@@ -200,6 +200,8 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sess
 
 `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-danger-soft`, `.btn-ghost`, `.btn-icon`, `.field`
 
+Dialog / PIN / call-ring actions use this ladder (`btn btn-primary` / `btn btn-secondary`; Accept adds `shell-call-accept` for pulse only). Icon-circle chrome (`.prompt-send-btn`, `.sidebar-new-chat`, `.contacts-find-btn`) and chips (`.chat-suggestion`) keep their own geometry but share primary/secondary **colors** from the theme sheets. Do not reintroduce `.shell-dialog-ok` / `.shell-dialog-cancel`.
+
 **Icons:** Asset SVGs under `assets/icons/` are **white monochrome** sources. Tint with RCSS `image-color` (RmlUi does not inherit this property — set it on the `svg` element). Theme defaults live on the `svg` type selector in `colors-light.rcss` / `colors-dark.rcss`; override per control (nav active, primary buttons, danger menu items, muted chevrons). Do not bake theme grays into SVG stroke/fill.
 
 ### Chat

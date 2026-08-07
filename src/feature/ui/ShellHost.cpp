@@ -1399,10 +1399,10 @@ std::string ShellHost::SerializeDialog() const {
   out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
          "data-value=\"dialog_prompt_value\"/>";
   out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"
       << Tr("common.cancel") << "</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"dialog_ok()\">"
+  out << "<button class=\"btn btn-primary\" data-event-click=\"dialog_ok()\">"
       << (state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str()))
       << "</button>";
   out << "</div></div></div>";
@@ -1421,11 +1421,11 @@ std::string ShellHost::SerializePinGate() const {
   out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
   out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
       << Tr("pin.just_continue") << "</button>";
-  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
       << "</button>";
   out << "</div>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"!pin_gate_chooser_mode\" "
@@ -1436,10 +1436,10 @@ std::string ShellHost::SerializePinGate() const {
          "placeholder=\""
       << Tr("pin.confirm_placeholder") << "\"/>";
   out << "<div class=\"shell-dialog-actions row\" data-if=\"!pin_gate_chooser_mode\">";
-  out << "<button class=\"shell-dialog-cancel\" data-if=\"pin_gate_create_mode\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
   out << "</div></div></div>";
   return out.str();
@@ -1460,9 +1460,10 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_decline()\" "
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
-  out << "<button class=\"shell-dialog-ok shell-call-accept\" data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
+  out << "<button class=\"btn btn-primary shell-call-accept\" "
+         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
   out << "</div></div></div>";
   return out.str();

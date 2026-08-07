@@ -45,13 +45,19 @@ selection {
   color: #ffffff;
 }
 
-.btn-primary {
+.btn-primary,
+.prompt-send-btn,
+.sidebar-new-chat,
+.contacts-find-btn {
   background-color: #6366f1;
   color: #ffffff;
 }
 
 .btn-primary:hover,
-.btn-primary:focus {
+.btn-primary:focus,
+.prompt-send-btn:hover,
+.sidebar-new-chat:hover,
+.contacts-find-btn:hover {
   background-color: #818cf8;
 }
 
@@ -63,13 +69,15 @@ selection {
   image-color: #ffffff;
 }
 
-.btn-secondary {
+.btn-secondary,
+.chat-suggestion {
   background-color: #374151;
   color: #f9fafb;
 }
 
 .btn-secondary:hover,
-.btn-secondary:focus {
+.btn-secondary:focus,
+.chat-suggestion:hover {
   background-color: #4b5563;
 }
 
@@ -94,6 +102,17 @@ selection {
   background-color: #7f1d1d;
   color: #fecaca;
   border: 1dp #f87171;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: #d1d5db;
+}
+
+.btn-ghost:hover,
+.btn-ghost:focus {
+  background-color: #374151;
+  color: #f9fafb;
 }
 
 .field {
@@ -155,27 +174,9 @@ select selectbox option:hover {
   box-shadow: 0 2dp 8dp #00000044;
 }
 
-.prompt-send-btn {
-  background-color: #6366f1;
-  color: #ffffff;
-}
-
-.prompt-send-btn:hover {
-  background-color: #818cf8;
-}
-
 .code-block {
   background-color: #374151;
   color: #f9fafb;
-}
-
-.chat-suggestion {
-  background-color: #374151;
-  color: #f9fafb;
-}
-
-.chat-suggestion:hover {
-  background-color: #4b5563;
 }
 
 .chat-jump-latest {
@@ -698,20 +699,6 @@ select selectbox option:hover {
   color: #e5e7eb;
 }
 
-.shell-dialog-cancel {
-  background-color: #374151;
-  color: #f9fafb;
-}
-
-.shell-dialog-ok {
-  background-color: #6366f1;
-  color: #ffffff;
-}
-
-.shell-dialog-ok:hover {
-  background-color: #818cf8;
-}
-
 .shell-call-meter-label {
   color: #9ca3af;
 }
@@ -909,15 +896,6 @@ select selectbox option:hover {
   color: #e5e7eb;
 }
 
-.sidebar-new-chat {
-  background-color: #6366f1;
-  color: #ffffff;
-}
-
-.sidebar-new-chat:hover {
-  background-color: #818cf8;
-}
-
 .sidebar-session {
   background-color: #1f2937;
   border: 1dp #374151;
@@ -1062,15 +1040,6 @@ select selectbox option:hover {
 
 .settings-row-chevron {
   image-color: #6b7280;
-}
-
-.contacts-find-btn {
-  background-color: #6366f1;
-  color: #ffffff;
-}
-
-.contacts-find-btn:hover {
-  background-color: #818cf8;
 }
 
 .contacts-row,

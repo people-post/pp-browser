@@ -8,6 +8,12 @@
   margin-bottom: 0;
   width: auto;
   display: inline-block;
+  box-sizing: border-box;
+}
+
+/* Low-emphasis text action (PIN “Not now”, optional dismissals). */
+.btn-ghost {
+  background-color: transparent;
 }
 
 .field {
@@ -2026,7 +2032,7 @@ call-video-tile {
   gap: 10dp;
 }
 
-.shell-call-ring .shell-dialog-cancel {
+.shell-call-ring .btn-secondary {
   flex-grow: 1;
   min-height: 44dp;
   padding: 10dp 12dp;
@@ -2053,24 +2059,6 @@ call-video-tile {
   margin-top: 16dp;
 }
 
-.shell-dialog-cancel {
-  border: 0;
-  font-family: LatoLatin;
-  font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
-  cursor: pointer;
-}
-
-.shell-dialog-ok {
-  border: 0;
-  font-family: LatoLatin;
-  font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
-  cursor: pointer;
-}
-
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;
@@ -2078,13 +2066,10 @@ call-video-tile {
   margin-top: 16dp;
 }
 
-.shell-pin-gate-chooser .shell-dialog-ok,
-.shell-pin-gate-chooser .shell-dialog-cancel,
 .shell-pin-gate-chooser .btn {
   display: block;
   width: 100%;
   text-align: center;
-  box-sizing: border-box;
 }
 
 .shell-pin-gate-input {
