@@ -9,6 +9,12 @@ add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
 add_subdirectory(people)
+
+if(PP_BROWSER_HEADLESS)
+  # Node-only: no messaging/media/net/ai/ui aggregate.
+  return()
+endif()
+
 add_subdirectory(messaging)
 add_subdirectory(media)
 add_subdirectory(net)

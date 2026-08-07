@@ -3,10 +3,13 @@
 #include "base/platform/AssetIO.h"
 #include "base/platform/IAssetLocator.h"
 
+#if !defined(PP_BROWSER_HEADLESS)
 #include <SDL3/SDL_locale.h>
+#endif
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
@@ -243,6 +246,30 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
   }
 
   std::vector<std::string> out;
+#if defined(PP_BROWSER_HEADLESS)
+  // pp-node / headless: no SDL — honor POSIX locale env (first non-empty / non-C).
+  for (const char* key : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
+    const char* value = std::getenv(key);
+    if (value == nullptr || value[0] == '\0') {
+      continue;
+    }
+    std::string tag = value;
+    // Drop encoding / modifier: en_US.UTF-8 → en_US
+    const auto dot = tag.find('.');
+    if (dot != std::string::npos) {
+      tag.resize(dot);
+    }
+    const auto at = tag.find('@');
+    if (at != std::string::npos) {
+      tag.resize(at);
+    }
+    if (tag == "C" || tag == "POSIX") {
+      continue;
+    }
+    out.push_back(NormalizeTag(tag));
+    break;
+  }
+#else
   int count = 0;
   SDL_Locale** locales = SDL_GetPreferredLocales(&count);
   if (locales == nullptr) {
@@ -260,6 +287,7 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
     out.push_back(std::move(tag));
   }
   SDL_free(locales);
+#endif
   return out;
 }
 

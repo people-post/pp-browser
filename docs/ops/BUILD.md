@@ -123,7 +123,19 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 
 ### Headless mesh node (`pp-node`)
 
-Desktop builds also produce **`pp-node`** — org/seed daemon without SDL/RmlUi ([p2p-mesh N011](../../projects/p2p-mesh/DECISIONS.md)):
+**Production / packaging** uses a dedicated headless configure (no X11, SDL, or RmlUi):
+
+```bash
+cmake -B build-pp-node -S . -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPP_BROWSER_HEADLESS=ON \
+  -DPP_BROWSER_BUILD_TESTS=OFF
+cmake --build build-pp-node -j --target pp-node
+```
+
+Or: `scripts/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
+
+**Desktop GUI trees** also produce **`pp-node`** as an extra target (links the same node runtime; GUI deps still configured):
 
 ```bash
 cmake --build build -j --target pp-node
@@ -195,7 +207,7 @@ cmake -B build -S .
 cmake --build build -j
 ```
 
-Do **not** pass `-DPP_BROWSER_HEADLESS=ON` unless you only need compile-only CI builds.
+Do **not** pass `-DPP_BROWSER_HEADLESS=ON` for the GUI app — that option is for **pp-node** / node-only configures (skips SDL, RmlUi, X11). See [Headless mesh node](#headless-mesh-node-pp-node).
 
 Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 
