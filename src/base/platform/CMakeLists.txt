@@ -79,12 +79,26 @@ else()
   )
 endif()
 
+# Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_base_error).
+# Desktop AssetIO is ifstream-only; no SDL.
+if(PP_BROWSER_HEADLESS)
+  list(APPEND _pp_platform_core_sources
+    AssetIO.cpp
+    IAssetLocator.cpp
+    DesktopAssetLocator.cpp
+  )
+endif()
+
 # Headless-safe platform surface (paths, env credentials, OS file/time/process).
 # No SDL / RmlUi — used by pp-node and by pp_base_data.
 pp_browser_add_base_library(pp_base_platform_core
   SOURCES
     ${_pp_platform_core_sources}
 )
+
+if(PP_BROWSER_HEADLESS)
+  return()
+endif()
 
 # OBJCXX is enabled in the top-level project() for desktop Darwin (required so
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).

@@ -60,7 +60,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 |------|-------|
 | **m1** desktop matrix | Android ↔ desktop voice; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept when mDNS misses |
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
-| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose loopbacks; optional s4 circuit SM if abort/leave hangs |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose loopbacks; call-media hello async+deadline+reset (peer-honesty); **remaining:** async `Connect(cb)`, other protocols still on Blocking* — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty); optional s4 circuit SM if abort/leave hangs |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
@@ -86,6 +86,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Always-mounted `data-if` + Dirty for Accept layer | Presence mount via `RemountCallChrome`; Dirty only for labels/pulse inside a mounted layer |
 | Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
+| `BlockingRead` hello/ack on WorkerPool; trust peer FIN | Async hello + handshake deadline + Yamux `reset()` — [SESSION_MACHINES peer honesty](SESSION_MACHINES.md#peer-honesty-rule-stream-waits) |
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
 | Put Accept / Connect / PollInbox on Browser IO | Dedicated workers / hop off IO |
 | 1:1 auto SoftMigrate to `media_relay` | Circuit only for undialable 1:1; SFU is N≥3 |

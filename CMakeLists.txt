@@ -58,7 +58,9 @@ include(dependencies)
 include(Progress)
 find_package(Threads REQUIRED)
 
-add_subdirectory(src/render)
+if(NOT PP_BROWSER_HEADLESS)
+  add_subdirectory(src/render)
+endif()
 add_subdirectory(src/libp2p)
 
 if(PP_BROWSER_BUILD_TESTS)

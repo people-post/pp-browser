@@ -144,17 +144,19 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker pool threads may block on network or disk for longer than a few milliseconds — **except** libp2p **data-plane** stream pumps, which must run as non-blocking async chains on the host `io_context` (see below).
 
+**Peer honesty (libp2p streams):** do not park WorkerPool threads on `BlockingRead`/`BlockingWrite` for peer-facing stream waits. Prefer async IO on the host `io_context` with a **local deadline** and Yamux **`reset()`** on timeout/Detach (write half-close does not cancel an in-flight read). Call-media hello/ack follows this; dial-back / some relay attach paths still use `Blocking*` — migrate when touched. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
+
 ### Libp2p integration executors
 
 Integration services under `src/libp2p/integration/host/` use three executor classes via `Libp2pScheduler`:
 
 | Class | Dispatch | Examples |
 |-------|----------|------------|
-| **Control** | App `WorkerPool` (`PostLibp2pWorker`) | dial waits, quote/attach handshake, `RequestBridge` RPC |
-| **Data** | `Libp2pHost::Post` (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media pump |
+| **Control** | App `WorkerPool` (`PostLibp2pWorker`) | dial waits, quote/attach handshake still on Blocking*, `RequestBridge` RPC; call-media **inbound key fill** only (not hello stream wait) |
+| **Data** | `Libp2pHost::Post` / stream async (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media duplex **and** call-media hello/ack |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` (`Blocking*` for control, `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for data). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `Libp2pExecutorLimits`.
+Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `Libp2pExecutorLimits`.
 
 ---
 

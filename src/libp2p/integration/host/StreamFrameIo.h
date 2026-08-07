@@ -38,6 +38,7 @@ public:
 
   void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameCallback on_frame,
              StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {});
+  /** Stops IO. Safe to call from inside FrameCallback (does not destroy on_frame_ reentrantly). */
   void Stop();
 
 private:
@@ -45,6 +46,7 @@ private:
 
   void ReadHeader();
   void ReadBody(uint64_t payload_len);
+  void ReleaseCallbackIfStopped();
 
   std::shared_ptr<libp2p::connection::Stream> stream_;
   FrameCallback on_frame_;
