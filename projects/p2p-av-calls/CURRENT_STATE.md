@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-07
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -20,6 +20,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
 | **Call media health UI** | Quality bars + Fair/Poor/NoAudio labels on call chrome; Call details sheet; debug subtitle + rich diagnostics behind `call_diagnostics` pref / `--debug`; periodic `media_health` INFO logs |
+| **Circuit compose (loopback)** | A↛B partition via R: `CircuitCallMediaComposeTest` (1:1 call-media) + `CircuitMediaRelayComposeTest` (quote/attach/fan-out); shared `loopback_partition_fixture.h`; `IsReachableForProtocol` gates |
 
 ## a4 thin in code (still relevant under V026)
 
@@ -53,13 +54,23 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 - Yamux `WriteQueue` copies on enqueue; `ReadBuffer::consumePart` soft-fails bad offsets (see [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md))
 - Keep Accept / MediaKey-send / Connect / Poll HTTP **off** Browser IO
 
+## Device LAN dogfood gates (open — after loopback compose)
+
+Do **not** claim NAT until these pass. Loopback compose is green; devices prove discovery + capture.
+
+| Gate | Goal | State |
+|------|------|-------|
+| **s2b** direct 1:1 | Android↔Android (and desktop) phase-log regression | Open |
+| **3-party circuit 1:1** | A, Node R (`circuit_relay`), B; A↛B direct (seed-only / no contact ma) → voice via circuit | Open — not claimed |
+| **s3c SoftMigrate PreferLocal** | Durable Node + 2 phones group SFU | Open |
+
 ## Still open
 
 | Area | State |
 |------|-------|
 | **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
-| Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
-| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** — call-media phases + Fail-after-Detach ignore; media-relay inbound + client attach phases; Detach aborts AcceptAndAttach; loopback goldens 3/4/6/7 + FailAfterDetach; Android / SoftMigrate dogfood gates open |
+| Hop peerstore / circuit PeerId dial | media-hop **L1–L3** landed; **L3.5 multi-hop deferred** until single-hop device dogfood exposes transitive failures |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** — call-media phases + Fail-after-Detach ignore; media-relay inbound + client attach phases; Detach aborts AcceptAndAttach; loopback goldens 3/4/6/7 + FailAfterDetach + circuit compose; Android / SoftMigrate dogfood gates open |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
@@ -68,9 +79,10 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 ## Next agent — start here
 
 1. **V033 s2b:** Android↔Android dogfood with `phase=` / `event=` logs (`adb logcat -s pp-browser:W`).
-2. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
-3. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
+2. **3-party circuit 1:1** device gate (A + `pp-node`/desktop R + B).
+3. **s3c** SoftMigrate PreferLocal dogfood.
 4. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
+5. **L3.5 multi-hop** only after single-hop dogfood shows R1 cannot dial B.
 
 ## Agent traps
 
@@ -88,3 +100,4 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
 | Put Accept / Connect / PollInbox on Browser IO | Dedicated workers / hop off IO |
+| 1:1 auto SoftMigrate to `media_relay` | Circuit only for undialable 1:1; SFU is N≥3 |

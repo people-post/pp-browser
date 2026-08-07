@@ -25,13 +25,14 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 - [x] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
 - [x] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
+- [x] Loopback compose: circuit + call-media + media_relay fan-out (`loopback_partition_fixture.h`)
 - **Gap:** L3 is **single-hop only** (one relay must direct-dial target). Multi-hop plan: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) / [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned).
 
 ## L3.5 — Multi-hop circuit v2
 
-Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Not started.**
+Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Deferred** until single-hop device dogfood exposes “R1 cannot dial B but R2 can.”
 
-- [ ] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
+- [x] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
 - [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, `circuit_relay.max_hops` (default 3, config-only limit), loop detection
 - [ ] R1 upstream relay selection (provider inner loop); consumer still picks R1 only
 - [ ] Session model: opaque end-to-end tunnel handle (replace single `CircuitHopLink` assumption)
@@ -42,6 +43,7 @@ Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--mu
 
 - [x] Rank hops; skip when stack says undialable (after circuit attempt)
 - [x] Drop reliance on empty contact ma as the only signal (contacts optional cache — H003)
+- [x] Loopback: circuit-backed SoftMigrate-style quote/attach/fan-out (`CircuitMediaRelayComposeTest`)
 - [ ] Dogfood: Android SoftMigrate → Windows Node without pasted multiaddr
 - [x] Mobile ephemeral listen (N025): addrs published during Wi‑Fi foreground call for PeerId dial
 - [x] UI + `RegisterContactEndpoints` consume address book; call-time prefetch via seed/circuit

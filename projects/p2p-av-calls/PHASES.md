@@ -87,6 +87,7 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 
 - [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`
 - [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
+- [x] Loopback compose: circuit + call-media Opus (`CircuitCallMediaComposeTest`); circuit + media_relay fan-out (`CircuitMediaRelayComposeTest`)
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
 - [x] App AEAD under call media key on media frames (direct 1:1 path + SFU V032)
@@ -94,6 +95,7 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [x] Stop extending legacy WebRTC bridge; libp2p connect-fail UI hints via `PlatformUserHints`
 - [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
 - [ ] Dogfood: Android ↔ desktop voice without WebRTC
+- [ ] Dogfood: 3-party circuit 1:1 (A + Node R + B; A↛B direct)
 
 ## m2 — Teardown WebRTC product path
 

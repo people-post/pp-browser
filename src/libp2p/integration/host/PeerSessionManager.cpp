@@ -290,6 +290,21 @@ bool PeerSessionManager::IsDialable(const std::string& peer_relay_user_id) const
   return HasDirectDialPathLocked(peer_relay_user_id);
 }
 
+bool PeerSessionManager::IsReachableForProtocol(const std::string& peer_relay_user_id,
+                                                const std::string& target_protocol) const {
+  if (peer_relay_user_id.empty()) {
+    return false;
+  }
+  std::lock_guard lock(mutex_);
+  if (HasDirectDialPathLocked(peer_relay_user_id)) {
+    return true;
+  }
+  if (target_protocol.empty()) {
+    return HasAnyCircuitHopLocked(peer_relay_user_id);
+  }
+  return FindCircuitHopLocked(peer_relay_user_id, target_protocol).has_value();
+}
+
 bool PeerSessionManager::IsConnected(const std::string& peer_relay_user_id) const {
   std::optional<libp2p::peer::PeerInfo> info;
   {

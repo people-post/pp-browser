@@ -727,7 +727,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   if (params.peer_key.empty() || params.call_id.empty() || params.media_key.empty()) {
     return Error("call-media connect params incomplete");
   }
-  if (!sessions_.IsDialable(params.peer_key)) {
+  if (!sessions_.IsReachableForProtocol(params.peer_key, kCallMediaDirectProtocolId)) {
     return Error("call-media peer not dialable");
   }
 

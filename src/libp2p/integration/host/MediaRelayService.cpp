@@ -69,7 +69,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   if (!host_.IsRunning()) {
     return Error("media-relay host not running");
   }
-  if (!sessions_.IsDialable(hop_peer_key)) {
+  if (!sessions_.IsReachableForProtocol(hop_peer_key, kMediaRelayProtocolId)) {
     return Error("hop peer endpoint not registered");
   }
 
@@ -84,7 +84,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
 
-  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key);
+  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key, kMediaRelayProtocolId);
 
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
                        [req = std::move(req), result_promise, settled, circuit_backed, &host = host_](

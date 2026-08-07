@@ -8,7 +8,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   if (!host_.IsRunning()) {
     return Error("media-relay host not running");
   }
-  if (!sessions_.IsDialable(hop_peer_key)) {
+  if (!sessions_.IsReachableForProtocol(hop_peer_key, kMediaRelayProtocolId)) {
     return Error("hop peer endpoint not registered");
   }
 
