@@ -1,5 +1,7 @@
 name: release
 
+# App installers only (macOS / Windows / Android). pp-node: release-pp-node.yml + pp-node/v* tags.
+
 on:
   push:
     tags:
@@ -7,14 +9,29 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 env:
   INSTALL_PREFIX: ${{ github.workspace }}/install
-  PP_NODE_IMAGE: ghcr.io/${{ github.repository_owner }}/pp-node
 
 jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require tag commit on main (release line)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::App release tags (v*) must point at a commit on origin/main."
+            exit 1
+          fi
+
   macos:
+    needs: [guard]
     runs-on: macos-14
 
     steps:
@@ -139,6 +156,7 @@ jobs:
         run: ccache --show-stats || true
 
   windows:
+    needs: [guard]
     runs-on: windows-2022
 
     steps:
@@ -222,6 +240,7 @@ jobs:
         run: sccache --show-stats || true
 
   android:
+    needs: [guard]
     runs-on: ubuntu-24.04
     env:
       # Set before setup-java / Gradle daemon so native builds inherit ccache config.
@@ -349,123 +368,8 @@ jobs:
           path: dist/android/*.apk
           if-no-files-found: error
 
-  # Headless org seed / datacenter binary + GHCR image (N011).
-  # Same OS family for build and runtime: Ubuntu 24.04 runner → ubuntu:24.04 image.
-  linux-pp-node:
-    runs-on: ubuntu-24.04
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: true
-      CCACHE_MAXSIZE: 2G
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Free disk space
-        uses: ./.github/actions/free-disk-space
-
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build ccache pkg-config \
-            python3 ca-certificates binutils
-
-      - name: Ensure ccache directory exists
-        run: |
-          mkdir -p "$CCACHE_DIR"
-          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: linux-pp-node-ubuntu2404-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml', 'scripts/pp_node_package_linux.sh') }}
-          restore-keys: |
-            linux-pp-node-ubuntu2404-ccache-v1-
-
-      - name: ccache stats (pre-build)
-        run: |
-          ccache --zero-stats || true
-          ccache --show-stats || true
-
-      - name: Parse version from tag
-        id: version
-        shell: bash
-        run: |
-          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
-          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
-          echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Packaging pp-node ${RELEASE_VERSION} (Ubuntu 24.04)"
-
-      - name: Build and package pp-node
-        env:
-          PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
-          PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-        run: bash scripts/pp_node_package_linux.sh all
-
-      - name: ccache stats (post-build)
-        if: always()
-        run: ccache --show-stats || true
-
-      - name: Upload Linux tarball artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: linux-pp-node-tarball
-          path: dist/pp-node/*.tar.gz
-          if-no-files-found: error
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push pp-node image
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-        run: |
-          set -euo pipefail
-          ctx=dist/pp-node/docker
-          [[ -x "${ctx}/pp-node" ]] || { echo "::error::missing ${ctx}/pp-node"; exit 1; }
-
-          tags=(
-            "${PP_NODE_IMAGE}:${RELEASE_VERSION}"
-            "${PP_NODE_IMAGE}:${GITHUB_REF_NAME}"
-          )
-          if [[ "${GITHUB_REF_NAME}" != *-* ]]; then
-            tags+=("${PP_NODE_IMAGE}:latest")
-          fi
-
-          tag_args=()
-          for t in "${tags[@]}"; do
-            tag_args+=(-t "$t")
-          done
-
-          docker buildx build \
-            --push \
-            --platform linux/amd64 \
-            "${tag_args[@]}" \
-            --label "org.opencontainers.image.title=pp-node" \
-            --label "org.opencontainers.image.description=Brief mesh headless node (org seed / datacenter)" \
-            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
-            "${ctx}"
-
-          printf 'Pushed:\n'
-          printf '  %s\n' "${tags[@]}"
-
   release:
-    needs: [macos, windows, android, linux-pp-node]
+    needs: [macos, windows, android]
     runs-on: ubuntu-24.04
 
     steps:
@@ -489,12 +393,6 @@ jobs:
           name: android-release-apk
           path: dist/android
 
-      - name: Download Linux pp-node tarball
-        uses: actions/download-artifact@v7
-        with:
-          name: linux-pp-node-tarball
-          path: dist/pp-node
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -506,14 +404,7 @@ jobs:
             dist/macos/*
             dist/windows/*
             dist/android/*
-            dist/pp-node/*.tar.gz
           body: |
-            ## Container image
+            ## App release
 
-            Headless mesh node (`pp-node`) is also published to GHCR (`ubuntu:24.04`):
-
-            ```text
-            ghcr.io/${{ github.repository_owner }}/pp-node:${{ github.ref_name }}
-            ```
-
-            Linux tarball on this release matches that image (Ubuntu 24.04 glibc). See [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md).
+            macOS / Windows / Android installers. Headless **`pp-node`** ships on a separate train — tag `pp-node/v…` and see [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md).

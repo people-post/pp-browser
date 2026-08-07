@@ -1,0 +1,208 @@
+name: release-pp-node
+
+# Independent train from app installers (release.yml / v* tags).
+# Cut tags from main (release line). See docs/ops/RELEASE.md.
+
+on:
+  push:
+    tags:
+      - 'pp-node/v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (branch/tag/SHA on or reachable from main)'
+        required: true
+        default: 'main'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  PP_NODE_IMAGE: ghcr.io/${{ github.repository_owner }}/pp-node
+  CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_NOHASHDIR: true
+  CCACHE_MAXSIZE: 2G
+
+jobs:
+  linux-pp-node:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Require tag commit on main (release line)
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::pp-node release tags must point at a commit on origin/main."
+            echo "HEAD=$(git rev-parse HEAD) main=$(git rev-parse origin/main)"
+            exit 1
+          fi
+          echo "OK: HEAD is on origin/main"
+
+      - name: Free disk space
+        uses: ./.github/actions/free-disk-space
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build ccache pkg-config \
+            python3 ca-certificates binutils curl
+
+      - name: Ensure ccache directory exists
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: linux-pp-node-ubuntu2404-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/pp_node_package_linux.sh') }}
+          restore-keys: |
+            linux-pp-node-ubuntu2404-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
+
+      - name: Parse version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Dogfood: no GitHub Release; image tag from short SHA
+            SHORT="$(git rev-parse --short=8 HEAD)"
+            echo "release_version=0.0.0-dev.${SHORT}" >> "$GITHUB_OUTPUT"
+            echo "project_version=0.0.0" >> "$GITHUB_OUTPUT"
+            echo "publish_github_release=false" >> "$GITHUB_OUTPUT"
+            echo "image_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Packaging pp-node dogfood from ${{ inputs.ref }} (${SHORT})"
+          else
+            # Tag: pp-node/v1.2.3 or pp-node/v1.2.3-rc1
+            REF="${GITHUB_REF_NAME#pp-node/}"
+            RELEASE_VERSION="${REF#v}"
+            PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+            echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "publish_github_release=true" >> "$GITHUB_OUTPUT"
+            if [[ "${RELEASE_VERSION}" == *-* ]]; then
+              echo "image_latest=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "image_latest=true" >> "$GITHUB_OUTPUT"
+            fi
+            echo "Packaging pp-node ${RELEASE_VERSION} (Ubuntu 24.04)"
+          fi
+
+      - name: Build and package pp-node
+        env:
+          PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
+          PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: bash scripts/pp_node_package_linux.sh all
+
+      - name: ccache stats (post-build)
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Upload Linux tarball artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-pp-node-tarball
+          path: dist/pp-node/*.tar.gz
+          if-no-files-found: error
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push pp-node image
+        id: image
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          IMAGE_LATEST: ${{ steps.version.outputs.image_latest }}
+        run: |
+          set -euo pipefail
+          ctx=dist/pp-node/docker
+          [[ -x "${ctx}/pp-node" ]] || { echo "::error::missing ${ctx}/pp-node"; exit 1; }
+
+          tags=(
+            "${PP_NODE_IMAGE}:${RELEASE_VERSION}"
+            "${PP_NODE_IMAGE}:v${RELEASE_VERSION}"
+          )
+          if [[ "${IMAGE_LATEST}" == "true" ]]; then
+            tags+=("${PP_NODE_IMAGE}:latest")
+          fi
+
+          tag_args=()
+          for t in "${tags[@]}"; do
+            tag_args+=(-t "$t")
+          done
+
+          docker buildx build \
+            --push \
+            --platform linux/amd64 \
+            "${tag_args[@]}" \
+            --label "org.opencontainers.image.title=pp-node" \
+            --label "org.opencontainers.image.description=Brief mesh headless node (org seed / datacenter)" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            "${ctx}"
+
+          echo "primary_tag=${PP_NODE_IMAGE}:${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          printf 'Pushed:\n'
+          printf '  %s\n' "${tags[@]}"
+
+      - name: L0 image smoke
+        env:
+          PRIMARY_TAG: ${{ steps.image.outputs.primary_tag }}
+        run: |
+          set -euo pipefail
+          docker pull "${PRIMARY_TAG}"
+          docker rm -f pp-node-ci-smoke >/dev/null 2>&1 || true
+          docker run -d --name pp-node-ci-smoke \
+            -e PP_BROWSER_PIN=ci-smoke-pin \
+            -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/18517 \
+            -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
+            -p 18518:18518 \
+            "${PRIMARY_TAG}"
+          PP_NODE_STATUS_URL=http://127.0.0.1:18518 \
+            bash scripts/pp_node_image_smoke.sh --timeout 60
+          docker rm -f pp-node-ci-smoke
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.publish_github_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: pp-node ${{ steps.version.outputs.release_version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.release_version, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/pp-node/*.tar.gz
+          body: |
+            ## Container image
+
+            ```text
+            ghcr.io/${{ github.repository_owner }}/pp-node:${{ steps.version.outputs.release_version }}
+            ```
+
+            Ubuntu 24.04 glibc. L0 HTTP smoke ran in CI. L1/L2: [IMAGE_SMOKE.md](https://github.com/${{ github.repository }}/blob/main/packaging/pp-node/IMAGE_SMOKE.md).
+            App installers ship separately via `v*` tags ([RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md)).

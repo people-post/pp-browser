@@ -1,64 +1,116 @@
-# Releasing pp-browser
+# Releasing pp-browser and pp-node
 
 **Tier:** ops
 
-Tag-triggered CI builds macOS and Windows installers, an Android release APK, a Linux **`pp-node`** tarball, and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases). The same workflow pushes a **`pp-node`** container image to GHCR.
+Two release trains share this monorepo but ship independently:
 
-When [macOS signing secrets](MACOS_SIGNING.md#github-repository-secrets) are configured, release CI code-signs and notarizes the macOS DMG. Until then, macOS artifacts ship unsigned (Gatekeeper override required). **Full setup guide:** [MACOS_SIGNING.md](MACOS_SIGNING.md).
+| Train | Tag | Workflow | Publishes |
+|-------|-----|----------|-----------|
+| **App** | `v1.2.3` | [`release.yml`](../.github/workflows/release.yml) | macOS DMG, Windows NSIS, Android APK → GitHub Release |
+| **Node** | `pp-node/v0.4.0` | [`release-pp-node.yml`](../.github/workflows/release-pp-node.yml) | Linux tarball + GHCR image → GitHub Release `pp-node …` |
 
-## Tag convention
+When [macOS signing secrets](MACOS_SIGNING.md#github-repository-secrets) are configured, app release CI code-signs and notarizes the macOS DMG. Until then, macOS artifacts ship unsigned (Gatekeeper override required). **Full setup guide:** [MACOS_SIGNING.md](MACOS_SIGNING.md).
 
-Use semver tags with a `v` prefix:
+## Branching
+
+| Branch | Role |
+|--------|------|
+| **`develop`** (default) | Integration / tip — day-to-day PRs and [build CI](../.github/workflows/build.yml) |
+| **`main`** | Release line — stabilize, hotfixes, **cut tags here** |
+
+```text
+develop  ──merge──►  main  ──tag──►  v*  and/or  pp-node/v*
+                ▲
+                └── hotfix on main, then backport to develop
+```
+
+Do not add a third long-lived branch unless you later need N-1 maintenance lines.
+
+## Tag conventions
+
+### App (`v*`)
 
 | Tag | Meaning |
 |-----|---------|
-| `v0.1.0` | Stable release |
-| `v0.2.0-rc1` | Pre-release (marked as prerelease on GitHub) |
-| `v0.2.0-beta1` | Pre-release |
+| `v0.1.0` | Stable app release |
+| `v0.2.0-rc1` | Pre-release (GitHub prerelease) |
 
-The workflow matches tags of the form `vMAJOR.MINOR.PATCH` with optional suffixes (`-rc1`, `-beta1`, etc.).
+Pattern: `vMAJOR.MINOR.PATCH` with optional suffixes (`-rc1`, `-beta1`, …).
+
+### Node (`pp-node/v*`)
+
+| Tag | Meaning |
+|-----|---------|
+| `pp-node/v0.1.0` | Stable node / GHCR release |
+| `pp-node/v0.1.0-rc1` | Pre-release (no `:latest` image tag) |
+
+Independent semver from the app. Breaking mesh/wire protocols still need a coordinated bump (or dual-protocol support) — see [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) and protocol IDs under `src/libp2p/integration/host/`.
 
 ## Maintainer flow
 
-1. Bump the version in [`CMakeLists.txt`](../CMakeLists.txt) (`PP_BROWSER_VERSION` default / `project(VERSION ...)`) on `main`.
-2. Commit and push.
-3. Create and push an annotated tag:
+### Ship from develop → main
+
+1. Land work on **`develop`** (PRs; build CI green).
+2. Open PR **`develop` → `main`** when ready to stabilize; merge.
+3. On **`main`**, bump versions if needed:
+   - App: `PP_BROWSER_VERSION` in [`CMakeLists.txt`](../../CMakeLists.txt)
+   - Node: version comes from the **`pp-node/v…` tag** (passed as `PP_BROWSER_RELEASE_VERSION` at build time)
+4. Tag **from `main`** and push (one or both trains):
 
 ```bash
+# App only
+git checkout main && git pull
 git tag -a v0.1.0 -m "pp-browser 0.1.0"
 git push origin v0.1.0
+
+# Node only
+git tag -a pp-node/v0.1.0 -m "pp-node 0.1.0"
+git push origin pp-node/v0.1.0
 ```
 
-4. GitHub Actions workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs automatically:
-   - **macOS** (`macos-14`): builds `Frame.app`, optionally signs + notarizes, packages a `.dmg`
-   - **Windows** (`windows-2022`): builds the app, packages an NSIS `.exe` installer
-   - **Android** (`ubuntu-24.04`, NDK `27.0.12077973`): builds a release APK (`assembleRelease`) with native code compiled in Release mode
-   - **Linux pp-node** (`ubuntu-24.04`): stripped headless binary, tarball on the GitHub Release, image pushed to GHCR (`ubuntu:24.04`)
-5. When all jobs succeed, a GitHub Release is created with the artifacts attached.
+5. Hotfix: commit on **`main`**, tag again, then merge/cherry-pick back to **`develop`**.
 
-Release CI uses the same OS runners, Android NDK, and compiler-cache setup as [build CI](../.github/workflows/build.yml) for GUI/mobile targets. Linux **desktop** packages are still not published; only **`pp-node`** is.
+CI refuses tags whose commit is not on `origin/main`.
 
-Release builds use:
+### App workflow (`v*`)
 
-- `-DPP_BROWSER_PACKAGED_BUILD=ON` — runtime asset paths relative to the installed executable / bundle (GUI installers)
-- `pp-node`: `-DPP_BROWSER_HEADLESS=ON` on Ubuntu 24.04 (no X11/GL); see [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh)
+[`release.yml`](../.github/workflows/release.yml):
+
+- macOS (`macos-14`): `Frame.app`, optional sign/notarize, `.dmg`
+- Windows (`windows-2022`): NSIS `.exe`
+- Android (`ubuntu-24.04`): release APK
+
+Uses `-DPP_BROWSER_PACKAGED_BUILD=ON`.
+
+### Node workflow (`pp-node/v*`)
+
+[`release-pp-node.yml`](../.github/workflows/release-pp-node.yml):
+
+- Ubuntu 24.04 build (`-DPP_BROWSER_HEADLESS=ON`) via [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh)
+- Push `ghcr.io/<owner>/pp-node:<version>` (and `:v…`, `:latest` when not a prerelease)
+- L0 HTTP smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md))
+- GitHub Release named `pp-node <version>` with the Linux tarball
+
+Optional dogfood: Actions → **release-pp-node** → **Run workflow** (builds a `0.0.0-dev.<sha>` image; no GitHub Release).
 
 ## Artifacts
 
-| Platform | File / image | Contents |
-|----------|--------------|----------|
-| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop install of `Frame.app` (DMG volume name Frame) |
-| Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer (display name Frame; exe + `assets/` under install dir) |
-| Android | `pp-browser-<version>-android.apk` | Universal APK (`armeabi-v7a`, `arm64-v8a`, `x86_64`); signed with the debug keystore until a release keystore is configured |
-| Linux (amd64) | `pp-node-<version>-linux-amd64.tar.gz` | Stripped `pp-node` + config example + systemd unit (Ubuntu 24.04 glibc) |
-| GHCR | `ghcr.io/people-post/pp-node:<version>` | Same binary on `ubuntu:24.04`. Also tagged `:v…` and `:latest` on non-prerelease tags |
+### App (`v*`)
 
-### `pp-node` glibc / image contract
+| Platform | File | Contents |
+|----------|------|----------|
+| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop `Frame.app` |
+| Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer |
+| Android | `pp-browser-<version>-android.apk` | Universal APK |
 
-Build and runtime stay on the **same OS family**: Ubuntu 24.04. Release CI compiles on the `ubuntu-24.04` runner; the Dockerfile is [`packaging/pp-node/Dockerfile`](../../packaging/pp-node/Dockerfile) (`FROM ubuntu:24.04`). Prefer this match over a smaller unrelated base (Debian bookworm, Alpine, distroless).
+### Node (`pp-node/v*`)
+
+| Artifact | Contents |
+|----------|----------|
+| `pp-node-<version>-linux-amd64.tar.gz` | Stripped binary + config example + systemd unit |
+| `ghcr.io/people-post/pp-node:<version>` | Same binary on `ubuntu:24.04` |
 
 ```bash
-# Pull (package may be private until made public in GHCR settings)
 docker pull ghcr.io/people-post/pp-node:0.1.0
 
 docker run --rm -it \
@@ -73,32 +125,26 @@ docker run --rm -it \
   ghcr.io/people-post/pp-node:0.1.0
 ```
 
-Image ships a seed `config.json` (org caps); override per deploy with `PP_NODE_*` (CLI → env → file). See [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
-
-Status HTTP defaults to loopback; set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` and publish **18518** for console/probes (`GET /healthz`, `GET /status`). Optional `PP_NODE_STATUS_TOKEN`. See [BUILD.md](BUILD.md#headless-mesh-node-pp-node).
+Deploy overlays: [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays). Local compose / L0–L1 smoke: [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md), [BUILD.md](BUILD.md#headless-mesh-node-pp-node).
 
 ## macOS code signing and notarization
 
-See **[MACOS_SIGNING.md](MACOS_SIGNING.md)** for the full guide: Apple Developer Portal setup, GitHub secrets, local smoke test, CI flow, and troubleshooting.
+See **[MACOS_SIGNING.md](MACOS_SIGNING.md)**.
 
 ## Installing unsigned builds
-
-When signing secrets are **not** configured, macOS artifacts are unsigned. Users may need to override OS protections:
 
 ### macOS
 
 1. Open the `.dmg` and drag **Frame** to Applications.
-2. On first launch, macOS Gatekeeper may block the app. Either:
-   - Right-click the app → **Open** → confirm, or
-   - **System Settings → Privacy & Security** → allow the app.
+2. First launch may need Right-click → **Open**, or allow under **Privacy & Security**.
 
 ### Windows
 
-SmartScreen may warn that the publisher is unknown. Click **More info** → **Run anyway**, or use **Unblock** on the downloaded file (file Properties → General → Unblock).
+SmartScreen may warn; **More info** → **Run anyway**, or Unblock the file.
 
-## Local packaging smoke test
+## Local packaging smoke
 
-On macOS or Windows:
+**App** (macOS / Windows):
 
 ```bash
 cmake -B build -S . \
@@ -110,39 +156,43 @@ cmake --install build --prefix install
 cpack --config build/CPackConfig.cmake
 ```
 
-Launch the installed app and confirm the UI loads (themes, views, fonts from bundled `assets/`).
-
-Linux GUI installs still use `bin/pp-browser` and `share/pp-browser/assets/`; CPack installers are macOS/Windows only for now.
-
-Local **`pp-node`** image/tarball (Ubuntu 24.04 host):
+**Node** (Ubuntu 24.04 host):
 
 ```bash
-sudo apt-get install -y cmake ninja-build ccache pkg-config
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
 docker build -t pp-node:local dist/pp-node/docker
+docker compose -f packaging/pp-node/docker-compose.yml up -d
+./scripts/pp_node_relay_smoke.sh
 ```
 
 ## Checklist before tagging
 
-- [ ] Version bumped in `CMakeLists.txt`
-- [ ] `main` CI green ([`build.yml`](../.github/workflows/build.yml))
-- [ ] Smoke-tested packaged build locally (if possible on target OS)
-- [ ] macOS signing secrets configured (optional; unsigned OK until ready)
-- [ ] GHCR package visibility set if the `pp-node` image should be pullable without auth
+### App (`v*`)
+
+- [ ] Changes merged to **`main`**
+- [ ] Version bumped in `CMakeLists.txt` when needed
+- [ ] `develop` / `main` build CI green
+- [ ] Smoke-tested packaged build locally if possible
+- [ ] macOS signing secrets configured (optional)
+
+### Node (`pp-node/v*`)
+
+- [ ] Changes merged to **`main`**
+- [ ] Local L0 (and L1 if probe built) green — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md)
+- [ ] GHCR package visibility set if public pulls are required
+- [ ] Protocol/compat note if this release breaks older apps
 
 ## Future: Windows code signing
 
-- Import an Authenticode certificate (`.pfx`) as a secret
-- Sign the NSIS installer (or the main exe before packaging) with `signtool`
-
-Document secret names and exact commands when Windows signing is enabled.
+- Import Authenticode `.pfx` as a secret; sign NSIS / exe with `signtool`
 
 ## Deferred
 
 | Item | Notes |
 |------|-------|
-| Intel macOS / universal binary | Current GHA `macos-14` is arm64 only |
-| Linux `.deb` / AppImage (GUI) | Not in current target |
-| `pp-node` multi-arch (`linux/arm64`) | amd64 only in release CI for now |
+| Intel macOS / universal binary | GHA `macos-14` is arm64 only |
+| Linux `.deb` / AppImage (GUI) | Not targeted |
+| `pp-node` multi-arch (`linux/arm64`) | amd64 only for now |
+| L1 in release CI / L2 multi-container | [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md) |
 | Auto-update channel | Separate effort |
-| iOS distribution | Separate Xcode target; see [PLATFORMS.md](../architecture/PLATFORMS.md) |
+| iOS distribution | [PLATFORMS.md](../architecture/PLATFORMS.md) |

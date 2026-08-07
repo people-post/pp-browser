@@ -11,6 +11,12 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **L1** | From outside the hop: dial peer; **media** `RequestQuote`; **circuit** bridge + payload to a local target | `pp-node-probe` + `scripts/pp_node_relay_smoke.sh` | **Done** (scaffold) |
 | **L2** | Multi-container topology (hop + 2 clients, fan-out / SoftMigrate-style) | Compose + probe or gtest-shaped harness | **Deferred** — see below |
 
+## CI / release
+
+Node images ship on the **`pp-node/v*`** train ([`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)), independent of app `v*` tags. Cut tags from **`main`**; day-to-day work is on **`develop`**. See [RELEASE.md](../../docs/ops/RELEASE.md).
+
+Release CI runs **L0** against the pushed image. Run L0/L1 locally against compose as below. **L2** (multi-container fan-out) remains deferred.
+
 ## Prerequisites
 
 ```bash
