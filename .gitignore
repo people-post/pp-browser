@@ -81,3 +81,4 @@ packaging/macos/signing.env
 packaging/ios/signing.env
 packaging/ios/ExportOptions.plist
 dist-ios/
+dist/
