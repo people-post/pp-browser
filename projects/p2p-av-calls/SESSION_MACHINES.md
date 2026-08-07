@@ -189,12 +189,13 @@ stateDiagram-v2
 | Transition | Effects |
 |------------|---------|
 | → `Dialing` | Arm connect timeout; store params/callbacks |
-| → `HelloOutbound` | Set glare bit (phase itself); Post Normal hello write/read |
-| → `HelloInbound` | Post Normal read hello; invoke inbound handler for key |
-| → `Adopting` | `TryAdopt` under lock; only one winner |
+| → `HelloOutbound` | Set glare bit; async hello write/read on host io_context; arm handshake deadline (reset on expiry) |
+| → `HelloInbound` | Async hello read on io_context + handshake deadline; inbound handler may hop to Normal for key fill only |
+| → `Adopting` | `TryAdopt` under lock; only one winner; cancel handshake timer |
 | → `MediaReady` | Start IO duplex; `on_connected`; complete Connect waiter OK |
-| → `Failed` | `on_failed`; complete waiter error; close stream |
-| → `Detaching` | Stop pump; reset stream; complete waiter if any; then Idle |
+| → `Failed` | `on_failed`; complete waiter error; reset stream |
+| → `Detaching` | Stop pump; cancel handshake; **reset** stream (not write half-close); complete waiter if any; then Idle |
+| `ConnectTimeout` | TeardownTransport (reset handshake) + Idle — never leave async hello pinned after Connect returns |
 
 ### Collapses today’s flags
 

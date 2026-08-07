@@ -1,10 +1,12 @@
 #pragma once
 
 #include "common/Error.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 
 #include <libp2p/connection/stream.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -23,5 +25,19 @@ Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection
 Roe<void> BlockingWriteStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
                                   const std::string& json_utf8,
                                   size_t max_frame_bytes = kMaxStreamJsonFrameBytes);
+
+using StreamJsonReadCallback = std::function<void(Roe<std::string>)>;
+using StreamJsonWriteCallback = std::function<void(Roe<void>)>;
+
+/**
+ * One-shot async JSON frame IO. Completions run on the stream's io_context.
+ * Prefer these for call-media hello/ack so Detach can cancel without pinning WorkerPool.
+ */
+void AsyncReadStreamJson(std::shared_ptr<libp2p::connection::Stream> stream,
+                         StreamJsonReadCallback on_done, StreamCancelCheck is_cancelled = {},
+                         size_t max_frame_bytes = kMaxStreamJsonFrameBytes);
+void AsyncWriteStreamJson(std::shared_ptr<libp2p::connection::Stream> stream, std::string json_utf8,
+                          StreamJsonWriteCallback on_done,
+                          size_t max_frame_bytes = kMaxStreamJsonFrameBytes);
 
 } // namespace pbr
