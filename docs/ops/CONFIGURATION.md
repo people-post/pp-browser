@@ -15,6 +15,28 @@ There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config
 
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
 
+### `pp-node` deploy overlays
+
+Headless **`pp-node`** uses the same config file schema, then applies deploy env, then CLI:
+
+**CLI flags → environment → config file → defaults**
+
+| Variable | Maps to | Notes |
+|----------|---------|--------|
+| `PP_BROWSER_PIN` | profile unlock | Required (or `--pin`). Secret — never bake into images. |
+| `PP_BROWSER_CONFIG` | config file path | Or `--config` |
+| `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
+| `PP_NODE_LISTEN` | `libp2p.listen_multiaddr` | Or `--listen` |
+| `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated multiaddrs |
+| `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
+| `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
+| `PP_NODE_PROFILE` | active profile id | Or `--profile` |
+| `PP_NODE_LISTEN_FALLBACK` | busy-port fallback | Or `--listen-fallback`; default fail-loud |
+| `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables |
+| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional |
+
+JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
+
 ## Runtime session state
 
 After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`SessionStore`](../../src/base/data/SessionStore.h) (`BootstrapResult`: config, profile prefs, paths). Settings and chat read/write through injected store / ports; saves reload from disk before notifying listeners.
@@ -166,7 +188,9 @@ Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../archite
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
+| `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
+| `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
 API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`.

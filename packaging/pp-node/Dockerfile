@@ -32,7 +32,12 @@ VOLUME ["/var/lib/pp-node"]
 # docker/kubectl exec → curl http://127.0.0.1:18518/status
 EXPOSE 443
 
-# Provide secrets via env or orchestration — never bake a PIN into the image:
-#   PP_BROWSER_PIN
-#   PP_NODE_STATUS_TOKEN   (optional Bearer for status HTTP)
+# Provide secrets and deploy overlays via env — never bake a PIN into the image.
+# Precedence: CLI → env → this config file → defaults. See docs/ops/CONFIGURATION.md.
+#   PP_BROWSER_PIN              (required)
+#   PP_NODE_LISTEN              e.g. /ip4/0.0.0.0/tcp/443
+#   PP_NODE_DATA_DIR            e.g. /var/lib/pp-node
+#   PP_NODE_BOOTSTRAP_PEERS     comma-separated multiaddrs
+#   PP_NODE_CAP_CIRCUIT_RELAY / PP_NODE_CAP_MEDIA_RELAY
+#   PP_NODE_STATUS_TOKEN        (optional Bearer for status HTTP)
 ENTRYPOINT ["/usr/local/bin/pp-node", "--config", "/etc/pp-node/config.json"]

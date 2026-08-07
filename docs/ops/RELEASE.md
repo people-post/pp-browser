@@ -64,10 +64,14 @@ docker pull ghcr.io/people-post/pp-node:0.1.0
 docker run --rm -it \
   --cap-add=NET_BIND_SERVICE \
   -e PP_BROWSER_PIN=... \
+  -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443 \
+  -e PP_NODE_DATA_DIR=/var/lib/pp-node \
   -v pp-node-data:/var/lib/pp-node \
   -p 443:443 \
   ghcr.io/people-post/pp-node:0.1.0
 ```
+
+Image ships a seed `config.json` (org caps); override per deploy with `PP_NODE_*` (CLI → env → file). See [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
 
 Status HTTP stays on loopback inside the container (`127.0.0.1:18518`); use `docker exec` / `kubectl exec` to query it. See [BUILD.md](BUILD.md#headless-mesh-node-pp-node).
 

@@ -130,8 +130,8 @@ cmake --build build -j --target pp-node
 ./build/src/app/node/pp-node --listen /ip4/0.0.0.0/tcp/18517 --pin "$PP_BROWSER_PIN"
 ```
 
-- PIN via `--pin` or `PP_BROWSER_PIN` (required).
-- Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` only for local dogfood.
+- PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_LISTEN`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
+- Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` / `PP_NODE_LISTEN_FALLBACK=1` only for local dogfood.
 - Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
 - **Loopback status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Not on the libp2p listen port; do not publish this port on a Service/Ingress. Query from the host/container via `curl` or `kubectl exec`:
   ```bash

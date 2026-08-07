@@ -9,6 +9,10 @@ Type=simple
 User=pp-node
 Group=pp-node
 Environment=PP_BROWSER_PIN=change-me
+# Optional deploy overlays (CLI → env → /etc/pp-node/config.json):
+# Environment=PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443
+# Environment=PP_NODE_DATA_DIR=/var/lib/pp-node
+# Environment=PP_NODE_CAP_MEDIA_RELAY=1
 ExecStart=/usr/bin/pp-node --config /etc/pp-node/config.json
 Restart=on-failure
 RestartSec=5
