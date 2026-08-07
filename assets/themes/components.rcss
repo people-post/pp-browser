@@ -1,14 +1,15 @@
 .btn {
   font-family: LatoLatin;
   font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
+  padding: 8dp 16dp;
+  border-radius: 999dp;
   border: 0;
   cursor: pointer;
   margin-bottom: 0;
   width: auto;
   display: inline-block;
   box-sizing: border-box;
+  text-align: center;
 }
 
 /* Low-emphasis text action (PIN “Not now”, optional dismissals). */
@@ -2032,16 +2033,16 @@ call-video-tile {
   gap: 10dp;
 }
 
-.shell-call-ring .btn-secondary {
+.shell-call-ring .btn {
   flex-grow: 1;
+  height: 44dp;
   min-height: 44dp;
-  padding: 10dp 12dp;
+  padding: 0 16dp;
+  line-height: 44dp;
+  text-align: center;
 }
 
 .shell-call-accept {
-  flex-grow: 2;
-  min-height: 44dp;
-  padding: 10dp 16dp;
   font-weight: bold;
   box-shadow: 0 0 0 0 #00000000;
 }
