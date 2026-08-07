@@ -9,7 +9,6 @@
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/ILocalNotifier.h"
-#include "base/platform/Platform.h"
 #include "base/platform/PlatformUserHints.h"
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
@@ -344,14 +343,8 @@ void CallController::SyncRingtone() {
     AppRuntime::PostUI([this]() { SyncRingtone(); });
     return;
   }
-  // Mobile: SDL playback teardown from a worker can stall the SDL thread during Accept.
-  // Skip ringtone until that path is safe; signaling/listen dogfood does not need it.
-  if (Platform::IsMobile()) {
-    if (ringtone_.IsPlaying()) {
-      ringtone_.Stop();
-    }
-    return;
-  }
+  // CallRingtone::Stop is async (never joins on Accept/UI) so mobile is safe — see
+  // CallRingtone.cpp Samsung Accept hang notes. Do not skip playback here.
   const bool should_ring = shell_call_chrome_.call_ring && shell_call_chrome_.call_ring().active;
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();

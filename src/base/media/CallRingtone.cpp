@@ -12,12 +12,14 @@ namespace {
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
   const std::string path = IAssetLocator::Instance().Resolve("sounds/call_ring.wav");
   if (path.empty()) {
+    SDL_Log("CallRingtone: empty path for sounds/call_ring.wav");
     return false;
   }
   SDL_AudioSpec spec{};
   Uint8* buf = nullptr;
   Uint32 len = 0;
   if (!SDL_LoadWAV(path.c_str(), &spec, &buf, &len) || !buf || len == 0) {
+    SDL_Log("CallRingtone: SDL_LoadWAV failed path=%s err=%s", path.c_str(), SDL_GetError());
     if (buf) {
       SDL_free(buf);
     }
@@ -41,6 +43,7 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
       SDL_ConvertAudioSamples(&spec, buf, static_cast<int>(len), &dst, &converted, &converted_len);
   SDL_free(buf);
   if (!ok || !converted || converted_len <= 0) {
+    SDL_Log("CallRingtone: convert failed err=%s", SDL_GetError());
     if (converted) {
       SDL_free(converted);
     }
@@ -129,6 +132,7 @@ void CallRingtone::Stop() {
 void CallRingtone::RunLoop() {
   if (!SDL_WasInit(SDL_INIT_AUDIO)) {
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+      SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
       playing_ = false;
       return;
     }
@@ -139,11 +143,14 @@ void CallRingtone::RunLoop() {
   want.channels = static_cast<Uint8>(wav_channels_);
   SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
   if (!stream) {
+    SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());
     playing_ = false;
     return;
   }
   const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
   (void)SDL_ResumeAudioDevice(device);
+  SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
+          wav_pcm_.size());
 
   while (!stop_.load()) {
     const int queued = SDL_GetAudioStreamQueued(stream);
