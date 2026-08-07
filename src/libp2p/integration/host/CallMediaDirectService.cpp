@@ -2,6 +2,7 @@
 
 #include "common/Module.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
+#include "libp2p/integration/host/CallMediaSessionLogic.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
@@ -192,138 +193,46 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
    */
   bool ApplyLocked(CallMediaSessionEvent ev, const std::string& call_id = {}) {
     const CallMediaSessionPhase p = Phase();
-    switch (ev) {
-    case CallMediaSessionEvent::ConnectRequested:
-      SetPhaseLocked(CallMediaSessionPhase::Dialing, ev, call_id);
-      return true;
-
-    case CallMediaSessionEvent::OpenStreamOk:
-      if (p == CallMediaSessionPhase::Dialing) {
-        SetPhaseLocked(CallMediaSessionPhase::HelloOutbound, ev, call_id);
-        return true;
+    CallMediaSessionApplyContext ctx;
+    ctx.connect_waiter_active = ConnectWaiterActiveLocked();
+    ctx.has_stream = static_cast<bool>(stream);
+    const CallMediaSessionPhaseOutcome outcome = DecideCallMediaSessionPhase(p, ev, ctx);
+    if (outcome.decision == CallMediaSessionPhaseDecision::Ignore) {
+      if (ev == CallMediaSessionEvent::OpenStreamOk) {
+        if (p == CallMediaSessionPhase::Detaching) {
+          IgnoreEventLocked(ev, "detaching");
+        } else if (p == CallMediaSessionPhase::Idle) {
+          IgnoreEventLocked(ev, "connect no longer active");
+        } else {
+          IgnoreEventLocked(ev, "unexpected phase for OpenStreamOk");
+        }
+      } else if (ev == CallMediaSessionEvent::OpenStreamFail) {
+        IgnoreEventLocked(ev, "not in outbound dial");
+      } else if (ev == CallMediaSessionEvent::HelloOk) {
+        IgnoreEventLocked(ev, "unexpected phase for HelloOk");
+      } else if (ev == CallMediaSessionEvent::HelloFail) {
+        IgnoreEventLocked(ev, "unexpected phase for HelloFail");
+      } else if (ev == CallMediaSessionEvent::AdoptLost) {
+        IgnoreEventLocked(ev, "unexpected phase for AdoptLost");
+      } else if (ev == CallMediaSessionEvent::DuplexStarted) {
+        IgnoreEventLocked(ev, "detach raced duplex start");
+      } else if (ev == CallMediaSessionEvent::ConnectTimeout) {
+        IgnoreEventLocked(ev, "not waiting on connect");
+      } else {
+        IgnoreEventLocked(ev, "unhandled event");
       }
-      // Inbound hello failed while Connect waiter still live — resume outbound.
-      if (p == CallMediaSessionPhase::Idle && ConnectWaiterActiveLocked()) {
-        SetPhaseLocked(CallMediaSessionPhase::Dialing, ev, call_id);
-        return true;
-      }
-      // Dual-dial: outbound hello proceeds without stealing HelloInbound.
-      if (p == CallMediaSessionPhase::HelloInbound) {
+      return false;
+    }
+    if (outcome.decision == CallMediaSessionPhaseDecision::Keep) {
+      if (ev == CallMediaSessionEvent::OpenStreamOk && p == CallMediaSessionPhase::HelloInbound) {
         log().info << "phase=" << CallMediaSessionPhaseName(p)
                    << " event=" << CallMediaSessionEventName(ev) << " call_id=" << call_id
                    << " (outbound hello; inbound in flight)";
-        return true;
       }
-      if (p == CallMediaSessionPhase::Detaching) {
-        IgnoreEventLocked(ev, "detaching");
-        return false;
-      }
-      if (p == CallMediaSessionPhase::Idle) {
-        IgnoreEventLocked(ev, "connect no longer active");
-        return false;
-      }
-      IgnoreEventLocked(ev, "unexpected phase for OpenStreamOk");
-      return false;
-
-    case CallMediaSessionEvent::OpenStreamFail:
-      if (p == CallMediaSessionPhase::Dialing || p == CallMediaSessionPhase::HelloOutbound) {
-        SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        return true;
-      }
-      IgnoreEventLocked(ev, "not in outbound dial");
-      return false;
-
-    case CallMediaSessionEvent::InboundStream:
-      SetPhaseLocked(CallMediaSessionPhase::HelloInbound, ev, call_id);
-      return true;
-
-    case CallMediaSessionEvent::HelloOk:
-      if (p == CallMediaSessionPhase::HelloInbound) {
-        SetPhaseLocked(CallMediaSessionPhase::HelloInbound, ev, call_id);
-        return true;
-      }
-      if (p == CallMediaSessionPhase::HelloOutbound || p == CallMediaSessionPhase::Dialing) {
-        SetPhaseLocked(CallMediaSessionPhase::HelloOutbound, ev, call_id);
-        return true;
-      }
-      IgnoreEventLocked(ev, "unexpected phase for HelloOk");
-      return false;
-
-    case CallMediaSessionEvent::HelloFail:
-      if (p == CallMediaSessionPhase::HelloInbound) {
-        // Restore Dialing if outbound Connect waiter still active (dogfood hang fix).
-        if (ConnectWaiterActiveLocked() && !stream) {
-          SetPhaseLocked(CallMediaSessionPhase::Dialing, ev, call_id);
-        } else {
-          SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        }
-        return true;
-      }
-      if (p == CallMediaSessionPhase::HelloOutbound || p == CallMediaSessionPhase::Dialing) {
-        SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        return true;
-      }
-      IgnoreEventLocked(ev, "unexpected phase for HelloFail");
-      return false;
-
-    case CallMediaSessionEvent::AdoptWon:
-      SetPhaseLocked(CallMediaSessionPhase::Adopting, ev, call_id);
-      return true;
-
-    case CallMediaSessionEvent::AdoptLost:
-      if (p == CallMediaSessionPhase::HelloInbound) {
-        if (ConnectWaiterActiveLocked() && !stream) {
-          SetPhaseLocked(CallMediaSessionPhase::Dialing, ev, call_id);
-        } else {
-          SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        }
-        return true;
-      }
-      if (p == CallMediaSessionPhase::HelloOutbound || p == CallMediaSessionPhase::Dialing) {
-        SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        return true;
-      }
-      IgnoreEventLocked(ev, "unexpected phase for AdoptLost");
-      return false;
-
-    case CallMediaSessionEvent::DuplexStarted:
-      if (p == CallMediaSessionPhase::Adopting || p == CallMediaSessionPhase::HelloOutbound ||
-          p == CallMediaSessionPhase::HelloInbound) {
-        SetPhaseLocked(CallMediaSessionPhase::MediaReady, ev, call_id);
-        return true;
-      }
-      if (p == CallMediaSessionPhase::MediaReady) {
-        return true;
-      }
-      IgnoreEventLocked(ev, "detach raced duplex start");
-      return false;
-
-    case CallMediaSessionEvent::ConnectTimeout:
-      if (p == CallMediaSessionPhase::Dialing || p == CallMediaSessionPhase::HelloOutbound) {
-        SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        return true;
-      }
-      IgnoreEventLocked(ev, "not waiting on connect");
-      return false;
-
-    case CallMediaSessionEvent::DetachRequested:
-      // Late outbound abort (settled mid-hello) — Idle without full DetachLocked teardown.
-      // MediaReady / Adopting teardown uses DetachLocked → SetPhase(Detaching→Idle).
-      if (p == CallMediaSessionPhase::Dialing || p == CallMediaSessionPhase::HelloOutbound) {
-        SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
-        return true;
-      }
-      return true;
-
-    case CallMediaSessionEvent::DuplexEof:
-    case CallMediaSessionEvent::DuplexError:
-    case CallMediaSessionEvent::ConnectSuperseded:
-    case CallMediaSessionEvent::HandlerCleared:
-      // Compound effects live in Fail / DetachLocked / ClearInboundHandler.
       return true;
     }
-    IgnoreEventLocked(ev, "unhandled event");
-    return false;
+    SetPhaseLocked(outcome.next, ev, call_id);
+    return true;
   }
 
   bool MediaReady() const {
@@ -412,7 +321,7 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     {
       std::lock_guard lock(mu);
       // Intentional Detach / already torn down: ignore late duplex EOF (SoftMigrate ReleaseDirect).
-      if (Phase() == CallMediaSessionPhase::Idle || Phase() == CallMediaSessionPhase::Detaching) {
+      if (CallMediaFailNotifySuppressed(Phase())) {
         IgnoreEventLocked(ev, "already detaching or idle");
         return;
       }

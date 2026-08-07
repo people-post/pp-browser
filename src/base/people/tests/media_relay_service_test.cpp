@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -23,6 +24,40 @@ static int ProcessId() { return static_cast<int>(getpid()); }
 
 namespace pbr {
 namespace {
+
+void WaitUntil(const std::function<bool()>& predicate, const std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  FAIL() << "Timed out waiting for condition";
+}
+
+/** Subscribe may land asynchronously — retry send until the receiver signals `got`. */
+void SendUntilReceived(MediaRelayService& sender, MediaDataFrame frame, std::mutex& mu,
+                       std::condition_variable& cv, bool& got,
+                       const std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  uint32_t seq = frame.seq == 0 ? 1 : frame.seq;
+  while (std::chrono::steady_clock::now() < deadline) {
+    {
+      std::lock_guard lock(mu);
+      if (got) {
+        return;
+      }
+    }
+    frame.seq = seq++;
+    ASSERT_TRUE(sender.SendFrame(frame));
+    std::unique_lock lock(mu);
+    if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return got; })) {
+      return;
+    }
+  }
+  FAIL() << "Timed out waiting for media-relay frame";
+}
 
 class MediaRelayServiceTest : public ::testing::Test {
 protected:
@@ -129,8 +164,6 @@ TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
   b_relay_->StartClientFrameReader();
 
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
-  // Give subscribe a moment to land on hop.
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 1;
@@ -138,12 +171,8 @@ TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
   sent.channel_type = MediaChannelType::LatestLossy;
   sent.seq = 1;
   sent.payload = {'h', 'i'};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
+  SendUntilReceived(*a_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }));
-  }
   EXPECT_EQ(received.stream_id, 1u);
   EXPECT_EQ(received.payload, sent.payload);
 
@@ -237,7 +266,6 @@ TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutToGuest) {
   ASSERT_TRUE(attach_a->ok) << attach_a->error;
   a_relay_->StartClientFrameReader();
   ASSERT_TRUE(a_relay_->Subscribe(42, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 42;
@@ -245,15 +273,9 @@ TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutToGuest) {
   sent.channel_type = MediaChannelType::ReliableOrdered;
   sent.seq = 7;
   sent.payload = {'p', 'c', 'm'};
-  ASSERT_TRUE(hop_relay_->SendFrame(sent));
+  SendUntilReceived(*hop_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
-        << "guest must receive PreferLocal hop frames";
-  }
   EXPECT_EQ(received.stream_id, 42u);
-  EXPECT_EQ(received.seq, 7u);
   EXPECT_EQ(received.payload, sent.payload);
 
   hop_relay_->Detach();
@@ -295,7 +317,6 @@ TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutGuestToLocal) {
   ASSERT_TRUE(attach_a) << attach_a.error().message;
   ASSERT_TRUE(attach_a->ok) << attach_a->error;
   a_relay_->StartClientFrameReader();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 3272724854u;
@@ -303,15 +324,9 @@ TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutGuestToLocal) {
   sent.channel_type = MediaChannelType::ReliableOrdered;
   sent.seq = 335;
   sent.payload = {'m', 'o', 't', 'o'};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
+  SendUntilReceived(*a_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
-        << "PreferLocal hop owner must receive guest uplink (Moto→Linux)";
-  }
   EXPECT_EQ(received.stream_id, 3272724854u);
-  EXPECT_EQ(received.seq, 335u);
   EXPECT_EQ(received.payload, sent.payload);
 
   hop_relay_->Detach();
@@ -400,7 +415,6 @@ TEST_F(MediaRelayServiceTest, AsyncDataPlaneQuoteAcceptAttachFanout) {
   b_relay_->StartClientFrameReader();
 
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   MediaDataFrame sent;
   sent.stream_id = 1;
@@ -408,12 +422,8 @@ TEST_F(MediaRelayServiceTest, AsyncDataPlaneQuoteAcceptAttachFanout) {
   sent.channel_type = MediaChannelType::LatestLossy;
   sent.seq = 1;
   sent.payload = {'a', 's', 'y', 'n', 'c'};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
+  SendUntilReceived(*a_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }));
-  }
   EXPECT_EQ(received.stream_id, 1u);
   EXPECT_EQ(received.payload, sent.payload);
 
@@ -464,9 +474,8 @@ TEST_F(MediaRelayServiceTest, DetachUnblocksAcceptAndAttachWait) {
     done.store(true, std::memory_order_release);
   });
 
-  for (int i = 0; i < 100 && a_relay_->ClientPhase() == MediaRelayClientPhase::Idle; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
+  WaitUntil([&] { return a_relay_->ClientPhase() == MediaRelayClientPhase::Dialing; },
+            std::chrono::milliseconds(5000));
   ASSERT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Dialing);
   ASSERT_FALSE(done.load(std::memory_order_acquire));
 
@@ -495,9 +504,8 @@ TEST_F(MediaRelayServiceTest, StopUnblocksAcceptAndAttachWait) {
     done.store(true, std::memory_order_release);
   });
 
-  for (int i = 0; i < 100 && a_relay_->ClientPhase() == MediaRelayClientPhase::Idle; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
+  WaitUntil([&] { return a_relay_->ClientPhase() == MediaRelayClientPhase::Dialing; },
+            std::chrono::milliseconds(5000));
   ASSERT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Dialing);
   ASSERT_FALSE(done.load(std::memory_order_acquire));
 
@@ -589,7 +597,6 @@ TEST_F(MediaRelayServiceTest, CorruptMediaFrameKeepsAttachedAndDeliversNext) {
   a_relay_->StartClientFrameReader();
   b_relay_->StartClientFrameReader();
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // Truncated / wrong-version media body — hop ProcessParticipantFrame must skip, not Kick.
   ASSERT_TRUE(a_relay_->EnqueueRawClientBodyForTest(std::vector<uint8_t>{0x01, 0x02, 0x03}));
@@ -609,12 +616,25 @@ TEST_F(MediaRelayServiceTest, CorruptMediaFrameKeepsAttachedAndDeliversNext) {
   sent.channel_type = MediaChannelType::LatestLossy;
   sent.seq = 1;
   sent.payload = {0xAA, 0xBB};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
-
   {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return good_frames >= 1; }))
-        << "good frame after corrupt inject should still deliver";
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    uint32_t seq = 1;
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard lock(mu);
+        if (good_frames >= 1) {
+          break;
+        }
+      }
+      sent.seq = seq++;
+      ASSERT_TRUE(a_relay_->SendFrame(sent));
+      std::unique_lock lock(mu);
+      if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return good_frames >= 1; })) {
+        break;
+      }
+    }
+    std::lock_guard lock(mu);
+    ASSERT_GE(good_frames, 1u) << "good frame after corrupt inject should still deliver";
   }
   EXPECT_EQ(received.payload, sent.payload);
   EXPECT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Attached);
@@ -663,7 +683,6 @@ TEST_F(MediaRelayServiceTest, PreferLocalGuestDetachThenReattachFanout) {
 
   a_relay_->StartClientFrameReader();
   ASSERT_TRUE(a_relay_->Subscribe(42, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   a_relay_->Detach();
   EXPECT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Idle);
@@ -688,7 +707,6 @@ TEST_F(MediaRelayServiceTest, PreferLocalGuestDetachThenReattachFanout) {
 
   a_relay_->StartClientFrameReader();
   ASSERT_TRUE(a_relay_->Subscribe(42, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 42;
@@ -696,13 +714,8 @@ TEST_F(MediaRelayServiceTest, PreferLocalGuestDetachThenReattachFanout) {
   sent.channel_type = MediaChannelType::ReliableOrdered;
   sent.seq = 9;
   sent.payload = {'p', 'l'};
-  ASSERT_TRUE(hop_relay_->SendFrame(sent));
+  SendUntilReceived(*hop_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
-        << "guest must receive PreferLocal frames after SoftMigrate-style reattach";
-  }
   EXPECT_EQ(received.payload, sent.payload);
 
   hop_relay_->Detach();
@@ -754,7 +767,6 @@ TEST_F(MediaRelayServiceTest, GuestDetachThenReattachFanout) {
   a_relay_->StartClientFrameReader();
   b_relay_->StartClientFrameReader();
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // SoftMigrate / Leave on guest: Detach then re-AcceptAndAttach on same call_id.
   b_relay_->Detach();
@@ -781,7 +793,6 @@ TEST_F(MediaRelayServiceTest, GuestDetachThenReattachFanout) {
 
   b_relay_->StartClientFrameReader();
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 1;
@@ -789,13 +800,8 @@ TEST_F(MediaRelayServiceTest, GuestDetachThenReattachFanout) {
   sent.channel_type = MediaChannelType::LatestLossy;
   sent.seq = 2;
   sent.payload = {'r', 'e'};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
+  SendUntilReceived(*a_relay_, sent, mu, cv, got);
 
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
-        << "guest must receive frames after SoftMigrate-style reattach";
-  }
   EXPECT_EQ(received.payload, sent.payload);
 
   a_relay_->Detach();

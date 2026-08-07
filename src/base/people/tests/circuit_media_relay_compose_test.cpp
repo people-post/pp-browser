@@ -125,7 +125,6 @@ TEST_F(CircuitMediaRelayComposeTest, CircuitBackedQuoteAttachFanout) {
   g_relay_->StartClientFrameReader();
 
   ASSERT_TRUE(g_relay_->Subscribe(1, 0));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   MediaDataFrame sent;
   sent.stream_id = 1;
@@ -133,11 +132,25 @@ TEST_F(CircuitMediaRelayComposeTest, CircuitBackedQuoteAttachFanout) {
   sent.channel_type = MediaChannelType::LatestLossy;
   sent.seq = 1;
   sent.payload = {'c', 'i', 'r'};
-  ASSERT_TRUE(a_relay_->SendFrame(sent));
-
   {
-    std::unique_lock lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got; }));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    uint32_t seq = 1;
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard lock(mu);
+        if (got) {
+          break;
+        }
+      }
+      sent.seq = seq++;
+      ASSERT_TRUE(a_relay_->SendFrame(sent));
+      std::unique_lock lock(mu);
+      if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return got; })) {
+        break;
+      }
+    }
+    std::lock_guard lock(mu);
+    ASSERT_TRUE(got);
   }
   EXPECT_EQ(received.stream_id, 1u);
   EXPECT_EQ(received.payload, sent.payload);

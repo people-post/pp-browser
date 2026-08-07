@@ -181,9 +181,8 @@ void PeerAddressBook::SyncFromHost(Libp2pHost& host, const std::string& peer_id_
   IngestPeerInfo(info, PeerAddrSource::AddressRepository);
 }
 
-void PeerAddressBook::PruneExpired() {
+void PeerAddressBook::PruneExpired(std::chrono::steady_clock::time_point now) {
   std::lock_guard lock(mutex_);
-  const auto now = std::chrono::steady_clock::now();
   for (auto it = peers_.begin(); it != peers_.end();) {
     auto& addrs = it->second.addrs;
     addrs.erase(std::remove_if(addrs.begin(), addrs.end(),
