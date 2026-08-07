@@ -9,7 +9,7 @@
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
 **Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V032**).  
 **Host receive / QoS matrix:** [HOST_RECEIVE_POLICY.md](../../projects/p2p-av-calls/HOST_RECEIVE_POLICY.md) (V032).  
-**Transport session machines (design):** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026) — docs before refactor.  
+**Transport session machines:** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033 s2a) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026 s3a+s3b) — dogfood gates open.  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).  
@@ -389,16 +389,17 @@ These are architectural, not one-off hacks.
 | Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; handshake on Normal; one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
 | SoftMigrate ReleaseDirect vs duplex EOF | Local Detach then `on_failed` / ConnectFailed | Intentional Detach sets Detaching/Idle first; late `Fail` ignored when already detaching — bridge still suppresses ConnectFailed when SFU expected |
 
-### Transport session machines (design — not yet code)
+### Transport session machines (V033 / N026)
 
-Product phases are owned by `CallLifecycle` above. Long-lived **host** sessions (`CallMediaDirectService`, `MediaRelayService` attach) still use ad-hoc flags / `settled` atomics. Intended end state:
+Product phases stay in `CallLifecycle`. Long-lived **host** sessions use flat enum + phase logs:
 
-| Concern | Design home | ADR |
-|---------|-------------|-----|
-| 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) | V033 |
-| `media_relay` quote/accept/attach per inbound stream | [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) | N026 |
+| Concern | Home | Status |
+|---------|------|--------|
+| 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) · `CallMediaDirectService` | **s2a** — dogfood s2b |
+| `media_relay` inbound quote/accept/attach | [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) · `MediaRelayAttachPhase` | **s3a** |
+| `media_relay` client `AcceptAndAttach` | same · `MediaRelayClientPhase` | **s3b** — SoftMigrate dogfood s3c |
 
-Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures. **s2a landed:** `CallMediaDirectService` emits `phase=` / `event=` logs; glare / Detach / connect-timeout are phase transitions. Dogfood gate (s2b) still open before calling s2 done.
+Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures.
 
 ---
 

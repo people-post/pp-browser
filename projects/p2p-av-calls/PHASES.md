@@ -116,7 +116,7 @@ Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.
 - [x] s1 — Freeze open questions in SESSION_MACHINES (mutex strand, blocking Connect, instant Failed→Idle, Detach-then-Connect)
 - [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
 - [ ] s2b — Android↔Android dogfood gate (phase logs triage Connecting stuck)
-- [ ] s2c — Delete remaining flag-equivalent leftovers if any; promote race homes in CALLS.md
+- [x] s2c — Flag soup collapsed to phase (+ `connect_settled` waiter / `offerer_glare`); race homes noted in SESSION_MACHINES / CALLS.md
 - [x] s3a — media-relay inbound attach SM (mesh N026)
 - [x] s3b — media-relay client `AcceptAndAttach` SM + Detach abort
 - [ ] s3c — SoftMigrate / PreferLocal dogfood gate

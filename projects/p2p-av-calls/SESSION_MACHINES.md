@@ -114,7 +114,7 @@ void Apply(XxxEvent ev, /* small context */);
 
 ## Call-media session machine
 
-**Code today:** [`CallMediaDirectService`](../../src/libp2p/integration/host/CallMediaDirectService.cpp) — flags `outbound_hello_inflight`, `pump_running`, `session_ready`, `connect_settled`.  
+**Code today:** [`CallMediaDirectService`](../../src/libp2p/integration/host/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit.  
 **Policy rows:** [HOST_RECEIVE_POLICY — 1:1 media](HOST_RECEIVE_POLICY.md#11-media-host-call-media).  
 **Product reporter:** `CallLibp2pMediaBridge` → `CallLifecycle` (`DirectConnected` / `ConnectFailed`).
 
