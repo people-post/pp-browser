@@ -1,7 +1,7 @@
 # Network status chrome — current state
 
 **As of:** 2026-08-07  
-**Phase:** **s3 landed** — Load counts; dogfood / s4 polish next
+**Phase:** **s3 landed** — Load counts; **s4** polish next
 
 ## Decisions
 
@@ -31,4 +31,4 @@ Product answers accepted and recorded as [S003–S011](DECISIONS.md). See [OPEN_
 
 ## Next
 
-Dogfood Node under load (circuit + media pills + popover aggregates); then **s4** polish.
+**s4** polish (truncation / width budget, transitional motion, promote normative bits to `docs/ui/`).

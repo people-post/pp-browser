@@ -30,7 +30,7 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 ## L3.5 — Multi-hop circuit v2
 
-Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Deferred** until single-hop device dogfood exposes “R1 cannot dial B but R2 can.”
+Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Later** when single-hop cannot reach B (R1↛B, R2 can).
 
 - [x] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
 - [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, `circuit_relay.max_hops` (default 3, config-only limit), loop detection
@@ -44,7 +44,6 @@ Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--mu
 - [x] Rank hops; skip when stack says undialable (after circuit attempt)
 - [x] Drop reliance on empty contact ma as the only signal (contacts optional cache — H003)
 - [x] Loopback: circuit-backed SoftMigrate-style quote/attach/fan-out (`CircuitMediaRelayComposeTest`)
-- [ ] Dogfood: Android SoftMigrate → Windows Node without pasted multiaddr
 - [x] Mobile ephemeral listen (N025): addrs published during Wi‑Fi foreground call for PeerId dial
 - [x] UI + `RegisterContactEndpoints` consume address book; call-time prefetch via seed/circuit
 

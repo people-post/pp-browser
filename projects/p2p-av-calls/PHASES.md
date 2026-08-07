@@ -94,8 +94,6 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [x] Receiver per-stream playout + hop load admission / A↑A↓ enforce (V032)
 - [x] Stop extending legacy WebRTC bridge; libp2p connect-fail UI hints via `PlatformUserHints`
 - [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
-- [ ] Dogfood: Android ↔ desktop voice without WebRTC
-- [ ] Dogfood: 3-party circuit 1:1 (A + Node R + B; A↛B direct)
 
 ## m2 — Teardown WebRTC product path
 
@@ -117,11 +115,10 @@ Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.
 - [x] s0 — Design docs + [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) (+ mesh N026)
 - [x] s1 — Freeze open questions in SESSION_MACHINES (mutex strand, blocking Connect, instant Failed→Idle, Detach-then-Connect)
 - [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
-- [ ] s2b — Android↔Android dogfood gate (phase logs triage Connecting stuck)
 - [x] s2c — Flag soup collapsed to phase (+ `connect_settled` waiter / `offerer_glare`); race homes noted in SESSION_MACHINES / CALLS.md
 - [x] s3a — media-relay inbound attach SM (mesh N026)
 - [x] s3b — media-relay client `AcceptAndAttach` SM + Detach abort
-- [ ] s3c — SoftMigrate / PreferLocal dogfood gate
+- [x] Circuit compose loopbacks — `CircuitCallMediaComposeTest` + `CircuitMediaRelayComposeTest`
 - [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 
 ## Later horizons

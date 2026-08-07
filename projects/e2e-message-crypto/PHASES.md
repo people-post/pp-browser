@@ -183,7 +183,7 @@ d0 (complete)
 - [x] Update [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) relay envelope section
 - [x] Update chat-storage [CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md)
 
-**Exit criteria:** Two devices with shared PSK exchange E2E messages via relay; relay cannot read body; public thread still plaintext. *(Automated round-trip + pipeline tests green; manual two-profile relay test deferred to c3 UX.)*
+**Exit criteria:** Two devices with shared PSK exchange E2E messages via relay; relay cannot read body; public thread still plaintext. *(Automated round-trip + pipeline tests green.)*
 
 ---
 

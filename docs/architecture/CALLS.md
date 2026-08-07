@@ -9,7 +9,7 @@
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
 **Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V032**).  
 **Host receive / QoS matrix:** [HOST_RECEIVE_POLICY.md](../../projects/p2p-av-calls/HOST_RECEIVE_POLICY.md) (V032).  
-**Transport session machines:** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033 s2a) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026 s3a+s3b) — dogfood gates open.  
+**Transport session machines:** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033 s2a) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026 s3a+s3b) — circuit compose loopbacks green.  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).  
@@ -401,9 +401,9 @@ Product phases stay in `CallLifecycle`. Long-lived **host** sessions use flat en
 
 | Concern | Home | Status |
 |---------|------|--------|
-| 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) · `CallMediaDirectService` | **s2a** — dogfood s2b |
+| 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) · `CallMediaDirectService` | **s2a** + circuit compose |
 | `media_relay` inbound quote/accept/attach | [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) · `MediaRelayAttachPhase` | **s3a** |
-| `media_relay` client `AcceptAndAttach` | same · `MediaRelayClientPhase` | **s3b** — SoftMigrate dogfood s3c |
+| `media_relay` client `AcceptAndAttach` | same · `MediaRelayClientPhase` | **s3b** + circuit compose |
 
 Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures.
 

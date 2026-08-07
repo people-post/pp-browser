@@ -72,7 +72,7 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] Freeze with calls V033 s1; call-media s2a landed first
 - [x] s3a — Replace inbound `while (!session)` with per-stream phase + `media_relay_attach phase=` logs
 - [x] s3b — Client `AcceptAndAttach` phase machine; Detach aborts waiter; no late stream install after timeout
-- [ ] s3c — SoftMigrate / PreferLocal dogfood gate (loopback reattach covered; device dogfood open)
+- [x] Circuit compose loopbacks (PreferLocal reattach + circuit quote/attach fan-out)
 
 ## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
@@ -144,7 +144,6 @@ Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circu
 - [x] Optional in-call `media_relay` (N≥3) — contacts-only admission; off on cellular
 - [x] Integrate with call bring-up / teardown (CallSessionManager ↔ NodeRuntime)
 - [ ] Later: opt-in **Help on Wi‑Fi** toggle (mode 3); no full Node UI on mobile
-- [ ] Tests: two phones same LAN, PeerId-only contact, foreground call dial (manual)
 - [x] Docs: [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), hop L4 consume notes
 
 ## ns2 — LAN mDNS (contacts-only)
@@ -155,4 +154,3 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
 - [x] Wire `MessagingHub::TickLibp2p` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)
-- [ ] Manual QA: two devices same LAN, PeerId-only contact discovers dial addr

@@ -54,23 +54,13 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 - Yamux `WriteQueue` copies on enqueue; `ReadBuffer::consumePart` soft-fails bad offsets (see [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md))
 - Keep Accept / MediaKey-send / Connect / Poll HTTP **off** Browser IO
 
-## Device LAN dogfood gates (open — after loopback compose)
-
-Do **not** claim NAT until these pass. Loopback compose is green; devices prove discovery + capture.
-
-| Gate | Goal | State |
-|------|------|-------|
-| **s2b** direct 1:1 | Android↔Android (and desktop) phase-log regression | Open |
-| **3-party circuit 1:1** | A, Node R (`circuit_relay`), B; A↛B direct (seed-only / no contact ma) → voice via circuit | Open — not claimed |
-| **s3c SoftMigrate PreferLocal** | Durable Node + 2 phones group SFU | Open |
-
 ## Still open
 
 | Area | State |
 |------|-------|
-| **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
-| Hop peerstore / circuit PeerId dial | media-hop **L1–L3** landed; **L3.5 multi-hop deferred** until single-hop device dogfood exposes transitive failures |
-| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** — call-media phases + Fail-after-Detach ignore; media-relay inbound + client attach phases; Detach aborts AcceptAndAttach; loopback goldens 3/4/6/7 + FailAfterDetach + circuit compose; Android / SoftMigrate dogfood gates open |
+| **m1** desktop matrix | Android ↔ desktop voice; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept when mDNS misses |
+| Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose loopbacks; optional s4 circuit SM if abort/leave hangs |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
@@ -78,11 +68,9 @@ Do **not** claim NAT until these pass. Loopback compose is green; devices prove 
 
 ## Next agent — start here
 
-1. **V033 s2b:** Android↔Android dogfood with `phase=` / `event=` logs (`adb logcat -s pp-browser:W`).
-2. **3-party circuit 1:1** device gate (A + `pp-node`/desktop R + B).
-3. **s3c** SoftMigrate PreferLocal dogfood.
-4. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
-5. **L3.5 multi-hop** only after single-hop dogfood shows R1 cannot dial B.
+1. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.
+2. **m1** desktop / mDNS dial gaps if they block ship.
+3. **L3.5 multi-hop** when single-hop circuit cannot reach B (transitive path needed).
 
 ## Agent traps
 

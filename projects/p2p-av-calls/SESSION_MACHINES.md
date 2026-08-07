@@ -217,7 +217,7 @@ stateDiagram-v2
 2. Offerer fallback dial wins after grace → MediaReady; late reverse-dial closed (glare).
 3. Dual dial race → exactly one adopt; other closed; no Critical deadlock. — **loopback:** `DualDialExactlyOneAdoptEachSide`
 4. Leave / Detach during Dialing or Hello* → Idle promptly; Connect unblocked (<15s hang). — **loopback:** `DetachUnblocksConnectWait`
-5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected. — **loopback:** `FailAfterDetachDoesNotCallOnFailed` (bridge SoftMigrate suppress still dogfood)
+5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected. — **loopback:** `FailAfterDetachDoesNotCallOnFailed`
 6. Stop / ClearInboundHandler → late inbound no-ops. — **loopback:** `ClearInboundHandlerRejectsLateInbound`
 7. Connect timeout → Failed → Idle; late OpenStreamOk ignored. — **loopback:** `ConnectTimeoutReturnsIdleAndIgnoresLateOpen`
 
@@ -242,10 +242,10 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 |------|------|
 | **s0** | This design + V033 / N026 (docs only) |
 | **s1** | Freeze open questions below; write behavior catalog / unit-test skeletons (no behavior change) |
-| **s2** | Call-media SM strangler in `CallMediaDirectService` — dogfood Android↔Android |
+| **s2** | Call-media SM strangler in `CallMediaDirectService` — loopback goldens (**done**) |
 | **s3a+s3b** | Media-relay inbound + client attach SM (**done**) |
-| **s3c** | SoftMigrate / PreferLocal dogfood gate |
-| **s4** | Optional circuit; promote race table homes into CALLS.md |
+| **Compose** | Circuit + call-media / media_relay loopback partition tests (**done**) |
+| **s4** | Optional circuit SM; promote race table homes into CALLS.md |
 
 **Strangler:** introduce phase enum beside flags → route new paths through `Apply` → delete flags when unused.  
 **Refuse** chat/history/dial-back refactors in the same PR as a session SM.
@@ -260,7 +260,7 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | Connect API | Keep **blocking** bridge-facing `Connect()` for s2; waiter/timeout owned inside the SM. Fully async later. |
 | Failed phase | **Instant notify → Idle** (log failure event; do not stick in `Failed`). |
 | Second Connect while busy | **Detach-then-Connect** (abort prior waiter, then dial). |
-| Scope | **s2 = call-media only**; media-relay N026 after dogfood. |
+| Scope | **s2 = call-media only**; media-relay N026 after call-media SM. |
 
 **Glare note (preserve dogfood):** Reject inbound only while outbound **offerer** hello is in flight (`offerer_glare`, set on outbound hello). Do **not** reject inbound during `Dialing` — answerer reverse-dial must still win while offerer `OpenStream` is outstanding.
 

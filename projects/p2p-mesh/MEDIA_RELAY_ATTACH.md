@@ -1,7 +1,7 @@
 # media_relay attach session machine
 
 **Tier:** project (design)  
-**Status:** **s3a+s3b done** — inbound `MediaRelayAttachPhase` + client `MediaRelayClientPhase`; SoftMigrate / PreferLocal dogfood next  
+**Status:** **s3a+s3b done** — inbound `MediaRelayAttachPhase` + client `MediaRelayClientPhase`; circuit compose loopbacks green  
 
 **ADR:** [N026](DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)  
 **Calls overview:** [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) (V033)  

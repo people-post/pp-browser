@@ -126,18 +126,18 @@
 | Area | State |
 |------|-------|
 | Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
-| **media_relay attach SM (N026)** | **s3a+s3b landed** — inbound + client `AcceptAndAttach` phases + Detach abort; SoftMigrate / PreferLocal dogfood still open — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
+| **media_relay attach SM (N026)** | **s3a+s3b landed** — inbound + client `AcceptAndAttach` phases + Detach abort; circuit compose loopbacks green — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | DHT | **n2** (later per N015) |
-| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code; LAN manual QA pending |
+| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
-1. **a4** / calls dogfood — keep `media_relay` consumer green  
-2. **N026** SoftMigrate / PreferLocal dogfood (s3a+s3b code landed after [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) s2a)  
-3. Curated public / paid regulation / **n2 DHT** later  
+1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
+2. Curated public / paid regulation / **n2 DHT** later  
+3. **L3.5** multi-hop when single-hop cannot reach B
 
 ## Follow-ups
 

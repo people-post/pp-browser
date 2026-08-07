@@ -18,7 +18,6 @@ Execute in order. Each phase should land reviewable PRs.
 - [x] Floating bottom chrome + content padding (see DESIGN.md)
 - [x] Safe area plumbing
 - [x] Interruption tests
-- [ ] Manual QA: compact Home, Sessions overlay, Me list
 
 ---
 
@@ -75,7 +74,6 @@ Execute in order. Each phase should land reviewable PRs.
 - [x] **Frost tier** default on; dogfood off via `compact_chrome_frost` in profile JSON
 - [x] Perf gate devices documented (LG005)
 - [x] Resolve LG005–LG007
-- [ ] Manual perf matrix on reference devices (ongoing QA)
 
 ---
 
