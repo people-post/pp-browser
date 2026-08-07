@@ -104,6 +104,19 @@ selection {
   border: 1dp #f87171;
 }
 
+.btn-danger svg {
+  image-color: #ffffff;
+}
+
+.btn-danger-soft svg {
+  image-color: #b91c1c;
+}
+
+.btn-danger-soft:hover svg,
+.btn-danger-soft:focus svg {
+  image-color: #991b1b;
+}
+
 .btn-ghost {
   background-color: transparent;
   color: #374151;

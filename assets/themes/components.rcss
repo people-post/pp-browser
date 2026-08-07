@@ -1,7 +1,9 @@
 .btn {
   font-family: LatoLatin;
   font-size: 14dp;
-  padding: 8dp 16dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
   border-radius: 999dp;
   border: 0;
   cursor: pointer;
@@ -15,6 +17,20 @@
 /* Low-emphasis text action (PIN “Not now”, optional dismissals). */
 .btn-ghost {
   background-color: transparent;
+}
+
+/* Icon + label modifier — layout only; size/color come from .btn + .btn-*. */
+.btn-icon {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6dp;
+  line-height: normal;
+}
+
+.btn-icon svg {
+  flex-shrink: 0;
 }
 
 .field {
@@ -2040,11 +2056,6 @@ call-video-tile {
 
 .shell-call-ring .btn {
   flex-grow: 1;
-  height: 44dp;
-  min-height: 44dp;
-  padding: 0 16dp;
-  line-height: 44dp;
-  text-align: center;
 }
 
 .shell-call-accept {
@@ -2745,8 +2756,6 @@ call-video-tile {
   width: 100%;
   text-align: center;
   box-sizing: border-box;
-  padding-top: 12dp;
-  padding-bottom: 12dp;
 }
 
 /* Pre-confirm destructive action: soft tint, not solid fill. */
@@ -2994,23 +3003,6 @@ call-video-tile {
   margin-top: 4dp;
   gap: 8dp;
   flex-wrap: wrap;
-}
-
-.contacts-trust-btn {
-  font-size: 12dp;
-  padding: 6dp 10dp;
-}
-
-.btn-icon {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 6dp;
-}
-
-.btn-icon svg {
-  flex-shrink: 0;
 }
 
 .contacts-threads {

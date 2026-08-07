@@ -88,9 +88,9 @@
     </div>
 
     <div class="contact-detail-danger me-profile-actions row">
-      <button class="btn btn-secondary btn-icon" type="button" data-event-click="remove_contact()">
+      <button class="btn btn-danger-soft btn-icon" type="button" data-event-click="remove_contact()">
         <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
-        Remove contact
+        Remove contact…
       </button>
     </div>
   </div>

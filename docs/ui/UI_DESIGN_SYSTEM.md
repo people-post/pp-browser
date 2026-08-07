@@ -64,12 +64,9 @@ Font family: `LatoLatin` everywhere.
 
 ## Touch targets
 
-Minimum **44dp** height/width for:
+Minimum **44dp** height for shared `.btn` / `.btn-icon` (and `.chat-suggestion` / `.chat-working-set-chip`). Prefer those classes over one-off sizes.
 
-- `.shell-toolbar-btn`
-- `.chat-suggestion` / `.chat-working-set-chip` (home + chat + banner chips)
-- `.sidebar-new-chat` / `.contacts-find-btn` (32dp); `.prompt-send-btn` (32dp)
-- Primary action buttons in composer and forms
+Still undersized (follow-up): `.sidebar-new-chat` / `.contacts-find-btn` / `.prompt-send-btn` (32dp); chat header call/more (36dp).
 
 List rows used as primary navigation use a larger **56dp** min-height (finger-friendly on phones and tablets):
 
@@ -201,7 +198,7 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sess
 
 `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-danger-soft`, `.btn-ghost`, `.btn-icon`, `.field`
 
-Shared `.btn` geometry is **capsule** (`border-radius: 999dp`, horizontal padding `16dp`). Dialog / PIN / call-ring actions use this ladder (`btn btn-primary` / `btn btn-secondary`; Accept adds `shell-call-accept` for pulse only). Icon-circle chrome (`.prompt-send-btn`, `.sidebar-new-chat`, `.contacts-find-btn`) and chips (`.chat-suggestion`) keep their own geometry but share primary/secondary **colors** from the theme sheets. Do not reintroduce `.shell-dialog-ok` / `.shell-dialog-cancel`. Leave list rows, context menus, titlebar, and nav tabs non-capsule.
+Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-height. Dialog / PIN / call-ring / contact / profile actions use this ladder (`btn btn-primary` / `btn btn-secondary`; Accept adds `shell-call-accept` for pulse only; trust toggles keep `contacts-trust-btn` only for active color). `.btn-icon` is a layout modifier (icon + label). Icon-circle chrome (`.prompt-send-btn`, `.sidebar-new-chat`, `.contacts-find-btn`) and chips (`.chat-suggestion`) keep their own geometry but share primary/secondary **colors** from the theme sheets. Do not reintroduce `.shell-dialog-ok` / `.shell-dialog-cancel`. Leave list rows, context menus, titlebar, and nav tabs non-capsule.
 
 **Icons:** Asset SVGs under `assets/icons/` are **white monochrome** sources. Tint with RCSS `image-color` (RmlUi does not inherit this property — set it on the `svg` element). Theme defaults live on the `svg` type selector in `colors-light.rcss` / `colors-dark.rcss`; override per control (nav active, primary buttons, danger menu items, muted chevrons). Do not bake theme grays into SVG stroke/fill.
 
