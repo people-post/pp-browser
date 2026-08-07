@@ -142,6 +142,7 @@ cmake --build build -j --target pp-node
   - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh).
+- **Image smoke (L0/L1):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md) — `scripts/pp_node_image_smoke.sh`, `scripts/pp_node_relay_smoke.sh`, `pp-node-probe` (L2 multi-container deferred).
 - **Release CI** builds `pp-node` on **Ubuntu 24.04** (same family as the runtime image `ubuntu:24.04`), attaches `pp-node-<ver>-linux-amd64.tar.gz` to the GitHub Release, and pushes `ghcr.io/<owner>/pp-node:<ver>`. See [RELEASE.md](RELEASE.md).
 - Local tarball + image smoke (on Ubuntu 24.04):
 
@@ -149,6 +150,8 @@ cmake --build build -j --target pp-node
 sudo apt-get install -y cmake ninja-build ccache pkg-config
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
 docker build -t pp-node:local dist/pp-node/docker
+docker compose -f packaging/pp-node/docker-compose.yml up -d
+./scripts/pp_node_relay_smoke.sh   # L0 HTTP; L1 if pp-node-probe built
 ```
 
   Keep build host and image on the same Ubuntu 24.04 family so glibc matches.

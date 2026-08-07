@@ -4,8 +4,9 @@
 #   docker compose -f packaging/pp-node/docker-compose.yml up -d --build
 #
 # Status HTTP (published on host; image has no curl):
+#   ./scripts/pp_node_relay_smoke.sh
 #   curl -sS http://127.0.0.1:18518/healthz
-#   curl -sS http://127.0.0.1:18518/status
+# See IMAGE_SMOKE.md (L0/L1; L2 multi-container deferred).
 
 services:
   pp-node:
