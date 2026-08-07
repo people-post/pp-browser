@@ -6,6 +6,9 @@
 #include "common/Utilities.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/Libp2pExecutorLimits.h"
+#include "libp2p/integration/host/MediaRelayAttachSm.h"
+#include "libp2p/integration/host/MediaRelayFrames.h"
+#include "libp2p/integration/host/MediaRelayLogic.h"
 #include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
@@ -19,7 +22,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <cstring>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -30,96 +32,6 @@
 
 namespace pbr {
 
-const char* MediaRelayAttachPhaseName(const MediaRelayAttachPhase phase) {
-  switch (phase) {
-  case MediaRelayAttachPhase::Control:
-    return "Control";
-  case MediaRelayAttachPhase::Quoted:
-    return "Quoted";
-  case MediaRelayAttachPhase::Accepted:
-    return "Accepted";
-  case MediaRelayAttachPhase::Attaching:
-    return "Attaching";
-  case MediaRelayAttachPhase::Attached:
-    return "Attached";
-  case MediaRelayAttachPhase::Rejected:
-    return "Rejected";
-  case MediaRelayAttachPhase::Closed:
-    return "Closed";
-  }
-  return "?";
-}
-
-const char* MediaRelayAttachEventName(const MediaRelayAttachEvent ev) {
-  switch (ev) {
-  case MediaRelayAttachEvent::StreamOpened:
-    return "StreamOpened";
-  case MediaRelayAttachEvent::OpQuote:
-    return "OpQuote";
-  case MediaRelayAttachEvent::OpAccept:
-    return "OpAccept";
-  case MediaRelayAttachEvent::OpAttach:
-    return "OpAttach";
-  case MediaRelayAttachEvent::OpUnsupported:
-    return "OpUnsupported";
-  case MediaRelayAttachEvent::AdmitFail:
-    return "AdmitFail";
-  case MediaRelayAttachEvent::AttachOk:
-    return "AttachOk";
-  case MediaRelayAttachEvent::AttachFail:
-    return "AttachFail";
-  case MediaRelayAttachEvent::Cancel:
-    return "Cancel";
-  }
-  return "?";
-}
-
-const char* MediaRelayClientPhaseName(const MediaRelayClientPhase phase) {
-  switch (phase) {
-  case MediaRelayClientPhase::Idle:
-    return "Idle";
-  case MediaRelayClientPhase::Dialing:
-    return "Dialing";
-  case MediaRelayClientPhase::Accepting:
-    return "Accepting";
-  case MediaRelayClientPhase::Attaching:
-    return "Attaching";
-  case MediaRelayClientPhase::Attached:
-    return "Attached";
-  case MediaRelayClientPhase::Detaching:
-    return "Detaching";
-  }
-  return "?";
-}
-
-const char* MediaRelayClientEventName(const MediaRelayClientEvent ev) {
-  switch (ev) {
-  case MediaRelayClientEvent::AttachRequested:
-    return "AttachRequested";
-  case MediaRelayClientEvent::OpenStreamOk:
-    return "OpenStreamOk";
-  case MediaRelayClientEvent::OpenStreamFail:
-    return "OpenStreamFail";
-  case MediaRelayClientEvent::AcceptOk:
-    return "AcceptOk";
-  case MediaRelayClientEvent::AcceptFail:
-    return "AcceptFail";
-  case MediaRelayClientEvent::AttachOk:
-    return "AttachOk";
-  case MediaRelayClientEvent::AttachFail:
-    return "AttachFail";
-  case MediaRelayClientEvent::DetachRequested:
-    return "DetachRequested";
-  case MediaRelayClientEvent::AttachTimeout:
-    return "AttachTimeout";
-  case MediaRelayClientEvent::DuplexLost:
-    return "DuplexLost";
-  case MediaRelayClientEvent::AttachSuperseded:
-    return "AttachSuperseded";
-  }
-  return "?";
-}
-
 namespace {
 
 using libp2p::Bytes;
@@ -129,10 +41,6 @@ using libp2p::peer::ProtocolName;
 auto MediaRelayLog() {
   return logging::getLogger("MediaRelayService");
 }
-
-constexpr uint8_t kMediaDataVersion = 1;
-constexpr size_t kMediaDataHeaderBytes = 1 + 4 + 2 + 1 + 4 + 1; // ver+stream+chan+type+seq+mark
-constexpr size_t kMaxMediaFrameBytes = 256 * 1024;
 
 /** Soft defaults when budget fields are 0 (unbounded / ops default). */
 constexpr int64_t kDefaultUserUpBps = 500'000;
@@ -172,6 +80,15 @@ Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
     return Error("invalid media-relay json");
   }
   return root;
+}
+
+void RejectAndCloseAttach(MediaRelayAttachSm& sm, const std::shared_ptr<Stream>& s,
+                          const std::string& error, const MediaRelayAttachEvent ev) {
+  (void)WriteJson(s, {{"v", 1}, {"ok", false}, {"error", error}});
+  s->close([](auto&&) {});
+  // Always terminal — do not rely on Apply guards (wrong-phase reject uses OpAccept etc.).
+  sm.SetPhase(MediaRelayAttachPhase::Rejected, ev);
+  sm.SetPhase(MediaRelayAttachPhase::Closed, ev);
 }
 
 int64_t OrDefault(int64_t configured, int64_t fallback) {
@@ -230,55 +147,6 @@ struct PendingQuote {
 };
 
 } // namespace
-
-std::vector<uint8_t> EncodeMediaDataFrame(const MediaDataFrame& frame) {
-  std::vector<uint8_t> body(kMediaDataHeaderBytes + frame.payload.size());
-  size_t i = 0;
-  body[i++] = kMediaDataVersion;
-  auto put_u32 = [&](uint32_t v) {
-    body[i++] = static_cast<uint8_t>((v >> 24) & 0xff);
-    body[i++] = static_cast<uint8_t>((v >> 16) & 0xff);
-    body[i++] = static_cast<uint8_t>((v >> 8) & 0xff);
-    body[i++] = static_cast<uint8_t>(v & 0xff);
-  };
-  auto put_u16 = [&](uint16_t v) {
-    body[i++] = static_cast<uint8_t>((v >> 8) & 0xff);
-    body[i++] = static_cast<uint8_t>(v & 0xff);
-  };
-  put_u32(frame.stream_id);
-  put_u16(frame.channel_id);
-  body[i++] = static_cast<uint8_t>(frame.channel_type);
-  put_u32(frame.seq);
-  body[i++] = frame.mark;
-  if (!frame.payload.empty()) {
-    std::memcpy(body.data() + i, frame.payload.data(), frame.payload.size());
-  }
-  return body;
-}
-
-Roe<MediaDataFrame> DecodeMediaDataFrame(const std::vector<uint8_t>& body) {
-  if (body.size() < kMediaDataHeaderBytes) {
-    return Error("media data frame too short");
-  }
-  if (body[0] != kMediaDataVersion) {
-    return Error("unsupported media data version");
-  }
-  auto get_u32 = [&](size_t at) -> uint32_t {
-    return (static_cast<uint32_t>(body[at]) << 24) | (static_cast<uint32_t>(body[at + 1]) << 16) |
-           (static_cast<uint32_t>(body[at + 2]) << 8) | static_cast<uint32_t>(body[at + 3]);
-  };
-  auto get_u16 = [&](size_t at) -> uint16_t {
-    return static_cast<uint16_t>((static_cast<uint16_t>(body[at]) << 8) | body[at + 1]);
-  };
-  MediaDataFrame frame;
-  frame.stream_id = get_u32(1);
-  frame.channel_id = get_u16(5);
-  frame.channel_type = static_cast<MediaChannelType>(body[7]);
-  frame.seq = get_u32(8);
-  frame.mark = body[12];
-  frame.payload.assign(body.begin() + static_cast<std::ptrdiff_t>(kMediaDataHeaderBytes), body.end());
-  return frame;
-}
 
 struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex mu;
@@ -351,65 +219,32 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
    */
   bool ApplyClientLocked(MediaRelayClientEvent ev, const std::string& call_id = {}) {
     const MediaRelayClientPhase p = ClientPhase();
-    switch (ev) {
-    case MediaRelayClientEvent::AttachRequested:
-      SetClientPhaseLocked(MediaRelayClientPhase::Dialing, ev, call_id);
+    const MediaRelayClientPhaseOutcome outcome = DecideMediaRelayClientPhase(p, ev);
+    switch (outcome.decision) {
+    case MediaRelayClientPhaseDecision::Transition:
+      SetClientPhaseLocked(outcome.next, ev, call_id);
       return true;
-
-    case MediaRelayClientEvent::OpenStreamOk:
-      if (p != MediaRelayClientPhase::Dialing) {
+    case MediaRelayClientPhaseDecision::Keep:
+      return true;
+    case MediaRelayClientPhaseDecision::Ignore:
+      if (ev == MediaRelayClientEvent::OpenStreamOk) {
         IgnoreClientEventLocked(ev, "not dialing");
-        return false;
-      }
-      SetClientPhaseLocked(MediaRelayClientPhase::Accepting, ev, call_id);
-      return true;
-
-    case MediaRelayClientEvent::OpenStreamFail:
-    case MediaRelayClientEvent::AcceptFail:
-    case MediaRelayClientEvent::AttachFail:
-    case MediaRelayClientEvent::AttachTimeout:
-    case MediaRelayClientEvent::AttachSuperseded:
-      if (p == MediaRelayClientPhase::Dialing || p == MediaRelayClientPhase::Accepting ||
-          p == MediaRelayClientPhase::Attaching) {
-        SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
-        return true;
-      }
-      IgnoreClientEventLocked(ev, "not in attach flight");
-      return false;
-
-    case MediaRelayClientEvent::AcceptOk:
-      if (p != MediaRelayClientPhase::Accepting) {
+      } else if (ev == MediaRelayClientEvent::AcceptOk) {
         IgnoreClientEventLocked(ev, "not accepting");
-        return false;
-      }
-      SetClientPhaseLocked(MediaRelayClientPhase::Attaching, ev, call_id);
-      return true;
-
-    case MediaRelayClientEvent::AttachOk:
-      if (p != MediaRelayClientPhase::Attaching) {
+      } else if (ev == MediaRelayClientEvent::AttachOk) {
         IgnoreClientEventLocked(ev, "not attaching");
-        return false;
-      }
-      SetClientPhaseLocked(MediaRelayClientPhase::Attached, ev, call_id);
-      return true;
-
-    case MediaRelayClientEvent::DuplexLost:
-      if (p == MediaRelayClientPhase::Idle || p == MediaRelayClientPhase::Detaching) {
+      } else if (ev == MediaRelayClientEvent::DuplexLost) {
         IgnoreClientEventLocked(ev, "already detaching or idle");
-        return false;
+      } else if (ev == MediaRelayClientEvent::OpenStreamFail ||
+                 ev == MediaRelayClientEvent::AcceptFail ||
+                 ev == MediaRelayClientEvent::AttachFail ||
+                 ev == MediaRelayClientEvent::AttachTimeout ||
+                 ev == MediaRelayClientEvent::AttachSuperseded) {
+        IgnoreClientEventLocked(ev, "not in attach flight");
+      } else {
+        IgnoreClientEventLocked(ev, "unhandled event");
       }
-      SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
-      return true;
-
-    case MediaRelayClientEvent::DetachRequested:
-      // Detach() drives Detaching → Idle via SetClientPhaseLocked; this event is for logging
-      // and late abort of in-flight Dialing/Accepting/Attaching without a Detach compound.
-      if (p == MediaRelayClientPhase::Dialing || p == MediaRelayClientPhase::Accepting ||
-          p == MediaRelayClientPhase::Attaching) {
-        SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
-        return true;
-      }
-      return true;
+      return false;
     }
     IgnoreClientEventLocked(ev, "unhandled event");
     return false;
@@ -450,10 +285,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
    * for that call are admitted even if strangers to this hop.
    */
   bool AdmitPeerForCall(const std::string& peer_id, const std::string& call_id) {
-    if (!call_id.empty() && sessions_by_call.find(call_id) != sessions_by_call.end()) {
-      return true;
-    }
-    return AdmitPeer(peer_id);
+    const bool session_exists =
+        !call_id.empty() && sessions_by_call.find(call_id) != sessions_by_call.end();
+    return MediaRelayCallScopedAdmit(session_exists, AdmitPeer(peer_id));
   }
 
   MediaRelayQuote BuildQuote(const MediaRelayQuoteRequest& req) {
@@ -655,7 +489,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
         if (frame.channel_type == MediaChannelType::LatestLossy) {
           auto it = part->last_lossy_seq.find(key);
-          if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
+          if (ShouldDropStaleLossyFrame(it != part->last_lossy_seq.end(),
+                                        it != part->last_lossy_seq.end() ? it->second : 0, frame.seq,
+                                        frame.mark)) {
             continue;
           }
           part->last_lossy_seq[key] = frame.seq;
@@ -788,11 +624,12 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   bool CanOpenNewHostSessionLocked() const {
-    return sessions_by_call.size() < MediaRelayService::kMaxHostSessions;
+    return MediaRelayCanOpenHostSession(sessions_by_call.size(), MediaRelayService::kMaxHostSessions);
   }
 
   static bool CanAddParticipantLocked(const HostSession& session) {
-    return session.participants.size() < MediaRelayService::kMaxParticipantsPerSession;
+    return MediaRelayCanAddParticipant(session.participants.size(),
+                                       MediaRelayService::kMaxParticipantsPerSession);
   }
 
   void CleanupParticipant(const std::shared_ptr<HostSession>& session,
@@ -888,83 +725,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   void HandleInboundBody(std::shared_ptr<Stream> stream) {
     // Per-inbound-stream attach SM (N026). HostSession remains a map object; this only
     // sequences quote → accept → attach on one control stream.
-    struct AttachSm {
-      MediaRelayAttachPhase phase = MediaRelayAttachPhase::Control;
-      std::string remote;
-      std::string call_id;
-      std::string accepted_quote_id;
-      std::string session_token;
-
-      void SetPhase(const MediaRelayAttachPhase next, const MediaRelayAttachEvent ev) {
-        const MediaRelayAttachPhase prev = phase;
-        phase = next;
-        if (prev == next) {
-          MediaRelayLog().info << "media_relay_attach phase=" << MediaRelayAttachPhaseName(prev)
-                               << " event=" << MediaRelayAttachEventName(ev) << " call_id=" << call_id
-                               << " peer=" << remote;
-          return;
-        }
-        MediaRelayLog().info << "media_relay_attach phase=" << MediaRelayAttachPhaseName(prev)
-                             << "->" << MediaRelayAttachPhaseName(next)
-                             << " event=" << MediaRelayAttachEventName(ev) << " call_id=" << call_id
-                             << " peer=" << remote;
-      }
-
-      /** Sole legal attach-phase transition entry for this inbound stream. */
-      bool Apply(const MediaRelayAttachEvent ev) {
-        switch (ev) {
-        case MediaRelayAttachEvent::StreamOpened:
-          SetPhase(MediaRelayAttachPhase::Control, ev);
-          return true;
-        case MediaRelayAttachEvent::OpQuote:
-          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted) {
-            return false;
-          }
-          SetPhase(MediaRelayAttachPhase::Quoted, ev);
-          return true;
-        case MediaRelayAttachEvent::OpAccept:
-          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted) {
-            return false;
-          }
-          SetPhase(MediaRelayAttachPhase::Accepted, ev);
-          return true;
-        case MediaRelayAttachEvent::OpAttach:
-          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted &&
-              phase != MediaRelayAttachPhase::Accepted) {
-            return false;
-          }
-          SetPhase(MediaRelayAttachPhase::Attaching, ev);
-          return true;
-        case MediaRelayAttachEvent::AttachOk:
-          if (phase != MediaRelayAttachPhase::Attaching) {
-            return false;
-          }
-          SetPhase(MediaRelayAttachPhase::Attached, ev);
-          return true;
-        case MediaRelayAttachEvent::AdmitFail:
-        case MediaRelayAttachEvent::AttachFail:
-        case MediaRelayAttachEvent::OpUnsupported:
-          SetPhase(MediaRelayAttachPhase::Rejected, ev);
-          SetPhase(MediaRelayAttachPhase::Closed, ev);
-          return true;
-        case MediaRelayAttachEvent::Cancel:
-          SetPhase(MediaRelayAttachPhase::Closed, ev);
-          return true;
-        }
-        return false;
-      }
-
-      void RejectAndClose(const std::shared_ptr<Stream>& s, const std::string& error,
-                          const MediaRelayAttachEvent ev) {
-        (void)WriteJson(s, {{"v", 1}, {"ok", false}, {"error", error}});
-        s->close([](auto&&) {});
-        // Always terminal — do not rely on Apply guards (wrong-phase reject uses OpAccept etc.).
-        SetPhase(MediaRelayAttachPhase::Rejected, ev);
-        SetPhase(MediaRelayAttachPhase::Closed, ev);
-      }
-    };
-
-    AttachSm sm;
+    MediaRelayAttachSm sm;
     if (auto peer = stream->remotePeerId()) {
       sm.remote = peer.value().toBase58();
     }
@@ -993,8 +754,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         {
           std::lock_guard<std::mutex> lock(mu);
           if (!AdmitPeerForCall(sm.remote, req.call_id)) {
-            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
-                              MediaRelayAttachEvent::AdmitFail);
+            RejectAndCloseAttach(sm, stream, "prefer contacts: stranger refused",
+                                 MediaRelayAttachEvent::AdmitFail);
             return;
           }
         }
@@ -1019,7 +780,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       } else if (op == "accept") {
         // Accept from Control or Quoted (quote may have been issued on another stream).
         if (sm.phase != MediaRelayAttachPhase::Control && sm.phase != MediaRelayAttachPhase::Quoted) {
-          sm.RejectAndClose(stream, "accept not allowed in phase", MediaRelayAttachEvent::OpAccept);
+          RejectAndCloseAttach(sm, stream, "accept not allowed in phase", MediaRelayAttachEvent::OpAccept);
           return;
         }
         const std::string quote_id = root->value("quote_id", "");
@@ -1028,13 +789,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           std::lock_guard<std::mutex> lock(mu);
           auto it = quotes_by_id.find(quote_id);
           if (it == quotes_by_id.end()) {
-            sm.RejectAndClose(stream, "unknown quote", MediaRelayAttachEvent::AttachFail);
+            RejectAndCloseAttach(sm, stream, "unknown quote", MediaRelayAttachEvent::AttachFail);
             return;
           }
           pending = it->second;
           if (!AdmitPeerForCall(sm.remote, pending.call_id)) {
-            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
-                              MediaRelayAttachEvent::AdmitFail);
+            RejectAndCloseAttach(sm, stream, "prefer contacts: stranger refused",
+                                 MediaRelayAttachEvent::AdmitFail);
             return;
           }
           quotes_by_id.erase(it);
@@ -1050,7 +811,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         (void)sm.Apply(MediaRelayAttachEvent::OpAccept);
       } else if (op == "attach") {
         if (!sm.Apply(MediaRelayAttachEvent::OpAttach)) {
-          sm.RejectAndClose(stream, "attach not allowed in phase", MediaRelayAttachEvent::OpAttach);
+          RejectAndCloseAttach(sm, stream, "attach not allowed in phase", MediaRelayAttachEvent::OpAttach);
           return;
         }
         const std::string token = root->value("session_token", sm.session_token);
@@ -1058,20 +819,20 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         const std::string auth = root->value("auth", "");
         sm.call_id = call_id;
         if (token.empty() || call_id.empty()) {
-          sm.RejectAndClose(stream, "missing session_token or call_id",
-                            MediaRelayAttachEvent::AttachFail);
+          RejectAndCloseAttach(sm, stream, "missing session_token or call_id",
+                               MediaRelayAttachEvent::AttachFail);
           return;
         }
         // Auth stub: non-empty auth required; must equal call_id for v1 dogfood.
-        if (auth.empty() || auth != call_id) {
-          sm.RejectAndClose(stream, "auth failed", MediaRelayAttachEvent::AttachFail);
+        if (!MediaRelayAuthStubOk(auth, call_id)) {
+          RejectAndCloseAttach(sm, stream, "auth failed", MediaRelayAttachEvent::AttachFail);
           return;
         }
         {
           std::lock_guard<std::mutex> lock(mu);
           if (!AdmitPeerForCall(sm.remote, call_id)) {
-            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
-                              MediaRelayAttachEvent::AdmitFail);
+            RejectAndCloseAttach(sm, stream, "prefer contacts: stranger refused",
+                                 MediaRelayAttachEvent::AdmitFail);
             return;
           }
         }
@@ -1086,12 +847,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           if (it != sessions_by_call.end()) {
             session = it->second;
             if (!CanAddParticipantLocked(*session)) {
-              sm.RejectAndClose(stream, "session participant limit", MediaRelayAttachEvent::AttachFail);
+              RejectAndCloseAttach(sm, stream, "session participant limit",
+                                   MediaRelayAttachEvent::AttachFail);
               return;
             }
           } else {
             if (!CanOpenNewHostSessionLocked()) {
-              sm.RejectAndClose(stream, "host session limit", MediaRelayAttachEvent::AttachFail);
+              RejectAndCloseAttach(sm, stream, "host session limit", MediaRelayAttachEvent::AttachFail);
               return;
             }
             session = std::make_shared<HostSession>();
@@ -1115,7 +877,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         StartParticipantAsync(session, part);
         return;
       } else {
-        sm.RejectAndClose(stream, "unsupported op", MediaRelayAttachEvent::OpUnsupported);
+        RejectAndCloseAttach(sm, stream, "unsupported op", MediaRelayAttachEvent::OpUnsupported);
         return;
       }
     }
