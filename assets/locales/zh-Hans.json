@@ -244,6 +244,7 @@
     "call.hint.looking_for_another_path": "当前设备无法到达现有路径。",
     "call.error.no_media_relay_hop": "没有可用的媒体中继 — 请让已启用 Media relay 的电脑加入，或从该电脑发起群组通话后重试。",
     "call.error.local_media_relay_unavailable": "此设备无法承载群组媒体。请使用已启用 Media relay 的电脑或组织节点。",
+    "call.error.media_key_timeout": "无法完成连接 — 通话密钥未到达。请重试，或确认双方设备在线。",
     "call.title.voice": "语音通话",
     "call.title.video": "视频通话",
     "call.title.group_voice": "群组语音通话",

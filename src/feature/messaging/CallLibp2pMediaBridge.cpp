@@ -1,9 +1,11 @@
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 
+#include "base/i18n/LocalizationService.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -27,6 +29,9 @@ constexpr int kInboundMediaKeyWaitMs = 8000;
  * while Windows was still in EnsurePeerReachable → dual-stream hello deadlock.
  */
 constexpr int64_t kOffererInboundGraceMs = 15000;
+
+/** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
+std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
 
 } // namespace
 
@@ -140,7 +145,15 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
             log().info << "Inbound call-media rebound stream_id=" << remote_stream
                        << " relay=" << relay << " call_id=" << call_id;
           } else {
-            return; // still unknown — drop rather than PeerId-hash zombie
+            // Still unknown — drop rather than PeerId-hash zombie (one-way audio until mapping).
+            const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (n == 1 || (n % 50) == 0) {
+              log().warning << "Inbound call-media drop: PeerId→relay unknown"
+                            << " peer_id=" << (deferred.empty() ? "(empty)" : deferred)
+                            << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
+                            << " call_id=" << call_id << " drops=" << n;
+            }
+            return;
           }
         }
         CallMediaEngine::SfuPacket pkt;
@@ -760,7 +773,23 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
             }
           }
         }
-        log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id;
+        // Surface failure — do not leave chrome stuck in MediaPending forever.
+        AppRuntime::PostUI([this, call_id]() {
+          if (pending_answerer_call_id_ != call_id) {
+            return; // key arrived, Leave, or superseding Accept
+          }
+          pending_answerer_call_id_.clear();
+          pending_answerer_peer_.clear();
+          const std::string err = Tr("call.error.media_key_timeout");
+          log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id
+                        << " — ConnectFailed";
+          libp2p_connect_failed_ = true;
+          host_.P2pSetLastMediaError(err);
+          if (lifecycle_) {
+            lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+          }
+          host_.P2pNotifyRingChanged();
+        });
       });
       return;
     }

@@ -8,7 +8,9 @@
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/people/PeerDisplayLabel.h"
+#include "base/platform/PlatformUserHints.h"
 #include "base/runtime/AppRuntime.h"
+#include "base/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
 
@@ -38,6 +40,27 @@ std::vector<MeshHopCandidate> PreferNamedHopFirst(std::vector<MeshHopCandidate> 
   ranked.erase(it);
   ranked.insert(ranked.begin(), std::move(chosen));
   return ranked;
+}
+
+/** SoftMigrate aggregate error — append OS network tip when every hop was undialable. */
+std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
+  std::string msg = Tr("call.error.no_media_relay_hop");
+  if (hop_failures.empty()) {
+    return msg;
+  }
+  const bool all_undialable =
+      std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
+        return f.find("hop not dialable") != std::string::npos;
+      });
+  if (!all_undialable) {
+    return msg;
+  }
+  const std::string tip = Tr(PlatformUserHints::P2pNetworkHintKey(), {{"product", kProductName}});
+  if (!tip.empty()) {
+    msg += " ";
+    msg += tip;
+  }
+  return msg;
 }
 
 } // namespace
@@ -676,7 +699,7 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     summary += hop_failures[i];
   }
   log().warning << summary;
-  return Error(Tr("call.error.no_media_relay_hop"));
+  return Error(SoftMigrateNoHopMessage(hop_failures));
 }
 
 Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
@@ -942,7 +965,8 @@ void CallTopologyController::OnGuestSfuTransportLost() {
   if (sfu_guest_reattach_attempts_ >= kMaxGuestSfuReattachAttempts) {
     log().warning << "Guest SFU reattach exhausted attempts=" << sfu_guest_reattach_attempts_
                   << " call_id=" << call_id;
-    host_.TopologySetLastMediaError(Tr("call.error.no_media_relay_hop"));
+    // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
+    host_.TopologySetLastMediaError(Tr("call.error.hop_unreachable_guest"));
     return;
   }
   ++sfu_guest_reattach_attempts_;

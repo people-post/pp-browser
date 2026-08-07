@@ -226,5 +226,110 @@ TEST_F(CallMediaDirectServiceTest, FailAfterDetachDoesNotCallOnFailed) {
   EXPECT_EQ(local_failed.load(), 0);
 }
 
+TEST_F(CallMediaDirectServiceTest, ConnectTimeoutReturnsIdleAndIgnoresLateOpen) {
+  // SESSION_MACHINES golden #7: Connect timeout → Idle; late OpenStreamOk ignored.
+  const std::string call_id = "call-connect-timeout";
+  ByteVector media_key(32, 0x44);
+  std::atomic<bool> release_b{false};
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    while (!release_b.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  auto result = a_call_media_->Connect(params, {}, 400);
+  EXPECT_FALSE(result);
+  EXPECT_EQ(result.error().message, "call-media connect timed out");
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+
+  release_b.store(true, std::memory_order_release);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, ClearInboundHandlerRejectsLateInbound) {
+  // SESSION_MACHINES golden #6: ClearInboundHandler → late inbound no-ops.
+  const std::string call_id = "call-handler-cleared";
+  ByteVector media_key(32, 0x55);
+
+  a_call_media_->ClearInboundHandler();
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "a";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  auto result = b_call_media_->Connect(params, {}, 3000);
+  EXPECT_FALSE(result);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
+  // SESSION_MACHINES golden #3: dual dial → one adopt per side; no hang.
+  const std::string call_id = "call-dual-dial";
+  ByteVector media_key(32, 0x66);
+
+  a_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+  });
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+  });
+
+  CallMediaDirectConnectParams a_params;
+  a_params.peer_key = "b";
+  a_params.call_id = call_id;
+  a_params.media_epoch = 1;
+  a_params.media_key = media_key;
+  a_params.offerer = true;
+
+  CallMediaDirectConnectParams b_params;
+  b_params.peer_key = "a";
+  b_params.call_id = call_id;
+  b_params.media_epoch = 1;
+  b_params.media_key = media_key;
+  b_params.offerer = true;
+
+  Roe<void> a_result = Error("not run");
+  Roe<void> b_result = Error("not run");
+  std::thread ta([&] { a_result = a_call_media_->Connect(a_params, {}, 8000); });
+  std::thread tb([&] { b_result = b_call_media_->Connect(b_params, {}, 8000); });
+  ta.join();
+  tb.join();
+
+  ASSERT_TRUE(a_result) << a_result.error().message;
+  ASSERT_TRUE(b_result) << b_result.error().message;
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_TRUE(a_call_media_->IsActive());
+  EXPECT_TRUE(b_call_media_->IsActive());
+
+  a_call_media_->Detach();
+  b_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle);
+}
+
 } // namespace
 } // namespace pbr
