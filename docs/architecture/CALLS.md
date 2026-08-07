@@ -357,18 +357,18 @@ Responsibilities:
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
 
 ### 3. `CallSessionManager` (shrunk)
-Keeps store updates + `ApplyInboundControl` switch. Each arm: decode → upsert roster/session → **one** call into topology or libp2p bridge.
+Keeps store updates + thin `ApplyInboundControl` switch. Per-type arms live in `CallInboundHandlers.cpp` (`HandleInboundInvite`, `HandleInboundAccept`, …): decode → upsert roster/session → **one** call into topology or libp2p bridge.
 
 ### 4. Inbound control flow (target)
 
 ```text
 ApplyInboundControl(type)
-  → update CallSessionStore / keys as needed
-  → switch type:
-       CallAccept / participant join  → Topology.OnRosterChanged(n)
+  → HandleInbound*(…)
+       decode → update CallSessionStore / keys as needed
+       CallAccept / participant join  → Topology.OnRemoteAcceptJoined / OnJoinedCountObserved
        CallSdp / CallIce              → ignore (wire compat)
-       CallSfuAttach                  → Topology.AttachLocal(...)
-       CallLeave / CallEnded          → Topology.Clear + L2P.Stop + EndCallLocal
+       CallSfuAttach                  → Topology.OnInboundSfuAttach
+       CallLeave / CallEnded          → Topology.Clear + EndCallLocal (+ media stop)
 ```
 
 ---
@@ -409,7 +409,7 @@ Landed (behavior-preserving + who-picks fix):
 
 1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
 2. **Libp2p media bridge** — `CallLibp2pMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
-3. **Dispatch cleanup** — thin `ApplyInboundControl` arms call topology or libp2p bridge.
+3. **Dispatch cleanup** — thin `ApplyInboundControl` → `HandleInbound*` in `CallInboundHandlers.cpp`; arms call topology or libp2p bridge.
 4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `SfuAttachWaitLogic`, `SfuAttachFanout` + fakes (`IMediaRelayClient` / `IDialRegistry`).
 5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
 6. **m2 teardown** — removed `CallP2pSignalingBridge` + libdatachannel from build; wire-compat ignore for `call_sdp` / `call_ice`.
@@ -421,7 +421,8 @@ Landed (behavior-preserving + who-picks fix):
 | Path | Role |
 |------|------|
 | `src/feature/messaging/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
-| `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
+| `src/feature/messaging/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
+| `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/messaging/CallMediaHost.h` | Narrow host façade for libp2p media side effects |
 | `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
 | `src/libp2p/integration/host/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |

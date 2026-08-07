@@ -179,6 +179,22 @@ private:
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
+  // Inbound call-control arms (CallInboundHandlers.cpp) — decode → store → one topology/bridge call.
+  Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
+                                const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
+                                std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
+  Roe<void> HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
+                                const std::string& local_identity);
+  Roe<void> HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
+                               const std::string& local_identity);
+  Roe<void> HandleInboundRoster(const std::string& detail_json);
+  Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
+  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
