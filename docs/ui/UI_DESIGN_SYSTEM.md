@@ -67,6 +67,7 @@ Font family: `LatoLatin` everywhere.
 Minimum **44dp** height/width for:
 
 - `.shell-toolbar-btn`
+- `.chat-suggestion` / `.chat-working-set-chip` (home + chat + banner chips)
 - `.sidebar-new-chat` / `.contacts-find-btn` (32dp); `.prompt-send-btn` (32dp)
 - Primary action buttons in composer and forms
 

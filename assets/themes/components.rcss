@@ -447,12 +447,17 @@ select selectbox option {
   width: auto;
   font-family: LatoLatin;
   font-size: 13dp;
-  padding: 6dp 12dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
   margin-right: 8dp;
   margin-bottom: 4dp;
   border: 0;
-  border-radius: 16dp;
+  border-radius: 999dp;
   cursor: pointer;
+  box-sizing: border-box;
+  text-align: center;
   focus: none;
 }
 
@@ -2450,9 +2455,14 @@ call-video-tile {
   display: inline-block;
   margin-top: 8dp;
   margin-right: 8dp;
-  padding: 6dp 12dp;
-  border-radius: 16dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
+  border-radius: 999dp;
   font-size: 13dp;
+  box-sizing: border-box;
+  text-align: center;
   focus: none;
 }
 
