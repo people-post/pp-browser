@@ -30,11 +30,105 @@
 
 namespace pbr {
 
+const char* MediaRelayAttachPhaseName(const MediaRelayAttachPhase phase) {
+  switch (phase) {
+  case MediaRelayAttachPhase::Control:
+    return "Control";
+  case MediaRelayAttachPhase::Quoted:
+    return "Quoted";
+  case MediaRelayAttachPhase::Accepted:
+    return "Accepted";
+  case MediaRelayAttachPhase::Attaching:
+    return "Attaching";
+  case MediaRelayAttachPhase::Attached:
+    return "Attached";
+  case MediaRelayAttachPhase::Rejected:
+    return "Rejected";
+  case MediaRelayAttachPhase::Closed:
+    return "Closed";
+  }
+  return "?";
+}
+
+const char* MediaRelayAttachEventName(const MediaRelayAttachEvent ev) {
+  switch (ev) {
+  case MediaRelayAttachEvent::StreamOpened:
+    return "StreamOpened";
+  case MediaRelayAttachEvent::OpQuote:
+    return "OpQuote";
+  case MediaRelayAttachEvent::OpAccept:
+    return "OpAccept";
+  case MediaRelayAttachEvent::OpAttach:
+    return "OpAttach";
+  case MediaRelayAttachEvent::OpUnsupported:
+    return "OpUnsupported";
+  case MediaRelayAttachEvent::AdmitFail:
+    return "AdmitFail";
+  case MediaRelayAttachEvent::AttachOk:
+    return "AttachOk";
+  case MediaRelayAttachEvent::AttachFail:
+    return "AttachFail";
+  case MediaRelayAttachEvent::Cancel:
+    return "Cancel";
+  }
+  return "?";
+}
+
+const char* MediaRelayClientPhaseName(const MediaRelayClientPhase phase) {
+  switch (phase) {
+  case MediaRelayClientPhase::Idle:
+    return "Idle";
+  case MediaRelayClientPhase::Dialing:
+    return "Dialing";
+  case MediaRelayClientPhase::Accepting:
+    return "Accepting";
+  case MediaRelayClientPhase::Attaching:
+    return "Attaching";
+  case MediaRelayClientPhase::Attached:
+    return "Attached";
+  case MediaRelayClientPhase::Detaching:
+    return "Detaching";
+  }
+  return "?";
+}
+
+const char* MediaRelayClientEventName(const MediaRelayClientEvent ev) {
+  switch (ev) {
+  case MediaRelayClientEvent::AttachRequested:
+    return "AttachRequested";
+  case MediaRelayClientEvent::OpenStreamOk:
+    return "OpenStreamOk";
+  case MediaRelayClientEvent::OpenStreamFail:
+    return "OpenStreamFail";
+  case MediaRelayClientEvent::AcceptOk:
+    return "AcceptOk";
+  case MediaRelayClientEvent::AcceptFail:
+    return "AcceptFail";
+  case MediaRelayClientEvent::AttachOk:
+    return "AttachOk";
+  case MediaRelayClientEvent::AttachFail:
+    return "AttachFail";
+  case MediaRelayClientEvent::DetachRequested:
+    return "DetachRequested";
+  case MediaRelayClientEvent::AttachTimeout:
+    return "AttachTimeout";
+  case MediaRelayClientEvent::DuplexLost:
+    return "DuplexLost";
+  case MediaRelayClientEvent::AttachSuperseded:
+    return "AttachSuperseded";
+  }
+  return "?";
+}
+
 namespace {
 
 using libp2p::Bytes;
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
+
+auto MediaRelayLog() {
+  return logging::getLogger("MediaRelayService");
+}
 
 constexpr uint8_t kMediaDataVersion = 1;
 constexpr size_t kMediaDataHeaderBytes = 1 + 4 + 2 + 1 + 4 + 1; // ver+stream+chan+type+seq+mark
@@ -198,7 +292,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_token;
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_call;
 
-  // Client attach state (remote hop dial)
+  // Client attach state (remote hop dial) — N026 client phase machine
+  std::atomic<MediaRelayClientPhase> client_phase{MediaRelayClientPhase::Idle};
+  std::string client_call_id;
   std::shared_ptr<Stream> client_stream;
   std::shared_ptr<DuplexFrameSession> client_duplex;
   std::shared_ptr<std::atomic<bool>> client_duplex_cancelled;
@@ -213,6 +309,131 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
    * Detach/Stop. Topology re-AcceptAndAttach while the call is still SFU-live.
    */
   std::function<void()> client_transport_lost_handler;
+  /** AcceptAndAttach waiter — Detach / timeout complete it (call-media pattern). */
+  std::shared_ptr<std::atomic<bool>> client_attach_settled;
+  std::shared_ptr<std::promise<Roe<MediaRelayAttachResult>>> client_attach_promise;
+
+  MediaRelayClientPhase ClientPhase() const {
+    return client_phase.load(std::memory_order_acquire);
+  }
+
+  void SetClientPhaseLocked(MediaRelayClientPhase next, MediaRelayClientEvent ev,
+                            const std::string& call_id = {}) {
+    const MediaRelayClientPhase prev = client_phase.load(std::memory_order_relaxed);
+    if (!call_id.empty()) {
+      client_call_id = call_id;
+    }
+    if (next == MediaRelayClientPhase::Idle) {
+      client_call_id.clear();
+    }
+    if (prev == next) {
+      MediaRelayLog().info << "media_relay_client phase=" << MediaRelayClientPhaseName(prev)
+                           << " event=" << MediaRelayClientEventName(ev)
+                           << " call_id=" << client_call_id;
+      return;
+    }
+    client_phase.store(next, std::memory_order_release);
+    MediaRelayLog().info << "media_relay_client phase=" << MediaRelayClientPhaseName(prev) << "->"
+                         << MediaRelayClientPhaseName(next)
+                         << " event=" << MediaRelayClientEventName(ev)
+                         << " call_id=" << client_call_id;
+  }
+
+  void IgnoreClientEventLocked(MediaRelayClientEvent ev, const char* reason) {
+    MediaRelayLog().warning << "media_relay_client ignore event=" << MediaRelayClientEventName(ev)
+                            << " phase=" << MediaRelayClientPhaseName(ClientPhase()) << " reason="
+                            << (reason ? reason : "");
+  }
+
+  /**
+   * Sole legal client-phase transition entry (CallLifecycle-style). Must hold mu.
+   * Returns false when the event is ignored for the current phase.
+   */
+  bool ApplyClientLocked(MediaRelayClientEvent ev, const std::string& call_id = {}) {
+    const MediaRelayClientPhase p = ClientPhase();
+    switch (ev) {
+    case MediaRelayClientEvent::AttachRequested:
+      SetClientPhaseLocked(MediaRelayClientPhase::Dialing, ev, call_id);
+      return true;
+
+    case MediaRelayClientEvent::OpenStreamOk:
+      if (p != MediaRelayClientPhase::Dialing) {
+        IgnoreClientEventLocked(ev, "not dialing");
+        return false;
+      }
+      SetClientPhaseLocked(MediaRelayClientPhase::Accepting, ev, call_id);
+      return true;
+
+    case MediaRelayClientEvent::OpenStreamFail:
+    case MediaRelayClientEvent::AcceptFail:
+    case MediaRelayClientEvent::AttachFail:
+    case MediaRelayClientEvent::AttachTimeout:
+    case MediaRelayClientEvent::AttachSuperseded:
+      if (p == MediaRelayClientPhase::Dialing || p == MediaRelayClientPhase::Accepting ||
+          p == MediaRelayClientPhase::Attaching) {
+        SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
+        return true;
+      }
+      IgnoreClientEventLocked(ev, "not in attach flight");
+      return false;
+
+    case MediaRelayClientEvent::AcceptOk:
+      if (p != MediaRelayClientPhase::Accepting) {
+        IgnoreClientEventLocked(ev, "not accepting");
+        return false;
+      }
+      SetClientPhaseLocked(MediaRelayClientPhase::Attaching, ev, call_id);
+      return true;
+
+    case MediaRelayClientEvent::AttachOk:
+      if (p != MediaRelayClientPhase::Attaching) {
+        IgnoreClientEventLocked(ev, "not attaching");
+        return false;
+      }
+      SetClientPhaseLocked(MediaRelayClientPhase::Attached, ev, call_id);
+      return true;
+
+    case MediaRelayClientEvent::DuplexLost:
+      if (p == MediaRelayClientPhase::Idle || p == MediaRelayClientPhase::Detaching) {
+        IgnoreClientEventLocked(ev, "already detaching or idle");
+        return false;
+      }
+      SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
+      return true;
+
+    case MediaRelayClientEvent::DetachRequested:
+      // Detach() drives Detaching → Idle via SetClientPhaseLocked; this event is for logging
+      // and late abort of in-flight Dialing/Accepting/Attaching without a Detach compound.
+      if (p == MediaRelayClientPhase::Dialing || p == MediaRelayClientPhase::Accepting ||
+          p == MediaRelayClientPhase::Attaching) {
+        SetClientPhaseLocked(MediaRelayClientPhase::Idle, ev, call_id);
+        return true;
+      }
+      return true;
+    }
+    IgnoreClientEventLocked(ev, "unhandled event");
+    return false;
+  }
+
+  void CompleteClientAttachLocked(Roe<MediaRelayAttachResult> value) {
+    if (!client_attach_settled) {
+      return;
+    }
+    if (!client_attach_settled->exchange(true)) {
+      try {
+        if (client_attach_promise) {
+          client_attach_promise->set_value(std::move(value));
+        }
+      } catch (const std::future_error&) {
+      }
+    }
+    client_attach_settled.reset();
+    client_attach_promise.reset();
+  }
+
+  bool ClientAttachWaiterActiveLocked() const {
+    return client_attach_settled && !client_attach_settled->load(std::memory_order_acquire);
+  }
 
   // In-call hop: local publisher joined into HostSession without dialing self
   std::shared_ptr<HostParticipant> local_hop_part;
@@ -361,6 +582,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
                 return;
               }
               // Drop dead transport so IsAttached/SendFrame reflect reality; keep on_frame for reattach.
+              // ApplyClientLocked ignores DuplexLost when already Idle/Detaching (intentional Detach).
+              if (!self->ApplyClientLocked(MediaRelayClientEvent::DuplexLost, self->client_call_id)) {
+                return;
+              }
               self->client_duplex.reset();
               self->client_duplex_cancelled.reset();
               self->client_stream.reset();
@@ -368,9 +593,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
               self->client_subscriptions.clear();
               handler = self->client_transport_lost_handler;
             }
-            logging::getLogger("MediaRelayService").warning
-                << "client duplex lost reason=" << (reason && reason[0] ? reason : "unknown")
-                << " will_notify=" << (handler ? 1 : 0);
+            MediaRelayLog().warning << "client duplex lost reason="
+                                    << (reason && reason[0] ? reason : "unknown")
+                                    << " will_notify=" << (handler ? 1 : 0);
             if (handler) {
               handler();
             }
@@ -661,154 +886,239 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void HandleInboundBody(std::shared_ptr<Stream> stream) {
+    // Per-inbound-stream attach SM (N026). HostSession remains a map object; this only
+    // sequences quote → accept → attach on one control stream.
+    struct AttachSm {
+      MediaRelayAttachPhase phase = MediaRelayAttachPhase::Control;
       std::string remote;
-      if (auto peer = stream->remotePeerId()) {
-        remote = peer.value().toBase58();
-      }
-
-      // Admission runs per control op (quote/accept/attach) with call_id so joiners can
-      // attach on a fresh stream after an admitted sponsor opened the session.
-      // Control handshake: quote → accept → attach (may be multi-message / multi-stream)
+      std::string call_id;
       std::string accepted_quote_id;
       std::string session_token;
-      std::shared_ptr<HostSession> session;
 
-      while (!session) {
-        auto root = ReadJson(stream);
-        if (!root) {
-          stream->close([](auto&&) {});
+      void SetPhase(const MediaRelayAttachPhase next, const MediaRelayAttachEvent ev) {
+        const MediaRelayAttachPhase prev = phase;
+        phase = next;
+        if (prev == next) {
+          MediaRelayLog().info << "media_relay_attach phase=" << MediaRelayAttachPhaseName(prev)
+                               << " event=" << MediaRelayAttachEventName(ev) << " call_id=" << call_id
+                               << " peer=" << remote;
           return;
         }
-        const std::string op = root->value("op", "");
-        if (op == "quote") {
-          MediaRelayQuoteRequest req;
-          req.call_id = root->value("call_id", "");
-          req.participants = root->value("participants", 1);
-          req.want_up_bps = root->value("want_up_bps", static_cast<int64_t>(0));
-          req.want_down_bps = root->value("want_down_bps", static_cast<int64_t>(0));
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            if (!AdmitPeerForCall(remote, req.call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-          }
-          MediaRelayQuote q = BuildQuote(req);
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            quotes_by_id[q.quote_id] = PendingQuote{q, req.call_id};
-          }
-          (void)WriteJson(stream, {{"v", 1},
-                                   {"ok", true},
-                                   {"op", "quote"},
-                                   {"quote_id", q.quote_id},
-                                   {"A_up", q.a_up_bps},
-                                   {"A_down", q.a_down_bps},
-                                   {"B_up", q.b_up_bps},
-                                   {"B_down", q.b_down_bps},
-                                   {"mode", q.pricing_mode},
-                                   {"rate", q.rate},
-                                   {"ceiling_bytes", q.ceiling_bytes},
-                                   {"ceiling_amount", q.ceiling_amount}});
-        } else if (op == "accept") {
-          const std::string quote_id = root->value("quote_id", "");
-          PendingQuote pending;
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            auto it = quotes_by_id.find(quote_id);
-            if (it == quotes_by_id.end()) {
-              (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unknown quote"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-            pending = it->second;
-            if (!AdmitPeerForCall(remote, pending.call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-            quotes_by_id.erase(it);
-          }
-          accepted_quote_id = quote_id;
-          session_token = MakeId("s");
-          (void)WriteJson(stream, {{"v", 1},
-                                   {"ok", true},
-                                   {"op", "accept"},
-                                   {"session_token", session_token},
-                                   {"quote_id", accepted_quote_id}});
-        } else if (op == "attach") {
-          const std::string token = root->value("session_token", session_token);
-          const std::string call_id = root->value("call_id", "");
-          const std::string auth = root->value("auth", "");
-          if (token.empty() || call_id.empty()) {
-            (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "missing session_token or call_id"}});
-            stream->close([](auto&&) {});
-            return;
-          }
-          // Auth stub: non-empty auth required; must equal call_id for v1 dogfood.
-          if (auth.empty() || auth != call_id) {
-            (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "auth failed"}});
-            stream->close([](auto&&) {});
-            return;
-          }
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            if (!AdmitPeerForCall(remote, call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-          }
-
-          auto part = std::make_shared<HostParticipant>();
-          part->peer_id = remote;
-          part->stream = stream;
-
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            auto it = sessions_by_call.find(call_id);
-            if (it != sessions_by_call.end()) {
-              session = it->second;
-              if (!CanAddParticipantLocked(*session)) {
-                (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "session participant limit"}});
-                stream->close([](auto&&) {});
-                return;
-              }
-            } else {
-              if (!CanOpenNewHostSessionLocked()) {
-                (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "host session limit"}});
-                stream->close([](auto&&) {});
-                return;
-              }
-              session = std::make_shared<HostSession>();
-              session->call_id = call_id;
-              session->session_token = token;
-              session->b_up_bps = OrDefault(budget.max_session_up_bps, kDefaultSessionUpBps);
-              session->b_down_bps = OrDefault(budget.max_session_down_bps, kDefaultSessionDownBps);
-              session->ceiling_bytes = kDefaultCeilingBytes;
-              ConfigureSessionLimiters(*session);
-              sessions_by_call[call_id] = session;
-              sessions_by_token[token] = session;
-            }
-            part->a_up_bps = OrDefault(budget.default_per_user_up_bps, kDefaultUserUpBps);
-            part->a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
-            ConfigureParticipantLimiters(*part);
-            session->participants.push_back(part);
-          }
-
-          (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
-          StartParticipantAsync(session, part);
-          return;
-        } else {
-          (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unsupported op"}});
-          stream->close([](auto&&) {});
-          return;
-        }
+        MediaRelayLog().info << "media_relay_attach phase=" << MediaRelayAttachPhaseName(prev)
+                             << "->" << MediaRelayAttachPhaseName(next)
+                             << " event=" << MediaRelayAttachEventName(ev) << " call_id=" << call_id
+                             << " peer=" << remote;
       }
+
+      /** Sole legal attach-phase transition entry for this inbound stream. */
+      bool Apply(const MediaRelayAttachEvent ev) {
+        switch (ev) {
+        case MediaRelayAttachEvent::StreamOpened:
+          SetPhase(MediaRelayAttachPhase::Control, ev);
+          return true;
+        case MediaRelayAttachEvent::OpQuote:
+          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted) {
+            return false;
+          }
+          SetPhase(MediaRelayAttachPhase::Quoted, ev);
+          return true;
+        case MediaRelayAttachEvent::OpAccept:
+          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted) {
+            return false;
+          }
+          SetPhase(MediaRelayAttachPhase::Accepted, ev);
+          return true;
+        case MediaRelayAttachEvent::OpAttach:
+          if (phase != MediaRelayAttachPhase::Control && phase != MediaRelayAttachPhase::Quoted &&
+              phase != MediaRelayAttachPhase::Accepted) {
+            return false;
+          }
+          SetPhase(MediaRelayAttachPhase::Attaching, ev);
+          return true;
+        case MediaRelayAttachEvent::AttachOk:
+          if (phase != MediaRelayAttachPhase::Attaching) {
+            return false;
+          }
+          SetPhase(MediaRelayAttachPhase::Attached, ev);
+          return true;
+        case MediaRelayAttachEvent::AdmitFail:
+        case MediaRelayAttachEvent::AttachFail:
+        case MediaRelayAttachEvent::OpUnsupported:
+          SetPhase(MediaRelayAttachPhase::Rejected, ev);
+          SetPhase(MediaRelayAttachPhase::Closed, ev);
+          return true;
+        case MediaRelayAttachEvent::Cancel:
+          SetPhase(MediaRelayAttachPhase::Closed, ev);
+          return true;
+        }
+        return false;
+      }
+
+      void RejectAndClose(const std::shared_ptr<Stream>& s, const std::string& error,
+                          const MediaRelayAttachEvent ev) {
+        (void)WriteJson(s, {{"v", 1}, {"ok", false}, {"error", error}});
+        s->close([](auto&&) {});
+        // Always terminal — do not rely on Apply guards (wrong-phase reject uses OpAccept etc.).
+        SetPhase(MediaRelayAttachPhase::Rejected, ev);
+        SetPhase(MediaRelayAttachPhase::Closed, ev);
+      }
+    };
+
+    AttachSm sm;
+    if (auto peer = stream->remotePeerId()) {
+      sm.remote = peer.value().toBase58();
+    }
+    (void)sm.Apply(MediaRelayAttachEvent::StreamOpened);
+
+    // Admission runs per control op (quote/accept/attach) with call_id so joiners can
+    // attach on a fresh stream after an admitted sponsor opened the session.
+    std::shared_ptr<HostSession> session;
+
+    while (sm.phase != MediaRelayAttachPhase::Attached && sm.phase != MediaRelayAttachPhase::Rejected &&
+           sm.phase != MediaRelayAttachPhase::Closed) {
+      auto root = ReadJson(stream);
+      if (!root) {
+        (void)sm.Apply(MediaRelayAttachEvent::Cancel);
+        stream->close([](auto&&) {});
+        return;
+      }
+      const std::string op = root->value("op", "");
+      if (op == "quote") {
+        MediaRelayQuoteRequest req;
+        req.call_id = root->value("call_id", "");
+        req.participants = root->value("participants", 1);
+        req.want_up_bps = root->value("want_up_bps", static_cast<int64_t>(0));
+        req.want_down_bps = root->value("want_down_bps", static_cast<int64_t>(0));
+        sm.call_id = req.call_id;
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          if (!AdmitPeerForCall(sm.remote, req.call_id)) {
+            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
+                              MediaRelayAttachEvent::AdmitFail);
+            return;
+          }
+        }
+        MediaRelayQuote q = BuildQuote(req);
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          quotes_by_id[q.quote_id] = PendingQuote{q, req.call_id};
+        }
+        (void)WriteJson(stream, {{"v", 1},
+                                 {"ok", true},
+                                 {"op", "quote"},
+                                 {"quote_id", q.quote_id},
+                                 {"A_up", q.a_up_bps},
+                                 {"A_down", q.a_down_bps},
+                                 {"B_up", q.b_up_bps},
+                                 {"B_down", q.b_down_bps},
+                                 {"mode", q.pricing_mode},
+                                 {"rate", q.rate},
+                                 {"ceiling_bytes", q.ceiling_bytes},
+                                 {"ceiling_amount", q.ceiling_amount}});
+        (void)sm.Apply(MediaRelayAttachEvent::OpQuote);
+      } else if (op == "accept") {
+        // Accept from Control or Quoted (quote may have been issued on another stream).
+        if (sm.phase != MediaRelayAttachPhase::Control && sm.phase != MediaRelayAttachPhase::Quoted) {
+          sm.RejectAndClose(stream, "accept not allowed in phase", MediaRelayAttachEvent::OpAccept);
+          return;
+        }
+        const std::string quote_id = root->value("quote_id", "");
+        PendingQuote pending;
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          auto it = quotes_by_id.find(quote_id);
+          if (it == quotes_by_id.end()) {
+            sm.RejectAndClose(stream, "unknown quote", MediaRelayAttachEvent::AttachFail);
+            return;
+          }
+          pending = it->second;
+          if (!AdmitPeerForCall(sm.remote, pending.call_id)) {
+            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
+                              MediaRelayAttachEvent::AdmitFail);
+            return;
+          }
+          quotes_by_id.erase(it);
+        }
+        sm.call_id = pending.call_id;
+        sm.accepted_quote_id = quote_id;
+        sm.session_token = MakeId("s");
+        (void)WriteJson(stream, {{"v", 1},
+                                 {"ok", true},
+                                 {"op", "accept"},
+                                 {"session_token", sm.session_token},
+                                 {"quote_id", sm.accepted_quote_id}});
+        (void)sm.Apply(MediaRelayAttachEvent::OpAccept);
+      } else if (op == "attach") {
+        if (!sm.Apply(MediaRelayAttachEvent::OpAttach)) {
+          sm.RejectAndClose(stream, "attach not allowed in phase", MediaRelayAttachEvent::OpAttach);
+          return;
+        }
+        const std::string token = root->value("session_token", sm.session_token);
+        const std::string call_id = root->value("call_id", "");
+        const std::string auth = root->value("auth", "");
+        sm.call_id = call_id;
+        if (token.empty() || call_id.empty()) {
+          sm.RejectAndClose(stream, "missing session_token or call_id",
+                            MediaRelayAttachEvent::AttachFail);
+          return;
+        }
+        // Auth stub: non-empty auth required; must equal call_id for v1 dogfood.
+        if (auth.empty() || auth != call_id) {
+          sm.RejectAndClose(stream, "auth failed", MediaRelayAttachEvent::AttachFail);
+          return;
+        }
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          if (!AdmitPeerForCall(sm.remote, call_id)) {
+            sm.RejectAndClose(stream, "prefer contacts: stranger refused",
+                              MediaRelayAttachEvent::AdmitFail);
+            return;
+          }
+        }
+
+        auto part = std::make_shared<HostParticipant>();
+        part->peer_id = sm.remote;
+        part->stream = stream;
+
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          auto it = sessions_by_call.find(call_id);
+          if (it != sessions_by_call.end()) {
+            session = it->second;
+            if (!CanAddParticipantLocked(*session)) {
+              sm.RejectAndClose(stream, "session participant limit", MediaRelayAttachEvent::AttachFail);
+              return;
+            }
+          } else {
+            if (!CanOpenNewHostSessionLocked()) {
+              sm.RejectAndClose(stream, "host session limit", MediaRelayAttachEvent::AttachFail);
+              return;
+            }
+            session = std::make_shared<HostSession>();
+            session->call_id = call_id;
+            session->session_token = token;
+            session->b_up_bps = OrDefault(budget.max_session_up_bps, kDefaultSessionUpBps);
+            session->b_down_bps = OrDefault(budget.max_session_down_bps, kDefaultSessionDownBps);
+            session->ceiling_bytes = kDefaultCeilingBytes;
+            ConfigureSessionLimiters(*session);
+            sessions_by_call[call_id] = session;
+            sessions_by_token[token] = session;
+          }
+          part->a_up_bps = OrDefault(budget.default_per_user_up_bps, kDefaultUserUpBps);
+          part->a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
+          ConfigureParticipantLimiters(*part);
+          session->participants.push_back(part);
+        }
+
+        (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
+        (void)sm.Apply(MediaRelayAttachEvent::AttachOk);
+        StartParticipantAsync(session, part);
+        return;
+      } else {
+        sm.RejectAndClose(stream, "unsupported op", MediaRelayAttachEvent::OpUnsupported);
+        return;
+      }
+    }
   }
 };
 
@@ -942,6 +1252,8 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   if (!sessions_.IsDialable(hop_peer_key)) {
     return Error("hop peer endpoint not registered");
   }
+
+  // Detach-then-attach (s1/N026): abort prior waiter and tear down prior session.
   Detach();
 
   auto result_promise = std::make_shared<std::promise<Roe<MediaRelayAttachResult>>>();
@@ -949,76 +1261,176 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto impl = impl_;
 
+  {
+    std::lock_guard<std::mutex> lock(impl->mu);
+    impl->client_attach_settled = settled;
+    impl->client_attach_promise = result_promise;
+    (void)impl->ApplyClientLocked(MediaRelayClientEvent::AttachRequested, call_id);
+  }
+
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled, &host = host_](
-          libp2p::StreamAndProtocolOrError stream_res) mutable {
+      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
+       &host = host_](libp2p::StreamAndProtocolOrError stream_res) mutable {
         PostLibp2pWorker(host, WorkerLane::Normal,
-                                  [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
-                                   settled, stream_res = std::move(stream_res)]() mutable {
-          auto finish = [&](Roe<MediaRelayAttachResult> value) {
-            if (!settled->exchange(true)) {
-              result_promise->set_value(std::move(value));
-            }
-          };
-          if (!stream_res) {
-            const auto& ec = stream_res.error();
-            finish(Error(std::string("media-relay stream open failed: ") + ec.message()));
-            return;
-          }
-          auto stream = std::move(stream_res.value().stream);
-          if (!WriteJson(stream, {{"v", 1}, {"op", "accept"}, {"quote_id", quote_id}})) {
-            finish(Error("Failed to send accept"));
-            stream->close([](auto&&) {});
-            return;
-          }
-          auto accept_root = ReadJson(stream);
-          if (!accept_root || !accept_root->value("ok", false)) {
-            finish(Error(accept_root ? accept_root->value("error", "accept failed")
-                                     : accept_root.error().message));
-            stream->close([](auto&&) {});
-            return;
-          }
-          const std::string token = accept_root->value("session_token", "");
-          if (!WriteJson(stream, {{"v", 1},
-                                  {"op", "attach"},
-                                  {"session_token", token},
-                                  {"call_id", call_id},
-                                  {"auth", auth_stub}})) {
-            finish(Error("Failed to send attach"));
-            stream->close([](auto&&) {});
-            return;
-          }
-          auto attach_root = ReadJson(stream);
-          if (!attach_root || !attach_root->value("ok", false)) {
-            finish(Error(attach_root ? attach_root->value("error", "attach failed")
-                                     : attach_root.error().message));
-            stream->close([](auto&&) {});
-            return;
-          }
+                         [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
+                          stream_res = std::move(stream_res)]() mutable {
+                           auto finish = [&](Roe<MediaRelayAttachResult> value,
+                                             MediaRelayClientEvent ev) {
+                             std::lock_guard<std::mutex> lock(impl->mu);
+                             if (!value) {
+                               (void)impl->ApplyClientLocked(ev, call_id);
+                             }
+                             impl->CompleteClientAttachLocked(std::move(value));
+                           };
+                           if (settled->load(std::memory_order_acquire)) {
+                             if (stream_res) {
+                               stream_res.value().stream->close([](auto&&) {});
+                             }
+                             return;
+                           }
+                           if (!stream_res) {
+                             const auto& ec = stream_res.error();
+                             finish(Error(std::string("media-relay stream open failed: ") + ec.message()),
+                                    MediaRelayClientEvent::OpenStreamFail);
+                             return;
+                           }
+                           auto stream = std::move(stream_res.value().stream);
+                           {
+                             std::lock_guard<std::mutex> lock(impl->mu);
+                             if (settled->load(std::memory_order_acquire) ||
+                                 !impl->ApplyClientLocked(MediaRelayClientEvent::OpenStreamOk, call_id)) {
+                               stream->close([](auto&&) {});
+                               return;
+                             }
+                           }
+                           if (!WriteJson(stream, {{"v", 1}, {"op", "accept"}, {"quote_id", quote_id}})) {
+                             finish(Error("Failed to send accept"), MediaRelayClientEvent::AcceptFail);
+                             stream->close([](auto&&) {});
+                             return;
+                           }
+                           auto accept_root = ReadJson(stream);
+                           if (settled->load(std::memory_order_acquire)) {
+                             stream->close([](auto&&) {});
+                             return;
+                           }
+                           if (!accept_root || !accept_root->value("ok", false)) {
+                             finish(Error(accept_root ? accept_root->value("error", "accept failed")
+                                                      : accept_root.error().message),
+                                    MediaRelayClientEvent::AcceptFail);
+                             stream->close([](auto&&) {});
+                             return;
+                           }
+                           const std::string token = accept_root->value("session_token", "");
+                           {
+                             std::lock_guard<std::mutex> lock(impl->mu);
+                             if (settled->load(std::memory_order_acquire) ||
+                                 !impl->ApplyClientLocked(MediaRelayClientEvent::AcceptOk, call_id)) {
+                               stream->close([](auto&&) {});
+                               return;
+                             }
+                           }
+                           if (!WriteJson(stream, {{"v", 1},
+                                                   {"op", "attach"},
+                                                   {"session_token", token},
+                                                   {"call_id", call_id},
+                                                   {"auth", auth_stub}})) {
+                             finish(Error("Failed to send attach"), MediaRelayClientEvent::AttachFail);
+                             stream->close([](auto&&) {});
+                             return;
+                           }
+                           auto attach_root = ReadJson(stream);
+                           if (settled->load(std::memory_order_acquire)) {
+                             stream->close([](auto&&) {});
+                             return;
+                           }
+                           if (!attach_root || !attach_root->value("ok", false)) {
+                             finish(Error(attach_root ? attach_root->value("error", "attach failed")
+                                                      : attach_root.error().message),
+                                    MediaRelayClientEvent::AttachFail);
+                             stream->close([](auto&&) {});
+                             return;
+                           }
 
-          {
-            std::lock_guard<std::mutex> lock(impl->mu);
-            impl->client_stream = stream;
-            impl->client_session_token = token;
-            impl->client_on_frame = std::move(on_frame);
-            impl->client_subscriptions.clear();
-          }
-          // Inbound reader starts later via StartClientFrameReader() after StartSfu.
-
-          MediaRelayAttachResult out;
-          out.ok = true;
-          out.session_token = token;
-          finish(out);
-        });
+                           {
+                             std::lock_guard<std::mutex> lock(impl->mu);
+                             // Bug fix: never install client_stream after timeout/Detach settled.
+                             if (settled->load(std::memory_order_acquire) ||
+                                 impl->ClientPhase() == MediaRelayClientPhase::Idle ||
+                                 impl->ClientPhase() == MediaRelayClientPhase::Detaching ||
+                                 !impl->ApplyClientLocked(MediaRelayClientEvent::AttachOk, call_id)) {
+                               stream->close([](auto&&) {});
+                               return;
+                             }
+                             impl->client_stream = stream;
+                             impl->client_session_token = token;
+                             impl->client_on_frame = std::move(on_frame);
+                             impl->client_subscriptions.clear();
+                             MediaRelayAttachResult out;
+                             out.ok = true;
+                             out.session_token = token;
+                             impl->CompleteClientAttachLocked(out);
+                           }
+                           // Inbound reader starts later via StartClientFrameReader() after StartSfu.
+                         });
       });
 
+  // Slice the wait so Detach can complete the promise without blocking Leave for the full timeout.
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
-  if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    settled->exchange(true);
-    return Error(std::string("media-relay attach timed out (hop=") + hop_peer_key + ")");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+  for (;;) {
+    const auto status = result_future.wait_for(std::chrono::milliseconds(50));
+    if (status == std::future_status::ready) {
+      std::lock_guard<std::mutex> lock(impl->mu);
+      if (impl->client_attach_settled == settled) {
+        impl->client_attach_settled.reset();
+        impl->client_attach_promise.reset();
+      }
+      return result_future.get();
+    }
+    {
+      std::lock_guard<std::mutex> lock(impl->mu);
+      if (impl->ClientPhase() == MediaRelayClientPhase::Attached && impl->client_stream) {
+        settled->store(true, std::memory_order_release);
+        if (impl->client_attach_settled == settled) {
+          impl->client_attach_settled.reset();
+          impl->client_attach_promise.reset();
+        }
+        MediaRelayAttachResult out;
+        out.ok = true;
+        out.session_token = impl->client_session_token;
+        return out;
+      }
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      settled->exchange(true);
+      {
+        std::lock_guard<std::mutex> lock(impl->mu);
+        if (impl->client_attach_settled == settled) {
+          impl->client_attach_settled.reset();
+          impl->client_attach_promise.reset();
+        }
+        if (impl->ClientPhase() == MediaRelayClientPhase::Attached && impl->client_stream) {
+          MediaRelayAttachResult out;
+          out.ok = true;
+          out.session_token = impl->client_session_token;
+          return out;
+        }
+        // Drop any late-installed stream from a racing worker (should be rare after settled check).
+        if (impl->ApplyClientLocked(MediaRelayClientEvent::AttachTimeout, call_id)) {
+          impl->StopClientDuplexLocked();
+          if (impl->client_stream) {
+            impl->client_stream->close([](auto&&) {});
+            impl->client_stream.reset();
+          }
+          impl->client_session_token.clear();
+          impl->client_on_frame = nullptr;
+          impl->client_subscriptions.clear();
+        }
+      }
+      return Error(std::string("media-relay attach timed out (hop=") + hop_peer_key + ")");
+    }
   }
-  return result_future.get();
 }
 
 void MediaRelayService::StartClientFrameReader() {
@@ -1236,6 +1648,13 @@ void MediaRelayService::Detach() {
   std::shared_ptr<HostSession> local_session;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
+    const MediaRelayClientPhase prev = impl_->ClientPhase();
+    if (prev != MediaRelayClientPhase::Idle) {
+      impl_->SetClientPhaseLocked(MediaRelayClientPhase::Detaching,
+                                  MediaRelayClientEvent::DetachRequested, impl_->client_call_id);
+    }
+    // Unblock AcceptAndAttach waiters (Leave / SoftMigrate / supersede).
+    impl_->CompleteClientAttachLocked(Error("media-relay attach aborted"));
     impl_->StopClientDuplexLocked();
     stream = impl_->client_stream;
     impl_->client_stream.reset();
@@ -1253,8 +1672,13 @@ void MediaRelayService::Detach() {
     if (local && local_session) {
       local_session->participants.erase(
           std::remove_if(local_session->participants.begin(), local_session->participants.end(),
-                         [&](const std::shared_ptr<HostParticipant>& p) { return p.get() == local.get(); }),
+                         [&](const std::shared_ptr<HostParticipant>& p) {
+                           return p.get() == local.get();
+                         }),
           local_session->participants.end());
+    }
+    if (prev != MediaRelayClientPhase::Idle) {
+      impl_->SetClientPhaseLocked(MediaRelayClientPhase::Idle, MediaRelayClientEvent::DetachRequested);
     }
   }
   impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
@@ -1267,6 +1691,10 @@ void MediaRelayService::Detach() {
 bool MediaRelayService::IsAttached() const {
   std::lock_guard<std::mutex> lock(impl_->mu);
   return impl_->client_stream != nullptr || impl_->local_hop_part != nullptr;
+}
+
+MediaRelayClientPhase MediaRelayService::ClientPhase() const {
+  return impl_->ClientPhase();
 }
 
 bool MediaRelayService::IsLocalHopAttached() const {

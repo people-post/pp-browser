@@ -108,6 +108,20 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [ ] Freeze ADRs as superseded-by docs where appropriate
 - [ ] Update CURRENT_STATE / README status
 
+## sm — Transport session machines (V033) — docs before code
+
+Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.md](SESSION_MACHINES.md). Mesh attach twin: [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026). **Do not start structural code until s1 open questions are frozen.**
+
+- [x] s0 — Design docs + [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) (+ mesh N026)
+- [x] s1 — Freeze open questions in SESSION_MACHINES (mutex strand, blocking Connect, instant Failed→Idle, Detach-then-Connect)
+- [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
+- [ ] s2b — Android↔Android dogfood gate (phase logs triage Connecting stuck)
+- [x] s2c — Flag soup collapsed to phase (+ `connect_settled` waiter / `offerer_glare`); race homes noted in SESSION_MACHINES / CALLS.md
+- [x] s3a — media-relay inbound attach SM (mesh N026)
+- [x] s3b — media-relay client `AcceptAndAttach` SM + Detach abort
+- [ ] s3c — SoftMigrate / PreferLocal dogfood gate
+- [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
+
 ## Later horizons
 
 - [ ] Video on libp2p (after voice green)

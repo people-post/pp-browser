@@ -6,6 +6,8 @@
 
 Admission, queue, drop, and meter rules for every inbound request a libp2p / messaging host can receive on the call path. Complements wire shapes in [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md) and mesh N019/N021.
 
+**Session lifecycle (how admit rows become transitions):** [SESSION_MACHINES.md](SESSION_MACHINES.md) (call-media, V033) · [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026).
+
 ---
 
 ## Planes

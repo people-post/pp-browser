@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a4 thin landed**; **V026 / m1** = libp2p-only voice (Android↔Android LAN dogfood OK 2026-08-02); **m2** = WebRTC teardown next  
+**Status:** **a4 thin landed**; **V026 / m1** = libp2p-only voice (Android↔Android LAN dogfood OK 2026-08-02); **m2** teardown done; **V033** session SM design (docs before code)  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [p2p-mesh](../p2p-mesh/) (N022), [media-hop-reachability](../media-hop-reachability/), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md)
@@ -32,8 +32,9 @@
 | [CURRENT_STATE.md](CURRENT_STATE.md) | **Active** (project) | Dogfood / codebase board this week |
 | [PHASES.md](PHASES.md) | **Active** (project) | Delivery checklist (v0 → a6) |
 | [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md) | **Active** (project) | Host admit / queue / drop / meter matrix (V032) |
+| [SESSION_MACHINES.md](SESSION_MACHINES.md) | **Active** (project) | Transport session SMs for call-media (+ link to media-relay attach) — **docs before code** (V033) |
 
-Agents: code “where does X live?” → **CALLS**. Product “should we…?” → **DESIGN / DECISIONS**. “What works on devices?” → **CURRENT_STATE**.
+Agents: code “where does X live?” → **CALLS**. Product “should we…?” → **DESIGN / DECISIONS**. “What works on devices?” → **CURRENT_STATE**. Host session robustness → **SESSION_MACHINES** / mesh [MEDIA_RELAY_ATTACH](../p2p-mesh/MEDIA_RELAY_ATTACH.md).
 
 ## Dependencies
 
@@ -52,5 +53,6 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 |-------|------|--------|
 | v0–a4 | Docs → signaling → WebRTC LAN → group SFU thin | **Done** (historical); WebRTC not ongoing path |
 | **V026 / m1** | Libp2p-only **voice** | **Mobile LAN done**; desktop matrix open |
-| m2 | Teardown WebRTC product path | **Next** |
+| m2 | Teardown WebRTC product path | **Done** |
+| **V033 / sm** | Transport session machines | **s0 docs**; code after s1 freeze |
 | a5–a6 | Cap / polish / promote contracts | Pending |

@@ -59,15 +59,17 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 |------|-------|
 | **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** — call-media phases + Fail-after-Detach ignore; media-relay inbound + client attach phases; Detach aborts AcceptAndAttach; loopback tests green; Android / SoftMigrate dogfood gates open |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
 ## Next agent — start here
 
-1. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
-2. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
-3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
+1. **V033 s2b:** Android↔Android dogfood with `phase=` / `event=` logs (`adb logcat -s pp-browser:W`).
+2. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
+3. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
+4. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
 
 ## Agent traps
 
@@ -78,6 +80,8 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
+| Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
+| Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |
 | Always-mounted `data-if` + Dirty for Accept layer | Presence mount via `RemountCallChrome`; Dirty only for labels/pulse inside a mounted layer |
 | Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |

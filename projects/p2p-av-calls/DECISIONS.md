@@ -703,3 +703,25 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** V022 / V024; mesh N019 / N021; [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
 
 ---
+
+## V033 — Transport session machines (not host-wide inbound SM)
+
+**Date:** 2026-08-07  
+**Status:** Accepted (**s2a done** — call-media phases in code; dogfood gate s2b; media-relay N026 **s3a+s3b done**, SoftMigrate dogfood open)  
+**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** libp2p host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `libp2p/integration/host`.
+
+| Rule | Detail |
+|------|--------|
+| **Style** | Mirror `CallLifecycle` — phases, events, `Apply`, INFO `phase=` / `event=` logs. No SM framework. |
+| **Layer** | Transport SM in `CallMediaDirectService` (integration/host). Product ring/accept/InCall stays in `CallLifecycle`. Bridge/Topology decide *when* to Connect/Detach; SM owns stream session legality. |
+| **Threading** | Handler on host io → control handshake on worker **Normal** (never Critical). `Apply` on one strand per service. Duplex R/W on host io. Waiters/timeouts owned by the SM. |
+| **Migration** | Docs → freeze open questions → strangler one service at a time → dogfood gate. No wire bump required. No drive-by chat/history refactors in the same PR. |
+| **Spec** | [SESSION_MACHINES.md](SESSION_MACHINES.md) |
+
+**Rationale:** m1 call-media works but is held together by flags (`outbound_hello_inflight`, `settled` atomics) and comments (glare, SoftMigrate EOF). That knowledge belongs in an explicit machine before more patches. A blanket host inbound SM would add ceremony to simple RPCs and blur protocol differences.
+
+**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of MessagingHub; SM-ifying chat/dial-back.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
+
+---

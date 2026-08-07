@@ -18,6 +18,59 @@ namespace pbr {
 
 inline constexpr const char* kMediaRelayProtocolId = "/pp-browser/media-relay/1.0.0";
 
+/** Per-inbound-stream control/attach phases (N026 / MEDIA_RELAY_ATTACH.md). */
+enum class MediaRelayAttachPhase {
+  Control = 0,
+  Quoted,
+  Accepted,
+  Attaching,
+  Attached,
+  Rejected,
+  Closed,
+};
+
+enum class MediaRelayAttachEvent {
+  StreamOpened = 0,
+  OpQuote,
+  OpAccept,
+  OpAttach,
+  OpUnsupported,
+  AdmitFail,
+  AttachOk,
+  AttachFail,
+  Cancel,
+};
+
+const char* MediaRelayAttachPhaseName(MediaRelayAttachPhase phase);
+const char* MediaRelayAttachEventName(MediaRelayAttachEvent ev);
+
+/** Client outbound attach phases (phone→hop AcceptAndAttach) — N026. */
+enum class MediaRelayClientPhase {
+  Idle = 0,
+  Dialing,
+  Accepting,
+  Attaching,
+  Attached,
+  Detaching,
+};
+
+enum class MediaRelayClientEvent {
+  AttachRequested = 0,
+  OpenStreamOk,
+  OpenStreamFail,
+  AcceptOk,
+  AcceptFail,
+  AttachOk,
+  AttachFail,
+  DetachRequested,
+  AttachTimeout,
+  DuplexLost,
+  AttachSuperseded,
+};
+
+const char* MediaRelayClientPhaseName(MediaRelayClientPhase phase);
+const char* MediaRelayClientEventName(MediaRelayClientEvent ev);
+
 /** N021 channel_type QoS classes (not codecs). */
 enum class MediaChannelType : uint8_t {
   ReliableOrdered = 0,
@@ -130,6 +183,8 @@ public:
   void Detach();
 
   bool IsAttached() const;
+  /** Diagnostics: client outbound attach phase (remote hop path). */
+  MediaRelayClientPhase ClientPhase() const;
   /** True while SoftMigrate PreferLocal is publishing into the local HostSession. */
   bool IsLocalHopAttached() const;
 
