@@ -30,7 +30,8 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };
-  navigation.fonts_ready = [&shell]() -> bool& { return shell.State().fonts_ready; };
+  navigation.set_fonts_ready = [&shell](const bool ready) { shell.State().fonts_ready = ready; };
+  navigation.fonts_ready = [&shell]() { return shell.State().fonts_ready; };
   navigation.set_nav_badges = [&shell](const NavBadgeState& badges) {
     shell.State().nav_badges = badges;
     shell.DirtyNavChrome();

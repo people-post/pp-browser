@@ -27,6 +27,7 @@ flowchart TB
     SettingsLogic["SettingsLogic<br/><small>feature/settings/</small>"]
     AgentSession["AgentSession<br/><small>feature/ai/</small>"]
     MessagingHub["MessagingHub<br/><small>feature/messaging/</small>"]
+    MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
     ChatController["ChatController<br/><small>feature/chat/</small>"]
@@ -51,6 +52,8 @@ flowchart TB
   Application --> ChatController
   Application --> ShellHost
   Application --> MessagingHub
+  Application -->|owns MessagingFacade| MessagingFacade
+  MessagingFacade --> MessagingHub
   ConfigApplyBridge --> MessagingHub
   ConfigApplyBridge --> ShellHost
   ConfigApplyBridge --> LocalizationService
@@ -58,7 +61,7 @@ flowchart TB
   ConfigApplyBridge --> SessionStore
 
   ChatController --> ShellHost
-  ChatController --> MessagingHub
+  ChatController --> MessagingFacade
   ChatController --> AgentSession
   ShellHost --> MessagingHub
   SettingsController --> SettingsLogic
@@ -134,13 +137,14 @@ flowchart LR
 
   Settings -->|flush disk DTOs only| Store
   Chat -->|AddConfigListener LLM| Store
-  Chat -->|MessagingChatPorts| Hub
+  Chat -->|MessagingFacade| Hub
   App --> Agent
   App -->|BindAgentPorts| Chat
-  Chat -->|BindBadgeAggregator| Badges
   Chat -->|BindInputCoordinator| Input
-  Chat -->|BindCallController| Call
-  App -->|BindCallController| Shell
+  App -->|BindBadgeNotify BadgeNotifyPorts| Chat
+  App -->|BindCallActions CallActionsPorts| Chat
+  App -->|BindCallActions CallActionsPorts| Shell
+  App -->|BindCallActions CallActionsPorts| PeoplePicker
   App -->|BindSource| Badges
   App -->|BindPorts| UnlockGate
   UnlockGate -->|UI ports| Pin
@@ -151,20 +155,21 @@ flowchart LR
   App -->|BindChatPorts| PeoplePicker
   App -->|BindPeoplePickerNotify| Chat
   App -->|BindPeoplePickerNotify| Call
-  App -->|BindPinGate| Shell
-  App -->|BindFlowCoordinator| Shell
-  App -->|BindFlowCoordinator| PeoplePicker
-  App -->|BindUnlockGate| Chat
-  App -->|BindUnlockGate| Settings
-  App -->|BindUnlockGate| Contacts
-  App -->|BindUnlockGate| PeoplePicker
+  App -->|BindPinGateActions PinGateActionPorts| Shell
+  App -->|BindFlowCoordinator FlowCoordinatorPorts| Shell
+  App -->|BindFlowCoordinator FlowCoordinatorPorts| PeoplePicker
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Chat
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Settings
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Contacts
+  App -->|BindUnlockEnsure UnlockEnsurePorts| PeoplePicker
   App -->|deferred startup| ClientCompat
   App -->|deferred startup| UnlockGate
   UnlockGate -.->|unlock gate| Settings
   Contacts -->|MessagingContactsPorts| Hub
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
   Shell -->|MessagingShellPorts| Hub
-  Call -->|MessagingCallPorts| Hub
+  Call -->|CallFunctionalPorts / CallUiBackend| Hub
+  App -->|owns CallUiBackend| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
@@ -291,25 +296,32 @@ Full model: [THREADING.md](THREADING.md).
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
+| **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
-| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat calls Refresh |
+| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` via `MessagingFacade`; chat via `BadgeNotifyPorts` |
+| **BadgeNotifyPorts** | `feature/ui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
 | **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
-| **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker |
+| **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
+| **FlowCoordinatorPorts** | `feature/ui/` | Modal begin/end/dismiss; app-filled from `FlowCoordinator` |
 | **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
-| **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate |
-| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports |
+| **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
+| **PinGateActionPorts** | `feature/ui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
+| **ProfileSecretsService** | `base/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
+| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
+| **UnlockEnsurePorts** | `feature/ui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
-| **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, imperative ops; app binds implementations |
+| **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, **Change PIN** (`change_pin` → app-owned vault), imperative ops; app binds implementations |
 | **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/people-picker; app-filled from `ChatController` |
 | **ContactsNotifyPorts** | `feature/ui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
 | **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
+| **CallActionsPorts** | `feature/ui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |

@@ -1,16 +1,17 @@
-#include "feature/messaging/MessagingCallPorts.h"
+#include "feature/messaging/CallFunctionalPorts.h"
 
 #include "base/data/SessionStore.h"
 #include "base/media/CallMediaHealth.h"
+#include "feature/messaging/CallUiBackend.h"
 #include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 
-MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub, SessionStore* session_store) {
-  MessagingCallPorts ports;
+CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, MessagingHub& hub,
+                                            SessionStore* session_store) {
+  CallFunctionalPorts ports;
   ports.initialized = [&hub]() { return hub.IsInitialized(); };
-  ports.calls = [&hub]() -> CallSessionManager* { return hub.Calls(); };
-  ports.lifecycle = [&hub]() -> CallLifecycle* { return hub.Lifecycle(); };
+  ports.backend = [&backend]() -> CallUiBackend* { return &backend; };
   ports.get_thread = [&hub](const std::string& thread_id) { return hub.Store().GetThread(thread_id); };
   ports.find_contact_by_identity = [&hub](const std::string& identity, const ContactIdKind kind) {
     return hub.Contacts().FindByIdentity(identity, kind);

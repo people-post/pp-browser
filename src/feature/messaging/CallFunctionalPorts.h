@@ -10,17 +10,16 @@
 
 namespace pbr {
 
-class CallLifecycle;
-class CallSessionManager;
+class CallUiBackend;
 
 /**
- * Call session / lifecycle ports for CallController.
- * Application fills from MessagingHub. Clear via BindCallPorts({}).
+ * Call functional ports for CallController.
+ * Application fills from owned CallUiBackend + MessagingHub lookups.
+ * Clear via BindCallPorts({}).
  */
-struct MessagingCallPorts {
+struct CallFunctionalPorts {
   std::function<bool()> initialized;
-  std::function<CallSessionManager*()> calls;
-  std::function<CallLifecycle*()> lifecycle;
+  std::function<CallUiBackend*()> backend;
   std::function<Roe<std::optional<Thread>>(const std::string& thread_id)> get_thread;
   std::function<Roe<std::optional<Contact>>(const std::string& identity, ContactIdKind kind)>
       find_contact_by_identity;
@@ -33,6 +32,7 @@ class MessagingHub;
 class SessionStore;
 
 /** Optional session_store wires profile `call_diagnostics` (CLI `--debug` still ORs in). */
-MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub, SessionStore* session_store = nullptr);
+CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, MessagingHub& hub,
+                                            SessionStore* session_store = nullptr);
 
 } // namespace pbr

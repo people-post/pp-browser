@@ -41,7 +41,7 @@ src/feature/
 │   └── bindings/     RmlUi action routing, bindings manifest
 ├── messaging/    MessagingHub, P2P/relay/sync orchestration
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
-└── chat/         Chat controller, agent↔hub wiring, messaging agent tools
+└── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
 
 **Domain grouping (mental model):**
@@ -113,12 +113,20 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | Pattern | Location | Purpose |
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` |
+| `CallActionsPorts` | `ui/CallActionsPorts.h` | Call chrome/actions for chat, shell, people-picker; Application fills from `CallController` |
+| `CallFunctionalPorts` | `messaging/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
+| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over hub call session/lifecycle (no leaky CSM/Lifecycle ports) |
 | `ContactsNotifyPorts` | `ui/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
+| `UnlockEnsurePorts` | `ui/UnlockEnsurePorts.h` | Ensure unlocked / unlock-in-progress; Application fills from `ProfileUnlockGate` |
+| `FlowCoordinatorPorts` | `ui/FlowCoordinatorPorts.h` | Modal begin/end/dismiss; Application fills from `FlowCoordinator` |
+| `BadgeNotifyPorts` | `ui/BadgeNotifyPorts.h` | Badge refresh / sessions unread for chat; Application fills from `BadgeAggregator` |
+| `PinGateActionPorts` | `ui/PinGateActionPorts.h` | PIN overlay submit/cancel/chooser; Application fills from `PinGateController` |
 | `PeoplePickerNotifyPorts` | `ui/PeoplePickerNotifyPorts.h` | Open-picker hooks for chat/call; Application fills from `PeoplePickerController` |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind |
 | `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
 | `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
 | `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
+| `MessagingFacade` | `messaging/MessagingFacade.h` | Non-owning wrapper over `MessagingHub&`; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (replaces the `MessagingChatPorts` mega-struct) |
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; app-owned presenters + ports |
 | App-owned presenters | `app/Application.cpp` | `unique_ptr` for shell + all presenters; `InstallInstance` for RmlUi static callbacks |

@@ -6,8 +6,11 @@ namespace pbr {
 
 ShellPinGatePorts MakeShellPinGatePorts(ShellHost& shell) {
   ShellPinGatePorts ports;
-  ports.pin_gate = [&shell]() -> PinGateState& { return shell.State().pin_gate; };
-  ports.unlock_in_progress = [&shell]() -> bool& { return shell.State().unlock_in_progress; };
+  ports.apply_pin_gate = [&shell](const PinGateState& state) { shell.ApplyPinGateState(state); };
+  ports.pin_gate_snapshot = [&shell]() { return shell.State().pin_gate; };
+  ports.set_unlock_in_progress = [&shell](const bool in_progress) {
+    shell.State().unlock_in_progress = in_progress;
+  };
   ports.set_activity = [&shell](const bool visible, const Rml::String& message) {
     shell.SetActivity(visible, message);
   };

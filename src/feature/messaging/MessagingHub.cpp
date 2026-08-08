@@ -1046,10 +1046,11 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     }
   });
 
-  ProfileSecretsService& secrets = ProfileSecretsService::Instance();
-  secrets.RegisterDekConsumer(identity_.get());
-  secrets.RegisterDekConsumer(psk_store_.get());
-  secrets.RegisterDekConsumer(call_media_keys_.get());
+  if (secrets_ != nullptr) {
+    secrets_->RegisterDekConsumer(identity_.get());
+    secrets_->RegisterDekConsumer(psk_store_.get());
+    secrets_->RegisterDekConsumer(call_media_keys_.get());
+  }
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
@@ -1224,7 +1225,7 @@ Roe<void> MessagingHub::EnsureMessagingReady() {
   if (messaging_ready_) {
     return {};
   }
-  if (!ProfileSecretsService::Instance().IsUnlocked()) {
+  if (secrets_ == nullptr || !secrets_->IsUnlocked()) {
     return AppError::Pin(Err::Pin::Required, "Profile vault is locked");
   }
   if (auto identity = identity_->LoadOrCreate(); !identity) {
@@ -1271,6 +1272,10 @@ void MessagingHub::BindAgent(AgentSession& agent) {
 
 void MessagingHub::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
+}
+
+void MessagingHub::BindSecrets(ProfileSecretsService& secrets) {
+  secrets_ = &secrets;
 }
 
 PeerSigningKeyStore& MessagingHub::SigningKeys() {
@@ -1888,15 +1893,16 @@ void MessagingHub::Shutdown() {
   group_roster_.reset();
   signing_resolver_.reset();
   kem_resolver_.reset();
-  ProfileSecretsService& secrets = ProfileSecretsService::Instance();
-  if (identity_) {
-    secrets.UnregisterDekConsumer(identity_.get());
-  }
-  if (psk_store_) {
-    secrets.UnregisterDekConsumer(psk_store_.get());
-  }
-  if (call_media_keys_) {
-    secrets.UnregisterDekConsumer(call_media_keys_.get());
+  if (secrets_ != nullptr) {
+    if (identity_) {
+      secrets_->UnregisterDekConsumer(identity_.get());
+    }
+    if (psk_store_) {
+      secrets_->UnregisterDekConsumer(psk_store_.get());
+    }
+    if (call_media_keys_) {
+      secrets_->UnregisterDekConsumer(call_media_keys_.get());
+    }
   }
   call_media_engine_.reset();
   call_media_keys_.reset();

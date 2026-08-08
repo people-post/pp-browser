@@ -81,9 +81,13 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
   }
   if (boot.identity) {
     boot.identity->Flush();
-    pbr::ProfileSecretsService::Instance().UnregisterDekConsumer(boot.identity.get());
+    if (boot.secrets) {
+      boot.secrets->UnregisterDekConsumer(boot.identity.get());
+    }
   }
-  pbr::ProfileSecretsService::Instance().Shutdown();
+  if (boot.secrets) {
+    boot.secrets->Shutdown();
+  }
 }
 
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {

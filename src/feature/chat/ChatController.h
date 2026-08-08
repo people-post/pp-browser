@@ -3,16 +3,19 @@
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/BadgeNotifyPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -39,10 +42,7 @@ class Element;
 
 namespace pbr {
 
-class BadgeAggregator;
-class CallController;
 class InputCoordinator;
-class ProfileUnlockGate;
 
 class ChatController : public Module {
 public:
@@ -90,16 +90,19 @@ public:
   using SessionRow = SessionDisplayRow;
 
   bool Setup(Rml::Context* context);
-  void BindChatPorts(MessagingChatPorts ports);
+  /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
+  void BindMessagingFacade(MessagingFacade* facade);
+  /** App-wired hook so messaging tool registration stays in Application (no feature/chat→hub edge). */
+  void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
-  void BindBadgeAggregator(BadgeAggregator& badges);
+  void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
-  void BindCallController(CallController& call);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindCallActions(CallActionsPorts ports);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app ChatShellBridge. Clear via BindSurfaceNotify({}). */
@@ -301,16 +304,17 @@ private:
   bool AgentConfigured() const;
 
   Rml::Context* context_ = nullptr;
-  MessagingChatPorts chat_ports_;
+  MessagingFacade* facade_ = nullptr;
+  std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
-  BadgeAggregator* badges_ = nullptr;
+  BadgeNotifyPorts badge_notify_;
   InputCoordinator* input_ = nullptr;
-  CallController* call_ = nullptr;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
+  CallActionsPorts call_actions_;
+  UnlockEnsurePorts unlock_ensure_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   ChatSurfaceNotifyPorts surface_notify_;

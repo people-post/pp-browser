@@ -58,20 +58,21 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return pin.error();
   }
 
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_data_dir); !secrets) {
-    return secrets.error();
+  auto secrets = std::make_unique<ProfileSecretsService>();
+  if (auto initialized = secrets->Initialize(profile_data_dir); !initialized) {
+    return initialized.error();
   }
 
   auto identity = std::make_unique<IdentityStore>(profile_data_dir, registry->ActiveProfileId());
-  ProfileSecretsService::Instance().RegisterDekConsumer(identity.get());
+  secrets->RegisterDekConsumer(identity.get());
 
-  if (auto unlocked = ProfileSecretsService::Instance().Unlock(*pin); !unlocked) {
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+  if (auto unlocked = secrets->Unlock(*pin); !unlocked) {
+    secrets->UnregisterDekConsumer(identity.get());
     return unlocked.error();
   }
 
   if (auto loaded = identity->LoadOrCreate(); !loaded) {
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+    secrets->UnregisterDekConsumer(identity.get());
     return loaded.error();
   }
 
@@ -100,7 +101,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     log.error << "libp2p listen failed: "
               << (runtime->LastError().empty() ? started.error().message : runtime->LastError());
     AppRuntime::Shutdown();
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+    secrets->UnregisterDekConsumer(identity.get());
     return started.error();
   }
 
@@ -135,6 +136,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (result.config_path.empty()) {
     result.config_path = AppPaths::ConfigFilePath();
   }
+  result.secrets = std::move(secrets);
   result.identity = std::move(identity);
   result.runtime = std::move(runtime);
   result.dial_back = std::move(dial_back);

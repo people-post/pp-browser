@@ -7,11 +7,6 @@
 
 namespace pbr {
 
-ProfileSecretsService& ProfileSecretsService::Instance() {
-  static ProfileSecretsService service;
-  return service;
-}
-
 Roe<void> ProfileSecretsService::Initialize(const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
