@@ -1,7 +1,6 @@
 #include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
-#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SchemaVersion.h"
@@ -1775,12 +1774,14 @@ void SettingsController::PerformResetProfile() {
 }
 
 void SettingsController::OnChangePin() {
-  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
+  const PinProtectionView pin_state =
+      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
+  if (!pin_state.ready) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
                       .WithUser("Set up key protection first"));
     return;
   }
-  if (!ProfileSecretsService::Instance().IsUnlocked()) {
+  if (!pin_state.unlocked) {
     if (!unlock_ensure_.ensure_unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
       return;
@@ -1812,12 +1813,11 @@ void SettingsController::OnChangePin() {
     return;
   }
 
-  DataKeyVault* vault = ProfileSecretsService::Instance().Vault();
-  if (vault == nullptr) {
+  if (!commands_.change_pin) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
     return;
   }
-  if (auto changed = vault->ChangePin(old_pin, new_pin); !changed) {
+  if (auto changed = commands_.change_pin(old_pin, new_pin); !changed) {
     ReportFailure(changed.error());
     return;
   }

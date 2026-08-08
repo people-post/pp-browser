@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/Config.h"
 #include "base/people/IdentityStore.h"
 #include "base/runtime/AppRuntime.h"
@@ -31,6 +32,8 @@ struct NodeBootstrapResult {
   std::string profile_data_dir;
   std::string profile_id;
   std::string config_path;
+  /** Node-owned profile vault / DEK service (holds identity DEK consumer). */
+  std::unique_ptr<ProfileSecretsService> secrets;
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<NodeRuntime> runtime;
   std::unique_ptr<DialBackService> dial_back;

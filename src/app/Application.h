@@ -28,6 +28,7 @@ class FlowCoordinator;
 class InputCoordinator;
 class MessagingFacade;
 class PinGateController;
+class ProfileSecretsService;
 class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
@@ -48,6 +49,8 @@ public:
   void Shutdown();
 
   MessagingHub& Messaging();
+  /** App-owned profile vault / DEK service (Bootstrap initializes it). */
+  ProfileSecretsService& Secrets();
   SessionStore& Store() { return store_; }
   const SessionStore& Store() const { return store_; }
 
@@ -61,6 +64,7 @@ public:
 private:
   bool initialized_ = false;
   SessionStore store_;
+  std::unique_ptr<ProfileSecretsService> secrets_;
   std::unique_ptr<MessagingHub> messaging_;
   std::unique_ptr<MessagingFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;

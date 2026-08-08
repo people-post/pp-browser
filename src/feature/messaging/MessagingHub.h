@@ -51,6 +51,7 @@
 namespace pbr {
 
 class AgentSession;
+class ProfileSecretsService;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
@@ -116,6 +117,9 @@ public:
   void AbortCallMediaForShutdown();
 
   void BindSessionStore(SessionStore& store);
+
+  /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
+  void BindSecrets(ProfileSecretsService& secrets);
 
   /** libp2p / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
@@ -230,6 +234,7 @@ private:
   AppConfig config_;
   AgentSession* agent_ = nullptr;
   SessionStore* session_store_ = nullptr;
+  ProfileSecretsService* secrets_ = nullptr;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;

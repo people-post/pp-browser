@@ -180,8 +180,10 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
+  secrets_ = std::make_unique<ProfileSecretsService>();
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
+  messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<MessagingFacade>(*messaging_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
@@ -222,11 +224,15 @@ MessagingHub& Application::Messaging() {
   return *messaging_;
 }
 
+ProfileSecretsService& Application::Secrets() {
+  return *secrets_;
+}
+
 void Application::ShutdownMessaging() {
   if (!messaging_ || !messaging_->IsInitialized()) {
-    if (ProfileSecretsService::Instance().IsInitialized()) {
+    if (secrets_ && secrets_->IsInitialized()) {
       StartupPhase phase("Shutdown::ProfileSecrets");
-      ProfileSecretsService::Instance().Shutdown();
+      secrets_->Shutdown();
     }
     return;
   }
@@ -234,9 +240,9 @@ void Application::ShutdownMessaging() {
     StartupPhase phase("Shutdown::MessagingHub");
     messaging_->Shutdown();
   }
-  if (ProfileSecretsService::Instance().IsInitialized()) {
+  if (secrets_ && secrets_->IsInitialized()) {
     StartupPhase phase("Shutdown::ProfileSecrets");
-    ProfileSecretsService::Instance().Shutdown();
+    secrets_->Shutdown();
   }
 }
 
@@ -265,7 +271,7 @@ Roe<void> Application::ResetActiveProfile() {
     return manifest.error();
   }
 
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
+  if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
     return secrets.error();
   }
 
@@ -508,12 +514,20 @@ bool Application::Initialize(const char* window_title) {
       badges_->Refresh();
     }
   };
-  settings_commands.load_pin_protection = []() {
+  settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
-    auto& secrets = ProfileSecretsService::Instance();
+    ProfileSecretsService& secrets = *secrets_;
     view.ready = secrets.IsInitialized() && secrets.HasVault();
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
+  };
+  settings_commands.change_pin = [this](const std::string& current_pin,
+                                        const std::string& new_pin) -> Roe<void> {
+    DataKeyVault* vault = secrets_->Vault();
+    if (vault == nullptr) {
+      return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
+    }
+    return vault->ChangePin(current_pin, new_pin);
   };
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
@@ -647,7 +661,7 @@ bool Application::Initialize(const char* window_title) {
     people_picker_->BindCallActions(std::move(call_actions));
   }
 
-  unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
+  unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
     gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
