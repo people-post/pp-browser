@@ -4,7 +4,11 @@
 
 #include <libp2p/connection/stream.hpp>
 
+#include <boost/asio/any_io_executor.hpp>
+#include <boost/asio/steady_timer.hpp>
+
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -13,13 +17,27 @@
 
 namespace pbr {
 
+/** Default bound for control-plane JSON frames (chat, history, dial-back, circuit). */
+inline constexpr std::chrono::milliseconds kDefaultControlFrameReadTimeout{8000};
+
 struct LengthPrefixedFrameConfig {
   size_t max_frame_bytes = 256 * 1024;
   bool allow_empty_body = false;
+  /**
+   * Per-frame read deadline (header + body). Zero disables.
+   * Blocking reads enforce this via wait_until + stream->reset().
+   * Async / duplex need timer_executor set; otherwise the timeout is ignored.
+   */
+  std::chrono::milliseconds read_timeout{0};
+  /** Host io_context executor — required for async/duplex read_timeout. */
+  boost::asio::any_io_executor timer_executor{};
 };
 
 std::vector<uint8_t> EncodeLengthPrefixedFrame(const std::vector<uint8_t>& body);
 uint64_t DecodeLengthPrefixedHeader(const std::vector<uint8_t>& header8);
+
+/** Reset a stream (error path / read timeout). Safe with null. */
+void ResetStreamQuiet(const std::shared_ptr<libp2p::connection::Stream>& stream);
 
 /** Blocking read/write for control-plane worker threads only. */
 Roe<std::vector<uint8_t>> BlockingReadLengthPrefixedFrame(
@@ -47,6 +65,9 @@ private:
   void ReadHeader();
   void ReadBody(uint64_t payload_len);
   void ReleaseCallbackIfStopped();
+  void ArmReadDeadline();
+  void CancelReadDeadline();
+  void OnReadDeadline();
 
   std::shared_ptr<libp2p::connection::Stream> stream_;
   FrameCallback on_frame_;
@@ -56,6 +77,8 @@ private:
   Phase phase_ = Phase::Idle;
   libp2p::Bytes header_buf_;
   libp2p::Bytes payload_buf_;
+  std::shared_ptr<boost::asio::steady_timer> read_timer_;
+  std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };
 
 /** Async length-prefixed frame writer with an outbound queue. */
@@ -142,6 +165,9 @@ private:
   void PumpWrite();
   void MaybeResumeRead();
   void CloseSession(const char* reason);
+  void ArmReadDeadline();
+  void CancelReadDeadline();
+  void OnReadDeadline();
 
   std::shared_ptr<libp2p::connection::Stream> stream_;
   FrameHandler on_frame_;
@@ -158,6 +184,8 @@ private:
   libp2p::Bytes header_buf_;
   libp2p::Bytes payload_buf_;
   std::vector<std::shared_ptr<std::vector<uint8_t>>> outbound_;
+  std::shared_ptr<boost::asio::steady_timer> read_timer_;
+  std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };
 
 } // namespace pbr
