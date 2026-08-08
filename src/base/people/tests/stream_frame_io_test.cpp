@@ -334,9 +334,8 @@ TEST_F(StreamFrameIoTest, BlockingReadTimesOutAndResetsStream) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return server_ready; }));
   }
 
-  // Declare a 1 MiB body (within max), then send nothing — reader must time out and reset.
-  // big-endian u64 length = 0x0000000000100000
-  const std::vector<uint8_t> header_only = {0, 0, 0, 0, 0, 0x10, 0, 0};
+  // Declare a 1 KiB body (within max), then send nothing — reader must time out and reset.
+  const std::vector<uint8_t> header_only = {0, 0, 0, 0, 0, 0, 0x04, 0x00}; // 1024
 
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
@@ -471,6 +470,7 @@ TEST_F(StreamFrameIoTest, AsyncReaderTimesOutWithExecutor) {
   std::condition_variable cv;
   bool got_error = false;
   std::string error_message;
+  std::shared_ptr<AsyncLengthPrefixedReader> kept_reader;
 
   b_host_.GetHost().setProtocolHandler(
       {ProtocolName{kStreamFrameIoTestProtocol}},
@@ -481,6 +481,10 @@ TEST_F(StreamFrameIoTest, AsyncReaderTimesOutWithExecutor) {
           config.read_timeout = std::chrono::milliseconds(200);
           config.timer_executor = b_host_.IoExecutor();
           auto reader = std::make_shared<AsyncLengthPrefixedReader>();
+          {
+            std::lock_guard lock(mu);
+            kept_reader = reader;
+          }
           reader->Start(
               stream,
               [&](Roe<std::vector<uint8_t>> frame) {
@@ -494,7 +498,7 @@ TEST_F(StreamFrameIoTest, AsyncReaderTimesOutWithExecutor) {
                 }
                 cv.notify_one();
               },
-              [] { return false; }, config);
+              [] { return false; }, std::move(config));
         });
       });
 
@@ -511,6 +515,7 @@ TEST_F(StreamFrameIoTest, AsyncReaderTimesOutWithExecutor) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got_error; }));
   }
   EXPECT_NE(error_message.find("timed out"), std::string::npos) << error_message;
+  kept_reader.reset();
 }
 
 TEST_F(StreamFrameIoTest, DuplexSessionEchoesOnSameStream) {

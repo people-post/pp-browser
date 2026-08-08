@@ -24,10 +24,6 @@ bool IsCancelled(const StreamCancelCheck& check) {
   return check && check();
 }
 
-bool HasTimerExecutor(const boost::asio::any_io_executor& ex) {
-  return static_cast<bool>(ex);
-}
-
 /** Wait for a libp2p::read completion; on deadline, reset the stream so the read fails. */
 Roe<void> AwaitExactRead(std::future<outcome::result<void>>& future,
                          const std::shared_ptr<Stream>& stream,
@@ -53,8 +49,7 @@ void CancelSteadyTimer(std::shared_ptr<boost::asio::steady_timer>& timer,
     generation->fetch_add(1, std::memory_order_acq_rel);
   }
   if (timer) {
-    boost::system::error_code ec;
-    timer->cancel(ec);
+    (void)timer->cancel();
     timer.reset();
   }
 }
@@ -182,7 +177,12 @@ void AsyncLengthPrefixedReader::CancelReadDeadline() {
 
 void AsyncLengthPrefixedReader::ArmReadDeadline() {
   CancelReadDeadline();
-  if (config_.read_timeout.count() <= 0 || !HasTimerExecutor(config_.timer_executor) || !stream_) {
+  if (config_.read_timeout.count() <= 0 || !stream_) {
+    return;
+  }
+  if (!config_.timer_executor) {
+    logging::getLogger("StreamFrameIo").warning
+        << "async frame read_timeout ignored (timer_executor unset)";
     return;
   }
   auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
@@ -203,18 +203,21 @@ void AsyncLengthPrefixedReader::ArmReadDeadline() {
 }
 
 void AsyncLengthPrefixedReader::OnReadDeadline() {
-  // Mark stopped before reset so the in-flight read callback does not double-report.
+  // Mark stopped and take the callback before reset — reset can synchronously complete the
+  // in-flight read, whose !running_ path would otherwise clear on_frame_ first.
   if (!running_.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
   phase_ = Phase::Idle;
   CancelReadDeadline();
+  FrameCallback cb;
+  std::swap(cb, on_frame_);
+  is_cancelled_ = {};
   ResetStreamQuiet(stream_);
-  if (on_frame_) {
-    on_frame_(Error("length-prefixed frame read timed out"));
-  }
   stream_.reset();
-  ReleaseCallbackIfStopped();
+  if (cb) {
+    cb(Error("length-prefixed frame read timed out"));
+  }
 }
 
 void AsyncLengthPrefixedReader::ReadHeader() {
@@ -466,7 +469,10 @@ void DuplexFrameSession::CancelReadDeadline() {
 
 void DuplexFrameSession::ArmReadDeadline() {
   CancelReadDeadline();
-  if (config_.read_timeout.count() <= 0 || !HasTimerExecutor(config_.timer_executor) || !stream_) {
+  if (config_.read_timeout.count() <= 0 || !stream_) {
+    return;
+  }
+  if (!config_.timer_executor) {
     return;
   }
   auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
@@ -490,10 +496,10 @@ void DuplexFrameSession::OnReadDeadline() {
   if (!running_.load(std::memory_order_acquire)) {
     return;
   }
-  // Reset first so the peer is cut; CloseSession clears handlers after one error delivery.
-  ResetStreamQuiet(stream_);
+  // Take the handler before reset — reset may synchronously finish the in-flight read.
   FrameHandler handler;
   std::swap(handler, on_frame_);
+  ResetStreamQuiet(stream_);
   if (handler) {
     handler(Error("length-prefixed frame read timed out"));
   }
