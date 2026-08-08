@@ -27,6 +27,7 @@ flowchart TB
     SettingsLogic["SettingsLogic<br/><small>feature/settings/</small>"]
     AgentSession["AgentSession<br/><small>feature/ai/</small>"]
     MessagingHub["MessagingHub<br/><small>feature/messaging/</small>"]
+    CallStack["CallStack<br/><small>feature/messaging/ — call media/CSM/lifecycle</small>"]
     MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
@@ -69,7 +70,8 @@ flowchart TB
   MessagingHub --> Libp2p
   MessagingHub --> IdentityStore
   MessagingHub --> ThreadStore
-  MessagingHub --> CallMediaEngine
+  MessagingHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
+  CallStack --> CallMediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
   SettingsLogic --> SessionStore
@@ -101,6 +103,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["MessagingHub<br/><small>feature/messaging/</small>"]
+    Mesh["MeshHost<br/><small>libp2p/integration/host/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>base/ui/</small>"]
@@ -114,6 +117,8 @@ flowchart LR
 
   App --> Bridge
   App --> Hub
+  Hub -->|owns MeshHost| Mesh
+  Mesh -.->|same start path| Node["pp-node<br/><small>app/node/NodeBootstrap</small>"]
   App --> Shell
   App --> Chat
   App --> Settings
@@ -167,9 +172,9 @@ flowchart LR
   UnlockGate -.->|unlock gate| Settings
   Contacts -->|MessagingContactsPorts| Hub
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
-  Shell -->|MessagingShellPorts| Hub
-  Call -->|CallFunctionalPorts / CallUiBackend| Hub
-  App -->|owns CallUiBackend| Call
+  Shell -->|MessagingShellPorts mesh reads via MeshHost| Hub
+  Call -->|CallFunctionalPorts / CallUiBackend → CallStack| Hub
+  App -->|owns CallUiBackend bound to Hub::CallStackRef| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
@@ -299,7 +304,9 @@ Full model: [THREADING.md](THREADING.md).
 | **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
+| **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
+| **MeshHost** | `libp2p/integration/host/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, libp2p media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
 | **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |

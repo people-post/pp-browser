@@ -18,13 +18,8 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
-#include "base/media/CallMediaEngine.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/messaging/CallSessionStore.h"
-#include "feature/messaging/CallMediaKeyStore.h"
-#include "feature/messaging/CallLibp2pMediaBridge.h"
-#include "feature/messaging/CallLifecycle.h"
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/CallStack.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
@@ -32,12 +27,11 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/CallMediaDirectService.h"
 #include "libp2p/integration/host/LanMdnsDiscovery.h"
 #include "libp2p/integration/host/MediaRelayService.h"
-#include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "libp2p/integration/host/ReachabilityService.h"
+#include "libp2p/integration/host/MeshHost.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
@@ -56,6 +50,20 @@ class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
 
+/**
+ * App-only messaging composition root (also known as MessagingCore).
+ *
+ * Ownership planes:
+ * - **MessagingCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
+ *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
+ * - **MeshHost (`mesh_`):** shared with headless `pp-node` — NodeRuntime + dial-back +
+ *   circuit/media relay + reachability (`libp2p/integration/host/MeshHost`).
+ * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, libp2p media bridge,
+ *   CallMediaDirect, dial/hop helpers.
+ *
+ * UI/tools talk through MessagingFacade / CallUiBackend / ports — not Hub accessors.
+ * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
+ */
 class MessagingHub : public Module {
 public:
   /** Hot-reloadable network / mesh slice projected from AppConfig. */
@@ -130,6 +138,9 @@ public:
   InboxController& Inbox();
   P2pMessagingService& P2p();
   GroupMembershipService& Groups();
+  /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
+  CallStack& CallStackRef() { return *call_stack_; }
+  const CallStack& CallStackRef() const { return *call_stack_; }
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
   MessageRouter& Router();
@@ -146,6 +157,7 @@ public:
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
+  // Thin forward for internal call wiring; mesh UX should use Mesh()->Host().
   Libp2pHost* Libp2p();
   PeerSessionManager* Sessions() const;
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
@@ -168,9 +180,21 @@ public:
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
-  DialBackService* DialBack() { return dial_back_.get(); }
-  CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
-  MediaRelayService* MediaRelay() { return media_relay_.get(); }
+
+  /**
+   * Shared libp2p mesh composition root (NodeRuntime + dial-back + relays +
+   * reachability). Mesh UX (status chrome, reachability, relay load) should read
+   * through here rather than the thin hub forwards below. Null before the stack
+   * is up; callers must degrade gracefully.
+   */
+  MeshHost* Mesh() { return mesh_.get(); }
+  const MeshHost* Mesh() const { return mesh_.get(); }
+
+  // Thin mesh forwards kept for internal call/lifecycle wiring; prefer Mesh()
+  // for mesh UX so the public hub surface stays narrow.
+  DialBackService* DialBack() { return mesh_ ? mesh_->DialBack() : nullptr; }
+  CircuitRelayService* CircuitRelay() { return mesh_ ? mesh_->CircuitRelay() : nullptr; }
+  MediaRelayService* MediaRelay() { return mesh_ ? mesh_->MediaRelay() : nullptr; }
 
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
@@ -203,13 +227,14 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
-  void StartMeshServices(Libp2pRole role);
+  /** App-only mesh glue (CallMediaDirect / LAN mDNS / policies) after MeshHost start. */
+  void StartMeshServices();
+  /** Shared libp2p mesh host (NodeRuntime + dial-back + relays + reachability). */
+  NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
-  void WireCallMediaRelayDeps();
   void PublishNodeAdvertisedAddrs();
-  Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
-  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
-  std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
+  /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
+  CallStackDeps MakeCallStackDeps();
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -219,13 +244,6 @@ private:
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
-  std::vector<std::string> LocalCallListenMultiaddrs() const;
-  void RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                        const std::vector<std::string>& multiaddrs);
-  bool HasActiveLocalCall();
-  /** N025: lifecycle sets desire; Hub executes start/stop on IO only. */
-  void SetEphemeralListenDesire(bool want);
-  void EnsureCallLifecycleBound();
   void StartCoordinatorTimers();
   void StopCoordinatorTimers();
 
@@ -235,6 +253,8 @@ private:
   AgentSession* agent_ = nullptr;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsService* secrets_ = nullptr;
+
+  // --- MessagingCore stores / HTTP / inbox ---------------------------------
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -242,10 +262,6 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
-  std::unique_ptr<CallSessionStore> call_session_store_;
-  std::unique_ptr<CallMediaKeyStore> call_media_keys_;
-  std::unique_ptr<CallMediaEngine> call_media_engine_;
-  std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
@@ -266,28 +282,21 @@ private:
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<NodeRuntime> node_runtime_;
-  std::unique_ptr<DialBackService> dial_back_;
-  std::unique_ptr<CircuitRelayService> circuit_relay_;
-  std::unique_ptr<MediaRelayService> media_relay_;
-  std::unique_ptr<CallMediaDirectService> call_media_direct_;
+  std::unique_ptr<P2pMessagingService> p2p_;
+  std::unique_ptr<ContactActionDispatcher> actions_;
+  std::unique_ptr<MessageRouter> router_;
+
+  // --- CallStack (app-only) ------------------------------------------------
+  std::unique_ptr<CallStack> call_stack_;
+
+  // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
+  std::unique_ptr<MeshHost> mesh_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
-  std::unique_ptr<CallLibp2pMediaBridge> call_libp2p_bridge_;
-  std::unique_ptr<CallLifecycle> call_lifecycle_;
-  /** CallSessionManager the bridge was last built against (detect stack rebuild). */
-  CallSessionManager* libp2p_bridge_bound_sessions_ = nullptr;
-  std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
-  std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
-  std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
-  ReachabilityService reachability_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
-  std::unique_ptr<P2pMessagingService> p2p_;
-  std::unique_ptr<ContactActionDispatcher> actions_;
-  std::unique_ptr<MessageRouter> router_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
@@ -298,10 +307,11 @@ private:
   int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;
   /** True while StopEphemeralListen runs on IO (ListenOn/StopListening PostAndWait). */
   bool mobile_ephemeral_stop_inflight_ = false;
-  /** Lifecycle-driven N025 desire (not inventing policy from TopPendingInvite alone). */
-  bool ephemeral_listen_desired_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
 };
+
+/** Preferred name for the app messaging assembler (holds MeshHost + CallStack). */
+using MessagingCore = MessagingHub;
 
 } // namespace pbr

@@ -5,11 +5,7 @@
 #include "base/people/IdentityStore.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Error.h"
-#include "libp2p/integration/host/DialBackService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/NodeRuntime.h"
-#include "libp2p/integration/host/ReachabilityService.h"
+#include "libp2p/integration/host/MeshHost.h"
 
 #include <memory>
 #include <string>
@@ -35,12 +31,8 @@ struct NodeBootstrapResult {
   /** Node-owned profile vault / DEK service (holds identity DEK consumer). */
   std::unique_ptr<ProfileSecretsService> secrets;
   std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<NodeRuntime> runtime;
-  std::unique_ptr<DialBackService> dial_back;
-  std::unique_ptr<CircuitRelayService> circuit_relay;
-  std::unique_ptr<MediaRelayService> media_relay;
-  /** Heap-allocated: ReachabilityService is not movable (mutex). */
-  std::unique_ptr<ReachabilityService> reachability;
+  /** Shared libp2p mesh host: NodeRuntime + dial-back + relays + reachability. */
+  std::unique_ptr<MeshHost> mesh;
 };
 
 /** Headless node bootstrap: config + PIN unlock + NodeRuntime + dial-back (N011). */

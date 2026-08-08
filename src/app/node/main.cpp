@@ -64,17 +64,8 @@ void PrintUsage(const char* argv0) {
 }
 
 void ShutdownNode(pbr::NodeBootstrapResult& boot) {
-  if (boot.dial_back) {
-    boot.dial_back->Stop();
-  }
-  if (boot.circuit_relay) {
-    boot.circuit_relay->Stop();
-  }
-  if (boot.media_relay) {
-    boot.media_relay->Stop();
-  }
-  if (boot.runtime) {
-    boot.runtime->Stop();
+  if (boot.mesh) {
+    boot.mesh->Stop();
   }
   if (pbr::AppRuntime::IsRunning()) {
     pbr::AppRuntime::Shutdown();
@@ -92,19 +83,19 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
-  snap.host_running = boot.runtime && boot.runtime->IsRunning();
-  if (boot.runtime) {
-    snap.listen_multiaddr = boot.runtime->BoundListenMultiaddr();
-    if (boot.runtime->Host()) {
-      if (auto peer = boot.runtime->Host()->LocalPeerIdBase58()) {
+  snap.host_running = boot.mesh && boot.mesh->IsRunning();
+  if (boot.mesh && boot.mesh->Runtime()) {
+    snap.listen_multiaddr = boot.mesh->Runtime()->BoundListenMultiaddr();
+    if (boot.mesh->Host()) {
+      if (auto peer = boot.mesh->Host()->LocalPeerIdBase58()) {
         snap.peer_id = *peer;
       }
     }
   }
-  snap.circuit_relay = boot.circuit_relay && boot.circuit_relay->IsStarted();
-  snap.media_relay = boot.media_relay && boot.media_relay->IsStarted();
-  if (boot.reachability) {
-    snap.reachability_json = boot.reachability->FormatOpsStatusJson();
+  snap.circuit_relay = boot.mesh && boot.mesh->CircuitRelay() && boot.mesh->CircuitRelay()->IsStarted();
+  snap.media_relay = boot.mesh && boot.mesh->MediaRelay() && boot.mesh->MediaRelay()->IsStarted();
+  if (boot.mesh) {
+    snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
   }
   return snap;
 }
@@ -181,10 +172,10 @@ int main(int argc, char** argv) {
   }
 
   if (print_status) {
-    const std::string bound = boot->runtime->BoundListenMultiaddr();
+    const std::string bound = boot->mesh->BoundListenMultiaddr();
     const bool try_upnp = !pbr::ShouldSkipUpnpForListen(bound);
-    boot->reachability->RunProbeBlocking(*boot->runtime, *boot->dial_back, try_upnp);
-    std::cout << boot->reachability->FormatOpsStatusJson() << std::endl;
+    boot->mesh->Reachability().RunProbeBlocking(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
+    std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
     ShutdownNode(*boot);
     return 0;
   }
@@ -208,9 +199,9 @@ int main(int argc, char** argv) {
   }
 
   auto schedule_probe = [&]() {
-    if (boot->reachability && boot->runtime && boot->dial_back) {
-      const bool try_upnp = !pbr::ShouldSkipUpnpForListen(boot->runtime->BoundListenMultiaddr());
-      boot->reachability->StartProbe(*boot->runtime, *boot->dial_back, try_upnp);
+    if (boot->mesh && boot->mesh->Runtime() && boot->mesh->DialBack()) {
+      const bool try_upnp = !pbr::ShouldSkipUpnpForListen(boot->mesh->BoundListenMultiaddr());
+      boot->mesh->Reachability().StartProbe(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
     }
   };
   schedule_probe();
@@ -218,7 +209,7 @@ int main(int argc, char** argv) {
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
   auto last_probe = std::chrono::steady_clock::now();
   while (!g_stop.load()) {
-    boot->runtime->Tick();
+    boot->mesh->Tick();
     // Refresh reachability snapshot periodically for /status (non-blocking probe).
     const auto now = std::chrono::steady_clock::now();
     if (now - last_probe > std::chrono::seconds(60)) {

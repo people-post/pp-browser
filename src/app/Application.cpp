@@ -194,7 +194,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
-  call_ui_ = std::make_unique<CallUiBackend>(*messaging_);
+  call_ui_ = std::make_unique<CallUiBackend>(messaging_->CallStackRef());
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
@@ -910,7 +910,7 @@ bool Application::Initialize(const char* window_title) {
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      const ReachabilitySnapshot snap = Messaging().Reachability();
+      const ReachabilitySnapshot snap = messaging_facade_->Reachability();
       if (snap.status == ReachabilityStatus::Reachable) {
         ProfilePreferences prefs = store_.Snapshot().profile_prefs;
         if (!prefs.reachability_nudge_acked_status.empty()) {
