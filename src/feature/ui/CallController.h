@@ -106,6 +106,9 @@ private:
   CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
+  /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
+  CallRingState ring_;
+  CallInProgressState in_call_;
 };
 
 } // namespace pbr

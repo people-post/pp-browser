@@ -2358,8 +2358,8 @@ bool ChatController::Setup(Rml::Context* context) {
     shell_setup_.initialize(context);
   }
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
-  if (shell_setup_.fonts_ready) {
-    shell_setup_.fonts_ready() = !UiLanguageNeedsCjkFonts();
+  if (shell_setup_.set_fonts_ready) {
+    shell_setup_.set_fonts_ready(!UiLanguageNeedsCjkFonts());
   }
 
   shell_setup_.register_pane(

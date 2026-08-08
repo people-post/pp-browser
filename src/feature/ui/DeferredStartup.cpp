@@ -57,13 +57,13 @@ void LoadFallbackFace(const std::string& relative, const char* phase_name) {
 }
 
 void MarkFontsReadyAndRefresh(const ShellNavigationPorts& shell) {
-  if (!shell.fonts_ready) {
+  if (!shell.set_fonts_ready) {
     return;
   }
-  if (shell.fonts_ready()) {
+  if (shell.fonts_ready && shell.fonts_ready()) {
     return;
   }
-  shell.fonts_ready() = true;
+  shell.set_fonts_ready(true);
   // SyncLayout remounts + DirtyWindow (includes fonts_ready); no separate dirty.
   if (shell.request_sync_layout) {
     shell.request_sync_layout(true, "deferred_fonts_ready");

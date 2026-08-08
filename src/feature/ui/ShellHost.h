@@ -8,6 +8,7 @@
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/FlowCoordinatorPorts.h"
 #include "feature/ui/PinGateActionPorts.h"
+#include "feature/ui/ShellCallChromePorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
@@ -141,8 +142,13 @@ public:
   void DirtyStatusChrome();
   /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
-  /** ShellHost applies Remount or DirtyCallChrome + force-frame for call chrome updates. */
-  void ApplyCallChromeUpdate(CallChromeUpdate update);
+  /**
+   * Copy presenter call-chrome snapshot into State, then Remount or DirtyCallChrome + force-frame.
+   * Classification (None / DirtyOnly / Remount) is owned by CallController.
+   */
+  void ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update);
+  /** Copy presenter PIN gate snapshot into State (binding target). */
+  void ApplyPinGateState(const PinGateState& state);
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();

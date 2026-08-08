@@ -188,7 +188,9 @@ struct MessagingActions {
 | **UI chrome state** | UI system | nav tab, pane visibility, overlay stack, pin overlay layout | Presenters / shell only |
 | **View projection** | Presenter | RmlUi-bound fields derived from functional + chrome | Presenter writes binding; sources are read-only snapshots |
 
-**Anti-pattern (current debt):** `PinGateController` mutating `ShellHost::State().pin_gate`, or `ChatController` opening shell panes via `ShellHost::Instance()` — functional/presenter logic reaching into global shell mutable state.
+**Anti-pattern:** Presenters or functional code reaching into global shell mutable state via `ShellHost::Instance()`, or chrome ports that return mutable references into `ShellHost::State()`.
+
+**Call / PIN chrome (apply-only):** `CallController` and `PinGateController` own local chrome snapshots (`ring_` / `in_call_`, `pin_state_`) and push them through `apply_snapshot` / `apply_pin_gate`. ShellHost copies into `State()` then remounts/dirties — ports do not hand out `CallRingState&` / `PinGateState&`.
 
 **Target:** Functional systems expose state; presenters **project** into chrome. Cross-surface navigation uses a **coordinator** (`FlowCoordinator`, future `ShellCoordinator`), not controller-to-controller `::Instance()` calls.
 

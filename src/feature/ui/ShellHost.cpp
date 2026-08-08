@@ -867,7 +867,9 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
 }
 
-void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
+void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update) {
+  state_.call_ring = snapshot.ring;
+  state_.call_in_progress = snapshot.in_progress;
   // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
   // that remounts chat panes and broke Samsung Accept hit-testing).
   if (update == CallChromeUpdate::Remount) {
@@ -877,6 +879,10 @@ void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
   Backend::RequestForceFrame();
+}
+
+void ShellHost::ApplyPinGateState(const PinGateState& state) {
+  state_.pin_gate = state;
 }
 
 void ShellHost::RequestRemountNavRail() {
