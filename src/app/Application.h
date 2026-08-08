@@ -22,6 +22,7 @@ namespace pbr {
 class ActionRouter;
 class BadgeAggregator;
 class CallController;
+class CallUiBackend;
 class ClientCompatController;
 class FlowCoordinator;
 class InputCoordinator;
@@ -69,6 +70,7 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::unique_ptr<CallController> call_;
+  std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;
   std::unique_ptr<ContactsController> contacts_;
   std::unique_ptr<ContactsShellBridge> contacts_shell_bridge_;

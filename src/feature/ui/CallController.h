@@ -4,7 +4,7 @@
 #include "base/media/CallRingtone.h"
 #include "base/ui/ShellTypes.h"
 #include "common/Module.h"
-#include "feature/messaging/MessagingCallPorts.h"
+#include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
@@ -16,15 +16,14 @@
 namespace pbr {
 
 class CallMediaEngine;
-class CallLifecycle;
-class CallSessionManager;
+class CallUiBackend;
 
 /** Shell-level call ring / in-call chrome. */
 class CallController : public Module {
 public:
   CallController();
 
-  void BindCallPorts(MessagingCallPorts ports);
+  void BindCallPorts(CallFunctionalPorts ports);
   /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
@@ -76,18 +75,17 @@ private:
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
-  void ApplyMediaHealth(CallMediaEngine& media, CallSessionManager* calls, bool media_reconnect);
-  CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallSessionManager* calls,
+  void ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend, bool media_reconnect);
+  CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
                                            bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
 
   bool MessagingInitialized() const;
-  CallSessionManager* Calls();
-  CallLifecycle* Lifecycle();
+  CallUiBackend* Backend();
 
   bool pending_call_wake_notify_ = false;
-  /** Last CallSessionManager we installed OnRingChanged on (recreated across unlock). */
+  /** Last CallSessionManager identity we installed OnRingChanged on (recreated across unlock). */
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
   std::string last_ring_call_id_;
@@ -105,7 +103,7 @@ private:
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;
-  MessagingCallPorts call_ports_;
+  CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
 };

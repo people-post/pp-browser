@@ -4,6 +4,7 @@
 #include "base/data/UserPreferences.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingShellPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellCallChromeGesture.h"
@@ -29,7 +30,6 @@ namespace pbr {
 
 class PinGateController;
 class FlowCoordinator;
-class CallController;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -82,7 +82,7 @@ public:
   void ToggleStatusbarPopover();
   void BindPinGate(PinGateController& pin_gate);
   void BindFlowCoordinator(FlowCoordinator& flow);
-  void BindCallController(CallController& call);
+  void BindCallActions(CallActionsPorts ports);
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -299,7 +299,7 @@ private:
   bool statusbar_popover_needs_position_ = false;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
-  CallController* call_ = nullptr;
+  CallActionsPorts call_actions_;
 
   static ShellHost* installed_instance_;
 };

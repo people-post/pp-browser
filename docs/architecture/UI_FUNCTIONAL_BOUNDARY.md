@@ -125,7 +125,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Rules:**
 
-- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
+- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
 - **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
@@ -135,6 +135,8 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 - `SettingsCommands` — register, UPnP, reset profile, appearance, locales
 - `ChatSessionPorts` — select thread, finalize display, find someone
+- `CallActionsPorts` — start/accept/leave call chrome actions for chat, shell, people-picker (filled from `CallController`)
+- `CallFunctionalPorts` + `CallUiBackend` — sealed call session/lifecycle access for `CallController` (no raw CSM/Lifecycle pointers)
 - `ProfileUnlockPorts` — ensure unlocked, complete with PIN (async heavy work)
 - `ActionRouter` — declarative Rml action → MCP tool map
 
@@ -192,8 +194,8 @@ struct MessagingActions {
 
 `Application` (`src/app/`) is the only place that:
 
-- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, …)
-- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `ProfileUnlockPorts`)
+- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …)
+- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickLibp2p`, drain `AppRuntime` UI mailbox

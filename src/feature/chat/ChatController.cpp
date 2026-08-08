@@ -40,7 +40,7 @@
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
 #include "base/crypto/ProfileUnlockGate.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/UserFeedback.h"
@@ -372,8 +372,8 @@ void ChatController::BindInputCoordinator(InputCoordinator& input) {
   input_ = &input;
 }
 
-void ChatController::BindCallController(CallController& call) {
-  call_ = &call;
+void ChatController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
@@ -604,8 +604,8 @@ void ChatController::StartVoiceCallCallback(Rml::DataModelHandle /*model*/, Rml:
                                             const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_) {
-    self.call_->StartVoiceCall(thread_id);
+  if (!thread_id.empty() && self.call_actions_.start_voice) {
+    self.call_actions_.start_voice(thread_id);
   }
 }
 
@@ -613,8 +613,8 @@ void ChatController::StartVideoCallCallback(Rml::DataModelHandle /*model*/, Rml:
                                             const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_) {
-    self.call_->StartVideoCall(thread_id);
+  if (!thread_id.empty() && self.call_actions_.start_video) {
+    self.call_actions_.start_video(thread_id);
   }
 }
 
@@ -1027,8 +1027,8 @@ void ChatController::RefreshFromMessaging() {
     badges_->Refresh();
   }
   // Inbox ingest (incl. call_invite) completes on IO; reconcile ring after messages change.
-  if (call_) {
-    call_->RefreshPendingRing();
+  if (call_actions_.refresh_pending_ring) {
+    call_actions_.refresh_pending_ring();
   }
   DirtyChat();
   DirtyShell();

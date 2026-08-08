@@ -12,7 +12,7 @@
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/ContactReachability.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/FlowCoordinator.h"
@@ -144,8 +144,8 @@ void PeoplePickerController::BindFlowCoordinator(FlowCoordinator& flow) {
   flow_ = &flow;
 }
 
-void PeoplePickerController::BindCallController(CallController& call) {
-  call_ = &call;
+void PeoplePickerController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 void PeoplePickerController::BindShellNavigation(ShellNavigationPorts ports) {
@@ -548,8 +548,8 @@ void PeoplePickerController::SyncGroupCallRows() {
 void PeoplePickerController::SyncCallAddGuestRows() {
   rows_.clear();
   identity_for_contact_.clear();
-  if (!MessagingInitialized() || call_id_.empty() || !call_ || !contacts_ports_.list_contacts ||
-      !picker_ports_.list_call_participants) {
+  if (!MessagingInitialized() || call_id_.empty() || !call_actions_.invite_identities ||
+      !contacts_ports_.list_contacts || !picker_ports_.list_call_participants) {
     return;
   }
   std::unordered_set<std::string> joined_identities;
@@ -820,7 +820,7 @@ void PeoplePickerController::OnConfirm() {
 }
 
 void PeoplePickerController::OnStartCall() {
-  if (!call_) {
+  if (!call_actions_.invite_identities && !call_actions_.start_with_invitees) {
     UserFeedback::Fail("Calls unavailable");
     return;
   }
@@ -853,11 +853,15 @@ void PeoplePickerController::OnStartCall() {
   Close();
   NotifySurfaceChanged();
   if (mode == PeoplePickerMode::CallAddGuest) {
-    call_->InviteIdentitiesToActiveCall(identities);
+    if (call_actions_.invite_identities) {
+      call_actions_.invite_identities(identities);
+    }
     return;
   }
   if (mode == PeoplePickerMode::GroupCall) {
-    (void)call_->StartCallWithInvitees(call_thread_id, call_video, identities);
+    if (call_actions_.start_with_invitees) {
+      (void)call_actions_.start_with_invitees(call_thread_id, call_video, identities);
+    }
   }
 }
 

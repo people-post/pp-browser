@@ -9,6 +9,7 @@
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
@@ -40,7 +41,6 @@ class Element;
 namespace pbr {
 
 class BadgeAggregator;
-class CallController;
 class InputCoordinator;
 class ProfileUnlockGate;
 
@@ -98,7 +98,7 @@ public:
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
   void BindInputCoordinator(InputCoordinator& input);
-  void BindCallController(CallController& call);
+  void BindCallActions(CallActionsPorts ports);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
@@ -309,7 +309,7 @@ private:
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
   InputCoordinator* input_ = nullptr;
-  CallController* call_ = nullptr;
+  CallActionsPorts call_actions_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;

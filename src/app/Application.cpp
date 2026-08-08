@@ -28,11 +28,13 @@
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/AgentUiPorts.h"
-#include "feature/messaging/MessagingCallPorts.h"
+#include "feature/messaging/CallFunctionalPorts.h"
+#include "feature/messaging/CallUiBackend.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
@@ -184,6 +186,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
+  call_ui_ = std::make_unique<CallUiBackend>(*messaging_);
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
@@ -543,7 +546,8 @@ bool Application::Initialize(const char* window_title) {
   chat_->BindMessagingUi(std::move(messaging_ui));
 
   contacts_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  call_->BindCallPorts(MakeMessagingCallPorts(messaging, store_.IsInitialized() ? &store_ : nullptr));
+  call_->BindCallPorts(
+      MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
@@ -591,7 +595,40 @@ bool Application::Initialize(const char* window_title) {
   });
   chat_->BindBadgeAggregator(*badges_);
   chat_->BindInputCoordinator(*input_);
-  chat_->BindCallController(*call_);
+  {
+    CallActionsPorts call_actions;
+    call_actions.start_voice = [this](const std::string& thread_id) {
+      return call_->StartVoiceCall(thread_id);
+    };
+    call_actions.start_video = [this](const std::string& thread_id) {
+      return call_->StartVideoCall(thread_id);
+    };
+    call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
+      call_->InviteIdentitiesToActiveCall(identities);
+    };
+    call_actions.start_with_invitees =
+        [this](const std::string& thread_id, bool video, const std::vector<std::string>& identities) {
+          return call_->StartCallWithInvitees(thread_id, video, identities);
+        };
+    call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
+    call_actions.leave_active = [this]() { call_->LeaveActive(); };
+    call_actions.retry_connect = [this]() { call_->RetryConnect(); };
+    call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
+    call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
+    call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
+    call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
+    call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
+    call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
+    call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };
+    call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
+    call_actions.set_minimized_corner = [this](int corner) { call_->SetMinimizedCorner(corner); };
+    call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
+    chat_->BindCallActions(call_actions);
+    shell_->BindCallActions(call_actions);
+    people_picker_->BindCallActions(std::move(call_actions));
+  }
 
   unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
   pin_gate_->BindGate(*unlock_gate_);
@@ -641,12 +678,10 @@ bool Application::Initialize(const char* window_title) {
   }
   shell_->BindPinGate(*pin_gate_);
   shell_->BindFlowCoordinator(*flow_);
-  shell_->BindCallController(*call_);
   settings_->BindUnlockGate(*unlock_gate_);
   contacts_->BindUnlockGate(*unlock_gate_);
   people_picker_->BindUnlockGate(*unlock_gate_);
   people_picker_->BindFlowCoordinator(*flow_);
-  people_picker_->BindCallController(*call_);
 
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
@@ -750,6 +785,16 @@ bool Application::Initialize(const char* window_title) {
       call_->BindShellCallChrome({});
       call_->BindPeoplePickerNotify({});
     }
+    if (chat_) {
+      chat_->BindCallActions({});
+    }
+    if (shell_) {
+      shell_->BindCallActions({});
+    }
+    if (people_picker_) {
+      people_picker_->BindCallActions({});
+    }
+    call_ui_.reset();
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
     }
@@ -960,6 +1005,16 @@ void Application::Shutdown() {
     call_->BindShellCallChrome({});
     call_->BindPeoplePickerNotify({});
   }
+  if (chat_) {
+    chat_->BindCallActions({});
+  }
+  if (shell_) {
+    shell_->BindCallActions({});
+  }
+  if (people_picker_) {
+    people_picker_->BindCallActions({});
+  }
+  call_ui_.reset();
   shell_->BindShellMessaging({});
   ChatController::ClearInstance();
   ShellHost::ClearInstance();

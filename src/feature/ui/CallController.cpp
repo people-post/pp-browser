@@ -12,9 +12,9 @@
 #include "base/platform/PlatformUserHints.h"
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
+#include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/messaging/CallLifecycle.h"
-#include "feature/messaging/CallSessionManager.h"
-#include "feature/messaging/MessagingCallPorts.h"
+#include "feature/messaging/CallUiBackend.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
@@ -140,7 +140,7 @@ std::string ComposeGroupCallStatusHint() {
 
 } // namespace
 
-void CallController::BindCallPorts(MessagingCallPorts ports) {
+void CallController::BindCallPorts(CallFunctionalPorts ports) {
   call_ports_ = std::move(ports);
   BindToMessaging();
 }
@@ -157,12 +157,8 @@ bool CallController::MessagingInitialized() const {
   return call_ports_.initialized && call_ports_.initialized();
 }
 
-CallSessionManager* CallController::Calls() {
-  return call_ports_.calls ? call_ports_.calls() : nullptr;
-}
-
-CallLifecycle* CallController::Lifecycle() {
-  return call_ports_.lifecycle ? call_ports_.lifecycle() : nullptr;
+CallUiBackend* CallController::Backend() {
+  return call_ports_.backend ? call_ports_.backend() : nullptr;
 }
 
 void CallController::BindToMessaging() {
@@ -170,31 +166,30 @@ void CallController::BindToMessaging() {
     bound_calls_ = nullptr;
     return;
   }
-  auto* calls = Calls();
-  if (!calls) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     bound_calls_ = nullptr;
     return;
   }
   // CallSessionManager is recreated in BuildMessagingStack; rebind when the pointer changes.
-  if (bound_calls_ == calls) {
+  const void* identity = backend->SessionsIdentity();
+  if (bound_calls_ == identity) {
     return;
   }
-  calls->SetOnRingChanged([this]() {
+  backend->SetOnRingChanged([this]() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
     AppRuntime::PostUI([this]() { RefreshPendingRing(); });
   });
-  if (auto* life = Lifecycle()) {
-    life->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
-  }
-  bound_calls_ = calls;
+  backend->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
+  bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   RefreshPendingRing();
 }
 
 void CallController::Tick() {
   BindToMessaging();
-  if (auto* calls = Calls()) {
-    calls->SweepExpiredInvites();
+  if (auto* backend = Backend()) {
+    backend->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
   if (!shell_call_chrome_.call_ring) {
@@ -400,30 +395,29 @@ void CallController::RefreshPendingRing() {
     return;
   }
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     return;
   }
 
-  if (auto* life = Lifecycle(); life && !life->LastError().empty()) {
-    UserFeedback::Fail(life->LastError());
-    life->ClearLastError();
+  if (!backend->LastError().empty()) {
+    UserFeedback::Fail(backend->LastError());
+    backend->ClearLastError();
   }
 
-  if (auto media_err = calls->TakeLastMediaError(); media_err && !media_err->empty()) {
+  if (auto media_err = backend->TakeLastMediaError(); media_err && !media_err->empty()) {
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
     // users can read multi-hop diagnostics.
     UserFeedback::NeedsSetup(*media_err);
   }
 
-  calls->PollPendingSfuAttach();
-  calls->PollP2pConnectHealth();
+  backend->PollPendingSfuAttach();
+  backend->PollP2pConnectHealth();
 
-  auto top = calls->TopPendingInvite();
+  auto top = backend->TopPendingInvite();
   if (top && top->has_value()) {
-    CallLifecycle* life = Lifecycle();
-    const bool accept_in_flight = life && life->ShouldSuppressRing((*top)->call_id);
-    auto active = calls->ActiveLocalCall();
+    const bool accept_in_flight = backend->ShouldSuppressRing((*top)->call_id);
+    auto active = backend->ActiveLocalCall();
     const bool same_call_active =
         active && active->has_value() && (*active)->call_id == (*top)->call_id;
 
@@ -453,11 +447,9 @@ void CallController::RefreshPendingRing() {
     } else {
       ringing_call_id_ = (*top)->call_id;
       last_ring_call_id_ = ringing_call_id_;
-      if (life) {
-        life->NoteRingCallId(ringing_call_id_);
-        if (life->Phase() == CallPhase::Idle) {
-          life->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
-        }
+      backend->NoteRingCallId(ringing_call_id_);
+      if (backend->Phase() == CallPhase::Idle) {
+        backend->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
       }
       if (ring_started_ms_ == 0) {
         ring_started_ms_ = util::NowUnixMs();
@@ -477,7 +469,7 @@ void CallController::RefreshPendingRing() {
       if (active && active->has_value() && (*active)->call_id != (*top)->call_id) {
         has_conflict = true;
         active_call_id_ = (*active)->call_id;
-        if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
+        if (auto peer = backend->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
           active_peer_label = DisplayNameForIdentity(**peer);
           if (active_peer_label.empty()) {
             active_peer_label = **peer;
@@ -524,15 +516,14 @@ void CallController::RefreshPendingRing() {
     }
   }
 
-  if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
-    CallLifecycle* life = Lifecycle();
+  if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
     // LeaveClicked sets Idle before LeaveCall IO finishes — do not resurrect the panel from the
     // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
-    if (life && life->Phase() == CallPhase::Idle) {
-      if ((*active)->state == CallSessionState::Active && !calls->Media().IsActive() &&
-          !calls->MediaAttemptedThisProcess((*active)->call_id) && !calls->IsAwaitingSfuRecovery()) {
+    if (backend->Phase() == CallPhase::Idle) {
+      if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
+          !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
         // True orphan after force-quit / process restart.
-        (void)calls->LeaveCall((*active)->call_id);
+        (void)backend->LeaveCall((*active)->call_id);
       }
       active_call_id_.clear();
       ClearInCall();
@@ -546,30 +537,30 @@ void CallController::RefreshPendingRing() {
 
     // Unanswered outbound: offerer stays Joined until Leave — without a TTL the Calling bar
     // sticks forever and masks a reverse inbound ring as "previous or new call?".
-    if (life && life->Phase() == CallPhase::OutboundCalling && !calls->Media().IsActive() &&
+    if (backend->Phase() == CallPhase::OutboundCalling && !backend->Media().IsActive() &&
         (*active)->created_at > 0 &&
         util::NowUnixMs() - (*active)->created_at >= kDefaultCallInviteTtlMs) {
       log().warning
           << "outbound unanswered timeout call_id=" << (*active)->call_id;
-      life->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
+      backend->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
       return;
     }
 
     // Direct connect failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.
-    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
-      const std::string media_state = calls->Media().ConnectionState();
-      if (media_state == "failed" && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode() &&
-          !calls->IsP2pConnectFailed()) {
+    if (backend->Media().IsActive() && backend->Media().ActiveCallId() == active_call_id_) {
+      const std::string media_state = backend->Media().ConnectionState();
+      if (media_state == "failed" && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode() &&
+          !backend->IsP2pConnectFailed()) {
         // State callback may not have marked yet (ordering); ensure UI can show Retry.
-        calls->PollP2pConnectHealth();
+        backend->PollP2pConnectHealth();
       }
     }
 
     auto& in_call = shell_call_chrome_.call_in_progress();
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
-    in_call.muted = calls->Media().IsMuted();
+    in_call.muted = backend->Media().IsMuted();
     in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
     in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
 
@@ -579,7 +570,7 @@ void CallController::RefreshPendingRing() {
     if (call_ports_.local_relay_identity) {
       local_identity = call_ports_.local_relay_identity().value_or(std::string{});
     }
-    if (auto participants = calls->ListJoinedParticipants((*active)->call_id); participants) {
+    if (auto participants = backend->ListJoinedParticipants((*active)->call_id); participants) {
       joined_count = static_cast<int>(participants->size());
       in_call.participant_count = joined_count;
       in_call.show_roster = joined_count > 2 || (*active)->origin_group_id.has_value();
@@ -620,7 +611,7 @@ void CallController::RefreshPendingRing() {
     }
 
     std::string peer_label = Tr("call.label.them");
-    if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
+    if (auto peer = backend->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
       const std::string name = DisplayNameForIdentity(**peer);
       if (!name.empty()) {
         peer_label = name;
@@ -628,24 +619,24 @@ void CallController::RefreshPendingRing() {
     }
     in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
-    const bool p2p_failed = calls->IsP2pConnectFailed();
+    const bool p2p_failed = backend->IsP2pConnectFailed();
     const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
-                                    calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode();
-    in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
+                                    backend->IsAwaitingSfuRecovery() || backend->Media().IsSfuMode();
+    in_call.show_retry = p2p_failed && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode();
 
     // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
     // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
     // Media activity (hop find/switch) wins over Connected so SoftMigrate progress stays visible
     // while the old path is still up.
-    const bool media_connected = calls->Media().IsConnected() ||
-                                 (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive());
-    const std::string activity = calls->PeekMediaActivity();
+    const bool media_connected = backend->Media().IsConnected() ||
+                                 (backend->Phase() == CallPhase::InCall && backend->Media().IsActive());
+    const std::string activity = backend->PeekMediaActivity();
     if (p2p_failed) {
       in_call.elapsed = {};
       in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       in_call.status_hint =
           group_call_context ? ComposeGroupCallStatusHint().c_str()
-                             : ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str();
+                             : ComposeP2pStatusHint(backend->P2pConnectMissingMic()).c_str();
       in_call.show_invite = false;
     } else if (!activity.empty()) {
       in_call.elapsed = {};
@@ -657,23 +648,23 @@ void CallController::RefreshPendingRing() {
         in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
       }
     } else if (media_connected) {
-      calls->ClearMediaActivity();
-      in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
+      backend->ClearMediaActivity();
+      in_call.elapsed = FormatElapsed(backend->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
       in_call.show_retry = false;
       in_call.status_hint = {};
     } else {
       in_call.elapsed = {};
       in_call.status_hint = {};
-      if (!calls->Media().IsActive()) {
+      if (!backend->Media().IsActive()) {
         in_call.subtitle = Tr("call.status.calling").c_str();
-      } else if (calls->IsSoftMigrateInFlight()) {
+      } else if (backend->IsSoftMigrateInFlight()) {
         in_call.subtitle = Tr("call.status.setting_up_group").c_str();
-      } else if (calls->IsSfuAttachWaitActive()) {
+      } else if (backend->IsSfuAttachWaitActive()) {
         in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
       } else {
-        const std::string state = calls->Media().ConnectionState();
-        if (calls->IsAwaitingSfuRecovery()) {
+        const std::string state = backend->Media().ConnectionState();
+        if (backend->IsAwaitingSfuRecovery()) {
           in_call.subtitle = Tr("call.status.reconnecting").c_str();
         } else if (state == "connecting" || state.empty() || state == "new") {
           in_call.subtitle = Tr("call.status.connecting").c_str();
@@ -694,7 +685,7 @@ void CallController::RefreshPendingRing() {
              {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
               .c_str();
     }
-    ApplyAudioLevels(calls->Media());
+    ApplyAudioLevels(backend->Media());
     {
       static std::string last_sub_log;
       const std::string sub = in_call.subtitle.c_str();
@@ -702,10 +693,10 @@ void CallController::RefreshPendingRing() {
         last_sub_log = sub;
         log().info
             << "in-call subtitle=\"" << sub << "\" phase="
-            << (life ? CallPhaseName(life->Phase()) : "?")
-            << " media_connected=" << (calls->Media().IsConnected() ? 1 : 0)
-            << " media_active=" << (calls->Media().IsActive() ? 1 : 0)
-            << " media_state=" << calls->Media().ConnectionState();
+            << CallPhaseName(backend->Phase())
+            << " media_connected=" << (backend->Media().IsConnected() ? 1 : 0)
+            << " media_active=" << (backend->Media().IsActive() ? 1 : 0)
+            << " media_state=" << backend->Media().ConnectionState();
       }
     }
     SyncShellState();
@@ -714,16 +705,16 @@ void CallController::RefreshPendingRing() {
 
   ClearInCall();
   ClearRing();
-  if (auto* life = Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
-    life->Apply(CallLifecycleEvent::InviteCleared, {});
+  if (backend->Phase() == CallPhase::Ringing) {
+    backend->Apply(CallLifecycleEvent::InviteCleared, {});
   }
   SyncShellState();
 }
 
 bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
@@ -751,8 +742,8 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
 bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                            const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
@@ -761,15 +752,13 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   auto started =
-      calls->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, invitee_identities);
+      backend->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, invitee_identities);
   if (!started) {
     UserFeedback::Fail(started.error().message);
     return false;
   }
   active_call_id_ = started->call_id;
-  if (auto* life = Lifecycle()) {
-    life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
-  }
+  backend->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   RefreshPendingRing();
   return true;
 }
@@ -782,9 +771,9 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 
 void CallController::OpenMidCallInvitePicker() {
   BindToMessaging();
-  auto* calls = Calls();
-  if (calls && active_call_id_.empty()) {
-    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+  auto* backend = Backend();
+  if (backend && backend->Available() && active_call_id_.empty()) {
+    if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
     }
   }
@@ -799,13 +788,13 @@ void CallController::OpenMidCallInvitePicker() {
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Calls();
-  if (calls && active_call_id_.empty()) {
-    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+  auto* backend = Backend();
+  if (backend && backend->Available() && active_call_id_.empty()) {
+    if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
     }
   }
-  if (!calls || active_call_id_.empty()) {
+  if (!backend || !backend->Available() || active_call_id_.empty()) {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
@@ -814,7 +803,7 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
     if (identity.empty()) {
       continue;
     }
-    if (auto ok = calls->InviteParticipant(active_call_id_, identity); ok) {
+    if (auto ok = backend->InviteParticipant(active_call_id_, identity); ok) {
       ++invited;
     } else {
       UserFeedback::Fail(ok.error().message);
@@ -836,8 +825,8 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* life = Lifecycle();
-  if (!life) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     return;
   }
   std::string call_id = ringing_call_id_;
@@ -848,7 +837,7 @@ void CallController::AcceptIncoming() {
     call_id = last_ring_call_id_;
   }
   if (call_id.empty()) {
-    call_id = life->LastRingCallId();
+    call_id = backend->LastRingCallId();
   }
   if (call_id.empty()) {
     log().warning << "AcceptIncoming ignored (no call_id)";
@@ -861,15 +850,15 @@ void CallController::AcceptIncoming() {
   SyncShellState();
   log().warning
       << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id;
-  life->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  backend->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 }
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* life = Lifecycle();
+  auto* backend = Backend();
   std::string call_id = ringing_call_id_;
-  if (call_id.empty() && life) {
-    call_id = life->LastRingCallId();
+  if (call_id.empty() && backend && backend->Available()) {
+    call_id = backend->LastRingCallId();
   }
   if (call_id.empty()) {
     return;
@@ -878,17 +867,17 @@ void CallController::DeclineIncoming() {
   ringing_call_id_.clear();
   ClearRing();
   SyncShellState();
-  if (life) {
-    life->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  if (backend && backend->Available()) {
+    backend->Apply(CallLifecycleEvent::DeclineClicked, call_id);
   }
 }
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* life = Lifecycle();
+  auto* backend = Backend();
   std::string call_id = active_call_id_;
-  if (call_id.empty() && life) {
-    call_id = life->ActiveCallId();
+  if (call_id.empty() && backend && backend->Available()) {
+    call_id = backend->ActiveCallId();
   }
   if (call_id.empty()) {
     // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
@@ -899,44 +888,47 @@ void CallController::LeaveActive() {
   }
   // Detach SFU then stop SDL on UI before LeaveCall worker (must not Stop off-UI) and before
   // remounting away the Leave button. Media().Stop alone deadlocks if capture is in BlockingWrite.
-  if (auto* calls = Calls()) {
-    calls->StopCallMedia(call_id);
+  if (backend && backend->Available()) {
+    backend->StopCallMedia(call_id);
   }
   active_call_id_.clear();
   ClearInCall();
   ClearRing();
   SyncShellState();
-  if (life) {
-    life->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  if (backend && backend->Available()) {
+    backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   }
 }
 
 void CallController::RetryConnect() {
   BindToMessaging();
-  auto* life = Lifecycle();
-  std::string call_id = active_call_id_;
-  if (call_id.empty() && life) {
-    call_id = life->ActiveCallId();
-  }
-  if (call_id.empty() || !life) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     return;
   }
-  life->Apply(CallLifecycleEvent::RetryClicked, call_id);
-  if (!life->LastError().empty()) {
-    UserFeedback::Fail(life->LastError());
-    life->ClearLastError();
+  std::string call_id = active_call_id_;
+  if (call_id.empty()) {
+    call_id = backend->ActiveCallId();
+  }
+  if (call_id.empty()) {
+    return;
+  }
+  backend->Apply(CallLifecycleEvent::RetryClicked, call_id);
+  if (!backend->LastError().empty()) {
+    UserFeedback::Fail(backend->LastError());
+    backend->ClearLastError();
   }
   RefreshPendingRing();
 }
 
 void CallController::ToggleMute() {
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls || !calls->Media().IsActive()) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || !backend->Media().IsActive()) {
     return;
   }
-  const bool before = calls->Media().IsMuted();
-  if (auto muted = calls->SetLocalAudioMuted(!before); !muted) {
+  const bool before = backend->Media().IsMuted();
+  if (auto muted = backend->SetLocalAudioMuted(!before); !muted) {
     UserFeedback::Fail(muted.error().message);
   }
   RefreshPendingRing();
@@ -944,12 +936,12 @@ void CallController::ToggleMute() {
 
 void CallController::ToggleCamera() {
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls || !calls->Media().IsActive()) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || !backend->Media().IsActive()) {
     return;
   }
-  const bool next = !calls->Media().IsCameraEnabled();
-  if (auto cam = calls->SetLocalVideoEnabled(next); !cam) {
+  const bool next = !backend->Media().IsCameraEnabled();
+  if (auto cam = backend->SetLocalVideoEnabled(next); !cam) {
     UserFeedback::Fail(cam.error().message);
   }
   RefreshPendingRing();
@@ -960,14 +952,14 @@ void CallController::ToggleSpeaker() {
     return;
   }
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls || !calls->Media().IsActive()) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || !backend->Media().IsActive()) {
     return;
   }
   const bool before = CallAudioSession::IsSpeakerphoneOn();
   CallAudioSession::SetSpeakerphoneOn(!before);
   // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen.
-  calls->Media().RequestAudioDeviceReopen();
+  backend->Media().RequestAudioDeviceReopen();
   log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " (reopen capture)";
   RefreshPendingRing();
 }
@@ -987,9 +979,9 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* calls = Calls();
-  if (calls && !active_call_id_.empty()) {
-    if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
+  auto* backend = Backend();
+  if (backend && backend->Available() && !active_call_id_.empty()) {
+    if (auto peer_video = backend->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {
       peer_camera_on = **peer_video;
       have_peer_video_flag = true;
@@ -1005,7 +997,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool missing_after_video =
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
   const bool p2p_failed =
-      calls && calls->IsP2pConnectFailed() && !calls->IsAwaitingSfuRecovery() && !media.IsSfuMode();
+      backend && backend->Available() && backend->IsP2pConnectFailed() &&
+      !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode();
   const bool media_reconnect =
       !p2p_failed && (stalling || missing_after_video || conn == "disconnected");
 
@@ -1062,7 +1055,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (media.IsConnected() ||
-             (Lifecycle() && Lifecycle()->Phase() == CallPhase::InCall && media.IsActive())) {
+             (backend && backend->Available() && backend->Phase() == CallPhase::InCall &&
+              media.IsActive())) {
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;
@@ -1071,22 +1065,22 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
 
-  ApplyMediaHealth(media, calls, media_reconnect || p2p_failed);
+  ApplyMediaHealth(media, backend, media_reconnect || p2p_failed);
 }
 
-CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallSessionManager* calls,
+CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
                                                          const bool media_reconnect) const {
   CallMediaHealthInput in;
   in.engine = media.HealthSnapshot();
-  if (calls) {
-    in.hop = calls->HopHealth();
+  if (backend && backend->Available()) {
+    in.hop = backend->HopHealth();
   }
   in.now_ms = util::NowUnixMs();
   in.reconnecting = media_reconnect;
   return EvaluateCallMediaHealth(in);
 }
 
-void CallController::ApplyMediaHealth(CallMediaEngine& media, CallSessionManager* calls,
+void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend,
                                       const bool media_reconnect) {
   if (!shell_call_chrome_.call_in_progress) {
     return;
@@ -1096,7 +1090,7 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallSessionManager
     return;
   }
 
-  const CallMediaHealthView view = BuildMediaHealthView(media, calls, media_reconnect);
+  const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
 
   in_call.quality_bars = view.quality_bars;
@@ -1152,8 +1146,8 @@ void CallController::ShowCallDetails() {
     return;
   }
   BindToMessaging();
-  auto* calls = Calls();
-  if (!calls || !shell_call_chrome_.call_in_progress) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || !shell_call_chrome_.call_in_progress) {
     return;
   }
   auto& in_call = shell_call_chrome_.call_in_progress();
@@ -1161,9 +1155,9 @@ void CallController::ShowCallDetails() {
     return;
   }
 
-  auto& media = calls->Media();
+  auto& media = backend->Media();
   const bool media_reconnect = !media.IsConnected() && media.IsActive();
-  const CallMediaHealthView view = BuildMediaHealthView(media, calls, media_reconnect);
+  const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
   const bool diagnostics =
       call_ports_.call_diagnostics_enabled && call_ports_.call_diagnostics_enabled();
@@ -1207,8 +1201,8 @@ void CallController::RefreshCallLevels() {
   if (active_call_id_.empty()) {
     return;
   }
-  auto* calls = Calls();
-  if (!calls) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
     return;
   }
   // Keep Calling… / timer / levels fresh even before media starts.

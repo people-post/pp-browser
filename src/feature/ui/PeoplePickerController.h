@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
 #include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
@@ -27,8 +28,6 @@ namespace pbr {
 class ProfileUnlockGate;
 class FlowCoordinator;
 
-class CallController;
-
 class PeoplePickerController : public Module {
 public:
   PeoplePickerController();
@@ -44,7 +43,7 @@ public:
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinator& flow);
-  void BindCallController(CallController& call);
+  void BindCallActions(CallActionsPorts ports);
   /** Shell navigation / layers without ShellHost::Instance(). Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
@@ -140,7 +139,7 @@ private:
   MessagingPeoplePickerPorts picker_ports_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
-  CallController* call_ = nullptr;
+  CallActionsPorts call_actions_;
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;

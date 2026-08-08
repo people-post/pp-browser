@@ -139,8 +139,9 @@ flowchart LR
   App -->|BindAgentPorts| Chat
   Chat -->|BindBadgeAggregator| Badges
   Chat -->|BindInputCoordinator| Input
-  Chat -->|BindCallController| Call
-  App -->|BindCallController| Shell
+  App -->|BindCallActions CallActionsPorts| Chat
+  App -->|BindCallActions CallActionsPorts| Shell
+  App -->|BindCallActions CallActionsPorts| PeoplePicker
   App -->|BindSource| Badges
   App -->|BindPorts| UnlockGate
   UnlockGate -->|UI ports| Pin
@@ -164,7 +165,8 @@ flowchart LR
   Contacts -->|MessagingContactsPorts| Hub
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
   Shell -->|MessagingShellPorts| Hub
-  Call -->|MessagingCallPorts| Hub
+  Call -->|CallFunctionalPorts / CallUiBackend| Hub
+  App -->|owns CallUiBackend| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell

@@ -11,7 +11,7 @@
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/FlowCoordinator.h"
@@ -105,8 +105,8 @@ void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
   flow_ = &flow;
 }
 
-void ShellHost::BindCallController(CallController& call) {
-  call_ = &call;
+void ShellHost::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 
@@ -2316,28 +2316,28 @@ void ShellHost::AttachCallChromeGesture() {
   }
   ShellCallChromeGesture::Callbacks callbacks;
   callbacks.on_minimize = [this]() {
-    if (call_) {
-      call_->MinimizeChrome();
+    if (call_actions_.minimize_chrome) {
+      call_actions_.minimize_chrome();
     }
   };
   callbacks.on_immersive = [this]() {
-    if (call_) {
-      call_->ImmersiveChrome();
+    if (call_actions_.immersive_chrome) {
+      call_actions_.immersive_chrome();
     }
   };
   callbacks.on_expand = [this]() {
-    if (call_) {
-      call_->ExpandChrome();
+    if (call_actions_.expand_chrome) {
+      call_actions_.expand_chrome();
     }
   };
   callbacks.on_restore = [this]() {
-    if (call_) {
-      call_->RestoreChromeFromMinimized();
+    if (call_actions_.restore_chrome_from_minimized) {
+      call_actions_.restore_chrome_from_minimized();
     }
   };
   callbacks.on_chip_corner = [this](int corner) {
-    if (call_) {
-      call_->SetMinimizedCorner(corner);
+    if (call_actions_.set_minimized_corner) {
+      call_actions_.set_minimized_corner(corner);
     }
   };
   call_chrome_gesture_.Attach(root, context_, state_.call_in_progress.mode, std::move(callbacks),
@@ -2534,92 +2534,92 @@ void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::E
 void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
   Instance().log().warning << "call_accept click";
-  if (auto* call = Instance().call_) {
-    call->AcceptIncoming();
+  if (Instance().call_actions_.accept_incoming) {
+    Instance().call_actions_.accept_incoming();
   }
 }
 
 void ShellHost::CallDeclineCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->DeclineIncoming();
+  if (Instance().call_actions_.decline_incoming) {
+    Instance().call_actions_.decline_incoming();
   }
 }
 
 void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->LeaveActive();
+  if (Instance().call_actions_.leave_active) {
+    Instance().call_actions_.leave_active();
   }
 }
 
 void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RetryConnect();
+  if (Instance().call_actions_.retry_connect) {
+    Instance().call_actions_.retry_connect();
   }
 }
 
 void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                  const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleMute();
+  if (Instance().call_actions_.toggle_mute) {
+    Instance().call_actions_.toggle_mute();
   }
 }
 
 void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleCamera();
+  if (Instance().call_actions_.toggle_camera) {
+    Instance().call_actions_.toggle_camera();
   }
 }
 
 void ShellHost::CallSpeakerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleSpeaker();
+  if (Instance().call_actions_.toggle_speaker) {
+    Instance().call_actions_.toggle_speaker();
   }
 }
 
 void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->OpenMidCallInvitePicker();
+  if (Instance().call_actions_.open_mid_call_invite_picker) {
+    Instance().call_actions_.open_mid_call_invite_picker();
   }
 }
 
 void ShellHost::CallMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                      const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->MinimizeChrome();
+  if (Instance().call_actions_.minimize_chrome) {
+    Instance().call_actions_.minimize_chrome();
   }
 }
 
 void ShellHost::CallExpandCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ExpandChrome();
+  if (Instance().call_actions_.expand_chrome) {
+    Instance().call_actions_.expand_chrome();
   }
 }
 
 void ShellHost::CallImmersiveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ImmersiveChrome();
+  if (Instance().call_actions_.immersive_chrome) {
+    Instance().call_actions_.immersive_chrome();
   }
 }
 
 void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RestoreChromeFromMinimized();
+  if (Instance().call_actions_.restore_chrome_from_minimized) {
+    Instance().call_actions_.restore_chrome_from_minimized();
   }
 }
 
 void ShellHost::CallDetailsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ShowCallDetails();
+  if (Instance().call_actions_.show_call_details) {
+    Instance().call_actions_.show_call_details();
   }
 }
 

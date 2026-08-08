@@ -21,7 +21,8 @@ pp_browser_add_feature_library(pp_feature_messaging
     ContactReachability.cpp
     MessagingContactsPorts.cpp
     MessagingChatPorts.cpp
-    MessagingCallPorts.cpp
+    CallFunctionalPorts.cpp
+    CallUiBackend.cpp
     MessagingShellPorts.cpp
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp
