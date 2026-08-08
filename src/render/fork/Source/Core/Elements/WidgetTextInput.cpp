@@ -904,14 +904,22 @@ bool WidgetTextInput::MoveCursorHorizontal(CursorMovement movement, bool select,
 		if (!select && selection_length > 0)
 			absolute_cursor_index = selection_begin_index;
 		else
-			absolute_cursor_index -= 1;
+		{
+			const char* boundary =
+				StringUtilities::SeekBackwardGraphemeCluster(value.data() + absolute_cursor_index, value.data());
+			absolute_cursor_index = int(boundary - value.data());
+		}
 		break;
 	case CursorMovement::Right:
 		seek_forward = true;
 		if (!select && selection_length > 0)
 			absolute_cursor_index = selection_begin_index + selection_length;
 		else
-			absolute_cursor_index += 1;
+		{
+			const char* boundary = StringUtilities::SeekForwardGraphemeCluster(value.data() + absolute_cursor_index,
+				value.data() + value.size());
+			absolute_cursor_index = int(boundary - value.data());
+		}
 		break;
 	case CursorMovement::NextWord:
 	{
@@ -996,15 +1004,31 @@ void WidgetTextInput::MoveCursorToCharacterBoundaries(bool forward)
 	const char* p_begin = value.data();
 	const char* p_end = p_begin + value.size();
 	const char* p_cursor = p_begin + absolute_cursor_index;
-	const char* p = p_cursor;
 
-	if (forward)
-		p = StringUtilities::SeekForwardUTF8(p_cursor, p_end);
-	else
-		p = StringUtilities::SeekBackwardUTF8(p_cursor, p_begin);
-
+	// Snap to a UTF-8 code-point boundary first, then to a grapheme cluster edge so
+	// emoji ZWJ / skin-tone sequences from mobile OS keyboards are not split.
+	const char* p = forward ? StringUtilities::SeekForwardUTF8(p_cursor, p_end)
+							: StringUtilities::SeekBackwardUTF8(p_cursor, p_begin);
 	if (p != p_cursor)
 		absolute_cursor_index += int(p - p_cursor);
+
+	p_cursor = p_begin + absolute_cursor_index;
+	if (forward)
+	{
+		// If we landed inside a cluster, advance to its end only when seeking forward
+		// from a mid-cluster index; otherwise leave the boundary as-is.
+		const char* cluster_end = StringUtilities::SeekForwardGraphemeCluster(p_cursor, p_end);
+		const char* cluster_start = StringUtilities::SeekBackwardGraphemeCluster(cluster_end, p_begin);
+		if (p_cursor > cluster_start && p_cursor < cluster_end)
+			absolute_cursor_index = int(cluster_end - p_begin);
+	}
+	else
+	{
+		const char* cluster_start = StringUtilities::SeekBackwardGraphemeCluster(p_cursor, p_begin);
+		const char* cluster_end = StringUtilities::SeekForwardGraphemeCluster(cluster_start, p_end);
+		if (p_cursor > cluster_start && p_cursor < cluster_end)
+			absolute_cursor_index = int(cluster_start - p_begin);
+	}
 }
 
 void WidgetTextInput::ExpandSelection()

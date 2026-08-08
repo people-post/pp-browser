@@ -50,7 +50,7 @@ RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** und
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
-Chat/CJK fonts (Noto Sans CJK Regular + Noto Emoji) ship under `assets/fonts/`. To refresh them:
+Chat/CJK fonts (Noto Sans CJK Regular + **Noto Color Emoji** CBDT, with monochrome Noto Emoji as secondary fallback) ship under `assets/fonts/`. FreeType is built with libpng so CBDT color bitmaps load. To refresh fonts:
 
 ```bash
 ./scripts/fonts_import_noto.sh

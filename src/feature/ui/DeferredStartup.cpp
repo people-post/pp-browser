@@ -92,6 +92,8 @@ void LoadDeferredFonts(const ShellNavigationPorts& shell) {
     }
     faces.emplace_back(path, "LoadFontFace:deferred_cjk");
   }
+  // Color emoji first so CBDT glyphs win over monochrome outlines.
+  faces.emplace_back("fonts/NotoColorEmoji.ttf", "LoadFontFace:NotoColorEmoji");
   faces.emplace_back("fonts/NotoEmoji-Regular.ttf", "LoadFontFace:NotoEmoji");
 
   for (size_t i = 0; i < faces.size(); ++i) {

@@ -1089,6 +1089,31 @@ Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const st
   return found;
 }
 
+Roe<int64_t> SqliteThreadStore::CountAnnotationsForTarget(const std::string& thread_id,
+                                                          const std::string& target_message_id) const {
+  if (target_message_id.empty()) {
+    return int64_t{0};
+  }
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "SELECT COUNT(*) FROM messages WHERE content_type = 'annotation' AND "
+                         "target_message_id = ?;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare annotation count query");
+  }
+  sqlite3_bind_text(stmt, 1, target_message_id.c_str(), -1, SQLITE_TRANSIENT);
+  int64_t count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
+}
+
 Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
   if (auto init = EnsureInitialized(); !init) {
     return init.error();

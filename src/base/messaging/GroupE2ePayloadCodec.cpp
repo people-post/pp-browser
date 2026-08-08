@@ -23,7 +23,8 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
     const std::string& message_id, const uint64_t sender_seq, const uint32_t session_epoch, const int64_t timestamp,
     const std::vector<GroupMemberTarget>& members, IPskSessionStore& psk_store,
-    const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public) {
+    const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public,
+    const std::optional<std::vector<uint8_t>>& chat_payload_plaintext) {
   (void)group_id;
   GroupEncryptResult result;
   for (const GroupMemberTarget& member : members) {
@@ -76,7 +77,11 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     params.sender_seq = sender_seq;
     params.session_epoch = session_epoch;
     params.timestamp = timestamp;
-    auto encrypted = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
+    auto encrypted =
+        (chat_payload_plaintext && !chat_payload_plaintext->empty())
+            ? E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *chat_payload_plaintext, master_psk,
+                                                                  key_init_b64)
+            : E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
     if (!encrypted) {
       result.failed_member_identities.push_back(member.member_identity);
       continue;

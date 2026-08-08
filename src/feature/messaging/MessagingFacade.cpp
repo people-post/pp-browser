@@ -126,6 +126,16 @@ Roe<ThreadMessage> MessagingFacade::SendUserMessage(const std::string& thread_id
   return hub_.P2p().SendUserMessage(thread_id, text, opts);
 }
 
+Roe<ThreadMessage> MessagingFacade::SendReaction(const std::string& thread_id, const std::string& target_message_id,
+                                                 const std::string& emoji) {
+  return hub_.P2p().SendReaction(thread_id, target_message_id, emoji);
+}
+
+Roe<ThreadMessage> MessagingFacade::ClearReaction(const std::string& thread_id, const std::string& target_message_id,
+                                                  const std::string& emoji) {
+  return hub_.P2p().ClearReaction(thread_id, target_message_id, emoji);
+}
+
 void MessagingFacade::SetOnMessagesChanged(std::function<void()> callback) {
   hub_.P2p().SetOnMessagesChanged(std::move(callback));
 }

@@ -327,10 +327,12 @@ One schema for disk and wire: **binary `ChatPayload`** (D087) inside AEAD plaint
   "payload": {
     "annotation_type": "reaction",
     "target_message_id": "uuid-of-target",
-    "value": { "emoji": "👍" }
+    "value": "👍"
   }
 }
 ```
+
+**Reactions (D098):** `annotation_type` is `reaction` (add) or `reaction_clear` (toggle off). `value` is a **plain UTF-8 emoji string** (not a nested object). Display resolves the latest row per `(sender_contact_id, target_message_id, emoji_key)`; clears win over older adds. Equality uses `NormalizeEmojiKey` (strip trailing `U+FE0F`). Both types count toward `kMaxAnnotationsPerTarget` (D042).
 
 ```json
 {

@@ -526,6 +526,195 @@ String StringUtilities::ToUTF8(const Character* characters, int num_characters)
 	return result;
 }
 
+namespace {
+
+bool IsSkinToneModifier(char32_t c)
+{
+	return c >= 0x1F3FB && c <= 0x1F3FF;
+}
+
+bool IsVariationSelector(char32_t c)
+{
+	return c == 0xFE0E || c == 0xFE0F || (c >= 0xE0100 && c <= 0xE01EF);
+}
+
+bool IsRegionalIndicator(char32_t c)
+{
+	return c >= 0x1F1E6 && c <= 0x1F1FF;
+}
+
+bool IsCombiningMark(char32_t c)
+{
+	// Common Mn/Me ranges used with emoji / Latin — not a full Unicode database.
+	return (c >= 0x0300 && c <= 0x036F) || (c >= 0x1AB0 && c <= 0x1AFF) || (c >= 0x1DC0 && c <= 0x1DFF) ||
+		(c >= 0x20D0 && c <= 0x20FF) || (c >= 0xFE20 && c <= 0xFE2F);
+}
+
+bool IsEmojiTag(char32_t c)
+{
+	return (c >= 0xE0020 && c <= 0xE007E) || c == 0xE007F;
+}
+
+bool IsZWJ(char32_t c)
+{
+	return c == 0x200D;
+}
+
+const char* NextCodePoint(const char* p, const char* p_end, char32_t& out)
+{
+	if (p >= p_end)
+	{
+		out = 0;
+		return p;
+	}
+	const Character ch = StringUtilities::ToCharacter(p, p_end);
+	if (ch == Character::Null)
+	{
+		out = static_cast<unsigned char>(*p);
+		return p + 1;
+	}
+	out = static_cast<char32_t>(ch);
+	return p + StringUtilities::BytesUTF8(ch);
+}
+
+const char* PrevCodePoint(const char* p, const char* p_begin, char32_t& out)
+{
+	if (p <= p_begin)
+	{
+		out = 0;
+		return p_begin;
+	}
+	const char* start = StringUtilities::SeekBackwardUTF8(p - 1, p_begin);
+	const Character ch = StringUtilities::ToCharacter(start, p);
+	out = (ch == Character::Null) ? static_cast<unsigned char>(*start) : static_cast<char32_t>(ch);
+	return start;
+}
+
+bool IsClusterExtender(char32_t c)
+{
+	return IsSkinToneModifier(c) || IsVariationSelector(c) || IsCombiningMark(c) || IsEmojiTag(c) || c == 0x20E3;
+}
+
+} // namespace
+
+const char* StringUtilities::SeekForwardGraphemeCluster(const char* p, const char* p_end)
+{
+	if (!p || p >= p_end)
+		return p_end;
+
+	char32_t first = 0;
+	const char* cursor = NextCodePoint(p, p_end, first);
+	if (cursor == p)
+		return p_end;
+
+	// Regional indicator pairs (flags).
+	if (IsRegionalIndicator(first))
+	{
+		char32_t second = 0;
+		const char* after = NextCodePoint(cursor, p_end, second);
+		if (IsRegionalIndicator(second))
+			return after;
+		return cursor;
+	}
+
+	// Consume skin tone / VS / keycap / tags attached to the base.
+	for (;;)
+	{
+		char32_t next = 0;
+		const char* after = NextCodePoint(cursor, p_end, next);
+		if (after == cursor)
+			break;
+		if (IsClusterExtender(next))
+		{
+			cursor = after;
+			continue;
+		}
+		if (IsZWJ(next))
+		{
+			char32_t joined = 0;
+			const char* after_joined = NextCodePoint(after, p_end, joined);
+			if (after_joined == after || joined == 0)
+				break;
+			cursor = after_joined;
+			// Extenders on the joined emoji.
+			for (;;)
+			{
+				char32_t ext = 0;
+				const char* after_ext = NextCodePoint(cursor, p_end, ext);
+				if (after_ext == cursor || !IsClusterExtender(ext))
+					break;
+				cursor = after_ext;
+			}
+			continue;
+		}
+		break;
+	}
+	return cursor;
+}
+
+const char* StringUtilities::SeekBackwardGraphemeCluster(const char* p, const char* p_begin)
+{
+	if (!p || p <= p_begin)
+		return p_begin;
+
+	// Walk back one code point, then keep walking while the previous code point
+	// is a ZWJ / extender that belongs to this cluster (or an RI pair).
+	char32_t last = 0;
+	const char* cursor = PrevCodePoint(p, p_begin, last);
+	if (cursor == p)
+		return p_begin;
+
+	if (IsRegionalIndicator(last))
+	{
+		char32_t prev = 0;
+		const char* before = PrevCodePoint(cursor, p_begin, prev);
+		if (IsRegionalIndicator(prev))
+			return before;
+		return cursor;
+	}
+
+	for (;;)
+	{
+		if (cursor <= p_begin)
+			return p_begin;
+		char32_t prev = 0;
+		const char* before = PrevCodePoint(cursor, p_begin, prev);
+		if (before == cursor)
+			break;
+		if (IsClusterExtender(last) || IsZWJ(prev) || (IsZWJ(last) && prev != 0))
+		{
+			// Include previous base / ZWJ / extender.
+			last = prev;
+			cursor = before;
+			continue;
+		}
+		// If current cluster started with an extender, still include its base.
+		if (IsClusterExtender(last))
+		{
+			last = prev;
+			cursor = before;
+			continue;
+		}
+		break;
+	}
+
+	// If we landed after a ZWJ, include the left-hand emoji too.
+	while (cursor > p_begin)
+	{
+		char32_t prev = 0;
+		const char* before = PrevCodePoint(cursor, p_begin, prev);
+		if (!IsZWJ(prev) && !IsClusterExtender(prev))
+			break;
+		cursor = before;
+		if (IsZWJ(prev))
+		{
+			char32_t base = 0;
+			cursor = PrevCodePoint(cursor, p_begin, base);
+		}
+	}
+	return cursor;
+}
+
 size_t StringUtilities::LengthUTF8(StringView string_view)
 {
 	const char* const p_end = string_view.end();
