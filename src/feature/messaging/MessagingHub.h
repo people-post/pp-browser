@@ -50,6 +50,20 @@ class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
 
+/**
+ * App-only messaging composition root (also known as MessagingCore).
+ *
+ * Ownership planes:
+ * - **MessagingCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
+ *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
+ * - **MeshHost (`mesh_`):** shared with headless `pp-node` — NodeRuntime + dial-back +
+ *   circuit/media relay + reachability (`libp2p/integration/host/MeshHost`).
+ * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, libp2p media bridge,
+ *   CallMediaDirect, dial/hop helpers.
+ *
+ * UI/tools talk through MessagingFacade / CallUiBackend / ports — not Hub accessors.
+ * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
+ */
 class MessagingHub : public Module {
 public:
   /** Hot-reloadable network / mesh slice projected from AppConfig. */
@@ -239,6 +253,8 @@ private:
   AgentSession* agent_ = nullptr;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsService* secrets_ = nullptr;
+
+  // --- MessagingCore stores / HTTP / inbox ---------------------------------
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -246,7 +262,6 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
-  std::unique_ptr<CallStack> call_stack_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
@@ -267,6 +282,14 @@ private:
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
+  std::unique_ptr<P2pMessagingService> p2p_;
+  std::unique_ptr<ContactActionDispatcher> actions_;
+  std::unique_ptr<MessageRouter> router_;
+
+  // --- CallStack (app-only) ------------------------------------------------
+  std::unique_ptr<CallStack> call_stack_;
+
+  // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::string libp2p_last_error_;
@@ -274,9 +297,6 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
-  std::unique_ptr<P2pMessagingService> p2p_;
-  std::unique_ptr<ContactActionDispatcher> actions_;
-  std::unique_ptr<MessageRouter> router_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
@@ -290,5 +310,8 @@ private:
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
 };
+
+/** Preferred name for the app messaging assembler (holds MeshHost + CallStack). */
+using MessagingCore = MessagingHub;
 
 } // namespace pbr

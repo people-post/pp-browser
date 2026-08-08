@@ -200,7 +200,10 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle, shared `Libp2pHost` / `PeerSessionManager` |
+| `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
+| `src/libp2p/integration/host/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
 | `src/feature/messaging/P2pMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |

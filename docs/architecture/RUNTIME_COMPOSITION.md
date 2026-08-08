@@ -304,8 +304,9 @@ Full model: [THREADING.md](THREADING.md).
 | **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices; owns a `MeshHost` for the libp2p mesh stack |
-| **MeshHost** | `libp2p/integration/host/` | Shared libp2p mesh host: `NodeRuntime` + dial-back + circuit/media relay + reachability; converges the `MessagingHub` and headless `pp-node` (`NodeBootstrap`) start paths |
+| **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
+| **MeshHost** | `libp2p/integration/host/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, libp2p media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
 | **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |

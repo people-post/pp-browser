@@ -35,8 +35,9 @@
 |------|-------|
 | Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
 | Shared runtime | `libp2p/integration/host/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
+| Shared mesh host | `libp2p/integration/host/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
-| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait |
+| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use MessagingHub / inbox / calls |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
