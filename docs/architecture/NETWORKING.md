@@ -42,5 +42,6 @@ Call **media** product path is **libp2p-only** (voice-first): direct peer stream
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — overall shape  
 - [P2P_MESSAGING.md](P2P_MESSAGING.md) — messaging  
+- [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md) — stream framing, exchanges, size/hang handling  
 - [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md) — fork deltas  
 - [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) — wire/compat  

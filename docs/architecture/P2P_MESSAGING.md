@@ -147,6 +147,8 @@ Outbound `SendUserMessage` tries libp2p direct first when the peer has a registe
 
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
+**On-wire framing & failure handling** (length-prefixed JSON on Noise+Yamux, shorter/longer/hang budgets): [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md).
+
 ## Identity model
 
 | Role | Example | Use |
