@@ -31,12 +31,15 @@
 #include "base/people/ContactJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/ReactionTypes.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
@@ -559,6 +562,20 @@ void ChatController::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml:
   }
 
   Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
+}
+
+void ChatController::ToggleReactionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().ToggleReaction(std::string(args[0].Get<Rml::String>().c_str()),
+                            std::string(args[1].Get<Rml::String>().c_str()));
+}
+
+void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                             const Rml::VariantList& /*args*/) {
+  Instance().OpenEmojiInsertMenu(&ev);
 }
 
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1301,6 +1318,168 @@ void ChatController::OnNewMessage() {
   if (people_picker_notify_.open_free) {
     people_picker_notify_.open_free();
   }
+}
+
+namespace {
+
+const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
+
+std::string FindMessageIdFromElement(Rml::Element* element) {
+  for (Rml::Element* cur = element; cur; cur = cur->GetParentNode()) {
+    if (cur->HasAttribute("message-id")) {
+      const Rml::String value = cur->GetAttribute("message-id", Rml::String());
+      return std::string(value.c_str());
+    }
+  }
+  return {};
+}
+
+} // namespace
+
+void ChatController::ToggleReaction(const std::string& message_id, const std::string& emoji) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (key.empty()) {
+    return;
+  }
+
+  // If local already has this emoji active on the target, clear; else add.
+  bool mine_active = false;
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, 500);
+  if (page) {
+    struct Slot {
+      int64_t order = -1;
+      bool active = false;
+    };
+    Slot latest;
+    for (const ThreadMessage& message : *page) {
+      if (message.content_type != ChatContentType::Annotation) {
+        continue;
+      }
+      if (message.sender_contact_id != kLocalSelfContactId) {
+        continue;
+      }
+      if (!message.target_message_id || *message.target_message_id != message_id) {
+        continue;
+      }
+      auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+      std::string annotation_type = kAnnotationTypeReaction;
+      std::string value = message.text;
+      if (fields) {
+        annotation_type = fields->annotation_type;
+        value = fields->value.empty() ? message.text : fields->value;
+      }
+      if (!IsReactionAnnotationType(annotation_type)) {
+        continue;
+      }
+      if (NormalizeEmojiKey(value) != key) {
+        continue;
+      }
+      if (message.display_order >= latest.order) {
+        latest.order = message.display_order;
+        latest.active = annotation_type == kAnnotationTypeReaction;
+      }
+    }
+    mine_active = latest.active;
+  }
+
+  auto sent = mine_active ? facade_->ClearReaction(thread_id, message_id, key)
+                          : facade_->SendReaction(thread_id, message_id, key);
+  if (!sent) {
+    if (shell_feedback_.show_toast) {
+      shell_feedback_.show_toast(sent.error().message, ToastDuration::Short);
+    }
+    return;
+  }
+  SyncDisplayFromThread();
+  NotifySurfaceChanged();
+}
+
+void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
+  if (!shell_feedback_.show_prompt) {
+    return;
+  }
+  shell_feedback_.show_prompt(
+      "React", "Pick an emoji (use the keyboard emoji key on mobile).", "",
+      [this, message_id](bool confirmed, std::string value) {
+        if (!confirmed) {
+          return;
+        }
+        ToggleReaction(message_id, value);
+      });
+}
+
+void ChatController::OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position) {
+  if (message_id.empty()) {
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  for (const char* emoji : kReactionPresets) {
+    actions.push_back({
+        std::string("react_") + emoji,
+        emoji,
+        nullptr,
+        [this, message_id, emoji]() { ToggleReaction(message_id, emoji); },
+    });
+  }
+  actions.push_back({
+      "react_more",
+      "More…",
+      nullptr,
+      [this, message_id]() { ShowReactionMorePrompt(message_id); },
+  });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
+  if (chat_.compose_disabled) {
+    return;
+  }
+  const Rml::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : Rml::Vector2i(120, 120);
+  std::vector<ContextMenuAction> actions;
+  for (const char* emoji : kReactionPresets) {
+    actions.push_back({
+        std::string("insert_") + emoji,
+        emoji,
+        nullptr,
+        [this, emoji]() {
+          chat_.draft = (std::string(chat_.draft.c_str()) + emoji).c_str();
+          DataModelHost::Instance().Dirty("chat", "draft");
+          focus_draft_after_sync_ = true;
+        },
+    });
+  }
+  actions.push_back({
+      "insert_more",
+      "More…",
+      nullptr,
+      [this]() {
+        if (!shell_feedback_.show_prompt) {
+          return;
+        }
+        shell_feedback_.show_prompt(
+            "Insert emoji", "Type or paste an emoji, then Continue.", "",
+            [this](bool confirmed, std::string value) {
+              if (!confirmed) {
+                return;
+              }
+              const std::string key = NormalizeEmojiKey(value);
+              if (key.empty()) {
+                return;
+              }
+              chat_.draft = (std::string(chat_.draft.c_str()) + key).c_str();
+              DataModelHost::Instance().Dirty("chat", "draft");
+              focus_draft_after_sync_ = true;
+            });
+      },
+  });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
 void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
@@ -2288,6 +2467,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
+        ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
+        ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
@@ -2361,6 +2542,26 @@ bool ChatController::Setup(Rml::Context* context) {
   if (shell_setup_.initialize) {
     shell_setup_.initialize(context);
   }
+
+  ContextMenuHost::Instance().RegisterProvider([this](const ContextMenuRequest& request) {
+    std::vector<ContextMenuAction> actions;
+    if (!messaging_ready_ || chat_.compose_disabled) {
+      return actions;
+    }
+    const std::string message_id = FindMessageIdFromElement(request.target);
+    if (message_id.empty()) {
+      return actions;
+    }
+    const Rml::Vector2i pos = request.position;
+    actions.push_back({
+        "react_message",
+        "React…",
+        nullptr,
+        [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
+    });
+    return actions;
+  });
+
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
   if (shell_setup_.set_fonts_ready) {
     shell_setup_.set_fonts_ready(!UiLanguageNeedsCjkFonts());

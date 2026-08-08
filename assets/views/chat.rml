@@ -86,7 +86,7 @@
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">
-      <div data-for="row : messages" data-class="row.row_class">
+      <div data-for="row : messages" data-class="row.row_class" data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
         </p>

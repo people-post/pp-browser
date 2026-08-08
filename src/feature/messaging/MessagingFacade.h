@@ -86,6 +86,10 @@ public:
   // --- P2P ------------------------------------------------------------------
   void MaybeTailSync(const std::string& thread_id);
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text, SendRelayOptions opts);
+  Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
+                                  const std::string& emoji);
+  Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
+                                   const std::string& emoji);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
   void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback);

@@ -123,6 +123,8 @@ Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.
 
 Register extra actions with `ContextMenuHost::RegisterProvider`.
 
+**Chat reactions:** long-press / right-click a message row (`message-id` attribute) adds **React…**, which opens a preset emoji strip (plus **More…** for a short-lived field that relies on the OS emoji keyboard on mobile). Tapping a reaction chip calls `toggle_reaction(message_id, emoji)`. Composer Left/Right/Backspace move by grapheme cluster so OSK multi-codepoint emoji edit correctly.
+
 ## Textarea selection
 
 - **Triple-click** selects the paragraph around the caret using blank-line (`\n\n`) boundaries.

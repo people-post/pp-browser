@@ -6,7 +6,12 @@
             data-value="draft" data-attr-placeholder="draft_placeholder"
             data-attrif-disabled="compose_disabled"></textarea>
   <div class="prompt-composer-footer">
-    <div class="prompt-composer-leading"></div>
+    <div class="prompt-composer-leading">
+      <button class="prompt-emoji-btn" type="button" data-event-click="open_emoji_insert()"
+              data-attrif-disabled="compose_disabled" title="Insert emoji">
+        <span class="prompt-emoji-btn-glyph">☺</span>
+      </button>
+    </div>
     <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="compose_disabled">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
