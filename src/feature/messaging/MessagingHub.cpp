@@ -120,6 +120,28 @@ MobileEphemeralListenInput BuildMobileEphemeralListenInput(bool messaging_ready,
 
 MessagingHub::MessagingHub() {
   redirectLogger("MessagingHub");
+  // Always own an (empty) CallStack so CallUiBackend can bind CallStackRef() at construction,
+  // even before Initialize builds the call session/media objects.
+  call_stack_ = std::make_unique<CallStack>();
+}
+
+CallStackDeps MessagingHub::MakeCallStackDeps() {
+  CallStackDeps deps;
+  deps.store = store_.get();
+  deps.contacts = contacts_.get();
+  deps.identity = identity_.get();
+  deps.psk = psk_store_.get();
+  deps.p2p = p2p_.get();
+  deps.mesh = [this]() { return mesh_.get(); };
+  deps.config = [this]() -> const AppConfig& { return config_; };
+  deps.prefetch_peer_reachability = [this](const std::string& identity) {
+    PrefetchPeerReachability(identity);
+  };
+  deps.sync_mobile_ephemeral_listen = [this]() { SyncMobileEphemeralListen(); };
+  deps.note_lan_mdns_peer_id = [this](const std::string& peer_id) {
+    lan_mdns_contact_peer_ids_.insert(peer_id);
+  };
+  return deps;
 }
 
 MessagingHub::~MessagingHub() {
@@ -282,9 +304,6 @@ void MessagingHub::StartMeshServices() {
     return;
   }
 
-  call_media_direct_ = std::make_unique<CallMediaDirectService>(*Runtime()->Host(), *Runtime()->Sessions());
-  call_media_direct_->Start();
-
   lan_mdns_ = std::make_unique<LanMdnsDiscovery>();
   lan_mdns_->SetOnDiscovered([this](const LanMdnsDiscoveredPeer& peer) { OnLanMdnsPeerDiscovered(peer); });
   if (auto started = lan_mdns_->Start(); !started) {
@@ -292,7 +311,8 @@ void MessagingHub::StartMeshServices() {
   }
 
   ApplyMeshAdmissionPolicies();
-  WireCallMediaRelayDeps();
+  // CallMediaDirect create/start + WireMediaRelayDeps now live in the call stack.
+  call_stack_->OnMeshServicesStarted();
   PublishNodeAdvertisedAddrs();
 }
 
@@ -312,22 +332,6 @@ void MessagingHub::PublishNodeAdvertisedAddrs() {
   PublishAdvertisedListenSet(*Runtime()->Host(), *Runtime()->Identify(),
                              mesh_->Reachability().Snapshot(), Runtime()->BoundListenMultiaddr(), peer_id,
                              publish);
-}
-
-bool MessagingHub::HasActiveLocalCall() {
-  if (call_lifecycle_ && call_lifecycle_->WantEphemeralListen()) {
-    return true;
-  }
-  if (ephemeral_listen_desired_) {
-    return true;
-  }
-  if (!call_sessions_) {
-    return false;
-  }
-  if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
-    return true;
-  }
-  return false;
 }
 
 void MessagingHub::PublishMobileCallScopedAddrs() {
@@ -357,8 +361,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
   }
 
   // Lifecycle owns whether we want listen; tick only executes start/stop.
-  const bool active_call = ephemeral_listen_desired_ ||
-                           (call_lifecycle_ && call_lifecycle_->WantEphemeralListen());
+  const bool active_call = call_stack_ && call_stack_->WantEphemeralListen();
   const MobileEphemeralListenInput gate = BuildMobileEphemeralListenInput(
       messaging_ready_, Runtime()->IsRunning(), Runtime()->EphemeralListenActive(), active_call);
 
@@ -421,8 +424,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         const bool on_wifi =
             transport == NetworkTransport::Wifi || transport == NetworkTransport::Unknown;
         const bool still_want =
-            (ephemeral_listen_desired_ ||
-             (call_lifecycle_ && call_lifecycle_->WantEphemeralListen())) &&
+            (call_stack_ && call_stack_->WantEphemeralListen()) &&
             AppLifecycle::IsForeground() && on_wifi;
         if (!still_want) {
           if (Runtime()->EphemeralListenActive()) {
@@ -430,7 +432,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
               AppRuntime::PostWorkerCritical([this]() {
                 if (messaging_ready_) {
                   ApplyMeshAdmissionPolicies();
-                  WireCallMediaRelayDeps();
+                  call_stack_->WireMediaRelayDeps();
                   SyncLanMdnsAdvertisement();
                 }
               });
@@ -439,7 +441,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
           return;
         }
         ApplyMeshAdmissionPolicies();
-        WireCallMediaRelayDeps();
+        call_stack_->WireMediaRelayDeps();
         PublishMobileCallScopedAddrs();
         SyncLanMdnsAdvertisement();
         // V029/V030: phones must not host media_relay. Guest SoftMigrate only dials a Node;
@@ -474,7 +476,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
       auto finish = [this]() {
         if (messaging_ready_) {
           ApplyMeshAdmissionPolicies();
-          WireCallMediaRelayDeps();
+          call_stack_->WireMediaRelayDeps();
           SyncLanMdnsAdvertisement();
         }
         AppRuntime::PostUI([this]() {
@@ -600,90 +602,6 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
   });
 }
 
-void MessagingHub::WireCallMediaRelayDeps() {
-  if (!call_sessions_) {
-    return;
-  }
-  media_relay_client_ = std::make_unique<MediaRelayServiceClient>(MediaRelay());
-  PeerSessionManager* sessions = Runtime() ? Runtime()->Sessions() : nullptr;
-  // Keep dial registry + libp2p media bridge stable across N025 listen sync — recreating them
-  // mid-call drops pending answerer state and dangling dial pointers.
-  if (!dial_registry_) {
-    dial_registry_ = std::make_unique<PeerSessionDialRegistry>(sessions);
-  } else {
-    dial_registry_->SetSessions(sessions);
-  }
-  if (sessions && config_.libp2p.capabilities.circuit_relay) {
-    if (!circuit_hop_reach_) {
-      circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
-          [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); },
-          [this](const std::string& peer_key) { return TryEnsureCallMediaReachable(peer_key); });
-    }
-  } else {
-    circuit_hop_reach_.reset();
-  }
-  CallSessionManager::MediaRelayDeps deps;
-  deps.relay = media_relay_client_.get();
-  deps.dial = dial_registry_.get();
-  deps.circuit_reach = circuit_hop_reach_.get();
-  Libp2pConfig libp2p = config_.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  deps.bootstrap_peers = libp2p.bootstrap_peers;
-  deps.prefer_contacts = libp2p.prefer_contacts_for_routing;
-  // PreferLocal = durable Node hosting only. Mobile ephemeral Start() must not SoftMigrate-self
-  // into the SFU hop (V028 / dogfood: Android hop crash → peer Connection reset).
-  deps.prefer_local_as_hop = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
-                            libp2p.capabilities.media_relay && MediaRelay() &&
-                            MediaRelay()->IsStarted();
-  if (Runtime() && !Runtime()->BoundListenMultiaddr().empty()) {
-    deps.local_listen_multiaddr = Runtime()->BoundListenMultiaddr();
-  } else {
-    deps.local_listen_multiaddr = libp2p.listen_multiaddr;
-  }
-  // PreferLocal CallSfuAttach fan-out needs dialable LAN addrs (same as invite listen_multiaddrs).
-  deps.local_advertise_multiaddrs = LocalCallListenMultiaddrs();
-  deps.resolve_local_advertise = [this]() { return LocalCallListenMultiaddrs(); };
-  deps.peer_has_media_relay = [this](const std::string& peer_id) {
-    return call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id);
-  };
-  deps.list_media_relay_peers = [this]() {
-    if (!call_sessions_) {
-      return std::vector<std::string>{};
-    }
-    return call_sessions_->ListMediaRelayCapablePeerIds();
-  };
-  // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
-  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
-    deps.local_listen_multiaddr.clear();
-  }
-  call_sessions_->SetMediaRelayDeps(std::move(deps));
-
-  if (call_media_direct_ && dial_registry_) {
-    // Rebuild when CallSessionManager was replaced (BuildMessagingStack) — bridge holds a host&
-    // into that object. Keep the same bridge across N025 listen sync on the same manager.
-    const bool sessions_changed = (libp2p_bridge_bound_sessions_ != call_sessions_.get());
-    if (!call_libp2p_bridge_ || sessions_changed) {
-      call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(
-          call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
-          *call_media_direct_, dial_registry_.get(), circuit_hop_reach_.get());
-      call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
-      libp2p_bridge_bound_sessions_ = call_sessions_.get();
-      EnsureCallLifecycleBound();
-      call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0) << ")";
-    } else {
-      call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
-      if (call_lifecycle_) {
-        call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-      }
-    }
-  } else {
-    call_libp2p_bridge_.reset();
-    libp2p_bridge_bound_sessions_ = nullptr;
-    call_sessions_->SetLibp2pMediaBridge(nullptr);
-  }
-}
-
 void MessagingHub::ApplyMeshAdmissionPolicies() {
   const bool prefer = config_.libp2p.prefer_contacts_for_routing;
   const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
@@ -754,35 +672,18 @@ void MessagingHub::StopLibp2p() {
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;
   mobile_ephemeral_last_start_error_.clear();
-  ephemeral_listen_desired_ = false;
-  if (call_lifecycle_) {
-    call_lifecycle_->ClearBinding();
-  }
-  if (call_sessions_) {
-    call_sessions_->SetLibp2pMediaBridge(nullptr);
-    call_sessions_->SetMediaRelayDeps({});
-  }
-  // Abort circuit waiters before joining/destroying Connect workers (same as AbortCallMediaForShutdown).
-  if (mesh_) {
-    mesh_->AbortInflightCircuitRequests();
-  }
-  // Connect worker holds `this` on the bridge — abort + wait before delete (shutdown segfault).
-  // Detach completes in-flight Connect() immediately; dial/reachability loops check generation.
-  if (call_libp2p_bridge_) {
-    call_libp2p_bridge_->PrepareForTeardown(2000);
-  }
-  if (mesh_) {
-    mesh_->AbortInflightCircuitRequests();
-  }
-  if (call_media_direct_) {
-    call_media_direct_->ClearInboundHandler();
-    call_media_direct_->Stop();
-  }
+  // Call-media teardown before the mesh stops. The bridge PrepareForTeardown is bracketed by
+  // mesh circuit-request aborts so the Connect worker observes abort and unblocks (same order
+  // as before the CallStack split).
+  call_stack_->PrepareForMeshStop([this]() {
+    if (mesh_) {
+      mesh_->AbortInflightCircuitRequests();
+    }
+  });
   if (lan_mdns_) {
     lan_mdns_->Stop();
     lan_mdns_.reset();
   }
-  media_relay_client_.reset();
   // MeshHost::Stop tears down media_relay, circuit, dial-back, and runtime (in that order).
   // Keep bridge + dial registry alive until the libp2p host joins its workers — inbound
   // CallMediaKey wait and OpenStream completions may still touch them.
@@ -790,38 +691,11 @@ void MessagingHub::StopLibp2p() {
     mesh_->Stop();
     mesh_.reset();
   }
-  call_libp2p_bridge_.reset();
-  libp2p_bridge_bound_sessions_ = nullptr;
-  call_media_direct_.reset();
-  dial_registry_.reset();
+  call_stack_->FinishMeshStop();
 }
 
 void MessagingHub::AbortCallMediaForShutdown() {
-  // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
-  // Old order waited 250ms then aborted circuit — WorkerPool::Shutdown joined a still-blocked
-  // Critical task and both peers looked hung until force-quit.
-  if (mesh_) {
-    mesh_->AbortInflightCircuitRequests();
-  }
-  // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
-  if (MediaRelay()) {
-    MediaRelay()->Detach();
-  }
-  // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
-  // leave Connecting instead of sitting on a half-open stream after we detach.
-  if (call_sessions_) {
-    if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
-      log().info << "AbortCallMediaForShutdown LeaveCall call_id=" << (*active)->call_id;
-      (void)call_sessions_->LeaveCall((*active)->call_id);
-    }
-  }
-  if (call_libp2p_bridge_) {
-    // LeaveCall already bumps connect_generation_; wait for the worker to observe abort.
-    call_libp2p_bridge_->PrepareForTeardown(2000);
-  }
-  if (call_media_direct_) {
-    call_media_direct_->Detach();
-  }
+  call_stack_->AbortCallMediaForShutdown();
 }
 
 void MessagingHub::RegisterContactEndpoints() {
@@ -912,77 +786,6 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   // Circuit hops stay on the call-media Connect path (EnsurePeerReachableOnIo).
 }
 
-std::vector<std::string> MessagingHub::LocalCallListenMultiaddrs() const {
-  if (!Runtime() || !Runtime()->Host() || !Runtime()->IsRunning()) {
-    return {};
-  }
-  const bool listening =
-      Runtime()->EphemeralListenActive() ||
-      ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
-  if (!listening) {
-    return {};
-  }
-  std::string peer_id;
-  if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-    peer_id = *local;
-  }
-  const std::string bound = Runtime()->BoundListenMultiaddr();
-  if (peer_id.empty() || bound.empty()) {
-    return {};
-  }
-  return BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
-}
-
-void MessagingHub::RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                                    const std::vector<std::string>& multiaddrs) {
-  if (identity.empty() || multiaddrs.empty()) {
-    return;
-  }
-  PeerSessionManager* sessions = Sessions();
-  for (const std::string& ma : multiaddrs) {
-    if (ma.empty()) {
-      continue;
-    }
-    const std::string ip = IpHostFromMultiaddrPrefix(ma);
-    if (IsLikelyUndialableLanIpv4(ip)) {
-      log().info << "Call listen addr skipped undialable dial_key=" << identity << " ma=" << ma;
-      continue;
-    }
-    std::string peer_id;
-    const auto p2p_pos = ma.rfind("/p2p/");
-    if (p2p_pos != std::string::npos) {
-      peer_id = ma.substr(p2p_pos + 5);
-      const auto slash = peer_id.find('/');
-      if (slash != std::string::npos) {
-        peer_id.resize(slash);
-      }
-    }
-    if (sessions) {
-      (void)sessions->RegisterEndpoint(identity, ma);
-      sessions->ClearDialBackoff(identity);
-      if (!peer_id.empty()) {
-        (void)sessions->UpsertBookEntry(peer_id, ma, PeerAddrSource::Manual);
-        (void)sessions->RegisterEndpoint(peer_id, ma);
-        sessions->ClearDialBackoff(peer_id);
-        if (peer_id != identity) {
-          (void)sessions->RegisterEndpoint(identity, ma);
-        }
-        lan_mdns_contact_peer_ids_.insert(peer_id);
-      }
-    }
-    if (p2p_) {
-      p2p_->RegisterPeerDirectEndpoint(identity, ma);
-      if (!peer_id.empty() && peer_id != identity) {
-        p2p_->RegisterPeerDirectEndpoint(peer_id, ma);
-      }
-    }
-    if (!peer_id.empty() && identity.rfind("relay:", 0) == 0 && call_sessions_) {
-      call_sessions_->NoteLibp2pPeerIdForRelay(identity, peer_id);
-    }
-    log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
-  }
-}
-
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -1011,9 +814,9 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
-  call_session_store_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
-  call_media_keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath(), profile_id_);
-  call_media_engine_ = std::make_unique<CallMediaEngine>();
+  if (auto stores = call_stack_->InitializeStores(store_->ProfileDbPath(), profile_id_); !stores) {
+    return stores.error();
+  }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
@@ -1027,7 +830,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
     secrets_->RegisterDekConsumer(psk_store_.get());
-    secrets_->RegisterDekConsumer(call_media_keys_.get());
+    secrets_->RegisterDekConsumer(call_stack_->MediaKeys());
   }
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
@@ -1041,49 +844,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
   p2p_->SetGroupMembership(group_membership_.get());
-  call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
-                                                       *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
-  p2p_->SetCallSessionManager(call_sessions_.get());
-  call_sessions_->AbandonOrphanedCallsAfterRestart();
-  call_sessions_->SetOnRingChangedMesh([this]() {
-    EnsureCallLifecycleBound();
-    // Invite ingest runs on IO — never Sync N025 on the IO thread itself.
-    if (AppRuntime::CurrentlyOnUI()) {
-      SyncMobileEphemeralListen();
-    } else {
-      AppRuntime::PostUI([this]() { SyncMobileEphemeralListen(); });
-    }
-  });
-  call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    // Warm only; must not run RequestBridge on Browser IO ahead of AcceptInvite.
-    AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
-  });
-  call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
-  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
-    if (!Runtime() || !Runtime()->Host()) {
-      return {};
-    }
-    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-      return *local;
-    }
-    return {};
-  });
-  call_sessions_->SetLocalPeerCapsProvider([this]() {
-    CallPeerCaps caps;
-    caps.v = kCallPeerCapsVersion;
-    caps.present = true;
-    // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
-    caps.media_relay = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
-                       config_.libp2p.capabilities.media_relay && MediaRelay() &&
-                       MediaRelay()->IsStarted();
-    return caps;
-  });
-  call_sessions_->SetRegisterPeerListenMultiaddrs(
-      [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
-        RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
-      });
-  EnsureCallLifecycleBound();
-  WireCallMediaRelayDeps();
+  call_stack_->BuildSessions(MakeCallStackDeps());
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
 
@@ -1140,47 +901,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
   p2p_->SetGroupMembership(group_membership_.get());
-  call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
-                                                       *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
-  p2p_->SetCallSessionManager(call_sessions_.get());
-  call_sessions_->AbandonOrphanedCallsAfterRestart();
-  call_sessions_->SetOnRingChangedMesh([this]() {
-    EnsureCallLifecycleBound();
-    if (AppRuntime::CurrentlyOnUI()) {
-      SyncMobileEphemeralListen();
-    } else {
-      AppRuntime::PostUI([this]() { SyncMobileEphemeralListen(); });
-    }
-  });
-  call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
-  });
-  call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
-  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
-    if (!Runtime() || !Runtime()->Host()) {
-      return {};
-    }
-    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-      return *local;
-    }
-    return {};
-  });
-  call_sessions_->SetLocalPeerCapsProvider([this]() {
-    CallPeerCaps caps;
-    caps.v = kCallPeerCapsVersion;
-    caps.present = true;
-    // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
-    caps.media_relay = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
-                       config_.libp2p.capabilities.media_relay && MediaRelay() &&
-                       MediaRelay()->IsStarted();
-    return caps;
-  });
-  call_sessions_->SetRegisterPeerListenMultiaddrs(
-      [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
-        RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
-      });
-  EnsureCallLifecycleBound();
-  WireCallMediaRelayDeps();
+  call_stack_->BuildSessions(MakeCallStackDeps());
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
@@ -1549,8 +1270,7 @@ void MessagingHub::RefreshMeshCapabilities() {
       CircuitRelay()->Start();
     }
   }
-  media_relay_client_.reset();
-  dial_registry_.reset();
+  call_stack_->ResetRelayClients();
   if (MediaRelay()) {
     MediaRelay()->Stop();
     MediaRelay()->SetBudget(config_.libp2p.media_relay_budget);
@@ -1560,7 +1280,7 @@ void MessagingHub::RefreshMeshCapabilities() {
     }
   }
   ApplyMeshAdmissionPolicies();
-  WireCallMediaRelayDeps();
+  call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
 }
 
@@ -1702,114 +1422,6 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   return last;
 }
 
-std::vector<std::string> MessagingHub::CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const {
-  std::vector<std::string> relay_ids;
-  if (!Runtime() || !Runtime()->Sessions()) {
-    return relay_ids;
-  }
-  PeerSessionManager& sessions = *Runtime()->Sessions();
-  std::vector<Contact> contacts;
-  if (contacts_) {
-    if (auto listed = contacts_->List()) {
-      contacts = std::move(*listed);
-    }
-  }
-  Libp2pConfig libp2p = config_.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(libp2p.bootstrap_peers),
-                               libp2p.prefer_contacts_for_routing);
-  relay_ids.reserve(hops.size());
-  for (const MeshHopCandidate& hop : hops) {
-    if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
-      continue;
-    }
-    if (hop.multiaddr.empty()) {
-      if (auto ma = sessions.PreferredPeerMultiaddr(hop.peer_id)) {
-        (void)sessions.RegisterEndpoint(hop.peer_id, *ma);
-      }
-    } else {
-      (void)sessions.RegisterEndpoint(hop.peer_id, hop.multiaddr);
-    }
-    sessions.ClearDialBackoff(hop.peer_id);
-    if (sessions.IsDialable(hop.peer_id)) {
-      relay_ids.push_back(hop.peer_id);
-    }
-  }
-  return relay_ids;
-}
-
-Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
-  if (!CircuitRelay() || !Runtime() || !Runtime()->Sessions()) {
-    return Error("circuit-relay not available");
-  }
-  if (!config_.libp2p.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
-  }
-  PeerSessionManager& sessions = *Runtime()->Sessions();
-  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(hop_peer_id);
-  if (relay_ids.empty()) {
-    return Error("no dialable circuit relays");
-  }
-  return sessions.TryEnsureHopViaCircuit(hop_peer_id, *CircuitRelay(), relay_ids, kMediaRelayProtocolId, 8000);
-}
-
-Roe<void> MessagingHub::TryEnsureCallMediaReachable(const std::string& peer_key) {
-  if (!CircuitRelay() || !Runtime() || !Runtime()->Sessions()) {
-    return Error("circuit-relay not available");
-  }
-  if (!config_.libp2p.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
-  }
-  if (peer_key.empty()) {
-    return Error("missing call peer");
-  }
-
-  PeerSessionManager& sessions = *Runtime()->Sessions();
-  std::string target = peer_key;
-  if (contacts_) {
-    if (auto hit = contacts_->FindByIdentity(peer_key, ContactIdKind::RelayUser)) {
-      if (hit->has_value()) {
-        const std::string peer_id = PeerIdFromContact(**hit);
-        if (!peer_id.empty()) {
-          target = peer_id;
-        }
-      }
-    }
-    if (target == peer_key) {
-      if (auto hit = contacts_->FindByIdentity(peer_key, ContactIdKind::PeerId)) {
-        if (hit->has_value()) {
-          const std::string peer_id = PeerIdFromContact(**hit);
-          if (!peer_id.empty()) {
-            target = peer_id;
-          }
-        }
-      }
-    }
-  }
-
-  if (sessions.IsDialable(peer_key) || sessions.IsDialable(target)) {
-    if (target != peer_key) {
-      if (auto ma = sessions.PreferredPeerMultiaddr(target)) {
-        (void)sessions.RegisterEndpoint(peer_key, *ma);
-      }
-    }
-    return {};
-  }
-
-  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(target);
-  if (relay_ids.empty()) {
-    return Error("no dialable circuit relays");
-  }
-  auto reached =
-      sessions.TryEnsureHopViaCircuit(target, *CircuitRelay(), relay_ids, kCallMediaDirectProtocolId, 8000);
-  if (reached && target != peer_key) {
-    if (auto ma = sessions.PreferredPeerMultiaddr(target)) {
-      (void)sessions.RegisterEndpoint(peer_key, *ma);
-    }
-  }
-  return reached;
-}
-
 void MessagingHub::SuspendLibp2pColdPeers() {
   SyncMobileEphemeralListen();
   if (Runtime()) {
@@ -1845,8 +1457,8 @@ void MessagingHub::Shutdown() {
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
   }
-  if (call_sessions_) {
-    call_sessions_->ClearMediaCallbacks();
+  if (auto* calls = call_stack_->Calls()) {
+    calls->ClearMediaCallbacks();
   }
 
   router_.reset();
@@ -1861,7 +1473,8 @@ void MessagingHub::Shutdown() {
   actions_.reset();
   // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
   StopLibp2p();
-  call_sessions_.reset();
+  // Drop the call session manager before P2P — CSM holds a P2pMessagingService& reference.
+  call_stack_->ResetSessions();
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   p2p_.reset();
   group_membership_.reset();
@@ -1876,13 +1489,12 @@ void MessagingHub::Shutdown() {
     if (psk_store_) {
       secrets_->UnregisterDekConsumer(psk_store_.get());
     }
-    if (call_media_keys_) {
-      secrets_->UnregisterDekConsumer(call_media_keys_.get());
+    if (call_stack_->MediaKeys()) {
+      secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
     }
   }
-  call_media_engine_.reset();
-  call_media_keys_.reset();
-  call_session_store_.reset();
+  // Reset media engine / key store / session store after DEK unregister above.
+  call_stack_->Shutdown();
   psk_store_.reset();
   inbox_.reset();
   peer_labels_.reset();
@@ -1922,34 +1534,11 @@ GroupMembershipService& MessagingHub::Groups() {
 }
 
 CallSessionManager* MessagingHub::Calls() {
-  return call_sessions_.get();
+  return call_stack_->Calls();
 }
 
 CallLifecycle* MessagingHub::Lifecycle() {
-  EnsureCallLifecycleBound();
-  return call_lifecycle_.get();
-}
-
-void MessagingHub::EnsureCallLifecycleBound() {
-  if (!call_sessions_) {
-    if (call_lifecycle_) {
-      call_lifecycle_->ClearBinding();
-    }
-    return;
-  }
-  if (!call_lifecycle_) {
-    call_lifecycle_ = std::make_unique<CallLifecycle>();
-  }
-  call_lifecycle_->Bind(call_sessions_.get());
-  call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
-  if (call_libp2p_bridge_) {
-    call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-  }
-}
-
-void MessagingHub::SetEphemeralListenDesire(bool want) {
-  ephemeral_listen_desired_ = want;
-  SyncMobileEphemeralListen();
+  return call_stack_->Lifecycle();
 }
 
 MessageRouter& MessagingHub::Router() {

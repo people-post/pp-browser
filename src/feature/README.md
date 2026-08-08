@@ -115,7 +115,8 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` |
 | `CallActionsPorts` | `ui/CallActionsPorts.h` | Call chrome/actions for chat, shell, people-picker; Application fills from `CallController` |
 | `CallFunctionalPorts` | `messaging/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
-| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over hub call session/lifecycle (no leaky CSM/Lifecycle ports) |
+| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over `CallStack` session/lifecycle (bound to `MessagingHub::CallStackRef()`; no leaky CSM/Lifecycle ports) |
+| `CallStack` | `messaging/CallStack.h` | Owns call media/CSM/lifecycle/bridge/CallMediaDirect/relay+dial+circuit clients; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()` |
 | `ContactsNotifyPorts` | `ui/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
 | `UnlockEnsurePorts` | `ui/UnlockEnsurePorts.h` | Ensure unlocked / unlock-in-progress; Application fills from `ProfileUnlockGate` |
 | `FlowCoordinatorPorts` | `ui/FlowCoordinatorPorts.h` | Modal begin/end/dismiss; Application fills from `FlowCoordinator` |

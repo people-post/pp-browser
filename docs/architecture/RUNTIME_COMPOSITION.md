@@ -27,6 +27,7 @@ flowchart TB
     SettingsLogic["SettingsLogic<br/><small>feature/settings/</small>"]
     AgentSession["AgentSession<br/><small>feature/ai/</small>"]
     MessagingHub["MessagingHub<br/><small>feature/messaging/</small>"]
+    CallStack["CallStack<br/><small>feature/messaging/ — call media/CSM/lifecycle</small>"]
     MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
@@ -69,7 +70,8 @@ flowchart TB
   MessagingHub --> Libp2p
   MessagingHub --> IdentityStore
   MessagingHub --> ThreadStore
-  MessagingHub --> CallMediaEngine
+  MessagingHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
+  CallStack --> CallMediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
   SettingsLogic --> SessionStore
@@ -171,8 +173,8 @@ flowchart LR
   Contacts -->|MessagingContactsPorts| Hub
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
   Shell -->|MessagingShellPorts mesh reads via MeshHost| Hub
-  Call -->|CallFunctionalPorts / CallUiBackend| Hub
-  App -->|owns CallUiBackend| Call
+  Call -->|CallFunctionalPorts / CallUiBackend → CallStack| Hub
+  App -->|owns CallUiBackend bound to Hub::CallStackRef| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell

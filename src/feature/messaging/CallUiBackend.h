@@ -13,16 +13,17 @@
 namespace pbr {
 
 class CallMediaEngine;
-class MessagingHub;
+class CallStack;
 
 /**
- * Sealed UI-facing façade over MessagingHub call session + lifecycle.
- * Queries hub.Calls()/Lifecycle() per call so stack rebuilds stay transparent.
- * Application owns the instance; CallController binds via CallFunctionalPorts.
+ * Sealed UI-facing façade over the CallStack session + lifecycle.
+ * Queries stack.Calls()/Lifecycle() per call so stack rebuilds stay transparent.
+ * Application owns the instance (bound to MessagingHub::CallStackRef());
+ * CallController binds via CallFunctionalPorts.
  */
 class CallUiBackend {
 public:
-  explicit CallUiBackend(MessagingHub& hub);
+  explicit CallUiBackend(CallStack& stack);
 
   bool Available() const;
   /** Stable identity for rebind detection (CallSessionManager* as opaque). */
@@ -76,7 +77,7 @@ public:
   const std::string& ActiveCallId() const;
 
 private:
-  MessagingHub& hub_;
+  CallStack& stack_;
 };
 
 } // namespace pbr

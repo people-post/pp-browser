@@ -18,13 +18,8 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
-#include "base/media/CallMediaEngine.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/messaging/CallSessionStore.h"
-#include "feature/messaging/CallMediaKeyStore.h"
-#include "feature/messaging/CallLibp2pMediaBridge.h"
-#include "feature/messaging/CallLifecycle.h"
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/CallStack.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
@@ -32,10 +27,8 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/CallMediaDirectService.h"
 #include "libp2p/integration/host/LanMdnsDiscovery.h"
 #include "libp2p/integration/host/MediaRelayService.h"
-#include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "libp2p/integration/host/ReachabilityService.h"
 #include "libp2p/integration/host/MeshHost.h"
@@ -131,6 +124,9 @@ public:
   InboxController& Inbox();
   P2pMessagingService& P2p();
   GroupMembershipService& Groups();
+  /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
+  CallStack& CallStackRef() { return *call_stack_; }
+  const CallStack& CallStackRef() const { return *call_stack_; }
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
   MessageRouter& Router();
@@ -222,11 +218,9 @@ private:
   /** Shared libp2p mesh host (NodeRuntime + dial-back + relays + reachability). */
   NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
-  void WireCallMediaRelayDeps();
   void PublishNodeAdvertisedAddrs();
-  Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
-  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
-  std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
+  /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
+  CallStackDeps MakeCallStackDeps();
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -236,13 +230,6 @@ private:
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
-  std::vector<std::string> LocalCallListenMultiaddrs() const;
-  void RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                        const std::vector<std::string>& multiaddrs);
-  bool HasActiveLocalCall();
-  /** N025: lifecycle sets desire; Hub executes start/stop on IO only. */
-  void SetEphemeralListenDesire(bool want);
-  void EnsureCallLifecycleBound();
   void StartCoordinatorTimers();
   void StopCoordinatorTimers();
 
@@ -259,10 +246,7 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
-  std::unique_ptr<CallSessionStore> call_session_store_;
-  std::unique_ptr<CallMediaKeyStore> call_media_keys_;
-  std::unique_ptr<CallMediaEngine> call_media_engine_;
-  std::unique_ptr<CallSessionManager> call_sessions_;
+  std::unique_ptr<CallStack> call_stack_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
@@ -284,15 +268,7 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<MeshHost> mesh_;
-  std::unique_ptr<CallMediaDirectService> call_media_direct_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
-  std::unique_ptr<CallLibp2pMediaBridge> call_libp2p_bridge_;
-  std::unique_ptr<CallLifecycle> call_lifecycle_;
-  /** CallSessionManager the bridge was last built against (detect stack rebuild). */
-  CallSessionManager* libp2p_bridge_bound_sessions_ = nullptr;
-  std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
-  std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
-  std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
@@ -311,8 +287,6 @@ private:
   int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;
   /** True while StopEphemeralListen runs on IO (ListenOn/StopListening PostAndWait). */
   bool mobile_ephemeral_stop_inflight_ = false;
-  /** Lifecycle-driven N025 desire (not inventing policy from TopPendingInvite alone). */
-  bool ephemeral_listen_desired_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
 };

@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     CallLifecycle.cpp
     CallInboundHandlers.cpp
     CallSessionManager.cpp
+    CallStack.cpp
     CallTopologyController.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp

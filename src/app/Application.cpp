@@ -194,7 +194,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
-  call_ui_ = std::make_unique<CallUiBackend>(*messaging_);
+  call_ui_ = std::make_unique<CallUiBackend>(messaging_->CallStackRef());
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
