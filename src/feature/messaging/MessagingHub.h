@@ -38,6 +38,7 @@
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "libp2p/integration/host/ReachabilityService.h"
+#include "libp2p/integration/host/MeshHost.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
@@ -168,9 +169,9 @@ public:
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
-  DialBackService* DialBack() { return dial_back_.get(); }
-  CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
-  MediaRelayService* MediaRelay() { return media_relay_.get(); }
+  DialBackService* DialBack() { return mesh_ ? mesh_->DialBack() : nullptr; }
+  CircuitRelayService* CircuitRelay() { return mesh_ ? mesh_->CircuitRelay() : nullptr; }
+  MediaRelayService* MediaRelay() { return mesh_ ? mesh_->MediaRelay() : nullptr; }
 
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
@@ -203,7 +204,10 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
-  void StartMeshServices(Libp2pRole role);
+  /** App-only mesh glue (CallMediaDirect / LAN mDNS / policies) after MeshHost start. */
+  void StartMeshServices();
+  /** Shared libp2p mesh host (NodeRuntime + dial-back + relays + reachability). */
+  NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
   void WireCallMediaRelayDeps();
   void PublishNodeAdvertisedAddrs();
@@ -266,10 +270,7 @@ private:
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<NodeRuntime> node_runtime_;
-  std::unique_ptr<DialBackService> dial_back_;
-  std::unique_ptr<CircuitRelayService> circuit_relay_;
-  std::unique_ptr<MediaRelayService> media_relay_;
+  std::unique_ptr<MeshHost> mesh_;
   std::unique_ptr<CallMediaDirectService> call_media_direct_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<CallLibp2pMediaBridge> call_libp2p_bridge_;
@@ -279,7 +280,6 @@ private:
   std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
-  ReachabilityService reachability_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;

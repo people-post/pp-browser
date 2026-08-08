@@ -38,6 +38,7 @@ function(pp_browser_add_libp2p_integration)
     host/PeerSessionManager.cpp
     host/PeerIdUtil.cpp
     host/NodeRuntime.cpp
+    host/MeshHost.cpp
     host/DialBackService.cpp
     host/StreamJsonFrame.cpp
     host/StreamFrameIo.cpp
