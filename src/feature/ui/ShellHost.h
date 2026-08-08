@@ -6,6 +6,8 @@
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
@@ -27,9 +29,6 @@ class Element;
 }
 
 namespace pbr {
-
-class PinGateController;
-class FlowCoordinator;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -80,8 +79,8 @@ public:
   void OpenStatusbarPopover();
   void CloseStatusbarPopover();
   void ToggleStatusbarPopover();
-  void BindPinGate(PinGateController& pin_gate);
-  void BindFlowCoordinator(FlowCoordinator& flow);
+  void BindPinGateActions(PinGateActionPorts ports);
+  void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
 
   void Initialize(Rml::Context* context);
@@ -297,8 +296,8 @@ private:
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
   bool statusbar_popover_needs_position_ = false;
-  PinGateController* pin_gate_ = nullptr;
-  FlowCoordinator* flow_ = nullptr;
+  PinGateActionPorts pin_gate_actions_;
+  FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
 
   static ShellHost* installed_instance_;

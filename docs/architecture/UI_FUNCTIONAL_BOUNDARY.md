@@ -125,7 +125,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Rules:**
 
-- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`) or facade methods — app fills implementations in `Application`.
+- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `UnlockEnsurePorts`, …) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
 - **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
@@ -137,6 +137,10 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 - `ChatSessionPorts` — select thread, finalize display, find someone
 - `CallActionsPorts` — start/accept/leave call chrome actions for chat, shell, people-picker (filled from `CallController`)
 - `CallFunctionalPorts` + `CallUiBackend` — sealed call session/lifecycle access for `CallController` (no raw CSM/Lifecycle pointers)
+- `UnlockEnsurePorts` — ensure unlocked / unlock-in-progress for chat, settings, contacts, people-picker (filled from `ProfileUnlockGate`)
+- `FlowCoordinatorPorts` — modal begin/end/dismiss for shell + people-picker (filled from `FlowCoordinator`)
+- `BadgeNotifyPorts` — badge refresh / sessions unread for chat (filled from `BadgeAggregator`)
+- `PinGateActionPorts` — PIN overlay submit/cancel/chooser actions for shell (filled from `PinGateController`)
 - `ProfileUnlockPorts` — ensure unlocked, complete with PIN (async heavy work)
 - `ActionRouter` — declarative Rml action → MCP tool map
 
@@ -195,7 +199,7 @@ struct MessagingActions {
 `Application` (`src/app/`) is the only place that:
 
 - Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …)
-- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `ProfileUnlockPorts`)
+- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `UnlockEnsurePorts`, `FlowCoordinatorPorts`, `BadgeNotifyPorts`, `PinGateActionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickLibp2p`, drain `AppRuntime` UI mailbox
@@ -229,6 +233,10 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Settings imperative ops | `SettingsCommands` | Actions |
 | Chat navigation | `ChatSessionPorts` | Actions |
 | Contacts notify | `ContactsNotifyPorts` | Actions + Events |
+| Unlock ensure | `UnlockEnsurePorts` | Actions |
+| Flow coordinator | `FlowCoordinatorPorts` | Actions |
+| Badge notify | `BadgeNotifyPorts` | Actions + State |
+| PIN gate actions | `PinGateActionPorts` | Actions |
 | People picker notify | `PeoplePickerNotifyPorts` | Actions |
 | App-owned presenters | `Application` + `InstallInstance` / `ClearInstance` | Composition root |
 | Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |

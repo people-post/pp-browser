@@ -5,10 +5,12 @@
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
 #include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -25,9 +27,6 @@ class Context;
 
 namespace pbr {
 
-class ProfileUnlockGate;
-class FlowCoordinator;
-
 class PeoplePickerController : public Module {
 public:
   PeoplePickerController();
@@ -40,9 +39,9 @@ public:
 
   void BindContactsPorts(MessagingContactsPorts ports);
   void BindPickerPorts(MessagingPeoplePickerPorts ports);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindChatPorts(ChatSessionPorts ports);
-  void BindFlowCoordinator(FlowCoordinator& flow);
+  void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
   /** Shell navigation / layers without ShellHost::Instance(). Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
@@ -137,8 +136,8 @@ private:
   bool cta_enabled_ = false;
   MessagingContactsPorts contacts_ports_;
   MessagingPeoplePickerPorts picker_ports_;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
-  FlowCoordinator* flow_ = nullptr;
+  UnlockEnsurePorts unlock_ensure_;
+  FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;

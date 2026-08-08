@@ -5,6 +5,7 @@
 #include "feature/chat/ChatDataModel.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/ui/BadgeAggregator.h"
+#include "feature/ui/BadgeNotifyPorts.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/i18n/ScriptLanguageDetector.h"
 #include "base/runtime/AppLifecycle.h"
@@ -39,8 +40,8 @@
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
-#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/CallActionsPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/UserFeedback.h"
@@ -364,8 +365,8 @@ void ChatController::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
-void ChatController::BindBadgeAggregator(BadgeAggregator& badges) {
-  badges_ = &badges;
+void ChatController::BindBadgeNotify(BadgeNotifyPorts ports) {
+  badge_notify_ = std::move(ports);
 }
 
 void ChatController::BindInputCoordinator(InputCoordinator& input) {
@@ -376,8 +377,8 @@ void ChatController::BindCallActions(CallActionsPorts ports) {
   call_actions_ = std::move(ports);
 }
 
-void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void ChatController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
@@ -411,8 +412,8 @@ ShellChromeSnapshot ChatController::ChromeSnapshot() const {
 ChatSurfaceSnapshot ChatController::BuildSurfaceSnapshot() const {
   ChatSurfaceSnapshot snap;
   snap.has_active_thread = !ActiveThreadId().empty();
-  if (badges_) {
-    snap.sessions_unread = badges_->State().sessions_unread;
+  if (badge_notify_.sessions_unread) {
+    snap.sessions_unread = badge_notify_.sessions_unread();
   }
   return snap;
 }
@@ -1023,8 +1024,8 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
-  if (badges_) {
-    badges_->Refresh();
+  if (badge_notify_.refresh) {
+    badge_notify_.refresh();
   }
   // Inbox ingest (incl. call_invite) completes on IO; reconcile ring after messages change.
   if (call_actions_.refresh_pending_ring) {
@@ -2007,20 +2008,20 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
 }
 
 void ChatController::WithSecrets(std::function<void()> action) {
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     if (action) {
       action();
     }
     return;
   }
-  if (unlock_gate_->IsUnlockInProgress()) {
+  if (unlock_ensure_.is_unlock_in_progress && unlock_ensure_.is_unlock_in_progress()) {
     ShowToast(Tr("startup.still_preparing"));
     NotifySurfaceChanged();
   }
-  unlock_gate_->EnsureUnlocked(
+  unlock_ensure_.ensure_unlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
-          if (!unlock_gate_->IsUnlockInProgress()) {
+          if (!unlock_ensure_.is_unlock_in_progress || !unlock_ensure_.is_unlock_in_progress()) {
             ShowToast("PIN required to continue");
             NotifySurfaceChanged();
           }

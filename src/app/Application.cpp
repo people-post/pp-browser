@@ -34,6 +34,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
+#include "feature/ui/BadgeNotifyPorts.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
@@ -42,7 +43,9 @@
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
 #include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/ShellChromeApplyPorts.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/BadgeAggregator.h"
@@ -51,6 +54,8 @@
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/PinGateController.h"
+#include "feature/ui/UnlockEnsurePorts.h"
+#include "feature/ui/UnlockGateCompletePorts.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "feature/ui/SettingsController.h"
@@ -593,7 +598,18 @@ bool Application::Initialize(const char* window_title) {
     }
     return inputs;
   });
-  chat_->BindBadgeAggregator(*badges_);
+  {
+    BadgeNotifyPorts badge_notify;
+    badge_notify.refresh = [this]() {
+      if (badges_) {
+        badges_->Refresh();
+      }
+    };
+    badge_notify.sessions_unread = [this]() {
+      return badges_ ? badges_->State().sessions_unread : 0;
+    };
+    chat_->BindBadgeNotify(std::move(badge_notify));
+  }
   chat_->BindInputCoordinator(*input_);
   {
     CallActionsPorts call_actions;
@@ -631,7 +647,15 @@ bool Application::Initialize(const char* window_title) {
   }
 
   unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
-  pin_gate_->BindGate(*unlock_gate_);
+  {
+    UnlockGateCompletePorts gate_complete;
+    gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
+      unlock_gate_->CompleteWithPin(pin, create_mode);
+    };
+    gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
+    gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
+    pin_gate_->BindGateComplete(std::move(gate_complete));
+  }
   ProfileUnlockPorts unlock_ports;
   unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
   unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
@@ -666,7 +690,17 @@ bool Application::Initialize(const char* window_title) {
   };
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
-  chat_->BindUnlockGate(*unlock_gate_);
+  {
+    UnlockEnsurePorts unlock_ensure;
+    unlock_ensure.ensure_unlocked = [this](std::function<void(bool)> done) {
+      unlock_gate_->EnsureUnlocked(std::move(done));
+    };
+    unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
+    chat_->BindUnlockEnsure(unlock_ensure);
+    settings_->BindUnlockEnsure(unlock_ensure);
+    contacts_->BindUnlockEnsure(unlock_ensure);
+    people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
+  }
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {
@@ -676,12 +710,26 @@ bool Application::Initialize(const char* window_title) {
     };
     shell_->BindShellMessaging(std::move(shell_messaging));
   }
-  shell_->BindPinGate(*pin_gate_);
-  shell_->BindFlowCoordinator(*flow_);
-  settings_->BindUnlockGate(*unlock_gate_);
-  contacts_->BindUnlockGate(*unlock_gate_);
-  people_picker_->BindUnlockGate(*unlock_gate_);
-  people_picker_->BindFlowCoordinator(*flow_);
+  {
+    PinGateActionPorts pin_actions;
+    pin_actions.on_submit = [this]() { pin_gate_->OnSubmit(); };
+    pin_actions.on_cancel = [this]() { pin_gate_->OnCancel(); };
+    pin_actions.on_set_pin = [this]() { pin_gate_->OnSetPin(); };
+    pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
+    shell_->BindPinGateActions(std::move(pin_actions));
+  }
+  {
+    FlowCoordinatorPorts flow_ports;
+    flow_ports.begin_modal =
+        [this](int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel) {
+          flow_->BeginModal(layer_id, std::move(on_step_back), std::move(on_cancel));
+        };
+    flow_ports.end_modal = [this]() { flow_->EndModal(); };
+    flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
+    flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
+    shell_->BindFlowCoordinator(flow_ports);
+    people_picker_->BindFlowCoordinator(std::move(flow_ports));
+  }
 
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
@@ -779,6 +827,7 @@ bool Application::Initialize(const char* window_title) {
     }
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
+      pin_gate_->BindGateComplete({});
     }
     if (call_) {
       call_->BindCallPorts({});
@@ -787,12 +836,24 @@ bool Application::Initialize(const char* window_title) {
     }
     if (chat_) {
       chat_->BindCallActions({});
+      chat_->BindBadgeNotify({});
+      chat_->BindUnlockEnsure({});
     }
     if (shell_) {
       shell_->BindCallActions({});
+      shell_->BindPinGateActions({});
+      shell_->BindFlowCoordinator({});
     }
     if (people_picker_) {
       people_picker_->BindCallActions({});
+      people_picker_->BindUnlockEnsure({});
+      people_picker_->BindFlowCoordinator({});
+    }
+    if (settings_) {
+      settings_->BindUnlockEnsure({});
+    }
+    if (contacts_) {
+      contacts_->BindUnlockEnsure({});
     }
     call_ui_.reset();
     if (unlock_gate_) {
@@ -999,6 +1060,7 @@ void Application::Shutdown() {
   }
   if (pin_gate_) {
     pin_gate_->BindShellPinGate({});
+    pin_gate_->BindGateComplete({});
   }
   if (call_) {
     call_->BindCallPorts({});
@@ -1007,12 +1069,24 @@ void Application::Shutdown() {
   }
   if (chat_) {
     chat_->BindCallActions({});
+    chat_->BindBadgeNotify({});
+    chat_->BindUnlockEnsure({});
   }
   if (shell_) {
     shell_->BindCallActions({});
+    shell_->BindPinGateActions({});
+    shell_->BindFlowCoordinator({});
   }
   if (people_picker_) {
     people_picker_->BindCallActions({});
+    people_picker_->BindUnlockEnsure({});
+    people_picker_->BindFlowCoordinator({});
+  }
+  if (settings_) {
+    settings_->BindUnlockEnsure({});
+  }
+  if (contacts_) {
+    contacts_->BindUnlockEnsure({});
   }
   call_ui_.reset();
   shell_->BindShellMessaging({});

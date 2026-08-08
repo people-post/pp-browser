@@ -10,11 +10,11 @@
 #include "base/ui/RmlVariantHelpers.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PinGateController.h"
 #include "feature/ui/CallActionsPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
-#include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
@@ -97,12 +97,12 @@ void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
 }
 
-void ShellHost::BindPinGate(PinGateController& pin_gate) {
-  pin_gate_ = &pin_gate;
+void ShellHost::BindPinGateActions(PinGateActionPorts ports) {
+  pin_gate_actions_ = std::move(ports);
 }
 
-void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
-  flow_ = &flow;
+void ShellHost::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_coordinator_ = std::move(ports);
 }
 
 void ShellHost::BindCallActions(CallActionsPorts ports) {
@@ -552,8 +552,8 @@ void ShellHost::CloseLayer(int layer_id) {
     return;
   }
   const int closing_id = layer_id < 0 ? state_.overlay_stack.back().id : layer_id;
-  if (flow_) {
-    flow_->NotifyLayerClosing(closing_id);
+  if (flow_coordinator_.notify_layer_closing) {
+    flow_coordinator_.notify_layer_closing(closing_id);
   }
   if (layer_id < 0) {
     state_.overlay_stack.pop_back();
@@ -666,14 +666,14 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
-      if (pin_gate_) {
-        pin_gate_->OnCancel();
+      if (pin_gate_actions_.on_cancel) {
+        pin_gate_actions_.on_cancel();
       }
     }
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
-  if (flow_ && flow_->HandleDismiss()) {
+  if (flow_coordinator_.handle_dismiss && flow_coordinator_.handle_dismiss()) {
     RequestSyncLayout();
     return true;
   }
@@ -2505,29 +2505,29 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSubmit();
+  if (Instance().pin_gate_actions_.on_submit) {
+    Instance().pin_gate_actions_.on_submit();
   }
 }
 
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnCancel();
+  if (Instance().pin_gate_actions_.on_cancel) {
+    Instance().pin_gate_actions_.on_cancel();
   }
 }
 
 void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSetPin();
+  if (Instance().pin_gate_actions_.on_set_pin) {
+    Instance().pin_gate_actions_.on_set_pin();
   }
 }
 
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnUseDefaultPin();
+  if (Instance().pin_gate_actions_.on_use_default) {
+    Instance().pin_gate_actions_.on_use_default();
   }
 }
 

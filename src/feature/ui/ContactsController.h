@@ -6,6 +6,7 @@
 #include "feature/ui/ContactsSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -21,7 +22,6 @@ class Context;
 
 namespace pbr {
 
-class ProfileUnlockGate;
 struct Contact;
 
 class ContactsController : public Module {
@@ -35,7 +35,7 @@ public:
   static ContactsController& Instance();
 
   void BindContactsPorts(MessagingContactsPorts ports);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindChatPorts(ChatSessionPorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
@@ -152,7 +152,7 @@ private:
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
   MessagingContactsPorts contacts_ports_;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
+  UnlockEnsurePorts unlock_ensure_;
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;

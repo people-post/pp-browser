@@ -137,8 +137,8 @@ flowchart LR
   Chat -->|MessagingChatPorts| Hub
   App --> Agent
   App -->|BindAgentPorts| Chat
-  Chat -->|BindBadgeAggregator| Badges
   Chat -->|BindInputCoordinator| Input
+  App -->|BindBadgeNotify BadgeNotifyPorts| Chat
   App -->|BindCallActions CallActionsPorts| Chat
   App -->|BindCallActions CallActionsPorts| Shell
   App -->|BindCallActions CallActionsPorts| PeoplePicker
@@ -152,13 +152,13 @@ flowchart LR
   App -->|BindChatPorts| PeoplePicker
   App -->|BindPeoplePickerNotify| Chat
   App -->|BindPeoplePickerNotify| Call
-  App -->|BindPinGate| Shell
-  App -->|BindFlowCoordinator| Shell
-  App -->|BindFlowCoordinator| PeoplePicker
-  App -->|BindUnlockGate| Chat
-  App -->|BindUnlockGate| Settings
-  App -->|BindUnlockGate| Contacts
-  App -->|BindUnlockGate| PeoplePicker
+  App -->|BindPinGateActions PinGateActionPorts| Shell
+  App -->|BindFlowCoordinator FlowCoordinatorPorts| Shell
+  App -->|BindFlowCoordinator FlowCoordinatorPorts| PeoplePicker
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Chat
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Settings
+  App -->|BindUnlockEnsure UnlockEnsurePorts| Contacts
+  App -->|BindUnlockEnsure UnlockEnsurePorts| PeoplePicker
   App -->|deferred startup| ClientCompat
   App -->|deferred startup| UnlockGate
   UnlockGate -.->|unlock gate| Settings
@@ -299,12 +299,16 @@ Full model: [THREADING.md](THREADING.md).
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
-| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat calls Refresh |
+| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat via `BadgeNotifyPorts` |
+| **BadgeNotifyPorts** | `feature/ui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
 | **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
-| **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker |
+| **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
+| **FlowCoordinatorPorts** | `feature/ui/` | Modal begin/end/dismiss; app-filled from `FlowCoordinator` |
 | **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
-| **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate |
-| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports |
+| **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
+| **PinGateActionPorts** | `feature/ui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
+| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts` |
+| **UnlockEnsurePorts** | `feature/ui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
@@ -312,6 +316,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/people-picker; app-filled from `ChatController` |
 | **ContactsNotifyPorts** | `feature/ui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
 | **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
+| **CallActionsPorts** | `feature/ui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |

@@ -4,8 +4,8 @@
 
 namespace pbr {
 
-void PinGateController::BindGate(ProfileUnlockGate& gate) {
-  gate_ = &gate;
+void PinGateController::BindGateComplete(UnlockGateCompletePorts ports) {
+  gate_complete_ = std::move(ports);
 }
 
 void PinGateController::BindShellPinGate(ShellPinGatePorts ports) {
@@ -116,13 +116,13 @@ void PinGateController::OnUseDefaultPin() {
     return;
   }
   PinGateState& gate = shell_pin_gate_.pin_gate();
-  if (!gate.active || !gate.chooser_mode || !gate_) {
+  if (!gate.active || !gate.chooser_mode || !gate_complete_.complete_with_default_pin) {
     return;
   }
 
   gate.error = "";
   DirtyPinFields();
-  gate_->CompleteWithDefaultPin();
+  gate_complete_.complete_with_default_pin();
 }
 
 void PinGateController::OnSubmit() {
@@ -130,7 +130,7 @@ void PinGateController::OnSubmit() {
     return;
   }
   PinGateState& gate = shell_pin_gate_.pin_gate();
-  if (!gate.active || gate.chooser_mode || !gate_) {
+  if (!gate.active || gate.chooser_mode || !gate_complete_.complete_with_pin) {
     return;
   }
 
@@ -156,7 +156,7 @@ void PinGateController::OnSubmit() {
 
   gate.error = "";
   DirtyPinFields();
-  gate_->CompleteWithPin(pin, gate.create_mode);
+  gate_complete_.complete_with_pin(pin, gate.create_mode);
 }
 
 void PinGateController::OnCancel() {
@@ -164,10 +164,10 @@ void PinGateController::OnCancel() {
     return;
   }
   PinGateState& gate = shell_pin_gate_.pin_gate();
-  if (!gate.active || (!gate.create_mode && !gate.chooser_mode) || !gate_) {
+  if (!gate.active || (!gate.create_mode && !gate.chooser_mode) || !gate_complete_.cancel) {
     return;
   }
-  gate_->Cancel();
+  gate_complete_.cancel();
 }
 
 } // namespace pbr

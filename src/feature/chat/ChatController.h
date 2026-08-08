@@ -9,11 +9,13 @@
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/BadgeNotifyPorts.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -40,9 +42,7 @@ class Element;
 
 namespace pbr {
 
-class BadgeAggregator;
 class InputCoordinator;
-class ProfileUnlockGate;
 
 class ChatController : public Module {
 public:
@@ -96,10 +96,10 @@ public:
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
-  void BindBadgeAggregator(BadgeAggregator& badges);
+  void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallActions(CallActionsPorts ports);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app ChatShellBridge. Clear via BindSurfaceNotify({}). */
@@ -307,10 +307,10 @@ private:
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
-  BadgeAggregator* badges_ = nullptr;
+  BadgeNotifyPorts badge_notify_;
   InputCoordinator* input_ = nullptr;
   CallActionsPorts call_actions_;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
+  UnlockEnsurePorts unlock_ensure_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   ChatSurfaceNotifyPorts surface_notify_;

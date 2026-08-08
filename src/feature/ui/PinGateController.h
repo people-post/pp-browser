@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ShellPinGatePorts.h"
+#include "feature/ui/UnlockGateCompletePorts.h"
 
 #include <string>
 
@@ -15,7 +15,7 @@ class PinGateController {
 public:
   PinGateController() = default;
 
-  void BindGate(ProfileUnlockGate& gate);
+  void BindGateComplete(UnlockGateCompletePorts ports);
   /** Shell PIN chrome without ShellHost::Instance(). Clear via BindShellPinGate({}). */
   void BindShellPinGate(ShellPinGatePorts ports);
 
@@ -36,7 +36,7 @@ public:
 private:
   void ShowCreate();
 
-  ProfileUnlockGate* gate_ = nullptr;
+  UnlockGateCompletePorts gate_complete_;
   ShellPinGatePorts shell_pin_gate_;
 };
 
