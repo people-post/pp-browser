@@ -7,6 +7,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eIntegrityUtil.h"
@@ -126,6 +127,13 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
     });
   }
   TailSyncActiveE2eThread();
+}
+
+void P2pMessagingService::SetInitiationBillingStore(InitiationBillingStore* store) {
+  initiation_billing_ = store;
+  if (receive_pipeline_) {
+    receive_pipeline_->SetInitiationBillingStore(store);
+  }
 }
 
 void P2pMessagingService::SetCallSessionManager(CallSessionManager* calls) {
@@ -785,6 +793,22 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   }
   if ((*thread)->peer_identity_value.empty()) {
     return Error("Direct thread missing peer identity");
+  }
+  // P001: first initiate blocked when peer floor > 0 and payment rails unavailable.
+  if (initiation_billing_ && !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
+    const InitiationPeerBilling billing = initiation_billing_->Get((*thread)->peer_identity_value);
+    const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
+    if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
+      return payable.error();
+    }
+    if (auto floor_ok = InitiationPricing::CheckOfferAgainstFloor(offer, billing.floor_minor); !floor_ok) {
+      return floor_ok.error();
+    }
+    if (offer > 0) {
+      (void)initiation_billing_->MarkOffered((*thread)->peer_identity_value, offer, billing.floor_minor);
+    } else {
+      (void)initiation_billing_->MarkOpen((*thread)->peer_identity_value);
+    }
   }
 
   ThreadMessage message;

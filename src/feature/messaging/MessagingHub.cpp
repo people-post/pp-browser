@@ -1023,6 +1023,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
+  initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
+  (void)initiation_billing_->Load();
 
   {
     StartupPhase phase("MessagingHub::ReconcileOutbox");
@@ -1045,6 +1047,21 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       inbox_->NotifyThreadChanged();
     }
   });
+  directory_shadows_->SetOnHitCached([this](const DirectoryHit& hit) {
+    if (!initiation_billing_) {
+      return;
+    }
+    std::string relay_id = hit.hit_id;
+    for (const ContactId& id : hit.ids) {
+      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+        relay_id = id.value;
+        break;
+      }
+    }
+    if (!relay_id.empty()) {
+      (void)initiation_billing_->SetFloor(relay_id, hit.initiation_floor);
+    }
+  });
 
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();
   secrets.RegisterDekConsumer(identity_.get());
@@ -1058,12 +1075,14 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
   p2p_->SetProfileDataDir(data_dir_);
+  p2p_->SetInitiationBillingStore(initiation_billing_.get());
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
   p2p_->SetGroupMembership(group_membership_.get());
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
+  call_sessions_->SetInitiationBillingStore(initiation_billing_.get());
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() {
@@ -1157,12 +1176,14 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
                                                 Sessions());
   p2p_->SetProfileDataDir(data_dir_);
+  p2p_->SetInitiationBillingStore(initiation_billing_.get());
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
   p2p_->SetGroupMembership(group_membership_.get());
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
+  call_sessions_->SetInitiationBillingStore(initiation_billing_.get());
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() {
@@ -1230,7 +1251,14 @@ Roe<void> MessagingHub::EnsureMessagingReady() {
   if (auto identity = identity_->LoadOrCreate(); !identity) {
     return identity.error();
   } else {
-    (void)identity;
+    // Dogfood: seed LocalIdentity.initiation_floor from AppConfig when identity is still 0 (P001).
+    if (identity->initiation_floor == 0 && config_.initiation_floor > 0) {
+      LocalIdentity updated = *identity;
+      updated.initiation_floor = config_.initiation_floor;
+      if (auto saved = identity_->Update(updated); !saved) {
+        return saved.error();
+      }
+    }
   }
 
   if (auto built = BuildMessagingStack(); !built) {

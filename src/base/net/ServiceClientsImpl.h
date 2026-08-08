@@ -92,7 +92,8 @@ public:
                                              int64_t timestamp, const std::string& signature_alg = "ed25519",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& peer_id = "",
-                                             const std::vector<std::string>& multiaddrs = {}) override;
+                                             const std::vector<std::string>& multiaddrs = {},
+                                             int64_t initiation_floor = 0) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
 };
@@ -153,7 +154,8 @@ public:
                                              int64_t timestamp, const std::string& signature_alg = "ed25519",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& peer_id = "",
-                                             const std::vector<std::string>& multiaddrs = {}) override;
+                                             const std::vector<std::string>& multiaddrs = {},
+                                             int64_t initiation_floor = 0) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
 

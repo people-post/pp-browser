@@ -4,6 +4,7 @@
 #include "base/crypto/SessionKeyDeriver.h"
 #include "base/messaging/CallSessionLogic.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/messaging/PeerCapsLogic.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/people/ContactJson.h"
@@ -515,6 +516,19 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   if ((*thread)->kind != ThreadKind::Direct && (*thread)->kind != ThreadKind::Group) {
     return Error("Calls require a direct or group thread");
   }
+  // P001: block outbound dial when initiation offer > 0 and payment rails unavailable.
+  if (initiation_billing_) {
+    for (const std::string& invitee : invitee_identities) {
+      if (invitee.empty() || invitee == *local || initiation_billing_->IsOpen(invitee)) {
+        continue;
+      }
+      const InitiationPeerBilling billing = initiation_billing_->Get(invitee);
+      const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
+      if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
+        return payable.error();
+      }
+    }
+  }
 
   auto key = media_keys_.GenerateEpochKey();
   if (!key) {
@@ -678,6 +692,19 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
     invite.caps = local_peer_caps_();
     invite.caps.present = true;
   }
+  if (initiation_billing_ && !initiation_billing_->IsOpen(invitee_identity)) {
+    const InitiationPeerBilling billing = initiation_billing_->Get(invitee_identity);
+    const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
+    if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
+      return payable.error();
+    }
+    invite.offer_amount_minor = offer;
+    invite.floor_minor = billing.floor_minor;
+    invite.currency = kPricingCurrencyId;
+    if (offer > 0) {
+      (void)initiation_billing_->MarkOffered(invitee_identity, offer, billing.floor_minor);
+    }
+  }
   auto detail = CallControlCodec::EncodeInvite(invite);
   if (!detail) {
     return detail.error();
@@ -792,6 +819,13 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   accept.call_id = call_id;
   accept.identity = *local;
   accept.video_enabled = false;
+  // P001: without charge UI yet, Accept waives initiation amount (call still connects).
+  if (initiation_billing_) {
+    const InitiationPeerBilling billing = initiation_billing_->Get(inviter);
+    accept.offer_amount_minor = billing.offer_minor;
+    accept.charge_decision = "waive";
+    (void)initiation_billing_->MarkOpen(inviter);
+  }
   if (local_listen_multiaddrs_) {
     accept.listen_multiaddrs = local_listen_multiaddrs_();
   }

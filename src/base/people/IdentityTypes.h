@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace pbr {
@@ -20,6 +21,11 @@ struct LocalIdentity {
   bool registered = false;
   /** ISO-8601 expiry from register/finish; empty until registered or if server omitted it. */
   std::string registration_expires_at;
+  /**
+   * Own initiation floor (pp_credit minor units, P001). Default 0.
+   * Dogfood via AppConfig.initiation_floor; published on register/renew when server supports it.
+   */
+  int64_t initiation_floor = 0;
 };
 
 } // namespace pbr

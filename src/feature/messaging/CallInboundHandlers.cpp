@@ -1,6 +1,7 @@
 #include "feature/messaging/CallSessionManager.h"
 
 #include "base/messaging/CallSessionLogic.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/messaging/PeerCapsLogic.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
@@ -63,6 +64,28 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
       existing && existing->has_value() && (*existing)->state == CallParticipantState::Joined) {
     log().info << "CallInvite ignored; already joined call_id=" << invite->call_id;
     return {};
+  }
+  // P001: when we charge (local floor > 0), auto-reject offers below floor.
+  if (initiation_billing_) {
+    int64_t local_floor = 0;
+    if (auto id = identity_.Get()) {
+      local_floor = id->initiation_floor;
+    }
+    if (local_floor > 0) {
+      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(invite->offer_amount_minor, local_floor); !ok) {
+        log().info << "CallInvite rejected offer_too_low call_id=" << invite->call_id
+                   << " offer=" << invite->offer_amount_minor << " floor=" << local_floor;
+        CallDeclineDetail decline;
+        decline.call_id = invite->call_id;
+        decline.identity = local_identity;
+        if (auto encoded = CallControlCodec::EncodeDecline(decline)) {
+          (void)SendCallDirectMessage(sender_identity, CallControlType::CallDecline, *encoded,
+                                      "Call declined (offer too low)");
+        }
+        return {};
+      }
+      (void)initiation_billing_->MarkOffered(sender_identity, invite->offer_amount_minor, local_floor);
+    }
   }
   const int64_t now = util::NowUnixMs();
   if (CallSessionLogic::ShouldDropStaleInvite(*invite, now, relay_created_at_ms, relay_server_time_ms)) {

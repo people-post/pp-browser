@@ -48,9 +48,12 @@ struct MediaRelayBudgetConfig {
   int64_t default_per_user_down_bps = 0;
 };
 
-/** Per-capability pricing stub (N010 / N017). Volunteer ships first. */
+/**
+ * Per-capability relay pricing (N010 / P001).
+ * Protocol branches on rate (== 0 free); mode is a UX label only.
+ */
 struct RelayPricingConfig {
-  std::string mode = "volunteer"; // volunteer | paid
+  std::string mode = "volunteer"; // UX label: volunteer | paid
   double rate = 0.0;
 };
 
@@ -96,6 +99,12 @@ struct AppConfig {
   McpConfig promoted_mcp;
   std::vector<McpConfig> mcp_servers;
   SearchConfig search;
+  /**
+   * Dogfood: own initiation floor in pp_credit minor units (P001).
+   * No Me UI yet — set via config.json. Seeded into LocalIdentity on hub start.
+   * Default 0 (free).
+   */
+  int64_t initiation_floor = 0;
 };
 
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults);

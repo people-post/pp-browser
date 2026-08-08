@@ -4,6 +4,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
+#include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
@@ -65,6 +66,8 @@ public:
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
+  /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
+  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
   CallMediaHost& AsMediaHost() { return *this; }
 
@@ -205,6 +208,7 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
+  InitiationBillingStore* initiation_billing_ = nullptr;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

@@ -133,6 +133,9 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   if (!result.expires_at.empty()) {
     identity.registration_expires_at = result.expires_at;
   }
+  if (result.initiation_floor_present) {
+    identity.initiation_floor = result.initiation_floor;
+  }
 }
 
 void MarkRegistrationExpired(LocalIdentity& identity) {
@@ -170,7 +173,7 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
 
   return registration.FinishRegistration(start->challenge, loaded->public_key_b64, nickname, *signature, timestamp,
                                          start->signature_alg, loaded->kem_public_key_b64, loaded->peer_id,
-                                         multiaddrs);
+                                         multiaddrs, loaded->initiation_floor);
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,

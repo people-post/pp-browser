@@ -26,6 +26,9 @@ pp_browser_add_base_library(pp_base_messaging
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
+    InitiationBillingCodec.cpp
+    InitiationBillingStore.cpp
+    InitiationPricing.cpp
     JsonThreadStore.cpp
     MessagingJson.cpp
     PeerKemKeyStore.cpp

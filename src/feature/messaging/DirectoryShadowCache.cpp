@@ -11,6 +11,11 @@ void DirectoryShadowCache::SetOnUpdated(std::function<void()> callback) {
   on_updated_ = std::move(callback);
 }
 
+void DirectoryShadowCache::SetOnHitCached(std::function<void(const DirectoryHit&)> callback) {
+  std::lock_guard lock(mutex_);
+  on_hit_cached_ = std::move(callback);
+}
+
 std::optional<DirectoryHit> DirectoryShadowCache::Get(const std::string& relay_user_id) const {
   if (relay_user_id.empty()) {
     return std::nullopt;
@@ -38,10 +43,17 @@ void DirectoryShadowCache::Put(const DirectoryHit& hit) {
     return;
   }
   std::function<void()> notify;
+  std::function<void(const DirectoryHit&)> on_hit;
+  DirectoryHit cached;
   {
     std::lock_guard lock(mutex_);
     by_relay_id_[relay_id] = hit;
+    cached = by_relay_id_[relay_id];
     notify = on_updated_;
+    on_hit = on_hit_cached_;
+  }
+  if (on_hit) {
+    on_hit(cached);
   }
   if (notify) {
     notify();
@@ -64,6 +76,8 @@ void DirectoryShadowCache::EnsureLookup(const std::string& relay_user_id) {
       [this, relay_user_id]() { return directory_.LookupRelayUser(relay_user_id); },
       [this, relay_user_id](Roe<DirectoryHit> result) {
         std::function<void()> notify;
+        std::function<void(const DirectoryHit&)> on_hit;
+        std::optional<DirectoryHit> cached;
         {
           std::lock_guard lock(mutex_);
           inflight_.erase(relay_user_id);
@@ -80,8 +94,13 @@ void DirectoryShadowCache::EnsureLookup(const std::string& relay_user_id) {
               hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
             }
             by_relay_id_[relay_user_id] = std::move(hit);
+            cached = by_relay_id_[relay_user_id];
             notify = on_updated_;
+            on_hit = on_hit_cached_;
           }
+        }
+        if (cached && on_hit) {
+          on_hit(*cached);
         }
         if (notify) {
           notify();

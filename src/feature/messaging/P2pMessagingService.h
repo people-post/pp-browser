@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
@@ -77,6 +78,7 @@ public:
   void SetRelayClient(IRelayClient* relay);
   void SetCallSessionManager(CallSessionManager* calls);
   void SetGroupMembership(GroupMembershipService* groups);
+  void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
@@ -164,6 +166,7 @@ private:
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
+  InitiationBillingStore* initiation_billing_ = nullptr;
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;

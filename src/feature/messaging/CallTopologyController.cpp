@@ -2,6 +2,7 @@
 
 #include "base/media/CallMediaAdaptation.h"
 #include "base/messaging/HopHintLogic.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/messaging/SfuAttachWaitLogic.h"
 #include "base/i18n/LocalizationService.h"
@@ -818,6 +819,11 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     if (!quote || !quote->ok) {
       return Error(quote ? quote->error : quote.error().message);
     }
+    // P001: rate == 0 proceeds; rate > 0 needs payment (unavailable) — SoftMigrate may try next hop.
+    if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
+      log().info << "AttachLocalToSfu skip paid hop=" << attach.hop_peer_id << " rate=" << quote->rate;
+      return payable.error();
+    }
     a_up_bps = quote->a_up_bps;
 
     auto attach_res = relay_deps_.relay->AcceptAndAttach(
@@ -1084,6 +1090,10 @@ Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& c
   auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);
   if (!quote || !quote->ok) {
     return Error(quote ? quote->error : quote.error().message);
+  }
+  if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
+    log().info << "ReattachGuestSfu skip paid hop=" << attach.hop_peer_id << " rate=" << quote->rate;
+    return payable.error();
   }
   if (!IsMigrateGenerationCurrent(gen_at_start)) {
     return Error("reattach aborted");

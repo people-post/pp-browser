@@ -328,8 +328,12 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (req.want_down_bps > 0) {
       q.a_down_bps = std::min(q.a_down_bps, req.want_down_bps);
     }
-    q.pricing_mode = pricing.mode.empty() ? "volunteer" : pricing.mode;
-    q.rate = (q.pricing_mode == "volunteer") ? 0.0 : pricing.rate;
+    // P001: rate is authoritative; mode is UX label only (volunteer when rate == 0).
+    q.rate = pricing.rate;
+    if (!pricing.mode.empty() && pricing.mode == "volunteer") {
+      q.rate = 0.0;
+    }
+    q.pricing_mode = (q.rate <= 0.0) ? "volunteer" : (pricing.mode.empty() ? "paid" : pricing.mode);
     q.ceiling_bytes = kDefaultCeilingBytes;
     q.ceiling_amount = 0.0;
     return q;

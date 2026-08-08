@@ -86,6 +86,7 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   hit.ids = {{ContactIdKind::RelayUser, "relay:x", true}};
   hit.signing_public_key_b64 = "sig";
   hit.kem_public_key_b64 = "kem";
+  hit.initiation_floor = 55;
 
   const DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   EXPECT_EQ(again.hit_id, hit.hit_id);
@@ -93,6 +94,13 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   EXPECT_EQ(*again.signing_public_key_b64, "sig");
   ASSERT_TRUE(again.kem_public_key_b64.has_value());
   EXPECT_EQ(*again.kem_public_key_b64, "kem");
+  EXPECT_EQ(again.initiation_floor, 55);
+}
+
+TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
+  const nlohmann::json json = {{"relay_user_id", "relay:y"}, {"nickname", "y"}};
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  EXPECT_EQ(hit.initiation_floor, 0);
 }
 
 } // namespace

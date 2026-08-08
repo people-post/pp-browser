@@ -21,6 +21,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/CallSessionStore.h"
+#include "base/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 #include "feature/messaging/CallLifecycle.h"
@@ -233,6 +234,7 @@ private:
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
+  std::unique_ptr<InitiationBillingStore> initiation_billing_;
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;

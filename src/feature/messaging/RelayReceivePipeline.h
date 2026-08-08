@@ -19,6 +19,7 @@ namespace pbr {
 
 class GroupInviteGate;
 class CallSessionManager;
+class InitiationBillingStore;
 
 struct RelayReceiveOutcome {
   bool persisted = false;
@@ -51,6 +52,7 @@ public:
                        GroupInviteGate* invite_gate = nullptr);
 
   void SetCallSessionManager(CallSessionManager* calls) { call_sessions_ = calls; }
+  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -88,6 +90,7 @@ private:
   Roe<void> ApplyInboundCallMessage(ThreadMessage& message, const std::string& actor_identity,
                                     std::optional<int64_t> relay_created_at_ms = std::nullopt,
                                     std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
+  Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
@@ -96,6 +99,7 @@ private:
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   CallSessionManager* call_sessions_ = nullptr;
+  InitiationBillingStore* initiation_billing_ = nullptr;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 

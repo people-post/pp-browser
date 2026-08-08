@@ -75,6 +75,9 @@ LocalIdentity IdentityFromJson(const nlohmann::json& root) {
   if (root.contains("kem_private_key_b64") && root["kem_private_key_b64"].is_string()) {
     identity.kem_private_key_b64 = root["kem_private_key_b64"].get<std::string>();
   }
+  if (root.contains("initiation_floor") && root["initiation_floor"].is_number_integer()) {
+    identity.initiation_floor = root["initiation_floor"].get<int64_t>();
+  }
   return identity;
 }
 
@@ -88,7 +91,8 @@ nlohmann::json IdentityToJson(const LocalIdentity& identity) {
           {"relay_user_id", identity.relay_user_id},
           {"brief_llm_api_key", identity.brief_llm_api_key},
           {"registered", identity.registered},
-          {"registration_expires_at", identity.registration_expires_at}};
+          {"registration_expires_at", identity.registration_expires_at},
+          {"initiation_floor", identity.initiation_floor}};
 }
 
 } // namespace
