@@ -5,9 +5,11 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <future>
-#include <atomic>
+#include <optional>
 #include <utility>
 
 namespace pbr {
@@ -16,12 +18,49 @@ namespace {
 
 using libp2p::Bytes;
 using libp2p::connection::Stream;
+using Clock = std::chrono::steady_clock;
 
 bool IsCancelled(const StreamCancelCheck& check) {
   return check && check();
 }
 
+/** Wait for a libp2p::read completion; on deadline, reset the stream so the read fails. */
+Roe<void> AwaitExactRead(std::future<outcome::result<void>>& future,
+                         const std::shared_ptr<Stream>& stream,
+                         const std::optional<Clock::time_point>& deadline,
+                         const char* fail_message) {
+  if (deadline) {
+    if (future.wait_until(*deadline) != std::future_status::ready) {
+      ResetStreamQuiet(stream);
+      (void)future.get();
+      return Error("length-prefixed frame read timed out");
+    }
+  }
+  auto result = future.get();
+  if (!result) {
+    return Error(fail_message);
+  }
+  return {};
+}
+
+void CancelSteadyTimer(std::shared_ptr<boost::asio::steady_timer>& timer,
+                       const std::shared_ptr<std::atomic<uint64_t>>& generation) {
+  if (generation) {
+    generation->fetch_add(1, std::memory_order_acq_rel);
+  }
+  if (timer) {
+    (void)timer->cancel();
+    timer.reset();
+  }
+}
+
 } // namespace
+
+void ResetStreamQuiet(const std::shared_ptr<Stream>& stream) {
+  if (stream) {
+    stream->reset();
+  }
+}
 
 std::vector<uint8_t> EncodeLengthPrefixedFrame(const std::vector<uint8_t>& body) {
   std::vector<uint8_t> frame(8 + body.size());
@@ -46,19 +85,31 @@ uint64_t DecodeLengthPrefixedHeader(const std::vector<uint8_t>& header8) {
 
 Roe<std::vector<uint8_t>> BlockingReadLengthPrefixedFrame(const std::shared_ptr<Stream>& stream,
                                                           const LengthPrefixedFrameConfig& config) {
+  if (!stream) {
+    return Error("Failed to read length-prefixed frame header");
+  }
+
+  std::optional<Clock::time_point> deadline;
+  if (config.read_timeout.count() > 0) {
+    deadline = Clock::now() + config.read_timeout;
+  }
+
   Bytes header(8);
   std::promise<outcome::result<void>> header_promise;
   auto header_future = header_promise.get_future();
   libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  if (!header_future.get()) {
-    return Error("Failed to read length-prefixed frame header");
+  if (auto wait = AwaitExactRead(header_future, stream, deadline, "Failed to read length-prefixed frame header");
+      !wait) {
+    return wait.error();
   }
 
   const uint64_t payload_len = DecodeLengthPrefixedHeader(std::vector<uint8_t>(header.begin(), header.end()));
   if (payload_len == 0 && !config.allow_empty_body) {
+    ResetStreamQuiet(stream);
     return Error("length-prefixed frame empty");
   }
   if (payload_len > config.max_frame_bytes) {
+    ResetStreamQuiet(stream);
     return Error("length-prefixed frame too large");
   }
 
@@ -70,8 +121,9 @@ Roe<std::vector<uint8_t>> BlockingReadLengthPrefixedFrame(const std::shared_ptr<
   std::promise<outcome::result<void>> body_promise;
   auto body_future = body_promise.get_future();
   libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  if (!body_future.get()) {
-    return Error("Failed to read length-prefixed frame body");
+  if (auto wait = AwaitExactRead(body_future, stream, deadline, "Failed to read length-prefixed frame body");
+      !wait) {
+    return wait.error();
   }
   return std::vector<uint8_t>(payload.begin(), payload.end());
 }
@@ -97,7 +149,8 @@ void AsyncLengthPrefixedReader::Start(std::shared_ptr<Stream> stream, FrameCallb
   stream_ = std::move(stream);
   on_frame_ = std::move(on_frame);
   is_cancelled_ = std::move(is_cancelled);
-  config_ = config;
+  config_ = std::move(config);
+  deadline_generation_ = std::make_shared<std::atomic<uint64_t>>(0);
   running_.store(true, std::memory_order_release);
   ReadHeader();
 }
@@ -106,13 +159,64 @@ void AsyncLengthPrefixedReader::Stop() {
   // Do not clear on_frame_ here: Stop() is often called from inside on_frame_
   // (one-shot AsyncReadStreamJson). Destroying std::function while it runs is UB.
   running_.store(false, std::memory_order_release);
+  CancelReadDeadline();
   stream_.reset();
 }
 
 void AsyncLengthPrefixedReader::ReleaseCallbackIfStopped() {
   if (!running_.load(std::memory_order_acquire) || !stream_) {
+    CancelReadDeadline();
     on_frame_ = {};
     is_cancelled_ = {};
+  }
+}
+
+void AsyncLengthPrefixedReader::CancelReadDeadline() {
+  CancelSteadyTimer(read_timer_, deadline_generation_);
+}
+
+void AsyncLengthPrefixedReader::ArmReadDeadline() {
+  CancelReadDeadline();
+  if (config_.read_timeout.count() <= 0 || !stream_) {
+    return;
+  }
+  if (!config_.timer_executor) {
+    logging::getLogger("StreamFrameIo").warning
+        << "async frame read_timeout ignored (timer_executor unset)";
+    return;
+  }
+  auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
+  read_timer_ = timer;
+  const uint64_t gen = deadline_generation_->load(std::memory_order_acquire);
+  timer->expires_after(config_.read_timeout);
+  auto self = shared_from_this();
+  timer->async_wait([self, timer, gen](const boost::system::error_code& ec) {
+    if (ec) {
+      return;
+    }
+    if (!self->deadline_generation_ ||
+        self->deadline_generation_->load(std::memory_order_acquire) != gen) {
+      return;
+    }
+    self->OnReadDeadline();
+  });
+}
+
+void AsyncLengthPrefixedReader::OnReadDeadline() {
+  // Mark stopped and take the callback before reset — reset can synchronously complete the
+  // in-flight read, whose !running_ path would otherwise clear on_frame_ first.
+  if (!running_.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
+  phase_ = Phase::Idle;
+  CancelReadDeadline();
+  FrameCallback cb;
+  std::swap(cb, on_frame_);
+  is_cancelled_ = {};
+  ResetStreamQuiet(stream_);
+  stream_.reset();
+  if (cb) {
+    cb(Error("length-prefixed frame read timed out"));
   }
 }
 
@@ -123,10 +227,12 @@ void AsyncLengthPrefixedReader::ReadHeader() {
   }
   header_buf_.assign(8, 0);
   phase_ = Phase::Header;
+  ArmReadDeadline();
   auto self = shared_from_this();
   libp2p::read(stream_, header_buf_, [self](outcome::result<void> result) {
     if (!self->running_.load(std::memory_order_acquire) || IsCancelled(self->is_cancelled_)) {
       self->phase_ = Phase::Idle;
+      self->CancelReadDeadline();
       // Not inside on_frame_ — safe to drop now (avoids reader↔callback cycle on cancel).
       self->on_frame_ = {};
       self->is_cancelled_ = {};
@@ -134,6 +240,7 @@ void AsyncLengthPrefixedReader::ReadHeader() {
     }
     if (!result) {
       self->phase_ = Phase::Idle;
+      self->CancelReadDeadline();
       if (self->on_frame_) {
         self->on_frame_(Error(std::string("Failed to read length-prefixed frame header: ") +
                               result.error().message()));
@@ -145,6 +252,8 @@ void AsyncLengthPrefixedReader::ReadHeader() {
         DecodeLengthPrefixedHeader(std::vector<uint8_t>(self->header_buf_.begin(), self->header_buf_.end()));
     if (payload_len == 0 && !self->config_.allow_empty_body) {
       self->phase_ = Phase::Idle;
+      self->CancelReadDeadline();
+      ResetStreamQuiet(self->stream_);
       if (self->on_frame_) {
         self->on_frame_(Error("length-prefixed frame empty"));
       }
@@ -153,6 +262,8 @@ void AsyncLengthPrefixedReader::ReadHeader() {
     }
     if (payload_len > self->config_.max_frame_bytes) {
       self->phase_ = Phase::Idle;
+      self->CancelReadDeadline();
+      ResetStreamQuiet(self->stream_);
       if (self->on_frame_) {
         self->on_frame_(Error("length-prefixed frame too large"));
       }
@@ -166,11 +277,13 @@ void AsyncLengthPrefixedReader::ReadHeader() {
 void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_) || !stream_) {
     phase_ = Phase::Idle;
+    CancelReadDeadline();
     ReleaseCallbackIfStopped();
     return;
   }
   if (payload_len == 0) {
     phase_ = Phase::Idle;
+    CancelReadDeadline();
     if (on_frame_) {
       on_frame_(std::vector<uint8_t>{});
     }
@@ -187,6 +300,7 @@ void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
   auto self = shared_from_this();
   libp2p::read(stream_, payload_buf_, [self](outcome::result<void> result) {
     self->phase_ = Phase::Idle;
+    self->CancelReadDeadline();
     if (!self->running_.load(std::memory_order_acquire) || IsCancelled(self->is_cancelled_)) {
       self->on_frame_ = {};
       self->is_cancelled_ = {};
@@ -349,6 +463,49 @@ void StreamBridge::PumpRead() {
   });
 }
 
+void DuplexFrameSession::CancelReadDeadline() {
+  CancelSteadyTimer(read_timer_, deadline_generation_);
+}
+
+void DuplexFrameSession::ArmReadDeadline() {
+  CancelReadDeadline();
+  if (config_.read_timeout.count() <= 0 || !stream_) {
+    return;
+  }
+  if (!config_.timer_executor) {
+    return;
+  }
+  auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
+  read_timer_ = timer;
+  const uint64_t gen = deadline_generation_->load(std::memory_order_acquire);
+  timer->expires_after(config_.read_timeout);
+  auto self = shared_from_this();
+  timer->async_wait([self, timer, gen](const boost::system::error_code& ec) {
+    if (ec) {
+      return;
+    }
+    if (!self->deadline_generation_ ||
+        self->deadline_generation_->load(std::memory_order_acquire) != gen) {
+      return;
+    }
+    self->OnReadDeadline();
+  });
+}
+
+void DuplexFrameSession::OnReadDeadline() {
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+  // Take the handler before reset — reset may synchronously finish the in-flight read.
+  FrameHandler handler;
+  std::swap(handler, on_frame_);
+  ResetStreamQuiet(stream_);
+  if (handler) {
+    handler(Error("length-prefixed frame read timed out"));
+  }
+  CloseSession("read_timeout");
+}
+
 void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_frame,
                                StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config,
                                ClosedCallback on_closed, size_t max_outbound_frames,
@@ -360,10 +517,11 @@ void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_f
   on_frame_ = std::move(on_frame);
   is_cancelled_ = std::move(is_cancelled);
   on_closed_ = std::move(on_closed);
-  config_ = config;
+  config_ = std::move(config);
   max_outbound_frames_ = max_outbound_frames;
   on_outbound_drop_ = std::move(on_outbound_drop);
   write_preferred_ = write_preferred;
+  deadline_generation_ = std::make_shared<std::atomic<uint64_t>>(0);
   running_.store(true, std::memory_order_release);
   PumpWrite();
   MaybeResumeRead();
@@ -371,6 +529,7 @@ void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_f
 
 void DuplexFrameSession::Stop() {
   running_.store(false, std::memory_order_release);
+  CancelReadDeadline();
   read_inflight_ = false;
   write_inflight_ = false;
   outbound_.clear();
@@ -419,6 +578,7 @@ void DuplexFrameSession::BeginRead() {
   }
   read_inflight_ = true;
   header_buf_.assign(8, 0);
+  ArmReadDeadline();
   auto self = shared_from_this();
   libp2p::read(stream_, header_buf_, [self](outcome::result<void> result) { self->OnReadHeader(result); });
 }
@@ -426,11 +586,13 @@ void DuplexFrameSession::BeginRead() {
 void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
     read_inflight_ = false;
+    CancelReadDeadline();
     CloseSession("cancelled");
     return;
   }
   if (!result) {
     read_inflight_ = false;
+    CancelReadDeadline();
     CloseSession("read_eof");
     return;
   }
@@ -438,6 +600,8 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
       DecodeLengthPrefixedHeader(std::vector<uint8_t>(header_buf_.begin(), header_buf_.end()));
   if (payload_len == 0 && !config_.allow_empty_body) {
     read_inflight_ = false;
+    CancelReadDeadline();
+    ResetStreamQuiet(stream_);
     if (on_frame_) {
       on_frame_(Error("length-prefixed frame empty"));
     }
@@ -446,6 +610,8 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
   }
   if (payload_len > config_.max_frame_bytes) {
     read_inflight_ = false;
+    CancelReadDeadline();
+    ResetStreamQuiet(stream_);
     if (on_frame_) {
       on_frame_(Error("length-prefixed frame too large"));
     }
@@ -453,6 +619,7 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
     return;
   }
   if (payload_len == 0) {
+    CancelReadDeadline();
     DeliverFrame({});
     return;
   }
@@ -465,6 +632,7 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
 }
 
 void DuplexFrameSession::OnReadBody(outcome::result<void> result) {
+  CancelReadDeadline();
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
     read_inflight_ = false;
     CloseSession("cancelled");
@@ -562,6 +730,7 @@ void DuplexFrameSession::CloseSession(const char* reason) {
   }
   const char* tag = (reason && reason[0]) ? reason : "unknown";
   logging::getLogger("DuplexFrameSession").warning << "CloseSession reason=" << tag;
+  CancelReadDeadline();
   read_inflight_ = false;
   write_inflight_ = false;
   outbound_.clear();

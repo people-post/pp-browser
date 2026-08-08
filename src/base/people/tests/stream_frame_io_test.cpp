@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
@@ -296,6 +297,225 @@ TEST_F(StreamFrameIoTest, StreamBridgeCopiesBytes) {
   EXPECT_EQ(reply, payload);
 
   bridge_cancelled.store(true, std::memory_order_release);
+}
+
+TEST_F(StreamFrameIoTest, BlockingReadTimesOutAndResetsStream) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool server_ready = false;
+  std::shared_ptr<Stream> server_stream;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          {
+            std::lock_guard lock(mu);
+            server_stream = stream;
+            server_ready = true;
+          }
+          cv.notify_one();
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  auto open_res = open_future.get();
+  ASSERT_TRUE(open_res);
+  auto client_stream = open_res.value().stream;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return server_ready; }));
+  }
+
+  // Declare a 1 KiB body (within max), then send nothing — reader must time out and reset.
+  const std::vector<uint8_t> header_only = {0, 0, 0, 0, 0, 0, 0x04, 0x00}; // 1024
+
+  std::promise<outcome::result<void>> write_promise;
+  auto write_future = write_promise.get_future();
+  libp2p::write(client_stream, header_only,
+                [&](outcome::result<void> result) { write_promise.set_value(result); });
+  ASSERT_TRUE(write_future.get());
+
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = 256 * 1024;
+  config.read_timeout = std::chrono::milliseconds(200);
+
+  const auto started = std::chrono::steady_clock::now();
+  auto read_result = RunOnWorker<Roe<std::vector<uint8_t>>>(
+      b_host_, [&] { return BlockingReadLengthPrefixedFrame(server_stream, config); });
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+
+  ASSERT_FALSE(read_result);
+  EXPECT_NE(read_result.error().message.find("timed out"), std::string::npos)
+      << read_result.error().message;
+  EXPECT_LT(elapsed, std::chrono::seconds(2));
+}
+
+TEST_F(StreamFrameIoTest, BlockingReadRejectsOversizedFrameWithoutReadingBody) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool server_ready = false;
+  std::shared_ptr<Stream> server_stream;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          {
+            std::lock_guard lock(mu);
+            server_stream = stream;
+            server_ready = true;
+          }
+          cv.notify_one();
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  auto open_res = open_future.get();
+  ASSERT_TRUE(open_res);
+  auto client_stream = open_res.value().stream;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return server_ready; }));
+  }
+
+  // Length = max_frame_bytes + 1
+  std::vector<uint8_t> header = {0, 0, 0, 0, 0, 0, 0x04, 0x01}; // 1025
+  std::promise<outcome::result<void>> write_promise;
+  auto write_future = write_promise.get_future();
+  libp2p::write(client_stream, header, [&](outcome::result<void> result) { write_promise.set_value(result); });
+  ASSERT_TRUE(write_future.get());
+
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = 1024;
+  config.read_timeout = std::chrono::seconds(2);
+
+  auto read_result = RunOnWorker<Roe<std::vector<uint8_t>>>(
+      b_host_, [&] { return BlockingReadLengthPrefixedFrame(server_stream, config); });
+  ASSERT_FALSE(read_result);
+  EXPECT_NE(read_result.error().message.find("too large"), std::string::npos)
+      << read_result.error().message;
+}
+
+TEST_F(StreamFrameIoTest, BlockingReadFailsWhenPeerClosesMidBody) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool server_ready = false;
+  std::shared_ptr<Stream> server_stream;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          {
+            std::lock_guard lock(mu);
+            server_stream = stream;
+            server_ready = true;
+          }
+          cv.notify_one();
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  auto open_res = open_future.get();
+  ASSERT_TRUE(open_res);
+  auto client_stream = open_res.value().stream;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return server_ready; }));
+  }
+
+  // Length 8, send only 2 body bytes, then reset.
+  std::vector<uint8_t> partial = {0, 0, 0, 0, 0, 0, 0, 8, 'a', 'b'};
+  std::promise<outcome::result<void>> write_promise;
+  auto write_future = write_promise.get_future();
+  libp2p::write(client_stream, partial, [&](outcome::result<void> result) { write_promise.set_value(result); });
+  ASSERT_TRUE(write_future.get());
+  client_stream->reset();
+
+  LengthPrefixedFrameConfig config;
+  config.read_timeout = std::chrono::seconds(2);
+
+  auto read_result = RunOnWorker<Roe<std::vector<uint8_t>>>(
+      b_host_, [&] { return BlockingReadLengthPrefixedFrame(server_stream, config); });
+  ASSERT_FALSE(read_result);
+  EXPECT_TRUE(read_result.error().message.find("Failed to read") != std::string::npos ||
+              read_result.error().message.find("timed out") != std::string::npos)
+      << read_result.error().message;
+}
+
+TEST_F(StreamFrameIoTest, AsyncReaderTimesOutWithExecutor) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got_error = false;
+  std::string error_message;
+  std::shared_ptr<AsyncLengthPrefixedReader> kept_reader;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          LengthPrefixedFrameConfig config;
+          config.read_timeout = std::chrono::milliseconds(200);
+          config.timer_executor = b_host_.IoExecutor();
+          auto reader = std::make_shared<AsyncLengthPrefixedReader>();
+          {
+            std::lock_guard lock(mu);
+            kept_reader = reader;
+          }
+          reader->Start(
+              stream,
+              [&](Roe<std::vector<uint8_t>> frame) {
+                if (frame) {
+                  return;
+                }
+                {
+                  std::lock_guard lock(mu);
+                  error_message = frame.error().message;
+                  got_error = true;
+                }
+                cv.notify_one();
+              },
+              [] { return false; }, std::move(config));
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  ASSERT_TRUE(open_future.get());
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got_error; }));
+  }
+  EXPECT_NE(error_message.find("timed out"), std::string::npos) << error_message;
+  kept_reader.reset();
 }
 
 TEST_F(StreamFrameIoTest, DuplexSessionEchoesOnSameStream) {

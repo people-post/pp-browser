@@ -38,9 +38,11 @@ Roe<std::string> DecodeStreamJsonFrame(const std::vector<uint8_t>& frame_bytes) 
 }
 
 Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
-                                        const size_t max_frame_bytes) {
+                                        const size_t max_frame_bytes,
+                                        const std::chrono::milliseconds read_timeout) {
   LengthPrefixedFrameConfig config;
   config.max_frame_bytes = max_frame_bytes;
+  config.read_timeout = read_timeout;
   auto body = BlockingReadLengthPrefixedFrame(stream, config);
   if (!body) {
     return body.error();
@@ -60,6 +62,15 @@ Roe<void> BlockingWriteStreamJson(const std::shared_ptr<libp2p::connection::Stre
 void AsyncReadStreamJson(std::shared_ptr<libp2p::connection::Stream> stream,
                          StreamJsonReadCallback on_done, StreamCancelCheck is_cancelled,
                          const size_t max_frame_bytes) {
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = max_frame_bytes;
+  AsyncReadStreamJson(std::move(stream), std::move(on_done), std::move(is_cancelled),
+                      std::move(config));
+}
+
+void AsyncReadStreamJson(std::shared_ptr<libp2p::connection::Stream> stream,
+                         StreamJsonReadCallback on_done, StreamCancelCheck is_cancelled,
+                         LengthPrefixedFrameConfig config) {
   if (!stream || !on_done) {
     if (on_done) {
       on_done(Error("async json read: missing stream"));
@@ -70,8 +81,6 @@ void AsyncReadStreamJson(std::shared_ptr<libp2p::connection::Stream> stream,
     on_done(Error("async json read cancelled"));
     return;
   }
-  LengthPrefixedFrameConfig config;
-  config.max_frame_bytes = max_frame_bytes;
   auto reader = std::make_shared<AsyncLengthPrefixedReader>();
   reader->Start(
       std::move(stream),
@@ -83,7 +92,7 @@ void AsyncReadStreamJson(std::shared_ptr<libp2p::connection::Stream> stream,
         }
         on_done(std::string(body->begin(), body->end()));
       },
-      std::move(is_cancelled), config);
+      std::move(is_cancelled), std::move(config));
 }
 
 void AsyncWriteStreamJson(std::shared_ptr<libp2p::connection::Stream> stream, std::string json_utf8,
