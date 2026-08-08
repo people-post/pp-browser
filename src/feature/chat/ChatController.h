@@ -3,7 +3,7 @@
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
@@ -90,7 +90,10 @@ public:
   using SessionRow = SessionDisplayRow;
 
   bool Setup(Rml::Context* context);
-  void BindChatPorts(MessagingChatPorts ports);
+  /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
+  void BindMessagingFacade(MessagingFacade* facade);
+  /** App-wired hook so messaging tool registration stays in Application (no feature/chat→hub edge). */
+  void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
@@ -301,7 +304,8 @@ private:
   bool AgentConfigured() const;
 
   Rml::Context* context_ = nullptr;
-  MessagingChatPorts chat_ports_;
+  MessagingFacade* facade_ = nullptr;
+  std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;

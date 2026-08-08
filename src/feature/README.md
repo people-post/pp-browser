@@ -41,7 +41,7 @@ src/feature/
 │   └── bindings/     RmlUi action routing, bindings manifest
 ├── messaging/    MessagingHub, P2P/relay/sync orchestration
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
-└── chat/         Chat controller, agent↔hub wiring, messaging agent tools
+└── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
 
 **Domain grouping (mental model):**
@@ -126,6 +126,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
 | `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
 | `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
+| `MessagingFacade` | `messaging/MessagingFacade.h` | Non-owning wrapper over `MessagingHub&`; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (replaces the `MessagingChatPorts` mega-struct) |
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; app-owned presenters + ports |
 | App-owned presenters | `app/Application.cpp` | `unique_ptr` for shell + all presenters; `InstallInstance` for RmlUi static callbacks |

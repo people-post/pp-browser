@@ -30,7 +30,7 @@
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/messaging/CallUiBackend.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
@@ -182,6 +182,7 @@ Application::Application() {
   AppRuntime::Initialize();
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
+  messaging_facade_ = std::make_unique<MessagingFacade>(*messaging_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -213,6 +214,7 @@ Application::~Application() {
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();
   Shutdown();
+  messaging_facade_.reset();
   messaging_.reset();
 }
 
@@ -413,40 +415,41 @@ bool Application::Initialize(const char* window_title) {
     DataModelHost::Instance().Dirty(model, binding);
   });
   MessagingHub& messaging = Messaging();
+  MessagingFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
-  settings_commands.load_profile_identity = [&messaging]() {
-    return messaging.LoadProfileIdentityView();
+  settings_commands.load_profile_identity = [&facade]() {
+    return facade.LoadProfileIdentityView();
   };
-  settings_commands.save_profile_nickname = [&messaging](const std::string& nickname) {
-    return messaging.SaveProfileNickname(nickname);
+  settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
+    return facade.SaveProfileNickname(nickname);
   };
-  settings_commands.register_identity = [this, &messaging](const RegisterIdentityArgs& args) {
-    auto result = messaging.RegisterIdentity(args.nickname);
+  settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
+    auto result = facade.RegisterIdentity(args.nickname);
     if (result) {
       chat_->ReloadAgentConfig();
     }
     return result;
   };
-  settings_commands.rotate_brief_llm_key = [this, &messaging]() {
-    auto result = messaging.RotateBriefLlmKey();
+  settings_commands.rotate_brief_llm_key = [this, &facade]() {
+    auto result = facade.RotateBriefLlmKey();
     if (result) {
       chat_->ReloadAgentConfig();
     }
     return result;
   };
-  settings_commands.clear_undelivered_older_than = [&messaging](int days) -> Roe<void> {
-    if (!messaging.IsInitialized() || !messaging.IsMessagingReady()) {
+  settings_commands.clear_undelivered_older_than = [&facade](int days) -> Roe<void> {
+    if (!facade.IsInitialized() || !facade.IsMessagingReady()) {
       return Error("Messaging is not ready");
     }
-    if (auto cleared = messaging.P2p().ClearUndeliveredOlderThan(days); !cleared) {
+    if (auto cleared = facade.ClearUndeliveredOlderThan(days); !cleared) {
       return cleared.error();
     }
     return {};
   };
-  settings_commands.run_reachability_probe = [&messaging](bool try_upnp) {
-    messaging.RunReachabilityProbe(try_upnp);
+  settings_commands.run_reachability_probe = [&facade](bool try_upnp) {
+    facade.RunReachabilityProbe(try_upnp);
   };
-  settings_commands.try_upnp_port_mapping = [&messaging]() { messaging.TryUpnpPortMapping(); };
+  settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
@@ -461,21 +464,21 @@ bool Application::Initialize(const char* window_title) {
   };
   settings_commands.session_store = [this]() -> SessionStore& { return store_; };
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
-  settings_commands.messaging_ready = [&messaging]() {
-    return messaging.IsInitialized() && messaging.IsMessagingReady();
+  settings_commands.messaging_ready = [&facade]() {
+    return facade.IsInitialized() && facade.IsMessagingReady();
   };
-  settings_commands.last_libp2p_error = [&messaging]() -> std::string {
-    if (!messaging.IsInitialized()) {
+  settings_commands.last_libp2p_error = [&facade]() -> std::string {
+    if (!facade.IsInitialized()) {
       return {};
     }
-    return messaging.LastLibp2pError();
+    return facade.LastLibp2pError();
   };
-  settings_commands.load_reachability = [&messaging]() {
+  settings_commands.load_reachability = [&facade]() {
     SettingsReachabilityView view;
-    if (!messaging.IsInitialized()) {
+    if (!facade.IsInitialized()) {
       return view;
     }
-    const ReachabilitySnapshot snap = messaging.Reachability();
+    const ReachabilitySnapshot snap = facade.Reachability();
     switch (snap.status) {
     case ReachabilityStatus::Checking:
       view.status = SettingsReachabilityView::Status::Checking;
@@ -541,11 +544,10 @@ bool Application::Initialize(const char* window_title) {
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
-  MessagingChatPorts messaging_chat_ports = MakeMessagingChatPorts(messaging);
-  messaging_chat_ports.register_messaging_tools = [&messaging](ToolRegistry& tools) {
-    RegisterMessagingTools(tools, messaging);
-  };
-  chat_->BindChatPorts(std::move(messaging_chat_ports));
+  chat_->BindMessagingFacade(messaging_facade_.get());
+  chat_->BindRegisterMessagingTools([this](ToolRegistry& tools) {
+    RegisterMessagingTools(tools, *messaging_facade_);
+  });
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
   chat_->BindMessagingUi(std::move(messaging_ui));
@@ -569,18 +571,17 @@ bool Application::Initialize(const char* window_title) {
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
-  badges_->BindSource([this, &messaging, &shell]() {
+  badges_->BindSource([this, &facade, &shell]() {
     BadgeUnreadInputs inputs;
-    if (!messaging.IsInitialized()) {
+    if (!facade.IsInitialized()) {
       return inputs;
     }
-    auto& inbox = messaging.Inbox();
-    const int total = inbox.SumUnread();
+    const int total = facade.SumUnread();
     int deduction = 0;
     if (shell.State().nav_tab == NavTab::Sessions) {
-      const std::string& active_id = inbox.ActiveThreadId();
+      const std::string& active_id = facade.ActiveThreadId();
       if (!active_id.empty()) {
-        auto thread = messaging.Store().GetThread(active_id);
+        auto thread = facade.GetThread(active_id);
         if (thread && *thread) {
           deduction = (*thread)->unread_count;
         }
@@ -591,7 +592,7 @@ bool Application::Initialize(const char* window_title) {
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.libp2p.node_enabled) {
-      const ReachabilitySnapshot snap = messaging.Reachability();
+      const ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(
           true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
@@ -797,7 +798,7 @@ bool Application::Initialize(const char* window_title) {
       chat_shell_bridge_->Clear();
     }
     chat_->BindShellSetup({});
-    chat_->BindChatPorts({});
+    chat_->BindMessagingFacade(nullptr);
     chat_->BindAgentPorts({});
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
@@ -1030,7 +1031,7 @@ void Application::Shutdown() {
     chat_shell_bridge_->Clear();
   }
   chat_->BindShellSetup({});
-  chat_->BindChatPorts({});
+  chat_->BindMessagingFacade(nullptr);
   chat_->BindAgentPorts({});
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});

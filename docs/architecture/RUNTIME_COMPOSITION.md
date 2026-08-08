@@ -27,6 +27,7 @@ flowchart TB
     SettingsLogic["SettingsLogic<br/><small>feature/settings/</small>"]
     AgentSession["AgentSession<br/><small>feature/ai/</small>"]
     MessagingHub["MessagingHub<br/><small>feature/messaging/</small>"]
+    MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
     ChatController["ChatController<br/><small>feature/chat/</small>"]
@@ -51,6 +52,8 @@ flowchart TB
   Application --> ChatController
   Application --> ShellHost
   Application --> MessagingHub
+  Application -->|owns MessagingFacade| MessagingFacade
+  MessagingFacade --> MessagingHub
   ConfigApplyBridge --> MessagingHub
   ConfigApplyBridge --> ShellHost
   ConfigApplyBridge --> LocalizationService
@@ -58,7 +61,7 @@ flowchart TB
   ConfigApplyBridge --> SessionStore
 
   ChatController --> ShellHost
-  ChatController --> MessagingHub
+  ChatController --> MessagingFacade
   ChatController --> AgentSession
   ShellHost --> MessagingHub
   SettingsController --> SettingsLogic
@@ -134,7 +137,7 @@ flowchart LR
 
   Settings -->|flush disk DTOs only| Store
   Chat -->|AddConfigListener LLM| Store
-  Chat -->|MessagingChatPorts| Hub
+  Chat -->|MessagingFacade| Hub
   App --> Agent
   App -->|BindAgentPorts| Chat
   Chat -->|BindInputCoordinator| Input
@@ -297,9 +300,10 @@ Full model: [THREADING.md](THREADING.md).
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
+| **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
-| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat via `BadgeNotifyPorts` |
+| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` via `MessagingFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `feature/ui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
 | **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
 | **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |

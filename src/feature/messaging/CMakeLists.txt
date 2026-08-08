@@ -20,7 +20,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     MobileEphemeralListenGate.cpp
     ContactReachability.cpp
     MessagingContactsPorts.cpp
-    MessagingChatPorts.cpp
+    MessagingFacade.cpp
     CallFunctionalPorts.cpp
     CallUiBackend.cpp
     MessagingShellPorts.cpp

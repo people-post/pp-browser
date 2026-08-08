@@ -25,7 +25,7 @@ inline MessagingView ProjectMessagingView(MessagingHub& hub) {
 
 /**
  * Messaging read snapshot for UI presenters. Application fills from MessagingHub.
- * Imperative ops remain on hub until MessagingFacade (Phase 6).
+ * Imperative ops live on MessagingFacade (see MessagingFacade.h).
  */
 struct MessagingUiPorts {
   std::function<MessagingView()> snapshot;

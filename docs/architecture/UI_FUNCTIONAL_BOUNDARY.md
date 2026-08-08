@@ -133,6 +133,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Existing examples:**
 
+- `MessagingFacade` — non-owning wrapper over `MessagingHub&` (app-owned); chat, chat sub-presenters (`ChatThreadChrome`, `ChatTranscriptScroller`), messaging tools, and `Application` settings/badge wiring call its methods instead of peeking hub accessors. Event subscriptions (`SetOnMessagesChanged`, `SetOnThreadChanged`, …) keep `std::function` params. **Phase 6 done** — replaced the `MessagingChatPorts` mega-struct + `MakeMessagingChatPorts`.
 - `SettingsCommands` — register, UPnP, reset profile, appearance, locales
 - `ChatSessionPorts` — select thread, finalize display, find someone
 - `CallActionsPorts` — start/accept/leave call chrome actions for chat, shell, people-picker (filled from `CallController`)
@@ -269,6 +270,8 @@ static Presenter& Instance();                      // static callbacks only
 ---
 
 ## Presenter template (target)
+
+`MessagingFacade` is now realized as a non-owning wrapper over `MessagingHub&` (see `src/feature/messaging/MessagingFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `MessagingHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
 
 ```cpp
 // Functional — no RmlUi
