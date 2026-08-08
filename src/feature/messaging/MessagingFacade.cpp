@@ -339,6 +339,8 @@ void MessagingFacade::TryUpnpPortMapping() { hub_.TryUpnpPortMapping(); }
 
 std::string MessagingFacade::LastLibp2pError() { return hub_.LastLibp2pError(); }
 
+bool MessagingFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnabled(); }
+
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<DirectoryHit>> MessagingFacade::SearchPeople(const std::string& query) {

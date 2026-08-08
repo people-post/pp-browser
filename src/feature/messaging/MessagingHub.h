@@ -147,6 +147,7 @@ public:
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
+  // Thin forward for internal call wiring; mesh UX should use Mesh()->Host().
   Libp2pHost* Libp2p();
   PeerSessionManager* Sessions() const;
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
@@ -169,6 +170,18 @@ public:
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
+
+  /**
+   * Shared libp2p mesh composition root (NodeRuntime + dial-back + relays +
+   * reachability). Mesh UX (status chrome, reachability, relay load) should read
+   * through here rather than the thin hub forwards below. Null before the stack
+   * is up; callers must degrade gracefully.
+   */
+  MeshHost* Mesh() { return mesh_.get(); }
+  const MeshHost* Mesh() const { return mesh_.get(); }
+
+  // Thin mesh forwards kept for internal call/lifecycle wiring; prefer Mesh()
+  // for mesh UX so the public hub surface stays narrow.
   DialBackService* DialBack() { return mesh_ ? mesh_->DialBack() : nullptr; }
   CircuitRelayService* CircuitRelay() { return mesh_ ? mesh_->CircuitRelay() : nullptr; }
   MediaRelayService* MediaRelay() { return mesh_ ? mesh_->MediaRelay() : nullptr; }

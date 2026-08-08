@@ -4,6 +4,10 @@
 
 namespace pbr {
 
+// ProjectMessagingView(MessagingHub&) forces including MessagingHub.h here; that
+// is fine for the projection helper, but UI surfaces should prefer
+// MessagingFacade::Snapshot() rather than depending on MessagingHub directly.
+
 /** Read-only messaging fields UI surfaces may bind without holding MessagingHub*. */
 struct MessagingView {
   bool initialized = false;

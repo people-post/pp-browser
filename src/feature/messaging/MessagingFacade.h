@@ -155,6 +155,8 @@ public:
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   std::string LastLibp2pError();
+  /** Desktop Node "Help the network" posture (for mesh UX projections). */
+  bool IsHelpNetworkEnabled();
 
   // --- Messaging tools helpers ----------------------------------------------
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query);

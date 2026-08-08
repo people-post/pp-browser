@@ -910,7 +910,7 @@ bool Application::Initialize(const char* window_title) {
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      const ReachabilitySnapshot snap = Messaging().Reachability();
+      const ReachabilitySnapshot snap = messaging_facade_->Reachability();
       if (snap.status == ReachabilityStatus::Reachable) {
         ProfilePreferences prefs = store_.Snapshot().profile_prefs;
         if (!prefs.reachability_nudge_acked_status.empty()) {

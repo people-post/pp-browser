@@ -101,6 +101,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["MessagingHub<br/><small>feature/messaging/</small>"]
+    Mesh["MeshHost<br/><small>libp2p/integration/host/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>base/ui/</small>"]
@@ -114,6 +115,8 @@ flowchart LR
 
   App --> Bridge
   App --> Hub
+  Hub -->|owns MeshHost| Mesh
+  Mesh -.->|same start path| Node["pp-node<br/><small>app/node/NodeBootstrap</small>"]
   App --> Shell
   App --> Chat
   App --> Settings
@@ -167,7 +170,7 @@ flowchart LR
   UnlockGate -.->|unlock gate| Settings
   Contacts -->|MessagingContactsPorts| Hub
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
-  Shell -->|MessagingShellPorts| Hub
+  Shell -->|MessagingShellPorts mesh reads via MeshHost| Hub
   Call -->|CallFunctionalPorts / CallUiBackend| Hub
   App -->|owns CallUiBackend| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
