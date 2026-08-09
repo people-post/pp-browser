@@ -1,17 +1,18 @@
 include(PpBrowserFeature)
 
 # Acyclic module order: each library links only lower layers.
-add_subdirectory(settings)
+# ai before settings so SettingsTools can register into ToolRegistry.
 add_subdirectory(ai)
+add_subdirectory(settings)
 add_subdirectory(messaging)
 add_subdirectory(ui)
 add_subdirectory(chat)
 
 set(PP_FEATURE_MODULE_LIBS
-  pp_feature_settings
   pp_feature_ai_tools
   pp_feature_ai_bindings
   pp_feature_ai
+  pp_feature_settings
   pp_feature_messaging
   pp_feature_ui
   pp_feature_chat

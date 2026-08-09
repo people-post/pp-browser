@@ -17,6 +17,7 @@
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
+#include "feature/settings/SettingsTools.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
@@ -529,6 +530,8 @@ bool Application::Initialize(const char* window_title) {
     }
     return vault->ChangePin(current_pin, new_pin);
   };
+  // Copy ports before BindCommands moves the command bag.
+  const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
@@ -559,8 +562,9 @@ bool Application::Initialize(const char* window_title) {
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
   chat_->BindMessagingFacade(messaging_facade_.get());
-  chat_->BindRegisterMessagingTools([this](ToolRegistry& tools) {
+  chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
+    RegisterSettingsTools(tools, settings_tool_ports);
   });
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };

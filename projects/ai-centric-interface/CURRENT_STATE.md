@@ -10,7 +10,7 @@ Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when l
 |-------|-------|-------------|
 | Intent model | Implicit via `ResponseGoal` + ad-hoc planner rules | Explicit act × domain × commitment × horizon |
 | Planner tool awareness | Live catalog injected into planner prompt (`SummaryForPrompt` + domain/risk tags) | Keep catalog; add act field on `TurnPlan` |
-| Tool registration | `IToolProvider` + `ToolRegistry::RegisterProvider` (messaging / web_search / MCP) | Domain metadata + policy on every provider |
+| Tool registration | `IToolProvider` + providers: messaging / web_search / MCP / **settings (Govern)** | Domain metadata + policy on every provider |
 | Tool permissions | In-chat park + `tool_permissions` prefs (I005); Me → Security reset | Optional per-tool Settings editor; planner `commitment` field |
 | Mutations from NL | Gated Ask for write tools; PeerId Operate path still weak | Operate tools + confirm payloads |
 | Every act covered | No — Monitor/Decide/Repair/Govern thin or absent in planner | Thin path for all 10 |
@@ -51,7 +51,7 @@ This is **not** an intent taxonomy. Operate/Navigate/Monitor/etc. are missing as
 ## Tools (exists)
 
 Registered via `IToolProvider` → `ToolRegistry::RegisterProvider`:
-`WebSearchProvider`, `McpToolProvider` (`BuildFromConfig`), `MessagingToolProvider` (`RegisterMessagingTools` hook):
+`WebSearchProvider`, `McpToolProvider` (`BuildFromConfig`), `MessagingToolProvider`, `SettingsToolProvider`:
 
 | Tool | Closest act(s) |
 |------|----------------|
@@ -65,6 +65,12 @@ Registered via `IToolProvider` → `ToolRegistry::RegisterProvider`:
 | `register_user` | Govern / Operate (Identity) |
 | `update_profile_nickname` | Govern (Identity) |
 | MCP / `blog_articles` | Discover / Inquire (Feeds) |
+| `get_preferences` / `get_profile_identity` / `get_*` (settings) | Govern / Inquire (read) |
+| `set_appearance` / `set_language` / `set_notifications` / `set_group_invite_policy` / … | Govern (Ask) |
+| `probe_reachability` / `set_node_enabled` / `set_mesh_capabilities` | Govern / Monitor (Ask) |
+| `reset_tool_permissions` | Govern / Repair (Ask) |
+
+Non-goals for settings tools: PIN change, profile wipe, MCP/LLM secret writes, service endpoint hijacks.
 
 UI payloads (not always planner tools): `add_contact`, `start_conversation`, `secure_message`, `show_contact`, `open_conversation`, form/article chips — see `ContactActionDispatcher`, `PeopleDiscoveryBlocks`.
 

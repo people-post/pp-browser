@@ -64,6 +64,10 @@ At most **one** `ParkedApproval` is active. Resume payload:
 
 Handled in `ChatController::HandleLocalAction` → `AgentSession::ResumeToolPermission` (strict `approval_id` validation). New user messages cancel the park. Always allow / Never persist under Me → Security → Assistant tool permissions. See [I005](../../projects/ai-centric-interface/DECISIONS.md#i005--in-chat-tool-permissions-parked-approval).
 
+### Settings / Govern tools
+
+`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
+
 ## Turn planning
 
 Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
