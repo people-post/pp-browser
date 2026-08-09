@@ -44,6 +44,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 include(Platform)
+include(PpBrowserWarnings)
 include(PpBrowserLibp2p)
 pp_browser_define_libp2p_options()
 

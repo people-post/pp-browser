@@ -1,5 +1,7 @@
 # libp2p fork configuration and pp-browser integration glue.
 
+include(PpBrowserWarnings)
+
 function(pp_browser_define_libp2p_options)
   if(PP_BROWSER_IS_MOBILE)
     set(PP_BROWSER_LIBP2P_TESTING_DEFAULT OFF)
@@ -78,6 +80,7 @@ function(pp_browser_add_libp2p_integration)
       ${CMAKE_SOURCE_DIR}/third_party/miniupnpc/include
       ${CMAKE_BINARY_DIR}/third_party/miniupnpc)
   endif()
+  pp_browser_apply_warnings(pp_libp2p_integration)
 endfunction()
 
 function(pp_browser_add_libp2p_includes target)

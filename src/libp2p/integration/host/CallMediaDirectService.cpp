@@ -41,12 +41,6 @@ LengthPrefixedFrameConfig CallMediaFrameConfig() {
   return config;
 }
 
-void CloseQuiet(const std::shared_ptr<Stream>& stream) {
-  if (stream) {
-    stream->close([](auto&&) {});
-  }
-}
-
 void ResetQuiet(const std::shared_ptr<Stream>& stream) {
   if (stream) {
     stream->reset();

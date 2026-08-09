@@ -43,14 +43,14 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   snap.media_relay = false;
   snap.reachability_json = R"({"status":"reachable","seed_dial_ok":true})";
 
-  pbr::StatusHttpRequest health{.method = "GET", .path = "/healthz"};
+  pbr::StatusHttpRequest health{.method = "GET", .path = "/healthz", .authorization = {}};
   auto h = pbr::HandleStatusHttpRequest(health, {}, snap);
   EXPECT_EQ(h.status_code, 200);
   auto hj = nlohmann::json::parse(h.body);
   EXPECT_TRUE(hj["ok"].get<bool>());
   EXPECT_TRUE(hj["host_running"].get<bool>());
 
-  pbr::StatusHttpRequest status{.method = "GET", .path = "/status"};
+  pbr::StatusHttpRequest status{.method = "GET", .path = "/status", .authorization = {}};
   auto s = pbr::HandleStatusHttpRequest(status, {}, snap);
   EXPECT_EQ(s.status_code, 200);
   auto sj = nlohmann::json::parse(s.body);
@@ -67,7 +67,7 @@ TEST(StatusHttpProtocolTest, BearerAuth) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = true;
 
-  pbr::StatusHttpRequest missing{.method = "GET", .path = "/healthz"};
+  pbr::StatusHttpRequest missing{.method = "GET", .path = "/healthz", .authorization = {}};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(missing, auth, snap).status_code, 401);
 
   pbr::StatusHttpRequest bad{.method = "GET", .path = "/healthz", .authorization = "Bearer nope"};
@@ -92,9 +92,9 @@ TEST(StatusHttpProtocolTest, ParseRequestExtractsAuthorization) {
 
 TEST(StatusHttpProtocolTest, UnknownPathAndMethod) {
   pbr::StatusHttpSnapshot snap;
-  pbr::StatusHttpRequest missing{.method = "GET", .path = "/nope"};
+  pbr::StatusHttpRequest missing{.method = "GET", .path = "/nope", .authorization = {}};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(missing, {}, snap).status_code, 404);
 
-  pbr::StatusHttpRequest post{.method = "POST", .path = "/status"};
+  pbr::StatusHttpRequest post{.method = "POST", .path = "/status", .authorization = {}};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(post, {}, snap).status_code, 405);
 }

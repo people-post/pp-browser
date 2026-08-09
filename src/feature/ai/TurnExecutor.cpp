@@ -37,10 +37,6 @@ void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits
   }
 }
 
-bool IsPeopleDiscoveryTool(const std::string& name) {
-  return name == "search_people" || name == "list_contacts";
-}
-
 } // namespace
 
 TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& tools,

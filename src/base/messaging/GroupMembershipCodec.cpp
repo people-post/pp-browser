@@ -22,16 +22,6 @@ std::string HistoryModeToString(const GroupHistoryMode mode) {
   return "fresh";
 }
 
-GroupHistoryMode HistoryModeFromString(const std::string& value) {
-  if (value == "copy_to_fork_point") {
-    return GroupHistoryMode::CopyToForkPoint;
-  }
-  if (value == "user_selected") {
-    return GroupHistoryMode::UserSelected;
-  }
-  return GroupHistoryMode::Fresh;
-}
-
 std::string InvitePolicyWireToString(const GroupInvitePolicyWire policy) {
   switch (policy) {
   case GroupInvitePolicyWire::OwnerOnly:
