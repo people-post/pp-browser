@@ -23,9 +23,13 @@ TEST(OutputRepairTest, BuildsSynthesisAndRepairPrompts) {
 }
 
 TEST(OutputRepairTest, PlannerPromptAndSystemPromptAreConstrained) {
-  const std::string planner = pbr::PromptBuilder::BuildPlannerPrompt();
+  const std::string catalog = "- web_search [knowledge, read]: Search the web\n";
+  const std::string planner = pbr::PromptBuilder::BuildPlannerPrompt(catalog);
   EXPECT_NE(planner.find("response_goal"), std::string::npos);
   EXPECT_NE(planner.find("people_list"), std::string::npos);
+  EXPECT_NE(planner.find("AVAILABLE TOOLS"), std::string::npos);
+  EXPECT_NE(planner.find("web_search [knowledge, read]"), std::string::npos);
+  EXPECT_NE(planner.find("Never invent tool names"), std::string::npos);
 
   const std::string system_prompt = pbr::PromptBuilder::BuildChatAgentSystemPrompt("- web_search: test\n");
   EXPECT_NE(system_prompt.find("REFINEMENT TOOL USE"), std::string::npos);

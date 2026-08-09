@@ -5,6 +5,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace pbr {
 
@@ -15,6 +16,13 @@ struct McpToolAdapterOptions {
 
 class McpToolAdapter {
 public:
+  // Build descriptors for tools currently advertised by the client.
+  // `occupied_names` skips collisions (e.g. tools already in the registry).
+  static std::vector<ToolDescriptor> ListTools(McpClient& client, const McpToolAdapterOptions& options = {},
+                                               const std::unordered_set<std::string>& occupied_names = {},
+                                               const std::string& provider_id = {},
+                                               const std::string& default_domain = "feeds");
+
   static void RegisterTools(ToolRegistry& registry, McpClient& client,
                             const McpToolAdapterOptions& options = {});
 };

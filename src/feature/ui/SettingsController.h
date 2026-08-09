@@ -143,6 +143,8 @@ private:
     Rml::String pin_change_confirm;
     Rml::String group_invite_policy = "contacts_only";
     Rml::String group_invite_policy_label = "Contacts only";
+    Rml::String tool_permissions_summary = "None saved";
+    bool tool_permissions_has_saved = false;
     Rml::String app_name;
     Rml::String app_version;
   };
@@ -178,6 +180,7 @@ private:
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
@@ -216,6 +219,7 @@ private:
   void OnRemoveMcpServer(int index);
   void OnChangePin();
   void OnClearUndeliveredOlderThan();
+  void OnResetToolPermissions();
   void OnResetProfile();
   void PerformResetProfile();
   void OnChooseTheme(Rml::Event& ev);

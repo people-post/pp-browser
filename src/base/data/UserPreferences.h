@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/data/ToolPermissions.h"
 #include "common/Error.h"
 
 #include <string>
@@ -33,7 +34,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 10;
+  static constexpr int kSchemaVersion = 11;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -62,6 +63,8 @@ struct ProfilePreferences {
    * Cleared when status becomes reachable so a later regression can nudge again.
    */
   std::string reachability_nudge_acked_status;
+  /** Agent tool trust: ask / allow / deny by tool or provider (schema v11). */
+  ToolPermissionsPrefs tool_permissions;
 };
 
 class UserPreferences {

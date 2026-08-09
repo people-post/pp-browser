@@ -751,6 +751,20 @@ bool Application::Initialize(const char* window_title) {
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (agent_session_) {
+    agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
+    agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.tool_permissions = permissions;
+      prefs.schema_version = ProfilePreferences::kSchemaVersion;
+      return store_.SaveProfilePrefs(prefs);
+    });
+    store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
+      if (agent_session_) {
+        agent_session_->SetToolPermissions(prefs.tool_permissions);
+      }
+    });
+  }
 
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";

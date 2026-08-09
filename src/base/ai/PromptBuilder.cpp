@@ -175,7 +175,7 @@ std::string PromptBuilder::BuildScopedAssistSystemPrompt(const std::string& tool
   return out.str();
 }
 
-std::string PromptBuilder::BuildPlannerPrompt() {
+std::string PromptBuilder::BuildPlannerPrompt(const std::string& tools_summary) {
   std::ostringstream out;
   out << "You are the turn planner for pp-browser chat.\n";
   out << "Analyze the user's latest message and produce a structured turn plan.\n";
@@ -186,12 +186,22 @@ std::string PromptBuilder::BuildPlannerPrompt() {
   "render_mode": "blocks|people_list",
   "synthesis_hints": "short guidance for the synthesizer"
 })";
-  out << "\n\nRules:\n";
-  out << "- Choose tools the runtime should execute BEFORE synthesis.\n";
-  out << "- Use web_search for live/news/market/weather/time-sensitive questions.\n";
-  out << "- Use blog_articles (or MCP feed tools) for article feed requests; not web_search.\n";
+  out << "\n\n";
+  if (!tools_summary.empty()) {
+    out << "AVAILABLE TOOLS (live catalog — only plan tools listed here)\n";
+    out << tools_summary << "\n";
+    out << "Tags: [domain, risk]. Prefer read tools for lookup; write/destructive tools change state.\n\n";
+  }
+  out << "Rules:\n";
+  out << "- Choose tools from the live catalog the runtime should execute BEFORE synthesis.\n";
+  out << "- Never invent tool names; if the catalog is empty, use an empty tools array.\n";
+  out << "- Lookup / discovery: use read tools (people search, feeds, web search, list inbox).\n";
+  out << "- Mutations (add contact, start chat, register, nickname): only when the user clearly asks "
+         "to change state and required args are available; otherwise discover first or leave tools empty.\n";
+  out << "- Use web_search for live/news/market/weather/time-sensitive questions when that tool is listed.\n";
+  out << "- Use blog_articles (or other feed tools in the catalog) for article feed requests; not web_search.\n";
   out << "- Use search_people or list_contacts for people discovery; set render_mode to people_list.\n";
-  out << "- Use list_conversations when the user asks about their inbox or existing chats.\n";
+  out << "- Use list_conversations / open_conversation when the user asks about inbox or opening a chat.\n";
   out << "- Use an empty tools array for pure conversation with no external lookup.\n";
   out << "- At most 4 tools. Provide concrete query arguments.\n";
   out << "- synthesis_hints should steer reply shape, not repeat the user message.\n";

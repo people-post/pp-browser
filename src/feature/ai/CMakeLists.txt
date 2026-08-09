@@ -5,6 +5,8 @@ pp_browser_add_feature_library(pp_feature_ai
   SOURCES
     AgentSession.cpp
     PayloadTurnPlanBuilder.cpp
+    ToolPermissionPolicy.cpp
+    ToolPermissionPrompt.cpp
     ToolRegistry.cpp
     ToolRegistryBuild.cpp
     TurnExecutor.cpp
