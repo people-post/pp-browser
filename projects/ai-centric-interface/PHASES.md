@@ -136,6 +136,6 @@ Each track gets its own checklist subsection in this file when started.
 
 - Treating `people_discovery` as the only people intent (blocks Operate)
 - Requiring `directory_hit` for every contact mutation
-- Planner without tool catalog (`(void)tools_summary`)
+- Planner without tool catalog (fixed: live `tools_summary` in prompt)
 - Silent no-op for Monitor/Repair “for later”
 - New top-level acts for each feature (“AddContactAct”) — use Operate × domain instead
