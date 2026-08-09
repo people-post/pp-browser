@@ -119,6 +119,8 @@ void WorkerPool::WorkerMain(const size_t worker_index) {
 #if defined(__ANDROID__) || defined(__linux__)
   const std::string name = "pp-worker-" + std::to_string(worker_index);
   pthread_setname_np(pthread_self(), name.c_str());
+#else
+  (void)worker_index;
 #endif
 
   for (;;) {

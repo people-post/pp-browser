@@ -63,6 +63,8 @@ endif()
 
 # FreeType (RmlUi font engine) — PNG required for Noto Color Emoji CBDT bitmaps.
 # Prefer system zlib/libpng when present; otherwise use SDL3_image vendored copies.
+# On Windows, never trust PATH-discovered MinGW archives (e.g. Strawberry Perl):
+# they are usually the wrong arch/ABI for MSVC (x64 .a linked into ARM64/x64 MSVC).
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_PNG OFF CACHE BOOL "" FORCE)
@@ -70,10 +72,23 @@ set(FT_REQUIRE_PNG ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_ZLIB OFF CACHE BOOL "" FORCE)
 set(FT_REQUIRE_ZLIB ON CACHE BOOL "" FORCE)
 
-find_package(ZLIB QUIET)
-find_package(PNG QUIET)
+if(WIN32)
+  set(ZLIB_FOUND FALSE)
+  set(PNG_FOUND FALSE)
+else()
+  find_package(ZLIB QUIET)
+  find_package(PNG QUIET)
+endif()
 if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
   message(STATUS "pp-browser: vendoring zlib+libpng for FreeType color emoji")
+  # Drop stale FindZLIB/FindPNG cache entries that may name incompatible system libs.
+  unset(ZLIB_LIBRARY CACHE)
+  unset(ZLIB_LIBRARY_RELEASE CACHE)
+  unset(ZLIB_LIBRARY_DEBUG CACHE)
+  unset(PNG_LIBRARY CACHE)
+  unset(PNG_LIBRARY_RELEASE CACHE)
+  unset(PNG_LIBRARY_DEBUG CACHE)
+  unset(PNG_PNG_INCLUDE_DIR CACHE)
   set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   # libp2p_dependencies may already have added third_party/zlib as target `zlib`.
   # Reuse it (and its headers) so libpng's PNG_ZLIB_VERNUM matches the compile
