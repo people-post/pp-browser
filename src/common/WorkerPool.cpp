@@ -126,7 +126,8 @@ void WorkerPool::WorkerMain(const size_t worker_index) {
     {
       std::unique_lock lock(mutex_);
       cv_.wait(lock, [this]() { return stopped_ || (!paused_ && HasWorkLocked()); });
-      if (stopped_ && !HasWorkLocked()) {
+      // Once Shutdown sets stopped_, never dequeue — queued work was dropped under the same lock.
+      if (stopped_) {
         break;
       }
       if (paused_ || !DequeueOneLocked(&task)) {

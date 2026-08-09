@@ -4,6 +4,7 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/connection/stream.hpp>
@@ -12,6 +13,7 @@
 
 #include <chrono>
 #include <future>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -20,11 +22,20 @@ namespace {
 
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
+using Clock = std::chrono::steady_clock;
 
 void CloseQuiet(const std::shared_ptr<Stream>& stream) {
   if (stream) {
     stream->close([](auto&&) {});
   }
+}
+
+std::chrono::milliseconds RemainingTimeout(const Clock::time_point& deadline) {
+  const auto now = Clock::now();
+  if (now >= deadline) {
+    return std::chrono::milliseconds(1);
+  }
+  return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
 }
 
 } // namespace
@@ -44,7 +55,8 @@ struct Libp2pChatHistoryService::Impl {
     }
     auto stream = std::move(stream_and_protocol.stream);
     PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
-      auto json_utf8 = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
+      auto json_utf8 = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes,
+                                              kDefaultControlFrameReadTimeout);
       if (!json_utf8) {
         CloseQuiet(stream);
         return;
@@ -124,22 +136,36 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
     return Error("Peer-direct endpoint not registered");
   }
 
+  constexpr auto kChatHistoryFetchTimeout = std::chrono::milliseconds(8000);
+  const auto deadline = Clock::now() + kChatHistoryFetchTimeout;
+
   // OpenStream callback only delivers the stream; blocking read/write stays on THIS worker.
   using StreamOpenResult = libp2p::StreamAndProtocolOrError;
   auto open_promise = std::make_shared<std::promise<StreamOpenResult>>();
   auto open_future = open_promise->get_future();
+  auto active_mu = std::make_shared<std::mutex>();
+  auto active_stream = std::make_shared<std::shared_ptr<Stream>>();
 
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatHistoryProtocolId}},
-                       [open_promise](StreamOpenResult stream_res) {
+                       [open_promise, active_mu, active_stream](StreamOpenResult stream_res) {
+                         if (stream_res) {
+                           std::lock_guard lock(*active_mu);
+                           *active_stream = stream_res.value().stream;
+                         }
                          try {
                            open_promise->set_value(std::move(stream_res));
                          } catch (const std::future_error&) {
                          }
                        });
 
-  constexpr int kChatHistoryFetchTimeoutMs = 8000;
-  if (open_future.wait_for(std::chrono::milliseconds(kChatHistoryFetchTimeoutMs)) !=
-      std::future_status::ready) {
+  if (open_future.wait_until(deadline) != std::future_status::ready) {
+    std::shared_ptr<Stream> to_reset;
+    {
+      std::lock_guard lock(*active_mu);
+      to_reset = *active_stream;
+      active_stream->reset();
+    }
+    ResetStreamQuiet(to_reset);
     return Error("libp2p chat-history fetch timed out");
   }
   auto stream_res = open_future.get();
@@ -147,12 +173,22 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
     return Error("libp2p stream open failed");
   }
   auto stream = std::move(stream_res.value().stream);
+  {
+    std::lock_guard lock(*active_mu);
+    *active_stream = stream;
+  }
+
   const std::string request_json = ChatHistoryRequestToJson(request).dump();
   if (!BlockingWriteStreamJson(stream, request_json, kMaxRelayEnvelopeJsonBytes)) {
     CloseQuiet(stream);
     return Error("Failed to send chat-history request");
   }
-  auto response_json = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
+  auto response_json =
+      BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes, RemainingTimeout(deadline));
+  {
+    std::lock_guard lock(*active_mu);
+    active_stream->reset();
+  }
   CloseQuiet(stream);
   if (!response_json) {
     return response_json.error();

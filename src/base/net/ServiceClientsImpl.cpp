@@ -286,12 +286,15 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& /*signature_alg*/,
                                                                    const std::string& /*kem_public_key_b64*/,
                                                                    const std::string& /*peer_id*/,
-                                                                   const std::vector<std::string>& /*multiaddrs*/) {
+                                                                   const std::vector<std::string>& /*multiaddrs*/,
+                                                                   int64_t initiation_floor) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
                             .message = "Registered as " + nickname,
                             .llm_api_key = "brf_llm_mock_key",
-                            .expires_at = "2099-01-01T00:00:00.000Z"};
+                            .expires_at = "2099-01-01T00:00:00.000Z",
+                            .initiation_floor = initiation_floor,
+                            .initiation_floor_present = true};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,
@@ -713,7 +716,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& signature_alg,
                                                                    const std::string& kem_public_key_b64,
                                                                    const std::string& peer_id,
-                                                                   const std::vector<std::string>& multiaddrs) {
+                                                                   const std::vector<std::string>& multiaddrs,
+                                                                   int64_t initiation_floor) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -723,7 +727,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                          {"signature", signature},
                          {"timestamp", timestamp},
                          {"signature_alg", signature_alg},
-                         {"kem_public_key_b64", kem_public_key_b64}};
+                         {"kem_public_key_b64", kem_public_key_b64},
+                         {"initiation_floor", initiation_floor}};
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
@@ -759,6 +764,10 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     }
     if (root.contains("expires_at") && root["expires_at"].is_string()) {
       result.expires_at = root["expires_at"].get<std::string>();
+    }
+    if (root.contains("initiation_floor") && root["initiation_floor"].is_number_integer()) {
+      result.initiation_floor = root["initiation_floor"].get<int64_t>();
+      result.initiation_floor_present = true;
     }
   }
   return result;

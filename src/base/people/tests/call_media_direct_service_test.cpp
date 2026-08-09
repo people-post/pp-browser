@@ -38,6 +38,7 @@ void WaitUntil(const std::function<bool()>& predicate, const std::chrono::millis
 class CallMediaDirectServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    stall_release_ = std::make_shared<std::atomic<bool>>(false);
     static std::atomic<int> port{44000 + (ProcessId() % 2000) * 10};
     a_port_ = port.fetch_add(1);
     b_port_ = port.fetch_add(1);
@@ -72,6 +73,11 @@ protected:
   }
 
   void TearDown() override {
+    // Release any inbound-handler stall before WorkerPool::Shutdown joins.
+    // Flag is shared_ptr so it outlives TestBody stack (UAF used to hang Stop).
+    if (stall_release_) {
+      stall_release_->store(true, std::memory_order_release);
+    }
     a_call_media_->Stop();
     b_call_media_->Stop();
     a_call_media_.reset();
@@ -80,12 +86,15 @@ protected:
     b_sessions_.reset();
     a_host_.Stop();
     b_host_.Stop();
+    stall_release_.reset();
   }
 
   int a_port_ = 0;
   int b_port_ = 0;
   std::string a_ma_;
   std::string b_ma_;
+  /** Shared with tests that stall B's inbound handler on the Normal worker lane. */
+  std::shared_ptr<std::atomic<bool>> stall_release_;
   Libp2pHost a_host_;
   Libp2pHost b_host_;
   std::unique_ptr<PeerSessionManager> a_sessions_;
@@ -165,23 +174,22 @@ TEST_F(CallMediaDirectServiceTest, HelloAndEncryptedAudioRoundTrip) {
 
 TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
   // B stalls inside inbound hello handler so A's Connect blocks in hello_ack read.
-  // release_b must always flip (RAII): a failed WaitUntil/ASSERT used to leave B's worker
-  // in the sleep loop and hang Libp2pHost::Stop → WorkerPool::Shutdown.
+  // stall_release_ is fixture-owned shared_ptr: TearDown flips it before host Stop so the
+  // Normal-lane worker can leave the sleep loop (stack atomic + RAII UAF used to hang Shutdown).
   const std::string call_id = "call-detach-wait";
   ByteVector media_key(32, 0x11);
-  std::atomic<bool> release_b{false};
   std::atomic<bool> b_stalled{false};
-  struct ReleaseB {
-    std::atomic<bool>* flag;
-    ~ReleaseB() { flag->store(true, std::memory_order_release); }
-  } release_guard{&release_b};
+  auto release_b = stall_release_;
+  ASSERT_TRUE(release_b);
 
-  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+  b_call_media_->SetInboundHandler([release_b, &media_key, &call_id, &b_stalled](
+                                       CallMediaDirectConnectParams& params,
+                                       CallMediaDirectCallbacks&) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     b_stalled.store(true, std::memory_order_release);
-    while (!release_b.load(std::memory_order_acquire)) {
+    while (!release_b->load(std::memory_order_acquire)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   });

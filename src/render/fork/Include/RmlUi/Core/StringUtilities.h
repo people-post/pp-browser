@@ -111,6 +111,12 @@ namespace StringUtilities {
 		return p;
 	}
 
+	/// Seek forward one extended grapheme cluster (emoji ZWJ / skin tone / VS16 / flags).
+	/// `p` must point at a code-point boundary (or end).
+	RMLUICORE_API const char* SeekForwardGraphemeCluster(const char* p, const char* p_end);
+	/// Seek backward one extended grapheme cluster. `p` is a boundary (or begin).
+	RMLUICORE_API const char* SeekBackwardGraphemeCluster(const char* p, const char* p_begin);
+
 	/// Converts a character position in a UTF-8 string to a byte offset.
 	RMLUICORE_API int ConvertCharacterOffsetToByteOffset(StringView string, int character_offset);
 

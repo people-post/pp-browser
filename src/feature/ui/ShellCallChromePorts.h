@@ -7,17 +7,22 @@
 
 namespace pbr {
 
+/** Presenter-owned call chrome copied into ShellHost::State on apply. */
+struct CallChromeSnapshot {
+  CallRingState ring;
+  CallInProgressState in_progress;
+};
+
 /**
  * Call ring / in-call chrome ports. Application fills from ShellHost.
  * Clear via BindShellCallChrome({}).
  *
- * CallController classifies chrome changes and notifies via apply_chrome_update;
- * ShellHost owns Remount / DirtyCallChrome / RequestForceFrame (not grab-bag DirtyWindow).
+ * CallController owns local ring / in-call snapshots, classifies updates, and
+ * pushes apply_snapshot — ports must not return mutable ShellHost::State refs.
  */
 struct ShellCallChromePorts {
-  std::function<CallRingState&()> call_ring;
-  std::function<CallInProgressState&()> call_in_progress;
-  std::function<void(CallChromeUpdate)> apply_chrome_update;
+  /** Copy snapshot into ShellHost::State and apply Remount/Dirty from update. */
+  std::function<void(const CallChromeSnapshot& snapshot, CallChromeUpdate update)> apply_snapshot;
 };
 
 class ShellHost;

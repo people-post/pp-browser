@@ -37,7 +37,9 @@ public:
                                                    const std::vector<GroupMemberTarget>& members,
                                                    IPskSessionStore& psk_store,
                                                    const std::function<Roe<ByteVector>(const ChatTargetKey&)>&
-                                                       resolve_peer_kem_public);
+                                                       resolve_peer_kem_public,
+                                                   const std::optional<std::vector<uint8_t>>& chat_payload_plaintext =
+                                                       std::nullopt);
   static Roe<ThreadMessage> DecryptForLocalMember(const RelayEnvelope& envelope,
                                                   const std::string& local_contact_id,
                                                   IPskSessionStore& psk_store,

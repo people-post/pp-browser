@@ -2,6 +2,7 @@
 
 #include "base/media/CallMediaAdaptation.h"
 #include "base/messaging/HopHintLogic.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/messaging/SfuAttachWaitLogic.h"
 #include "base/i18n/LocalizationService.h"
@@ -44,10 +45,17 @@ std::vector<MeshHopCandidate> PreferNamedHopFirst(std::vector<MeshHopCandidate> 
 
 /** SoftMigrate aggregate error — append OS network tip when every hop was undialable. */
 std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
-  std::string msg = Tr("call.error.no_media_relay_hop");
   if (hop_failures.empty()) {
-    return msg;
+    return Tr("call.error.no_media_relay_hop");
   }
+  const bool all_payment =
+      std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
+        return f.find("payment_unavailable") != std::string::npos;
+      });
+  if (all_payment) {
+    return Tr("call.error.payment_unavailable_media");
+  }
+  std::string msg = Tr("call.error.no_media_relay_hop");
   const bool all_undialable =
       std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
         return f.find("hop not dialable") != std::string::npos;
@@ -818,6 +826,11 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     if (!quote || !quote->ok) {
       return Error(quote ? quote->error : quote.error().message);
     }
+    // P001: rate == 0 proceeds; rate > 0 needs payment (unavailable) — SoftMigrate may try next hop.
+    if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
+      log().info << "AttachLocalToSfu skip paid hop=" << attach.hop_peer_id << " rate=" << quote->rate;
+      return payable.error();
+    }
     a_up_bps = quote->a_up_bps;
 
     auto attach_res = relay_deps_.relay->AcceptAndAttach(
@@ -1084,6 +1097,10 @@ Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& c
   auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);
   if (!quote || !quote->ok) {
     return Error(quote ? quote->error : quote.error().message);
+  }
+  if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
+    log().info << "ReattachGuestSfu skip paid hop=" << attach.hop_peer_id << " rate=" << quote->rate;
+    return payable.error();
   }
   if (!IsMigrateGenerationCurrent(gen_at_start)) {
     return Error("reattach aborted");

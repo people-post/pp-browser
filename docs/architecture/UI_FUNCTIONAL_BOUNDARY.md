@@ -125,7 +125,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Rules:**
 
-- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
+- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `UnlockEnsurePorts`, …) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
 - **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
@@ -133,8 +133,16 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Existing examples:**
 
-- `SettingsCommands` — register, UPnP, reset profile, appearance, locales
+- `MessagingFacade` — non-owning wrapper over `MessagingHub&` (app-owned); chat, chat sub-presenters (`ChatThreadChrome`, `ChatTranscriptScroller`), messaging tools, and `Application` settings/badge wiring call its methods instead of peeking hub accessors. Event subscriptions (`SetOnMessagesChanged`, `SetOnThreadChanged`, …) keep `std::function` params. **Phase 6 done** — replaced the `MessagingChatPorts` mega-struct + `MakeMessagingChatPorts`.
+- `MessagingShellPorts` — status-bar cluster/popover snapshots + retest for shell chrome. Mesh reads (host running, reachability, relay load) come from `MeshHost*` (via `MakeMessagingShellPorts(hub)` passing `hub.Mesh()`); only hub-owned bits (messaging-ready, Brief health, help-network, last error) are projected off the hub.
+- `SettingsCommands` — register, UPnP, reset profile, appearance, locales, PIN status + Change PIN (`change_pin`); the app-owned `ProfileSecretsService` stays out of `SettingsController` (no `ProfileSecretsService::Instance()`)
 - `ChatSessionPorts` — select thread, finalize display, find someone
+- `CallActionsPorts` — start/accept/leave call chrome actions for chat, shell, people-picker (filled from `CallController`)
+- `CallFunctionalPorts` + `CallUiBackend` — sealed call session/lifecycle access for `CallController` (no raw CSM/Lifecycle pointers)
+- `UnlockEnsurePorts` — ensure unlocked / unlock-in-progress for chat, settings, contacts, people-picker (filled from `ProfileUnlockGate`)
+- `FlowCoordinatorPorts` — modal begin/end/dismiss for shell + people-picker (filled from `FlowCoordinator`)
+- `BadgeNotifyPorts` — badge refresh / sessions unread for chat (filled from `BadgeAggregator`)
+- `PinGateActionPorts` — PIN overlay submit/cancel/chooser actions for shell (filled from `PinGateController`)
 - `ProfileUnlockPorts` — ensure unlocked, complete with PIN (async heavy work)
 - `ActionRouter` — declarative Rml action → MCP tool map
 
@@ -182,7 +190,9 @@ struct MessagingActions {
 | **UI chrome state** | UI system | nav tab, pane visibility, overlay stack, pin overlay layout | Presenters / shell only |
 | **View projection** | Presenter | RmlUi-bound fields derived from functional + chrome | Presenter writes binding; sources are read-only snapshots |
 
-**Anti-pattern (current debt):** `PinGateController` mutating `ShellHost::State().pin_gate`, or `ChatController` opening shell panes via `ShellHost::Instance()` — functional/presenter logic reaching into global shell mutable state.
+**Anti-pattern:** Presenters or functional code reaching into global shell mutable state via `ShellHost::Instance()`, or chrome ports that return mutable references into `ShellHost::State()`.
+
+**Call / PIN chrome (apply-only):** `CallController` and `PinGateController` own local chrome snapshots (`ring_` / `in_call_`, `pin_state_`) and push them through `apply_snapshot` / `apply_pin_gate`. ShellHost copies into `State()` then remounts/dirties — ports do not hand out `CallRingState&` / `PinGateState&`.
 
 **Target:** Functional systems expose state; presenters **project** into chrome. Cross-surface navigation uses a **coordinator** (`FlowCoordinator`, future `ShellCoordinator`), not controller-to-controller `::Instance()` calls.
 
@@ -192,8 +202,8 @@ struct MessagingActions {
 
 `Application` (`src/app/`) is the only place that:
 
-- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, …)
-- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `ProfileUnlockPorts`)
+- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …)
+- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `UnlockEnsurePorts`, `FlowCoordinatorPorts`, `BadgeNotifyPorts`, `PinGateActionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickLibp2p`, drain `AppRuntime` UI mailbox
@@ -227,6 +237,10 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Settings imperative ops | `SettingsCommands` | Actions |
 | Chat navigation | `ChatSessionPorts` | Actions |
 | Contacts notify | `ContactsNotifyPorts` | Actions + Events |
+| Unlock ensure | `UnlockEnsurePorts` | Actions |
+| Flow coordinator | `FlowCoordinatorPorts` | Actions |
+| Badge notify | `BadgeNotifyPorts` | Actions + State |
+| PIN gate actions | `PinGateActionPorts` | Actions |
 | People picker notify | `PeoplePickerNotifyPorts` | Actions |
 | App-owned presenters | `Application` + `InstallInstance` / `ClearInstance` | Composition root |
 | Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |
@@ -257,6 +271,8 @@ static Presenter& Instance();                      // static callbacks only
 ---
 
 ## Presenter template (target)
+
+`MessagingFacade` is now realized as a non-owning wrapper over `MessagingHub&` (see `src/feature/messaging/MessagingFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `MessagingHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
 
 ```cpp
 // Functional — no RmlUi

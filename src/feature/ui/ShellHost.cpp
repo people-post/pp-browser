@@ -10,11 +10,11 @@
 #include "base/ui/RmlVariantHelpers.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PinGateController.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
-#include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
@@ -97,16 +97,16 @@ void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
 }
 
-void ShellHost::BindPinGate(PinGateController& pin_gate) {
-  pin_gate_ = &pin_gate;
+void ShellHost::BindPinGateActions(PinGateActionPorts ports) {
+  pin_gate_actions_ = std::move(ports);
 }
 
-void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
-  flow_ = &flow;
+void ShellHost::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_coordinator_ = std::move(ports);
 }
 
-void ShellHost::BindCallController(CallController& call) {
-  call_ = &call;
+void ShellHost::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 
@@ -154,6 +154,11 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
+    ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
+    ctor.Bind("call_ring_pricing_label", &host.state_.call_ring.pricing_label);
+    ctor.Bind("call_ring_accept_charge_label", &host.state_.call_ring.accept_charge_label);
+    ctor.Bind("call_ring_accept_charge_enabled", &host.state_.call_ring.accept_charge_enabled);
+    ctor.Bind("call_ring_accept_charge_hint", &host.state_.call_ring.accept_charge_hint);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -278,6 +283,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
     ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
@@ -552,8 +558,8 @@ void ShellHost::CloseLayer(int layer_id) {
     return;
   }
   const int closing_id = layer_id < 0 ? state_.overlay_stack.back().id : layer_id;
-  if (flow_) {
-    flow_->NotifyLayerClosing(closing_id);
+  if (flow_coordinator_.notify_layer_closing) {
+    flow_coordinator_.notify_layer_closing(closing_id);
   }
   if (layer_id < 0) {
     state_.overlay_stack.pop_back();
@@ -583,6 +589,8 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
     return DismissTarget::CompactChatOverlay;
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
+  case InterruptionKind::CallRing:
+  case InterruptionKind::CallInProgress:
   case InterruptionKind::None:
     return DismissTarget::None;
   }
@@ -666,14 +674,14 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
-      if (pin_gate_) {
-        pin_gate_->OnCancel();
+      if (pin_gate_actions_.on_cancel) {
+        pin_gate_actions_.on_cancel();
       }
     }
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
-  if (flow_ && flow_->HandleDismiss()) {
+  if (flow_coordinator_.handle_dismiss && flow_coordinator_.handle_dismiss()) {
     RequestSyncLayout();
     return true;
   }
@@ -834,6 +842,11 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
+  DataModelHost::Instance().Dirty("window", "call_ring_pricing_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_enabled");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -867,7 +880,9 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
 }
 
-void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
+void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update) {
+  state_.call_ring = snapshot.ring;
+  state_.call_in_progress = snapshot.in_progress;
   // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
   // that remounts chat panes and broke Samsung Accept hit-testing).
   if (update == CallChromeUpdate::Remount) {
@@ -877,6 +892,10 @@ void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
   Backend::RequestForceFrame();
+}
+
+void ShellHost::ApplyPinGateState(const PinGateState& state) {
+  state_.pin_gate = state;
 }
 
 void ShellHost::RequestRemountNavRail() {
@@ -1729,12 +1748,21 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
+  out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
+         "data-rml=\"call_ring_pricing_label\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
   out << "<button class=\"btn btn-primary shell-call-accept\" "
          "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
+  out << "</div>";
+  out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
+  out << "<button class=\"btn btn-secondary\" type=\"button\" "
+         "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
+         "data-event-click=\"call_accept_charge()\" data-rml=\"call_ring_accept_charge_label\"></button>";
+  out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
+         "data-rml=\"call_ring_accept_charge_hint\"></p>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -2316,28 +2344,28 @@ void ShellHost::AttachCallChromeGesture() {
   }
   ShellCallChromeGesture::Callbacks callbacks;
   callbacks.on_minimize = [this]() {
-    if (call_) {
-      call_->MinimizeChrome();
+    if (call_actions_.minimize_chrome) {
+      call_actions_.minimize_chrome();
     }
   };
   callbacks.on_immersive = [this]() {
-    if (call_) {
-      call_->ImmersiveChrome();
+    if (call_actions_.immersive_chrome) {
+      call_actions_.immersive_chrome();
     }
   };
   callbacks.on_expand = [this]() {
-    if (call_) {
-      call_->ExpandChrome();
+    if (call_actions_.expand_chrome) {
+      call_actions_.expand_chrome();
     }
   };
   callbacks.on_restore = [this]() {
-    if (call_) {
-      call_->RestoreChromeFromMinimized();
+    if (call_actions_.restore_chrome_from_minimized) {
+      call_actions_.restore_chrome_from_minimized();
     }
   };
   callbacks.on_chip_corner = [this](int corner) {
-    if (call_) {
-      call_->SetMinimizedCorner(corner);
+    if (call_actions_.set_minimized_corner) {
+      call_actions_.set_minimized_corner(corner);
     }
   };
   call_chrome_gesture_.Attach(root, context_, state_.call_in_progress.mode, std::move(callbacks),
@@ -2505,121 +2533,129 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSubmit();
+  if (Instance().pin_gate_actions_.on_submit) {
+    Instance().pin_gate_actions_.on_submit();
   }
 }
 
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnCancel();
+  if (Instance().pin_gate_actions_.on_cancel) {
+    Instance().pin_gate_actions_.on_cancel();
   }
 }
 
 void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSetPin();
+  if (Instance().pin_gate_actions_.on_set_pin) {
+    Instance().pin_gate_actions_.on_set_pin();
   }
 }
 
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnUseDefaultPin();
+  if (Instance().pin_gate_actions_.on_use_default) {
+    Instance().pin_gate_actions_.on_use_default();
   }
 }
 
 void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
   Instance().log().warning << "call_accept click";
-  if (auto* call = Instance().call_) {
-    call->AcceptIncoming();
+  if (Instance().call_actions_.accept_incoming) {
+    Instance().call_actions_.accept_incoming();
+  }
+}
+
+void ShellHost::CallAcceptChargeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& /*args*/) {
+  Instance().log().warning << "call_accept_charge click";
+  if (Instance().call_actions_.accept_incoming_with_charge) {
+    Instance().call_actions_.accept_incoming_with_charge();
   }
 }
 
 void ShellHost::CallDeclineCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->DeclineIncoming();
+  if (Instance().call_actions_.decline_incoming) {
+    Instance().call_actions_.decline_incoming();
   }
 }
 
 void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->LeaveActive();
+  if (Instance().call_actions_.leave_active) {
+    Instance().call_actions_.leave_active();
   }
 }
 
 void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RetryConnect();
+  if (Instance().call_actions_.retry_connect) {
+    Instance().call_actions_.retry_connect();
   }
 }
 
 void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                  const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleMute();
+  if (Instance().call_actions_.toggle_mute) {
+    Instance().call_actions_.toggle_mute();
   }
 }
 
 void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleCamera();
+  if (Instance().call_actions_.toggle_camera) {
+    Instance().call_actions_.toggle_camera();
   }
 }
 
 void ShellHost::CallSpeakerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleSpeaker();
+  if (Instance().call_actions_.toggle_speaker) {
+    Instance().call_actions_.toggle_speaker();
   }
 }
 
 void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->OpenMidCallInvitePicker();
+  if (Instance().call_actions_.open_mid_call_invite_picker) {
+    Instance().call_actions_.open_mid_call_invite_picker();
   }
 }
 
 void ShellHost::CallMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                      const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->MinimizeChrome();
+  if (Instance().call_actions_.minimize_chrome) {
+    Instance().call_actions_.minimize_chrome();
   }
 }
 
 void ShellHost::CallExpandCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ExpandChrome();
+  if (Instance().call_actions_.expand_chrome) {
+    Instance().call_actions_.expand_chrome();
   }
 }
 
 void ShellHost::CallImmersiveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ImmersiveChrome();
+  if (Instance().call_actions_.immersive_chrome) {
+    Instance().call_actions_.immersive_chrome();
   }
 }
 
 void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RestoreChromeFromMinimized();
+  if (Instance().call_actions_.restore_chrome_from_minimized) {
+    Instance().call_actions_.restore_chrome_from_minimized();
   }
 }
 
 void ShellHost::CallDetailsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ShowCallDetails();
+  if (Instance().call_actions_.show_call_details) {
+    Instance().call_actions_.show_call_details();
   }
 }
 

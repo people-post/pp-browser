@@ -158,6 +158,36 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   ASSERT_TRUE(old_invite);
   EXPECT_FALSE(old_invite->caps.present);
   EXPECT_FALSE(old_invite->caps.media_relay);
+  EXPECT_EQ(old_invite->offer_amount_minor, 0);
+}
+
+TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
+  CallInviteDetail invite;
+  invite.call_id = "call:pay";
+  invite.inviter_identity = "relay:a";
+  invite.invitee_identity = "relay:b";
+  invite.offer_amount_minor = 25;
+  invite.floor_minor = 20;
+  invite.currency = "pp_credit";
+  auto encoded = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->offer_amount_minor, 25);
+  EXPECT_EQ(decoded->floor_minor, 20);
+  EXPECT_EQ(decoded->currency, "pp_credit");
+
+  CallAcceptDetail accept;
+  accept.call_id = "call:pay";
+  accept.identity = "relay:b";
+  accept.charge_decision = "take_all";
+  accept.offer_amount_minor = 25;
+  auto encoded_accept = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(encoded_accept);
+  auto decoded_accept = CallControlCodec::DecodeAccept(*encoded_accept);
+  ASSERT_TRUE(decoded_accept);
+  EXPECT_EQ(decoded_accept->charge_decision, "take_all");
+  EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
 
 } // namespace

@@ -42,12 +42,23 @@ TEST(RegistrationClientUtilTest, ApplyRegistrationResultPersistsFields) {
                             .relay_user_id = "relay:abc",
                             .message = "ok",
                             .llm_api_key = "brf_llm_new",
-                            .expires_at = "2099-12-31T23:59:59.000Z"};
+                            .expires_at = "2099-12-31T23:59:59.000Z",
+                            .initiation_floor = 99,
+                            .initiation_floor_present = true};
   ApplyRegistrationResult(identity, result);
   EXPECT_TRUE(identity.registered);
   EXPECT_EQ(identity.relay_user_id, "relay:abc");
   EXPECT_EQ(identity.brief_llm_api_key, "brf_llm_new");
   EXPECT_EQ(identity.registration_expires_at, "2099-12-31T23:59:59.000Z");
+  EXPECT_EQ(identity.initiation_floor, 99);
+}
+
+TEST(RegistrationClientUtilTest, ApplyRegistrationResultIgnoresMissingFloor) {
+  LocalIdentity identity;
+  identity.initiation_floor = 7;
+  RegistrationResult result{.success = true, .relay_user_id = "relay:x"};
+  ApplyRegistrationResult(identity, result);
+  EXPECT_EQ(identity.initiation_floor, 7);
 }
 
 TEST(RegistrationClientUtilTest, MarkRegistrationExpired) {

@@ -1314,6 +1314,23 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 ---
 
+## D098 — Reaction annotations (`reaction` / `reaction_clear`)
+
+**Date:** 2026-08-08  
+**Decision:**
+
+1. Message reactions use existing `content_type=annotation` rows (D005/D026) — not in-place mutations of the target.
+2. **`value` is a plain UTF-8 emoji string** (codec/tests). Documentary nested `{ "emoji": "…" }` shapes are rejected.
+3. **Add:** `annotation_type=reaction`, `text` = display glyph, `value` = emoji, `target_message_id` set. Store original UTF-8; compare with `NormalizeEmojiKey` (strip trailing `U+FE0F`).
+4. **Remove (toggle off):** append `annotation_type=reaction_clear` with the same `target_message_id` + `value` emoji key and empty `text`. Display keeps the **latest** row per `(sender_contact_id, target_message_id, emoji_key)`; clear wins.
+5. Both types count toward **`kMaxAnnotationsPerTarget`** (D042); enforce on compose and ingest persist.
+6. Mobile: OS emoji keyboard for composer text; reaction UX uses a fixed preset strip + optional “More…” that focuses a short-lived field for OSK input.
+
+**Rationale:** Reuses the shipped annotation path; append-only sync stays simple; toggle without mutating history.  
+**Alternatives:** Mutate target row likes array (rejected — D005); nested JSON `value` object (rejected — codec is string); full in-app emoji catalog (deferred).
+
+---
+
 ## Open decisions (not yet resolved)
 
 **Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — all chat rollout items resolved 2026-07-06.

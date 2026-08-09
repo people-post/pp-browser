@@ -305,7 +305,8 @@ void to_json(nlohmann::json& j, const AppConfig& config) {
                      {"relay", config.relay},
                      {"directory", config.directory},
                      {"registration", config.registration},
-                     {"libp2p", config.libp2p}};
+                     {"libp2p", config.libp2p},
+                     {"initiation_floor", config.initiation_floor}};
   if (!config.llm_api_key_env.empty()) {
     j["llm"]["api_key_env"] = config.llm_api_key_env;
     j["llm"].erase("api_key");
@@ -374,6 +375,9 @@ void from_json(const nlohmann::json& j, AppConfig& config) {
   }
   if (j.contains("registration") && j["registration"].is_object()) {
     from_json(j["registration"], config.registration);
+  }
+  if (j.contains("initiation_floor") && j["initiation_floor"].is_number_integer()) {
+    config.initiation_floor = j["initiation_floor"].get<int64_t>();
   }
   if (j.contains("libp2p") && j["libp2p"].is_object()) {
     from_json(j["libp2p"], config.libp2p);

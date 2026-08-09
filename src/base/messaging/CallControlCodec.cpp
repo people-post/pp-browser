@@ -125,6 +125,11 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     json["libp2p_peer_id"] = detail.libp2p_peer_id;
   }
   WritePeerCaps(json, detail.caps);
+  if (detail.offer_amount_minor > 0 || detail.floor_minor > 0) {
+    json["offer_amount_minor"] = detail.offer_amount_minor;
+    json["floor_minor"] = detail.floor_minor;
+    json["currency"] = detail.currency.empty() ? "pp_credit" : detail.currency;
+  }
   return json.dump();
 }
 
@@ -162,6 +167,9 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
   detail.libp2p_peer_id = OptString(json, "libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(json);
+  detail.offer_amount_minor = json.value("offer_amount_minor", static_cast<int64_t>(0));
+  detail.floor_minor = json.value("floor_minor", static_cast<int64_t>(0));
+  detail.currency = OptString(json, "currency").value_or("pp_credit");
   return detail;
 }
 
@@ -175,6 +183,10 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json["libp2p_peer_id"] = detail.libp2p_peer_id;
   }
   WritePeerCaps(json, detail.caps);
+  if (detail.offer_amount_minor > 0 || detail.charge_decision == "take_all") {
+    json["charge_decision"] = detail.charge_decision.empty() ? "waive" : detail.charge_decision;
+    json["offer_amount_minor"] = detail.offer_amount_minor;
+  }
   return json.dump();
 }
 
@@ -191,6 +203,8 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
   detail.libp2p_peer_id = OptString(json, "libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(json);
+  detail.charge_decision = OptString(json, "charge_decision").value_or("waive");
+  detail.offer_amount_minor = json.value("offer_amount_minor", static_cast<int64_t>(0));
   return detail;
 }
 

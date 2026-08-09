@@ -34,6 +34,8 @@ public:
   Roe<void> ClearThreadMemory(const std::string& thread_id) override;
   Roe<int64_t> CountContextEligibleMessagesAfter(const std::string& thread_id,
                                                  int64_t after_display_order) const override;
+  Roe<int64_t> CountAnnotationsForTarget(const std::string& thread_id,
+                                         const std::string& target_message_id) const override;
   Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
                                                                   int64_t after_display_order) const override;
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;

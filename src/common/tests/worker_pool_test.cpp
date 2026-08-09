@@ -161,6 +161,8 @@ TEST(WorkerPoolTest, ShutdownDropsQueuedWorkAndJoins) {
   pool.Post(WorkerLane::Background, [&]() { background_ran.fetch_add(1); });
   EXPECT_GE(pool.QueuedCount(WorkerLane::Background), 1u);
 
+  // Pause so the worker cannot dequeue Background after Normal finishes and before Shutdown.
+  pool.Pause();
   {
     std::lock_guard lock(mu);
     allow_finish = true;

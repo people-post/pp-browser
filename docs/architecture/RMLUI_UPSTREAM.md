@@ -67,7 +67,8 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths; lollipop **selection handle** geometry (`BuildSelectionHandleGeometry`)
 - `ElementSelectableText` — `GetAbsolutePositionForFlatIndex`, handle rendering after child text (`Render` overlay pass)
 - `SelectionController` — draggable selection handles (`HitTestHandle`, `BeginHandleDrag`, `UpdateHandleDrag`) for static text
-- `WidgetTextInput` — composer selection handles with the same visual and drag semantics (`OnRenderOverlays` after text children); `SetValue` no-ops when the displayed string is unchanged (avoids IME/cursor reset from data-model write-back while typing)
+- `WidgetTextInput` — composer selection handles with the same visual and drag semantics (`OnRenderOverlays` after text children); `SetValue` no-ops when the displayed string is unchanged (avoids IME/cursor reset from data-model write-back while typing); Left/Right/Backspace move by **grapheme cluster** (emoji ZWJ, skin tones, VS16, regional-indicator flags) via `StringUtilities::SeekForward/BackwardGraphemeCluster`
+- `StringUtilities` — grapheme-cluster seeks for mobile OS emoji keyboards (not full ICU UAX #29)
 - `Element::Render` — virtual so form controls and selectable text can draw ink above descendants
 - `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
 - `DataViewIf` / `DataViewVisible` — treat only `display:none` / `visibility:hidden` as data-bound hidden (not any local display/visibility); fixes Dirty toggles when layout set `display:flex|block`

@@ -39,9 +39,9 @@ src/feature/
 ├── ai/           Agent session, turn pipeline, UI generation
 │   ├── tools/        Web search, MCP tool adapters
 │   └── bindings/     RmlUi action routing, bindings manifest
-├── messaging/    MessagingHub, P2P/relay/sync orchestration
+├── messaging/    MessagingHub (MessagingCore assembler), MeshHost consumer, CallStack, MessagingFacade
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
-└── chat/         Chat controller, agent↔hub wiring, messaging agent tools
+└── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
 
 **Domain grouping (mental model):**
@@ -113,18 +113,27 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | Pattern | Location | Purpose |
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` |
+| `CallActionsPorts` | `ui/CallActionsPorts.h` | Call chrome/actions for chat, shell, people-picker; Application fills from `CallController` |
+| `CallFunctionalPorts` | `messaging/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
+| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over `CallStack` session/lifecycle (bound to `MessagingHub::CallStackRef()`; no leaky CSM/Lifecycle ports) |
+| `CallStack` | `messaging/CallStack.h` | Owns call media/CSM/lifecycle/bridge/CallMediaDirect/relay+dial+circuit clients; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()` |
 | `ContactsNotifyPorts` | `ui/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
+| `UnlockEnsurePorts` | `ui/UnlockEnsurePorts.h` | Ensure unlocked / unlock-in-progress; Application fills from `ProfileUnlockGate` |
+| `FlowCoordinatorPorts` | `ui/FlowCoordinatorPorts.h` | Modal begin/end/dismiss; Application fills from `FlowCoordinator` |
+| `BadgeNotifyPorts` | `ui/BadgeNotifyPorts.h` | Badge refresh / sessions unread for chat; Application fills from `BadgeAggregator` |
+| `PinGateActionPorts` | `ui/PinGateActionPorts.h` | PIN overlay submit/cancel/chooser; Application fills from `PinGateController` |
 | `PeoplePickerNotifyPorts` | `ui/PeoplePickerNotifyPorts.h` | Open-picker hooks for chat/call; Application fills from `PeoplePickerController` |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind |
 | `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
 | `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
 | `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
+| `MessagingFacade` | `messaging/MessagingFacade.h` | Non-owning wrapper over `MessagingHub&`; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (replaces the `MessagingChatPorts` mega-struct) |
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; app-owned presenters + ports |
 | App-owned presenters | `app/Application.cpp` | `unique_ptr` for shell + all presenters; `InstallInstance` for RmlUi static callbacks |
 | `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
 | SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |
-| Hub-and-spoke within messaging | `MessagingHub` referenced from `MessageRouter`, `InboxController`, etc. | Orchestration inside single target `pp_feature_messaging` (compile coupling, not a link-cycle) |
+| Hub-and-spoke within messaging | `MessagingHub` (`MessagingCore`) owns stores/inbox/P2P + `MeshHost` + `CallStack` | Assembler inside `pp_feature_messaging`; mesh shared with `pp-node` via MeshHost |
 | App-level wiring | `app/Application.cpp`, `app/ConfigApplyBridge.cpp` | Cross-controller callbacks and SessionStore → slice fan-out stay in `app/` per SRC_LAYOUT |
 
 ### Intentional one-way edges (not cycles)

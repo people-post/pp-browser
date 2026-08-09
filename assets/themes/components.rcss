@@ -424,6 +424,29 @@ select selectbox option {
 .prompt-composer-leading {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.prompt-emoji-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-emoji-btn-glyph {
+  font-size: 18dp;
+  line-height: 1;
 }
 
 .prompt-send-btn {
@@ -2280,6 +2303,28 @@ call-video-tile {
   border-radius: 4dp;
   background-color: rgba(128, 128, 128, 0.15);
   font-size: 11dp;
+}
+
+.chat-reaction-row {
+  display: block;
+  margin-top: 4dp;
+}
+
+.chat-reaction-chip {
+  display: inline-block;
+  min-width: 44dp;
+  min-height: 32dp;
+  margin-right: 6dp;
+  margin-top: 2dp;
+  padding: 4dp 10dp;
+  border-radius: 16dp;
+  background-color: rgba(128, 128, 128, 0.12);
+  font-size: 14dp;
+  text-align: center;
+}
+
+.chat-reaction-chip--mine {
+  background-color: rgba(64, 128, 255, 0.18);
 }
 
 .chat-system-line {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ui/ChatWidgetTypes.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 
 #include <RmlUi/Core/Types.h>
 
@@ -59,7 +59,7 @@ public:
   };
 
   ChatThreadChrome(View view, bool& messaging_ready);
-  void BindChatPorts(MessagingChatPorts ports);
+  void BindMessagingFacade(MessagingFacade* facade);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** App/chat controller fills: surface→shell notify (not dirty_nav). */
@@ -103,7 +103,7 @@ public:
   std::function<void()> capture_scroll_before_prepend_;
   std::function<void(const std::string&, int64_t)> expand_loaded_min_;
   std::chrono::steady_clock::time_point last_peer_link_poll_{};
-  MessagingChatPorts chat_ports_;
+  MessagingFacade* facade_ = nullptr;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> notify_surface_changed_;

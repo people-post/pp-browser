@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 
   auto bootstrap_result = [&] {
     pbr::StartupPhase phase("Bootstrap::Run");
-    return pbr::Bootstrap::Run(options, app.Messaging());
+    return pbr::Bootstrap::Run(options, app.Messaging(), app.Secrets());
   }();
   if (!bootstrap_result) {
     root.error << pbr::kProductName << ": " << bootstrap_result.error().message;

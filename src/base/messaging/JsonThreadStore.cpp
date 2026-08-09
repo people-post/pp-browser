@@ -345,6 +345,32 @@ Roe<int64_t> JsonThreadStore::CountContextEligibleMessagesAfter(const std::strin
   return count;
 }
 
+Roe<int64_t> JsonThreadStore::CountAnnotationsForTarget(const std::string& thread_id,
+                                                        const std::string& target_message_id) const {
+  if (target_message_id.empty()) {
+    return int64_t{0};
+  }
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return int64_t{0};
+  }
+  int64_t count = 0;
+  for (const ThreadMessage& message : it->second) {
+    if (message.content_type != ChatContentType::Annotation) {
+      continue;
+    }
+    if (message.target_message_id && *message.target_message_id == target_message_id) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 Roe<std::vector<ThreadMessage>> JsonThreadStore::GetContextEligibleMessagesAfter(
     const std::string& thread_id, const int64_t after_display_order) const {
   std::lock_guard lock(mutex_);

@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
@@ -25,6 +26,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -59,6 +61,18 @@ public:
                                      const SendRelayOptions& options = {});
   Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text,
                                       const SendRelayOptions& options = {});
+  /**
+   * P001: re-lock peer initiation billing (`charge_required` system message) then MarkClosed locally.
+   * `floor_minor` defaults to local identity initiation_floor when nullopt.
+   */
+  Roe<void> SendChargeRequired(const std::string& peer_identity,
+                               std::optional<int64_t> floor_minor = std::nullopt);
+  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
+  Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
+                                  const std::string& emoji);
+  Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
+                                   const std::string& emoji);
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);
@@ -77,6 +91,7 @@ public:
   void SetRelayClient(IRelayClient* relay);
   void SetCallSessionManager(CallSessionManager* calls);
   void SetGroupMembership(GroupMembershipService* groups);
+  void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
@@ -164,6 +179,7 @@ private:
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
+  InitiationBillingStore* initiation_billing_ = nullptr;
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;

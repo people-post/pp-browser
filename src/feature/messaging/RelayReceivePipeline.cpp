@@ -2,12 +2,16 @@
 
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/GroupMembershipApply.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/CallControlCodec.h"
+#include "base/messaging/InitiationBillingCodec.h"
+#include "base/messaging/InitiationBillingStore.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
@@ -27,6 +31,24 @@
 namespace pbr {
 
 namespace {
+
+Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage& persisted) {
+  if (persisted.content_type != ChatContentType::Annotation) {
+    return {};
+  }
+  const std::string target_id = persisted.target_message_id.value_or("");
+  if (target_id.empty()) {
+    return {};
+  }
+  auto count = store.CountAnnotationsForTarget(persisted.thread_id, target_id);
+  if (!count) {
+    return count.error();
+  }
+  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
+    return Error("Annotation cap exceeded for target");
+  }
+  return {};
+}
 
 bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
   if (!thread.peer_identity_value.empty()) {
@@ -84,6 +106,71 @@ Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
     return {};
   }
   return call_sessions_->ApplyInboundControl(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
+}
+
+Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& message,
+                                                           const std::string& actor_identity) const {
+  if (!initiation_billing_) {
+    return {};
+  }
+  const auto type = InitiationBillingCodec::ControlTypeFromMessage(message);
+  if (!type) {
+    return {};
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+    return Error("Initiation billing control missing detail");
+  }
+  const std::string detail_json = payload["detail"].get<std::string>();
+  const std::string peer = actor_identity.empty() ? std::string() : actor_identity;
+
+  switch (*type) {
+  case InitiationBillingControlType::ChargeRequired: {
+    auto detail = InitiationBillingCodec::DecodeChargeRequired(detail_json);
+    if (!detail) {
+      return detail.error();
+    }
+    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    if (key.empty()) {
+      return {};
+    }
+    (void)initiation_billing_->SetFloor(key, detail->floor_minor);
+    (void)initiation_billing_->MarkClosed(key);
+    log().info << "charge_required from " << key << " floor=" << detail->floor_minor;
+    return {};
+  }
+  case InitiationBillingControlType::InitiationOffer: {
+    auto detail = InitiationBillingCodec::DecodeInitiationOffer(detail_json);
+    if (!detail) {
+      return detail.error();
+    }
+    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    int64_t local_floor = 0;
+    if (auto id = identity_.Get()) {
+      local_floor = id->initiation_floor;
+    }
+    if (local_floor > 0) {
+      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(detail->offer_minor, local_floor); !ok) {
+        log().info << "initiation_offer rejected offer_too_low peer=" << key
+                   << " offer=" << detail->offer_minor << " floor=" << local_floor;
+        return {}; // soft drop; sender sees no accept
+      }
+    }
+    (void)initiation_billing_->MarkOffered(key, detail->offer_minor, local_floor > 0 ? local_floor : detail->floor_minor);
+    return {};
+  }
+  case InitiationBillingControlType::InitiationAccept: {
+    auto detail = InitiationBillingCodec::DecodeInitiationAccept(detail_json);
+    if (!detail) {
+      return detail.error();
+    }
+    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    // waive or take_all both open the relationship; settlement deferred.
+    (void)initiation_billing_->MarkOpen(key);
+    return {};
+  }
+  }
+  return {};
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
@@ -665,6 +752,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             << "Call-control side-effect failed: " << call.error().message;
       }
     }
+    (void)ApplyInboundBillingMessage(side, envelope.sender_contact_id);
   };
 
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
@@ -750,6 +838,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       !call) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
+                       resolved_thread_id);
+    return outcome;
+  }
+  if (auto billing = ApplyInboundBillingMessage(persisted, envelope.sender_contact_id); !billing) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply billing update",
+                       billing.error().message, resolved_thread_id);
+    return outcome;
+  }
+
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
                        resolved_thread_id);
     return outcome;
   }
@@ -905,6 +1006,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
                        membership.error().message, resolved_thread_id);
+    return outcome;
+  }
+
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
+                       resolved_thread_id);
     return outcome;
   }
 

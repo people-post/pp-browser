@@ -218,7 +218,8 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
                         {"display_name", hit.display_name},
                         {"nickname", hit.nickname},
                         {"ids", IdsToJson(hit.ids)},
-                        {"multiaddrs", MultiaddrsToJson(hit.multiaddrs)}};
+                        {"multiaddrs", MultiaddrsToJson(hit.multiaddrs)},
+                        {"initiation_floor", hit.initiation_floor}};
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
     out["signing_public_key_b64"] = *hit.signing_public_key_b64;
   }
@@ -268,6 +269,9 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   }
   if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
     ParseMultiaddrsArray(json["multiaddrs"], hit.multiaddrs);
+  }
+  if (json.contains("initiation_floor") && json["initiation_floor"].is_number_integer()) {
+    hit.initiation_floor = json["initiation_floor"].get<int64_t>();
   }
   return hit;
 }

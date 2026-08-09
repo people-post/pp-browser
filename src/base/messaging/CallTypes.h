@@ -149,6 +149,14 @@ struct CallInviteDetail {
   std::string libp2p_peer_id;
   /** Optional capability ads (additive; old peers ignore). */
   CallPeerCaps caps;
+  /**
+   * Initiation offer (P001): pp_credit minor units the caller prepared before dial.
+   * Missing on wire → 0 (free / old peer).
+   */
+  int64_t offer_amount_minor = 0;
+  /** Peer's advertised floor used when preparing the offer (informational). */
+  int64_t floor_minor = 0;
+  std::string currency = "pp_credit";
 };
 
 struct CallAcceptDetail {
@@ -162,6 +170,13 @@ struct CallAcceptDetail {
   std::string libp2p_peer_id;
   /** Optional capability ads (additive; old peers ignore). */
   CallPeerCaps caps;
+  /**
+   * Recipient charge decision for initiation offer (P001).
+   * "waive" | "take_all"; missing → waive (compat / free path).
+   */
+  std::string charge_decision = "waive";
+  /** Echo of offer amount being waived or taken. */
+  int64_t offer_amount_minor = 0;
 };
 
 struct CallDeclineDetail {

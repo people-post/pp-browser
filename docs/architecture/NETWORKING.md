@@ -32,6 +32,10 @@ The **vendored** fork under [`src/libp2p/fork/`](../../src/libp2p/fork/) is a pr
 
 **Hop reachability** is implemented **inside** that stack ([media-hop-reachability](../../projects/media-hop-reachability/) — program + consume; [H001](../../projects/media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-libp2p) / [H007](../../projects/media-hop-reachability/DECISIONS.md#h007--no-app-layer-hop-candidate-exchange-as-product-path)). SoftMigrate must not grow a parallel NAT toolkit.
 
+**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (shared) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
+
+`MeshHost` ([`src/libp2p/integration/host/`](../../src/libp2p/integration/host/)) is the **shared mesh composition root** — `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths. Mesh UX reads through `MeshHost` (via `MessagingHub::Mesh()`), not ad-hoc hub forwards.
+
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+).
 
 ## Calls
@@ -42,5 +46,6 @@ Call **media** product path is **libp2p-only** (voice-first): direct peer stream
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — overall shape  
 - [P2P_MESSAGING.md](P2P_MESSAGING.md) — messaging  
+- [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md) — stream framing, exchanges, size/hang handling  
 - [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md) — fork deltas  
 - [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) — wire/compat  

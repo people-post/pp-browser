@@ -40,6 +40,9 @@ public:
   /** Text/system rows with display_order strictly greater than cursor (D040 eligibility). */
   virtual Roe<int64_t> CountContextEligibleMessagesAfter(const std::string& thread_id,
                                                          int64_t after_display_order) const = 0;
+  /** D042 — count annotation rows targeting `target_message_id` (all annotation_type values). */
+  virtual Roe<int64_t> CountAnnotationsForTarget(const std::string& thread_id,
+                                                 const std::string& target_message_id) const = 0;
   /** Chronological text/system rows after cursor for compaction input. */
   virtual Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
                                                                           int64_t after_display_order) const = 0;

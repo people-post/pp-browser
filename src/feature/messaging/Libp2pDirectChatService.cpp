@@ -3,6 +3,7 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/connection/stream.hpp>
@@ -40,7 +41,8 @@ struct Libp2pDirectChatService::Impl {
     }
     auto stream = std::move(stream_and_protocol.stream);
     PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
-      auto json_utf8 = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
+      auto json_utf8 = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes,
+                                              kDefaultControlFrameReadTimeout);
       if (!json_utf8) {
         CloseQuiet(stream);
         return;
@@ -121,14 +123,20 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
 
   auto result_promise = std::make_shared<std::promise<Roe<void>>>();
   auto result_future = result_promise->get_future();
+  auto active_mu = std::make_shared<std::mutex>();
+  auto active_stream = std::make_shared<std::shared_ptr<Stream>>();
 
   sessions_.OpenStream(peer_relay_user_id, {ProtocolName{kDirectChatProtocolId}},
-                       [host = &host_, envelope_json, result_promise](
+                       [host = &host_, envelope_json, result_promise, active_mu, active_stream](
                            libp2p::StreamAndProtocolOrError stream_res) mutable {
                          PostLibp2pWorker(*host, WorkerLane::Normal,
-                                          [envelope_json, result_promise,
+                                          [envelope_json, result_promise, active_mu, active_stream,
                                            stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<void> value) {
+                             {
+                               std::lock_guard lock(*active_mu);
+                               active_stream->reset();
+                             }
                              try {
                                result_promise->set_value(std::move(value));
                              } catch (const std::future_error&) {
@@ -140,13 +148,18 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
+                           {
+                             std::lock_guard lock(*active_mu);
+                             *active_stream = stream;
+                           }
                            if (!BlockingWriteStreamJson(stream, envelope_json, kMaxRelayEnvelopeJsonBytes)) {
                              CloseQuiet(stream);
                              finish(Error("Failed to send direct chat envelope")
                                         .WithUser("Direct send didn't confirm — will use relay if available."));
                              return;
                            }
-                           auto ack = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
+                           auto ack = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes,
+                                                             kDefaultControlFrameReadTimeout);
                            CloseQuiet(stream);
                            if (!ack) {
                              finish(Error("Failed to read direct chat ack")
@@ -160,6 +173,13 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
   constexpr int kDirectChatSendTimeoutMs = 4000;
   if (result_future.wait_for(std::chrono::milliseconds(kDirectChatSendTimeoutMs)) !=
       std::future_status::ready) {
+    std::shared_ptr<Stream> to_reset;
+    {
+      std::lock_guard lock(*active_mu);
+      to_reset = *active_stream;
+      active_stream->reset();
+    }
+    ResetStreamQuiet(to_reset);
     return Error("libp2p chat send timed out")
         .WithUser("Direct send didn't confirm — will use relay if available.");
   }

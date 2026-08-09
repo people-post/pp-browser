@@ -16,7 +16,7 @@
 #include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/DataModelHost.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 
@@ -325,8 +325,8 @@ void ContactsController::BindContactsPorts(MessagingContactsPorts ports) {
   contacts_ports_ = std::move(ports);
 }
 
-void ContactsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void ContactsController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 void ContactsController::BindChatPorts(ChatSessionPorts ports) {
@@ -865,10 +865,10 @@ void ContactsController::OnSecureMessage() {
   }
   FlushPending();
 
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     return;
   }
-  unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
     if (!unlocked) {
       ShowToast("PIN required to continue");
       return;

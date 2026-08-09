@@ -141,6 +141,8 @@ public:
     q.ok = true;
     q.quote_id = "quote-" + std::to_string(quote_calls);
     q.a_up_bps = 64000;
+    q.rate = quote_rate;
+    q.pricing_mode = quote_rate > 0 ? "paid" : "volunteer";
     return q;
   }
 
@@ -204,6 +206,7 @@ public:
   std::string local_peer_id = "12D3KooWLocal";
   bool started = true;
   bool quote_ok = true;
+  double quote_rate = 0.0;
   bool attach_ok = true;
   bool local_hop_ok = true;
   std::string quote_error = "media-relay stream open failed: protocol not supported";
@@ -350,6 +353,24 @@ TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   // SoftMigrate returns user-facing copy; technical hop detail stays in logs.
   EXPECT_FALSE(ok.error().message.empty());
   EXPECT_TRUE(host_->fanouts.empty());
+}
+
+TEST_F(CallTopologyControllerTest, PaidQuoteBlockedWithoutPaymentRails) {
+  const std::string call_id = "call:paid";
+  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
+  host_->local_identity = "relay:A";
+  relay_->started = false;
+  relay_->quote_rate = 1.25;
+
+  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  ASSERT_FALSE(ok);
+  EXPECT_GE(relay_->quote_calls, 1);
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_TRUE(host_->fanouts.empty());
+  // SoftMigrateNoHopMessage: all payment_unavailable → dedicated media copy (key or localized).
+  EXPECT_TRUE(ok.error().message.find("payment_unavailable_media") != std::string::npos ||
+              ok.error().message.find("require payment") != std::string::npos)
+      << ok.error().message;
 }
 
 TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {

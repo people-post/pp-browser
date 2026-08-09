@@ -27,16 +27,41 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
     (void)impl->ApplyClientLocked(MediaRelayClientEvent::AttachRequested, call_id);
   }
 
+  std::weak_ptr<MediaRelayService::Impl> weak_impl = impl;
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
+      [weak_impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
        &host = host_](libp2p::StreamAndProtocolOrError stream_res) mutable {
+        auto impl = weak_impl.lock();
+        if (!impl) {
+          if (stream_res) {
+            stream_res.value().stream->close([](auto&&) {});
+          }
+          return;
+        }
+        // Detach/timeout may have settled before this cb; do not post work that touches mu.
+        if (settled->load(std::memory_order_acquire)) {
+          if (stream_res) {
+            stream_res.value().stream->close([](auto&&) {});
+          }
+          return;
+        }
         PostLibp2pWorker(host, WorkerLane::Normal,
-                         [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
+                         [weak_impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
                           stream_res = std::move(stream_res)]() mutable {
+                           auto impl = weak_impl.lock();
+                           if (!impl) {
+                             if (stream_res) {
+                               stream_res.value().stream->close([](auto&&) {});
+                             }
+                             return;
+                           }
                            auto finish = [&](Roe<MediaRelayAttachResult> value,
                                              MediaRelayClientEvent ev) {
                              std::lock_guard<std::mutex> lock(impl->mu);
+                             if (settled->load(std::memory_order_acquire)) {
+                               return;
+                             }
                              if (!value) {
                                (void)impl->ApplyClientLocked(ev, call_id);
                              }

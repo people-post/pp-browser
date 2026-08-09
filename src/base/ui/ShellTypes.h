@@ -149,6 +149,10 @@ struct CallRingState {
   bool pulse = false;
   /** True when Accept would end an existing local call. */
   bool conflict = false;
+  /** P001: initiation offer > 0 — show waive / take-all actions. */
+  bool show_pricing = false;
+  /** Take-all enabled only when settlement rails exist. */
+  bool accept_charge_enabled = false;
   Rml::String call_id;
   Rml::String caller_label;
   Rml::String media_label;
@@ -156,6 +160,9 @@ struct CallRingState {
   Rml::String conflict_hint;
   Rml::String accept_label;
   Rml::String decline_label;
+  Rml::String pricing_label;
+  Rml::String accept_charge_label;
+  Rml::String accept_charge_hint;
 };
 
 /** One row in the in-call participant roster strip. */

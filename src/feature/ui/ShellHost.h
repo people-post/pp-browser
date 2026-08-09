@@ -4,7 +4,11 @@
 #include "base/data/UserPreferences.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingShellPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
+#include "feature/ui/ShellCallChromePorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
@@ -26,10 +30,6 @@ class Element;
 }
 
 namespace pbr {
-
-class PinGateController;
-class FlowCoordinator;
-class CallController;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -80,9 +80,9 @@ public:
   void OpenStatusbarPopover();
   void CloseStatusbarPopover();
   void ToggleStatusbarPopover();
-  void BindPinGate(PinGateController& pin_gate);
-  void BindFlowCoordinator(FlowCoordinator& flow);
-  void BindCallController(CallController& call);
+  void BindPinGateActions(PinGateActionPorts ports);
+  void BindFlowCoordinator(FlowCoordinatorPorts ports);
+  void BindCallActions(CallActionsPorts ports);
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -142,8 +142,13 @@ public:
   void DirtyStatusChrome();
   /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
-  /** ShellHost applies Remount or DirtyCallChrome + force-frame for call chrome updates. */
-  void ApplyCallChromeUpdate(CallChromeUpdate update);
+  /**
+   * Copy presenter call-chrome snapshot into State, then Remount or DirtyCallChrome + force-frame.
+   * Classification (None / DirtyOnly / Remount) is owned by CallController.
+   */
+  void ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update);
+  /** Copy presenter PIN gate snapshot into State (binding target). */
+  void ApplyPinGateState(const PinGateState& state);
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
@@ -183,6 +188,7 @@ public:
   static void PinGateSetPinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateUseDefaultCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallAcceptCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallAcceptChargeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallDeclineCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallLeaveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallRetryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -297,9 +303,9 @@ private:
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
   bool statusbar_popover_needs_position_ = false;
-  PinGateController* pin_gate_ = nullptr;
-  FlowCoordinator* flow_ = nullptr;
-  CallController* call_ = nullptr;
+  PinGateActionPorts pin_gate_actions_;
+  FlowCoordinatorPorts flow_coordinator_;
+  CallActionsPorts call_actions_;
 
   static ShellHost* installed_instance_;
 };

@@ -1,9 +1,8 @@
 #include "feature/chat/MessagingTools.h"
 
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingFacade.h"
 
 #include "base/messaging/MessagingJson.h"
-#include "base/net/RegistrationClientUtil.h"
 
 #include <nlohmann/json.hpp>
 
@@ -29,16 +28,16 @@ nlohmann::json ThreadsToJson(const std::vector<Thread>& threads) {
 
 } // namespace
 
-void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
+void RegisterMessagingTools(ToolRegistry& registry, MessagingFacade& messaging) {
   registry.Register(
       {.definition = {.name = "search_people",
                       .description = "Search the public directory for people by name, nickname, or ID fragment.",
                       .parameters = {{"type", "object"},
                                      {"properties", {{"query", {{"type", "string"}, {"description", "Search query"}}}}},
                                      {"required", nlohmann::json::array({"query"})}}},
-       .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
          const std::string query = arguments.value("query", "");
-         auto hits = hub.Directory().SearchPeople(query);
+         auto hits = messaging.SearchPeople(query);
          if (!hits) {
            return hits.error();
          }
@@ -55,9 +54,9 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                                                    {"properties",
                                                     {{"query", {{"type", "string"}, {"description", "Optional filter"}}}}},
                                                    {"required", nlohmann::json::array()}}},
-                     .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+                     .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
                        const std::string query = arguments.value("query", "");
-                       auto contacts = hub.Contacts().SearchLocal(query);
+                       auto contacts = messaging.SearchLocalContacts(query);
                        if (!contacts) {
                          return contacts.error();
                        }
@@ -70,12 +69,12 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                       .parameters = {{"type", "object"},
                                      {"properties", {{"directory_hit", {{"type", "object"}}}}},
                                      {"required", nlohmann::json::array({"directory_hit"})}}},
-       .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
          if (!arguments.contains("directory_hit")) {
            return Error("directory_hit required");
          }
          const DirectoryHit hit = DirectoryHitFromJson(arguments["directory_hit"]);
-         auto contact = hub.Contacts().AddFromDirectoryHit(hit);
+         auto contact = messaging.AddContactFromDirectoryHit(hit);
          if (!contact) {
            return contact.error();
          }
@@ -85,8 +84,8 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
   registry.Register({.definition = {.name = "list_conversations",
                                     .description = "List inbox threads (AI and person-to-person).",
                                     .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
-                     .execute = [&hub](const nlohmann::json& /*arguments*/) -> Roe<std::string> {
-                       auto threads = hub.Inbox().ListThreads();
+                     .execute = [&messaging](const nlohmann::json& /*arguments*/) -> Roe<std::string> {
+                       auto threads = messaging.ListThreads();
                        if (!threads) {
                          return threads.error();
                        }
@@ -99,9 +98,9 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                       .parameters = {{"type", "object"},
                                      {"properties", {{"thread_id", {{"type", "string"}}}}},
                                      {"required", nlohmann::json::array({"thread_id"})}}},
-       .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
          const std::string thread_id = arguments.value("thread_id", "");
-         auto thread = hub.Inbox().OpenThread(thread_id);
+         auto thread = messaging.OpenThread(thread_id);
          if (!thread) {
            return thread.error();
          }
@@ -114,9 +113,9 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                       .parameters = {{"type", "object"},
                                      {"properties", {{"contact_id", {{"type", "string"}}}}},
                                      {"required", nlohmann::json::array({"contact_id"})}}},
-       .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
          const std::string contact_id = arguments.value("contact_id", "");
-         auto thread = hub.Inbox().FindOrCreateDirectThread(contact_id);
+         auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
          if (!thread) {
            return thread.error();
          }
@@ -130,19 +129,19 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                                                     {{"nickname",
                                                       {{"type", "string"}, {"description", "Optional nickname override"}}}}},
                                                    {"required", nlohmann::json::array()}}},
-                     .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
-                       auto identity = hub.Identity().Get();
+                     .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
+                       auto identity = messaging.GetLocalIdentity();
                        if (!identity) {
                          return identity.error();
                        }
                        if (arguments.contains("nickname") && arguments["nickname"].is_string()) {
                          LocalIdentity updated = *identity;
                          updated.nickname = arguments["nickname"].get<std::string>();
-                         (void)hub.Identity().Update(updated);
-                         identity = hub.Identity().Get();
+                         (void)messaging.UpdateLocalIdentity(updated);
+                         identity = messaging.GetLocalIdentity();
                        }
 
-                       auto result = FinishAndPersistRegistration(hub.Registration(), hub.Identity(), identity->nickname);
+                       auto result = messaging.FinishAndPersistRegistration(identity->nickname);
                        if (!result) {
                          return result.error();
                        }
@@ -159,20 +158,20 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                       .parameters = {{"type", "object"},
                                      {"properties", {{"nickname", {{"type", "string"}}}}},
                                      {"required", nlohmann::json::array({"nickname"})}}},
-       .execute = [&hub](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
          const std::string nickname = arguments.value("nickname", "");
          if (nickname.empty()) {
            return Error("nickname required");
          }
-         auto result = UpdateRegisteredNickname(hub.Registration(), hub.Identity(), nickname);
+         auto result = messaging.UpdateRegisteredNickname(nickname);
          if (!result) {
            return result.error();
          }
-         auto identity = hub.Identity().Get();
+         auto identity = messaging.GetLocalIdentity();
          if (identity) {
            LocalIdentity updated = *identity;
            updated.nickname = nickname;
-           (void)hub.Identity().Update(updated);
+           (void)messaging.UpdateLocalIdentity(updated);
          }
          return nlohmann::json{{"success", result->success}, {"message", result->message}}.dump();
        }});
