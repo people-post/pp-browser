@@ -40,16 +40,6 @@ namespace {
 
 constexpr uint32_t kContactDebounceMs = 400;
 
-std::string TrimCopy(std::string text) {
-  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
-    text.erase(text.begin());
-  }
-  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
-    text.pop_back();
-  }
-  return text;
-}
-
 std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
   std::ostringstream out;
   for (size_t i = 0; i < multiaddrs.size(); ++i) {

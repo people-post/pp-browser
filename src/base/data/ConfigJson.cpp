@@ -8,20 +8,6 @@ namespace pbr {
 
 namespace {
 
-void MergeObjectField(nlohmann::json& base, const nlohmann::json& overlay, const char* key) {
-  if (!overlay.contains(key)) {
-    return;
-  }
-  if (!overlay[key].is_object()) {
-    base[key] = overlay[key];
-    return;
-  }
-  if (!base.contains(key) || !base[key].is_object()) {
-    base[key] = nlohmann::json::object();
-  }
-  DeepMergeJson(base[key], overlay[key]);
-}
-
 std::string NormalizeThemePath(std::string theme) {
   if (theme.rfind("assets/", 0) == 0) {
     theme = theme.substr(7);

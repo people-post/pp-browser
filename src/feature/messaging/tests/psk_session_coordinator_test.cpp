@@ -13,12 +13,6 @@ namespace {
 
 using namespace pbr;
 
-ByteVector TestPskBytes() {
-  const auto bytes = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-  EXPECT_TRUE(bytes);
-  return *bytes;
-}
-
 ByteVector TestDek() {
   ByteVector dek(kDataEncryptionKeySize);
   for (size_t i = 0; i < dek.size(); ++i) {

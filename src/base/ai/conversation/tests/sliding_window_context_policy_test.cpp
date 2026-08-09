@@ -5,7 +5,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cassert>
 #include <string>
 
 namespace {
@@ -17,7 +16,7 @@ pbr::TranscriptEntry& AddCompletedTurn(pbr::Conversation& conversation, const st
   return entry;
 }
 
-void AssertUserAssistantPair(const pbr::ContextBuildResult& built, const std::string& user_text,
+void ExpectUserAssistantPair(const pbr::ContextBuildResult& built, const std::string& user_text,
                              const std::string& assistant_text) {
   bool saw_user = false;
   bool saw_assistant = false;
@@ -29,8 +28,8 @@ void AssertUserAssistantPair(const pbr::ContextBuildResult& built, const std::st
       saw_assistant = true;
     }
   }
-  assert(saw_user);
-  assert(saw_assistant);
+  EXPECT_TRUE(saw_user);
+  EXPECT_TRUE(saw_assistant);
 }
 
 } // namespace
@@ -48,14 +47,14 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
   const pbr::ContextBuildResult built =
       policy.Build("system prompt", conversation, current, budget);
 
-  assert(!built.messages.empty());
-  assert(built.messages.front().role == "system");
-  assert(built.messages.front().content == "system prompt");
-  assert(built.messages.back().role == "user");
-  assert(built.messages.back().content == "fourth user");
+  ASSERT_FALSE(built.messages.empty());
+  EXPECT_EQ(built.messages.front().role, "system");
+  EXPECT_EQ(built.messages.front().content, "system prompt");
+  EXPECT_EQ(built.messages.back().role, "user");
+  EXPECT_EQ(built.messages.back().content, "fourth user");
 
-  AssertUserAssistantPair(built, "second user", "second assistant");
-  AssertUserAssistantPair(built, "third user", "third assistant");
+  ExpectUserAssistantPair(built, "second user", "second assistant");
+  ExpectUserAssistantPair(built, "third user", "third assistant");
 
   bool saw_first = false;
   for (const pbr::ChatMessage& message : built.messages) {
@@ -63,7 +62,7 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       saw_first = true;
     }
   }
-  assert(!saw_first);
+  EXPECT_FALSE(saw_first);
 
   pbr::Conversation trimmed_conversation;
   for (int i = 0; i < 5; ++i) {
@@ -73,14 +72,14 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
   const pbr::ContextBudget tight_budget{.max_turn_pairs = 10, .max_recent_chars = 600, .max_input_tokens = 8000};
   const pbr::ContextBuildResult trimmed =
       policy.Build("system", trimmed_conversation, trimmed_current, tight_budget);
-  assert(trimmed.provenance.trimmed_turn_count > 0);
+  EXPECT_GT(trimmed.provenance.trimmed_turn_count, 0);
 
   pbr::Conversation summary_conversation;
   summary_conversation.SetSummary({.text = "User prefers blue.", .version = 1});
   pbr::TranscriptEntry& summary_current = summary_conversation.AppendUser("follow up");
   const pbr::ContextBuildResult with_summary =
       policy.Build("system", summary_conversation, summary_current, budget);
-  assert(with_summary.provenance.summary_included);
+  EXPECT_TRUE(with_summary.provenance.summary_included);
   bool saw_summary = false;
   int system_count = 0;
   for (const pbr::ChatMessage& message : with_summary.messages) {
@@ -92,22 +91,22 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       }
     }
   }
-  assert(system_count == 1);
-  assert(saw_summary);
+  EXPECT_EQ(system_count, 1);
+  EXPECT_TRUE(saw_summary);
 
   pbr::TurnCoordinator coordinator;
   pbr::Conversation turn_conversation;
   AddCompletedTurn(turn_conversation, "hello", "hi there");
   pbr::TranscriptEntry& turn_current = turn_conversation.AppendUser("again");
   const pbr::TurnSnapshot snapshot = coordinator.BeginTurn(turn_conversation, "system", turn_current, budget);
-  assert(snapshot.entry_id == turn_current.id);
-  assert(!snapshot.messages.empty());
-  assert(coordinator.CompleteTurn(turn_conversation, turn_current.id, "second reply"));
-  assert(turn_conversation.CompletedTurnCount() == 2);
+  EXPECT_EQ(snapshot.entry_id, turn_current.id);
+  EXPECT_FALSE(snapshot.messages.empty());
+  EXPECT_TRUE(coordinator.CompleteTurn(turn_conversation, turn_current.id, "second reply"));
+  EXPECT_EQ(turn_conversation.CompletedTurnCount(), 2);
 
   conversation.StartNewConversation();
-  assert(conversation.Entries().empty());
-  assert(conversation.CompletedTurnCount() == 0);
+  EXPECT_TRUE(conversation.Entries().empty());
+  EXPECT_EQ(conversation.CompletedTurnCount(), 0);
 
   pbr::Conversation payload_conversation;
   pbr::TranscriptEntry& payload_entry = payload_conversation.AppendUser(
@@ -123,7 +122,7 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       saw_payload_fence = true;
     }
   }
-  assert(saw_payload_fence);
+  EXPECT_TRUE(saw_payload_fence);
 
   pbr::Conversation current_payload_conversation;
   pbr::TranscriptEntry& current_payload = current_payload_conversation.AppendUser(
@@ -131,12 +130,11 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       R"({"type":"form_submission","form_id":"booking","values":{"name":"Bob"}})");
   const pbr::ContextBuildResult current_payload_built =
       policy.Build("system", current_payload_conversation, current_payload, budget);
-  assert(current_payload_built.messages.back().role == "user");
-  assert(current_payload_built.messages.back().content.find("```json") != std::string::npos);
-  assert(current_payload_built.messages.back().content.find("Submit booking") != std::string::npos);
+  EXPECT_EQ(current_payload_built.messages.back().role, "user");
+  EXPECT_NE(current_payload_built.messages.back().content.find("```json"), std::string::npos);
+  EXPECT_NE(current_payload_built.messages.back().content.find("Submit booking"), std::string::npos);
 
   pbr::TranscriptEntry plain_entry;
   plain_entry.user_text = "hello";
-  assert(pbr::FormatUserContentForLlm(plain_entry) == "hello");
-
+  EXPECT_EQ(pbr::FormatUserContentForLlm(plain_entry), "hello");
 }

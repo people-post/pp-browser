@@ -65,7 +65,7 @@ FileHandler::~FileHandler() {
   }
 }
 
-void FileHandler::emit(Level level, const std::string &loggerName,
+void FileHandler::emit(Level level, const std::string & /*loggerName*/,
                        const std::string &message) {
   if (level < level_) {
     return;

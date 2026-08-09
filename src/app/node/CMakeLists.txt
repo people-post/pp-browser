@@ -2,6 +2,8 @@ if(PP_BROWSER_IS_MOBILE)
   return()
 endif()
 
+include(PpBrowserWarnings)
+
 add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
@@ -31,6 +33,7 @@ target_link_libraries(pp-node PRIVATE
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
 endif()
+pp_browser_apply_warnings(pp-node)
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
@@ -49,6 +52,7 @@ target_link_libraries(pp-node-probe PRIVATE
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node-probe PRIVATE OpenSSL::Crypto)
 endif()
+pp_browser_apply_warnings(pp-node-probe)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
@@ -66,6 +70,7 @@ if(PP_BROWSER_BUILD_TESTS)
     nlohmann_json::nlohmann_json
     pp_common
   )
+  pp_browser_apply_warnings(pp_browser_pp_node_test)
   include(PpBrowserTesting)
   pp_browser_add_gtest(pp_browser_pp_node_test)
 endif()

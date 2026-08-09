@@ -31,12 +31,6 @@ void NotifySurfaceChanged(const std::function<void()>& notify) {
   }
 }
 
-void ShowToast(const ShellFeedbackPorts& ports, const std::string& message) {
-  if (ports.show_toast) {
-    ports.show_toast(message, ToastDuration::Short);
-  }
-}
-
 void ShowConfirm(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
                  std::function<void(bool)> on_result) {
   if (ports.show_confirm) {

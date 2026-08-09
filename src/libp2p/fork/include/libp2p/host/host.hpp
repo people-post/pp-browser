@@ -164,7 +164,9 @@ namespace libp2p {
     void newStream(const PeerId &peer_id,
                    StreamProtocols protocols,
                    StreamAndProtocolOrErrorCb cb) {
-      newStream(PeerInfo{.id = peer_id}, std::move(protocols), std::move(cb));
+      newStream(PeerInfo{.id = peer_id, .addresses = {}},
+                std::move(protocols),
+                std::move(cb));
     }
 
     /**
