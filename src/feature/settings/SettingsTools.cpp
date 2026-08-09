@@ -4,6 +4,8 @@
 #include "base/data/ToolPermissions.h"
 #include "base/data/UserPreferences.h"
 
+#include <algorithm>
+#include <cctype>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -49,8 +51,23 @@ Roe<void> SaveConfig(SessionStore& store, AppConfig config) {
   return store.SaveConfig(config);
 }
 
+std::string NormalizeAppearance(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
 bool ValidAppearance(const std::string& appearance) {
   return appearance == "system" || appearance == "light" || appearance == "dark";
+}
+
+/** Prefer `appearance`; accept common LLM aliases (`theme`, Title Case). */
+std::string AppearanceFromArgs(const nlohmann::json& arguments) {
+  std::string value = arguments.value("appearance", "");
+  if (value.empty()) {
+    value = arguments.value("theme", "");
+  }
+  return NormalizeAppearance(std::move(value));
 }
 
 bool ValidGroupInvitePolicy(const std::string& policy) {
@@ -293,7 +310,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
 
   tools.push_back(
       {.definition = {.name = "set_appearance",
-                      .description = "Set UI appearance theme: system, light, or dark.",
+                      .description = "Set UI appearance theme: system, light, or dark. "
+                                     "Pass lowercase appearance (not theme).",
                       .parameters = {{"type", "object"},
                                      {"properties",
                                       {{"appearance",
@@ -302,7 +320,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                                      {"required", nlohmann::json::array({"appearance"})}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string appearance = arguments.value("appearance", "");
+         const std::string appearance = AppearanceFromArgs(arguments);
          if (!ValidAppearance(appearance)) {
            return Error("appearance must be system, light, or dark");
          }

@@ -122,6 +122,16 @@ TEST_F(SettingsToolsTest, GetAndSetAppearance) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
 }
 
+TEST_F(SettingsToolsTest, SetAppearanceAcceptsThemeAliasAndCase) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+
+  auto set = registry.Execute("set_appearance", nlohmann::json{{"theme", "Dark"}});
+  ASSERT_TRUE(set) << set.error().message;
+  EXPECT_EQ(last_appearance_, "dark");
+  EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
+}
+
 TEST_F(SettingsToolsTest, SetLanguageValidatesLocales) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());

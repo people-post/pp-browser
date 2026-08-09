@@ -465,9 +465,12 @@ bool Application::Initialize(const char* window_title) {
     return LocalizationService::Instance().AvailableLocales();
   };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
-    if (auto* ctx = Rml::GetContext("main")) {
-      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
-    }
+    // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
+    AppRuntime::PostUI([appearance_pref]() {
+      if (auto* ctx = Rml::GetContext("main")) {
+        Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
+      }
+    });
   };
   settings_commands.session_store = [this]() -> SessionStore& { return store_; };
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
