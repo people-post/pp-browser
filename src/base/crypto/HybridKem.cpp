@@ -17,10 +17,6 @@ namespace pbr {
 
 namespace {
 
-bool AppendKyberPublicKey(CBB* out, const KYBER_public_key& public_key) {
-  return KYBER_marshal_public_key(out, &public_key) == 1;
-}
-
 bool AppendKyberPrivateKey(CBB* out, const KYBER_private_key& private_key) {
   return KYBER_marshal_private_key(out, &private_key) == 1;
 }

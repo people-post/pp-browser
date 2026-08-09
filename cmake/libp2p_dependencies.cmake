@@ -184,7 +184,13 @@ set(ZLIB_INCLUDE "${PP_LIBP2P_THIRD_PARTY}/zlib")
 set(ZLIB_INCLUDE_DIR "${ZLIB_INCLUDE}" CACHE PATH "" FORCE)
 set(ZLIB_BINARY_INCLUDE "${CMAKE_BINARY_DIR}/third_party/zlib")
 set(ZLIB_LIB ZLIB::ZLIB)
+# lsquic's install(EXPORT) pulls in zlib/OpenSSL deps we never ship; skip its
+# install rules (vendored, EXCLUDE_FROM_ALL — we only link it in-tree).
+set(_pp_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
+set(CMAKE_SKIP_INSTALL_RULES ON)
 pp_libp2p_add_vendored(lsquic)
+set(CMAKE_SKIP_INSTALL_RULES "${_pp_prev_skip_install_rules}")
+unset(_pp_prev_skip_install_rules)
 if(TARGET lsquic)
   target_include_directories(lsquic PUBLIC
     "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/include>"
@@ -195,10 +201,7 @@ if(TARGET lsquic)
     )
   endif()
   if(NOT HUNTER_ENABLED)
-    # Keep OpenSSL public for consumers; link zlib privately so lsquic's
-    # install(EXPORT) does not require exporting the vendored zlib target.
-    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-    target_link_libraries(lsquic PRIVATE ZLIB::ZLIB)
+    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
   endif()
 endif()
 if(NOT TARGET lsquic::lsquic)

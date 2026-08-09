@@ -145,6 +145,15 @@ private:
 };
 
 class Logger {
+  friend class LogStream;
+  friend class LogProxy;
+
+  // Declared before LogProxy members so ctor init order matches (-Wreorder).
+  std::shared_ptr<LoggerNode> spNode_;
+
+  std::shared_ptr<LoggerNode> getNode() const { return spNode_; }
+  void log(Level level, const std::string &message) { spNode_->log(level, message); }
+
 public:
   explicit Logger(std::shared_ptr<LoggerNode> node);
   ~Logger() = default;
@@ -174,15 +183,6 @@ public:
 
   bool operator==(const Logger& other) const { return spNode_ == other.spNode_; }
   bool operator!=(const Logger& other) const { return spNode_ != other.spNode_; }
-
-private:
-  friend class LogStream;
-  friend class LogProxy;
-
-  std::shared_ptr<LoggerNode> getNode() const { return spNode_; }
-  void log(Level level, const std::string &message) { spNode_->log(level, message); }
-
-  std::shared_ptr<LoggerNode> spNode_;
 };
 
 template <typename T> LogStream LogProxy::operator<<(const T &value) {

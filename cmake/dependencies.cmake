@@ -75,18 +75,29 @@ find_package(PNG QUIET)
 if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
   message(STATUS "pp-browser: vendoring zlib+libpng for FreeType color emoji")
   set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  # libp2p_dependencies may already have added third_party/zlib as target `zlib`.
+  # Reuse it (and its headers) so libpng's PNG_ZLIB_VERNUM matches the compile
+  # include path; do not mix sdl3_image zlib headers with the libp2p zlib binary.
+  set(_pp_added_zlib_ft FALSE)
   if(NOT TARGET zlibstatic AND NOT TARGET zlib)
     add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib"
                      "${CMAKE_BINARY_DIR}/third_party/zlib_ft" EXCLUDE_FROM_ALL)
+    set(_pp_added_zlib_ft TRUE)
   endif()
   if(TARGET zlibstatic)
     set(_pp_zlib_lib zlibstatic)
   else()
     set(_pp_zlib_lib zlib)
   endif()
+  if(_pp_added_zlib_ft)
+    set(_pp_zlib_inc
+        "${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib;${CMAKE_BINARY_DIR}/third_party/zlib_ft")
+  else()
+    set(_pp_zlib_inc
+        "${PP_THIRD_PARTY_DIR}/zlib;${CMAKE_BINARY_DIR}/third_party/zlib")
+  endif()
   set(ZLIB_LIBRARY ${_pp_zlib_lib} CACHE FILEPATH "zlib for FreeType/libpng" FORCE)
-  set(ZLIB_INCLUDE_DIR
-      "${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib;${CMAKE_BINARY_DIR}/third_party/zlib_ft"
+  set(ZLIB_INCLUDE_DIR "${_pp_zlib_inc}"
       CACHE PATH "zlib include for FreeType/libpng" FORCE)
   set(ZLIB_FOUND TRUE CACHE BOOL "" FORCE)
   set(ZLIB_LIBRARIES ${ZLIB_LIBRARY})

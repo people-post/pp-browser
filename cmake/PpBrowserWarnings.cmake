@@ -21,7 +21,14 @@ function(pp_browser_apply_warnings target)
       target_compile_options(${target} PRIVATE /WX)
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU|AppleClang")
-    target_compile_options(${target} PRIVATE -Wall -Wextra)
+    # From -Wextra, suppress the two that are chronically noisy in this tree:
+    # - missing-field-initializers: aggregate / designated init omitting fields
+    # - unused-parameter: interface overrides and callback stubs
+    target_compile_options(${target} PRIVATE
+      -Wall
+      -Wextra
+      -Wno-missing-field-initializers
+      -Wno-unused-parameter)
     if(PP_BROWSER_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
