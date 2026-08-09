@@ -11,7 +11,7 @@
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
-| **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
+| **np** | Headless `pp-node` + shared `MeshHost` (`NodeRuntime` + dial-back + circuit/media relay + reachability) + dial-back protocol (see below) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
 | **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
@@ -35,8 +35,9 @@
 |------|-------|
 | Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
 | Shared runtime | `libp2p/integration/host/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
+| Shared mesh host | `libp2p/integration/host/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
-| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait |
+| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use MessagingHub / inbox / calls |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
@@ -107,7 +108,7 @@
 | Hardcoded N014 stages for media | Outer scope bands + inner N020 scorer — not fixed stage list |
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
-| Link `MessagingHub` into `pp-node` | Thin `NodeRuntime` + identity/crypto only |
+| Link `MessagingHub` into `pp-node` | Shared `MeshHost` + identity/crypto only (no chat/UI stack) |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
 | libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
 | Relay decodes Opus/H264 | Blind forward + `channel_type` only (N021) |

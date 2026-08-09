@@ -228,7 +228,18 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 
 **Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`. Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
 
-**`[post-v1]`** types: documented sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
+**`content_type = annotation`:**
+
+| Field | Encoding |
+|-------|----------|
+| `sub_version` | `u8` = **`1`** |
+| `annotation_type` | **LenUtf8** — `reaction` (add) or `reaction_clear` (remove); other types reserved |
+| `target_message_id` | **LenUtf8** (UUID of target message) |
+| `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
+
+Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+
+**`[post-v1]`** types: further sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
 
 ### Frozen vectors (BLAKE2b-256 of `0x01` ‖ bytes)
 

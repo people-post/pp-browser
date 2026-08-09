@@ -114,6 +114,8 @@ Feature protocols on the shared host:
 | `/pp-browser/circuit-relay/1.0.0` | `CircuitRelayService` (n3 stream bridge; not libp2p circuit v2) |
 | `/pp-browser/media-relay/1.0.0` | `MediaRelayService` (n4-media blind forwarder; N021 framing/QoS) |
 
+Stream framing (`u64-BE` length + body), protocol exchanges, and shorter/longer/hang handling: [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md).
+
 ## TLS note
 
 When libp2p build is enabled, curl links against vendored BoringSSL (`OpenSSL::` targets) instead of system OpenSSL on Linux.

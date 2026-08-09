@@ -4,6 +4,10 @@
 
 namespace pbr {
 
+// ProjectMessagingView(MessagingHub&) forces including MessagingHub.h here; that
+// is fine for the projection helper, but UI surfaces should prefer
+// MessagingFacade::Snapshot() rather than depending on MessagingHub directly.
+
 /** Read-only messaging fields UI surfaces may bind without holding MessagingHub*. */
 struct MessagingView {
   bool initialized = false;
@@ -25,7 +29,7 @@ inline MessagingView ProjectMessagingView(MessagingHub& hub) {
 
 /**
  * Messaging read snapshot for UI presenters. Application fills from MessagingHub.
- * Imperative ops remain on hub until MessagingFacade (Phase 6).
+ * Imperative ops live on MessagingFacade (see MessagingFacade.h).
  */
 struct MessagingUiPorts {
   std::function<MessagingView()> snapshot;

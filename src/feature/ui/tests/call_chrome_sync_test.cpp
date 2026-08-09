@@ -181,10 +181,12 @@ TEST(CallChromeSyncTest, QualityChipDirties) {
 }
 
 TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
-  // CallController path: classify mute → apply_chrome_update(DirtyOnly), never DirtyWindow.
+  // CallController path: classify mute → apply_snapshot(..., DirtyOnly), never DirtyWindow.
   std::vector<pbr::CallChromeUpdate> applied;
   pbr::ShellCallChromePorts ports;
-  ports.apply_chrome_update = [&](pbr::CallChromeUpdate u) { applied.push_back(u); };
+  ports.apply_snapshot = [&](const pbr::CallChromeSnapshot&, pbr::CallChromeUpdate u) {
+    applied.push_back(u);
+  };
 
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
@@ -195,8 +197,11 @@ TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
 
   const pbr::CallChromeUpdate update = pbr::ClassifyCallChromeUpdate(synced, next);
   ASSERT_EQ(update, pbr::CallChromeUpdate::DirtyOnly);
-  ASSERT_TRUE(ports.apply_chrome_update);
-  ports.apply_chrome_update(update);
+  ASSERT_TRUE(ports.apply_snapshot);
+  pbr::CallChromeSnapshot snap;
+  snap.in_progress.active = true;
+  snap.in_progress.muted = true;
+  ports.apply_snapshot(snap, update);
   ASSERT_EQ(applied.size(), 1u);
   EXPECT_EQ(applied[0], pbr::CallChromeUpdate::DirtyOnly);
 }

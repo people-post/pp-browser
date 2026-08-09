@@ -109,6 +109,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | Composer maxlength | **Implemented** | `composer.rml` — `kMaxComposeTextBytes` |
 | Delivery / transport badges | **Implemented** | post-v6d — `chat.rml`, `components.rcss` |
 | Rich payload display | **Implemented** | annotations, contact cards, crypto tx rows |
+| Emoji reactions (D098) | **Implemented** | `reaction` / `reaction_clear`; grouped chips; OSK color emoji font; long-press React… |
 | PSK export/import/verify (c3) | **Implemented** | `chat.rml`, `PskSessionCoordinator` |
 
 ## Tests

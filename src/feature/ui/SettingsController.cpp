@@ -1,7 +1,6 @@
 #include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
-#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SchemaVersion.h"
@@ -13,8 +12,8 @@
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
-#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ProfileSettingsSection.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
@@ -164,8 +163,8 @@ ShellChromeSnapshot SettingsController::ChromeSnapshot() const {
   return {};
 }
 
-void SettingsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void SettingsController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 SettingsCommands& SettingsController::Commands() {
@@ -1570,11 +1569,11 @@ void SettingsController::OnRegisterProfile() {
   CommitProfileNickname(/*show_toast=*/false);
   PullBindingsToUiState();
   const bool renewing = ui_state_.profile_registered == "yes";
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
     return;
   }
-  unlock_gate_->EnsureUnlocked([this, renewing](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this, renewing](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
@@ -1604,11 +1603,11 @@ void SettingsController::OnRegisterProfile() {
 
 void SettingsController::OnRotateBriefLlmKey() {
   PullBindingsToUiState();
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
     return;
   }
-  unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
@@ -1775,17 +1774,19 @@ void SettingsController::PerformResetProfile() {
 }
 
 void SettingsController::OnChangePin() {
-  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
+  const PinProtectionView pin_state =
+      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
+  if (!pin_state.ready) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
                       .WithUser("Set up key protection first"));
     return;
   }
-  if (!ProfileSecretsService::Instance().IsUnlocked()) {
-    if (!unlock_gate_) {
+  if (!pin_state.unlocked) {
+    if (!unlock_ensure_.ensure_unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
       return;
     }
-    unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
+    unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
       if (!unlocked) {
         ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
         return;
@@ -1812,12 +1813,11 @@ void SettingsController::OnChangePin() {
     return;
   }
 
-  DataKeyVault* vault = ProfileSecretsService::Instance().Vault();
-  if (vault == nullptr) {
+  if (!commands_.change_pin) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
     return;
   }
-  if (auto changed = vault->ChangePin(old_pin, new_pin); !changed) {
+  if (auto changed = commands_.change_pin(old_pin, new_pin); !changed) {
     ReportFailure(changed.error());
     return;
   }

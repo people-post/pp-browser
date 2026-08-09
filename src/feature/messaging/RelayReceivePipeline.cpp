@@ -2,6 +2,7 @@
 
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
@@ -30,6 +31,24 @@
 namespace pbr {
 
 namespace {
+
+Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage& persisted) {
+  if (persisted.content_type != ChatContentType::Annotation) {
+    return {};
+  }
+  const std::string target_id = persisted.target_message_id.value_or("");
+  if (target_id.empty()) {
+    return {};
+  }
+  auto count = store.CountAnnotationsForTarget(persisted.thread_id, target_id);
+  if (!count) {
+    return count.error();
+  }
+  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
+    return Error("Annotation cap exceeded for target");
+  }
+  return {};
+}
 
 bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
   if (!thread.peer_identity_value.empty()) {
@@ -829,6 +848,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
 
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
+                       resolved_thread_id);
+    return outcome;
+  }
+
   if (classified.decision == IngestDecision::AcceptEpochAdvance) {
     const uint32_t old_epoch = chat_target_epoch;
     if (!store_.AppendMessageWithPassiveEpochAdopt(persisted, old_epoch, envelope.session_epoch,
@@ -980,6 +1006,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
                        membership.error().message, resolved_thread_id);
+    return outcome;
+  }
+
+  if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
+                       resolved_thread_id);
     return outcome;
   }
 

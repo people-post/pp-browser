@@ -68,6 +68,11 @@ public:
   Roe<void> SendChargeRequired(const std::string& peer_identity,
                                std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
+  Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
+                                  const std::string& emoji);
+  Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
+                                   const std::string& emoji);
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);

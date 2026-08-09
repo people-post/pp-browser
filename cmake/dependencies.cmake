@@ -61,11 +61,92 @@ endif()
 
 # --- GUI / full-app third_party below ---
 
-# FreeType (RmlUi font engine)
+# FreeType (RmlUi font engine) — PNG required for Noto Color Emoji CBDT bitmaps.
+# Prefer system zlib/libpng when present; otherwise use SDL3_image vendored copies.
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG OFF CACHE BOOL "" FORCE)
+set(FT_REQUIRE_PNG ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB OFF CACHE BOOL "" FORCE)
+set(FT_REQUIRE_ZLIB ON CACHE BOOL "" FORCE)
+
+find_package(ZLIB QUIET)
+find_package(PNG QUIET)
+if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
+  message(STATUS "pp-browser: vendoring zlib+libpng for FreeType color emoji")
+  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  if(NOT TARGET zlibstatic AND NOT TARGET zlib)
+    add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib"
+                     "${CMAKE_BINARY_DIR}/third_party/zlib_ft" EXCLUDE_FROM_ALL)
+  endif()
+  if(TARGET zlibstatic)
+    set(_pp_zlib_lib zlibstatic)
+  else()
+    set(_pp_zlib_lib zlib)
+  endif()
+  set(ZLIB_LIBRARY ${_pp_zlib_lib} CACHE FILEPATH "zlib for FreeType/libpng" FORCE)
+  set(ZLIB_INCLUDE_DIR
+      "${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib;${CMAKE_BINARY_DIR}/third_party/zlib_ft"
+      CACHE PATH "zlib include for FreeType/libpng" FORCE)
+  set(ZLIB_FOUND TRUE CACHE BOOL "" FORCE)
+  set(ZLIB_LIBRARIES ${ZLIB_LIBRARY})
+  set(ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR})
+  if(NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB ALIAS ${_pp_zlib_lib})
+  endif()
+
+  set(PNG_SHARED OFF CACHE BOOL "" FORCE)
+  set(PNG_STATIC ON CACHE BOOL "" FORCE)
+  set(PNG_TESTS OFF CACHE BOOL "" FORCE)
+  set(PNG_TOOLS OFF CACHE BOOL "" FORCE)
+  set(PNG_FRAMEWORK OFF CACHE BOOL "" FORCE)
+  set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+  if(NOT TARGET png_static AND NOT TARGET png_shared AND NOT TARGET png)
+    add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng"
+                     "${CMAKE_BINARY_DIR}/third_party/libpng_ft" EXCLUDE_FROM_ALL)
+  endif()
+  if(TARGET png_static)
+    set(_pp_png_lib png_static)
+  elseif(TARGET png)
+    set(_pp_png_lib png)
+  else()
+    message(FATAL_ERROR "Vendored libpng target not found after add_subdirectory")
+  endif()
+  # Satisfy FreeType's find_package(PNG) via a redirect config package.
+  set(_pp_png_cfg_dir "${CMAKE_BINARY_DIR}/pp_cmake_png")
+  file(MAKE_DIRECTORY "${_pp_png_cfg_dir}")
+  file(WRITE "${_pp_png_cfg_dir}/PNGConfig.cmake"
+       "set(PNG_FOUND TRUE)\n"
+       "set(PNG_INCLUDE_DIRS \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\")\n"
+       "set(PNG_LIBRARIES ${_pp_png_lib})\n"
+       "set(PNG_LIBRARY ${_pp_png_lib})\n"
+       "set(PNG_PNG_INCLUDE_DIR \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\")\n"
+       "if(NOT TARGET PNG::PNG)\n"
+       "  add_library(PNG::PNG INTERFACE IMPORTED)\n"
+       "  set_target_properties(PNG::PNG PROPERTIES\n"
+       "    INTERFACE_INCLUDE_DIRECTORIES \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\"\n"
+       "    INTERFACE_LINK_LIBRARIES ${_pp_png_lib})\n"
+       "endif()\n")
+  set(_pp_zlib_cfg_dir "${CMAKE_BINARY_DIR}/pp_cmake_zlib")
+  file(MAKE_DIRECTORY "${_pp_zlib_cfg_dir}")
+  file(WRITE "${_pp_zlib_cfg_dir}/ZLIBConfig.cmake"
+       "set(ZLIB_FOUND TRUE)\n"
+       "set(ZLIB_INCLUDE_DIRS \"${ZLIB_INCLUDE_DIR}\")\n"
+       "set(ZLIB_LIBRARIES ${_pp_zlib_lib})\n"
+       "set(ZLIB_LIBRARY ${_pp_zlib_lib})\n"
+       "set(ZLIB_INCLUDE_DIR \"${ZLIB_INCLUDE_DIR}\")\n"
+       "if(NOT TARGET ZLIB::ZLIB)\n"
+       "  add_library(ZLIB::ZLIB INTERFACE IMPORTED)\n"
+       "  set_target_properties(ZLIB::ZLIB PROPERTIES\n"
+       "    INTERFACE_INCLUDE_DIRECTORIES \"${ZLIB_INCLUDE_DIR}\"\n"
+       "    INTERFACE_LINK_LIBRARIES ${_pp_zlib_lib})\n"
+       "endif()\n")
+  list(PREPEND CMAKE_PREFIX_PATH "${_pp_png_cfg_dir}" "${_pp_zlib_cfg_dir}")
+  set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+  set(PNG_FOUND TRUE)
+  set(PNG_LIBRARIES ${_pp_png_lib})
+  set(PNG_INCLUDE_DIRS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng")
+endif()
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/freetype"
                  "${CMAKE_BINARY_DIR}/third_party/freetype" EXCLUDE_FROM_ALL)

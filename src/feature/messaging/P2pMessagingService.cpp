@@ -12,14 +12,17 @@
 #include "base/data/PricingTypes.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/messaging/ChatPayloadCodec.h"
+#include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/ReactionTypes.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/MessagingLimits.h"
+#include "common/EmojiKey.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateTypes.h"
@@ -41,6 +44,44 @@
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+namespace {
+
+Roe<void> EnsureAnnotationCap(IThreadStore& store, const std::string& thread_id,
+                              const ThreadMessage& message) {
+  if (message.content_type != ChatContentType::Annotation) {
+    return {};
+  }
+  const std::string target_id = message.target_message_id.value_or("");
+  if (target_id.empty()) {
+    return Error("Annotation missing target_message_id");
+  }
+  auto count = store.CountAnnotationsForTarget(thread_id, target_id);
+  if (!count) {
+    return count.error();
+  }
+  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
+    return Error("Too many reactions on this message");
+  }
+  return {};
+}
+
+void ApplyRichPayloadOptions(ThreadMessage& message, const SendRelayOptions& options) {
+  if (options.content_type) {
+    message.content_type = *options.content_type;
+  }
+  if (options.payload_json) {
+    message.payload_json = *options.payload_json;
+  }
+  if (message.content_type == ChatContentType::Annotation) {
+    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json)) {
+      if (!fields->target_message_id.empty()) {
+        message.target_message_id = fields->target_message_id;
+      }
+    }
+  }
+}
+
+} // namespace
 
 namespace {
 
@@ -829,12 +870,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   message.generation = options.generation;
   message.ai_invoke_mode = options.ai_invoke_mode;
   message.seq_owner_contact_id = options.seq_owner_contact_id;
-  if (options.content_type) {
-    message.content_type = *options.content_type;
-  }
-  if (options.payload_json) {
-    message.payload_json = *options.payload_json;
-  }
+  ApplyRichPayloadOptions(message, options);
 
   auto sender_seq = store_.AllocateSenderSeq(thread_id);
   if (!sender_seq) {
@@ -846,6 +882,10 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   }
   message.sender_seq = *sender_seq;
   message.session_epoch = *session_epoch;
+
+  if (auto cap = EnsureAnnotationCap(store_, thread_id, message); !cap) {
+    return cap.error();
+  }
 
   auto appended = store_.AppendMessage(message);
   if (!appended) {
@@ -1138,6 +1178,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   message.delivery = MessageDelivery::Pending;
   message.relay_visible = true;
   message.transport = MessageTransport::Relay;
+  ApplyRichPayloadOptions(message, options);
 
   auto sender_seq = store_.AllocateSenderSeq(thread_id);
   if (!sender_seq) {
@@ -1149,6 +1190,10 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   }
   message.sender_seq = *sender_seq;
   message.session_epoch = *session_epoch;
+
+  if (auto cap = EnsureAnnotationCap(store_, thread_id, message); !cap) {
+    return cap.error();
+  }
 
   auto appended = store_.AppendMessage(message);
   if (!appended) {
@@ -1177,10 +1222,21 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     return Base64Decode(kem->kem_public_key_b64);
   };
 
+  std::optional<std::vector<uint8_t>> rich_plaintext;
+  if (options.content_type && *options.content_type != ChatContentType::Text) {
+    auto plaintext = ChatPayloadCodec::EncodeToRow(message);
+    if (!plaintext) {
+      appended->delivery = MessageDelivery::Failed;
+      (void)store_.UpdateMessage(*appended);
+      return plaintext.error();
+    }
+    rich_plaintext = std::move(*plaintext);
+  }
+
   const std::string group_id = *(*thread)->group_id;
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
       text, group_id, identity->relay_user_id, message.id, *message.sender_seq, *message.session_epoch,
-      message.timestamp, targets, psk_store_, resolve_kem);
+      message.timestamp, targets, psk_store_, resolve_kem, rich_plaintext);
   if (!encrypted) {
     appended->delivery = MessageDelivery::Failed;
     (void)store_.UpdateMessage(*appended);
@@ -1246,6 +1302,59 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
+}
+
+namespace {
+
+Roe<ThreadMessage> SendAnnotationReaction(P2pMessagingService& p2p, IThreadStore& store, const std::string& thread_id,
+                                          const std::string& target_message_id, const std::string& emoji,
+                                          const char* annotation_type) {
+  if (target_message_id.empty()) {
+    return Error("Missing target message");
+  }
+  const std::string trimmed = NormalizeEmojiKey(emoji);
+  if (trimmed.empty()) {
+    return Error("Empty reaction");
+  }
+  auto has_target = store.HasMessageId(thread_id, target_message_id);
+  if (!has_target) {
+    return has_target.error();
+  }
+  if (!*has_target) {
+    return Error("Target message not found");
+  }
+
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::Annotation;
+  opts.payload_json = BuildReactionPayloadJson(annotation_type, target_message_id, trimmed);
+  opts.update_preview = false;
+  const std::string display_text = (annotation_type == kAnnotationTypeReactionClear) ? std::string{} : trimmed;
+
+  auto thread = store.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind == ThreadKind::Group) {
+    return p2p.SendGroupMessage(thread_id, display_text, opts);
+  }
+  return p2p.SendUserMessage(thread_id, display_text, opts);
+}
+
+} // namespace
+
+Roe<ThreadMessage> P2pMessagingService::SendReaction(const std::string& thread_id,
+                                                     const std::string& target_message_id,
+                                                     const std::string& emoji) {
+  return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReaction);
+}
+
+Roe<ThreadMessage> P2pMessagingService::ClearReaction(const std::string& thread_id,
+                                                      const std::string& target_message_id,
+                                                      const std::string& emoji) {
+  return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReactionClear);
 }
 
 void P2pMessagingService::RetryFailedOutbound() {

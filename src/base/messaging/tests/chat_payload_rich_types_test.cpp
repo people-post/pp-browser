@@ -1,6 +1,8 @@
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
+#include "base/messaging/ReactionTypes.h"
+#include "common/EmojiKey.h"
 
 #include <gtest/gtest.h>
 
@@ -22,6 +24,37 @@ TEST(ChatPayloadRichTypesTest, AnnotationRoundTrip) {
   EXPECT_EQ(message->text, "👍");
   ASSERT_TRUE(message->target_message_id.has_value());
   EXPECT_EQ(*message->target_message_id, "msg-target-1");
+}
+
+TEST(ChatPayloadRichTypesTest, ReactionClearRoundTrip) {
+  using namespace pbr;
+
+  ChatAnnotationFields fields;
+  fields.text = "";
+  fields.annotation_type = kAnnotationTypeReactionClear;
+  fields.target_message_id = "msg-target-2";
+  fields.value = "❤️";
+
+  auto bytes = ChatPayloadCodec::EncodeAnnotation(fields);
+  ASSERT_TRUE(static_cast<bool>(bytes));
+
+  auto message = ChatPayloadValidator::DecodeValidated(*bytes);
+  ASSERT_TRUE(static_cast<bool>(message));
+  EXPECT_EQ(message->content_type, ChatContentType::Annotation);
+  ASSERT_TRUE(message->target_message_id.has_value());
+  EXPECT_EQ(*message->target_message_id, "msg-target-2");
+  auto decoded = ChatPayloadCodec::DecodeAnnotationJson(message->payload_json);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(decoded->annotation_type, kAnnotationTypeReactionClear);
+  EXPECT_EQ(decoded->value, "❤️");
+}
+
+TEST(EmojiKeyTest, StripsTrailingVariationSelector) {
+  using namespace pbr;
+  // thumbs-up + VS16
+  const std::string with_vs = std::string("👍") + "\xEF\xB8\x8F";
+  EXPECT_EQ(NormalizeEmojiKey(with_vs), NormalizeEmojiKey("👍"));
+  EXPECT_EQ(NormalizeEmojiKey("  😂  "), "😂");
 }
 
 TEST(ChatPayloadRichTypesTest, ContactCardRoundTrip) {

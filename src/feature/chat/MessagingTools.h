@@ -4,8 +4,8 @@
 
 namespace pbr {
 
-class MessagingHub;
+class MessagingFacade;
 
-void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub);
+void RegisterMessagingTools(ToolRegistry& registry, MessagingFacade& messaging);
 
 } // namespace pbr

@@ -1,7 +1,8 @@
 #pragma once
 
-#include "base/crypto/ProfileUnlockGate.h"
+#include "base/ui/ShellTypes.h"
 #include "feature/ui/ShellPinGatePorts.h"
+#include "feature/ui/UnlockGateCompletePorts.h"
 
 #include <string>
 
@@ -10,12 +11,13 @@ namespace pbr {
 /**
  * Shell PIN overlay — presentation only.
  * Policy / queue live in ProfileUnlockGate; Application binds UI ports from this controller.
+ * Owns local PinGateState and pushes apply-only copies into ShellHost.
  */
 class PinGateController {
 public:
   PinGateController() = default;
 
-  void BindGate(ProfileUnlockGate& gate);
+  void BindGateComplete(UnlockGateCompletePorts ports);
   /** Shell PIN chrome without ShellHost::Instance(). Clear via BindShellPinGate({}). */
   void BindShellPinGate(ShellPinGatePorts ports);
 
@@ -35,9 +37,12 @@ public:
 
 private:
   void ShowCreate();
+  void PullBoundPinFields();
+  void ApplyPinGate();
 
-  ProfileUnlockGate* gate_ = nullptr;
+  UnlockGateCompletePorts gate_complete_;
   ShellPinGatePorts shell_pin_gate_;
+  PinGateState pin_state_;
 };
 
 } // namespace pbr

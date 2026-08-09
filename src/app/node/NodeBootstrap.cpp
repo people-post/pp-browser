@@ -58,20 +58,21 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return pin.error();
   }
 
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_data_dir); !secrets) {
-    return secrets.error();
+  auto secrets = std::make_unique<ProfileSecretsService>();
+  if (auto initialized = secrets->Initialize(profile_data_dir); !initialized) {
+    return initialized.error();
   }
 
   auto identity = std::make_unique<IdentityStore>(profile_data_dir, registry->ActiveProfileId());
-  ProfileSecretsService::Instance().RegisterDekConsumer(identity.get());
+  secrets->RegisterDekConsumer(identity.get());
 
-  if (auto unlocked = ProfileSecretsService::Instance().Unlock(*pin); !unlocked) {
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+  if (auto unlocked = secrets->Unlock(*pin); !unlocked) {
+    secrets->UnregisterDekConsumer(identity.get());
     return unlocked.error();
   }
 
   if (auto loaded = identity->LoadOrCreate(); !loaded) {
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+    secrets->UnregisterDekConsumer(identity.get());
     return loaded.error();
   }
 
@@ -95,35 +96,27 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   runtime_cfg.listen_candidates = BuildLibp2pListenCandidates(config->libp2p.listen_multiaddr, busy);
   AppendIpv6ListenCandidatesForPreferred(config->libp2p.listen_multiaddr, runtime_cfg.listen_candidates);
 
-  auto runtime = std::make_unique<NodeRuntime>();
-  if (auto started = runtime->Start(runtime_cfg); !started) {
+  MeshHostConfig mesh_cfg;
+  mesh_cfg.runtime = std::move(runtime_cfg);
+  // Org seed: circuit / media_relay host inbound when enabled (N018).
+  mesh_cfg.host_circuit_relay = config->libp2p.capabilities.circuit_relay;
+  mesh_cfg.host_media_relay = config->libp2p.capabilities.media_relay;
+  mesh_cfg.media_relay_budget = config->libp2p.media_relay_budget;
+  mesh_cfg.media_relay_pricing = config->libp2p.pricing.media_relay;
+  // pp-node drives reachability probes from its run loop (--status / periodic refresh).
+  mesh_cfg.start_reachability_probe = false;
+
+  auto mesh = std::make_unique<MeshHost>();
+  if (auto started = mesh->Start(mesh_cfg); !started) {
     log.error << "libp2p listen failed: "
-              << (runtime->LastError().empty() ? started.error().message : runtime->LastError());
+              << (mesh->LastError().empty() ? started.error().message : mesh->LastError());
     AppRuntime::Shutdown();
-    ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
+    secrets->UnregisterDekConsumer(identity.get());
     return started.error();
   }
 
-  if (!runtime->BoundListenMultiaddr().empty()) {
-    config->libp2p.listen_multiaddr = runtime->BoundListenMultiaddr();
-  }
-
-  auto dial_back = std::make_unique<DialBackService>(*runtime->Host(), *runtime->Sessions());
-  dial_back->Start();
-
-  std::unique_ptr<CircuitRelayService> circuit_relay;
-  if (config->libp2p.capabilities.circuit_relay) {
-    circuit_relay = std::make_unique<CircuitRelayService>(*runtime->Host(), *runtime->Sessions());
-    circuit_relay->Start();
-  }
-
-  std::unique_ptr<MediaRelayService> media_relay;
-  // Org seed: media_relay default on (N018); host inbound when enabled.
-  if (config->libp2p.capabilities.media_relay) {
-    media_relay = std::make_unique<MediaRelayService>(*runtime->Host(), *runtime->Sessions());
-    media_relay->SetBudget(config->libp2p.media_relay_budget);
-    media_relay->SetPricing(config->libp2p.pricing.media_relay);
-    media_relay->Start();
+  if (!mesh->BoundListenMultiaddr().empty()) {
+    config->libp2p.listen_multiaddr = mesh->BoundListenMultiaddr();
   }
 
   NodeBootstrapResult result;
@@ -135,14 +128,11 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (result.config_path.empty()) {
     result.config_path = AppPaths::ConfigFilePath();
   }
+  result.secrets = std::move(secrets);
   result.identity = std::move(identity);
-  result.runtime = std::move(runtime);
-  result.dial_back = std::move(dial_back);
-  result.circuit_relay = std::move(circuit_relay);
-  result.media_relay = std::move(media_relay);
-  result.reachability = std::make_unique<ReachabilityService>();
+  result.mesh = std::move(mesh);
 
-  auto peer_id = result.runtime->Host()->LocalPeerIdBase58();
+  auto peer_id = result.mesh->Host()->LocalPeerIdBase58();
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
            << (peer_id ? (" peer=" + *peer_id) : std::string())
            << " dial-back=" << kDialBackProtocolId

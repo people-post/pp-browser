@@ -22,10 +22,13 @@ namespace pbr {
 class ActionRouter;
 class BadgeAggregator;
 class CallController;
+class CallUiBackend;
 class ClientCompatController;
 class FlowCoordinator;
 class InputCoordinator;
+class MessagingFacade;
 class PinGateController;
+class ProfileSecretsService;
 class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
@@ -46,6 +49,8 @@ public:
   void Shutdown();
 
   MessagingHub& Messaging();
+  /** App-owned profile vault / DEK service (Bootstrap initializes it). */
+  ProfileSecretsService& Secrets();
   SessionStore& Store() { return store_; }
   const SessionStore& Store() const { return store_; }
 
@@ -59,7 +64,9 @@ public:
 private:
   bool initialized_ = false;
   SessionStore store_;
+  std::unique_ptr<ProfileSecretsService> secrets_;
   std::unique_ptr<MessagingHub> messaging_;
+  std::unique_ptr<MessagingFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;
@@ -69,6 +76,7 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::unique_ptr<CallController> call_;
+  std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;
   std::unique_ptr<ContactsController> contacts_;
   std::unique_ptr<ContactsShellBridge> contacts_shell_bridge_;
