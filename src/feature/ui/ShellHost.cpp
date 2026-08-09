@@ -589,6 +589,8 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
     return DismissTarget::CompactChatOverlay;
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
+  case InterruptionKind::CallRing:
+  case InterruptionKind::CallInProgress:
   case InterruptionKind::None:
     return DismissTarget::None;
   }
@@ -2568,8 +2570,8 @@ void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
 void ShellHost::CallAcceptChargeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                          const Rml::VariantList& /*args*/) {
   Instance().log().warning << "call_accept_charge click";
-  if (auto* call = Instance().call_) {
-    call->AcceptIncomingWithCharge();
+  if (Instance().call_actions_.accept_incoming_with_charge) {
+    Instance().call_actions_.accept_incoming_with_charge();
   }
 }
 

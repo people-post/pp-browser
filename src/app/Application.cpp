@@ -643,6 +643,7 @@ bool Application::Initialize(const char* window_title) {
           return call_->StartCallWithInvitees(thread_id, video, identities);
         };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
     call_actions.retry_connect = [this]() { call_->RetryConnect(); };

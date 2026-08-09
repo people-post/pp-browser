@@ -25,6 +25,7 @@ struct CallActionsPorts {
 
   // Shell
   std::function<void()> accept_incoming;
+  std::function<void()> accept_incoming_with_charge;
   std::function<void()> decline_incoming;
   std::function<void()> leave_active;
   std::function<void()> retry_connect;
