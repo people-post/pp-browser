@@ -11,7 +11,8 @@ Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when l
 | Intent model | Implicit via `ResponseGoal` + ad-hoc planner rules | Explicit act × domain × commitment × horizon |
 | Planner tool awareness | Live catalog injected into planner prompt (`SummaryForPrompt` + domain/risk tags) | Keep catalog; add act field on `TurnPlan` |
 | Tool registration | `IToolProvider` + `ToolRegistry::RegisterProvider` (messaging / web_search / MCP) | Domain metadata + policy on every provider |
-| Mutations from NL | Weak — Discover-shaped people flow | Operate tools + confirm payloads |
+| Tool permissions | In-chat park + `tool_permissions` prefs (I005); Me → Security reset | Optional per-tool Settings editor; planner `commitment` field |
+| Mutations from NL | Gated Ask for write tools; PeerId Operate path still weak | Operate tools + confirm payloads |
 | Every act covered | No — Monitor/Decide/Repair/Govern thin or absent in planner | Thin path for all 10 |
 
 ## Turn pipeline (exists)
@@ -28,8 +29,10 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 | `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
 | `IToolProvider` | `src/feature/ai/IToolProvider.h` | MCP-shaped in-process registration |
 | `PayloadTurnPlanBuilder` | `src/feature/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
-| `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; `people_list` shortcut |
-| `AgentSession` | `src/feature/ai/AgentSession.*` | Plan → execute → synthesize; refinement tool loop |
+| `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
+| `ToolPermissionPolicy` | `src/feature/ai/ToolPermissionPolicy.*` | allow / ask / deny from prefs + session grants |
+| `ParkedApproval` | `src/feature/ai/ParkedApproval.h` | Single in-flight in-chat confirm |
+| `AgentSession` | `src/feature/ai/AgentSession.*` | Plan → execute → (park\|synthesize); resume permission |
 | `PromptBuilder` | `src/base/ai/PromptBuilder.cpp` | Planner + synthesis + chat-agent prompts |
 
 ## ResponseGoal (render — exists)
@@ -94,7 +97,7 @@ Root cause: **Discover-shaped planning + Operate API that only accepts directory
 
 | Agency | Gap |
 |--------|-----|
-| Suggest / Confirm / Execute | Confirm via chips exists; not planned as commitment |
+| Suggest / Confirm / Execute | In-chat tool permission park (I005) + people chips; not yet a `commitment` plan field |
 | Autonomous | Not present |
 | Horizon Session/Background | Not present |
 

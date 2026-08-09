@@ -1209,6 +1209,25 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
   if (payload && !payload->empty()) {
     const nlohmann::json action_json = nlohmann::json::parse(*payload, nullptr, false);
     if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
+        action_json["type"].get<std::string>() == "tool_permission") {
+      const std::string approval_id =
+          action_json.contains("approval_id") && action_json["approval_id"].is_string()
+              ? action_json["approval_id"].get<std::string>()
+              : "";
+      const std::string decision = action_json.contains("decision") && action_json["decision"].is_string()
+                                       ? action_json["decision"].get<std::string>()
+                                       : "";
+      if (!agent_ports_.resume_tool_permission) {
+        ShowToast("Assistant is not ready for permission decisions.");
+        return;
+      }
+      auto resumed = agent_ports_.resume_tool_permission(approval_id, decision, message);
+      if (!resumed) {
+        ShowToast(resumed.error().message);
+      }
+      return;
+    }
+    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
         action_json["type"].get<std::string>() == "fork_group") {
       const std::string confirmed_payload = *payload;
       ShowConfirm("Start a new group?",

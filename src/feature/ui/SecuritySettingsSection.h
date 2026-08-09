@@ -23,6 +23,9 @@ public:
   Roe<void> Flush(SettingsUiState& state, SessionStore& store) override;
   void ResetToDefaults(SettingsUiState& state, const SessionStore& store) override;
 
+  /** Clears remembered Always/Never tool decisions back to Ask defaults. */
+  Roe<void> ResetToolPermissions(SettingsUiState& state, SessionStore& store);
+
 private:
   SettingsCommands* commands_ = nullptr;
 };

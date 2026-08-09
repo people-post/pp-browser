@@ -315,6 +315,14 @@
         </button>
         <p class="text muted settings-help">{{i18n:settings.security.group_invites.help}}</p>
         <div class="stack settings-actions">
+          <p class="text">{{i18n:settings.security.tool_permissions}}: <span data-rml="tool_permissions_summary"></span></p>
+          <p class="text muted settings-help">{{i18n:settings.security.tool_permissions.help}}</p>
+          <button class="btn" type="button" data-if="tool_permissions_has_saved"
+                  data-event-click="reset_tool_permissions()">
+            {{i18n:settings.security.tool_permissions.reset}}
+          </button>
+        </div>
+        <div class="stack settings-actions">
           <p class="text muted settings-help">{{i18n:settings.security.clear_undelivered.help}}</p>
           <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
             {{i18n:settings.security.clear_undelivered}}

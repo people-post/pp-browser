@@ -142,10 +142,10 @@ Rule: each act has **at least one** path. Prefer reuse of current tools/blocks. 
 
 ### v1 tool / prompt work (minimum)
 
-1. **Wire `tools_summary` into the planner prompt** (today discarded).
-2. **Planner rules for all 10 acts** (lookup vs mutate vs navigate vs stub).
+1. **Wire `tools_summary` into the planner prompt** — done (live catalog + domain/risk tags).
+2. **Planner rules for all 10 acts** (lookup vs mutate vs navigate vs stub) — partial (lookup vs mutate guidance).
 3. **Operate×People:** accept PeerId (and optionally display name) on `add_contact` / ContactsStore path — not only `directory_hit`.
-4. **Confirm path:** prefer structured chip payloads for risky Operate when commitment=Confirm.
+4. **Confirm path:** in-chat tool permission park (`choice` Allow once / Always / Deny) for mutating tools — done (I005); chip payloads remain for people actions.
 5. **TurnPlan fields** for `act` / `domain` / `commitment` / `horizon` (or encode in `synthesis_hints` only as a temporary bridge — prefer real fields).
 6. **Fixture corpus:** one NL example per act for planner tests.
 

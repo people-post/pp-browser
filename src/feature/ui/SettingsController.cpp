@@ -254,6 +254,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
+  ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
+  ui_state_.tool_permissions_has_saved = bindings_.tool_permissions_has_saved;
 
   ui_state_.mcp_servers.clear();
   ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
@@ -320,6 +322,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
+  bindings_.tool_permissions_summary = ui_state_.tool_permissions_summary.c_str();
+  bindings_.tool_permissions_has_saved = ui_state_.tool_permissions_has_saved;
   bindings_.app_name = ui_state_.app_name.c_str();
   bindings_.app_version = ui_state_.app_version.c_str();
 
@@ -463,6 +467,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
+    ctor.Bind("tool_permissions_summary", &controller.bindings_.tool_permissions_summary);
+    ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
@@ -500,6 +506,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
     ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
     ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
+    ctor.BindEventCallback("reset_tool_permissions", &SettingsController::OnResetToolPermissionsCallback);
     ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
   });
 }
@@ -571,6 +578,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
+  host.Dirty("settings", "tool_permissions_summary");
+  host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
   host.Dirty("settings", "pin_change_old");
@@ -1689,6 +1698,38 @@ void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml
 void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                     const Rml::VariantList& /*args*/) {
   Instance().OnClearUndeliveredOlderThan();
+}
+
+void SettingsController::OnResetToolPermissionsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                        const Rml::VariantList& /*args*/) {
+  Instance().OnResetToolPermissions();
+}
+
+void SettingsController::OnResetToolPermissions() {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(
+      Tr("settings.security.tool_permissions.reset_title"),
+      Tr("settings.security.tool_permissions.reset_message"),
+      [this](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
+        if (!security) {
+          return;
+        }
+        PullBindingsToUiState();
+        if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
+          ReportFailure(reset.error());
+          return;
+        }
+        PushUiStateToBindings();
+        DirtyAll(false);
+        MaybeShowSaveToast("security");
+      },
+      {});
 }
 
 void SettingsController::OnClearUndeliveredOlderThan() {

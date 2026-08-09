@@ -111,7 +111,7 @@ Pick **one** track per effort; do not rename acts.
 |-------|----------------|
 | **Monitor real** | Need watchers / background jobs / notifications |
 | **Decide → Operate pipeline** | Plans that end in Confirm chips for mutations |
-| **Govern in-chat** | Settings forms / memory / tool allowlists via chat |
+| **Govern in-chat** | Settings forms / memory / tool allowlists via chat (tool allow/deny prefs landed via I005; in-chat Govern still open) |
 | **Repair real** | Undo last contact add; integrity/PSK repair hooks |
 | **Operate depth** | Multiaddr dial requirements; batch; idempotency |
 | **Fast paths** | PeerId/URL/deep-link `PayloadTurnPlanBuilder` without LLM |

@@ -441,6 +441,71 @@ void from_json(const nlohmann::json& j, MachinePreferences& prefs) {
   }
 }
 
+nlohmann::json ToolPermissionsToJson(const ToolPermissionsPrefs& perms) {
+  nlohmann::json by_tool = nlohmann::json::object();
+  for (const auto& [name, entry] : perms.by_tool) {
+    by_tool[name] = nlohmann::json{{"decision", entry.decision}};
+  }
+  nlohmann::json by_provider = nlohmann::json::object();
+  for (const auto& [name, entry] : perms.by_provider) {
+    by_provider[name] = nlohmann::json{{"decision", entry.decision}};
+  }
+  return nlohmann::json{{"schema_version", perms.schema_version},
+                        {"defaults",
+                         {{"read", perms.default_read},
+                          {"write", perms.default_write},
+                          {"destructive", perms.default_destructive}}},
+                        {"by_tool", std::move(by_tool)},
+                        {"by_provider", std::move(by_provider)}};
+}
+
+ToolPermissionsPrefs ToolPermissionsFromJson(const nlohmann::json& j) {
+  ToolPermissionsPrefs perms;
+  if (!j.is_object()) {
+    return perms;
+  }
+  if (j.contains("schema_version") && j["schema_version"].is_number_integer()) {
+    perms.schema_version = j["schema_version"].get<int>();
+  }
+  if (j.contains("defaults") && j["defaults"].is_object()) {
+    const auto& defaults = j["defaults"];
+    if (defaults.contains("read") && defaults["read"].is_string()) {
+      perms.default_read = defaults["read"].get<std::string>();
+    }
+    if (defaults.contains("write") && defaults["write"].is_string()) {
+      perms.default_write = defaults["write"].get<std::string>();
+    }
+    if (defaults.contains("destructive") && defaults["destructive"].is_string()) {
+      perms.default_destructive = defaults["destructive"].get<std::string>();
+    }
+  }
+  if (j.contains("by_tool") && j["by_tool"].is_object()) {
+    for (const auto& [name, node] : j["by_tool"].items()) {
+      if (!node.is_object() || !node.contains("decision") || !node["decision"].is_string()) {
+        continue;
+      }
+      const std::string decision = node["decision"].get<std::string>();
+      if (!IsValidToolPermissionDecision(decision)) {
+        continue;
+      }
+      perms.by_tool[name] = ToolPermissionEntry{.decision = decision};
+    }
+  }
+  if (j.contains("by_provider") && j["by_provider"].is_object()) {
+    for (const auto& [name, node] : j["by_provider"].items()) {
+      if (!node.is_object() || !node.contains("decision") || !node["decision"].is_string()) {
+        continue;
+      }
+      const std::string decision = node["decision"].get<std::string>();
+      if (!IsValidToolPermissionDecision(decision)) {
+        continue;
+      }
+      perms.by_provider[name] = ToolPermissionEntry{.decision = decision};
+    }
+  }
+  return perms;
+}
+
 void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
   j = nlohmann::json{{"schema_version", prefs.schema_version},
                      {"theme", prefs.theme},
@@ -453,7 +518,8 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"group_invite_policy", prefs.group_invite_policy},
                      {"reduce_transparency", prefs.reduce_transparency},
                      {"compact_chrome_frost", prefs.compact_chrome_frost},
-                     {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status}};
+                     {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status},
+                     {"tool_permissions", ToolPermissionsToJson(prefs.tool_permissions)}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -508,6 +574,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.reachability_nudge_acked_status = j["reachability_nudge_acked_status"].get<std::string>();
   } else {
     prefs.reachability_nudge_acked_status.clear();
+  }
+  if (j.contains("tool_permissions")) {
+    prefs.tool_permissions = ToolPermissionsFromJson(j["tool_permissions"]);
+  } else {
+    prefs.tool_permissions = ToolPermissionsPrefs{};
   }
 }
 
