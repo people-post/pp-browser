@@ -1,5 +1,7 @@
 #include "feature/messaging/MessagingChatPorts.h"
 
+#include "base/data/PricingTypes.h"
+#include "base/messaging/InitiationPricing.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
 
@@ -164,6 +166,20 @@ MessagingChatPorts MakeMessagingChatPorts(MessagingHub& hub) {
   ports.route_message = [&hub](const std::string& thread_id, const std::string& text,
                                std::optional<std::string> user_payload) {
     return hub.Router().Route(thread_id, text, std::move(user_payload));
+  };
+  ports.initiation_outbound_blocked = [&hub](const std::string& peer_identity) {
+    if (peer_identity.empty()) {
+      return false;
+    }
+    auto* store = hub.InitiationBilling();
+    if (!store || store->IsOpen(peer_identity)) {
+      return false;
+    }
+    const int64_t offer = InitiationPricing::DefaultOfferForFloor(store->Get(peer_identity).floor_minor);
+    return !CanPayAmount(offer);
+  };
+  ports.send_charge_required = [&hub](const std::string& peer_identity, std::optional<int64_t> floor_minor) {
+    return hub.SendChargeRequired(peer_identity, floor_minor);
   };
   ports.expects_agent_work = [&hub](const std::string& thread_id, const std::string& text,
                                     const std::optional<std::string>& user_payload) {

@@ -1,6 +1,7 @@
 #include "feature/chat/ChatThreadChrome.h"
 
 #include "feature/chat/ChatDataModel.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/PeerDisplayLabel.h"
@@ -227,6 +228,15 @@ void ChatThreadChrome::Update() {
       view_.compose_disabled = !PortsMessagingReady(chat_ports_);
     } else if (thread->kind == ThreadKind::Group) {
       view_.compose_disabled = !PortsMessagingReady(chat_ports_);
+    }
+    // P001: unpaid initiation floor blocks compose (same gate as outbound send).
+    if (!view_.compose_disabled && thread->kind == ThreadKind::Direct &&
+        !thread->peer_identity_value.empty() && chat_ports_.initiation_outbound_blocked &&
+        chat_ports_.initiation_outbound_blocked(thread->peer_identity_value)) {
+      view_.compose_disabled = true;
+      if (view_.status.empty()) {
+        view_.status = Tr("call.error.payment_unavailable").c_str();
+      }
     }
     if (thread->kind == ThreadKind::Ai) {
       view_.thread_subtitle = "Local assistant";

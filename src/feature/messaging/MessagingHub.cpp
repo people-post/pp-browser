@@ -1478,6 +1478,14 @@ Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
   return {};
 }
 
+Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
+                                           const std::optional<int64_t> floor_minor) {
+  if (!IsInitialized() || !IsMessagingReady() || !p2p_) {
+    return Error("Messaging not ready");
+  }
+  return p2p_->SendChargeRequired(peer_identity, floor_minor);
+}
+
 Roe<void> MessagingHub::RotateBriefLlmKey() {
   if (!IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");

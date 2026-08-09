@@ -7,7 +7,9 @@
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/InitiationBillingCodec.h"
 #include "base/messaging/InitiationPricing.h"
+#include "base/data/PricingTypes.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eIntegrityUtil.h"
@@ -795,7 +797,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return Error("Direct thread missing peer identity");
   }
   // P001: first initiate blocked when peer floor > 0 and payment rails unavailable.
-  if (initiation_billing_ && !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
+  // System/control traffic (call invite, charge_required, …) must not hit this gate.
+  const bool system_control =
+      options.content_type && *options.content_type == ChatContentType::System;
+  if (!system_control && initiation_billing_ &&
+      !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
     const InitiationPeerBilling billing = initiation_billing_->Get((*thread)->peer_identity_value);
     const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
     if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
@@ -1036,6 +1042,74 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
+}
+
+Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identity,
+                                                  const std::optional<int64_t> floor_minor) {
+  if (peer_identity.empty()) {
+    return Error("Missing peer identity");
+  }
+  if (!initiation_billing_) {
+    return Error("Initiation billing unavailable");
+  }
+  auto identity = identity_.Get();
+  if (!identity) {
+    return Error("Local identity unavailable");
+  }
+  const int64_t floor = floor_minor.value_or(identity->initiation_floor);
+
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = peer_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+
+  std::string contact_id;
+  std::string dm_title = peer_identity;
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::RelayUser)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = peer_identity;
+      }
+    }
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
+  if (!thread) {
+    return thread.error();
+  }
+
+  ChargeRequiredDetail detail;
+  detail.peer_identity = identity->relay_user_id;
+  detail.floor_minor = floor;
+  detail.currency = kPricingCurrencyId;
+  auto detail_json = InitiationBillingCodec::EncodeChargeRequired(detail);
+  if (!detail_json) {
+    return detail_json.error();
+  }
+
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::System;
+  opts.payload_json =
+      nlohmann::json({{"control_type", InitiationBillingCodec::ControlTypeToWire(
+                                           InitiationBillingControlType::ChargeRequired)},
+                      {"detail", *detail_json}})
+          .dump();
+  opts.generation = "system";
+  opts.update_preview = false;
+  opts.prefer_relay = true;
+  opts.sender_contact_id = identity->relay_user_id;
+
+  auto sent = SendUserMessage(thread->id, "Charge required", opts);
+  if (!sent) {
+    return sent.error();
+  }
+  // Re-lock after send succeeds (send path skips initiation gate for system controls).
+  (void)initiation_billing_->SetFloor(peer_identity, floor);
+  (void)initiation_billing_->MarkClosed(peer_identity);
+  log().info << "charge_required sent peer=" << peer_identity << " floor=" << floor;
+  return {};
 }
 
 Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thread_id, const std::string& text,

@@ -43,6 +43,7 @@
 #include "feature/ui/CallController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/SettingsController.h"
+#include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "base/data/Config.h"
@@ -1791,8 +1792,14 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
 
   if (messaging_ready_ && chat_ports_.has_router && chat_ports_.has_router()) {
     log().info << "Routing message via MessageRouter";
-    (void)chat_ports_.route_message(ActiveThreadId(), trimmed,
-                                                  std::move(user_payload));
+    auto routed = chat_ports_.route_message(ActiveThreadId(), trimmed, std::move(user_payload));
+    if (!routed) {
+      chat_.loading = false;
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      DirtyChatChrome();
+      SyncDisplayFromThread();
+      return;
+    }
     SyncDisplayFromThread();
     return;
   }

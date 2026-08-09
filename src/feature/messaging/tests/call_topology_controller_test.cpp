@@ -367,6 +367,10 @@ TEST_F(CallTopologyControllerTest, PaidQuoteBlockedWithoutPaymentRails) {
   EXPECT_GE(relay_->quote_calls, 1);
   EXPECT_EQ(relay_->attach_calls, 0);
   EXPECT_TRUE(host_->fanouts.empty());
+  // SoftMigrateNoHopMessage: all payment_unavailable → dedicated media copy (key or localized).
+  EXPECT_TRUE(ok.error().message.find("payment_unavailable_media") != std::string::npos ||
+              ok.error().message.find("require payment") != std::string::npos)
+      << ok.error().message;
 }
 
 TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {

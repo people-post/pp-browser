@@ -18,6 +18,15 @@ TEST(CallChromeSyncTest, RingAppearRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
+TEST(CallChromeSyncTest, RingPricingPresenceRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.ring_active = true;
+  synced.ring_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.ring_show_pricing = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
 TEST(CallChromeSyncTest, RingDisappearRemounts) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;

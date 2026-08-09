@@ -4,6 +4,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
+#include "base/data/PricingTypes.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/people/ContactsStore.h"
@@ -68,13 +69,19 @@ public:
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
+  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  /** Offer amount stored for inviter when inbound invite carried pricing. */
+  int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
+  /** Set before AcceptClicked — consumed by AcceptInvite. */
+  void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
   /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
   CallMediaHost& AsMediaHost() { return *this; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
                              const std::vector<std::string>& invitee_identities);
 
-  Roe<void> AcceptInvite(const std::string& call_id);
+  Roe<void> AcceptInvite(const std::string& call_id,
+                         InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
   /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
@@ -209,6 +216,8 @@ private:
   CallTopologyController topology_;
   CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
+  bool pending_accept_charge_set_ = false;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

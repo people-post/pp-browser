@@ -45,10 +45,17 @@ std::vector<MeshHopCandidate> PreferNamedHopFirst(std::vector<MeshHopCandidate> 
 
 /** SoftMigrate aggregate error — append OS network tip when every hop was undialable. */
 std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
-  std::string msg = Tr("call.error.no_media_relay_hop");
   if (hop_failures.empty()) {
-    return msg;
+    return Tr("call.error.no_media_relay_hop");
   }
+  const bool all_payment =
+      std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
+        return f.find("payment_unavailable") != std::string::npos;
+      });
+  if (all_payment) {
+    return Tr("call.error.payment_unavailable_media");
+  }
+  std::string msg = Tr("call.error.no_media_relay_hop");
   const bool all_undialable =
       std::all_of(hop_failures.begin(), hop_failures.end(), [](const std::string& f) {
         return f.find("hop not dialable") != std::string::npos;

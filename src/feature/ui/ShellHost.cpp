@@ -154,6 +154,11 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
+    ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
+    ctor.Bind("call_ring_pricing_label", &host.state_.call_ring.pricing_label);
+    ctor.Bind("call_ring_accept_charge_label", &host.state_.call_ring.accept_charge_label);
+    ctor.Bind("call_ring_accept_charge_enabled", &host.state_.call_ring.accept_charge_enabled);
+    ctor.Bind("call_ring_accept_charge_hint", &host.state_.call_ring.accept_charge_hint);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -278,6 +283,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
     ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
@@ -834,6 +840,11 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
+  DataModelHost::Instance().Dirty("window", "call_ring_pricing_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_enabled");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -1729,12 +1740,21 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
+  out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
+         "data-rml=\"call_ring_pricing_label\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
   out << "<button class=\"btn btn-primary shell-call-accept\" "
          "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
+  out << "</div>";
+  out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
+  out << "<button class=\"btn btn-secondary\" type=\"button\" "
+         "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
+         "data-event-click=\"call_accept_charge()\" data-rml=\"call_ring_accept_charge_label\"></button>";
+  out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
+         "data-rml=\"call_ring_accept_charge_hint\"></p>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -2536,6 +2556,14 @@ void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
   Instance().log().warning << "call_accept click";
   if (auto* call = Instance().call_) {
     call->AcceptIncoming();
+  }
+}
+
+void ShellHost::CallAcceptChargeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& /*args*/) {
+  Instance().log().warning << "call_accept_charge click";
+  if (auto* call = Instance().call_) {
+    call->AcceptIncomingWithCharge();
   }
 }
 

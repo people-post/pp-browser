@@ -47,6 +47,8 @@ public:
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   void AcceptIncoming();
+  /** Take-all when offer > 0; no-op toast when rails unavailable. */
+  void AcceptIncomingWithCharge();
   void DeclineIncoming();
   void LeaveActive();
   void RetryConnect();

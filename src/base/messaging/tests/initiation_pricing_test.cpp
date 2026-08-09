@@ -52,6 +52,37 @@ TEST(InitiationBillingCodecTest, ChargeRequiredRoundTrip) {
   EXPECT_EQ(decoded->message, "please pay");
 }
 
+TEST(InitiationBillingCodecTest, AcceptDecisionWire) {
+  EXPECT_STREQ(InitiationChargeDecisionToWire(InitiationChargeDecision::Waive), "waive");
+  EXPECT_STREQ(InitiationChargeDecisionToWire(InitiationChargeDecision::TakeAll), "take_all");
+  EXPECT_EQ(InitiationChargeDecisionFromWire("take_all"), InitiationChargeDecision::TakeAll);
+  EXPECT_EQ(InitiationChargeDecisionFromWire("waive"), InitiationChargeDecision::Waive);
+  InitiationAcceptDetail detail;
+  detail.peer_identity = "relay:bob";
+  detail.offer_minor = 9;
+  detail.decision = InitiationChargeDecision::TakeAll;
+  auto encoded = InitiationBillingCodec::EncodeInitiationAccept(detail);
+  ASSERT_TRUE(static_cast<bool>(encoded));
+  auto decoded = InitiationBillingCodec::DecodeInitiationAccept(*encoded);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(decoded->decision, InitiationChargeDecision::TakeAll);
+  EXPECT_EQ(decoded->offer_minor, 9);
+}
+
+TEST(InitiationBillingStoreTest, MarkClosedRelocks) {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("pp_initiation_closed_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  InitiationBillingStore store(dir.string());
+  ASSERT_TRUE(store.Load());
+  ASSERT_TRUE(store.MarkOpen("relay:carol"));
+  EXPECT_TRUE(store.IsOpen("relay:carol"));
+  ASSERT_TRUE(store.MarkClosed("relay:carol"));
+  EXPECT_FALSE(store.IsOpen("relay:carol"));
+  std::filesystem::remove_all(dir);
+}
+
 TEST(InitiationBillingStoreTest, PersistsState) {
   const auto dir = std::filesystem::temp_directory_path() /
                    ("pp_initiation_billing_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));

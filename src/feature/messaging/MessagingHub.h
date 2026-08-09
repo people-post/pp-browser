@@ -46,6 +46,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 
@@ -156,6 +157,11 @@ public:
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> RotateBriefLlmKey();
+
+  /** P001: send `charge_required` and re-lock peer initiation billing. */
+  Roe<void> SendChargeRequired(const std::string& peer_identity,
+                               std::optional<int64_t> floor_minor = std::nullopt);
+  InitiationBillingStore* InitiationBilling() const { return initiation_billing_.get(); }
 
   ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);

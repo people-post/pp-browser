@@ -17,9 +17,12 @@
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
+#include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
+
+#include "base/data/PricingTypes.h"
 
 #include "common/Utilities.h"
 
@@ -51,6 +54,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_remote_video = in_call.remote_video,
       .in_call_local_preview = in_call.local_preview,
       .ring_conflict = ring.conflict,
+      .ring_show_pricing = ring.show_pricing,
+      .ring_accept_charge_enabled = ring.accept_charge_enabled,
       .ring_call_id = ring.call_id.c_str(),
       .in_call_id = in_call.call_id.c_str(),
       .in_call_subtitle = in_call.subtitle.c_str(),
@@ -60,6 +65,9 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_conflict_hint = ring.conflict_hint.c_str(),
       .ring_accept_label = ring.accept_label.c_str(),
       .ring_decline_label = ring.decline_label.c_str(),
+      .ring_pricing_label = ring.pricing_label.c_str(),
+      .ring_accept_charge_label = ring.accept_charge_label.c_str(),
+      .ring_accept_charge_hint = ring.accept_charge_hint.c_str(),
       .in_call_title = in_call.title.c_str(),
       .in_call_mic_level = in_call.mic_level,
       .in_call_peer_level = in_call.peer_level,
@@ -406,14 +414,14 @@ void CallController::RefreshPendingRing() {
   }
 
   if (auto* life = Lifecycle(); life && !life->LastError().empty()) {
-    UserFeedback::Fail(life->LastError());
+    UserFeedback::Fail(PaymentErrorUserMessage(life->LastError()));
     life->ClearLastError();
   }
 
   if (auto media_err = calls->TakeLastMediaError(); media_err && !media_err->empty()) {
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
     // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(*media_err);
+    UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
   }
 
   calls->PollPendingSfuAttach();
@@ -510,6 +518,31 @@ void CallController::RefreshPendingRing() {
       ring.conflict_hint = copy.hint;
       ring.accept_label = copy.accept_label;
       ring.decline_label = copy.decline_label;
+
+      // P001: show waive / take-all when inviter offered a positive initiation amount.
+      const int64_t offer_minor = calls->InitiationOfferMinorForPeer((*top)->inviter_identity);
+      ring.show_pricing = offer_minor > 0;
+      ring.accept_charge_enabled = offer_minor > 0 && PaymentRailsAvailable();
+      if (ring.show_pricing) {
+        const std::string amount = std::to_string(offer_minor);
+        ring.pricing_label =
+            Tr("call.pricing.offer", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
+                .c_str();
+        ring.accept_charge_label =
+            Tr("call.ring.accept_charge", {{"amount", amount}, {"currency", kPricingCurrencyDisplayName}})
+                .c_str();
+        ring.accept_charge_hint = Tr("call.ring.accept_charge_disabled_hint").c_str();
+        if (!has_conflict) {
+          ring.accept_label = Tr("call.ring.accept_free").c_str();
+        } else {
+          ring.accept_label = Tr("call.ring.end_and_accept_free").c_str();
+        }
+      } else {
+        ring.pricing_label.clear();
+        ring.accept_charge_label.clear();
+        ring.accept_charge_hint.clear();
+      }
+
       if (pending_call_wake_notify_) {
         pending_call_wake_notify_ = false;
         const std::string body =
@@ -763,7 +796,7 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
   auto started =
       calls->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, invitee_identities);
   if (!started) {
-    UserFeedback::Fail(started.error().message);
+    UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
     return false;
   }
   active_call_id_ = started->call_id;
@@ -854,13 +887,51 @@ void CallController::AcceptIncoming() {
     log().warning << "AcceptIncoming ignored (no call_id)";
     return;
   }
+  if (auto* calls = Calls()) {
+    calls->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
+  }
   // Dismiss ring on the click frame (CALLS.md Accept → Accepting dismisses chrome). Leaving the
   // dialog up until AcceptInvite finishes made Accept look hung.
   ringtone_.Stop();
   ClearRing();
   SyncShellState();
   log().warning
-      << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id;
+      << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id << " charge=waive";
+  life->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+}
+
+void CallController::AcceptIncomingWithCharge() {
+  BindToMessaging();
+  auto* life = Lifecycle();
+  if (!life) {
+    return;
+  }
+  if (!PaymentRailsAvailable()) {
+    UserFeedback::Fail(Tr("call.ring.accept_charge_disabled_hint"));
+    return;
+  }
+  std::string call_id = ringing_call_id_;
+  if (call_id.empty() && shell_call_chrome_.call_ring) {
+    call_id = shell_call_chrome_.call_ring().call_id;
+  }
+  if (call_id.empty()) {
+    call_id = last_ring_call_id_;
+  }
+  if (call_id.empty()) {
+    call_id = life->LastRingCallId();
+  }
+  if (call_id.empty()) {
+    log().warning << "AcceptIncomingWithCharge ignored (no call_id)";
+    return;
+  }
+  if (auto* calls = Calls()) {
+    calls->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
+  }
+  ringtone_.Stop();
+  ClearRing();
+  SyncShellState();
+  log().warning
+      << "AcceptIncomingWithCharge → lifecycle AcceptClicked call_id=" << call_id << " charge=take_all";
   life->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 }
 

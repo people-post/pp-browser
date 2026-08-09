@@ -53,7 +53,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_show_roster != next.in_call_show_roster ||
       synced.in_call_stage_visible != next.in_call_stage_visible ||
       synced.in_call_mode != next.in_call_mode ||
-      synced.in_call_minimized_corner != next.in_call_minimized_corner) {
+      synced.in_call_minimized_corner != next.in_call_minimized_corner ||
+      synced.ring_show_pricing != next.ring_show_pricing ||
+      synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
     return CallChromeUpdate::Remount;
   }
 
@@ -94,7 +96,10 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.ring_eyebrow != next.ring_eyebrow ||
                               synced.ring_conflict_hint != next.ring_conflict_hint ||
                               synced.ring_accept_label != next.ring_accept_label ||
-                              synced.ring_decline_label != next.ring_decline_label;
+                              synced.ring_decline_label != next.ring_decline_label ||
+                              synced.ring_pricing_label != next.ring_pricing_label ||
+                              synced.ring_accept_charge_label != next.ring_accept_charge_label ||
+                              synced.ring_accept_charge_hint != next.ring_accept_charge_hint;
   if (labels_changed) {
     return CallChromeUpdate::DirtyOnly;
   }

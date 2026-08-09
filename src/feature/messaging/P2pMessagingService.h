@@ -26,6 +26,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -60,6 +61,13 @@ public:
                                      const SendRelayOptions& options = {});
   Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text,
                                       const SendRelayOptions& options = {});
+  /**
+   * P001: re-lock peer initiation billing (`charge_required` system message) then MarkClosed locally.
+   * `floor_minor` defaults to local identity initiation_floor when nullopt.
+   */
+  Roe<void> SendChargeRequired(const std::string& peer_identity,
+                               std::optional<int64_t> floor_minor = std::nullopt);
+  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);

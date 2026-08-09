@@ -721,8 +721,27 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   return {};
 }
 
-Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
-  log().info << "AcceptInvite start call_id=" << call_id;
+int64_t CallSessionManager::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
+  if (!initiation_billing_ || peer_identity.empty()) {
+    return 0;
+  }
+  return initiation_billing_->Get(peer_identity).offer_minor;
+}
+
+void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
+  pending_accept_charge_ = decision;
+  pending_accept_charge_set_ = true;
+}
+
+Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
+                                           InitiationChargeDecision charge_decision) {
+  if (pending_accept_charge_set_) {
+    charge_decision = pending_accept_charge_;
+    pending_accept_charge_set_ = false;
+    pending_accept_charge_ = InitiationChargeDecision::Waive;
+  }
+  log().info << "AcceptInvite start call_id=" << call_id
+             << " charge=" << InitiationChargeDecisionToWire(charge_decision);
   auto local = LocalRelayIdentity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
@@ -743,6 +762,16 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     NotifyRingChanged();
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Call invite expired";
     return Error("Call invite expired");
+  }
+
+  const std::string inviter = (*pending)->inviter_identity;
+  int64_t offer_minor = 0;
+  if (initiation_billing_) {
+    offer_minor = initiation_billing_->Get(inviter).offer_minor;
+  }
+  if (charge_decision == InitiationChargeDecision::TakeAll && offer_minor > 0 && !PaymentRailsAvailable()) {
+    log().warning << "AcceptInvite end call_id=" << call_id << " err=payment_unavailable take_all";
+    return Error("payment_unavailable: cannot collect charge yet");
   }
 
   auto session = sessions_.LoadSession(call_id);
@@ -786,8 +815,6 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   }
   (void)sessions_.UpdateInviteStatus(call_id, *local, "accepted");
 
-  const std::string inviter = (*pending)->inviter_identity;
-
   // Runs on Accept worker thread (never Browser IO). Do not wait on ListenOn / PollInbox here.
   // ScheduleStart* only posts StartSfu onto UI — never run the engine on this thread.
   auto joined_after = sessions_.CountJoined(call_id);
@@ -819,11 +846,10 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   accept.call_id = call_id;
   accept.identity = *local;
   accept.video_enabled = false;
-  // P001: without charge UI yet, Accept waives initiation amount (call still connects).
+  // P001: recipient chooses waive (0) or take_all (rails checked above).
   if (initiation_billing_) {
-    const InitiationPeerBilling billing = initiation_billing_->Get(inviter);
-    accept.offer_amount_minor = billing.offer_minor;
-    accept.charge_decision = "waive";
+    accept.offer_amount_minor = offer_minor;
+    accept.charge_decision = InitiationChargeDecisionToWire(charge_decision);
     (void)initiation_billing_->MarkOpen(inviter);
   }
   if (local_listen_multiaddrs_) {

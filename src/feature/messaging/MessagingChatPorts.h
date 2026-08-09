@@ -127,6 +127,10 @@ struct MessagingChatPorts {
   std::function<Roe<void>(const std::string& thread_id, const std::string& text,
                           std::optional<std::string> user_payload)>
       route_message;
+  /** True when peer initiation floor > 0, relationship not open, and payment rails unavailable. */
+  std::function<bool(const std::string& peer_identity)> initiation_outbound_blocked;
+  std::function<Roe<void>(const std::string& peer_identity, std::optional<int64_t> floor_minor)>
+      send_charge_required;
   std::function<bool(const std::string& thread_id, const std::string& text,
                      const std::optional<std::string>& user_payload)>
       expects_agent_work;
