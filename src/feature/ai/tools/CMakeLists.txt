@@ -1,6 +1,8 @@
 pp_browser_add_feature_library(pp_feature_ai_tools
   SOURCES
     McpToolAdapter.cpp
+    McpToolProvider.cpp
+    WebSearchProvider.cpp
     WebSearchTool.cpp
   PUBLIC_LIBS
     pp_base_net

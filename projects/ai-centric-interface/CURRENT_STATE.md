@@ -2,14 +2,15 @@
 
 Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when landing phase work.
 
-**As of:** 2026-07-10
+**As of:** 2026-08-09
 
 ## Release posture
 
 | Layer | Today | Target (v1) |
 |-------|-------|-------------|
 | Intent model | Implicit via `ResponseGoal` + ad-hoc planner rules | Explicit act × domain × commitment × horizon |
-| Planner tool awareness | `tools_summary` **discarded** in `TurnPlanner::Plan` | Live catalog in planner prompt |
+| Planner tool awareness | Live catalog injected into planner prompt (`SummaryForPrompt` + domain/risk tags) | Keep catalog; add act field on `TurnPlan` |
+| Tool registration | `IToolProvider` + `ToolRegistry::RegisterProvider` (messaging / web_search / MCP) | Domain metadata + policy on every provider |
 | Mutations from NL | Weak — Discover-shaped people flow | Operate tools + confirm payloads |
 | Every act covered | No — Monitor/Decide/Repair/Govern thin or absent in planner | Thin path for all 10 |
 
@@ -24,7 +25,8 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 | Piece | Location | Notes |
 |-------|----------|-------|
 | `TurnPlan` | `src/base/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
-| `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; `(void)tools_summary` |
+| `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
+| `IToolProvider` | `src/feature/ai/IToolProvider.h` | MCP-shaped in-process registration |
 | `PayloadTurnPlanBuilder` | `src/feature/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; `people_list` shortcut |
 | `AgentSession` | `src/feature/ai/AgentSession.*` | Plan → execute → synthesize; refinement tool loop |
@@ -45,7 +47,8 @@ This is **not** an intent taxonomy. Operate/Navigate/Monitor/etc. are missing as
 
 ## Tools (exists)
 
-Registered via `ToolRegistry::BuildFromConfig` + `RegisterMessagingTools`:
+Registered via `IToolProvider` → `ToolRegistry::RegisterProvider`:
+`WebSearchProvider`, `McpToolProvider` (`BuildFromConfig`), `MessagingToolProvider` (`RegisterMessagingTools` hook):
 
 | Tool | Closest act(s) |
 |------|----------------|

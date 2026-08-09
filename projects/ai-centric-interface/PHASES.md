@@ -36,8 +36,9 @@ Check boxes when work is **merged and verified**. Design (d0) should be solid be
 
 **Goal:** Planner sees tools and emits act (minimum viable intent).
 
-- [ ] Stop discarding `tools_summary` in `TurnPlanner::Plan`; inject into planner system prompt
+- [x] Stop discarding `tools_summary` in `TurnPlanner::Plan`; inject into planner system prompt
 - [ ] Extend `BuildPlannerPrompt` with the 10 acts + lookup vs mutate vs navigate vs stub rules
+      (partial: lookup vs mutate guidance + live catalog tags landed with `IToolProvider`)
 - [ ] Add `act` (required) to `TurnPlan` JSON schema; parse/validate; default `relate` or `inquire` if missing only during soft rollout if needed
 - [ ] Optional v1a: `domain`, `commitment`, `horizon` fields (string enums) — prefer yes if cheap
 - [ ] Keep `response_goal` as **render** only; map act×domain → suggested goal in planner rules

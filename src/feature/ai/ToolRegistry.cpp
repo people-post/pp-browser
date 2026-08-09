@@ -1,8 +1,33 @@
 #include "feature/ai/ToolRegistry.h"
 
+#include "feature/ai/IToolProvider.h"
+
 #include <sstream>
 
 namespace pbr {
+
+namespace {
+
+std::string FormatMetaTag(const ToolMeta& meta) {
+  std::string tag;
+  if (!meta.domain.empty()) {
+    tag = meta.domain;
+  }
+  if (!meta.risk.empty()) {
+    if (!tag.empty()) {
+      tag += ", ";
+    }
+    tag += meta.risk;
+  } else if (meta.mutating) {
+    if (!tag.empty()) {
+      tag += ", ";
+    }
+    tag += "write";
+  }
+  return tag;
+}
+
+} // namespace
 
 ToolRegistry::ToolRegistry() {
   redirectLogger("ToolRegistry");
@@ -15,6 +40,28 @@ void ToolRegistry::Register(ToolDescriptor tool) {
     }
   }
   tools_.push_back(std::move(tool));
+}
+
+void ToolRegistry::RegisterProvider(IToolProvider& provider) {
+  const std::string provider_id = provider.Id();
+  for (ToolDescriptor& tool : provider.ListTools()) {
+    if (tool.meta.provider.empty()) {
+      tool.meta.provider = provider_id;
+    }
+    bool exists = false;
+    for (const ToolDescriptor& existing : tools_) {
+      if (existing.definition.name == tool.definition.name) {
+        log().warning << "Skipping duplicate tool from provider " << provider_id << ": "
+                      << tool.definition.name;
+        exists = true;
+        break;
+      }
+    }
+    if (exists) {
+      continue;
+    }
+    tools_.push_back(std::move(tool));
+  }
 }
 
 void ToolRegistry::Clear() {
@@ -33,7 +80,12 @@ std::vector<ToolDefinition> ToolRegistry::Definitions() const {
 std::string ToolRegistry::SummaryForPrompt() const {
   std::ostringstream out;
   for (const ToolDescriptor& tool : tools_) {
-    out << "- " << tool.definition.name << ": " << tool.definition.description << "\n";
+    out << "- " << tool.definition.name;
+    const std::string tag = FormatMetaTag(tool.meta);
+    if (!tag.empty()) {
+      out << " [" << tag << "]";
+    }
+    out << ": " << tool.definition.description << "\n";
   }
   return out.str();
 }

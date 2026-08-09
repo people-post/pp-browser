@@ -1,7 +1,7 @@
 #include "feature/ai/ToolRegistry.h"
 
-#include "feature/ai/tools/McpToolAdapter.h"
-#include "feature/ai/tools/WebSearchTool.h"
+#include "feature/ai/tools/McpToolProvider.h"
+#include "feature/ai/tools/WebSearchProvider.h"
 #include "base/ai/mcp/McpClient.h"
 
 namespace pbr {
@@ -10,10 +10,13 @@ void ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* promoted_
                                    const std::vector<McpClient*>& custom_mcps,
                                    const std::vector<std::string>& custom_prefixes) {
   Clear();
-  Register(WebSearchTool::Make(config.search));
+
+  WebSearchProvider web_search(config.search);
+  RegisterProvider(web_search);
 
   if (promoted_mcp && promoted_mcp->IsRunning()) {
-    McpToolAdapter::RegisterTools(*this, *promoted_mcp, {});
+    McpToolProvider promoted("mcp:promoted", *promoted_mcp, {}, "feeds");
+    RegisterProvider(promoted);
   }
 
   for (size_t i = 0; i < custom_mcps.size(); ++i) {
@@ -24,7 +27,9 @@ void ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* promoted_
     const std::string prefix = i < custom_prefixes.size() && !custom_prefixes[i].empty()
                                    ? custom_prefixes[i] + "__"
                                    : "";
-    McpToolAdapter::RegisterTools(*this, *client, {.tool_prefix = prefix});
+    const std::string id = prefix.empty() ? ("mcp:custom_" + std::to_string(i)) : ("mcp:" + custom_prefixes[i]);
+    McpToolProvider custom(id, *client, {.tool_prefix = prefix}, "feeds");
+    RegisterProvider(custom);
   }
 }
 
