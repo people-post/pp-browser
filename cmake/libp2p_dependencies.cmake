@@ -195,7 +195,10 @@ if(TARGET lsquic)
     )
   endif()
   if(NOT HUNTER_ENABLED)
-    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
+    # Keep OpenSSL public for consumers; link zlib privately so lsquic's
+    # install(EXPORT) does not require exporting the vendored zlib target.
+    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+    target_link_libraries(lsquic PRIVATE ZLIB::ZLIB)
   endif()
 endif()
 if(NOT TARGET lsquic::lsquic)

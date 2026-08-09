@@ -2,6 +2,8 @@
 # MSVC does not reliably resolve PRIVATE static-lib deps (rmlui_core -> lunasvg).
 # App/test glue only; keep the RmlUi fork unchanged.
 
+include(PpBrowserWarnings)
+
 function(pp_browser_link_rmlui_core target)
   target_link_libraries(${target} PRIVATE RmlUi::Core)
   if(WIN32 AND TARGET lunasvg::lunasvg)
@@ -69,4 +71,5 @@ function(pp_browser_add_rmlui_backend)
   if(ANDROID)
     target_link_libraries(pp_rmlui_backend PUBLIC log GLESv3 EGL)
   endif()
+  pp_browser_apply_warnings(pp_rmlui_backend)
 endfunction()

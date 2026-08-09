@@ -16,12 +16,15 @@ set(PP_BROWSER_APP_SOURCES
   PeoplePickerShellBridge.cpp
 )
 
+include(PpBrowserWarnings)
+
 if(ANDROID)
   add_library(${PP_BROWSER_APP_TARGET} SHARED ${PP_BROWSER_APP_SOURCES})
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES OUTPUT_NAME main)
 else()
   add_executable(${PP_BROWSER_APP_TARGET} ${PP_BROWSER_APP_SOURCES})
 endif()
+pp_browser_apply_warnings(${PP_BROWSER_APP_TARGET})
 
 option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
 
