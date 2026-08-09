@@ -11,7 +11,6 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsTools.cpp
     StorageSettingsSection.cpp
   PUBLIC_LIBS
-    pp_feature_ai
     nlohmann_json::nlohmann_json)
 
 if(PP_BROWSER_BUILD_TESTS)

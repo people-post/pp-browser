@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_ai
     PromptBuilder.cpp
     RmlValidator.cpp
     StructuredTextParser.cpp
+    ToolRegistry.cpp
     ToolResultFormatter.cpp
     TurnPlan.cpp
     TurnTrace.cpp

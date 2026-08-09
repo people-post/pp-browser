@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/messaging/AtAiParser.h"
+#include "base/ai/ToolRegistry.h"
 #include "base/ai/TurnPlan.h"
 #include "base/ai/TurnTrace.h"
 #include "base/ai/conversation/ConversationTypes.h"
@@ -21,7 +22,6 @@ namespace pbr {
 
 class Conversation;
 class IThreadStore;
-class ToolRegistry;
 
 using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;

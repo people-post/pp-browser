@@ -66,7 +66,7 @@ Handled in `ChatController::HandleLocalAction` → `AgentSession::ResumeToolPerm
 
 ### Settings / Govern tools
 
-`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
+`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**) into `base/ai/ToolRegistry` (no `feature/ai` link). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
 
 ## Turn planning
 

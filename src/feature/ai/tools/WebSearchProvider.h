@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/ai/IToolProvider.h"
+#include "base/ai/IToolProvider.h"
 #include "base/data/Config.h"
 
 namespace pbr {

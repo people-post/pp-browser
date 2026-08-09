@@ -27,7 +27,7 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 |-------|----------|-------|
 | `TurnPlan` | `src/base/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
 | `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
-| `IToolProvider` | `src/feature/ai/IToolProvider.h` | MCP-shaped in-process registration |
+| `IToolProvider` / `ToolRegistry` | `src/base/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
 | `PayloadTurnPlanBuilder` | `src/feature/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
 | `ToolPermissionPolicy` | `src/feature/ai/ToolPermissionPolicy.*` | allow / ask / deny from prefs + session grants |
@@ -51,7 +51,7 @@ This is **not** an intent taxonomy. Operate/Navigate/Monitor/etc. are missing as
 ## Tools (exists)
 
 Registered via `IToolProvider` → `ToolRegistry::RegisterProvider`:
-`WebSearchProvider`, `McpToolProvider` (`BuildFromConfig`), `MessagingToolProvider`, `SettingsToolProvider`:
+`WebSearchProvider`, `McpToolProvider` (`BuildToolRegistryFromConfig`), `MessagingToolProvider`, `SettingsToolProvider`:
 
 | Tool | Closest act(s) |
 |------|----------------|
