@@ -35,14 +35,16 @@ Five top-level folders. Two sub-trees under `ai/`.
 
 ```
 src/feature/
-├── settings/     Config apply logic, section handlers (no messaging/chat deps)
-├── ai/           Agent session, turn pipeline, UI generation
+├── settings/     Config apply logic, section handlers + SettingsTools (no messaging/chat/ai deps)
+├── ai/           Agent session, turn pipeline, UI generation; BuildToolRegistryFromConfig
 │   ├── tools/        Web search, MCP tool adapters
 │   └── bindings/     RmlUi action routing, bindings manifest
 ├── messaging/    MessagingHub (MessagingCore assembler), MeshHost consumer, CallStack, MessagingFacade
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
 └── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
+
+`IToolProvider` / `ToolRegistry` live in `base/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
 
 **Domain grouping (mental model):**
 

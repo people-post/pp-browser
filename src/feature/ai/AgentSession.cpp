@@ -4,11 +4,12 @@
 #include "feature/ai/PayloadTurnPlanBuilder.h"
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/StructuredTextParser.h"
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/ToolRegistry.h"
 #include "base/ai/ToolResultFormatter.h"
 #include "feature/ai/ParkedApproval.h"
 #include "feature/ai/ToolPermissionPolicy.h"
 #include "feature/ai/ToolPermissionPrompt.h"
+#include "feature/ai/ToolRegistryBuild.h"
 #include "feature/ai/TurnExecutor.h"
 #include "feature/ai/TurnPlanner.h"
 #include "base/ai/conversation/Conversation.h"
@@ -823,8 +824,8 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       custom_prefixes.push_back(entry.id);
     }
 
-    state->tools.BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
-                                 custom_prefixes);
+    BuildToolRegistryFromConfig(state->tools, state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
+                                custom_prefixes);
     if (state->tool_registration_hook) {
       state->tool_registration_hook(state->tools);
     }

@@ -3,7 +3,7 @@
 #include "base/ai/LlmClient.h"
 #include "base/ai/TurnPlan.h"
 #include "feature/ai/ToolPermissionPolicy.h"
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/ToolRegistry.h"
 #include "common/Error.h"
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"

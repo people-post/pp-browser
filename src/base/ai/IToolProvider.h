@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/ToolDescriptor.h"
 
 #include <string>
 #include <vector>

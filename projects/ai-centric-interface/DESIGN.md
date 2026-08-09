@@ -158,7 +158,7 @@ Improve **one row at a time** without changing act names:
 | Operate depth | Idempotent add, multiaddr-required dial, batch actions |
 | Monitor real | Subscriptions, background AgentSession jobs, notification chips |
 | Decide real | Multi-criteria compare tables, plan → Confirm Operate pipeline |
-| Govern real | In-chat settings forms bound to config; memory forget; tool allowlists |
+| Govern real | SettingsToolProvider read/write prefs (landed); in-chat forms; memory forget; richer allowlists |
 | Repair real | Undo last mutation; verify fingerprint; gap/integrity repair hooks |
 | Domain expansion | Calendar, files, MCP apps as new domain labels |
 | Autonomous | Horizon=Background charters with kill switch |

@@ -8,6 +8,7 @@ pp_browser_add_feature_library(pp_feature_settings
     ReachabilityNudge.cpp
     SettingsLogic.cpp
     SettingsSections.cpp
+    SettingsTools.cpp
     StorageSettingsSection.cpp
   PUBLIC_LIBS
     nlohmann_json::nlohmann_json)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/ToolRegistry.h"
 #include "base/ai/mcp/McpClient.h"
 
 #include <string>

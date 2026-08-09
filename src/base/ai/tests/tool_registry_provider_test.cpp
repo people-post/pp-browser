@@ -1,5 +1,5 @@
-#include "feature/ai/IToolProvider.h"
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/IToolProvider.h"
+#include "base/ai/ToolRegistry.h"
 
 #include <gtest/gtest.h>
 

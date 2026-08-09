@@ -1,6 +1,4 @@
-#include "feature/ai/ToolRegistry.h"
-
-#include "feature/ai/IToolProvider.h"
+#include "base/ai/ToolRegistry.h"
 
 #include <sstream>
 

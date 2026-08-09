@@ -25,6 +25,8 @@ check_absent "settings must not include ui/" \
   '#include "feature/ui/' src/feature/settings
 check_absent "settings must not include chat/" \
   '#include "feature/chat/' src/feature/settings
+check_absent "settings must not include ai/ (ToolRegistry is in base/ai)" \
+  '#include "feature/ai/' src/feature/settings
 
 check_absent "ai must not include messaging/" \
   '#include "feature/messaging/' src/feature/ai
