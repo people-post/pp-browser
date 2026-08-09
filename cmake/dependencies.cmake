@@ -154,6 +154,10 @@ if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
        "endif()\n")
   list(PREPEND CMAKE_PREFIX_PATH "${_pp_png_cfg_dir}" "${_pp_zlib_cfg_dir}")
   set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+  # iOS/Android set CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY, so CMAKE_PREFIX_PATH alone
+  # is ignored for find_package. Point *_DIR at our redirect configs (host paths).
+  set(PNG_DIR "${_pp_png_cfg_dir}" CACHE PATH "Vendored PNG config for FreeType" FORCE)
+  set(ZLIB_DIR "${_pp_zlib_cfg_dir}" CACHE PATH "Vendored ZLIB config for FreeType" FORCE)
   set(PNG_FOUND TRUE)
   set(PNG_LIBRARIES ${_pp_png_lib})
   set(PNG_INCLUDE_DIRS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng")
