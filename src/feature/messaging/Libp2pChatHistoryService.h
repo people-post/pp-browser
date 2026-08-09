@@ -40,9 +40,6 @@ private:
   std::unique_ptr<Impl> impl_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
-  IThreadStore& store_;
-  IdentityStore& identity_;
-  IPskSessionStore& psk_store_;
   bool started_ = false;
 };
 

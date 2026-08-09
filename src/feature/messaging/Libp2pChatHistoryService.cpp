@@ -95,8 +95,7 @@ struct Libp2pChatHistoryService::Impl {
 
 Libp2pChatHistoryService::Libp2pChatHistoryService(Libp2pHost& host, PeerSessionManager& sessions, IThreadStore& store,
                                                    IdentityStore& identity, IPskSessionStore& psk_store)
-    : impl_(std::make_unique<Impl>(store, identity, psk_store)), host_(host), sessions_(sessions), store_(store),
-      identity_(identity), psk_store_(psk_store) {
+    : impl_(std::make_unique<Impl>(store, identity, psk_store)), host_(host), sessions_(sessions) {
   impl_->host = &host_;
 }
 

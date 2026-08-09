@@ -486,7 +486,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         });
       };
       if (Runtime() && Runtime()->EphemeralListenActive()) {
-        Runtime()->StopEphemeralListenAsync([this, finish = std::move(finish)]() mutable {
+        Runtime()->StopEphemeralListenAsync([finish = std::move(finish)]() mutable {
           AppRuntime::PostWorkerNormal(std::move(finish));
         });
         return;
