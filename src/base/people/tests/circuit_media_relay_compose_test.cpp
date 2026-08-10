@@ -4,20 +4,11 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <string>
 #include <thread>
-
-#if defined(_WIN32)
-#include <process.h>
-static int GuestProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static int GuestProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace {
@@ -36,14 +27,11 @@ protected:
 
     a_relay_ = std::make_unique<MediaRelayService>(a_host_, *a_sessions_);
 
-    static std::atomic<int> guest_port{49500 + (GuestProcessId() % 2000) * 10};
-    g_port_ = guest_port.fetch_add(1);
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
-    Libp2pHostConfig g_cfg;
-    g_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(g_port_);
-    ASSERT_TRUE(g_host_.Start(g_cfg));
+    auto g_started = test::StartEphemeralLoopbackHost(g_host_, g_port_);
+    ASSERT_TRUE(g_started) << g_started.error().message;
     g_sessions_ = std::make_unique<PeerSessionManager>(g_host_, config);
     g_relay_ = std::make_unique<MediaRelayService>(g_host_, *g_sessions_);
     // Guest has direct path to hop (B).

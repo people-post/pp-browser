@@ -263,7 +263,7 @@ void FlexFormattingContext::Format(Vector2f& flex_resulting_content_size, Vector
 			absolute_containing_block->AddAbsoluteElement(element, {}, element_flex);
 			continue;
 		}
-		else if (computed.position() == Style::Position::Relative)
+		else if (computed.position() == Style::Position::Relative || computed.position() == Style::Position::Sticky)
 		{
 			flex_container_box->AddRelativeElement(element);
 		}

@@ -88,6 +88,7 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
 - `ResolveValueOr` / `FlexFormattingContext` / `BuildBoxWidth` / `GetShrinkToFitWidth` — percentage and auto width no longer collapse to 0px when the containing block is indefinite or zero-sized
 - `FontEngineHarfBuzz/` — HarfBuzz text shaping engine ported from upstream `Samples/basic/harfbuzz`; enabled via `RMLUI_FONT_ENGINE_HARFBUZZ` (on by default in pp-browser builds); script is detected from string content (not forced from UI `lang`), and CJK UI `lang` is not applied to non-CJK runs, so Latin inputs stay stable when the document is `lang=zh-Hans`
+- `position: sticky` — `Style::Position::Sticky` (ComputedValues bitfield widened to 3 bits); stays in normal flow (block/flex/table like relative); `Element::ComputeStickyOffset` clamps against the nearest overflow scrollport and parent padding box; recomputed when absolute offsets are dirtied on scroll; sticky is a positioned containing block for absolute descendants (CSS); tests in `Tests/Source/UnitTests/Layout.cpp` (`Layout.Position.Sticky`)
 
 ### User-agent baseline: browser comparison and known gaps
 

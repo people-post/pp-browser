@@ -380,6 +380,13 @@ void Element::UpdateAbsoluteOffsetAndRenderBoxData()
 				offset_from_ancestors += ancestor->relative_offset_position;
 		}
 
+		// Fork: sticky clamp is recomputed whenever absolute offsets are dirtied (including on scroll).
+		if (meta->computed_values.position() == Style::Position::Sticky)
+		{
+			const Vector2f unstuck_absolute = relative_offset_base + offset_from_ancestors;
+			relative_offset_position = ComputeStickyOffset(unstuck_absolute);
+		}
+
 		const Vector2f relative_offset = relative_offset_base + relative_offset_position;
 		absolute_offset = relative_offset + offset_from_ancestors;
 
@@ -707,7 +714,7 @@ Vector2f Element::GetContainingBlock()
 		Position position_property = GetPosition();
 		const Box& parent_box = offset_parent->GetBox();
 
-		if (position_property == Position::Static || position_property == Position::Relative)
+		if (position_property == Position::Static || position_property == Position::Relative || position_property == Position::Sticky)
 		{
 			containing_block = parent_box.GetSize();
 			containing_block.x -= meta->scroll.GetScrollbarSize(ElementScroll::VERTICAL);
@@ -2369,11 +2376,125 @@ void Element::UpdateOffset()
 				relative_offset_position.y = 0;
 		}
 	}
+	else if (position_property == Position::Sticky)
+	{
+		// Sticky offsets depend on scroll; zero until absolute offsets are resolved (or recompute eagerly).
+		relative_offset_position = {};
+		if (!absolute_offset_dirty)
+		{
+			// Layout just finished; seed sticky from current scroll using unstuck flow position.
+			Vector2f offset_from_ancestors;
+			if (offset_parent)
+			{
+				offset_from_ancestors = offset_parent->GetAbsoluteOffset(BoxArea::Border);
+				if (!offset_fixed)
+					offset_from_ancestors -= offset_parent->scroll_offset;
+			}
+			for (Element* ancestor = parent; ancestor && ancestor != offset_parent; ancestor = ancestor->parent)
+				offset_from_ancestors += ancestor->relative_offset_position;
+			relative_offset_position = ComputeStickyOffset(relative_offset_base + offset_from_ancestors);
+		}
+	}
 	else
 	{
 		relative_offset_position.x = 0;
 		relative_offset_position.y = 0;
 	}
+}
+
+Vector2f Element::ComputeStickyOffset(Vector2f unstuck_absolute_border)
+{
+	using namespace Style;
+
+	// Nearest scrollport ancestor (overflow not visible on either axis), else the document.
+	Element* scroll_container = nullptr;
+	for (Element* ancestor = parent; ancestor; ancestor = ancestor->parent)
+	{
+		const auto& ac = ancestor->GetComputedValues();
+		if (ac.overflow_x() != Overflow::Visible || ac.overflow_y() != Overflow::Visible)
+		{
+			scroll_container = ancestor;
+			break;
+		}
+	}
+	if (!scroll_container)
+		scroll_container = owner_document;
+	if (!scroll_container)
+		return {};
+
+	const auto& computed = meta->computed_values;
+	const Vector2f size = GetBox().GetSize(BoxArea::Border);
+
+	// Visible scrollport (padding box client area) in absolute coordinates.
+	const Vector2f scroll_abs = scroll_container->GetAbsoluteOffset(BoxArea::Border);
+	const Box& scroll_box = scroll_container->GetBox();
+	const Vector2f scrollport_tl = scroll_abs + scroll_box.GetPosition(BoxArea::Padding);
+	const Vector2f scrollport_size = {scroll_container->GetClientWidth(), scroll_container->GetClientHeight()};
+
+	// Sticky constraint rectangle: parent's padding box (element cannot escape its parent).
+	Element* constraint = parent ? parent : scroll_container;
+	const Vector2f constraint_abs = constraint->GetAbsoluteOffset(BoxArea::Border);
+	const Box& constraint_box = constraint->GetBox();
+	const Vector2f constraint_tl = constraint_abs + constraint_box.GetPosition(BoxArea::Padding);
+	const Vector2f constraint_size = constraint_box.GetSize(BoxArea::Padding);
+
+	const Vector2f containing_block = GetContainingBlock();
+	Vector2f sticky_offset;
+
+	const bool has_top = computed.top().type != Top::Auto;
+	const bool has_bottom = computed.bottom().type != Bottom::Auto;
+	const bool has_left = computed.left().type != Left::Auto;
+	const bool has_right = computed.right().type != Right::Auto;
+
+	if (has_top || has_bottom)
+	{
+		float y = 0.f;
+		if (has_top)
+		{
+			const float top_inset = ResolveValue(computed.top(), containing_block.y);
+			const float desired = scrollport_tl.y + top_inset;
+			if (unstuck_absolute_border.y < desired)
+				y = desired - unstuck_absolute_border.y;
+		}
+		else // has_bottom
+		{
+			const float bottom_inset = ResolveValue(computed.bottom(), containing_block.y);
+			const float desired_bottom = scrollport_tl.y + scrollport_size.y - bottom_inset;
+			const float unstuck_bottom = unstuck_absolute_border.y + size.y;
+			if (unstuck_bottom > desired_bottom)
+				y = desired_bottom - unstuck_bottom;
+		}
+
+		const float min_y = constraint_tl.y - unstuck_absolute_border.y;
+		const float max_y = (constraint_tl.y + constraint_size.y - size.y) - unstuck_absolute_border.y;
+		sticky_offset.y = Math::Clamp(y, Math::Min(min_y, max_y), Math::Max(min_y, max_y));
+	}
+
+	if (has_left || has_right)
+	{
+		float x = 0.f;
+		if (has_left)
+		{
+			const float left_inset = ResolveValue(computed.left(), containing_block.x);
+			const float desired = scrollport_tl.x + left_inset;
+			if (unstuck_absolute_border.x < desired)
+				x = desired - unstuck_absolute_border.x;
+		}
+		else // has_right
+		{
+			const float right_inset = ResolveValue(computed.right(), containing_block.x);
+			const float desired_right = scrollport_tl.x + scrollport_size.x - right_inset;
+			const float unstuck_right = unstuck_absolute_border.x + size.x;
+			if (unstuck_right > desired_right)
+				x = desired_right - unstuck_right;
+		}
+
+		const float min_x = constraint_tl.x - unstuck_absolute_border.x;
+		const float max_x = (constraint_tl.x + constraint_size.x - size.x) - unstuck_absolute_border.x;
+		sticky_offset.x = Math::Clamp(x, Math::Min(min_x, max_x), Math::Max(min_x, max_x));
+	}
+
+	return sticky_offset;
 }
 
 void Element::SetBaseline(float in_baseline)

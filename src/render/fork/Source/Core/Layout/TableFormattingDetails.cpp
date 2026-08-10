@@ -68,8 +68,11 @@ bool TableGrid::Build(Element* element_table, TableWrapper& table_wrapper)
 				rows[row_group_index].element_group = element;
 				rows[row_group_index].group_span = num_rows_added;
 			}
-			if (element->GetPosition() == Style::Position::Relative)
-				table_wrapper.AddRelativeElement(element);
+			{
+				const Style::Position pos = element->GetPosition();
+				if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+					table_wrapper.AddRelativeElement(element);
+			}
 		}
 		else if (rows.empty() && display == Display::TableColumn)
 		{
@@ -210,8 +213,11 @@ void TableGrid::PushRow(Element* element_row, ElementList cell_elements, TableWr
 			}
 		}
 
-		if (element_row->GetPosition() == Style::Position::Relative)
-			table_wrapper.AddRelativeElement(element_row);
+		{
+			const Style::Position pos = element_row->GetPosition();
+			if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+				table_wrapper.AddRelativeElement(element_row);
+		}
 	}
 
 	rows.push_back(Row{element_row, nullptr, 0});
@@ -276,7 +282,7 @@ void TableGrid::PushRow(Element* element_row, ElementList cell_elements, TableWr
 			cell.column_begin = column;
 			cell.column_last = column_last;
 
-			if (cell_position == Style::Position::Relative)
+			if (cell_position == Style::Position::Relative || cell_position == Style::Position::Sticky)
 				table_wrapper.AddRelativeElement(element_cell);
 		}
 
