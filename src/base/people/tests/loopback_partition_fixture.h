@@ -1,23 +1,15 @@
 #pragma once
 
+#include "base/people/tests/libp2p_ephemeral_listen.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
-
-#if defined(_WIN32)
-#include <process.h>
-static inline int LoopbackPartitionProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static inline int LoopbackPartitionProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace test {
@@ -30,24 +22,16 @@ namespace test {
 class LoopbackPartitionFixture : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{49000 + (LoopbackPartitionProcessId() % 2000) * 10};
-    a_port_ = port.fetch_add(1);
-    r_port_ = port.fetch_add(1);
-    b_port_ = port.fetch_add(1);
-
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
 
-    auto start_host = [](Libp2pHost& host, int listen_port) {
-      Libp2pHostConfig cfg;
-      cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(listen_port);
-      return host.Start(cfg);
-    };
-
-    ASSERT_TRUE(start_host(a_host_, a_port_));
-    ASSERT_TRUE(start_host(r_host_, r_port_));
-    ASSERT_TRUE(start_host(b_host_, b_port_));
+    auto a_started = StartEphemeralLoopbackHost(a_host_, a_port_);
+    ASSERT_TRUE(a_started) << a_started.error().message;
+    auto r_started = StartEphemeralLoopbackHost(r_host_, r_port_);
+    ASSERT_TRUE(r_started) << r_started.error().message;
+    auto b_started = StartEphemeralLoopbackHost(b_host_, b_port_);
+    ASSERT_TRUE(b_started) << b_started.error().message;
 
     a_sessions_ = std::make_unique<PeerSessionManager>(a_host_, config);
     r_sessions_ = std::make_unique<PeerSessionManager>(r_host_, config);
@@ -67,9 +51,9 @@ protected:
     r_peer_id_ = *r_id;
     b_peer_id_ = *b_id;
 
-    a_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(a_port_) + "/p2p/" + a_peer_id_;
-    r_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(r_port_) + "/p2p/" + r_peer_id_;
-    b_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(b_port_) + "/p2p/" + b_peer_id_;
+    a_ma_ = LoopbackP2pMultiaddr(a_port_, a_peer_id_);
+    r_ma_ = LoopbackP2pMultiaddr(r_port_, r_peer_id_);
+    b_ma_ = LoopbackP2pMultiaddr(b_port_, b_peer_id_);
 
     // Partition: A knows only R; R knows B (and can dial it). A must not register B.
     ASSERT_TRUE(a_sessions_->RegisterEndpoint(r_peer_id_, r_ma_));

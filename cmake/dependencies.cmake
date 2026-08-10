@@ -127,6 +127,12 @@ if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
   set(PNG_TOOLS OFF CACHE BOOL "" FORCE)
   set(PNG_FRAMEWORK OFF CACHE BOOL "" FORCE)
   set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+  # libpng's project(... LANGUAGES C ASM) needs CMAKE_ASM_COMPILE_OBJECT at
+  # generate time. On WIN32 the root project() declares ASM (+ MSVC stub rule).
+  if(MSVC AND NOT CMAKE_ASM_COMPILE_OBJECT)
+    set(CMAKE_ASM_COMPILE_OBJECT
+        "<CMAKE_C_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /c /Fo<OBJECT> <SOURCE>")
+  endif()
   if(NOT TARGET png_static AND NOT TARGET png_shared AND NOT TARGET png)
     add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng"
                      "${CMAKE_BINARY_DIR}/third_party/libpng_ft" EXCLUDE_FROM_ALL)

@@ -1,3 +1,5 @@
+#include "base/people/tests/libp2p_ephemeral_listen.h"
+
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
@@ -12,7 +14,6 @@
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <future>
@@ -20,14 +21,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
-#if defined(_WIN32)
-#include <process.h>
-static int ProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static int ProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace {
@@ -48,26 +41,18 @@ Result RunOnWorker(Libp2pHost& host, std::function<Result()> work) {
 class CircuitRelayServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{46000 + (ProcessId() % 2000) * 10};
-    relay_port_ = port.fetch_add(1);
-    client_port_ = port.fetch_add(1);
-    target_port_ = port.fetch_add(1);
-    stranger_port_ = port.fetch_add(1);
-
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
 
-    auto start_host = [&](Libp2pHost& host, int port) {
-      Libp2pHostConfig cfg;
-      cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(port);
-      return host.Start(cfg);
-    };
-
-    ASSERT_TRUE(start_host(relay_host_, relay_port_));
-    ASSERT_TRUE(start_host(client_host_, client_port_));
-    ASSERT_TRUE(start_host(target_host_, target_port_));
-    ASSERT_TRUE(start_host(stranger_host_, stranger_port_));
+    auto relay_started = test::StartEphemeralLoopbackHost(relay_host_, relay_port_);
+    ASSERT_TRUE(relay_started) << relay_started.error().message;
+    auto client_started = test::StartEphemeralLoopbackHost(client_host_, client_port_);
+    ASSERT_TRUE(client_started) << client_started.error().message;
+    auto target_started = test::StartEphemeralLoopbackHost(target_host_, target_port_);
+    ASSERT_TRUE(target_started) << target_started.error().message;
+    auto stranger_started = test::StartEphemeralLoopbackHost(stranger_host_, stranger_port_);
+    ASSERT_TRUE(stranger_started) << stranger_started.error().message;
 
     relay_sessions_ = std::make_unique<PeerSessionManager>(relay_host_, config);
     client_sessions_ = std::make_unique<PeerSessionManager>(client_host_, config);
@@ -88,10 +73,10 @@ protected:
     ASSERT_TRUE(target_id);
     ASSERT_TRUE(stranger_id);
 
-    relay_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(relay_port_) + "/p2p/" + *relay_id;
-    client_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(client_port_) + "/p2p/" + *client_id;
-    target_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(target_port_) + "/p2p/" + *target_id;
-    stranger_ma_ = "/ip4/127.0.0.1/tcp/" + std::to_string(stranger_port_) + "/p2p/" + *stranger_id;
+    relay_ma_ = test::LoopbackP2pMultiaddr(relay_port_, *relay_id);
+    client_ma_ = test::LoopbackP2pMultiaddr(client_port_, *client_id);
+    target_ma_ = test::LoopbackP2pMultiaddr(target_port_, *target_id);
+    stranger_ma_ = test::LoopbackP2pMultiaddr(stranger_port_, *stranger_id);
 
     ASSERT_TRUE(client_sessions_->RegisterEndpoint("relay", relay_ma_));
     ASSERT_TRUE(stranger_sessions_->RegisterEndpoint("relay", relay_ma_));
@@ -202,20 +187,16 @@ TEST_F(CircuitRelayServiceTest, StrangerRefusedWhenContactsOnly) {
 }
 
 TEST_F(CircuitRelayServiceTest, ConcurrentBridges) {
-  static std::atomic<int> extra_port{47000 + (ProcessId() % 2000) * 10};
-  const int target2_port = extra_port.fetch_add(1);
-
+  int target2_port = 0;
   Libp2pHost target2_host;
   PeerSessionConfig config;
   config.dial_timeout = std::chrono::milliseconds(3000);
   config.dial_failure_backoff = std::chrono::milliseconds(100);
-  Libp2pHostConfig target2_cfg;
-  target2_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(target2_port);
-  ASSERT_TRUE(target2_host.Start(target2_cfg));
+  auto target2_started = test::StartEphemeralLoopbackHost(target2_host, target2_port);
+  ASSERT_TRUE(target2_started) << target2_started.error().message;
   auto target2_id = target2_host.LocalPeerIdBase58();
   ASSERT_TRUE(target2_id);
-  const std::string target2_ma =
-      "/ip4/127.0.0.1/tcp/" + std::to_string(target2_port) + "/p2p/" + *target2_id;
+  const std::string target2_ma = test::LoopbackP2pMultiaddr(target2_port, *target2_id);
 
   std::mutex mu1;
   std::mutex mu2;
@@ -291,9 +272,8 @@ TEST_F(CircuitRelayServiceTest, ConcurrentBridges) {
 }
 
 TEST(CircuitRelayServiceAbortTest, AbortInflightRequest) {
-  static std::atomic<int> port{48000 + (ProcessId() % 2000) * 10};
-  const int relay_port = port.fetch_add(1);
-  const int client_port = port.fetch_add(1);
+  int relay_port = 0;
+  int client_port = 0;
 
   PeerSessionConfig config;
   config.dial_timeout = std::chrono::milliseconds(3000);
@@ -301,12 +281,10 @@ TEST(CircuitRelayServiceAbortTest, AbortInflightRequest) {
 
   Libp2pHost relay_host;
   Libp2pHost client_host;
-  Libp2pHostConfig relay_cfg;
-  relay_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(relay_port);
-  Libp2pHostConfig client_cfg;
-  client_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_port);
-  ASSERT_TRUE(relay_host.Start(relay_cfg));
-  ASSERT_TRUE(client_host.Start(client_cfg));
+  auto relay_started = test::StartEphemeralLoopbackHost(relay_host, relay_port);
+  ASSERT_TRUE(relay_started) << relay_started.error().message;
+  auto client_started = test::StartEphemeralLoopbackHost(client_host, client_port);
+  ASSERT_TRUE(client_started) << client_started.error().message;
 
   auto relay_sessions = std::make_unique<PeerSessionManager>(relay_host, config);
   auto client_sessions = std::make_unique<PeerSessionManager>(client_host, config);
@@ -316,7 +294,7 @@ TEST(CircuitRelayServiceAbortTest, AbortInflightRequest) {
 
   auto relay_id = relay_host.LocalPeerIdBase58();
   ASSERT_TRUE(relay_id);
-  const std::string relay_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(relay_port) + "/p2p/" + *relay_id;
+  const std::string relay_ma = test::LoopbackP2pMultiaddr(relay_port, *relay_id);
   ASSERT_TRUE(client_sessions->RegisterEndpoint("relay", relay_ma));
 
   std::thread waiter([&] {
