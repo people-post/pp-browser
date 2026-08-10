@@ -128,8 +128,9 @@ if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
   set(PNG_FRAMEWORK OFF CACHE BOOL "" FORCE)
   set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
   # libpng's project(... LANGUAGES C ASM) needs CMAKE_ASM_COMPILE_OBJECT at
-  # generate time. On WIN32 the root project() declares ASM (+ MSVC stub and
-  # empty CMAKE_ASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_* mappings).
+  # generate time. On WIN32 the root project() declares ASM with `.s;.S` only
+  # (so `.asm` stays with ASM_NASM for BoringSSL), plus an MSVC stub and empty
+  # CMAKE_ASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_* mappings.
   if(MSVC AND NOT CMAKE_ASM_COMPILE_OBJECT)
     set(CMAKE_ASM_COMPILE_OBJECT
         "<CMAKE_C_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /c /Fo<OBJECT> <SOURCE>")

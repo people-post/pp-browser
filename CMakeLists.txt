@@ -15,7 +15,14 @@ if(WIN32)
   # Generic ASM must also be declared here: vendored libpng does
   # project(... LANGUAGES C ASM) from a subdirectory, which leaves
   # CMAKE_ASM_COMPILE_OBJECT unset at generate time (same class of bug as OBJCXX).
-  project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C ASM_MASM ASM_NASM ASM)
+  #
+  # Do not let generic ASM claim `.asm`: CMake's extension→language map is
+  # last-wins, and ASM defaults include `asm`. That steals BoringSSL NASM
+  # sources so fipsmodule objects are never built and linking crypto.lib
+  # fails with LNK1181 (missing *.asm.obj). libpng only needs `.S` on ARM.
+  set(CMAKE_ASM_SOURCE_FILE_EXTENSIONS "s;S")
+  # ASM_NASM last so `.asm` maps to NASM until Boost re-enables ASM_MASM.
+  project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C ASM_MASM ASM ASM_NASM)
   if(NOT CMAKE_ASM_COMPILE_OBJECT)
     # There is no Compiler/MSVC-ASM.cmake; install a cl-compatible stub.
     # libpng's amd64 path uses C SSE2 intrinsics only (no .S sources).
