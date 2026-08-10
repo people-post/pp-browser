@@ -507,6 +507,10 @@ ToolPermissionsPrefs ToolPermissionsFromJson(const nlohmann::json& j) {
 }
 
 void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
+  nlohmann::json recent = nlohmann::json::array();
+  for (const std::string& e : prefs.recent_emojis) {
+    recent.push_back(e);
+  }
   j = nlohmann::json{{"schema_version", prefs.schema_version},
                      {"theme", prefs.theme},
                      {"appearance", prefs.appearance},
@@ -519,7 +523,8 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"reduce_transparency", prefs.reduce_transparency},
                      {"compact_chrome_frost", prefs.compact_chrome_frost},
                      {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status},
-                     {"tool_permissions", ToolPermissionsToJson(prefs.tool_permissions)}};
+                     {"tool_permissions", ToolPermissionsToJson(prefs.tool_permissions)},
+                     {"recent_emojis", std::move(recent)}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -579,6 +584,14 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.tool_permissions = ToolPermissionsFromJson(j["tool_permissions"]);
   } else {
     prefs.tool_permissions = ToolPermissionsPrefs{};
+  }
+  prefs.recent_emojis.clear();
+  if (j.contains("recent_emojis") && j["recent_emojis"].is_array()) {
+    for (const auto& item : j["recent_emojis"]) {
+      if (item.is_string()) {
+        prefs.recent_emojis.push_back(item.get<std::string>());
+      }
+    }
   }
 }
 

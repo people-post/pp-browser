@@ -34,6 +34,7 @@ class SettingsController;
 class ContactsController;
 class ShellHost;
 class PeoplePickerController;
+class EmojiPickerController;
 class ChatController;
 
 class Application : public Module {
@@ -83,6 +84,7 @@ private:
   std::unique_ptr<ChatShellBridge> chat_shell_bridge_;
   std::unique_ptr<PeoplePickerShellBridge> people_picker_shell_bridge_;
   std::unique_ptr<PeoplePickerController> people_picker_;
+  std::unique_ptr<EmojiPickerController> emoji_picker_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::optional<AgentSession> agent_session_;

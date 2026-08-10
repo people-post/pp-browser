@@ -1,0 +1,37 @@
+<div class="emoji-picker" data-model="emoji_picker">
+  <div class="emoji-picker-header row">
+    <p class="emoji-picker-title" data-rml="title"></p>
+    <button class="btn btn-secondary emoji-picker-close" type="button"
+            data-event-click="cancel_picker()">Close</button>
+  </div>
+
+  <div class="emoji-picker-main row">
+    <div class="emoji-picker-rail">
+      <button data-for="tab : rail_tabs"
+              class="emoji-picker-rail-tab"
+              data-class-emoji-picker-rail-tab--active="tab.active"
+              type="button"
+              data-event-click="select_category(tab.id)">
+        <span class="emoji-picker-rail-glyph" data-rml="tab.glyph"></span>
+      </button>
+    </div>
+
+    <div id="emoji-picker-body" class="emoji-picker-body" data-event-scroll="on_scroll()">
+      <div data-for="section : sections"
+           class="emoji-picker-section"
+           data-attr-id="section.element_id">
+        <div class="emoji-picker-section-label">
+          <p class="emoji-picker-section-label-text" data-rml="section.label"></p>
+        </div>
+        <div class="emoji-picker-cells">
+          <button data-for="cell : section.cells"
+                  class="emoji-picker-cell"
+                  type="button"
+                  data-event-click="select_emoji(cell.glyph)">
+            <span class="emoji-picker-cell-glyph" data-rml="cell.glyph"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
