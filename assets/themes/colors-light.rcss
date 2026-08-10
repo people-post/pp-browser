@@ -1137,6 +1137,18 @@ select selectbox option:hover {
   color: #3730a3;
 }
 
+.emoji-picker-section-label {
+  background-color: #ffffff;
+}
+
+.emoji-picker-section-label-text {
+  color: #6b7280;
+}
+
+.emoji-picker-rail-tab--active {
+  background-color: #e5e7eb;
+}
+
 .contacts-trust-btn--active {
   background-color: #eef2ff;
   color: #3730a3;

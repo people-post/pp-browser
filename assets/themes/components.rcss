@@ -3491,9 +3491,6 @@ call-video-tile {
   flex-shrink: 0;
 }
 
-.emoji-picker-rail-tab--active {
-}
-
 .emoji-picker-rail-glyph {
   font-size: 20dp;
   line-height: 1.2;
