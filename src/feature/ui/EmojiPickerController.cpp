@@ -65,6 +65,10 @@ bool EmojiPickerController::RegisterModel(Rml::Context* context) {
     if (auto cell = ctor.RegisterStruct<Cell>()) {
       cell.RegisterMember("glyph", &Cell::glyph);
     }
+    // Arrays must be registered before struct members that reference them.
+    ctor.RegisterArray<std::vector<Cell>>();
+    ctor.RegisterArray<std::vector<Section>>();
+    ctor.RegisterArray<std::vector<RailTab>>();
     if (auto section = ctor.RegisterStruct<Section>()) {
       section.RegisterMember("id", &Section::id);
       section.RegisterMember("element_id", &Section::element_id);
@@ -76,9 +80,6 @@ bool EmojiPickerController::RegisterModel(Rml::Context* context) {
       tab.RegisterMember("glyph", &RailTab::glyph);
       tab.RegisterMember("active", &RailTab::active);
     }
-    ctor.RegisterArray<std::vector<Cell>>();
-    ctor.RegisterArray<std::vector<Section>>();
-    ctor.RegisterArray<std::vector<RailTab>>();
     ctor.Bind("title", &controller.title_);
     ctor.Bind("active_category", &controller.active_category_);
     ctor.Bind("rail_tabs", &controller.rail_tabs_);
