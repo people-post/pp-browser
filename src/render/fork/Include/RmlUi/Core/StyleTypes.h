@@ -44,7 +44,8 @@ namespace Style {
 		TableColumnGroup,
 		TableCell
 	};
-	enum class Position : uint8_t { Static, Relative, Absolute, Fixed };
+	// Fork: Sticky (pp-browser) — in-flow, scrollport-clamped offset. See RMLUI_UPSTREAM.md.
+	enum class Position : uint8_t { Static, Relative, Absolute, Fixed, Sticky };
 
 	using Top = LengthPercentageAuto;
 	using Right = LengthPercentageAuto;

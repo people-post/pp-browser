@@ -171,12 +171,12 @@ ContainingBlock LayoutDetails::GetContainingBlock(ContainerBox* parent_container
 
 	Vector2f containing_block = box->GetSize(area);
 
-	if (position == Position::Static || position == Position::Relative)
+	if (position == Position::Static || position == Position::Relative || position == Position::Sticky)
 	{
-		// For static elements we subtract the scrollbar size so that elements normally don't overlap their parent's
-		// scrollbars. In CSS, this would also be done for absolutely positioned elements, we might want to copy that
-		// behavior in the future. If so, we would also need to change the element offset behavior, and ideally also
-		// make positioned boxes contribute to the scrollable area.
+		// For static/relative/sticky elements we subtract the scrollbar size so that elements normally don't overlap
+		// their parent's scrollbars. In CSS, this would also be done for absolutely positioned elements, we might want
+		// to copy that behavior in the future. If so, we would also need to change the element offset behavior, and
+		// ideally also make positioned boxes contribute to the scrollable area.
 		if (Element* element = container->GetElement())
 		{
 			ElementScroll* element_scroll = element->GetElementScroll();

@@ -27,7 +27,7 @@ Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches the theme sheets).
 ### Layout
 
 - `display`: `none`, `block`, `inline`, `inline-block`, `flow-root`, `flex`, `inline-flex`, table values
-- `position`: `static`, `relative`, `absolute`, `fixed`
+- `position`: `static`, `relative`, `absolute`, `fixed`, `sticky`
 - `top`, `right`, `bottom`, `left`, `inset`
 - `float`: `none`, `left`, `right`
 - `clear`: `none`, `left`, `right`, `both`
