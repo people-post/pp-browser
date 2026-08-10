@@ -77,5 +77,17 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |
 | `compact_chrome_frost` | `preferences.json` | boolean, schema v8; default true; dogfood off in JSON |
 | `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
+| `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
+
+`tool_permissions` shape:
+
+```json
+"tool_permissions": {
+  "schema_version": 1,
+  "defaults": { "read": "allow", "write": "ask", "destructive": "ask" },
+  "by_tool": { "add_contact": { "decision": "allow" } },
+  "by_provider": {}
+}
+```
 
 Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.

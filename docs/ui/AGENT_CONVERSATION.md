@@ -46,6 +46,28 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 Natural-language turns add one planner LLM call. Structured UI actions (form submit, article chips, pagination) skip the planner via the payload fast path.
 
+### Tool permissions (mutating tools)
+
+Before executing a planned tool with risk `write` / `destructive` (or `mutating`), `TurnExecutor` consults `ToolPermissionPolicy` against profile `tool_permissions`:
+
+| Verdict | Behavior |
+|---------|----------|
+| Allow | Execute |
+| Deny | Fail the turn with a clear error |
+| Ask | Stop the turn, emit an in-chat `choice` (Allow once / Always allow / Deny), **park** the plan |
+
+At most **one** `ParkedApproval` is active. Resume payload:
+
+```json
+{ "type": "tool_permission", "approval_id": "…", "decision": "allow_once|allow_always|deny" }
+```
+
+Handled in `ChatController::HandleLocalAction` → `AgentSession::ResumeToolPermission` (strict `approval_id` validation). New user messages cancel the park. Always allow / Never persist under Me → Security → Assistant tool permissions. See [I005](../../projects/ai-centric-interface/DECISIONS.md#i005--in-chat-tool-permissions-parked-approval).
+
+### Settings / Govern tools
+
+`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**) into `base/ai/ToolRegistry` (no `feature/ai` link). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
+
 ## Turn planning
 
 Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):

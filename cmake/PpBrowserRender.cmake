@@ -53,6 +53,10 @@ function(pp_browser_add_rmlui_backend)
   if(RMLUI_BACKEND_SIMULATE_TOUCH)
     target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_BACKEND_SIMULATE_TOUCH)
   endif()
+  if(PP_BROWSER_IS_IOS)
+    # OpenGLES is deprecated on iOS 12+; we still use ES3 via SDL until Metal.
+    target_compile_definitions(pp_rmlui_backend PRIVATE GLES_SILENCE_DEPRECATION=1)
+  endif()
   target_include_directories(pp_rmlui_backend PUBLIC
     ${CMAKE_SOURCE_DIR}/src/render/fork/Include
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/platform

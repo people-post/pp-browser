@@ -21,7 +21,7 @@ void MaybeEnterDesktopForeground() {
   if (!window) {
     return;
   }
-  const Uint32 flags = SDL_GetWindowFlags(window);
+  const SDL_WindowFlags flags = SDL_GetWindowFlags(window);
   if ((flags & SDL_WINDOW_MINIMIZED) != 0) {
     return;
   }

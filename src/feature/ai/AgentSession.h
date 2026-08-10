@@ -1,12 +1,16 @@
 #pragma once
 
 #include "base/messaging/AtAiParser.h"
+#include "base/ai/ToolRegistry.h"
 #include "base/ai/TurnPlan.h"
 #include "base/ai/TurnTrace.h"
 #include "base/ai/conversation/ConversationTypes.h"
 #include "base/ai/mcp/McpClient.h"
 #include "base/data/Config.h"
+#include "base/data/ToolPermissions.h"
 #include "common/Error.h"
+#include "feature/ai/ParkedApproval.h"
+#include "feature/ai/TurnExecutor.h"
 
 #include <functional>
 #include <memory>
@@ -18,9 +22,9 @@ namespace pbr {
 
 class Conversation;
 class IThreadStore;
-class ToolRegistry;
 
 using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
+using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;
 
 enum class AgentEventType {
   LoadingChanged,
@@ -55,6 +59,8 @@ public:
 
   void Configure(const AppConfig& config);
   void SetToolRegistrationHook(ToolRegistrationHook hook);
+  void SetToolPermissions(ToolPermissionsPrefs permissions);
+  void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
   McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
@@ -63,6 +69,12 @@ public:
   void SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                           std::optional<std::string> user_payload = std::nullopt,
                           AtAiMode mode = AtAiMode::Local);
+  /**
+   * Resume a parked tool-permission confirm from an in-chat choice payload.
+   * decision: allow_once | allow_always | deny
+   */
+  Roe<void> ResumeToolPermission(const std::string& approval_id, const std::string& decision,
+                                 const std::string& decision_label = {});
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
@@ -101,6 +113,12 @@ private:
   static void InjectSynthesisPolicy(const std::shared_ptr<Impl>& state);
   static void PopulateTurnTraceFromPlan(const std::shared_ptr<Impl>& state);
   static std::vector<std::string> AllowedToolNames(const std::shared_ptr<Impl>& state);
+  static void CancelParkedApproval(const std::shared_ptr<Impl>& state, ParkedApprovalState reason);
+  static void ParkForPermission(const std::shared_ptr<Impl>& state, TurnExecutionResult execution);
+  static void ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
+                                           std::string decision, std::string decision_label);
+  static ApprovalResumeError ValidateParkedResume(const std::optional<ParkedApproval>& park,
+                                                  const std::string& approval_id, bool busy);
 
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);

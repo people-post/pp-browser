@@ -426,7 +426,7 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
-        std::fill(mix.begin(), mix.end(), 0);
+        std::fill(mix.begin(), mix.end(), int16_t{0});
         bool any = false;
         double pressure = 0.0;
         uint64_t ticks = 0;
@@ -709,7 +709,7 @@ struct CallMediaEngine::Impl {
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
               }
-              std::fill(pcm.begin(), pcm.end(), 0);
+              std::fill(pcm.begin(), pcm.end(), int16_t{0});
               paced_silence_frame = true;
               // Fall through to encode/send silence so tx_alive stays true.
             } else {
@@ -728,14 +728,14 @@ struct CallMediaEngine::Impl {
             std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
             pending.erase(pending.begin(), pending.begin() + kFrameSamples);
             if (muted.load(std::memory_order_relaxed)) {
-              std::fill(pcm.begin(), pcm.end(), 0);
+              std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
             }
           }
         } else {
-          std::fill(pcm.begin(), pcm.end(), 0);
+          std::fill(pcm.begin(), pcm.end(), int16_t{0});
           SmoothLevel(local_input_level, 0.f);
           paced_silence_frame = true;
           if (!can_send) {

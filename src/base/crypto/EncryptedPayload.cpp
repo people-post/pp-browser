@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 
+#include <algorithm>
 #include <sodium.h>
 
 namespace pbr {
@@ -11,11 +12,13 @@ Roe<ByteVector> EncryptedPayload::EncodeBlob(const EncryptedBlob& blob) {
   if (blob.nonce.size() != kAeadNonceSize) {
     return Error("Invalid nonce size");
   }
-  ByteVector out;
-  out.reserve(1 + blob.nonce.size() + blob.ciphertext.size());
-  out.push_back(kEncryptedPayloadVersion);
-  out.insert(out.end(), blob.nonce.begin(), blob.nonce.end());
-  out.insert(out.end(), blob.ciphertext.begin(), blob.ciphertext.end());
+  // Size the vector once (no reserve/push_back/realloc). GCC 14 -O3 falsely
+  // reports -Wfree-nonheap-object on the previous reserve + push_back path.
+  ByteVector out(1 + blob.nonce.size() + blob.ciphertext.size());
+  out[0] = kEncryptedPayloadVersion;
+  std::copy(blob.nonce.begin(), blob.nonce.end(), out.begin() + 1);
+  std::copy(blob.ciphertext.begin(), blob.ciphertext.end(),
+            out.begin() + 1 + static_cast<std::ptrdiff_t>(blob.nonce.size()));
   return out;
 }
 

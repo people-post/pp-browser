@@ -2,7 +2,6 @@
 
 #include "base/ai/LlmClient.h"
 #include "base/ai/TurnPlan.h"
-#include "feature/ai/ToolRegistry.h"
 #include "common/Error.h"
 
 #include <string>
@@ -18,8 +17,9 @@ public:
 
 private:
   static Roe<TurnPlan> PlanOnce(const LlmClient& llm, const std::vector<ChatMessage>& messages,
-                                const std::vector<std::string>& allowed_tools, const std::string& user_request,
-                                bool repair, const std::string& invalid_output, const std::string& error_message);
+                                const std::string& tools_summary, const std::vector<std::string>& allowed_tools,
+                                const std::string& user_request, bool repair, const std::string& invalid_output,
+                                const std::string& error_message);
 };
 
 } // namespace pbr

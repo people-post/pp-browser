@@ -36,8 +36,9 @@ Check boxes when work is **merged and verified**. Design (d0) should be solid be
 
 **Goal:** Planner sees tools and emits act (minimum viable intent).
 
-- [ ] Stop discarding `tools_summary` in `TurnPlanner::Plan`; inject into planner system prompt
+- [x] Stop discarding `tools_summary` in `TurnPlanner::Plan`; inject into planner system prompt
 - [ ] Extend `BuildPlannerPrompt` with the 10 acts + lookup vs mutate vs navigate vs stub rules
+      (partial: lookup vs mutate guidance + live catalog tags landed with `IToolProvider`)
 - [ ] Add `act` (required) to `TurnPlan` JSON schema; parse/validate; default `relate` or `inquire` if missing only during soft rollout if needed
 - [ ] Optional v1a: `domain`, `commitment`, `horizon` fields (string enums) — prefer yes if cheap
 - [ ] Keep `response_goal` as **render** only; map act×domain → suggested goal in planner rules
@@ -110,7 +111,7 @@ Pick **one** track per effort; do not rename acts.
 |-------|----------------|
 | **Monitor real** | Need watchers / background jobs / notifications |
 | **Decide → Operate pipeline** | Plans that end in Confirm chips for mutations |
-| **Govern in-chat** | Settings forms / memory / tool allowlists via chat |
+| **Govern in-chat** | Settings forms / memory / tool allowlists via chat (tool allow/deny prefs landed via I005; in-chat Govern still open) |
 | **Repair real** | Undo last contact add; integrity/PSK repair hooks |
 | **Operate depth** | Multiaddr dial requirements; batch; idempotency |
 | **Fast paths** | PeerId/URL/deep-link `PayloadTurnPlanBuilder` without LLM |
@@ -135,6 +136,6 @@ Each track gets its own checklist subsection in this file when started.
 
 - Treating `people_discovery` as the only people intent (blocks Operate)
 - Requiring `directory_hit` for every contact mutation
-- Planner without tool catalog (`(void)tools_summary`)
+- Planner without tool catalog (fixed: live `tools_summary` in prompt)
 - Silent no-op for Monitor/Repair “for later”
 - New top-level acts for each feature (“AddContactAct”) — use Operate × domain instead

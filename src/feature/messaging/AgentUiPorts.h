@@ -29,6 +29,11 @@ struct AgentUiPorts {
   std::function<bool()> has_session;
   std::function<void(const AppConfig& config)> configure;
   std::function<void(ToolRegistrationHook hook)> set_tool_registration_hook;
+  std::function<void(const ToolPermissionsPrefs& permissions)> set_tool_permissions;
+  std::function<void(ToolPermissionsSaveFn saver)> set_tool_permissions_saver;
+  std::function<Roe<void>(const std::string& approval_id, const std::string& decision,
+                          const std::string& decision_label)>
+      resume_tool_permission;
   std::function<void(IThreadStore* store)> set_thread_store;
   std::function<void(const std::string& text, std::optional<std::string> user_payload)> submit;
   std::function<void()> cancel;

@@ -37,7 +37,6 @@ private:
   Roe<void> RouteSharedAi(const std::string& thread_id, const std::string& prompt, AtAiMode mode);
   bool NeedsSharedAiConfirm(const std::string& thread_id) const;
 
-  InboxController& inbox_;
   P2pMessagingService& p2p_;
   AgentSession& agent_;
   IThreadStore& store_;

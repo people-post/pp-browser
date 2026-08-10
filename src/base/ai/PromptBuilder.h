@@ -19,7 +19,8 @@ public:
 
   static std::string BuildChatSystemPrompt();
   static std::string BuildChatAgentSystemPrompt(const std::string& tools_summary);
-  static std::string BuildPlannerPrompt();
+  // `tools_summary` is the live ToolRegistry catalog (name [domain, risk]: description).
+  static std::string BuildPlannerPrompt(const std::string& tools_summary = {});
   static std::string BuildPlannerRepairPrompt(const std::string& error_message);
   static std::string BuildSynthesisPrompt(const TurnPlan& plan);
   static std::string BuildSynthesisRefinementReminder(const TurnPlan& plan);

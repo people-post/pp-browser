@@ -17,6 +17,7 @@
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
+#include "feature/settings/SettingsTools.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
@@ -464,9 +465,12 @@ bool Application::Initialize(const char* window_title) {
     return LocalizationService::Instance().AvailableLocales();
   };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
-    if (auto* ctx = Rml::GetContext("main")) {
-      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
-    }
+    // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
+    AppRuntime::PostUI([appearance_pref]() {
+      if (auto* ctx = Rml::GetContext("main")) {
+        Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
+      }
+    });
   };
   settings_commands.session_store = [this]() -> SessionStore& { return store_; };
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
@@ -529,6 +533,8 @@ bool Application::Initialize(const char* window_title) {
     }
     return vault->ChangePin(current_pin, new_pin);
   };
+  // Copy ports before BindCommands moves the command bag.
+  const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
@@ -559,8 +565,9 @@ bool Application::Initialize(const char* window_title) {
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
   chat_->BindMessagingFacade(messaging_facade_.get());
-  chat_->BindRegisterMessagingTools([this](ToolRegistry& tools) {
+  chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
+    RegisterSettingsTools(tools, settings_tool_ports);
   });
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
@@ -751,6 +758,20 @@ bool Application::Initialize(const char* window_title) {
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (agent_session_) {
+    agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
+    agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.tool_permissions = permissions;
+      prefs.schema_version = ProfilePreferences::kSchemaVersion;
+      return store_.SaveProfilePrefs(prefs);
+    });
+    store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
+      if (agent_session_) {
+        agent_session_->SetToolPermissions(prefs.tool_permissions);
+      }
+    });
+  }
 
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";

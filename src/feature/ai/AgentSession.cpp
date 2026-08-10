@@ -4,8 +4,12 @@
 #include "feature/ai/PayloadTurnPlanBuilder.h"
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/StructuredTextParser.h"
-#include "feature/ai/ToolRegistry.h"
+#include "base/ai/ToolRegistry.h"
 #include "base/ai/ToolResultFormatter.h"
+#include "feature/ai/ParkedApproval.h"
+#include "feature/ai/ToolPermissionPolicy.h"
+#include "feature/ai/ToolPermissionPrompt.h"
+#include "feature/ai/ToolRegistryBuild.h"
 #include "feature/ai/TurnExecutor.h"
 #include "feature/ai/TurnPlanner.h"
 #include "base/ai/conversation/Conversation.h"
@@ -29,10 +33,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <unordered_set>
 
 namespace pbr {
-
-enum class AgentTurnMode { Conversation, Thread, ScopedAssist };
 
 namespace {
 
@@ -96,6 +99,10 @@ struct AgentSession::Impl : public Module {
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
   AtAiMode assist_mode = AtAiMode::Local;
   ToolRegistrationHook tool_registration_hook;
+  ToolPermissionsPrefs tool_permissions;
+  ToolPermissionsSaveFn tool_permissions_saver;
+  std::optional<ParkedApproval> parked_approval;
+  std::mutex park_mutex;
 };
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
@@ -146,6 +153,207 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
   PushLoading(state, false);
+}
+
+void AgentSession::CancelParkedApproval(const std::shared_ptr<Impl>& state, const ParkedApprovalState reason) {
+  std::lock_guard lock(state->park_mutex);
+  if (!state->parked_approval) {
+    return;
+  }
+  state->parked_approval->state = reason;
+  state->Log().info << "Parked approval " << state->parked_approval->id << " -> "
+                    << ApprovalResumeErrorCode(reason == ParkedApprovalState::Cancelled
+                                                   ? ApprovalResumeError::Superseded
+                                                   : ApprovalResumeError::AlreadyResolved);
+  state->parked_approval.reset();
+}
+
+ApprovalResumeError AgentSession::ValidateParkedResume(const std::optional<ParkedApproval>& park,
+                                                       const std::string& approval_id, const bool busy) {
+  if (busy) {
+    return ApprovalResumeError::TurnBusy;
+  }
+  if (!park) {
+    return ApprovalResumeError::NotFound;
+  }
+  if (park->id != approval_id) {
+    return ApprovalResumeError::Superseded;
+  }
+  if (park->state == ParkedApprovalState::Resolved || park->state == ParkedApprovalState::Cancelled) {
+    return ApprovalResumeError::AlreadyResolved;
+  }
+  if (park->state != ParkedApprovalState::Pending) {
+    return ApprovalResumeError::AlreadyResolved;
+  }
+  constexpr int64_t kApprovalTtlMs = 30LL * 60LL * 1000LL;
+  if (park->created_at_ms > 0 && util::NowUnixMs() - park->created_at_ms > kApprovalTtlMs) {
+    return ApprovalResumeError::Expired;
+  }
+  return ApprovalResumeError::Ok;
+}
+
+void AgentSession::ParkForPermission(const std::shared_ptr<Impl>& state, TurnExecutionResult execution) {
+  ParkedApproval park;
+  park.id = util::GenerateUuid();
+  park.thread_id = state->pending_thread_id;
+  park.entry_id = state->pending_entry_id;
+  park.plan = state->turn_plan;
+  park.next_tool_index = execution.next_tool_index;
+  park.scratch_so_far = state->turn_scratch;
+  park.scratch_so_far.insert(park.scratch_so_far.end(), execution.scratch_append.begin(),
+                             execution.scratch_append.end());
+  park.tools_executed = execution.tools_executed;
+  park.offered_tools = std::move(execution.offered_tools);
+  park.state = ParkedApprovalState::Pending;
+  park.created_at_ms = util::NowUnixMs();
+  park.turn_mode = state->turn_mode;
+
+  state->turn_trace.tools_executed = park.tools_executed;
+  const std::string blocks = BuildToolPermissionChoiceBlocks(park.id, park.offered_tools);
+
+  {
+    std::lock_guard lock(state->park_mutex);
+    state->parked_approval = std::move(park);
+  }
+
+  ValidateAndFinishAssistant(state, blocks, "stop", false);
+}
+
+void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& state, std::string approval_id,
+                                                std::string decision, std::string decision_label) {
+  ParkedApproval park;
+  {
+    std::lock_guard lock(state->park_mutex);
+    const ApprovalResumeError err =
+        ValidateParkedResume(state->parked_approval, approval_id, state->busy.load());
+    if (err != ApprovalResumeError::Ok) {
+      PushError(state, std::string("Permission prompt inactive: ") + ApprovalResumeErrorCode(err));
+      return;
+    }
+    park = *state->parked_approval;
+    state->parked_approval->state = ParkedApprovalState::Executing;
+  }
+
+  if (state->busy.exchange(true)) {
+    std::lock_guard lock(state->park_mutex);
+    if (state->parked_approval && state->parked_approval->id == approval_id) {
+      state->parked_approval->state = ParkedApprovalState::Pending;
+    }
+    PushError(state, std::string("Permission prompt inactive: ") +
+                         ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
+    return;
+  }
+
+  state->cancelled = false;
+  state->turn_mode = park.turn_mode;
+  state->pending_thread_id = park.thread_id;
+  state->turn_plan = park.plan;
+  state->turn_scratch = park.scratch_so_far;
+  state->people_list_blocks.reset();
+  state->iterations = 0;
+  PushLoading(state, true);
+
+  auto append_decision_user = [&](const std::string& text) {
+    if (state->turn_mode == AgentTurnMode::Conversation) {
+      TranscriptEntry& entry = state->conversation.AppendUser(text, std::nullopt);
+      state->pending_entry_id = entry.id;
+      return;
+    }
+    if (state->turn_mode == AgentTurnMode::Thread && state->thread_store) {
+      ThreadMessage user_message;
+      user_message.id = util::GenerateUuid();
+      user_message.thread_id = state->pending_thread_id;
+      user_message.sender_contact_id = kLocalSelfContactId;
+      user_message.text = text;
+      user_message.timestamp = util::NowUnixMs();
+      user_message.delivery = MessageDelivery::Local;
+      user_message.transport = MessageTransport::Local;
+      if (auto appended = state->thread_store->AppendMessage(user_message)) {
+        state->pending_entry_id = appended->id;
+      } else {
+        state->pending_entry_id = user_message.id;
+      }
+      return;
+    }
+    state->pending_entry_id = util::GenerateUuid();
+  };
+
+  if (decision == "deny") {
+    {
+      std::lock_guard lock(state->park_mutex);
+      state->parked_approval.reset();
+    }
+    append_decision_user(decision_label.empty() ? "Deny" : decision_label);
+    ValidateAndFinishAssistant(state, BuildToolPermissionDeniedBlocks(park.offered_tools), "stop", false);
+    return;
+  }
+
+  if (decision != "allow_once" && decision != "allow_always") {
+    {
+      std::lock_guard lock(state->park_mutex);
+      if (state->parked_approval && state->parked_approval->id == approval_id) {
+        state->parked_approval->state = ParkedApprovalState::Pending;
+      }
+    }
+    FinishTurn(state);
+    PushError(state, std::string("Permission prompt inactive: ") +
+                         ApprovalResumeErrorCode(ApprovalResumeError::InvalidDecision));
+    return;
+  }
+
+  if (decision == "allow_always") {
+    for (const PlannedToolCall& tool : park.offered_tools) {
+      ToolPermissionPolicy::SetToolDecision(state->tool_permissions, tool.name, "allow");
+    }
+    if (state->tool_permissions_saver) {
+      if (auto saved = state->tool_permissions_saver(state->tool_permissions); !saved) {
+        state->Log().warning << "Failed to persist tool permissions: " << saved.error().message;
+      }
+    }
+  }
+
+  std::unordered_set<std::string> session_grants;
+  for (const PlannedToolCall& tool : park.offered_tools) {
+    session_grants.insert(tool.name);
+  }
+
+  append_decision_user(decision_label.empty()
+                           ? (decision == "allow_always" ? "Always allow" : "Allow once")
+                           : decision_label);
+
+  const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
+    PushToolActivity(state, tool_name, status);
+  };
+
+  TurnExecutionOptions options;
+  options.start_index = park.next_tool_index;
+  options.permissions = state->tool_permissions;
+  options.session_grants = std::move(session_grants);
+
+  TurnExecutionResult execution = TurnExecutor::Execute(park.plan, state->tools, on_activity, options);
+  {
+    std::lock_guard lock(state->park_mutex);
+    state->parked_approval.reset();
+  }
+
+  if (!execution.ok) {
+    PushError(state, execution.error);
+    FinishTurn(state);
+    return;
+  }
+  if (execution.needs_permission) {
+    PushError(state, "Tool permission still required after approval");
+    FinishTurn(state);
+    return;
+  }
+
+  state->turn_trace.tools_executed = park.tools_executed;
+  state->turn_trace.tools_executed.insert(state->turn_trace.tools_executed.end(), execution.tools_executed.begin(),
+                                          execution.tools_executed.end());
+  state->turn_scratch.insert(state->turn_scratch.end(), execution.scratch_append.begin(),
+                             execution.scratch_append.end());
+  state->people_list_blocks = execution.people_list_blocks;
+  ContinueAfterExecution(state);
 }
 
 std::vector<std::string> AgentSession::AllowedToolNames(const std::shared_ptr<Impl>& state) {
@@ -286,6 +494,30 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
 
     for (const ToolCall& call : tool_calls) {
       AgentSession::PushToolActivity(state, call.name, "running");
+
+      ToolMeta meta;
+      for (const ToolDescriptor& tool : state->tools.Tools()) {
+        if (tool.definition.name == call.name) {
+          meta = tool.meta;
+          break;
+        }
+      }
+      const ToolPermissionEval eval =
+          ToolPermissionPolicy::Evaluate(call.name, meta, state->tool_permissions, {});
+      if (eval.verdict == ToolPermissionVerdict::Ask || eval.verdict == ToolPermissionVerdict::Deny) {
+        AgentSession::PushToolActivity(state, call.name, "error");
+        state->turn_trace.tools_executed.push_back(call.name);
+        ChatMessage tool_message;
+        tool_message.role = "tool";
+        tool_message.tool_call_id = call.id;
+        tool_message.content =
+            eval.verdict == ToolPermissionVerdict::Deny
+                ? "Tool error: blocked by tool permission settings."
+                : "Tool error: permission required — ask the user to confirm this action in a follow-up.";
+        state->turn_scratch.push_back(std::move(tool_message));
+        continue;
+      }
+
       auto result = state->tools.Execute(call.name, call.arguments);
       AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
       state->turn_trace.tools_executed.push_back(call.name);
@@ -432,10 +664,16 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
     AgentSession::PushToolActivity(state, tool_name, status);
   };
 
-  TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity);
+  TurnExecutionOptions options;
+  options.permissions = state->tool_permissions;
+  TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity, options);
   if (!execution.ok) {
     PushError(state, execution.error);
     FinishTurn(state);
+    return;
+  }
+  if (execution.needs_permission) {
+    ParkForPermission(state, std::move(execution));
     return;
   }
 
@@ -451,6 +689,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     FinishTurn(state);
     return;
   }
+
+  CancelParkedApproval(state, ParkedApprovalState::Cancelled);
 
   state->iterations = 0;
   state->turn_scratch.clear();
@@ -584,8 +824,8 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       custom_prefixes.push_back(entry.id);
     }
 
-    state->tools.BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
-                                 custom_prefixes);
+    BuildToolRegistryFromConfig(state->tools, state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
+                                custom_prefixes);
     if (state->tool_registration_hook) {
       state->tool_registration_hook(state->tools);
     }
@@ -647,8 +887,41 @@ void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
   impl_->tool_registration_hook = std::move(hook);
 }
 
+void AgentSession::SetToolPermissions(ToolPermissionsPrefs permissions) {
+  impl_->tool_permissions = std::move(permissions);
+}
+
+void AgentSession::SetToolPermissionsSaver(ToolPermissionsSaveFn saver) {
+  impl_->tool_permissions_saver = std::move(saver);
+}
+
 McpClient* AgentSession::PromotedMcp() {
   return impl_->mcp.PromotedPtr();
+}
+
+Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, const std::string& decision,
+                                             const std::string& decision_label) {
+  if (approval_id.empty()) {
+    return Error(ApprovalResumeErrorCode(ApprovalResumeError::NotFound));
+  }
+  if (decision != "allow_once" && decision != "allow_always" && decision != "deny") {
+    return Error(ApprovalResumeErrorCode(ApprovalResumeError::InvalidDecision));
+  }
+
+  {
+    std::lock_guard lock(impl_->park_mutex);
+    const ApprovalResumeError err =
+        ValidateParkedResume(impl_->parked_approval, approval_id, impl_->busy.load());
+    if (err != ApprovalResumeError::Ok) {
+      return Error(ApprovalResumeErrorCode(err));
+    }
+  }
+
+  AppRuntime::PostWorkerNormal(
+      [impl = impl_, approval_id, decision, decision_label]() {
+        ResumeToolPermissionOnWorker(impl, approval_id, decision, decision_label);
+      });
+  return {};
 }
 
 bool AgentSession::IsConfigured() const {
@@ -751,6 +1024,7 @@ void AgentSession::Cancel() {
   impl_->cancelled = true;
   impl_->busy = false;
   impl_->tool_registration_hook = nullptr;
+  CancelParkedApproval(impl_, ParkedApprovalState::Cancelled);
 }
 
 void AgentSession::WaitForConfigureIdle() {
@@ -760,6 +1034,7 @@ void AgentSession::WaitForConfigureIdle() {
 
 void AgentSession::StartNewConversation() {
   AppRuntime::PostWorkerNormal([impl = impl_]() {
+    CancelParkedApproval(impl, ParkedApprovalState::Cancelled);
     impl->conversation.StartNewConversation();
     impl->turn_scratch.clear();
     impl->pending_entry_id.clear();

@@ -1,29 +1,25 @@
 #pragma once
 
+#include "base/ai/IToolProvider.h"
+#include "base/ai/ToolDescriptor.h"
 #include "base/ai/LlmClient.h"
-#include "base/data/Config.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
-#include <functional>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
-class McpClient;
-
-struct ToolDescriptor {
-  ToolDefinition definition;
-  std::function<Roe<std::string>(const nlohmann::json& arguments)> execute;
-};
-
+// Catalog of agent tools. Feature providers register here;
+// BuildToolRegistryFromConfig (feature/ai) fills web_search + MCP.
 class ToolRegistry : public Module {
 public:
   ToolRegistry();
 
   void Register(ToolDescriptor tool);
+  void RegisterProvider(IToolProvider& provider);
   void Clear();
 
   const std::vector<ToolDescriptor>& Tools() const { return tools_; }
@@ -31,10 +27,6 @@ public:
   std::string SummaryForPrompt() const;
 
   Roe<std::string> Execute(const std::string& name, const nlohmann::json& arguments) const;
-
-  void BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
-                       const std::vector<McpClient*>& custom_mcps = {},
-                       const std::vector<std::string>& custom_prefixes = {});
 
 private:
   std::vector<ToolDescriptor> tools_;

@@ -16,7 +16,12 @@ function(pp_browser_apply_warnings target)
   endif()
 
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4)
+    # Match GCC/Clang policy under /WX:
+    # - CRT secure deprecations (getenv/localtime) — portable code uses the ISO APIs
+    # - C4100 unused parameter — same as -Wno-unused-parameter
+    # - C4458 hide class member — GCC does not enable -Wshadow by default
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(${target} PRIVATE /W4 /wd4100 /wd4458)
     if(PP_BROWSER_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()

@@ -30,3 +30,13 @@ TEST(PromptBuilderTest, FormatsArticleFeedAndDetectsTool) {
   EXPECT_NE(article_formatted.find("art-001"), std::string::npos);
   EXPECT_TRUE(pbr::PromptBuilder::IsMcpArticleFeedTool("blog_articles"));
 }
+
+TEST(PromptBuilderTest, PlannerPromptIncludesLiveToolCatalog) {
+  const std::string summary = "- search_people [people, read]: Find people\n"
+                              "- add_contact [people, write]: Add a contact\n";
+  const std::string planner = pbr::PromptBuilder::BuildPlannerPrompt(summary);
+  EXPECT_NE(planner.find("AVAILABLE TOOLS"), std::string::npos);
+  EXPECT_NE(planner.find("search_people [people, read]"), std::string::npos);
+  EXPECT_NE(planner.find("add_contact [people, write]"), std::string::npos);
+  EXPECT_NE(planner.find("only plan tools listed here"), std::string::npos);
+}

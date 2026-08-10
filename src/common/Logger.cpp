@@ -26,8 +26,20 @@ std::string getCurrentTimestamp() {
                 now.time_since_epoch()) %
             1000;
 
+  std::tm local{};
+#if defined(_WIN32)
+  if (localtime_s(&local, &time) != 0) {
+    // Avoid "??-" trigraph sequences under -Werror=trigraphs.
+    return std::string("??") + "??" + "-" + "??" + "-" + "??" + " ??:??:??." + "???";
+  }
+#else
+  if (localtime_r(&time, &local) == nullptr) {
+    return std::string("??") + "??" + "-" + "??" + "-" + "??" + " ??:??:??." + "???";
+  }
+#endif
+
   std::stringstream ss;
-  ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+  ss << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
   ss << '.' << std::setfill('0') << std::setw(3) << ms.count();
   return ss.str();
 }

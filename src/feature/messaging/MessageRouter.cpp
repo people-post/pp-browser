@@ -10,7 +10,8 @@
 namespace pbr {
 
 MessageRouter::MessageRouter(InboxController& inbox, P2pMessagingService& p2p, AgentSession& agent, IThreadStore& store)
-    : inbox_(inbox), p2p_(p2p), agent_(agent), store_(store) {
+    : p2p_(p2p), agent_(agent), store_(store) {
+  (void)inbox;
   redirectLogger("MessageRouter");
 }
 
