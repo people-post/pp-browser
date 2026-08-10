@@ -3492,7 +3492,6 @@ call-video-tile {
 }
 
 .emoji-picker-rail-tab--active {
-  background-color: rgba(128, 128, 128, 0.18);
 }
 
 .emoji-picker-rail-glyph {
@@ -3518,7 +3517,6 @@ call-video-tile {
   top: 0dp;
   z-index: 1;
   padding: 6dp 4dp;
-  background-color: var(--color-surface-elevated);
 }
 
 .emoji-picker-section-label-text {
@@ -3526,7 +3524,6 @@ call-video-tile {
   font-family: LatoLatin;
   font-size: 12dp;
   font-weight: bold;
-  color: #6b7280;
 }
 
 .emoji-picker-cells {
