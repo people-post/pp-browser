@@ -123,7 +123,7 @@ Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.
 
 Register extra actions with `ContextMenuHost::RegisterProvider`.
 
-**Chat reactions:** long-press / right-click a message row (`message-id` attribute) adds **React…**, which opens a preset emoji strip (plus **More…** for a short-lived field that relies on the OS emoji keyboard on mobile). Tapping a reaction chip calls `toggle_reaction(message_id, emoji)`. Composer Left/Right/Backspace move by grapheme cluster so OSK multi-codepoint emoji edit correctly.
+**Chat reactions:** long-press / right-click a message row (`message-id` attribute) adds **React…**, which opens a preset emoji strip (plus **More…**). **More…** and the composer ☺ button open the in-app emoji picker overlay (`emoji_picker`: category rail + sticky section labels + scroll-spy). Picking an emoji inserts into the draft or toggles a reaction; recently used glyphs persist in profile prefs. OS paste / OSK remains available for rare glyphs not in the curated catalog. Tapping a reaction chip calls `toggle_reaction(message_id, emoji)`. Composer Left/Right/Backspace move by grapheme cluster so OSK multi-codepoint emoji edit correctly.
 
 ## Textarea selection
 

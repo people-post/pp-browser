@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ContactsChromeSync.cpp
     ContactsController.cpp
     PeoplePickerController.cpp
+    EmojiPickerController.cpp
     DataModelHost.cpp
     DocumentLoader.cpp
     FlowCoordinator.cpp

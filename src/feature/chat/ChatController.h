@@ -3,6 +3,7 @@
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/ui/EmojiPickerNotifyPorts.h"
 #include "feature/messaging/MessagingFacade.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
@@ -97,6 +98,11 @@ public:
   void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
+  void BindEmojiPickerNotify(EmojiPickerNotifyPorts ports);
+  /** Append a normalized emoji glyph to the composer draft (used by emoji picker). */
+  void InsertEmojiIntoDraft(const std::string& emoji);
+  /** Toggle a reaction from the emoji picker (public for Application wiring). */
+  void ReactWithEmoji(const std::string& message_id, const std::string& emoji);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeNotify(BadgeNotifyPorts ports);
@@ -315,6 +321,7 @@ private:
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
+  EmojiPickerNotifyPorts emoji_picker_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeNotifyPorts badge_notify_;

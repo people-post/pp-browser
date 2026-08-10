@@ -2,6 +2,7 @@ pp_browser_add_base_library(pp_base_ui
   SOURCES
     ChatFormHelper.cpp
     ContextMenuHost.cpp
+    EmojiCatalog.cpp
     InputCoordinator.cpp
     RmlVariantHelpers.cpp
     Theme.cpp

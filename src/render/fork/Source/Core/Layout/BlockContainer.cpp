@@ -127,8 +127,11 @@ BlockContainer* BlockContainer::OpenBlockBox(Element* child_element, const Box& 
 
 	// Store relatively positioned elements with their containing block so that their offset can be updated after
 	// their containing block has been sized.
-	if (child_element->GetPosition() == Style::Position::Relative)
-		AddRelativeElement(child_element);
+	{
+		const Style::Position pos = child_element->GetPosition();
+		if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+			AddRelativeElement(child_element);
+	}
 
 	child_boxes.push_back(std::move(child_container_ptr));
 
@@ -148,8 +151,11 @@ LayoutBox* BlockContainer::AddBlockLevelBox(UniquePtr<LayoutBox> block_level_box
 
 	child_element->SetOffset(child_position - position, element);
 
-	if (child_element->GetPosition() == Style::Position::Relative)
-		AddRelativeElement(child_element);
+	{
+		const Style::Position pos = child_element->GetPosition();
+		if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+			AddRelativeElement(child_element);
+	}
 
 	LayoutBox* block_level_box = block_level_box_ptr.get();
 	child_boxes.push_back(std::move(block_level_box_ptr));
@@ -170,8 +176,11 @@ InlineBoxHandle BlockContainer::AddInlineElement(Element* element, const Box& ch
 
 	InlineBox* inline_box = inline_container->AddInlineElement(element, child_box);
 
-	if (element->GetPosition() == Style::Position::Relative)
-		AddRelativeElement(element);
+	{
+		const Style::Position pos = element->GetPosition();
+		if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+			AddRelativeElement(element);
+	}
 
 	return {inline_box};
 }
@@ -244,8 +253,11 @@ void BlockContainer::AddFloatElement(Element* element, Vector2f visible_overflow
 		PlaceFloat(element, box_position.y, visible_overflow_size);
 	}
 
-	if (element->GetPosition() == Style::Position::Relative)
-		AddRelativeElement(element);
+	{
+		const Style::Position pos = element->GetPosition();
+		if (pos == Style::Position::Relative || pos == Style::Position::Sticky)
+			AddRelativeElement(element);
+	}
 }
 
 Vector2f BlockContainer::GetOpenStaticPosition(Style::Display display) const

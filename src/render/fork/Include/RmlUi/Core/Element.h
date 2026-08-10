@@ -685,6 +685,8 @@ private:
 	void DirtyAbsoluteOffsetRecursive();
 	void UpdateAbsoluteOffsetAndRenderBoxData();
 	void UpdateOffset();
+	/// Fork: compute sticky clamp into relative_offset_position from unstuck absolute position.
+	Vector2f ComputeStickyOffset(Vector2f unstuck_absolute_border);
 	void SetBaseline(float baseline);
 
 	void BuildLocalStackingContext();

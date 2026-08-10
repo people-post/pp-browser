@@ -326,6 +326,24 @@ void ChatController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
 
+void ChatController::BindEmojiPickerNotify(EmojiPickerNotifyPorts ports) {
+  emoji_picker_notify_ = std::move(ports);
+}
+
+void ChatController::InsertEmojiIntoDraft(const std::string& emoji) {
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (key.empty() || chat_.compose_disabled) {
+    return;
+  }
+  chat_.draft = (std::string(chat_.draft.c_str()) + key).c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  focus_draft_after_sync_ = true;
+}
+
+void ChatController::ReactWithEmoji(const std::string& message_id, const std::string& emoji) {
+  ToggleReaction(message_id, emoji);
+}
+
 bool ChatController::AgentReady() const {
   return agent_ports_.has_session && agent_ports_.has_session();
 }
@@ -1422,6 +1440,10 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
 }
 
 void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
+  if (emoji_picker_notify_.open_react) {
+    emoji_picker_notify_.open_react(message_id);
+    return;
+  }
   if (!shell_feedback_.show_prompt) {
     return;
   }
@@ -1461,6 +1483,11 @@ void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
   if (chat_.compose_disabled) {
     return;
   }
+  if (emoji_picker_notify_.open_insert) {
+    emoji_picker_notify_.open_insert();
+    return;
+  }
+  // Fallback when picker is not wired (tests / headless): keep preset strip.
   const Rml::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : Rml::Vector2i(120, 120);
   std::vector<ContextMenuAction> actions;
   for (const char* emoji : kReactionPresets) {
@@ -1468,37 +1495,9 @@ void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
         std::string("insert_") + emoji,
         emoji,
         nullptr,
-        [this, emoji]() {
-          chat_.draft = (std::string(chat_.draft.c_str()) + emoji).c_str();
-          DataModelHost::Instance().Dirty("chat", "draft");
-          focus_draft_after_sync_ = true;
-        },
+        [this, emoji]() { InsertEmojiIntoDraft(emoji); },
     });
   }
-  actions.push_back({
-      "insert_more",
-      "More…",
-      nullptr,
-      [this]() {
-        if (!shell_feedback_.show_prompt) {
-          return;
-        }
-        shell_feedback_.show_prompt(
-            "Insert emoji", "Type or paste an emoji, then Continue.", "",
-            [this](bool confirmed, std::string value) {
-              if (!confirmed) {
-                return;
-              }
-              const std::string key = NormalizeEmojiKey(value);
-              if (key.empty()) {
-                return;
-              }
-              chat_.draft = (std::string(chat_.draft.c_str()) + key).c_str();
-              DataModelHost::Instance().Dirty("chat", "draft");
-              focus_draft_after_sync_ = true;
-            });
-      },
-  });
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 

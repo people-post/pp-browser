@@ -59,6 +59,8 @@
 #include "feature/ui/UnlockGateCompletePorts.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/ui/EmojiPickerController.h"
+#include "feature/ui/EmojiPickerNotifyPorts.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellFeedbackPorts.h"
@@ -205,6 +207,8 @@ Application::Application() {
   people_picker_shell_bridge_ = std::make_unique<PeoplePickerShellBridge>();
   people_picker_ = std::make_unique<PeoplePickerController>();
   PeoplePickerController::InstallInstance(*people_picker_);
+  emoji_picker_ = std::make_unique<EmojiPickerController>();
+  EmojiPickerController::InstallInstance(*emoji_picker_);
   chat_ = std::make_unique<ChatController>();
   ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
@@ -213,6 +217,7 @@ Application::Application() {
 }
 
 Application::~Application() {
+  EmojiPickerController::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();
@@ -589,6 +594,9 @@ bool Application::Initialize(const char* window_title) {
         people_picker_shell_bridge_->OnSurface(snap);
       },
   });
+  emoji_picker_->BindShellNavigation(shell_navigation);
+  emoji_picker_->BindShellFeedback(shared_feedback);
+  emoji_picker_->BindSessionStore(store_);
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
@@ -751,7 +759,8 @@ bool Application::Initialize(const char* window_title) {
     flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
-    people_picker_->BindFlowCoordinator(std::move(flow_ports));
+    people_picker_->BindFlowCoordinator(flow_ports);
+    emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
@@ -788,6 +797,11 @@ bool Application::Initialize(const char* window_title) {
     return false;
   }
 
+  if (!emoji_picker_->RegisterModel(context)) {
+    log().error << "EmojiPickerController RegisterModel failed";
+    return false;
+  }
+
   if (!shell_->RegisterWindowModel(context)) {
     log().error << "ShellHost RegisterWindowModel failed";
     return false;
@@ -802,6 +816,17 @@ bool Application::Initialize(const char* window_title) {
   chat_people_picker_notify.open_free = [this]() { people_picker_->OpenFree(); };
   chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
+
+  EmojiPickerNotifyPorts emoji_notify;
+  emoji_notify.open_insert = [this]() {
+    emoji_picker_->OpenInsert([this](std::string emoji) { chat_->InsertEmojiIntoDraft(emoji); });
+  };
+  emoji_notify.open_react = [this](const std::string& message_id) {
+    emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
+      chat_->ReactWithEmoji(message_id, emoji);
+    });
+  };
+  chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
   call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video) {
@@ -838,6 +863,7 @@ bool Application::Initialize(const char* window_title) {
     chat_->BindAgentPorts({});
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
+    chat_->BindEmojiPickerNotify({});
     chat_->BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
@@ -851,6 +877,11 @@ bool Application::Initialize(const char* window_title) {
     }
     people_picker_->BindContactsPorts({});
     people_picker_->BindPickerPorts({});
+    if (emoji_picker_) {
+      emoji_picker_->BindShellNavigation({});
+      emoji_picker_->BindShellFeedback({});
+      emoji_picker_->BindFlowCoordinator({});
+    }
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
@@ -885,6 +916,9 @@ bool Application::Initialize(const char* window_title) {
       people_picker_->BindCallActions({});
       people_picker_->BindUnlockEnsure({});
       people_picker_->BindFlowCoordinator({});
+    }
+    if (emoji_picker_) {
+      emoji_picker_->BindFlowCoordinator({});
     }
     if (settings_) {
       settings_->BindUnlockEnsure({});
@@ -1071,6 +1105,7 @@ void Application::Shutdown() {
   chat_->BindAgentPorts({});
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
+  chat_->BindEmojiPickerNotify({});
   chat_->BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});
@@ -1081,6 +1116,11 @@ void Application::Shutdown() {
   people_picker_->BindSurfaceNotify({});
   if (people_picker_shell_bridge_) {
     people_picker_shell_bridge_->Clear();
+  }
+  if (emoji_picker_) {
+    emoji_picker_->BindShellNavigation({});
+    emoji_picker_->BindShellFeedback({});
+    emoji_picker_->BindFlowCoordinator({});
   }
   people_picker_->BindContactsPorts({});
   people_picker_->BindPickerPorts({});

@@ -36,7 +36,7 @@ namespace Style {
 		{}
 
 		Display display : 4;
-		Position position : 2;
+		Position position : 3; // widened for Sticky (pp-browser fork)
 
 		Float float_ : 2;
 		Clear clear : 2;
