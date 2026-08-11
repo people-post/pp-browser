@@ -79,8 +79,10 @@ Choose the lightest primitive that fits the user task:
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
 | **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Compact Me: profile and preferences without switching `nav_tab` | Me settings list/detail inside sheet |
-| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`) |
+| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji picker |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
+
+`PaneSpec.return_focus_id` (optional): when set, `PushLayer` restores that element on close instead of the live focus target (e.g. emoji Insert → `#draft-input`).
 
 **Do not** stack `ShellFeedback::ShowPrompt` on top of an active `PushLayer` flow. Keep wizard steps in the same overlay (or push a dedicated step view on the overlay stack).
 

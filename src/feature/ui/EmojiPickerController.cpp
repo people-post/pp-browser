@@ -91,33 +91,48 @@ bool EmojiPickerController::RegisterModel(Rml::Context* context) {
   });
 }
 
-void EmojiPickerController::OpenInsert(std::function<void(std::string emoji)> on_pick) {
-  Open(Mode::Insert, {}, std::move(on_pick));
-}
-
-void EmojiPickerController::OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick) {
-  Open(Mode::React, std::move(message_id), std::move(on_pick));
-}
-
-void EmojiPickerController::Open(Mode mode, std::string message_id,
-                                 std::function<void(std::string emoji)> on_pick) {
+void EmojiPickerController::OpenInsert(
+    std::function<void(std::string emoji, bool restore_composer_focus)> on_pick) {
   if (layer_id_ >= 0) {
     Close();
   }
-  mode_ = mode;
+  mode_ = Mode::Insert;
+  react_message_id_.clear();
+  on_insert_pick_ = std::move(on_pick);
+  on_react_pick_ = nullptr;
+  OpenPresentation();
+}
+
+void EmojiPickerController::OpenReact(std::string message_id,
+                                      std::function<void(std::string emoji)> on_pick) {
+  if (layer_id_ >= 0) {
+    Close();
+  }
+  mode_ = Mode::React;
   react_message_id_ = std::move(message_id);
-  on_pick_ = std::move(on_pick);
+  on_react_pick_ = std::move(on_pick);
+  on_insert_pick_ = nullptr;
+  OpenPresentation();
+}
+
+void EmojiPickerController::OpenPresentation() {
   title_ = (mode_ == Mode::Insert) ? "Insert emoji" : "React";
   active_category_.clear();
   RebuildModel();
   DirtyAll();
 
+  keyboard_panel_mode_ = false;
   if (shell_navigation_.begin_emoji_keyboard_panel) {
-    shell_navigation_.begin_emoji_keyboard_panel();
+    keyboard_panel_mode_ = shell_navigation_.begin_emoji_keyboard_panel();
   }
 
   PaneSpec spec;
   spec.key = "emoji_picker";
+  // Insert returns to the composer after the overlay closes (popover). Keyboard-panel
+  // dismiss also restores the composer so typing can resume with the OSK.
+  if (mode_ == Mode::Insert) {
+    spec.return_focus_id = "draft-input";
+  }
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
 }
@@ -157,7 +172,9 @@ void EmojiPickerController::Close() {
 }
 
 void EmojiPickerController::ResetState() {
-  on_pick_ = nullptr;
+  on_insert_pick_ = nullptr;
+  on_react_pick_ = nullptr;
+  keyboard_panel_mode_ = false;
   react_message_id_.clear();
   rail_tabs_.clear();
   sections_.clear();
@@ -257,7 +274,23 @@ void EmojiPickerController::OnEmojiPicked(const std::string& glyph) {
     return;
   }
   PersistRecent(key);
-  auto pick = std::move(on_pick_);
+  if (mode_ == Mode::Insert) {
+    // Keyboard-panel Insert stays open for multi-tap (OSK stays dismissed).
+    // Expanded popover Insert closes and restores composer focus via return_focus_id.
+    if (keyboard_panel_mode_) {
+      if (on_insert_pick_) {
+        on_insert_pick_(key, /*restore_composer_focus=*/false);
+      }
+      return;
+    }
+    auto pick = std::move(on_insert_pick_);
+    Close();
+    if (pick) {
+      pick(key, /*restore_composer_focus=*/true);
+    }
+    return;
+  }
+  auto pick = std::move(on_react_pick_);
   Close();
   if (pick) {
     pick(key);

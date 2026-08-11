@@ -673,7 +673,9 @@ void Context::UpdateTouchGestures()
 			continue;
 
 		state.long_press_fired = true;
-		Element* target = state.touch_target ? state.touch_target : hover;
+		Element* target = state.touch_target.get();
+		if (!target)
+			target = hover;
 		if (!target)
 			continue;
 
@@ -1223,8 +1225,9 @@ bool Context::ProcessTouchStart(const Touch& touch, int key_modifier_state)
 	state->PushSample(touch.position, state->scrolling_last_time);
 
 	Element* touch_element = GetElementAtPoint(touch.position);
-	state->touch_target = touch_element;
-	state->scroll_container = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
+	state->touch_target = touch_element ? touch_element->GetObserverPtr() : ObserverPtr<Element>{};
+	Element* scrollable = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
+	state->scroll_container = scrollable ? scrollable->GetObserverPtr() : ObserverPtr<Element>{};
 
 	// Interrupt any coast / rubber-band settle when a new touch begins.
 	if (scroll_controller->GetMode() != ScrollController::Mode::None || scroll_controller->HasVisualOverscroll())
@@ -1262,7 +1265,7 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 			Math::Absolute(delta_from_start.y) >= Math::Absolute(delta_from_start.x)))
 		state->touch_scrolling = true;
 
-	if (state->scroll_container)
+	if (Element* scroll_container = state->scroll_container.get())
 	{
 		const Vector2f delta = touch.position - state->last_position;
 
@@ -1277,7 +1280,7 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 		else if (delta.x != 0 || delta.y != 0)
 		{
 			// Finger-tracking with rubber-band overscroll past edges.
-			scroll_controller->InstantScrollOnTarget(state->scroll_container, -delta, true);
+			scroll_controller->InstantScrollOnTarget(scroll_container, -delta, true);
 			state->PushSample(touch.position, state->scrolling_last_time);
 
 			const float touch_max_distance = TOUCH_CLICK_MAX_DISTANCE * density_independent_pixel_ratio;
@@ -1302,7 +1305,7 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 	if (!state->selection_armed && !state->long_press_fired && !state->touch_scrolling)
 		selection_controller->OnTouchTap(Vector2i(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y)), hover);
 
-	if (state->scroll_container)
+	if (Element* scroll_container = state->scroll_container.get())
 	{
 		const double current_time = GetSystemInterface()->GetElapsedTime();
 		const double time_since_last_move = current_time - state->scrolling_last_time;
@@ -1326,18 +1329,18 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 				velocity = (oldest_in_window->position - newest.position) / dt;
 		}
 
-		const float scroll_top = state->scroll_container->GetScrollTop();
-		const float scroll_left = state->scroll_container->GetScrollLeft();
-		const float max_top = Math::Max(0.f, state->scroll_container->GetScrollHeight() - state->scroll_container->GetClientHeight());
-		const float max_left = Math::Max(0.f, state->scroll_container->GetScrollWidth() - state->scroll_container->GetClientWidth());
+		const float scroll_top = scroll_container->GetScrollTop();
+		const float scroll_left = scroll_container->GetScrollLeft();
+		const float max_top = Math::Max(0.f, scroll_container->GetScrollHeight() - scroll_container->GetClientHeight());
+		const float max_left = Math::Max(0.f, scroll_container->GetScrollWidth() - scroll_container->GetClientWidth());
 		constexpr float overscroll_eps = 0.5f;
 		const bool overscrolled = scroll_top < -overscroll_eps || scroll_left < -overscroll_eps || scroll_top > max_top + overscroll_eps ||
 			scroll_left > max_left + overscroll_eps;
 
 		if (overscrolled)
-			scroll_controller->ActivateOverscrollSettle(state->scroll_container, velocity);
+			scroll_controller->ActivateOverscrollSettle(scroll_container, velocity);
 		else if (velocity.x != 0.f || velocity.y != 0.f)
-			scroll_controller->ActivateInertia(state->scroll_container, velocity);
+			scroll_controller->ActivateInertia(scroll_container, velocity);
 	}
 
 	touch_states.erase(touch.identifier);
@@ -1524,10 +1527,12 @@ void Context::OnElementDetach(Element* element)
 	if (scroll_controller->GetTarget() == element)
 		scroll_controller->Reset();
 
-	// Clear TouchState if we're touching element
+	// Drop touch gestures whose target or scroll container was destroyed (e.g. SyncLayout
+	// remount while a finger is still down — otherwise UpdateTouchGestures UAF).
 	for (auto touch_it = touch_states.begin(); touch_it != touch_states.end();)
 	{
-		if (touch_it->second.scroll_container == element)
+		TouchState& ts = touch_it->second;
+		if (ts.scroll_container == element || ts.touch_target == element)
 			touch_it = touch_states.erase(touch_it);
 		else
 			++touch_it;

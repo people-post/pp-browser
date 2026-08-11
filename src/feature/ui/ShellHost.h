@@ -172,7 +172,8 @@ public:
    * Mobile/compact: open emoji UI as a keyboard-height bottom panel. Dismisses the OSK
    * and keeps shell bottom inset at the latched IME height (or a default).
    */
-  void BeginEmojiKeyboardPanel();
+  /** @return true when the emoji keyboard panel presentation is active. */
+  bool BeginEmojiKeyboardPanel();
   void EndEmojiKeyboardPanel();
   bool EmojiKeyboardPanelOpen() const { return emoji_keyboard_panel_open_; }
 

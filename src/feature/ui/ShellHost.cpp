@@ -556,7 +556,11 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.key = spec.key;
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
   state_.overlay_stack.push_back(std::move(entry));
-  SaveFocus();
+  if (!spec.return_focus_id.empty()) {
+    saved_focus_id_ = spec.return_focus_id.c_str();
+  } else {
+    SaveFocus();
+  }
   RequestSyncLayout();
   return state_.overlay_stack.back().id;
 }
@@ -1108,9 +1112,9 @@ bool ShellHost::UsesEmojiKeyboardPanelPresentation() const {
   return Platform::IsMobile() || state_.layout_mode == LayoutMode::Compact;
 }
 
-void ShellHost::BeginEmojiKeyboardPanel() {
+bool ShellHost::BeginEmojiKeyboardPanel() {
   if (!UsesEmojiKeyboardPanelPresentation()) {
-    return;
+    return false;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->DeactivateKeyboard();
@@ -1121,6 +1125,7 @@ void ShellHost::BeginEmojiKeyboardPanel() {
   state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, emoji_panel_height_dp_);
   ApplySafeAreaLayout();
   Backend::RequestForceFrame();
+  return true;
 }
 
 void ShellHost::EndEmojiKeyboardPanel() {

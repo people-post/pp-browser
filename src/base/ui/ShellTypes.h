@@ -93,6 +93,11 @@ struct PaneSpec {
   PaneRole role = PaneRole::Primary;
   Rml::String toolbar_label;
   bool provides_composer = false;
+  /**
+   * When non-empty, PushLayer stores this element id for RestoreFocus on close
+   * instead of the live focus element (often the button that opened the overlay).
+   */
+  std::string return_focus_id;
 };
 
 struct PaneState {

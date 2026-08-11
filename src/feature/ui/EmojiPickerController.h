@@ -57,12 +57,12 @@ public:
 
   bool RegisterModel(Rml::Context* context);
 
-  void OpenInsert(std::function<void(std::string emoji)> on_pick);
+  void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
 
 private:
-  void Open(Mode mode, std::string message_id, std::function<void(std::string emoji)> on_pick);
+  void OpenPresentation();
   void RegisterFlow();
   void OnFlowDismissed();
   void ResetState();
@@ -84,8 +84,11 @@ private:
   Rml::Context* context_ = nullptr;
   int layer_id_ = -1;
   Mode mode_ = Mode::Insert;
+  /** True when Open used the mobile/compact keyboard-panel presentation. */
+  bool keyboard_panel_mode_ = false;
   std::string react_message_id_;
-  std::function<void(std::string)> on_pick_;
+  std::function<void(std::string, bool)> on_insert_pick_;
+  std::function<void(std::string)> on_react_pick_;
 
   Rml::String title_;
   Rml::String active_category_;

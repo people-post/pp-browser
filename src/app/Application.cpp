@@ -819,7 +819,9 @@ bool Application::Initialize(const char* window_title) {
 
   EmojiPickerNotifyPorts emoji_notify;
   emoji_notify.open_insert = [this]() {
-    emoji_picker_->OpenInsert([this](std::string emoji) { chat_->InsertEmojiIntoDraft(emoji); });
+    emoji_picker_->OpenInsert([this](std::string emoji, bool restore_focus) {
+      chat_->InsertEmojiIntoDraft(emoji, restore_focus);
+    });
   };
   emoji_notify.open_react = [this](const std::string& message_id) {
     emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
