@@ -15,27 +15,29 @@ Cross-project: [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099-
 
 ---
 
-## M002 — Account ID format: `account:` + base64url(pubkey)
+## M002 — Account ID format: PQ hash-binding of ML-DSA-65 pubkey
 
 **Date:** 2026-08-11  
+**Updated:** 2026-08-11 — aggressive PQ: Account ID no longer Ed25519-derived.  
 **Decision:**
 
 ```text
-account:<base64url-unpadded(32-byte Ed25519 account public key)>
+account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 account public key))>
 ```
 
-UTF-8 exact, case-sensitive, no trim. Ed25519 material is the 32-byte public key (no separate compressed form).  
-**Rationale:** Shortest practical option-A encoding; id verifies as the account key; URL-safe.  
-**Alternatives:** Hex (longer); std base64 with padding (awkward in ids); hash-of-pubkey / option B (shorter but needs key record); `did:key` (heavier); random UUID (not crypto-bound).
+Directory / identity publish the full **1952-byte ML-DSA-65** public key; Account ID **must** equal the hash binding. UTF-8 exact, case-sensitive, no trim.  
+**Rationale:** PQ-rooted person id without putting ~2.6k chars on every wire field; forgery still requires ML-DSA secret key.  
+**Alternatives:** Full ML-DSA pubkey in id (accepted if desired later); Ed25519-derived id (rejected for account root); random UUID (not crypto-bound).
 
 ---
 
-## M003 — Account key signs envelopes (S1); device key is endpoint-only
+## M003 — Account ML-DSA-65 signs envelopes; device Ed25519 is endpoint-only
 
 **Date:** 2026-08-11  
-**Decision:** **Account** Ed25519 key signs all relay envelopes. **Device** keypair derives Peer ID and secures libp2p only — not envelope `signature` in this freeze. Installs distinguished by `sender_instance_id` when multi-writer ships (D074).  
-**Rationale:** One verify path for friends (“one person”); aligns with Account ID on wire.  
-**Alternatives:** Device signs + account attests (S2); tier-split private=device sign (S3); dual signatures (S4).
+**Updated:** 2026-08-11 — aggressive PQ: account signing is **ML-DSA-65 only** (not Ed25519 hybrid).  
+**Decision:** **Account** key = **ML-DSA-65** (vendored `mldsa-native`) signs all relay envelopes. **Device** Ed25519 keypair derives Peer ID / libp2p only — not envelope `signature`. Installs distinguished by `sender_instance_id` when multi-writer ships (D074).  
+**Rationale:** Maximize PQ for person-level auth; classical remains only where mesh forces it.  
+**Alternatives:** Ed25519+ML-DSA hybrid (S1 classic); device signs + account attests (S2).
 
 ---
 
@@ -72,3 +74,12 @@ UTF-8 exact, case-sensitive, no trim. Ed25519 material is the 32-byte public key
 **Decision:** Target wire and `ChatTargetKey` use **Account ID** as communicating identity (destructive OK pre-release). `relay:` remains route/binding. Implementation timing in [PHASES.md](PHASES.md) m1–m2.  
 **Rationale:** Avoid shipping `relay:`-as-person then migrating again.  
 **Alternatives:** Soft cut (Account ID for link/DEK only; wire stays `relay:`) — faster but weak multi-relay threads.
+
+---
+
+## M008 — PQ libraries and KEM: mlkem-native + mldsa-native; ML-KEM-768 only
+
+**Date:** 2026-08-11  
+**Decision:** Vendor **mlkem-native v2.0.0** (ML-KEM-768, C backend) and **mldsa-native v2.0.0** (ML-DSA-65, C backend) under `third_party/`. Public auto-key uses **ML-KEM-768 only** (no X25519 hybrid). App wrappers: `HybridKem` (ML-KEM-768; name retained) and `MlDsa`. Symmetric stack remains libsodium; libp2p remains BoringSSL/Ed25519 for device Peer ID.  
+**Rationale:** High-assurance PQCP implementations; matches aggressive PQ account model; Brief updates KEM blob size to 1184 in parallel.  
+**Alternatives:** liboqs umbrella; keep X25519+Kyber-draft BoringSSL experimental path.

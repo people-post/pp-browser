@@ -207,14 +207,15 @@ d0 (complete)
 
 ---
 
-## Phase c4 — Post-quantum migration (deferred)
+## Phase c4 — Post-quantum migration
 
-**Goal:** Hybrid classical + PQ for automated keying and/or signatures where EC is used.
+**Goal:** PQ account signing + ML-KEM auto-key (aggressive PQ — E026 / multi-device M008).
 
-- [ ] Evaluate liboqs vs OpenSSL OQS provider vs BoringSSL PQ APIs
-- [ ] Hybrid KEM (X25519 + ML-KEM-768) for optional automated PSK setup (E013)
-- [ ] Hybrid or PQ signatures for relay envelope (ML-DSA)
-- [ ] Migration: dual-verify during transition window
+- [x] Choose libs: **mlkem-native** + **mldsa-native** (PQCP v2.0.0), not liboqs/OpenSSL 3.5
+- [x] Vendor lean trees + CMake; `HybridKem` → ML-KEM-768 only; `MlDsa` wrapper + Account ID helper
+- [ ] Wire ML-DSA-65 into envelope signer / register (Brief + `EnvelopeSigner`) — account hard cut
+- [ ] Directory publishes ML-DSA account pubkey; retire Ed25519 as person signer
+- [ ] Migration: wipe/regenerate legacy Kyber-draft KEM blobs (client path started in IdentityStore)
 
 **Exit criteria:** TBD when threat model and library support firm up.
 
