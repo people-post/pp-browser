@@ -168,6 +168,14 @@ public:
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
   void RefreshSafeAreaInsets(Rml::Context* context);
 
+  /**
+   * Mobile/compact: open emoji UI as a keyboard-height bottom panel. Dismisses the OSK
+   * and keeps shell bottom inset at the latched IME height (or a default).
+   */
+  void BeginEmojiKeyboardPanel();
+  void EndEmojiKeyboardPanel();
+  bool EmojiKeyboardPanelOpen() const { return emoji_keyboard_panel_open_; }
+
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
@@ -224,6 +232,7 @@ private:
   std::string SerializeCompactBase() const;
   std::string SerializeAccountSheet() const;
   std::string SerializeOverlays() const;
+  std::string SerializeEmojiKeyboardPanel() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
   std::string SerializeCallRing() const;
@@ -231,6 +240,7 @@ private:
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
+  void MountEmojiKeyboardPanel();
   void MountNavRail();
   void MountNavContent();
   void MountComposer();
@@ -268,6 +278,7 @@ private:
     int bottom_dp = 0;
   };
   SafeAreaFromSdl ReadSafeAreaFromSdl() const;
+  bool UsesEmojiKeyboardPanelPresentation() const;
 
   struct PendingDismiss {
     DismissTarget target = DismissTarget::None;
@@ -279,6 +290,11 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
+  int last_ime_bottom_dp_ = 0;
+  /** Synthetic bottom inset while the emoji keyboard panel is open. */
+  int emoji_panel_height_dp_ = 0;
+  bool emoji_keyboard_panel_open_ = false;
   LayoutMode last_synced_mode_ = LayoutMode::Expanded;
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;

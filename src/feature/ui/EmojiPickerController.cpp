@@ -112,6 +112,10 @@ void EmojiPickerController::Open(Mode mode, std::string message_id,
   RebuildModel();
   DirtyAll();
 
+  if (shell_navigation_.begin_emoji_keyboard_panel) {
+    shell_navigation_.begin_emoji_keyboard_panel();
+  }
+
   PaneSpec spec;
   spec.key = "emoji_picker";
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
@@ -129,17 +133,23 @@ void EmojiPickerController::RegisterFlow() {
 
 void EmojiPickerController::OnFlowDismissed() {
   layer_id_ = -1;
+  if (shell_navigation_.end_emoji_keyboard_panel) {
+    shell_navigation_.end_emoji_keyboard_panel();
+  }
   ResetState();
   DirtyAll();
 }
 
 void EmojiPickerController::Close() {
+  const int closing_id = layer_id_;
+  layer_id_ = -1;
+  if (shell_navigation_.end_emoji_keyboard_panel) {
+    shell_navigation_.end_emoji_keyboard_panel();
+  }
+  ResetState();
   if (flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();
   }
-  const int closing_id = layer_id_;
-  layer_id_ = -1;
-  ResetState();
   if (closing_id >= 0 && shell_navigation_.close_layer) {
     shell_navigation_.close_layer(closing_id);
   }

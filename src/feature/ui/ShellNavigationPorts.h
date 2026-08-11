@@ -79,6 +79,12 @@ struct ShellNavigationPorts {
   std::function<void()> close_auxiliary;
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
+  /**
+   * Mobile / compact: treat the in-app emoji picker as a keyboard-replacement bottom
+   * panel (latch IME height into safe-area bottom). No-op on expanded desktop.
+   */
+  std::function<void()> begin_emoji_keyboard_panel;
+  std::function<void()> end_emoji_keyboard_panel;
 };
 
 class ShellHost;

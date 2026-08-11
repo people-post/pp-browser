@@ -54,6 +54,9 @@
     <div class="shell-activity-strip" data-if="activity_visible && !statusbar_visible"></div>
   </div>
   <div id="shell-root" class="shell-root"></div>
+  <!-- Keyboard-replacement emoji panel: sibling of shell-root so content can be
+       lifted (shell-root bottom) while the panel paints in the freed bottom band. -->
+  <div id="shell-emoji-keyboard-mount" class="shell-emoji-keyboard-mount"></div>
   <div id="shell-statusbar" class="shell-statusbar" data-if="statusbar_visible">
     <div id="shell-statusbar-cluster" class="shell-statusbar-cluster"
          data-attr-title="statusbar_cluster_title"

@@ -103,6 +103,8 @@ struct PaneState {
 struct OverlayEntry {
   int id = 0;
   OverlayKind kind = OverlayKind::Generic;
+  /** ViewCatalog key (e.g. emoji_picker); used for presentation variants. */
+  std::string key;
   std::string rml_path;
   std::function<void(bool)> on_result;
 };

@@ -41,6 +41,8 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.close_auxiliary = [&shell]() { shell.CloseAuxiliary(); };
   navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
   navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
+  navigation.begin_emoji_keyboard_panel = [&shell]() { shell.BeginEmojiKeyboardPanel(); };
+  navigation.end_emoji_keyboard_panel = [&shell]() { shell.EndEmojiKeyboardPanel(); };
   return navigation;
 }
 

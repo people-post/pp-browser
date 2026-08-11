@@ -881,6 +881,17 @@ select selectbox option {
   bottom: 0;
 }
 
+/* Sibling of #shell-root — holds the mobile/compact emoji keyboard panel. */
+.shell-emoji-keyboard-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
 .shell-banner {
   display: flex;
   flex-direction: row;
@@ -3429,7 +3440,59 @@ call-video-tile {
   font-weight: bold;
 }
 
-/* Emoji picker overlay */
+/* Emoji picker as keyboard-replacement bottom panel (mobile / compact). */
+.shell-layer-emoji-keyboard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.shell-layer-emoji-keyboard .shell-emoji-keyboard-scrim,
+.shell-layer-emoji-keyboard .shell-emoji-keyboard-panel {
+  pointer-events: auto;
+}
+
+.shell-emoji-keyboard-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  focus: none;
+}
+
+.shell-emoji-keyboard-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 280dp;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12dp 12dp 0 0;
+  padding: 8dp 8dp 4dp 8dp;
+  box-sizing: border-box;
+  overflow: hidden;
+  z-index: 51;
+}
+
+.shell-emoji-keyboard-body {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-emoji-keyboard-body .emoji-picker {
+  height: 100%;
+}
+
+/* Emoji picker overlay (expanded desktop modal) */
 .emoji-picker {
   display: flex;
   flex-direction: column;
