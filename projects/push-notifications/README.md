@@ -3,7 +3,7 @@
 **Status:** Wave 1 implemented (p0–p7)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/contracts/SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md)  
-**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D032 poll), [e2e-message-crypto](../e2e-message-crypto/) (opaque wake; ciphertexts on relay), [p2p-av-calls](../p2p-av-calls/) (`call_wake` planned for a1)
+**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D032 poll), [e2e-message-crypto](../e2e-message-crypto/) (opaque wake; ciphertexts on relay), [p2p-av-calls](../p2p-av-calls/) (`call_wake` planned for a1), [multi-device-account](../multi-device-account/) (per-device push under account / `relay:` binding)
 
 Relay providers that speak this HTTP profile implement device register/unregister and optional FCM wakes; pp-browser does not depend on a specific server codebase.
 

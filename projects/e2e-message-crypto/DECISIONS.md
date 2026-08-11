@@ -391,3 +391,23 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 
 **Rationale:** Splitting anchors lets blockchain verify **identity ↔ signing key** without making the relay a PSK broker. Hybrid KEM keeps confidentiality even against a curious relay. CAIP-10 prepares search/attestation without forcing a wire identity migration.  
 **Alternatives rejected:** Relay-sealed PSK (relay learns secret); relay as combined identity+PSK anchor; manual OOB for public tier (E021); blockchain address on wire in v1 (premature).
+
+---
+
+## E025 — Account envelope signing; private PSK not auto-synced
+
+**Date:** 2026-08-11  
+**Amends:** E016/E024 verify target (account key once Account ID is on wire); E011 private PSK distribution remains OOB — **not** fan-out on link-device.  
+**Canonical:** [multi-device-account](../multi-device-account/) M003, M005 ([DESIGN](../multi-device-account/DESIGN.md)).  
+**Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+
+**Decision:**
+
+1. **S1 — Account key signs** all relay envelopes. Device keypair is for Peer ID / libp2p only (not envelope `signature` in this freeze).
+2. Friends verify using the **account** signing public key bound to Account ID (directory/cache — same resolver seam as E016, key kind shifts with D099/m2).
+3. **Private (`e2e`) PSKs are not auto-synced** to linked devices. New device needs OOB/import or explicit opt-in; default link-device does **not** copy private `chat_targets` PSK material.
+4. **Public (`e2e_public`) / group** PSKs **may** sync with account/DEK when those tiers + link-device ship.
+5. Message **body** encryption remains PSK AEAD on all tiers — device-bound private means **which installs hold the PSK**, not a different cipher.
+
+**Rationale:** One person-level verify path; private tier keeps higher assurance under multi-device account keys.  
+**Alternatives:** Device-signed envelopes (S2/S3); sync all PSKs with DEK.
