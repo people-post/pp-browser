@@ -79,7 +79,7 @@ These are recorded ADRs; agents should not re-litigate. Change only with explici
 | Topic | Decision | ADR |
 |-------|----------|-----|
 | Private PSK UX | Generate/import + **mandatory fingerprint confirm** before send | E011 |
-| Multi-device | **Unsupported v1** — seq conflicts → integrity pause | D015 |
+| Multi-device | **Unsupported in code today** (D015); **account model design frozen** — [multi-device-account](multi-device-account/) (D099 / E025 / A010) | D015 → D099 |
 | PSK at rest | **Encrypted under profile DEK** | E008 / [at-rest A005](at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk) |
 | Signing key trust | Relay directory + cache; fingerprint **display-only** v1 | E016 |
 | Strict vs relaxed ingest | **`e2e` strict**; **`e2e_public`/group relaxed when shipped | D013, D046 |
@@ -99,7 +99,7 @@ Documented as `[future]` or `[post-v1]` in DESIGN/PHASES:
 - Per-message transport badges (post-v6d)
 - Shared `@ai+` / `@ai++` (post-v6b)
 - Rich ChatPayload beyond text/system (post-v4) — **in scope via bucket B**
-- `sender_instance_id` / multi-device protocol (D074)
+- `sender_instance_id` / multi-device protocol (D074) — account/device identity design in [multi-device-account](multi-device-account/); implementation post-m0
 - Cross-thread FTS search
 - Blockchain attestation for signing keys (D091 — post-v1)
 - Display-order escape hatches (D077 — accepted complexity budget for v1)
@@ -112,5 +112,6 @@ Documented as `[future]` or `[post-v1]` in DESIGN/PHASES:
 
 | Date | Change |
 |------|--------|
+| 2026-08-11 | Multi-device account identity design freeze — [multi-device-account](multi-device-account/); D015 still describes current code |
 | 2026-07-06 | Resolved items 1–4: scope **B**, relay **ready (A)**, peer-direct **required (B)**, O008 **N ciphertexts**; removed platform-limits from checklist |
 | 2026-07-02 | Created from pre-rollout decision review (human checklist) |

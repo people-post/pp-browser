@@ -3,7 +3,7 @@
 **Status:** Waves 1–7 landed in tree (2026-07-06) — Bucket B feature-complete; release hygiene pending  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md), [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md), [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md), [DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md)  
-**Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
+**Related projects:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up); [multi-device-account](../multi-device-account/) (Account ID amends D096 — D099)  
 **Recent:** D090 (no `public_relay` / plaintext direct wire) — see [DECISIONS.md](DECISIONS.md)
 
 ## One-line goal
