@@ -62,7 +62,8 @@ public:
   void Close();
 
 private:
-  void OpenPresentation();
+  void OpenOverlayPresentation();
+  void OpenBottomChromePresentation();
   void RegisterFlow();
   void OnFlowDismissed();
   void ResetState();
@@ -73,6 +74,7 @@ private:
   void UpdateActiveFromScroll();
   void ScrollToCategory(const std::string& category_id);
   void EnsureWindowAround(int center_index);
+  bool IsBottomChromeEmojiOpen() const;
   Rml::Element* FindScrollBody() const;
   Rml::Element* FindSectionElement(const std::string& category_id) const;
 
@@ -84,8 +86,8 @@ private:
   Rml::Context* context_ = nullptr;
   int layer_id_ = -1;
   Mode mode_ = Mode::Insert;
-  /** True when Open used the mobile/compact keyboard-panel presentation. */
-  bool keyboard_panel_mode_ = false;
+  /** True when Insert used mobile/compact bottom-chrome (IME slot) presentation. */
+  bool bottom_chrome_mode_ = false;
   std::string react_message_id_;
   std::function<void(std::string, bool)> on_insert_pick_;
   std::function<void(std::string)> on_react_pick_;

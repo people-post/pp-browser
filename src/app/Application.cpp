@@ -947,6 +947,11 @@ bool Application::Initialize(const char* window_title) {
   people_picker_->BindChatPorts(std::move(chat_ports));
 
   WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  shell_->SetOnBottomChromeDismissed([this]() {
+    if (emoji_picker_) {
+      emoji_picker_->Close();
+    }
+  });
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();

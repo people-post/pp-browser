@@ -100,6 +100,12 @@ struct PaneSpec {
   std::string return_focus_id;
 };
 
+/** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
+struct BottomChromeSpec {
+  std::string key;
+  std::string rml_path;
+};
+
 struct PaneState {
   PaneSpec spec;
   int id = 0;

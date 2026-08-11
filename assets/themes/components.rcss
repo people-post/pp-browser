@@ -3440,7 +3440,7 @@ call-video-tile {
   font-weight: bold;
 }
 
-/* Emoji picker as keyboard-replacement bottom panel (mobile / compact). */
+/* Emoji / bottom-chrome IME panel (mobile / compact). No scrim — chat stays interactive. */
 .shell-layer-emoji-keyboard {
   position: absolute;
   top: 0;
@@ -3451,18 +3451,8 @@ call-video-tile {
   pointer-events: none;
 }
 
-.shell-layer-emoji-keyboard .shell-emoji-keyboard-scrim,
 .shell-layer-emoji-keyboard .shell-emoji-keyboard-panel {
   pointer-events: auto;
-}
-
-.shell-emoji-keyboard-scrim {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  focus: none;
 }
 
 .shell-emoji-keyboard-panel {

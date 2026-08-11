@@ -693,6 +693,14 @@ bool ShellHost::HandleDismiss() {
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
+  if (bottom_chrome_open_) {
+    if (on_bottom_chrome_dismissed_) {
+      on_bottom_chrome_dismissed_();
+    } else {
+      ClearBottomChrome();
+    }
+    return true;
+  }
   if (flow_coordinator_.handle_dismiss && flow_coordinator_.handle_dismiss()) {
     RequestSyncLayout();
     return true;
@@ -1086,19 +1094,19 @@ void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
-    if (emoji_keyboard_panel_open_) {
-      emoji_panel_height_dp_ = std::max(emoji_panel_height_dp_, last_ime_bottom_dp_);
+    if (bottom_chrome_open_) {
+      bottom_chrome_height_dp_ = std::max(bottom_chrome_height_dp_, last_ime_bottom_dp_);
     }
   }
 
   const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
   int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
-  if (emoji_keyboard_panel_open_) {
-    // Keep the shell lifted at the emoji panel height while the OSK is dismissed.
-    effective_bottom = std::max(effective_bottom, emoji_panel_height_dp_);
+  if (bottom_chrome_open_) {
+    // Keep the shell lifted at the bottom-chrome height while the OSK is dismissed.
+    effective_bottom = std::max(effective_bottom, bottom_chrome_height_dp_);
   }
   if (effective_top == state_.safe_area_top_dp && effective_bottom == state_.safe_area_bottom_dp) {
-    if (emoji_keyboard_panel_open_) {
+    if (bottom_chrome_open_) {
       ApplySafeAreaLayout();
     }
     return;
@@ -1108,32 +1116,42 @@ void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
   ApplySafeAreaLayout();
 }
 
-bool ShellHost::UsesEmojiKeyboardPanelPresentation() const {
+bool ShellHost::UsesBottomChromePresentation() const {
   return Platform::IsMobile() || state_.layout_mode == LayoutMode::Compact;
 }
 
-bool ShellHost::BeginEmojiKeyboardPanel() {
-  if (!UsesEmojiKeyboardPanelPresentation()) {
+void ShellHost::SetOnBottomChromeDismissed(std::function<void()> callback) {
+  on_bottom_chrome_dismissed_ = std::move(callback);
+}
+
+bool ShellHost::SetBottomChrome(const BottomChromeSpec& spec) {
+  if (!UsesBottomChromePresentation() || spec.key.empty()) {
     return false;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->DeactivateKeyboard();
   }
-  emoji_keyboard_panel_open_ = true;
-  emoji_panel_height_dp_ =
+  bottom_chrome_open_ = true;
+  bottom_chrome_key_ = spec.key;
+  bottom_chrome_rml_path_ = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
+  bottom_chrome_height_dp_ =
       std::max(last_ime_bottom_dp_ > 0 ? last_ime_bottom_dp_ : 0, kDefaultEmojiKeyboardPanelDp);
-  state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, emoji_panel_height_dp_);
+  state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, bottom_chrome_height_dp_);
+  RemountBottomChrome();
   ApplySafeAreaLayout();
   Backend::RequestForceFrame();
   return true;
 }
 
-void ShellHost::EndEmojiKeyboardPanel() {
-  if (!emoji_keyboard_panel_open_) {
+void ShellHost::ClearBottomChrome() {
+  if (!bottom_chrome_open_) {
     return;
   }
-  emoji_keyboard_panel_open_ = false;
-  emoji_panel_height_dp_ = 0;
+  bottom_chrome_open_ = false;
+  bottom_chrome_height_dp_ = 0;
+  bottom_chrome_key_.clear();
+  bottom_chrome_rml_path_.clear();
+  RemountBottomChrome();
   // Re-read SDL insets now that the synthetic panel is gone.
   RefreshSafeAreaInsets(context_);
   Backend::RequestForceFrame();
@@ -1144,11 +1162,10 @@ void ShellHost::ApplySafeAreaLayout() {
     return;
   }
   const float titlebar_dp = state_.titlebar_visible ? config_.titlebar_height_dp : 0.f;
-  // Emoji keyboard panel paints in a sibling of #shell-root. Keep the document
+  // Bottom chrome paints in a sibling of #shell-root. Keep the document
   // full-bleed and lift #shell-root by the panel height so nav stays above it
   // (same visual as OSK document-bottom inset).
-  const int layout_bottom =
-      emoji_keyboard_panel_open_ ? 0 : state_.safe_area_bottom_dp;
+  const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp);
   Rml::ElementDocument* doc = context_->GetDocument(0);
@@ -1167,10 +1184,10 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc, "bottom", layout.shell_bottom_dp);
   set_dp(doc->GetElementById("shell-root"), "top", layout.content_top_dp);
   const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
-  const float emoji_panel_dp =
-      emoji_keyboard_panel_open_ ? static_cast<float>(emoji_panel_height_dp_) : 0.f;
-  // Lift shell-root above the emoji panel (nav chrome lives inside shell-root).
-  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + emoji_panel_dp);
+  const float bottom_chrome_dp =
+      bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
+  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
+  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   // Absolute toast stack is positioned from the chrome top edge (ignores padding).
   set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
@@ -1180,15 +1197,15 @@ void ShellHost::ApplySafeAreaLayout() {
                                    5.f, state_.titlebar_traffic_lights);
   }
 
-  if (Rml::Element* emoji_panel = doc->GetElementById("shell-emoji-keyboard-panel")) {
-    set_dp(emoji_panel, "height",
-           emoji_panel_dp > 0.f ? emoji_panel_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
+  if (Rml::Element* panel = doc->GetElementById("shell-emoji-keyboard-panel")) {
+    set_dp(panel, "height",
+           bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
   }
 
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  // Nav page only needs nav-height padding; shell-root bottom already clears the emoji panel.
+  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome.
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   // Auxiliary sheet sits above the nav rail; account sheet covers it and draws from
@@ -1727,13 +1744,7 @@ std::string ShellHost::SerializeTransientLayer() const {
 
 std::string ShellHost::SerializeOverlays() const {
   std::ostringstream out;
-  const bool emoji_keyboard = UsesEmojiKeyboardPanelPresentation();
   for (const OverlayEntry& overlay : state_.overlay_stack) {
-    // Keyboard-style emoji is mounted into #shell-emoji-keyboard-mount (sibling of
-    // #shell-root), not into the shell-root overlay stack.
-    if (emoji_keyboard && overlay.key == "emoji_picker") {
-      continue;
-    }
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";
@@ -1745,30 +1756,19 @@ std::string ShellHost::SerializeOverlays() const {
   return out.str();
 }
 
-std::string ShellHost::SerializeEmojiKeyboardPanel() const {
-  if (!UsesEmojiKeyboardPanelPresentation() || !emoji_keyboard_panel_open_) {
-    return {};
-  }
-  const OverlayEntry* emoji = nullptr;
-  for (const OverlayEntry& overlay : state_.overlay_stack) {
-    if (overlay.key == "emoji_picker") {
-      emoji = &overlay;
-      break;
-    }
-  }
-  if (!emoji) {
+std::string ShellHost::SerializeBottomChrome() const {
+  if (!bottom_chrome_open_ || bottom_chrome_key_.empty()) {
     return {};
   }
   std::ostringstream out;
+  // No scrim: IME-replacement chrome; chat stays interactive (back / toggle dismiss).
   out << "<div class=\"shell-layer shell-layer-emoji-keyboard\" data-model=\"window\">";
-  out << "<div class=\"shell-scrim shell-emoji-keyboard-scrim\" data-event-click=\"close_layer("
-      << emoji->id << ")\"></div>";
   out << "<div class=\"shell-emoji-keyboard-panel surface-chrome";
   if (state_.reduce_transparency) {
     out << " surface-chrome--solid";
   }
   out << "\" id=\"shell-emoji-keyboard-panel\">";
-  out << "<div class=\"shell-emoji-keyboard-body\" id=\"overlay-body-" << emoji->id << "\"></div>";
+  out << "<div class=\"shell-emoji-keyboard-body\" id=\"shell-bottom-chrome-body\"></div>";
   out << "</div></div>";
   return out.str();
 }
@@ -2353,9 +2353,6 @@ void ShellHost::MountPaneBodies() {
     if (!context_ || context_->GetNumDocuments() == 0) {
       continue;
     }
-    if (UsesEmojiKeyboardPanelPresentation() && overlay.key == "emoji_picker") {
-      continue;
-    }
     Rml::Element* target =
         context_->GetDocument(0)->GetElementById(("overlay-body-" + std::to_string(overlay.id)).c_str());
     if (!target) {
@@ -2367,11 +2364,29 @@ void ShellHost::MountPaneBodies() {
     }
   }
 
-  MountEmojiKeyboardPanel();
+  RemountBottomChromeNow();
   RefreshDismissGestures();
 }
 
-void ShellHost::MountEmojiKeyboardPanel() {
+void ShellHost::RemountBottomChrome() {
+  if (remount_bottom_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_bottom_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountBottomChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountBottomChrome() {
+  if (!remount_bottom_chrome_pending_) {
+    return;
+  }
+  remount_bottom_chrome_pending_ = false;
+  RemountBottomChromeNow();
+}
+
+void ShellHost::RemountBottomChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
@@ -2380,23 +2395,15 @@ void ShellHost::MountEmojiKeyboardPanel() {
   if (!mount) {
     return;
   }
-  const std::string html = SerializeEmojiKeyboardPanel();
+  const std::string html = SerializeBottomChrome();
   RmlMount::MountInner(mount, html);
-  if (html.empty()) {
-    return;
-  }
-  for (const OverlayEntry& overlay : state_.overlay_stack) {
-    if (overlay.key != "emoji_picker") {
-      continue;
-    }
-    Rml::Element* target =
-        doc->GetElementById(("overlay-body-" + std::to_string(overlay.id)).c_str());
-    if (!target) {
-      continue;
-    }
-    const std::string body = ViewCatalog::LoadBody(overlay.rml_path);
-    if (!body.empty()) {
-      RmlMount::MountInner(target, body);
+  if (!html.empty()) {
+    Rml::Element* target = doc->GetElementById("shell-bottom-chrome-body");
+    if (target && !bottom_chrome_rml_path_.empty()) {
+      const std::string body = ViewCatalog::LoadBody(bottom_chrome_rml_path_);
+      if (!body.empty()) {
+        RmlMount::MountInner(target, body);
+      }
     }
   }
   ApplySafeAreaLayout();

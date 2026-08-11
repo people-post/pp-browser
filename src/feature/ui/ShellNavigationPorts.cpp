@@ -41,8 +41,10 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.close_auxiliary = [&shell]() { shell.CloseAuxiliary(); };
   navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
   navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
-  navigation.begin_emoji_keyboard_panel = [&shell]() { return shell.BeginEmojiKeyboardPanel(); };
-  navigation.end_emoji_keyboard_panel = [&shell]() { shell.EndEmojiKeyboardPanel(); };
+  navigation.set_bottom_chrome = [&shell](const BottomChromeSpec& spec) { return shell.SetBottomChrome(spec); };
+  navigation.clear_bottom_chrome = [&shell]() { shell.ClearBottomChrome(); };
+  navigation.bottom_chrome_open = [&shell]() { return shell.BottomChromeOpen(); };
+  navigation.uses_bottom_chrome = [&shell]() { return shell.UsesBottomChromePresentation(); };
   return navigation;
 }
 

@@ -80,12 +80,13 @@ struct ShellNavigationPorts {
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
   /**
-   * Mobile / compact: treat the in-app emoji picker as a keyboard-replacement bottom
-   * panel (latch IME height into safe-area bottom). Returns true when that presentation
-   * is active; no-op (false) on expanded desktop overlay.
+   * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
+   * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).
    */
-  std::function<bool()> begin_emoji_keyboard_panel;
-  std::function<void()> end_emoji_keyboard_panel;
+  std::function<bool(const BottomChromeSpec& spec)> set_bottom_chrome;
+  std::function<void()> clear_bottom_chrome;
+  std::function<bool()> bottom_chrome_open;
+  std::function<bool()> uses_bottom_chrome;
 };
 
 class ShellHost;

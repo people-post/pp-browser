@@ -79,10 +79,13 @@ Choose the lightest primitive that fits the user task:
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
 | **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Compact Me: profile and preferences without switching `nav_tab` | Me settings list/detail inside sheet |
-| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji picker |
+| **Bottom chrome** | `SetBottomChrome` / `ClearBottomChrome` | IME-replacement bottom panel: remount-only, no scrim, latched IME height | Mobile/compact emoji **Insert** |
+| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji **React** / expanded Insert overlay |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
 
-`PaneSpec.return_focus_id` (optional): when set, `PushLayer` restores that element on close instead of the live focus target (e.g. emoji Insert → `#draft-input`).
+`PaneSpec.return_focus_id` (optional): when set, `PushLayer` restores that element on close instead of the live focus target (e.g. expanded emoji Insert → `#draft-input`).
+
+Bottom chrome mounts into `#shell-emoji-keyboard-mount` (sibling of `#shell-root`), lifts `#shell-root` by panel height, and dismisses via Back/Escape (`HandleDismiss`) or the composer ☺ toggle — not a dimming scrim. Open/close remounts that mount only (same deferral rule as call chrome); it does not `SyncLayout` the shell tree.
 
 **Do not** stack `ShellFeedback::ShowPrompt` on top of an active `PushLayer` flow. Keep wizard steps in the same overlay (or push a dedicated step view on the overlay stack).
 

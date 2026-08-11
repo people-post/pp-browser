@@ -169,13 +169,15 @@ public:
   void RefreshSafeAreaInsets(Rml::Context* context);
 
   /**
-   * Mobile/compact: open emoji UI as a keyboard-height bottom panel. Dismisses the OSK
-   * and keeps shell bottom inset at the latched IME height (or a default).
+   * Mobile/compact IME-replacement bottom panel (no scrim, remount-only).
+   * Dismisses the OSK and latches height from the last IME inset (or a default).
+   * @return false when bottom-chrome presentation is not used (expanded desktop).
    */
-  /** @return true when the emoji keyboard panel presentation is active. */
-  bool BeginEmojiKeyboardPanel();
-  void EndEmojiKeyboardPanel();
-  bool EmojiKeyboardPanelOpen() const { return emoji_keyboard_panel_open_; }
+  bool SetBottomChrome(const BottomChromeSpec& spec);
+  void ClearBottomChrome();
+  bool BottomChromeOpen() const { return bottom_chrome_open_; }
+  bool UsesBottomChromePresentation() const;
+  void SetOnBottomChromeDismissed(std::function<void()> callback);
 
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
@@ -233,7 +235,7 @@ private:
   std::string SerializeCompactBase() const;
   std::string SerializeAccountSheet() const;
   std::string SerializeOverlays() const;
-  std::string SerializeEmojiKeyboardPanel() const;
+  std::string SerializeBottomChrome() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
   std::string SerializeCallRing() const;
@@ -241,7 +243,9 @@ private:
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
-  void MountEmojiKeyboardPanel();
+  void RemountBottomChrome();
+  void FlushRemountBottomChrome();
+  void RemountBottomChromeNow();
   void MountNavRail();
   void MountNavContent();
   void MountComposer();
@@ -279,7 +283,6 @@ private:
     int bottom_dp = 0;
   };
   SafeAreaFromSdl ReadSafeAreaFromSdl() const;
-  bool UsesEmojiKeyboardPanelPresentation() const;
 
   struct PendingDismiss {
     DismissTarget target = DismissTarget::None;
@@ -293,9 +296,13 @@ private:
   int safe_area_bottom_from_prefs_dp_ = 0;
   /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
   int last_ime_bottom_dp_ = 0;
-  /** Synthetic bottom inset while the emoji keyboard panel is open. */
-  int emoji_panel_height_dp_ = 0;
-  bool emoji_keyboard_panel_open_ = false;
+  /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
+  int bottom_chrome_height_dp_ = 0;
+  bool bottom_chrome_open_ = false;
+  std::string bottom_chrome_key_;
+  std::string bottom_chrome_rml_path_;
+  bool remount_bottom_chrome_pending_ = false;
+  std::function<void()> on_bottom_chrome_dismissed_;
   LayoutMode last_synced_mode_ = LayoutMode::Expanded;
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;

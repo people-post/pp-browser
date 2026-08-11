@@ -69,7 +69,7 @@ Android still keeps the activity alive across other config changes (`configChang
 
 | Event | App response |
 |-------|----------------|
-| Soft keyboard (IME) | Manifest `windowSoftInputMode=adjustNothing` (do not resize/pan EGL). `MainActivity` publishes **keyboard-only** bottom inset via IMM/`WindowInsets` (never status/nav — those are already window-fitted on API &lt; 30) → SDL safe-area → `ShellHost::RefreshSafeAreaInsets`. Same channel as iOS; moto g(7) play / API 28 verified. In-app emoji picker on mobile/compact reuses the latched IME height as a bottom keyboard panel (`BeginEmojiKeyboardPanel`) |
+| Soft keyboard (IME) | Manifest `windowSoftInputMode=adjustNothing` (do not resize/pan EGL). `MainActivity` publishes **keyboard-only** bottom inset via IMM/`WindowInsets` (never status/nav — those are already window-fitted on API &lt; 30) → SDL safe-area → `ShellHost::RefreshSafeAreaInsets`. Same channel as iOS; moto g(7) play / API 28 verified. In-app emoji **Insert** on mobile/compact uses `ShellHost::SetBottomChrome` (latched IME height, remount-only, no scrim) |
 | `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` / display scale / safe area | `Backend::SyncContext` updates RmlUi dimensions, DP ratio, and GL viewport; next frame is forced (no long power-save wait) |
 | UI task posted (`AppRuntime::PostUI`) | `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + always-push wake event). `Application::Run` also forces when `HasPendingUITasks()`. Do **not** use `WakeEventLoop` alone — that left SyncLayout/call chrome pending until mouse move when WaitEventTimeout lied |
 | Call chrome dirty (`Backend::RequestForceFrame`) | Skips the next idle wait so ring/accept overlays Present without waiting for input (also implied by PostTask(UI)) |
