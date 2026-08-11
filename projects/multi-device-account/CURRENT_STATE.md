@@ -1,12 +1,14 @@
 # Multi-device account — current state
 
-**As of:** 2026-08-11 (m0 design freeze; no implementation)
+**As of:** 2026-08-11 (m0 design + PQ libs vendored; envelope hard cut not wired)
 
 ## Code today (single-device assumptions)
 
 | Area | Behavior |
 |------|----------|
 | `LocalIdentity` | One Ed25519 + KEM keypair; `peer_id` derived in memory; `relay_user_id` after register |
+| KEM | **ML-KEM-768** via `HybridKem` + `third_party/mlkem-native` (legacy 1216 hybrid wiped on size mismatch) |
+| Account ML-DSA | Wrapper `MlDsa` + `third_party/mldsa-native` built/tested; **not** yet envelope/register signer |
 | D096 / Me | Peer ID treated as product “who”; one keypair for Peer ID + register + envelope sign |
 | Wire / threads | `ChatTargetKey` / `sender_contact_id` use `relay_user` + `relay:…` |
 | Vault | Per-profile `vault.bin` wraps DEK; no link-device / shared-DEK path |
@@ -17,7 +19,7 @@
 
 ## Target (this project)
 
-See [DESIGN.md](DESIGN.md). m0 decisions: [DECISIONS.md](DECISIONS.md) M001–M007.
+See [DESIGN.md](DESIGN.md). m0 decisions: [DECISIONS.md](DECISIONS.md) M001–M008.
 
 ## Gap summary
 

@@ -1348,7 +1348,7 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 | Role | Value | Scope |
 |------|--------|-------|
-| **Account (person)** | `account:<base64url-unpadded(32-byte account Ed25519 pubkey)>` | Shared across linked devices |
+| **Account (person)** | `account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` | Shared across linked devices |
 | **Endpoint (install)** | libp2p **Peer ID** from **device** keypair | Per device |
 | **Route** | `relay:<opaque_id>` | Per relay server binding |
 | **Find** | CAIP-10 (optional) | Alias → Account ID |

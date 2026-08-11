@@ -20,8 +20,14 @@ namespace pbr {
 namespace {
 
 Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
-  if (!identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty()) {
-    return {};
+  const bool have_both = !identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty();
+  if (have_both) {
+    auto pk = Base64Decode(identity.kem_public_key_b64);
+    auto sk = Base64Decode(identity.kem_private_key_b64);
+    if (pk && sk && pk->size() == kHybridKemPublicKeyBytes && sk->size() == kHybridKemPrivateKeyBytes) {
+      return {};
+    }
+    // Pre-release: drop legacy X25519+Kyber-draft blobs and mint ML-KEM-768.
   }
   auto generated = HybridKem::GenerateKeyPair();
   if (!generated) {

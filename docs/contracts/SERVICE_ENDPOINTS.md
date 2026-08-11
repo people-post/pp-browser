@@ -36,7 +36,7 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
 | Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor? }` |
 
-Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), 32-byte raw Ed25519 public key, 1216-byte raw hybrid KEM public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
+Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), 32-byte raw Ed25519 public key (device/register proof today), **1184-byte raw ML-KEM-768** public key (`kem_public_key_b64`), `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE. (Pre-release: replaced 1216-byte X25519+Kyber-draft hybrid; Brief must accept 1184.)
 
 ## HTTP relay API auth (per-request sign bytes)
 

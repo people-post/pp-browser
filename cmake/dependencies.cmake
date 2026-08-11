@@ -13,6 +13,8 @@ endfunction()
 # Always required for pp-node and the GUI app.
 pp_require_vendored(nlohmann_json)
 pp_require_vendored(libsodium)
+pp_require_vendored(mlkem-native)
+pp_require_vendored(mldsa-native)
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 if(NOT PP_BROWSER_HEADLESS)
@@ -54,8 +56,14 @@ set(SODIUM_MINIMAL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PP_THIRD_PARTY_DIR}/libsodium"
                  "${CMAKE_BINARY_DIR}/third_party/libsodium" EXCLUDE_FROM_ALL)
 
+# PQ Code Package — ML-KEM-768 + ML-DSA-65 (account / auto-key); C backends.
+add_subdirectory("${PP_THIRD_PARTY_DIR}/mlkem-native"
+                 "${CMAKE_BINARY_DIR}/third_party/mlkem-native" EXCLUDE_FROM_ALL)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/mldsa-native"
+                 "${CMAKE_BINARY_DIR}/third_party/mldsa-native" EXCLUDE_FROM_ALL)
+
 if(PP_BROWSER_HEADLESS)
-  pp_configure_status("Headless deps ready (json, sodium, libp2p); skipping GUI third_party")
+  pp_configure_status("Headless deps ready (json, sodium, mlkem/mldsa, libp2p); skipping GUI third_party")
   return()
 endif()
 

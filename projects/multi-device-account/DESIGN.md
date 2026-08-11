@@ -28,19 +28,19 @@ Private (e2e) PSKs — only where set up     sender_instance_id
 
 | Role | Value | Scope | First-class for |
 |------|--------|-------|-----------------|
-| **Account (person)** | `account:<base64url-unpadded(32-byte Ed25519 account pubkey)>` | Shared | Wire communicating identity (hard cut), link-device, DEK realm, directory person |
-| **Endpoint (install)** | libp2p **Peer ID** (device keypair) | Per device | Dial/bind, mesh, call media peer |
+| **Account (person)** | `account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` | Shared | Wire communicating identity (hard cut), link-device, DEK realm, directory person |
+| **Endpoint (install)** | libp2p **Peer ID** (device Ed25519) | Per device | Dial/bind, mesh, call media peer |
 | **Route** | `relay:<opaque_id>` | Per relay server, shared on devices using that server | Inbox, Brief register binding |
 | **Find** | CAIP-10 (optional) | Alias | Search / attestation → Account ID (not wire) |
 
 ### Account ID format (frozen)
 
 ```text
-account:<base64url-unpadded(Ed25519_account_public_key_32_bytes)>
+account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65_account_public_key))>
 ```
 
-- Ed25519 pubkeys are already 32 bytes (no further “compression”).
-- Base64url, **no padding** — URL-safe, ~43 chars after prefix.
+- Full **ML-DSA-65** public key (1952 bytes) is published in directory/identity; id is the hash binding (M002).
+- Base64url, **no padding** — URL-safe, 43 chars after prefix.
 - Wire/storage: UTF-8 exact bytes, case-sensitive, no trim (same discipline as D082).
 
 ### Brief register binding
@@ -58,13 +58,15 @@ Devices do **not** each create a new person via register; they attach under the 
 
 | Key | Holds | Signs / encrypts |
 |-----|--------|------------------|
-| **Account Ed25519** | All linked devices (under DEK) | **All** relay envelopes (S1) |
-| **Device Ed25519** | One install | libp2p identity / Noise; **not** envelope `signature` in this freeze |
-| **DEK** | Logical shared; each device wraps in own `vault.bin` | `identity` account material, syncable PSKs at rest |
-| **Chat PSK** | Per `ChatTargetKey` | Message body AEAD (unchanged stack) |
+| **Account ML-DSA-65** | All linked devices (under DEK) | **All** relay envelopes (PQ-only) |
+| **Account ML-KEM-768** | Profile (auto-key / directory) | Public-tier `key_init` (PQ-only; no X25519) |
+| **Device Ed25519** | One install | libp2p identity / Noise; **not** envelope `signature` |
+| **DEK** | Logical shared; each device wraps in own `vault.bin` | account material, syncable PSKs at rest |
+| **Chat PSK** | Per `ChatTargetKey` | Message body AEAD (libsodium; unchanged) |
 
-**Envelope verify:** friends resolve **account** signing key for `sender_contact_id` = Account ID (directory / cache).  
-**Install attribution:** `sender_instance_id` (D074) when multi-writer ships — not a second envelope signer in m0.
+**Libs:** `third_party/mldsa-native`, `third_party/mlkem-native` (PQCP v2.0.0 C backends); wrappers `MlDsa`, `HybridKem` in `base/crypto`.  
+**Envelope verify:** friends resolve **ML-DSA-65** account pubkey for Account ID (directory / cache); id must match hash(pk).  
+**Install attribution:** `sender_instance_id` (D074) when multi-writer ships.
 
 ## Chat secret sync policy
 

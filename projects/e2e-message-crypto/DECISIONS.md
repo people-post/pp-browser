@@ -397,17 +397,36 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 ## E025 — Account envelope signing; private PSK not auto-synced
 
 **Date:** 2026-08-11  
+**Updated:** 2026-08-11 — account signing = **ML-DSA-65** (not Ed25519).  
 **Amends:** E016/E024 verify target (account key once Account ID is on wire); E011 private PSK distribution remains OOB — **not** fan-out on link-device.  
-**Canonical:** [multi-device-account](../multi-device-account/) M003, M005 ([DESIGN](../multi-device-account/DESIGN.md)).  
+**Canonical:** [multi-device-account](../multi-device-account/) M003, M005, M008 ([DESIGN](../multi-device-account/DESIGN.md)).  
 **Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
 
-1. **S1 — Account key signs** all relay envelopes. Device keypair is for Peer ID / libp2p only (not envelope `signature` in this freeze).
-2. Friends verify using the **account** signing public key bound to Account ID (directory/cache — same resolver seam as E016, key kind shifts with D099/m2).
+1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device Ed25519 is for Peer ID / libp2p only.
+2. Friends verify using the **ML-DSA-65** account public key bound to Account ID (hash-binding M002; directory/cache — resolver seam as E016, key kind shifts with D099/m2).
 3. **Private (`e2e`) PSKs are not auto-synced** to linked devices. New device needs OOB/import or explicit opt-in; default link-device does **not** copy private `chat_targets` PSK material.
 4. **Public (`e2e_public`) / group** PSKs **may** sync with account/DEK when those tiers + link-device ship.
 5. Message **body** encryption remains PSK AEAD on all tiers — device-bound private means **which installs hold the PSK**, not a different cipher.
 
-**Rationale:** One person-level verify path; private tier keeps higher assurance under multi-device account keys.  
-**Alternatives:** Device-signed envelopes (S2/S3); sync all PSKs with DEK.
+**Rationale:** One person-level PQ verify path; private tier keeps higher assurance under multi-device account keys.  
+**Alternatives:** Device-signed envelopes (S2/S3); sync all PSKs with DEK; Ed25519+ML-DSA hybrid.
+
+---
+
+## E026 — ML-KEM-768 via mlkem-native (replaces X25519+Kyber-draft)
+
+**Date:** 2026-08-11  
+**Amends:** E013/E024 hybrid KEM — **ML-KEM-768 only** (no X25519 half); library = vendored **mlkem-native** (not BoringSSL experimental Kyber).  
+**Cross-project:** [multi-device-account M008](../multi-device-account/DECISIONS.md#m008--pq-libraries-and-kem-mlkem-native--mldsa-native-ml-kem-768-only), [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md) register KEM size **1184**.
+
+**Decision:**
+
+1. `HybridKem` implements **FIPS 203 ML-KEM-768** (`mlkem_keypair` / `enc` / `dec`).
+2. Sizes: pk **1184**, sk **2400**, ct **1088**, ss **32**.
+3. Pre-release: regenerate stored profile KEM blobs if size ≠ ML-KEM-768.
+4. Brief accepts 1184-byte `kem_public_key_b64` on register/directory.
+
+**Rationale:** Aggressive PQ for auto-key; PQCP C backend; drops draft Kyber + classical KEM half.  
+**Alternatives:** Keep X25519+ML-KEM hybrid; liboqs.

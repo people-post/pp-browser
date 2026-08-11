@@ -64,8 +64,8 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 | Key derivation | HKDF-SHA256 | libsodium | PQ-adequate |
 | PSK fingerprint | BLAKE2b-256 | libsodium | PQ-adequate |
 | Master PSK | 32 random bytes | libsodium `randombytes_buf` | Must be full entropy |
-| Relay envelope sig | Ed25519 | OpenSSL EVP (today) | Classical — c4 hybrid |
-| Future key agreement | X25519 + ML-KEM-768 | liboqs or OQS provider (c4) | Hybrid KEM |
+| Relay envelope sig | Ed25519 (today) → **ML-DSA-65** | OpenSSL EVP → **mldsa-native** | Aggressive PQ (E025/E026) |
+| Public auto-key | **ML-KEM-768** | **mlkem-native** | PQ-only (no X25519) |
 
 ## Key material
 
@@ -98,7 +98,7 @@ No wire-protocol initiator — only UX default (Secure-message starter offers Ge
 | Anchor | Mechanism | v1 | `[post-v1]` |
 |--------|-----------|-----|-------------|
 | **Signing** (who sent) | **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`** | Relay directory + lazy fetch (E016) | On-chain attestation (CAIP-10 linked — D091), **chain-preferred** |
-| **PSK** (body secrecy) | Hybrid **X25519 + ML-KEM-768** (E013) | Peer KEM only | Same — relay never learns `master_psk` |
+| **PSK** (body secrecy) | **ML-KEM-768** peer KEM (E026; amends E013) | Peer KEM only | Same — relay never learns `master_psk` |
 
 **PSK derivation from KEM:**
 
@@ -480,17 +480,17 @@ Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.
 
 **`[post-v1]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension); not in v1 (D046).
 
-## Post-quantum migration (phase c4 — deferred)
+## Post-quantum migration (phase c4)
 
-| Component | v1 (c1–c3) | c4 target |
-|-----------|------------|-----------|
+| Component | Pre-c4 | c4 (aggressive PQ) |
+|-----------|--------|---------------------|
 | E2E body | PSK + XChaCha20-Poly1305 | Unchanged |
 | Manual PSK | OOB 256-bit | Unchanged (PQ-safe) |
-| Optional automated setup | None | Hybrid **X25519 + ML-KEM-768** → HKDF input |
-| Relay signatures | Ed25519 | **Hybrid Ed25519 + ML-DSA-65** or PQ-only new identities |
+| Optional automated setup | None / draft hybrid | **ML-KEM-768 only** (`mlkem-native`) → HKDF input |
+| Relay / account signatures | Ed25519 | **ML-DSA-65 only** (`mldsa-native`); device Ed25519 = Peer ID |
 | libp2p transport | BoringSSL TLS | Follow libp2p / industry PQ TLS when available |
 
-Do **not** use X25519 or ECDH alone for automated key agreement after c4 without ML-KEM hybrid.
+Do **not** use X25519 or ECDH alone for automated key agreement (E026).
 
 ## Relationship to chat-storage-and-memory
 
