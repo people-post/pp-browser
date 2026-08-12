@@ -327,9 +327,6 @@ void WidgetTextInput::Select()
 
 void WidgetTextInput::SetSelectionRange(int selection_start, int selection_end)
 {
-	if (!IsFocused())
-		return;
-
 	const String& value = GetValue();
 	const int byte_start = StringUtilities::ConvertCharacterOffsetToByteOffset(value, selection_start);
 	const int byte_end = StringUtilities::ConvertCharacterOffsetToByteOffset(value, selection_end);
@@ -350,7 +347,11 @@ void WidgetTextInput::SetSelectionRange(int selection_start, int selection_end)
 	}
 
 	UpdateCursorPosition(true);
-	ShowCursor(true, true);
+	// Allow programmatic caret placement while unfocused (e.g. emoji insert into
+	// the composer while the in-app emoji keyboard panel has focus). Only show the
+	// caret / activate the OSK when this widget is already focused.
+	if (IsFocused())
+		ShowCursor(true, true);
 
 	if (selection_changed)
 		FormatText();

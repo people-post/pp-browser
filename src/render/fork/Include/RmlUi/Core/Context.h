@@ -375,8 +375,9 @@ private:
 		bool long_press_fired = false;
 		Vector2f start_position;
 		Vector2f last_position;
-		Element* scroll_container = nullptr;
-		Element* touch_target = nullptr;
+		/** ObserverPtrs: shell remount / safe-area reflow can destroy targets mid-gesture. */
+		ObserverPtr<Element> scroll_container;
+		ObserverPtr<Element> touch_target;
 		double scrolling_last_time = 0;
 		double touch_start_time = 0;
 

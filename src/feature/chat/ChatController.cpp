@@ -67,6 +67,8 @@
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
+#include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/SystemInterface.h>
 
 #include <optional>
@@ -330,14 +332,34 @@ void ChatController::BindEmojiPickerNotify(EmojiPickerNotifyPorts ports) {
   emoji_picker_notify_ = std::move(ports);
 }
 
-void ChatController::InsertEmojiIntoDraft(const std::string& emoji) {
+void ChatController::InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus) {
   const std::string key = NormalizeEmojiKey(emoji);
   if (key.empty() || chat_.compose_disabled) {
     return;
   }
-  chat_.draft = (std::string(chat_.draft.c_str()) + key).c_str();
+  const std::string next = std::string(chat_.draft.c_str()) + key;
+  chat_.draft = next.c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  if (!draft) {
+    return;
+  }
+  draft->SetValue(next.c_str());
+  const Rml::String value = draft->GetValue();
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, value.size());
+  if (!restore_composer_focus) {
+    // Keyboard-panel multi-insert: caret only (unfocused SetSelectionRange does not OSK).
+    draft->SetSelectionRange(end, end);
+    return;
+  }
+  // Popover close remounts via SyncLayout; place caret after remount too.
   focus_draft_after_sync_ = true;
+  draft->Focus();
+  draft->SetSelectionRange(end, end);
 }
 
 void ChatController::ReactWithEmoji(const std::string& message_id, const std::string& emoji) {
@@ -1833,9 +1855,15 @@ void ChatController::OnShellLayoutSynced() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  if (Rml::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-    draft->Focus();
+  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  if (!draft) {
+    return;
   }
+  draft->Focus();
+  const Rml::String value = draft->GetValue();
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, value.size());
+  draft->SetSelectionRange(end, end);
 }
 
 void ChatController::SubmitForm(const std::string& entry_id, const std::string& form_id) {

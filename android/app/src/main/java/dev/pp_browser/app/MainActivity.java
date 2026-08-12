@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
@@ -23,19 +24,25 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.PixelCopy;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsAnimationCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,6 +56,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * On API 24+, SDL pauses from {@code onStop} after {@code surfaceDestroyed}; capture must happen
  * earlier from {@code onPause} / focus loss while {@code mIsSurfaceReady} is still true.
+ *
+ * Soft keyboard: {@code windowSoftInputMode=adjustNothing} keeps the EGL surface full-bleed
+ * (same as iOS — do not pan/resize the GL view). IME + system-bar insets are published into
+ * SDL safe-area bottom so {@code ShellHost::RefreshSafeAreaInsets} reflows chrome above the
+ * keyboard. {@link SDLSurface} alone often misses IME inset dispatch, so this activity also
+ * listens on {@code mLayout}.
  *
  * Native argv (via {@link #getArguments()}):
  * <ul>
@@ -72,6 +85,35 @@ public class MainActivity extends SDLActivity {
 
     /** App appearance preference from native Theme ("system" / "light" / "dark"). */
     private volatile String mAppAppearance = "system";
+
+    /**
+     * Last system-bar / cutout insets from WindowInsets (API 30+ / edge-to-edge).
+     * Keyboard height is merged into bottom separately — never from visible.top.
+     */
+    private int mSysLeft;
+    private int mSysRight;
+    private int mSysTop;
+    private int mSysBottom;
+    private boolean mHaveSystemInsets;
+    /** Bottom gap (rootH - visible.bottom) while IME is hidden; usually nav-bar overlay. */
+    private int mBaselineBottomGap = -1;
+    private int mPublishedLeft = -1;
+    private int mPublishedRight = -1;
+    private int mPublishedTop = -1;
+    private int mPublishedBottom = -1;
+    private ViewTreeObserver.OnGlobalLayoutListener mKeyboardLayoutListener;
+    /** adjustNothing often skips layout passes when the IME opens — poll IMM height. */
+    private final Handler mKeyboardProbeHandler = new Handler(android.os.Looper.getMainLooper());
+    private final Runnable mKeyboardProbeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (mLayout != null) {
+                publishSafeAreaFromVisibleFrame(mLayout);
+            }
+            final long delayMs = isScreenKeyboardShown() ? 100L : 500L;
+            mKeyboardProbeHandler.postDelayed(this, delayMs);
+        }
+    };
 
     @Override
     protected String[] getLibraries() {
@@ -109,6 +151,7 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        installKeyboardSafeAreaPublisher();
         applyNavigationBarColor();
         ensureNotificationChannel();
         InboxSyncWorker.schedule(this, true);
@@ -122,6 +165,7 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        uninstallKeyboardSafeAreaPublisher();
         if (mPixelCopyThread != null) {
             mPixelCopyThread.quitSafely();
             mPixelCopyThread = null;
@@ -130,10 +174,199 @@ public class MainActivity extends SDLActivity {
         super.onDestroy();
     }
 
+    /**
+     * Mirror iOS keyboard-as-safe-area-bottom, without double-counting system bars.
+     *
+     * This activity is <em>not</em> edge-to-edge (see {@link #applyNavigationBarColor}): the
+     * SurfaceView is already laid out below the status bar and above the nav bar. Publishing
+     * {@code visible.top} / resting nav gap as SDL safe-area inset the shell a second time
+     * (blank strip at top, black strip at bottom) — observed on moto g(7) play / API 28.
+     *
+     * Only the soft-keyboard occlusion is added to bottom; static safe area stays
+     * machine-prefs (API &lt; 30) or {@link SDLSurface} system insets (API 30+).
+     */
+    private void installKeyboardSafeAreaPublisher() {
+        if (mLayout == null) {
+            Log.w(TAG, "Keyboard safe-area: mLayout null after onCreate");
+            return;
+        }
+        final View root = mLayout;
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, windowInsets) -> {
+            publishSafeAreaFromWindowInsets(windowInsets);
+            return windowInsets;
+        });
+
+        ViewCompat.setWindowInsetsAnimationCallback(root,
+                new WindowInsetsAnimationCompat.Callback(
+                        WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                    @Override
+                    public WindowInsetsCompat onProgress(WindowInsetsCompat insets,
+                            List<WindowInsetsAnimationCompat> runningAnimations) {
+                        publishSafeAreaFromWindowInsets(insets);
+                        return insets;
+                    }
+                });
+
+        mKeyboardLayoutListener = () -> publishSafeAreaFromVisibleFrame(root);
+        root.getViewTreeObserver().addOnGlobalLayoutListener(mKeyboardLayoutListener);
+        ViewCompat.requestApplyInsets(root);
+        publishSafeAreaFromVisibleFrame(root);
+        mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
+        mKeyboardProbeHandler.post(mKeyboardProbeRunnable);
+    }
+
+    private void uninstallKeyboardSafeAreaPublisher() {
+        mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
+        if (mLayout != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(mLayout, null);
+            ViewCompat.setWindowInsetsAnimationCallback(mLayout, null);
+            if (mKeyboardLayoutListener != null) {
+                final ViewTreeObserver observer = mLayout.getViewTreeObserver();
+                if (observer.isAlive()) {
+                    observer.removeOnGlobalLayoutListener(mKeyboardLayoutListener);
+                }
+            }
+        }
+        mKeyboardLayoutListener = null;
+    }
+
+    private void publishSafeAreaFromWindowInsets(WindowInsetsCompat windowInsets) {
+        final Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+        final int imeBottom = Math.max(0, ime.bottom);
+        // API < 30: content is window-fitted; system-bar WindowInsets would double-count
+        // (moto g7 play blank top / black bottom). Only IME + visible-frame keyboard.
+        if (Build.VERSION.SDK_INT >= 30) {
+            final Insets sys = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars()
+                            | WindowInsetsCompat.Type.displayCutout());
+            mHaveSystemInsets = true;
+            mSysLeft = Math.max(0, sys.left);
+            mSysRight = Math.max(0, sys.right);
+            mSysTop = Math.max(0, sys.top);
+            mSysBottom = Math.max(0, sys.bottom);
+        }
+        if (mLayout != null) {
+            publishSafeAreaFromVisibleFrame(mLayout, imeBottom);
+        } else if (mHaveSystemInsets) {
+            publishSafeAreaInsets(mSysLeft, mSysRight, mSysTop, Math.max(mSysBottom, imeBottom));
+        } else {
+            publishSafeAreaInsets(0, 0, 0, imeBottom);
+        }
+    }
+
+    private void publishSafeAreaFromVisibleFrame(View root) {
+        publishSafeAreaFromVisibleFrame(root, 0);
+    }
+
+    /**
+     * Resolve soft-keyboard height in px. {@code adjustNothing} on API &lt; 30 often leaves
+     * {@link View#getWindowVisibleDisplayFrame} unchanged (moto g7 play), so also probe
+     * {@code InputMethodManager#getInputMethodWindowVisibleHeight} and SDL's keyboard flag.
+     */
+    private int probeKeyboardHeightPx(View root, int imeBottomFromInsets) {
+        int keyboardBottom = Math.max(0, imeBottomFromInsets);
+
+        final WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(root);
+        if (rootInsets != null) {
+            keyboardBottom = Math.max(keyboardBottom,
+                    rootInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom);
+        }
+
+        final Rect visible = new Rect();
+        root.getWindowVisibleDisplayFrame(visible);
+        // Prefer display height: DecorView height can already exclude the nav bar.
+        final int screenH = getResources().getDisplayMetrics().heightPixels;
+        final int rootH = Math.max(screenH, root.getRootView().getHeight());
+        final int gapBottom = Math.max(0, rootH - visible.bottom);
+        final int keyboardThreshold = Math.max(rootH / 6, dpToPx(100));
+        if (gapBottom < keyboardThreshold) {
+            mBaselineBottomGap = gapBottom;
+        } else {
+            final int baseline = Math.max(0, mBaselineBottomGap);
+            keyboardBottom = Math.max(keyboardBottom, Math.max(0, gapBottom - baseline));
+        }
+
+        final int immHeight = probeImmKeyboardHeightPx();
+        if (immHeight > keyboardThreshold) {
+            keyboardBottom = Math.max(keyboardBottom, immHeight);
+        } else if (immHeight > 0 && isScreenKeyboardShown()) {
+            keyboardBottom = Math.max(keyboardBottom, immHeight);
+        }
+
+        // Last resort when visible-frame is sticky under adjustNothing but SDL says IME is up.
+        if (keyboardBottom == 0 && isScreenKeyboardShown() && immHeight > 0) {
+            keyboardBottom = immHeight;
+        }
+        return keyboardBottom;
+    }
+
+    private int probeImmKeyboardHeightPx() {
+        try {
+            final android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm == null) {
+                return 0;
+            }
+            final java.lang.reflect.Method method =
+                    imm.getClass().getMethod("getInputMethodWindowVisibleHeight");
+            final Object value = method.invoke(imm);
+            if (value instanceof Integer) {
+                return Math.max(0, (Integer) value);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Hidden API; absence is fine — visible-frame / WindowInsets paths remain.
+        }
+        return 0;
+    }
+
+    /**
+     * Visible-frame + IMM keyboard detection for {@code adjustNothing} / API &lt; 30.
+     * {@code imeBottomFromInsets} is max'd in when WindowInsets.Type.ime is available.
+     */
+    private void publishSafeAreaFromVisibleFrame(View root, int imeBottomFromInsets) {
+        final int keyboardBottom = probeKeyboardHeightPx(root, imeBottomFromInsets);
+
+        if (mHaveSystemInsets) {
+            // Edge-to-edge / API 30+: keep system bars; replace bottom with max(sys, IME).
+            publishSafeAreaInsets(mSysLeft, mSysRight, mSysTop, Math.max(mSysBottom, keyboardBottom));
+        } else {
+            // Fitted window (moto g7 play): do not republish status/nav — only IME lift.
+            publishSafeAreaInsets(0, 0, 0, keyboardBottom);
+        }
+    }
+
+    private int dpToPx(int dp) {
+        final float density = getResources().getDisplayMetrics().density;
+        return Math.round(dp * density);
+    }
+
+    private void publishSafeAreaInsets(int left, int right, int top, int bottom) {
+        if (left == mPublishedLeft && right == mPublishedRight && top == mPublishedTop
+                && bottom == mPublishedBottom) {
+            return;
+        }
+        mPublishedLeft = left;
+        mPublishedRight = right;
+        mPublishedTop = top;
+        mPublishedBottom = bottom;
+        Log.i(TAG, "Safe-area insets LRTB=" + left + "," + right + "," + top + "," + bottom);
+        onNativeInsetsChanged(left, right, top, bottom);
+    }
+
     @Override
     protected void onResume() {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
+        mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
+        mKeyboardProbeHandler.post(mKeyboardProbeRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
+        captureRecentsThumbnailOnce();
+        super.onPause();
     }
 
     @Override
@@ -210,12 +443,6 @@ public class MainActivity extends SDLActivity {
         final WindowInsetsControllerCompat insetsController =
                 WindowCompat.getInsetsController(window, decor);
         insetsController.setAppearanceLightNavigationBars(lightUi);
-    }
-
-    @Override
-    protected void onPause() {
-        captureRecentsThumbnailOnce();
-        super.onPause();
     }
 
     @Override

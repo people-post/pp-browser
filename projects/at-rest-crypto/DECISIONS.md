@@ -57,3 +57,23 @@
 **Decision:** Move `vault.bin`, PIN unlock, and `IDekConsumer` fan-out from `MessagingHub` to `ProfileSecretsService` (`base/crypto`). Bootstrap initializes the profile service before the hub. `MessagingHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P after `ProfileSecretsService::IsUnlocked()`. UI/settings use the profile service for vault state and Change PIN; messaging features use `IsMessagingReady()`.  
 **Rationale:** Profile PIN/DEK is app-wide infrastructure, not messaging-specific; enables future non-messaging encrypted stores without depending on the hub.  
 **Alternatives:** Keep vault in MessagingHub with `IDekConsumer` only (A008); fat `Application` owner (rejected — app wires, base owns domain).
+
+---
+
+## A010 — Shared DEK; per-device vault wrap (multi-device)
+
+**Date:** 2026-08-11  
+**Amends:** README “multi-device vault sync” out-of-scope — **shared DEK + link seal** is now in scope under [multi-device-account](../multi-device-account/) (not a second vault product).  
+**Canonical:** [multi-device-account M004](../multi-device-account/DECISIONS.md#m004--shared-dek-per-device-vault-wrap).  
+**Cross-project:** [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced).
+
+**Decision:**
+
+1. Linked devices share one **DEK** (account secrets realm).
+2. Each install keeps its own **`vault.bin`** — PIN-derived wrap of that DEK (PIN may differ per device).
+3. Link-device seals the DEK to the new install; the new install wraps into its vault (A001 layering unchanged: PIN wraps DEK, DEK encrypts payloads).
+4. **PIN recovery / cloud vault backup** remain out of scope.
+5. Which ciphertext blobs sync under the shared DEK (account key, public PSKs, etc.) is owned by multi-device-account — private PSKs excluded by default (E025).
+
+**Rationale:** Per-device vault ≠ per-device master key; minimizes on-disk share while enabling one secrets realm.  
+**Alternatives:** Distinct DEK per device; clone identical `vault.bin` bytes.

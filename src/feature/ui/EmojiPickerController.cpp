@@ -91,29 +91,79 @@ bool EmojiPickerController::RegisterModel(Rml::Context* context) {
   });
 }
 
-void EmojiPickerController::OpenInsert(std::function<void(std::string emoji)> on_pick) {
-  Open(Mode::Insert, {}, std::move(on_pick));
-}
-
-void EmojiPickerController::OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick) {
-  Open(Mode::React, std::move(message_id), std::move(on_pick));
-}
-
-void EmojiPickerController::Open(Mode mode, std::string message_id,
-                                 std::function<void(std::string emoji)> on_pick) {
+void EmojiPickerController::OpenInsert(
+    std::function<void(std::string emoji, bool restore_composer_focus)> on_pick) {
+  // Toggle: ☺ again while bottom chrome emoji is open closes it (no OSK bounce).
+  if (IsBottomChromeEmojiOpen()) {
+    Close();
+    return;
+  }
   if (layer_id_ >= 0) {
     Close();
   }
-  mode_ = mode;
-  react_message_id_ = std::move(message_id);
-  on_pick_ = std::move(on_pick);
-  title_ = (mode_ == Mode::Insert) ? "Insert emoji" : "React";
+  mode_ = Mode::Insert;
+  react_message_id_.clear();
+  on_insert_pick_ = std::move(on_pick);
+  on_react_pick_ = nullptr;
+  title_ = "Insert emoji";
   active_category_.clear();
   RebuildModel();
   DirtyAll();
 
+  const bool prefer_bottom =
+      shell_navigation_.uses_bottom_chrome && shell_navigation_.uses_bottom_chrome();
+  if (prefer_bottom) {
+    OpenBottomChromePresentation();
+    if (bottom_chrome_mode_) {
+      return;
+    }
+  }
+  OpenOverlayPresentation();
+}
+
+void EmojiPickerController::OpenReact(std::string message_id,
+                                      std::function<void(std::string emoji)> on_pick) {
+  if (IsBottomChromeEmojiOpen()) {
+    Close();
+  }
+  if (layer_id_ >= 0) {
+    Close();
+  }
+  mode_ = Mode::React;
+  react_message_id_ = std::move(message_id);
+  on_react_pick_ = std::move(on_pick);
+  on_insert_pick_ = nullptr;
+  title_ = "React";
+  active_category_.clear();
+  RebuildModel();
+  DirtyAll();
+  OpenOverlayPresentation();
+}
+
+bool EmojiPickerController::IsBottomChromeEmojiOpen() const {
+  if (bottom_chrome_mode_) {
+    return true;
+  }
+  return shell_navigation_.bottom_chrome_open && shell_navigation_.bottom_chrome_open();
+}
+
+void EmojiPickerController::OpenBottomChromePresentation() {
+  if (!shell_navigation_.set_bottom_chrome) {
+    bottom_chrome_mode_ = false;
+    return;
+  }
+  BottomChromeSpec spec;
+  spec.key = "emoji_picker";
+  bottom_chrome_mode_ = shell_navigation_.set_bottom_chrome(spec);
+}
+
+void EmojiPickerController::OpenOverlayPresentation() {
+  bottom_chrome_mode_ = false;
   PaneSpec spec;
   spec.key = "emoji_picker";
+  if (mode_ == Mode::Insert) {
+    spec.return_focus_id = "draft-input";
+  }
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
 }
@@ -134,12 +184,16 @@ void EmojiPickerController::OnFlowDismissed() {
 }
 
 void EmojiPickerController::Close() {
-  if (flow_coordinator_.end_modal) {
-    flow_coordinator_.end_modal();
-  }
+  const bool was_bottom = bottom_chrome_mode_;
   const int closing_id = layer_id_;
   layer_id_ = -1;
   ResetState();
+  if (was_bottom && shell_navigation_.clear_bottom_chrome) {
+    shell_navigation_.clear_bottom_chrome();
+  }
+  if (flow_coordinator_.end_modal) {
+    flow_coordinator_.end_modal();
+  }
   if (closing_id >= 0 && shell_navigation_.close_layer) {
     shell_navigation_.close_layer(closing_id);
   }
@@ -147,7 +201,9 @@ void EmojiPickerController::Close() {
 }
 
 void EmojiPickerController::ResetState() {
-  on_pick_ = nullptr;
+  on_insert_pick_ = nullptr;
+  on_react_pick_ = nullptr;
+  bottom_chrome_mode_ = false;
   react_message_id_.clear();
   rail_tabs_.clear();
   sections_.clear();
@@ -247,7 +303,23 @@ void EmojiPickerController::OnEmojiPicked(const std::string& glyph) {
     return;
   }
   PersistRecent(key);
-  auto pick = std::move(on_pick_);
+  if (mode_ == Mode::Insert) {
+    // Bottom-chrome Insert stays open for multi-tap (OSK stays dismissed).
+    // Expanded popover Insert closes and restores composer focus via return_focus_id.
+    if (bottom_chrome_mode_) {
+      if (on_insert_pick_) {
+        on_insert_pick_(key, /*restore_composer_focus=*/false);
+      }
+      return;
+    }
+    auto pick = std::move(on_insert_pick_);
+    Close();
+    if (pick) {
+      pick(key, /*restore_composer_focus=*/true);
+    }
+    return;
+  }
+  auto pick = std::move(on_react_pick_);
   Close();
   if (pick) {
     pick(key);

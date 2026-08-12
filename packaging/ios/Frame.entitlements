@@ -3,15 +3,9 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- Optional: shared container for extensions / push service (register group in Developer Portal). -->
-  <key>com.apple.security.application-groups</key>
-  <array>
-    <string>group.YOUR_TEAM_ID.dev.pp-browser.ios</string>
-  </array>
-  <!-- Keychain access for future secure API-key storage (placeholder). -->
-  <key>keychain-access-groups</key>
-  <array>
-    <string>$(AppIdentifierPrefix)dev.pp-browser.ios</string>
-  </array>
+  <!-- Required for development installs / debugger attach. -->
+  <key>get-task-allow</key>
+  <true/>
+  <!-- App Groups / Keychain access groups: add when App ID capabilities are enabled. -->
 </dict>
 </plist>

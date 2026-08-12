@@ -160,13 +160,20 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event)
 
 	bool size_may_have_changed = false;
 	bool live_expose = false;
+	bool safe_area_only = false;
 	switch (event->type)
 	{
 	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
 	case SDL_EVENT_WINDOW_RESIZED:
 	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
 		size_may_have_changed = true;
+		break;
+	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+		// Android publishes IME insets from the Java UI thread via JNI → PushEvent →
+		// this watch. Running a full SyncContext/Update here nests Rml layout inside
+		// FlexFormattingContext and has crashed (SIGSEGV) when the OSK toggles with
+		// the emoji panel. Only force a main-loop frame; ProcessEvents handles the event.
+		safe_area_only = true;
 		break;
 	case SDL_EVENT_WINDOW_EXPOSED:
 		// data1 == 1: live-resize expose while the modal resize/drag loop is active.
@@ -174,6 +181,12 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event)
 		break;
 	default:
 		break;
+	}
+
+	if (safe_area_only)
+	{
+		Backend::RequestForceFrame();
+		return true;
 	}
 
 	if (!size_may_have_changed && !live_expose)

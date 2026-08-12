@@ -68,7 +68,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::Top(dialog_state), InterruptionKind::Dialog);
 
   ShellState overlay_state{};
-  overlay_state.overlay_stack.push_back({1, OverlayKind::Generic, "views/dialog.rml", {}});
+  overlay_state.overlay_stack.push_back({1, OverlayKind::Generic, "dialog", "views/dialog.rml", {}});
   EXPECT_EQ(ShellInterruption::Top(overlay_state), InterruptionKind::OverlayLayer);
 
   ShellState transient_state{};

@@ -28,7 +28,7 @@ Until you fill in signing placeholders, **simulator builds work unsigned**; **de
 
 ## Prerequisites
 
-- macOS with **Xcode 15+** and iOS SDK
+- macOS with **Xcode matching the device iOS major** (e.g. iPhone on **iOS 26.5** needs **Xcode 26.5+**; Xcode 26.5+ itself needs **macOS Tahoe 26.2+**)
 - **CMake 3.24+**, **Ninja** (recommended)
 - **Perl** (lsquic codegen — same as desktop/Android)
 - Vendored trees present (`./scripts/vendor_import.sh`, `./scripts/libp2p_vendor_import.sh` if needed)
@@ -38,6 +38,8 @@ Install command-line tools if needed:
 ```bash
 xcode-select --install
 ```
+
+If `xcrun devicectl` reports **developer disk image could not be mounted**, the Mac’s Xcode is older than the phone’s iOS — update Xcode (and macOS if required) before device install/debug will work.
 
 ---
 
@@ -80,6 +82,8 @@ If typing with the Mac keyboard works but nothing appears on screen, the app pat
 ./scripts/ios_build.sh install           # Install to install-ios/Frame.app
 ./scripts/ios_build.sh sim               # configure + build + install (simulator)
 ./scripts/ios_build.sh device            # configure + build + install (device)
+./scripts/ios_build.sh run-sim           # install + launch on Simulator
+./scripts/ios_build.sh run-device        # sign (from signing.env) + install + launch on iPhone
 ./scripts/ios_build.sh xcode             # -G Xcode for IDE debugging
 ./scripts/ios_build.sh clean             # Remove build-ios-* trees
 ```
@@ -167,14 +171,18 @@ source packaging/ios/signing.env
 | `IOS_SIGNING_IDENTITY` | `Apple Development: …` | From Keychain |
 | `IOS_PROVISIONING_PROFILE_PATH` | `/path/to/*.mobileprovision` | Development profile |
 
-Sign after install:
+Sign + install on a connected iPhone:
 
 ```bash
-./scripts/ios_build.sh device install
-./scripts/ios_sign.sh sign-app install-ios/Frame.app
+./scripts/ios_build.sh device          # once, or when sources change
+source packaging/ios/signing.env
+./scripts/ios_build.sh run-device      # embeds profile, codesigns, devicectl install + launch
 ```
 
-Install on a connected device via Xcode **Devices and Simulators**, or archive/export when ready for TestFlight.
+Or manually: `./scripts/ios_sign.sh sign-app install-ios/Frame.app` then  
+`xcrun devicectl device install app --device <UDID> install-ios/Frame.app`.
+
+Archive/export when ready for TestFlight.
 
 For IPA export, copy and edit the export template:
 

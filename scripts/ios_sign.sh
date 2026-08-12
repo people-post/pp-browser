@@ -164,15 +164,36 @@ cmd_sign_app() {
   log "Team: ${IOS_DEVELOPMENT_TEAM}"
   log "Bundle ID: ${bundle_id}"
 
+  # Embed the provisioning profile (required for device install).
+  local profile_src=""
+  if [[ -n "${IOS_PROVISIONING_PROFILE_PATH:-}" && -f "${IOS_PROVISIONING_PROFILE_PATH}" ]]; then
+    profile_src="${IOS_PROVISIONING_PROFILE_PATH}"
+  elif [[ -n "${TEMP_PROFILE:-}" && -f "${TEMP_PROFILE}" ]]; then
+    profile_src="${TEMP_PROFILE}"
+  fi
+  if [[ -z "$profile_src" ]]; then
+    echo "error: no provisioning profile to embed" >&2
+    exit 1
+  fi
+  cp "$profile_src" "${app_path}/embedded.mobileprovision"
+  log "Embedded $(basename "$profile_src")"
+
+  # Align Info.plist bundle id with the App ID / profile.
+  if [[ -f "${app_path}/Info.plist" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${bundle_id}" "${app_path}/Info.plist" 2>/dev/null \
+      || plutil -replace CFBundleIdentifier -string "$bundle_id" "${app_path}/Info.plist"
+  fi
+
   while IFS= read -r -d '' binary; do
     if file "$binary" | grep -q 'Mach-O'; then
-      codesign --force --sign "$IOS_SIGNING_IDENTITY" --timestamp "$binary" || true
+      codesign --force --sign "$IOS_SIGNING_IDENTITY" --timestamp=none "$binary" || true
     fi
-  done < <(find "$app_path" -type f -print0)
+  done < <(find "$app_path" -type f ! -name 'embedded.mobileprovision' -print0)
 
   codesign --force --sign "$IOS_SIGNING_IDENTITY" \
     --entitlements "$entitlements" \
-    --timestamp \
+    --generate-entitlement-der \
+    --timestamp=none \
     "$app_path"
 
   codesign --verify --deep --strict --verbose=2 "$app_path"

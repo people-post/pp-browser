@@ -99,8 +99,10 @@ public:
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   void BindEmojiPickerNotify(EmojiPickerNotifyPorts ports);
-  /** Append a normalized emoji glyph to the composer draft (used by emoji picker). */
-  void InsertEmojiIntoDraft(const std::string& emoji);
+  /** Append a normalized emoji glyph to the composer draft (used by emoji picker).
+   *  @param restore_composer_focus When true (popover), focus the composer after insert.
+   *         When false (keyboard panel), advance caret only so the OSK stays dismissed. */
+  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true);
   /** Toggle a reaction from the emoji picker (public for Application wiring). */
   void ReactWithEmoji(const std::string& message_id, const std::string& emoji);
   void BindShellSetup(ShellSetupPorts ports);

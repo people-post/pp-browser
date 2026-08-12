@@ -93,6 +93,17 @@ struct PaneSpec {
   PaneRole role = PaneRole::Primary;
   Rml::String toolbar_label;
   bool provides_composer = false;
+  /**
+   * When non-empty, PushLayer stores this element id for RestoreFocus on close
+   * instead of the live focus element (often the button that opened the overlay).
+   */
+  std::string return_focus_id;
+};
+
+/** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
+struct BottomChromeSpec {
+  std::string key;
+  std::string rml_path;
 };
 
 struct PaneState {
@@ -103,6 +114,8 @@ struct PaneState {
 struct OverlayEntry {
   int id = 0;
   OverlayKind kind = OverlayKind::Generic;
+  /** ViewCatalog key (e.g. emoji_picker); used for presentation variants. */
+  std::string key;
   std::string rml_path;
   std::function<void(bool)> on_result;
 };

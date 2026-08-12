@@ -20,6 +20,7 @@ Commands:
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
   run-sim           Boot a simulator if needed, install Frame.app, and launch
+  run-device         Sign (if configured) and install+launch on a connected iPhone
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
 
@@ -31,9 +32,10 @@ Environment:
   PP_BROWSER_RELEASE_VERSION  Full version string (e.g. 0.1.0-rc1)
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
+  IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
 
 Requires (macOS only):
-  Xcode 15+ with iOS SDK
+  Xcode matching the device iOS major (iOS 26.x → Xcode 26.x)
   CMake 3.24+
   Ninja (recommended)
   Perl (lsquic codegen)
@@ -216,6 +218,67 @@ for devices in data.get('devices', {}).values():
   echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name pp-browser-debug.log -exec cat {} \\;"
 }
 
+pick_physical_device_udid() {
+  xcrun xctrace list devices 2>/dev/null | python3 -c "
+import re, sys
+text = sys.stdin.read()
+# Prefer lines like: Name (iOS ver) (UDID) that are not Simulator
+for line in text.splitlines():
+    if 'Simulator' in line:
+        continue
+    m = re.search(r'\(([0-9A-Fa-f-]{25,})\)\s*$', line.strip())
+    if not m:
+        continue
+    udid = m.group(1)
+    # Skip Mac hosts (no iOS version in name typically uses different shape)
+    if 'Mac' in line and 'iPhone' not in line and 'iPad' not in line:
+        continue
+    if 'iPhone' in line or 'iPad' in line or re.search(r'\(\d+\.\d+', line):
+        print(udid)
+        raise SystemExit(0)
+raise SystemExit(1)
+"
+}
+
+cmd_run_device() {
+  require_macos
+  local app="${INSTALL_PREFIX}/Frame.app"
+  if [[ ! -d "$app" ]]; then
+    echo "error: ${app} not found — run './scripts/ios_build.sh device' first" >&2
+    exit 1
+  fi
+
+  local signing_env="${ROOT}/packaging/ios/signing.env"
+  if [[ -f "$signing_env" ]]; then
+    # shellcheck disable=SC1090
+    set -a
+    # shellcheck disable=SC1091
+    source "$signing_env"
+    set +a
+  fi
+
+  if [[ -x "${ROOT}/scripts/ios_sign.sh" ]]; then
+    echo "==> Signing ${app}"
+    "${ROOT}/scripts/ios_sign.sh" sign-app "$app"
+  fi
+
+  local udid="${IOS_DEVICE_UDID:-}"
+  if [[ -z "$udid" ]]; then
+    if ! udid="$(pick_physical_device_udid)"; then
+      echo "error: no connected physical iPhone/iPad found" >&2
+      echo "hint: unlock the phone, trust this Mac, then: xcrun xctrace list devices" >&2
+      exit 1
+    fi
+  fi
+
+  local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
+  echo "==> Installing on device ${udid}"
+  xcrun devicectl device install app --device "$udid" "$app"
+  echo "==> Launching ${bundle_id}"
+  xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+  echo "==> Installed and launched ${bundle_id} on ${udid}"
+}
+
 cmd_clean() {
   rm -rf "${ROOT}/build-ios-simulator" "${ROOT}/build-ios-device" "${ROOT}/build-ios-xcode"
 }
@@ -251,6 +314,9 @@ main() {
       ;;
     run-sim)
       cmd_run_sim
+      ;;
+    run-device)
+      cmd_run_device
       ;;
     xcode)
       IOS_PLATFORM=simulator

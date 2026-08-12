@@ -57,12 +57,13 @@ public:
 
   bool RegisterModel(Rml::Context* context);
 
-  void OpenInsert(std::function<void(std::string emoji)> on_pick);
+  void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
 
 private:
-  void Open(Mode mode, std::string message_id, std::function<void(std::string emoji)> on_pick);
+  void OpenOverlayPresentation();
+  void OpenBottomChromePresentation();
   void RegisterFlow();
   void OnFlowDismissed();
   void ResetState();
@@ -73,6 +74,7 @@ private:
   void UpdateActiveFromScroll();
   void ScrollToCategory(const std::string& category_id);
   void EnsureWindowAround(int center_index);
+  bool IsBottomChromeEmojiOpen() const;
   Rml::Element* FindScrollBody() const;
   Rml::Element* FindSectionElement(const std::string& category_id) const;
 
@@ -84,8 +86,11 @@ private:
   Rml::Context* context_ = nullptr;
   int layer_id_ = -1;
   Mode mode_ = Mode::Insert;
+  /** True when Insert used mobile/compact bottom-chrome (IME slot) presentation. */
+  bool bottom_chrome_mode_ = false;
   std::string react_message_id_;
-  std::function<void(std::string)> on_pick_;
+  std::function<void(std::string, bool)> on_insert_pick_;
+  std::function<void(std::string)> on_react_pick_;
 
   Rml::String title_;
   Rml::String active_category_;

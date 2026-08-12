@@ -1273,8 +1273,9 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 
 **Date:** 2026-07-09  
 **Updated:** 2026-07-09 — clarify chain vs peer vs relay roles.  
+**Updated:** 2026-08-11 — **amended by [D099](#d099--account-id-amends-d096-multi-device)** for multi-device account root (pre-release). Until m1–m2 land, **code still matches the single-device table below**.  
 **Amends UX of:** D082 (relay-user string remains wire format).  
-**Cross-project:** [D091](#d091--blockchain-contact-id-caip-10-e024), [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).  
+**Cross-project:** [D091](#d091--blockchain-contact-id-caip-10-e024), [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007), [multi-device-account](../multi-device-account/).  
 **Decision:**
 
 Identity strings serve different verbs — do not treat them as interchangeable “user ids”:
@@ -1291,10 +1292,12 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 4. **v1 wire unchanged:** `ChatTargetKey` / `sender_contact_id` / AAD continue to use `peer_identity_kind = relay_user` and `relay:…` until a deliberate protocol bump to `peer_id` threads (D079). Target directory map: `CAIP-10 | nickname | relay_id → Peer ID`.
 5. **One keypair:** The Ed25519 key in `identity.json` is the source for Peer ID derivation, message signing, and registration proofs.
 
-**Slogan:** Peer ID = who. Chain account = how you find who. Relay = how messages route today.
+**Slogan (single-device era):** Peer ID = who. Chain account = how you find who. Relay = how messages route today.
 
 **Rationale:** Dialable P2P identity exists before relay registration; wallet search and attestation must not be confused with the network id or the v1 transport account.  
 **Alternatives:** Keep relay-first Settings (rejected); CAIP-10 as Me primary / wire id in v1 (rejected — D091); flip wire to Peer ID in the same change (rejected — protocol bump).
+
+**Superseded in part by D099** for multi-device: person = Account ID; Peer ID = device endpoint; relay = route binding; account key signs (not one keypair for all roles). Canonical matrix: [multi-device-account DESIGN](../multi-device-account/DESIGN.md).
 
 ---
 
@@ -1330,6 +1333,34 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 **Alternatives:** Mutate target row likes array (rejected — D005); nested JSON `value` object (rejected — codec is string); full Unicode dump (rejected — curated catalog + OS paste for rare glyphs).
 
 **Follow-up (2026-08-10):** In-app emoji catalog is no longer deferred for insert / reaction **More…** — see `EmojiCatalog` + `EmojiPickerController`.
+
+---
+
+## D099 — Account ID amends D096 (multi-device)
+
+**Date:** 2026-08-11  
+**Amends:** [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route) (person/endpoint/route split; ends “one keypair” for multi-device).  
+**Does not amend:** D082 string rules for `relay:` **as a route id**; D091 (CAIP-10 find-only).  
+**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M007](../multi-device-account/DECISIONS.md)).  
+**Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+
+**Decision:**
+
+| Role | Value | Scope |
+|------|--------|-------|
+| **Account (person)** | `account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` | Shared across linked devices |
+| **Endpoint (install)** | libp2p **Peer ID** from **device** keypair | Per device |
+| **Route** | `relay:<opaque_id>` | Per relay server binding |
+| **Find** | CAIP-10 (optional) | Alias → Account ID |
+
+1. **Account ID** is the communicating-identity target for the pre-release hard cut (`ChatTargetKey` / wire) — see multi-device-account M007; code remains `relay_user` until m2.
+2. **Peer ID** is no longer the account “who”; it is the mesh endpoint for one install (avoids dual-online conflict).
+3. **Brief register binding:** prove account key → at most one `relay_user_id` per Account ID per server (M006).
+4. **Signing / PSK sync / DEK:** owned by e2e E025 and at-rest A010 — not re-specified here.
+5. D015 single-active-sender and D074 `sender_instance_id` remain until multi-writer phases in multi-device-account / public tier work.
+
+**Rationale:** Portable multi-device account without overloading Peer ID or `relay:` as the person root; destructive cut acceptable pre-release.  
+**Alternatives:** Keep D096 as-is; soft-cut wire stays `relay:`; account = CAIP-10.
 
 ---
 

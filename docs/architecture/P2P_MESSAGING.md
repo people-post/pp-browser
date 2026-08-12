@@ -151,6 +151,8 @@ Per-message **Direct / Relay / Local** badges read the persisted `transport` col
 
 ## Identity model
 
+**Code today** (single-device): table below. **Multi-device target** (pre-release design freeze): Account ID = person; Peer ID = per-device endpoint; `relay:` = route binding — [multi-device-account](../../projects/multi-device-account/) ([D099](../../projects/chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device)).
+
 | Role | Example | Use |
 |------|---------|-----|
 | **Who** (network id) | libp2p Peer ID | Me primary, dial/bind, direct-only threads when no relay |

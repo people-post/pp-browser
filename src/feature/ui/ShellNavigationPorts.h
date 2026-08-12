@@ -79,6 +79,14 @@ struct ShellNavigationPorts {
   std::function<void()> close_auxiliary;
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
+  /**
+   * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
+   * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).
+   */
+  std::function<bool(const BottomChromeSpec& spec)> set_bottom_chrome;
+  std::function<void()> clear_bottom_chrome;
+  std::function<bool()> bottom_chrome_open;
+  std::function<bool()> uses_bottom_chrome;
 };
 
 class ShellHost;

@@ -9,18 +9,21 @@
 
 namespace pbr {
 
-inline constexpr size_t kHybridKemX25519PublicBytes = 32;
-inline constexpr size_t kHybridKemPublicKeyBytes = 1216;
-inline constexpr size_t kHybridKemCiphertextBytes = 1120;
-inline constexpr size_t kHybridKemSharedSecretBytes = 64;
-inline constexpr size_t kHybridKemPrivateKeyBytes = 2432;
+/** ML-KEM-768 (FIPS 203) via vendored mlkem-native — public-tier auto-key (PQ-only). */
+inline constexpr size_t kHybridKemPublicKeyBytes = 1184;
+inline constexpr size_t kHybridKemCiphertextBytes = 1088;
+inline constexpr size_t kHybridKemSharedSecretBytes = 32;
+inline constexpr size_t kHybridKemPrivateKeyBytes = 2400;
 
 struct HybridKemKeyPair {
   ByteVector public_key;
   ByteVector private_key;
 };
 
-/** X25519 + ML-KEM-768 (Kyber768 draft) — matches BoringSSL X25519Kyber768Draft00. */
+/**
+ * ML-KEM-768 encaps/decaps for `e2e_public` key_init.
+ * Class name kept for call-site stability; no longer X25519+Kyber draft hybrid.
+ */
 class HybridKem {
 public:
   static Roe<HybridKemKeyPair> GenerateKeyPair();
