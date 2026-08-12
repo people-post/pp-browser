@@ -2120,10 +2120,11 @@ std::string ShellHost::SerializeShellRoot() const {
   out << SerializeTransientLayer();
   out << SerializeOverlays();
   out << SerializeDialog();
-  // Call chrome mounts stay empty here; RemountCallChrome fills them (avoids full-shell remount).
+  // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
+  out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
-  out << SerializePinGate();
+  out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
   return out.str();
 }
 
@@ -2421,7 +2422,11 @@ void ShellHost::SyncLayout() {
   last_synced_mode_ = mode;
   MountPaneBodies();
   remount_call_chrome_pending_ = false;
+  remount_dialog_chrome_pending_ = false;
+  remount_pin_gate_chrome_pending_ = false;
+  RemountDialogChromeNow();
   RemountCallChromeNow();
+  RemountPinGateChromeNow();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -2538,6 +2543,78 @@ void ShellHost::RemountCallChromeNow() {
   }
   DirtyCallChrome();
   AttachCallChromeGesture();
+}
+
+void ShellHost::RemountDialogChrome() {
+  if (remount_dialog_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_dialog_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountDialogChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountDialogChrome() {
+  if (!remount_dialog_chrome_pending_) {
+    return;
+  }
+  remount_dialog_chrome_pending_ = false;
+  RemountDialogChromeNow();
+  AppRuntime::PostUI([]() {
+    ShellHost::Instance().DirtyFeedback();
+    Backend::RequestForceFrame();
+  });
+}
+
+void ShellHost::RemountDialogChromeNow() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  if (Rml::Element* mount = doc->GetElementById("shell-dialog-mount")) {
+    RmlMount::MountInner(mount, SerializeDialog());
+  }
+  DirtyFeedback();
+}
+
+void ShellHost::RemountPinGateChrome() {
+  if (remount_pin_gate_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_pin_gate_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountPinGateChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountPinGateChrome() {
+  if (!remount_pin_gate_chrome_pending_) {
+    return;
+  }
+  remount_pin_gate_chrome_pending_ = false;
+  RemountPinGateChromeNow();
+  AppRuntime::PostUI([]() {
+    ShellHost::Instance().DirtyPinGate();
+    Backend::RequestForceFrame();
+  });
+}
+
+void ShellHost::RemountPinGateChromeNow() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  if (Rml::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
+    RmlMount::MountInner(mount, SerializePinGate());
+  }
+  DirtyPinGate();
 }
 
 void ShellHost::Update(Rml::Context* context) {

@@ -1236,7 +1236,8 @@ void ChatController::SyncDisplayFromThread() {
   const size_t prev_count = chat_.messages.size();
 
   chat_.messages = facade_
-      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder())
+      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder(),
+                                  scroller_.LoadedMaxDisplayOrder())
       : std::vector<MessageDisplayRow>{};
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();

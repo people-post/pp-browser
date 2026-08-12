@@ -12,6 +12,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,14 @@ public:
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
 
+  /**
+   * Grow-ahead + unload-behind window for emoji sections.
+   * `end` never shrinks below `prev_end` so scroll can reach categories below.
+   * `begin` tracks behind `center` so far-above sections can unload.
+   */
+  static void ComputeSectionWindow(int center_index, int section_count, int span, int prev_end,
+                                   int& begin_out, int& end_out);
+
 private:
   void OpenOverlayPresentation();
   void OpenBottomChromePresentation();
@@ -74,6 +83,7 @@ private:
   void UpdateActiveFromScroll();
   void ScrollToCategory(const std::string& category_id);
   void EnsureWindowAround(int center_index);
+  void ApplyPendingScrollAdjust();
   bool IsBottomChromeEmojiOpen() const;
   Rml::Element* FindScrollBody() const;
   Rml::Element* FindSectionElement(const std::string& category_id) const;
@@ -96,9 +106,12 @@ private:
   Rml::String active_category_;
   std::vector<RailTab> rail_tabs_;
   std::vector<Section> sections_;
-  /** App-side window: bind cells for sections in [window_begin, window_end). */
+  /** App-side window: cells bound for [window_begin, window_end); grow end on scroll, unload above. */
   int window_begin_ = 0;
   int window_end_ = 0;
+  /** Scroll restore after unloading sections above the viewport (height shrink). */
+  std::optional<float> pending_scroll_height_before_;
+  std::optional<float> pending_scroll_top_before_;
 
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;

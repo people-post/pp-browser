@@ -26,7 +26,7 @@ push *SurfaceSnapshot      → Project + Classify → ShellChromeOp → DirtyNav
 | Chat | `ChatSurfaceSnapshot` | `ChatShellBridge` | `ChatThreadChrome` notifies via callback |
 | People picker | `PeoplePickerSurfaceSnapshot` | `PeoplePickerShellBridge` | overlay open/close |
 | Call | `CallChromeSnapshot` (`ring_` / `in_call_` in `CallController`) | `ShellCallChromePorts::apply_snapshot` | Classify via `CallChromeSync`; `ShellHost::ApplyCallChromeSnapshot` copies then Remount/Dirty |
-| PIN gate | `PinGateState` (`pin_state_` in `PinGateController`) | `ShellPinGatePorts::apply_pin_gate` | `dirty_pin_gate` + sync layout; bound pin inputs pulled via read-only snapshot before submit |
+| PIN gate | `PinGateState` (`pin_state_` in `PinGateController`) | `ShellPinGatePorts::apply_pin_gate` | `dirty_pin_gate` + `remount_pin_gate`; bound pin inputs pulled via read-only snapshot before submit |
 
 `dirty_nav_chrome` removed from `ShellNavigationPorts` — presenters must not shotgun-dirty nav.
 

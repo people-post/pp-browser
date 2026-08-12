@@ -1,0 +1,43 @@
+      <div class="settings-section stack">
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_theme()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.theme.label}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="appearance_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.theme.help}}</p>
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_language()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.language.label}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="language_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.language.help}}</p>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.reduce_transparency.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="reduce_transparency == 'on'"
+                  data-event-click="toggle_reduce_transparency()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.reduce_transparency.help}}</p>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.call_diagnostics.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="call_diagnostics == 'on'"
+                  data-event-click="toggle_call_diagnostics()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.call_diagnostics.help}}</p>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+

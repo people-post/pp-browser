@@ -63,8 +63,8 @@ void PinGateController::ShowError(const std::string& message) {
 void PinGateController::Dismiss() {
   pin_state_ = {};
   ApplyPinGate();
-  if (shell_pin_gate_.request_sync_layout) {
-    shell_pin_gate_.request_sync_layout(false, nullptr);
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
   }
 }
 
@@ -78,8 +78,8 @@ void PinGateController::ShowChooser() {
   pin_state_.title = Tr("pin.chooser_title").c_str();
   pin_state_.message = Tr("pin.chooser_message").c_str();
   ApplyPinGate();
-  if (shell_pin_gate_.request_sync_layout) {
-    shell_pin_gate_.request_sync_layout(false, nullptr);
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
   }
 }
 
@@ -93,8 +93,8 @@ void PinGateController::ShowUnlock() {
   pin_state_.title = Tr("pin.unlock_title").c_str();
   pin_state_.message = Tr("pin.unlock_message").c_str();
   ApplyPinGate();
-  if (shell_pin_gate_.request_sync_layout) {
-    shell_pin_gate_.request_sync_layout(false, nullptr);
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
   }
 }
 
@@ -110,8 +110,8 @@ void PinGateController::ShowCreate() {
   pin_state_.title = Tr("pin.create_title").c_str();
   pin_state_.message = Tr("pin.create_message").c_str();
   ApplyPinGate();
-  if (shell_pin_gate_.request_sync_layout) {
-    shell_pin_gate_.request_sync_layout(false, nullptr);
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
   }
 }
 

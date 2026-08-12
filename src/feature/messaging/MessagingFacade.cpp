@@ -81,8 +81,9 @@ PeerDisplayLabel MessagingFacade::ResolveThreadLabel(const Thread& thread) {
 }
 
 std::vector<MessageDisplayRow> MessagingFacade::BuildDisplayRows(const std::string& thread_id,
-                                                                 const std::optional<int64_t> oldest_inclusive) {
-  return hub_.Inbox().BuildDisplayRows(thread_id, oldest_inclusive);
+                                                                 const std::optional<int64_t> oldest_inclusive,
+                                                                 const std::optional<int64_t> newest_inclusive) {
+  return hub_.Inbox().BuildDisplayRows(thread_id, oldest_inclusive, newest_inclusive);
 }
 
 bool MessagingFacade::HasLocalMessagesBefore(const std::string& thread_id, const int64_t before_display_order) {

@@ -20,7 +20,8 @@ struct ShellPinGatePorts {
   std::function<void(bool visible, const Rml::String& message)> set_activity;
   /** PIN gate + unlock_in_progress bindings (not grab-bag DirtyWindow). */
   std::function<void()> dirty_pin_gate;
-  std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
+  /** Presence remount into #shell-pin-gate-mount (not full SyncLayout). */
+  std::function<void()> remount_pin_gate;
 };
 
 class ShellHost;

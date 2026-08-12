@@ -1,0 +1,40 @@
+      <div class="settings-section stack">
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.integrations.promoted_mcp}}</span>
+          <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="Blank uses platform default"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.integrations.search}}</span>
+          <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
+        </label>
+        <p class="text muted">Custom MCP servers (stdio on desktop; URL on mobile).</p>
+        <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
+          <label class="settings-field">
+            <span class="settings-label">ID</span>
+            <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">URL</span>
+            <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">Command</span>
+            <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">Args</span>
+            <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="space-separated"/>
+          </label>
+          <div class="settings-actions row">
+            <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">Remove</button>
+          </div>
+        </div>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">{{i18n:settings.integrations.add_mcp}}</button>
+        </div>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+

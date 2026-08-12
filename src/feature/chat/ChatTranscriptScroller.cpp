@@ -33,6 +33,7 @@ void ChatTranscriptScroller::Reset() {
   has_more_local_history_ = false;
   scroll_thread_id_.clear();
   loaded_min_display_order_.reset();
+  loaded_max_display_order_.reset();
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
   last_messages_scroll_height_ = 0.f;
@@ -231,8 +232,18 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
       facade_ &&
       facade_->HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
 
-  view_.messages = facade_ ? facade_->BuildDisplayRows(thread_id, loaded_min_display_order_)
-                                                  : std::vector<MessageDisplayRow>{};
+  view_.messages = facade_
+                       ? facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_)
+                       : std::vector<MessageDisplayRow>{};
+  if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
+                    loaded_max_display_order_, has_more_local_history_)) {
+    pinned_to_bottom_ = false;
+    SetShowJumpToLatest(true);
+    // Rebuild with new max bound so store sync stays coherent.
+    view_.messages = facade_
+                         ? facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_)
+                         : std::vector<MessageDisplayRow>{};
+  }
   view_.has_turns = !view_.messages.empty();
   if (dirty_turns_) {
     dirty_turns_();
@@ -262,6 +273,23 @@ void ChatTranscriptScroller::OnMessagesScroll() {
 }
 
 void ChatTranscriptScroller::OnJumpToLatest() {
+  loaded_max_display_order_.reset();
+  loaded_min_display_order_.reset();
+  if (facade_) {
+    const std::string thread_id = facade_->ActiveThreadId();
+    if (!thread_id.empty()) {
+      view_.messages = facade_->BuildDisplayRows(thread_id, std::nullopt, std::nullopt);
+      view_.has_turns = !view_.messages.empty();
+      if (!view_.messages.empty()) {
+        loaded_min_display_order_ = view_.messages.front().display_order;
+        has_more_local_history_ =
+            facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+      }
+      if (dirty_turns_) {
+        dirty_turns_();
+      }
+    }
+  }
   RequestScrollToLatest();
   ScrollMessagesToBottom();
 }
@@ -282,6 +310,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
   if (thread_changed) {
     scroll_thread_id_ = thread_id;
     loaded_min_display_order_.reset();
+    loaded_max_display_order_.reset();
     unread_while_scrolled_ = 0;
     RequestScrollToLatest();
   }
@@ -291,13 +320,32 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
 void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::string& prev_tail_id,
                                             size_t prev_count) {
   if (!view_.messages.empty()) {
-    loaded_min_display_order_ = view_.messages.front().display_order;
-    const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string{};
-    has_more_local_history_ =
-        facade_ &&
-        facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+    if (TrimDomWindow(view_.messages, pinned_to_bottom_, loaded_min_display_order_, loaded_max_display_order_,
+                      has_more_local_history_)) {
+      if (pinned_to_bottom_ && facade_) {
+        const std::string thread_id = facade_->ActiveThreadId();
+        view_.messages =
+            facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
+        view_.has_turns = !view_.messages.empty();
+      } else if (!pinned_to_bottom_) {
+        SetShowJumpToLatest(true);
+      }
+    }
+    if (!view_.messages.empty()) {
+      loaded_min_display_order_ = view_.messages.front().display_order;
+      if (!loaded_max_display_order_.has_value()) {
+        // Tip-aligned window: max is the current tip (implicit).
+      } else {
+        loaded_max_display_order_ = view_.messages.back().display_order;
+      }
+      const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string{};
+      has_more_local_history_ =
+          facade_ &&
+          facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+    }
   } else {
     loaded_min_display_order_.reset();
+    loaded_max_display_order_.reset();
     has_more_local_history_ = false;
   }
 
@@ -311,6 +359,26 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
       SetShowJumpToLatest(true);
     }
   }
+}
+
+bool ChatTranscriptScroller::TrimDomWindow(std::vector<MessageDisplayRow>& messages, bool pinned_to_bottom,
+                                           std::optional<int64_t>& loaded_min,
+                                           std::optional<int64_t>& loaded_max, bool& has_more_local_history) {
+  if (messages.size() <= kMaxMessagesDomWindow) {
+    return false;
+  }
+  if (pinned_to_bottom) {
+    const size_t drop = messages.size() - kMaxMessagesDomWindow;
+    messages.erase(messages.begin(), messages.begin() + static_cast<std::ptrdiff_t>(drop));
+    loaded_min = messages.front().display_order;
+    loaded_max.reset();
+    has_more_local_history = true;
+    return true;
+  }
+  messages.resize(kMaxMessagesDomWindow);
+  loaded_min = messages.front().display_order;
+  loaded_max = messages.back().display_order;
+  return true;
 }
 
 void ChatTranscriptScroller::CaptureScrollBeforePrependIfUnpinned() {

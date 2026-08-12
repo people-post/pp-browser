@@ -195,6 +195,8 @@ private:
   bool ComputeNetworkAttention() const;
   SessionStore& Store();
   void FinishPaneResync();
+  /** Mount selected section RML into #settings-section-mount (one section at a time). */
+  void MountSelectedSettingsSection();
   void OnSelectSection(const std::string& section_id);
   void OpenSettingsDetailPane();
   bool CloseSettingsDetailPane();

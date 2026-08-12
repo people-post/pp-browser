@@ -1,0 +1,52 @@
+      <div class="settings-section stack">
+        <p class="text muted me-profile-meta">
+          {{i18n:settings.nickname}}: <span data-rml="profile_nickname"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
+          Peer ID: <span data-rml="profile_peer_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
+          Relay ID: <span data-rml="profile_relay_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
+          Relay ID: not registered yet
+        </p>
+        <p class="text muted me-profile-meta">
+          Registration: <span data-rml="profile_registration_status"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
+          Expires: <span data-rml="profile_registration_expires"></span>
+        </p>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.auto_renew}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="auto_renew_registration == 'auto'"
+                  data-event-click="toggle_auto_renew_registration()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.notifications}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="show_notifications == 'on'"
+                  data-event-click="toggle_show_notifications()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
+        <div class="me-profile-actions row">
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
+            <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+            Copy ID
+          </button>
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
+            <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+            Share
+          </button>
+          <button class="btn btn-primary" type="button" data-if="profile_show_register"
+                  data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
+          <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
+                  data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
+        </div>
+      </div>
+

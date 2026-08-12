@@ -29,6 +29,14 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings", "views/settings.rml"},
       {"settings_detail", "views/settings_detail.rml"},
       {"settings_sections", "views/settings_sections.rml"},
+      {"settings_section_profile", "views/settings_section_profile.rml"},
+      {"settings_section_llm", "views/settings_section_llm.rml"},
+      {"settings_section_integrations", "views/settings_section_integrations.rml"},
+      {"settings_section_network", "views/settings_section_network.rml"},
+      {"settings_section_appearance", "views/settings_section_appearance.rml"},
+      {"settings_section_security", "views/settings_section_security.rml"},
+      {"settings_section_storage", "views/settings_section_storage.rml"},
+      {"settings_section_about", "views/settings_section_about.rml"},
   };
   return keys;
 }
@@ -65,6 +73,11 @@ std::string ExpandIncludes(std::string body, int depth = 0) {
   return body;
 }
 
+std::unordered_map<std::string, std::string>& BodyCache() {
+  static std::unordered_map<std::string, std::string> cache;
+  return cache;
+}
+
 } // namespace
 
 std::string ViewCatalog::ResolvePath(const std::string& key_or_path) {
@@ -87,7 +100,21 @@ std::string ViewCatalog::LoadFile(const std::string& absolute_path) {
 }
 
 std::string ViewCatalog::LoadBody(const std::string& key_or_path) {
-  return ExpandIncludes(LoadRawBody(key_or_path));
+  const std::string cache_key = ResolvePath(key_or_path);
+  auto& cache = BodyCache();
+  if (const auto it = cache.find(cache_key); it != cache.end()) {
+    return it->second;
+  }
+  std::string body = ExpandIncludes(LoadRawBody(key_or_path));
+  // Do not cache empty (missing asset) so a later successful read can populate.
+  if (!body.empty()) {
+    cache.emplace(cache_key, body);
+  }
+  return body;
+}
+
+void ViewCatalog::ClearCache() {
+  BodyCache().clear();
 }
 
 } // namespace pbr

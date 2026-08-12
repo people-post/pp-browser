@@ -11,11 +11,11 @@ void ShellFeedback::BindChromePorts(ShellFeedbackChromePorts ports) {
   chrome_ports_ = std::move(ports);
 }
 
-void ShellFeedback::SyncDialogChrome(const char* reason) {
-  if (chrome_ports_.request_sync_layout) {
-    chrome_ports_.request_sync_layout(/*restore_focus_after=*/false, reason);
+void ShellFeedback::SyncDialogChrome(const char* /*reason*/) {
+  if (chrome_ports_.remount_dialog) {
+    chrome_ports_.remount_dialog();
   }
-  // SyncLayout remounts dialog presence and DirtyWindow(); no extra dirty_feedback.
+  // RemountDialogChrome mounts dialog presence and Dirtys feedback bindings.
 }
 
 namespace {

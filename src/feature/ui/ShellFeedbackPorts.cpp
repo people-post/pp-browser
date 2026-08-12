@@ -9,9 +9,7 @@ namespace pbr {
 ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
   ShellFeedbackChromePorts feedback_chrome;
   feedback_chrome.shell_state = [&shell]() -> ShellState& { return shell.State(); };
-  feedback_chrome.request_sync_layout = [&shell](const bool restore, const char* reason) {
-    shell.RequestSyncLayout(restore, reason);
-  };
+  feedback_chrome.remount_dialog = [&shell]() { shell.RemountDialogChrome(); };
   feedback_chrome.dirty_feedback = [&shell]() { shell.DirtyFeedback(); };
   ShellFeedback::BindChromePorts(std::move(feedback_chrome));
 

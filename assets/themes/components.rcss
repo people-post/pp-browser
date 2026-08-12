@@ -1606,6 +1606,28 @@ select selectbox option {
   z-index: 50;
 }
 
+/* Dialog / PIN: empty mounts must not steal hits; children re-enable pointer-events. */
+.shell-overlay-chrome-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.shell-overlay-chrome-mount--dialog {
+  z-index: 50;
+}
+
+.shell-overlay-chrome-mount--pin {
+  z-index: 55;
+}
+
+.shell-overlay-chrome-mount .shell-layer {
+  pointer-events: auto;
+}
+
 /* Call chrome: empty mounts must not steal hits; children re-enable pointer-events. */
 .shell-call-chrome-mount {
   position: absolute;
@@ -1646,6 +1668,8 @@ select selectbox option {
   padding: 16dp;
   border-radius: 8dp;
   box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
 }
 
 .shell-close-btn {
@@ -1666,7 +1690,9 @@ select selectbox option {
 .shell-overlay-body {
   margin-top: 32dp;
   height: 100%;
+  min-height: 0;
   overflow: auto;
+  clip: always;
 }
 
 .shell-dialog {
@@ -3467,6 +3493,8 @@ call-video-tile {
   padding: 8dp 8dp 4dp 8dp;
   box-sizing: border-box;
   overflow: hidden;
+  /* Force scissor even when flex children absorb overflow (scroll lives on .emoji-picker-body). */
+  clip: always;
   z-index: 51;
 }
 
@@ -3476,10 +3504,14 @@ call-video-tile {
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  clip: always;
 }
 
 .shell-emoji-keyboard-body .emoji-picker {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Emoji picker overlay (expanded desktop modal) */
@@ -3490,6 +3522,7 @@ call-video-tile {
   min-height: 0;
   box-sizing: border-box;
   gap: 8dp;
+  overflow: hidden;
 }
 
 .emoji-picker-header {
@@ -3515,6 +3548,7 @@ call-video-tile {
   min-height: 0;
   align-items: stretch;
   gap: 0;
+  overflow: hidden;
 }
 
 .emoji-picker-rail {
@@ -3554,6 +3588,7 @@ call-video-tile {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  clip: always;
   padding: 0 8dp 12dp 8dp;
 }
 

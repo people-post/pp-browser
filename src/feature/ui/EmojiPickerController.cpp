@@ -1,5 +1,6 @@
 #include "feature/ui/EmojiPickerController.h"
 
+#include "base/runtime/AppRuntime.h"
 #include "base/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"
@@ -14,7 +15,7 @@
 namespace pbr {
 namespace {
 
-// Grow bound cell lists monotonically; never unload (stable section geometry).
+/** Prefetch / keep this many sections ahead of and behind the active category. */
 constexpr int kWindowSectionSpan = 4;
 
 } // namespace
@@ -210,6 +211,27 @@ void EmojiPickerController::ResetState() {
   active_category_.clear();
   window_begin_ = 0;
   window_end_ = 0;
+  pending_scroll_height_before_.reset();
+  pending_scroll_top_before_.reset();
+}
+
+void EmojiPickerController::ComputeSectionWindow(int center_index, int section_count, int span,
+                                                 int prev_end, int& begin_out, int& end_out) {
+  if (section_count <= 0 || span <= 0) {
+    begin_out = 0;
+    end_out = 0;
+    return;
+  }
+  const int use_span = std::min(span, section_count);
+  // Grow end ahead of center and never shrink — empty sections below have no height, so
+  // scroll-driven load requires the window to expand as the user moves down.
+  const int desired_end = std::min(section_count, std::max(use_span, center_index + use_span));
+  end_out = std::max(prev_end, desired_end);
+  // Unload only well above the active category (behind the viewport).
+  begin_out = std::max(0, center_index - use_span);
+  if (begin_out > end_out) {
+    begin_out = std::max(0, end_out - use_span);
+  }
 }
 
 void EmojiPickerController::EnsureWindowAround(int center_index) {
@@ -221,20 +243,49 @@ void EmojiPickerController::EnsureWindowAround(int center_index) {
   if (cats.empty() || sections_.size() != cats.size()) {
     return;
   }
-  // Grow the bound window monotonically (never unload) so section geometry stays stable.
-  window_begin_ = 0;
-  window_end_ = std::max(window_end_, std::min(static_cast<int>(cats.size()),
-                                               std::max(kWindowSectionSpan, center_index + kWindowSectionSpan)));
-  for (int i = 0; i < window_end_; ++i) {
-    if (sections_[static_cast<size_t>(i)].cells.empty()) {
-      sections_[static_cast<size_t>(i)].cells.reserve(cats[static_cast<size_t>(i)].glyphs.size());
-      for (const std::string& g : cats[static_cast<size_t>(i)].glyphs) {
-        Cell cell;
-        cell.glyph = g.c_str();
-        sections_[static_cast<size_t>(i)].cells.push_back(std::move(cell));
+  const int n = static_cast<int>(cats.size());
+  const int prev_begin = window_begin_;
+  ComputeSectionWindow(center_index, n, kWindowSectionSpan, window_end_, window_begin_, window_end_);
+
+  Rml::Element* body = FindScrollBody();
+  const bool unloading_above = window_begin_ > prev_begin;
+  if (unloading_above && body) {
+    pending_scroll_height_before_ = body->GetScrollHeight();
+    pending_scroll_top_before_ = body->GetScrollTop();
+  }
+
+  for (int i = 0; i < n; ++i) {
+    Section& section = sections_[static_cast<size_t>(i)];
+    if (i >= window_begin_ && i < window_end_) {
+      if (section.cells.empty()) {
+        section.cells.reserve(cats[static_cast<size_t>(i)].glyphs.size());
+        for (const std::string& g : cats[static_cast<size_t>(i)].glyphs) {
+          Cell cell;
+          cell.glyph = g.c_str();
+          section.cells.push_back(std::move(cell));
+        }
       }
+    } else if (!section.cells.empty()) {
+      section.cells.clear();
+      section.cells.shrink_to_fit();
     }
   }
+}
+
+void EmojiPickerController::ApplyPendingScrollAdjust() {
+  if (!pending_scroll_height_before_.has_value() || !pending_scroll_top_before_.has_value()) {
+    return;
+  }
+  Rml::Element* body = FindScrollBody();
+  if (!body) {
+    pending_scroll_height_before_.reset();
+    pending_scroll_top_before_.reset();
+    return;
+  }
+  const float delta = *pending_scroll_height_before_ - body->GetScrollHeight();
+  body->SetScrollTop(std::max(0.f, *pending_scroll_top_before_ - delta));
+  pending_scroll_height_before_.reset();
+  pending_scroll_top_before_.reset();
 }
 
 void EmojiPickerController::RebuildModel() {
@@ -246,6 +297,10 @@ void EmojiPickerController::RebuildModel() {
 
   rail_tabs_.clear();
   sections_.clear();
+  window_begin_ = 0;
+  window_end_ = 0;
+  pending_scroll_height_before_.reset();
+  pending_scroll_top_before_.reset();
   rail_tabs_.reserve(cats.size());
   sections_.reserve(cats.size());
 
@@ -403,6 +458,10 @@ void EmojiPickerController::UpdateActiveFromScroll() {
   }
   if (window_begin_ != prev_begin || window_end_ != prev_end) {
     DataModelHost::Instance().Dirty("emoji_picker", "sections");
+    // Unloading above shrinks scroll height — restore after the next layout pass.
+    if (pending_scroll_height_before_.has_value()) {
+      AppRuntime::PostUI([]() { EmojiPickerController::Instance().ApplyPendingScrollAdjust(); });
+    }
   } else if (category_changed) {
     DataModelHost::Instance().Dirty("emoji_picker", "rail_tabs");
   }
@@ -425,6 +484,9 @@ void EmojiPickerController::ScrollToCategory(const std::string& category_id) {
   }
   EnsureWindowAround(target);
   DirtyAll();
+  if (pending_scroll_height_before_.has_value()) {
+    AppRuntime::PostUI([]() { EmojiPickerController::Instance().ApplyPendingScrollAdjust(); });
+  }
 
   if (Rml::Element* el = FindSectionElement(category_id)) {
     el->ScrollIntoView(true);
