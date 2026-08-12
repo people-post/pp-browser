@@ -1748,8 +1748,10 @@ std::string ShellHost::SerializeOverlays() const {
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";
-    out << "<button class=\"shell-close-btn\" data-event-click=\"close_layer(" << overlay.id
-        << ")\">×</button>";
+    out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer("
+        << overlay.id << ")\">";
+    out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
     out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
     out << "</div></div>";
   }
