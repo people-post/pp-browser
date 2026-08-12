@@ -20,7 +20,8 @@ std::string VectorKemPublicKeyB64(uint8_t fill = 0x43) {
 TEST(RegistrationSignPayloadTest, BuildRegistrationSignBytesBindsKemKey) {
   const auto bytes = BuildRegistrationSignBytes("ch-1", kVectorPublicKeyB64, VectorKemPublicKeyB64(), "ed25519",
                                                 1700000000000);
-  ASSERT_EQ(bytes.size(), 1299u);
+  // domain+NUL + ver + len-prefixed "ch-1" + 32-byte Ed25519 pk + ML-KEM-768 pk + alg + i64 ts
+  ASSERT_EQ(bytes.size(), kHybridKemPublicKeyBytes + 83u);
   EXPECT_EQ(bytes[bytes.size() - 10], 0x43);
   EXPECT_EQ(bytes[bytes.size() - 9], 0x00);
   EXPECT_EQ(bytes[bytes.size() - 8], 0x00);

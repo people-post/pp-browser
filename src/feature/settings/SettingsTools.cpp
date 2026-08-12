@@ -3,9 +3,12 @@
 #include "base/data/LlmPreset.h"
 #include "base/data/ToolPermissions.h"
 #include "base/data/UserPreferences.h"
+#include "base/i18n/LocalizationService.h"
 
 #include <algorithm>
 #include <cctype>
+#include <optional>
+#include <string_view>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -51,42 +54,221 @@ Roe<void> SaveConfig(SessionStore& store, AppConfig config) {
   return store.SaveConfig(config);
 }
 
-std::string NormalizeAppearance(std::string value) {
+std::string TrimAscii(std::string value) {
+  auto not_space = [](unsigned char c) { return !std::isspace(c); };
+  value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+  value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+  return value;
+}
+
+std::string ToLowerAscii(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
+}
+
+bool EqualsIgnoreCaseAscii(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) !=
+        std::tolower(static_cast<unsigned char>(b[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Safe string read — avoids nlohmann type_error when LLMs pass non-strings. */
+std::string JsonString(const nlohmann::json& value) {
+  if (value.is_string()) {
+    return value.get<std::string>();
+  }
+  if (value.is_number_integer()) {
+    return std::to_string(value.get<long long>());
+  }
+  if (value.is_boolean()) {
+    return value.get<bool>() ? "true" : "false";
+  }
+  return {};
+}
+
+std::string FirstStringArg(const nlohmann::json& arguments,
+                           std::initializer_list<const char*> keys) {
+  for (const char* key : keys) {
+    if (!arguments.contains(key)) {
+      continue;
+    }
+    const std::string value = TrimAscii(JsonString(arguments[key]));
+    if (!value.empty()) {
+      return value;
+    }
+  }
+  return {};
+}
+
+std::optional<bool> ParseFlexibleBool(const nlohmann::json& value) {
+  if (value.is_boolean()) {
+    return value.get<bool>();
+  }
+  if (value.is_number_integer()) {
+    return value.get<long long>() != 0;
+  }
+  if (value.is_number_float()) {
+    return value.get<double>() != 0.0;
+  }
+  if (value.is_string()) {
+    const std::string s = ToLowerAscii(TrimAscii(value.get<std::string>()));
+    if (s == "true" || s == "1" || s == "yes" || s == "y" || s == "on" || s == "enable" ||
+        s == "enabled") {
+      return true;
+    }
+    if (s == "false" || s == "0" || s == "no" || s == "n" || s == "off" || s == "disable" ||
+        s == "disabled") {
+      return false;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<bool> BoolFromArgs(const nlohmann::json& arguments,
+                                 std::initializer_list<const char*> keys) {
+  for (const char* key : keys) {
+    if (!arguments.contains(key)) {
+      continue;
+    }
+    if (auto parsed = ParseFlexibleBool(arguments[key])) {
+      return parsed;
+    }
+  }
+  return std::nullopt;
 }
 
 bool ValidAppearance(const std::string& appearance) {
   return appearance == "system" || appearance == "light" || appearance == "dark";
 }
 
-/** Prefer `appearance`; accept common LLM aliases (`theme`, Title Case). */
+/** Prefer `appearance`; accept LLM aliases (`theme`, `mode`, Title Case, dark_mode bool). */
 std::string AppearanceFromArgs(const nlohmann::json& arguments) {
-  std::string value = arguments.value("appearance", "");
-  if (value.empty()) {
-    value = arguments.value("theme", "");
+  std::string value =
+      FirstStringArg(arguments, {"appearance", "theme", "mode", "color_scheme", "colorScheme"});
+  if (!value.empty()) {
+    return ToLowerAscii(std::move(value));
   }
-  return NormalizeAppearance(std::move(value));
+  if (auto dark = BoolFromArgs(arguments, {"dark_mode", "darkMode", "is_dark"})) {
+    return *dark ? "dark" : "light";
+  }
+  if (auto light = BoolFromArgs(arguments, {"light_mode", "lightMode", "is_light"})) {
+    return *light ? "light" : "dark";
+  }
+  return {};
+}
+
+std::string NormalizePolicyToken(std::string value) {
+  value = ToLowerAscii(TrimAscii(std::move(value)));
+  std::string out;
+  out.reserve(value.size());
+  for (char ch : value) {
+    if (std::isalnum(static_cast<unsigned char>(ch))) {
+      out.push_back(ch);
+    } else if (ch == '-' || ch == ' ' || ch == '/') {
+      if (!out.empty() && out.back() != '_') {
+        out.push_back('_');
+      }
+    }
+  }
+  while (!out.empty() && out.back() == '_') {
+    out.pop_back();
+  }
+  if (out == "contacts" || out == "contact_only" || out == "only_contacts" ||
+      out == "contacts_only") {
+    return "contacts_only";
+  }
+  if (out == "all" || out == "anybody" || out == "anyone" || out == "everyone") {
+    return "everyone";
+  }
+  if (out == "none" || out == "no_one" || out == "noone" || out == "nobody") {
+    return "nobody";
+  }
+  return out;
 }
 
 bool ValidGroupInvitePolicy(const std::string& policy) {
   return policy == "everyone" || policy == "contacts_only" || policy == "nobody";
 }
 
-bool LanguageAllowed(const SettingsToolPorts& ports, const std::string& language) {
-  if (language == "system") {
-    return true;
+std::string PolicyFromArgs(const nlohmann::json& arguments) {
+  return NormalizePolicyToken(
+      FirstStringArg(arguments, {"policy", "group_invite_policy", "invite_policy", "who"}));
+}
+
+/**
+ * Map free-form LLM language input to a storable pref (`system` or shipped tag).
+ * Accepts aliases (`locale`/`lang`), tag variants (`zh`, `zh-CN`, `zh_Hans`), and labels.
+ */
+std::string CanonicalLanguagePref(const SettingsToolPorts& ports, std::string raw) {
+  raw = TrimAscii(std::move(raw));
+  if (raw.empty()) {
+    return {};
   }
-  if (!ports.available_locales) {
-    return false;
+  const std::string lower = ToLowerAscii(raw);
+  if (lower == "system" || lower == "auto" || lower == "default" || lower == "os") {
+    return "system";
   }
-  for (const LocaleInfo& locale : ports.available_locales()) {
-    if (locale.tag == language) {
-      return true;
+
+  std::vector<LocaleInfo> locales;
+  if (ports.available_locales) {
+    locales = ports.available_locales();
+  }
+
+  const std::string normalized = LocalizationService::NormalizeTag(raw);
+  for (const LocaleInfo& locale : locales) {
+    if (locale.tag == raw || locale.tag == normalized) {
+      return locale.tag;
     }
   }
-  return false;
+
+  const std::string primary = LocalizationService::PrimaryLanguage(normalized);
+  for (const LocaleInfo& locale : locales) {
+    if (LocalizationService::PrimaryLanguage(locale.tag) == primary) {
+      return locale.tag;
+    }
+  }
+
+  for (const LocaleInfo& locale : locales) {
+    std::string label = locale.tag;
+    if (ports.language_display_label) {
+      label = ports.language_display_label(locale.tag);
+    }
+    if (EqualsIgnoreCaseAscii(label, raw) || label == raw) {
+      return locale.tag;
+    }
+  }
+
+  // Common English / Chinese display aliases when catalogs are thin.
+  if (lower == "english" || lower == "en-us" || lower == "en_us") {
+    for (const LocaleInfo& locale : locales) {
+      if (locale.tag == "en") {
+        return "en";
+      }
+    }
+  }
+  if (lower == "chinese" || lower == "simplified chinese" || lower == "zh-cn" || lower == "zh_cn" ||
+      raw == "中文" || raw == "简体中文" || raw == "汉语" || raw == "普通话") {
+    for (const LocaleInfo& locale : locales) {
+      if (locale.tag == "zh-Hans" || LocalizationService::PrimaryLanguage(locale.tag) == "zh") {
+        return locale.tag;
+      }
+    }
+  }
+
+  return {};
+}
+
+std::string LanguageFromArgs(const SettingsToolPorts& ports, const nlohmann::json& arguments) {
+  return CanonicalLanguagePref(
+      ports, FirstStringArg(arguments, {"language", "locale", "lang", "language_code", "languageCode"}));
 }
 
 nlohmann::json OkJson(nlohmann::json extra = nlohmann::json::object()) {
@@ -310,14 +492,17 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
 
   tools.push_back(
       {.definition = {.name = "set_appearance",
-                      .description = "Set UI appearance theme: system, light, or dark. "
-                                     "Pass lowercase appearance (not theme).",
+                      .description = "Set UI appearance: system, light, or dark. "
+                                     "Args: appearance (preferred) or theme/mode; case-insensitive.",
                       .parameters = {{"type", "object"},
                                      {"properties",
                                       {{"appearance",
                                         {{"type", "string"},
-                                         {"description", "system | light | dark"}}}}},
-                                     {"required", nlohmann::json::array({"appearance"})}}},
+                                         {"description", "system | light | dark"}}},
+                                       {"theme",
+                                        {{"type", "string"},
+                                         {"description", "Alias for appearance"}}}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
          const std::string appearance = AppearanceFromArgs(arguments);
@@ -341,14 +526,22 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
 
   tools.push_back(
       {.definition = {.name = "set_language",
-                      .description = "Set UI language preference to system or a shipped BCP-47 tag from list_locales.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"language", {{"type", "string"}}}}},
-                                     {"required", nlohmann::json::array({"language"})}}},
+                      .description =
+                          "Set UI language to system or a shipped BCP-47 tag from list_locales "
+                          "(en, zh-Hans). Accepts locale/lang aliases and common labels "
+                          "(Chinese, 简体中文, zh, zh-CN).",
+                      .parameters =
+                          {{"type", "object"},
+                           {"properties",
+                            {{"language",
+                              {{"type", "string"},
+                               {"description", "system | en | zh-Hans (or alias/label)"}}},
+                             {"locale", {{"type", "string"}, {"description", "Alias for language"}}}}},
+                           {"required", nlohmann::json::array()}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string language = arguments.value("language", "");
-         if (language.empty() || !LanguageAllowed(ports, language)) {
+         const std::string language = LanguageFromArgs(ports, arguments);
+         if (language.empty()) {
            return Error("language must be system or a tag from list_locales");
          }
          auto store = RequireStore(ports);
@@ -367,11 +560,16 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "set_notifications",
                       .description = "Enable or disable OS notification banners (sync continues either way).",
                       .parameters = {{"type", "object"},
-                                     {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array({"enabled"})}}},
+                                     {"properties",
+                                      {{"enabled", {{"type", "boolean"}}},
+                                       {"show_notifications",
+                                        {{"type", "boolean"}, {"description", "Alias for enabled"}}}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("enabled") || !arguments["enabled"].is_boolean()) {
+         const auto enabled =
+             BoolFromArgs(arguments, {"enabled", "show_notifications", "notifications"});
+         if (!enabled) {
            return Error("enabled boolean required");
          }
          auto store = RequireStore(ports);
@@ -379,7 +577,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
-         prefs.show_notifications = arguments["enabled"].get<bool>();
+         prefs.show_notifications = *enabled;
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
@@ -388,13 +586,18 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
 
   tools.push_back(
       {.definition = {.name = "set_group_invite_policy",
-                      .description = "Set who may invite this user to group chats: everyone, contacts_only, or nobody.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"policy", {{"type", "string"}}}}},
-                                     {"required", nlohmann::json::array({"policy"})}}},
+                      .description = "Set who may invite this user to group chats: everyone, "
+                                     "contacts_only, or nobody.",
+                      .parameters =
+                          {{"type", "object"},
+                           {"properties",
+                            {{"policy", {{"type", "string"}}},
+                             {"group_invite_policy",
+                              {{"type", "string"}, {"description", "Alias for policy"}}}}},
+                           {"required", nlohmann::json::array()}}},
        .meta = Meta("security", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string policy = arguments.value("policy", "");
+         const std::string policy = PolicyFromArgs(arguments);
          if (!ValidGroupInvitePolicy(policy)) {
            return Error("policy must be everyone, contacts_only, or nobody");
          }
@@ -415,10 +618,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                       .description = "Enable or disable automatic network registration renewal near expiry.",
                       .parameters = {{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array({"enabled"})}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("identity", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("enabled") || !arguments["enabled"].is_boolean()) {
+         const auto enabled = BoolFromArgs(arguments, {"enabled", "auto_renew_registration"});
+         if (!enabled) {
            return Error("enabled boolean required");
          }
          auto store = RequireStore(ports);
@@ -426,7 +630,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
-         prefs.auto_renew_registration = arguments["enabled"].get<bool>();
+         prefs.auto_renew_registration = *enabled;
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
@@ -438,10 +642,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                       .description = "When enabled, compact chrome uses opaque surfaces (no backdrop frost).",
                       .parameters = {{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array({"enabled"})}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("enabled") || !arguments["enabled"].is_boolean()) {
+         const auto enabled = BoolFromArgs(arguments, {"enabled", "reduce_transparency"});
+         if (!enabled) {
            return Error("enabled boolean required");
          }
          auto store = RequireStore(ports);
@@ -449,7 +654,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
-         prefs.reduce_transparency = arguments["enabled"].get<bool>();
+         prefs.reduce_transparency = *enabled;
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
@@ -461,10 +666,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                       .description = "Enable or disable call media diagnostics in the UI.",
                       .parameters = {{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array({"enabled"})}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("settings", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("enabled") || !arguments["enabled"].is_boolean()) {
+         const auto enabled = BoolFromArgs(arguments, {"enabled", "call_diagnostics"});
+         if (!enabled) {
            return Error("enabled boolean required");
          }
          auto store = RequireStore(ports);
@@ -472,7 +678,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
-         prefs.call_diagnostics = arguments["enabled"].get<bool>();
+         prefs.call_diagnostics = *enabled;
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
@@ -484,10 +690,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                       .description = "Enable or disable desktop Node participation (help the network). Ignored on mobile.",
                       .parameters = {{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array({"enabled"})}}},
+                                     {"required", nlohmann::json::array()}}},
        .meta = Meta("network", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("enabled") || !arguments["enabled"].is_boolean()) {
+         const auto enabled = BoolFromArgs(arguments, {"enabled", "node_enabled"});
+         if (!enabled) {
            return Error("enabled boolean required");
          }
          auto store = RequireStore(ports);
@@ -495,7 +702,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          AppConfig config = (*store)->Snapshot().config;
-         config.libp2p.node_enabled = arguments["enabled"].get<bool>();
+         config.libp2p.node_enabled = *enabled;
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
@@ -514,8 +721,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                            {"required", nlohmann::json::array()}}},
        .meta = Meta("network", "write", true),
        .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("circuit_relay") && !arguments.contains("media_relay") &&
-             !arguments.contains("prefer_contacts_for_routing")) {
+         const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
+         const auto media = BoolFromArgs(arguments, {"media_relay"});
+         const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
+         if (!circuit && !media && !prefer) {
            return Error("provide at least one of circuit_relay, media_relay, prefer_contacts_for_routing");
          }
          auto store = RequireStore(ports);
@@ -523,15 +732,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          AppConfig config = (*store)->Snapshot().config;
-         if (arguments.contains("circuit_relay") && arguments["circuit_relay"].is_boolean()) {
-           config.libp2p.capabilities.circuit_relay = arguments["circuit_relay"].get<bool>();
+         if (circuit) {
+           config.libp2p.capabilities.circuit_relay = *circuit;
          }
-         if (arguments.contains("media_relay") && arguments["media_relay"].is_boolean()) {
-           config.libp2p.capabilities.media_relay = arguments["media_relay"].get<bool>();
+         if (media) {
+           config.libp2p.capabilities.media_relay = *media;
          }
-         if (arguments.contains("prefer_contacts_for_routing") &&
-             arguments["prefer_contacts_for_routing"].is_boolean()) {
-           config.libp2p.prefer_contacts_for_routing = arguments["prefer_contacts_for_routing"].get<bool>();
+         if (prefer) {
+           config.libp2p.prefer_contacts_for_routing = *prefer;
          }
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
@@ -553,7 +761,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (!ports.run_reachability_probe) {
            return Error("Reachability probe unavailable");
          }
-         const bool try_upnp = arguments.value("try_upnp", false);
+         const bool try_upnp = BoolFromArgs(arguments, {"try_upnp"}).value_or(false);
          ports.run_reachability_probe(try_upnp);
          SettingsReachabilityView view;
          if (ports.load_reachability) {

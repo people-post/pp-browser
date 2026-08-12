@@ -8,11 +8,13 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
+#include "base/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ProfileSettingsSection.h"
+#include "feature/ui/RmlMount.h"
 #include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/UiEditSession.h"
@@ -23,6 +25,7 @@
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <SDL3/SDL.h>
@@ -594,6 +597,7 @@ void SettingsController::FinishPaneResync() {
   if (context_) {
     context_->Update();
   }
+  MountSelectedSettingsSection();
   // Select widgets can emit a spurious change on the frame after remount.
   AppRuntime::PostUI([this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
@@ -607,9 +611,43 @@ void SettingsController::FinishPaneResync() {
     if (context_) {
       context_->Update();
     }
+    MountSelectedSettingsSection();
     suppress_auto_save_ = false;
     UiEditSession::Instance().EndRemount();
   });
+}
+
+void SettingsController::MountSelectedSettingsSection() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  const bool use_sheet_mount = show_detail_ || in_account_sheet_ || chrome.account_sheet_open;
+  const char* mount_id = use_sheet_mount ? "settings-section-mount-sheet" : "settings-section-mount-pane";
+  Rml::Element* mount = doc->GetElementById(mount_id);
+  if (!mount) {
+    // Fallback: try the other mount if layout migration left only one present.
+    mount = doc->GetElementById(use_sheet_mount ? "settings-section-mount-pane" : "settings-section-mount-sheet");
+  }
+  if (!mount) {
+    return;
+  }
+  if (selected_id_.empty()) {
+    RmlMount::MountInner(mount, {});
+    return;
+  }
+  const std::string key = "settings_section_" + std::string(selected_id_.c_str());
+  const std::string body = ViewCatalog::LoadBody(key);
+  if (body.empty()) {
+    log().error << "Failed to load settings section body for '" << key << "'";
+    return;
+  }
+  RmlMount::MountInner(mount, body);
+  DirtyAll();
 }
 
 void SettingsController::OnShellLayoutSynced() {

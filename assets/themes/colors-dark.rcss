@@ -714,6 +714,15 @@ select selectbox option:hover {
   color: #f9fafb;
 }
 
+.shell-close-btn:hover,
+.shell-close-btn:focus {
+  background-color: #4b5563;
+}
+
+.shell-close-btn svg {
+  image-color: #f9fafb;
+}
+
 .shell-dialog {
   background-color: #1f2937;
 }

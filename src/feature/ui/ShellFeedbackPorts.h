@@ -38,7 +38,8 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell);
 /** Low-level chrome sync for ShellFeedback static helpers (dialog open/close). App-filled. */
 struct ShellFeedbackChromePorts {
   std::function<ShellState&()> shell_state;
-  std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
+  /** Presence remount into #shell-dialog-mount (not full SyncLayout). */
+  std::function<void()> remount_dialog;
   /** Binding-only toast/banner/dialog field refresh (not grab-bag DirtyWindow). */
   std::function<void()> dirty_feedback;
 };

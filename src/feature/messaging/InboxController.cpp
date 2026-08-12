@@ -747,7 +747,8 @@ bool InboxController::HasLocalMessagesBefore(const std::string& thread_id,
 }
 
 std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
-    const std::string& thread_id, std::optional<int64_t> oldest_inclusive) const {
+    const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+    std::optional<int64_t> newest_inclusive) const {
   std::vector<MessageDisplayRow> rows;
   std::vector<ThreadMessage> messages;
   std::optional<int64_t> before;
@@ -778,6 +779,14 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       break;
     }
     before = page_oldest;
+  }
+
+  if (newest_inclusive.has_value()) {
+    messages.erase(std::remove_if(messages.begin(), messages.end(),
+                                  [&](const ThreadMessage& m) {
+                                    return m.display_order > *newest_inclusive;
+                                  }),
+                   messages.end());
   }
 
   std::unordered_map<std::string, size_t> row_index_by_id;

@@ -14,6 +14,7 @@
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ContextMenuHost.h"
+#include "base/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
@@ -991,6 +992,7 @@ bool Application::Initialize(const char* window_title) {
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
+    ViewCatalog::ClearCache();
     shell_->RequestSyncLayout(true);
     if (auto* ctx = Rml::GetContext("main")) {
       ApplyUiDocumentLanguage(ctx);

@@ -1,0 +1,4 @@
+      <div class="settings-section stack">
+        <p class="heading-2" data-rml="app_name"></p>
+        <p class="text muted">{{i18n:settings.about.version}}: <span data-rml="app_version"></span></p>
+      </div>

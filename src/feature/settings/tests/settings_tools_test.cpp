@@ -132,6 +132,15 @@ TEST_F(SettingsToolsTest, SetAppearanceAcceptsThemeAliasAndCase) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
 }
 
+TEST_F(SettingsToolsTest, SetAppearanceAcceptsDarkModeBool) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+
+  auto set = registry.Execute("set_appearance", nlohmann::json{{"dark_mode", true}});
+  ASSERT_TRUE(set) << set.error().message;
+  EXPECT_EQ(last_appearance_, "dark");
+}
+
 TEST_F(SettingsToolsTest, SetLanguageValidatesLocales) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
@@ -142,6 +151,50 @@ TEST_F(SettingsToolsTest, SetLanguageValidatesLocales) {
   auto ok = registry.Execute("set_language", nlohmann::json{{"language", "zh-Hans"}});
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
+}
+
+TEST_F(SettingsToolsTest, SetLanguageAcceptsLocaleAliasAndTagVariants) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+
+  auto via_locale = registry.Execute("set_language", nlohmann::json{{"locale", "zh"}});
+  ASSERT_TRUE(via_locale) << via_locale.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
+
+  auto via_cn = registry.Execute("set_language", nlohmann::json{{"lang", "zh-CN"}});
+  ASSERT_TRUE(via_cn) << via_cn.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
+
+  auto via_label = registry.Execute("set_language", nlohmann::json{{"language", "中文"}});
+  ASSERT_TRUE(via_label) << via_label.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
+
+  auto via_english = registry.Execute("set_language", nlohmann::json{{"language", "English"}});
+  ASSERT_TRUE(via_english) << via_english.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "en");
+
+  auto via_system = registry.Execute("set_language", nlohmann::json{{"language", "System"}});
+  ASSERT_TRUE(via_system) << via_system.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "system");
+}
+
+TEST_F(SettingsToolsTest, SetNotificationsAcceptsStringBoolAndAlias) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+
+  auto set = registry.Execute("set_notifications", nlohmann::json{{"show_notifications", "false"}});
+  ASSERT_TRUE(set) << set.error().message;
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.show_notifications);
+}
+
+TEST_F(SettingsToolsTest, SetGroupInvitePolicyAcceptsAliases) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+
+  auto set =
+      registry.Execute("set_group_invite_policy", nlohmann::json{{"group_invite_policy", "Contacts Only"}});
+  ASSERT_TRUE(set) << set.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.group_invite_policy, "contacts_only");
 }
 
 TEST_F(SettingsToolsTest, ResetToolPermissionsClearsRemembered) {

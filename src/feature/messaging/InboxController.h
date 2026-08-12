@@ -56,7 +56,8 @@ public:
    *        (expanded window after scroll-up); otherwise newest page only.
    */
   std::vector<MessageDisplayRow> BuildDisplayRows(
-      const std::string& thread_id, std::optional<int64_t> oldest_inclusive = std::nullopt) const;
+      const std::string& thread_id, std::optional<int64_t> oldest_inclusive = std::nullopt,
+      std::optional<int64_t> newest_inclusive = std::nullopt) const;
   /** True when local transcript has rows older than the given display_order. */
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order) const;
 

@@ -15,9 +15,7 @@ ShellPinGatePorts MakeShellPinGatePorts(ShellHost& shell) {
     shell.SetActivity(visible, message);
   };
   ports.dirty_pin_gate = [&shell]() { shell.DirtyPinGate(); };
-  ports.request_sync_layout = [&shell](const bool restore, const char* reason) {
-    shell.RequestSyncLayout(restore, reason);
-  };
+  ports.remount_pin_gate = [&shell]() { shell.RemountPinGateChrome(); };
   return ports;
 }
 

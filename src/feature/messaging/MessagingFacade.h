@@ -70,7 +70,8 @@ public:
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
   std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id,
-                                                  std::optional<int64_t> oldest_inclusive);
+                                                  std::optional<int64_t> oldest_inclusive,
+                                                  std::optional<int64_t> newest_inclusive = std::nullopt);
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order);
   int SumUnread();
 

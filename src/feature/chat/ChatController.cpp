@@ -350,7 +350,7 @@ void ChatController::InsertEmojiIntoDraft(const std::string& emoji, bool restore
   }
   draft->SetValue(next.c_str());
   const Rml::String value = draft->GetValue();
-  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, value.size());
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
   if (!restore_composer_focus) {
     // Keyboard-panel multi-insert: caret only (unfocused SetSelectionRange does not OSK).
     draft->SetSelectionRange(end, end);
@@ -1236,7 +1236,8 @@ void ChatController::SyncDisplayFromThread() {
   const size_t prev_count = chat_.messages.size();
 
   chat_.messages = facade_
-      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder())
+      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder(),
+                                  scroller_.LoadedMaxDisplayOrder())
       : std::vector<MessageDisplayRow>{};
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
@@ -1862,7 +1863,7 @@ void ChatController::OnShellLayoutSynced() {
   }
   draft->Focus();
   const Rml::String value = draft->GetValue();
-  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, value.size());
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
   draft->SetSelectionRange(end, end);
 }
 

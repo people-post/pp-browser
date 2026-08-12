@@ -1,8 +1,6 @@
 <div class="emoji-picker" data-model="emoji_picker">
   <div class="emoji-picker-header row">
     <p class="emoji-picker-title" data-rml="title"></p>
-    <button class="btn btn-secondary emoji-picker-close" type="button"
-            data-event-click="cancel_picker()">Close</button>
   </div>
 
   <div class="emoji-picker-main row">

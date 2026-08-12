@@ -132,16 +132,35 @@ void MediaRelayService::Impl::HandleInboundBody(std::shared_ptr<Stream> stream) 
         part->peer_id = sm.remote;
         part->stream = stream;
 
+        // SoftMigrate / guest Detach→reattach: replace a prior remote participant for the
+        // same peer before the old duplex FIN cleanup lands (half-open double entry).
+        std::vector<std::shared_ptr<HostParticipant>> replaced;
         {
           std::lock_guard<std::mutex> lock(mu);
           auto it = sessions_by_call.find(call_id);
           if (it != sessions_by_call.end()) {
             session = it->second;
-            if (!CanAddParticipantLocked(*session)) {
+            size_t others = 0;
+            for (const auto& p : session->participants) {
+              if (p && !(p->peer_id == part->peer_id && !p->local_on_frame)) {
+                ++others;
+              }
+            }
+            if (others >= MediaRelayService::kMaxParticipantsPerSession) {
               RejectAndCloseAttach(sm, stream, "session participant limit",
                                    MediaRelayAttachEvent::AttachFail);
               return;
             }
+            session->participants.erase(
+                std::remove_if(session->participants.begin(), session->participants.end(),
+                               [&](const std::shared_ptr<HostParticipant>& p) {
+                                 if (!p || p->peer_id != part->peer_id || p->local_on_frame) {
+                                   return false;
+                                 }
+                                 replaced.push_back(p);
+                                 return true;
+                               }),
+                session->participants.end());
           } else {
             if (!CanOpenNewHostSessionLocked()) {
               RejectAndCloseAttach(sm, stream, "host session limit", MediaRelayAttachEvent::AttachFail);
@@ -161,6 +180,9 @@ void MediaRelayService::Impl::HandleInboundBody(std::shared_ptr<Stream> stream) 
           part->a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
           ConfigureParticipantLimiters(*part);
           session->participants.push_back(part);
+        }
+        for (const auto& old : replaced) {
+          CleanupParticipant(session, old, "replaced_by_reattach");
         }
 
         (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});

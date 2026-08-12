@@ -364,11 +364,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
     std::shared_ptr<DuplexFrameSession> duplex = std::move(client_duplex);
     client_duplex_cancelled.reset();
-    if (duplex) {
+    // DuplexFrameSession is io-thread affine (outbound_/callbacks). Never Stop() off the
+    // host strand — Detach/reattach from the test or UI thread raced PumpWrite on CI.
+    if (duplex && host) {
+      host->Post([duplex = std::move(duplex)]() mutable {
+        duplex->Stop();
+        duplex.reset();
+      });
+    } else if (duplex) {
       duplex->Stop();
-      if (host) {
-        host->Post([duplex = std::move(duplex)]() mutable { duplex.reset(); });
-      }
     }
   }
 
@@ -672,10 +676,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       part->duplex_cancelled->store(true, std::memory_order_release);
     }
     // Move duplex out before Stop — CloseSession may be on the call stack (FIN path).
+    // Always Stop on the host strand: CleanupParticipant runs from io on_closed *and*
+    // from worker/UI (ShutdownHostSessions, SoftMigrate replace-on-reattach).
     std::shared_ptr<DuplexFrameSession> duplex = std::move(part->duplex);
-    if (duplex) {
-      duplex->Stop();
-    }
     std::lock_guard<std::mutex> lock(mu);
     session->participants.erase(std::remove_if(session->participants.begin(), session->participants.end(),
                                                [&](const std::shared_ptr<HostParticipant>& p) {
@@ -694,9 +697,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (part->stream) {
       part->stream->close([](auto&&) {});
     }
-    // Defer destroy so we are not inside DuplexFrameSession::CloseSession.
     if (duplex && host) {
-      host->Post([duplex = std::move(duplex)]() mutable { duplex.reset(); });
+      host->Post([duplex = std::move(duplex)]() mutable {
+        duplex->Stop();
+        duplex.reset();
+      });
+    } else if (duplex) {
+      duplex->Stop();
     }
   }
 

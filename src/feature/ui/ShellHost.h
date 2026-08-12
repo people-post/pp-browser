@@ -90,6 +90,10 @@ public:
   /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
    *  Defers to the next UI turn so Rml click handlers are not mid-dispatch on destroyed nodes. */
   void RemountCallChrome();
+  /** Mount/clear alert/confirm/prompt into #shell-dialog-mount (not full SyncLayout). */
+  void RemountDialogChrome();
+  /** Mount/clear PIN gate into #shell-pin-gate-mount (not full SyncLayout). */
+  void RemountPinGateChrome();
   void Update(Rml::Context* context);
   /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(Rml::Context* context);
@@ -264,6 +268,10 @@ private:
   void FlushPendingSyncLayout();
   void RemountCallChromeNow();
   void FlushRemountCallChrome();
+  void RemountDialogChromeNow();
+  void FlushRemountDialogChrome();
+  void RemountPinGateChromeNow();
+  void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
@@ -312,6 +320,8 @@ private:
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool remount_call_chrome_pending_ = false;
+  bool remount_dialog_chrome_pending_ = false;
+  bool remount_pin_gate_chrome_pending_ = false;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
