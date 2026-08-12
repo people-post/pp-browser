@@ -85,7 +85,9 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
   const LocalizationService::Prefs locale = LocalizationService::Project(prefs);
   if (!last_locale_ || locale != *last_locale_) {
     last_locale_ = locale;
-    LocalizationService::Instance().Apply(locale);
+    // SaveProfilePrefs may run on a worker (agent settings tools). Locale listeners
+    // remount chrome / touch RmlUi and must run on the UI thread.
+    AppRuntime::PostUI([locale]() { LocalizationService::Instance().Apply(locale); });
   }
 }
 

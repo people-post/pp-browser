@@ -58,6 +58,11 @@ public:
   /** Display label for a language pref (`system` → translated System; else native name). */
   std::string LanguageDisplayLabel(std::string_view pref) const;
 
+  /** Normalize BCP-47-ish tags (`zh_CN` → `zh-Hans`, case / underscore cleanup). */
+  static std::string NormalizeTag(std::string_view tag);
+  /** Primary subtag only (`zh-Hans` → `zh`). */
+  static std::string PrimaryLanguage(std::string_view tag);
+
 private:
   LocalizationService() = default;
 
@@ -66,8 +71,6 @@ private:
   std::vector<std::string> PreferredSystemLocales() const;
   std::string Lookup(std::string_view key) const;
   static std::string Interpolate(std::string templ, const std::map<std::string, std::string>& args);
-  static std::string NormalizeTag(std::string_view tag);
-  static std::string PrimaryLanguage(std::string_view tag);
 
   std::string preferred_ = "system";
   std::string resolved_ = "en";
