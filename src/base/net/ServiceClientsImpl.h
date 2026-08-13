@@ -24,6 +24,7 @@ public:
 
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
   Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+  Roe<DirectoryHit> LookupByAccount(const std::string& account_id) override;
 
 private:
   std::string default_kem_public_key_b64_;
@@ -136,6 +137,7 @@ public:
   explicit HttpDirectoryClient(std::string base_url);
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
   Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+  Roe<DirectoryHit> LookupByAccount(const std::string& account_id) override;
 
 private:
   std::string base_url_;

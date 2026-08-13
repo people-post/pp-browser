@@ -11,7 +11,7 @@
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
-**Identity (D079, D082; hard-cut target D099 / M009–M010):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** — not local `Contact.id`. **`Contact.id`** is address-book only. **Code today (pre-m2):** `peer_identity_kind = relay_user`, value = `relay:` + opaque id ([D082](../../projects/chat-storage-and-memory/DECISIONS.md#d082--relay-user-communicating-identity-string-format)). **Pre-release target:** `peer_identity_kind = account`, value = full Account ID (`account:…`); relay inbox/API auth stays `relay:` — [M009](../../projects/multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount), [M010](../../projects/multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay).
+**Identity (D079 / M009–M010):** Wire **`sender_contact_id`** is the sender **Account ID** (`peer_identity_kind = account`, value `account:…`) — not local `Contact.id`, not `relay:`. Brief inbox/API auth, `sender_relay_id`, recipient, and stream parties stay **`relay:`**.
 
 ---
 

@@ -37,11 +37,13 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 ### m2b — Client wire / catalog
 
-- [ ] `ContactIdKind::Account` / `peer_identity_kind=account` (M009)
-- [ ] `ChatTargetKey` / envelope `sender_contact_id` / AAD → Account ID (M010)
-- [ ] Ingest verify against account signing key; signing cache keyed by Account ID
-- [ ] Migrate or wipe pre-cut `relay:`-keyed local state (pre-release OK)
-- [ ] Promote normative snippets to `docs/contracts/` when behavior ships
+- [x] `ContactIdKind::Account` / `peer_identity_kind=account` (M009)
+- [x] `ChatTargetKey` / envelope `sender_contact_id` / AAD → Account ID (M010)
+- [x] Ingest verify against account signing key; signing cache keyed by Account ID
+- [x] Directory `LookupByAccount` + add-contact / key register by Account
+- [x] History/stream route remains `relay:` (resolve from contact)
+- [x] Migrate or wipe pre-cut `relay:`-keyed local state (pre-release wipe OK — COMPATIBILITY)
+- [x] Promote normative identity note in `docs/contracts/WIRE_SCHEMAS.md`
 
 ## m3 — Brief multi-device attach polish
 

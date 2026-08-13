@@ -40,7 +40,7 @@ Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
 ### Dev wipe after Brief PQ / Account ID hard cut
 
-When Brief drops classical `relay_users` (ML-DSA-only register), wipe local profiles so clients re-mint account keys and re-register:
+When Brief drops classical `relay_users` (ML-DSA-only register), **or** after the client **m2b** wire cut (`ChatTargetKey` / envelopes → Account ID), wipe local profiles so clients re-mint account keys, re-register, and rebuild threads/PSKs keyed by Account ID:
 
 | Platform | Script |
 |----------|--------|

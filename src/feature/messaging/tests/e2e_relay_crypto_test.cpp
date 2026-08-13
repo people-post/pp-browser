@@ -50,8 +50,8 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:bob456";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:bob";
   target.channel = ThreadChannel::E2e;
   auto thread = store.FindOrCreateDirectThread(target, "contact-bob", "Bob");
   ASSERT_TRUE(static_cast<bool>(thread));
@@ -60,7 +60,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.sender_seq = 42;
@@ -70,8 +70,8 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   E2eEncryptParams params;
   params.text = "Hello";
   params.channel = CryptoChannel::E2e;
-  params.peer_contact_id = "relay:local";
-  params.sender_contact_id = "relay:alice123";
+  params.peer_contact_id = "account:local";
+  params.sender_contact_id = "account:alice";
   params.message_id = envelope.message_id;
   params.sender_seq = envelope.sender_seq;
   params.session_epoch = envelope.session_epoch;
@@ -88,7 +88,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   EXPECT_EQ(*body_hash, *body_hash_again);
 
   const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
-  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, "relay:local", target_key, psk_store);
+  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, "account:local", target_key, psk_store);
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(decrypted->text, "Hello");
 }
@@ -103,6 +103,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   IdentityStore identity(data_dir.string(), "test");
   ASSERT_TRUE(static_cast<bool>(identity.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(identity.LoadOrCreate()));
+  const std::string local_account_id = identity.Get()->account_id;
   PeerSigningKeyStore key_store;
 
   auto peer_keys = MlDsa::GenerateKeyPair();
@@ -110,11 +111,11 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   PeerSigningKeyRecord record;
   record.signing_public_key_b64 = Base64Encode(peer_keys->public_key);
   record.source = "test";
-  key_store.Put("relay_user", "relay:peer", record);
+  key_store.Put("account", "account:peer", record);
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:peer";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:peer";
   target.channel = ThreadChannel::E2e;
   auto thread = store.FindOrCreateDirectThread(target, "contact-peer", "Peer");
   ASSERT_TRUE(static_cast<bool>(thread));
@@ -127,7 +128,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "peer-msg-1";
-  envelope.sender_contact_id = "relay:peer";
+  envelope.sender_contact_id = "account:peer";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
   envelope.sender_seq = 1;
@@ -137,8 +138,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   E2eEncryptParams params;
   params.text = "secret";
   params.channel = CryptoChannel::E2e;
-  params.peer_contact_id = "relay:local";
-  params.sender_contact_id = "relay:peer";
+  params.peer_contact_id = local_account_id;
+  params.sender_contact_id = "account:peer";
   params.message_id = envelope.message_id;
   params.sender_seq = envelope.sender_seq;
   params.session_epoch = envelope.session_epoch;
@@ -154,7 +155,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(signature));
   envelope.signature = Base64Encode(*signature);
 
-  const RelayReceiveOutcome outcome = pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome outcome = pipeline.ProcessEnvelope(envelope, local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);
   EXPECT_TRUE(outcome.persisted);
 }

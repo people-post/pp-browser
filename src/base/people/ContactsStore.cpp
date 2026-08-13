@@ -235,27 +235,30 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
 }
 
 Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
-  std::string relay_user_id;
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-      relay_user_id = id.value;
-      if (id.primary) {
-        break;
+  std::string account_id;
+  if (hit.account_id && !hit.account_id->empty()) {
+    account_id = *hit.account_id;
+  }
+  if (account_id.empty()) {
+    for (const ContactId& id : hit.ids) {
+      if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+        account_id = id.value;
+        if (id.primary) {
+          break;
+        }
       }
     }
   }
-  if (relay_user_id.empty() && !hit.hit_id.empty() && hit.hit_id.rfind("relay:", 0) == 0) {
-    relay_user_id = hit.hit_id;
+  if (account_id.empty()) {
+    return Error("Directory hit missing Account ID");
   }
 
-  if (!relay_user_id.empty()) {
-    auto existing = FindByIdentity(relay_user_id, ContactIdKind::RelayUser);
-    if (!existing) {
-      return existing.error();
-    }
-    if (existing->has_value()) {
-      return ApplyRemoteSnapshot((*existing)->id, hit, util::NowUnixMs());
-    }
+  auto existing = FindByIdentity(account_id, ContactIdKind::Account);
+  if (!existing) {
+    return existing.error();
+  }
+  if (existing->has_value()) {
+    return ApplyRemoteSnapshot((*existing)->id, hit, util::NowUnixMs());
   }
 
   Contact contact;
@@ -265,6 +268,18 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   contact.local.trust = TrustLevel::Unknown;
   contact.remote.nickname = hit.nickname;
   contact.remote.ids = hit.ids;
+  bool has_account = false;
+  for (ContactId& id : contact.remote.ids) {
+    if (id.kind == ContactIdKind::Account && id.value == account_id) {
+      id.primary = true;
+      has_account = true;
+    } else {
+      id.primary = false;
+    }
+  }
+  if (!has_account) {
+    contact.remote.ids.insert(contact.remote.ids.begin(), {ContactIdKind::Account, account_id, true});
+  }
   contact.remote.multiaddrs = hit.multiaddrs;
   contact.remote.fetched_at = util::NowUnixMs();
   SyncContactMirrors(contact);

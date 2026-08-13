@@ -6,6 +6,8 @@ namespace pbr {
 
 std::string ContactIdKindToString(const ContactIdKind kind) {
   switch (kind) {
+  case ContactIdKind::Account:
+    return "account";
   case ContactIdKind::RelayUser:
     return "relay_user";
   case ContactIdKind::PeerId:
@@ -15,10 +17,13 @@ std::string ContactIdKindToString(const ContactIdKind kind) {
   case ContactIdKind::Custom:
     return "custom";
   }
-  return "relay_user";
+  return "account";
 }
 
 ContactIdKind ContactIdKindFromString(const std::string& value) {
+  if (value == "account") {
+    return ContactIdKind::Account;
+  }
   if (value == "peer_id") {
     return ContactIdKind::PeerId;
   }
@@ -28,7 +33,11 @@ ContactIdKind ContactIdKindFromString(const std::string& value) {
   if (value == "custom") {
     return ContactIdKind::Custom;
   }
-  return ContactIdKind::RelayUser;
+  if (value == "relay_user") {
+    return ContactIdKind::RelayUser;
+  }
+  // Unknown kinds must not silently become relay_user (M009).
+  return ContactIdKind::Custom;
 }
 
 std::string TrustLevelToString(const TrustLevel level) {
@@ -58,6 +67,15 @@ namespace {
 bool HasRelayUserId(const std::vector<ContactId>& ids, const std::string& relay_user_id) {
   for (const ContactId& id : ids) {
     if (id.kind == ContactIdKind::RelayUser && id.value == relay_user_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasAccountId(const std::vector<ContactId>& ids, const std::string& account_id) {
+  for (const ContactId& id : ids) {
+    if (id.kind == ContactIdKind::Account && id.value == account_id) {
       return true;
     }
   }
@@ -220,6 +238,9 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
                         {"ids", IdsToJson(hit.ids)},
                         {"multiaddrs", MultiaddrsToJson(hit.multiaddrs)},
                         {"initiation_floor", hit.initiation_floor}};
+  if (hit.account_id && !hit.account_id->empty()) {
+    out["account_id"] = *hit.account_id;
+  }
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
     out["signing_public_key_b64"] = *hit.signing_public_key_b64;
   }
@@ -241,6 +262,19 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
     hit.nickname = json["nickname"].get<std::string>();
   }
   AppendContactIdsFromJson(json, hit.ids);
+  if (json.contains("account_id") && json["account_id"].is_string()) {
+    const std::string account_id = json["account_id"].get<std::string>();
+    if (!account_id.empty()) {
+      hit.account_id = account_id;
+      if (!HasAccountId(hit.ids, account_id)) {
+        // Insert Account as primary; demote prior primary flags.
+        for (ContactId& id : hit.ids) {
+          id.primary = false;
+        }
+        hit.ids.insert(hit.ids.begin(), {ContactIdKind::Account, account_id, true});
+      }
+    }
+  }
   if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
     const std::string relay_user_id = json["relay_user_id"].get<std::string>();
     if (!relay_user_id.empty()) {
@@ -248,7 +282,7 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
         hit.hit_id = relay_user_id;
       }
       if (!HasRelayUserId(hit.ids, relay_user_id)) {
-        hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
+        hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, false});
       }
     }
   }

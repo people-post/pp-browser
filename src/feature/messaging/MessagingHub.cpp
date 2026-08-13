@@ -753,9 +753,16 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
 
   std::string peer_id;
   if (contacts_) {
-    if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+    if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::Account)) {
       if (hit->has_value()) {
         peer_id = PeerIdFromContact(**hit);
+      }
+    }
+    if (peer_id.empty()) {
+      if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+        if (hit->has_value()) {
+          peer_id = PeerIdFromContact(**hit);
+        }
       }
     }
     if (peer_id.empty()) {

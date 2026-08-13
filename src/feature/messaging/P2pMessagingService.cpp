@@ -89,7 +89,7 @@ constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1j
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
-  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   target.peer_identity_value = envelope.sender_contact_id;
   target.channel = envelope.route.channel;
   return target;
@@ -120,7 +120,7 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     direct_chat_->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     direct_chat_->Start();
   }
-  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, inbox_,
+  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
@@ -148,7 +148,7 @@ void P2pMessagingService::RegisterPeerKemKey(const std::string& peer_identity_ki
 }
 
 void P2pMessagingService::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
-  RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_identity_value,
+  RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), peer_identity_value,
                          kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
@@ -161,7 +161,7 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
     LoadPersistedRelayCursor(identity->relay_user_id);
   }
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, inbox_,
+    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
@@ -331,7 +331,7 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
     return;
   }
   const RelayReceiveOutcome outcome =
-      receive_pipeline_->ProcessEnvelope(envelope, identity->relay_user_id, false, MessageTransport::Direct);
+      receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
   MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
@@ -397,15 +397,28 @@ ThreadPeerLinkView P2pMessagingService::GetThreadPeerLink(const std::string& thr
   }
 
   const std::string peer = (*thread)->peer_identity_value;
-  view.relay_available = relay_ != nullptr &&
-                         ((*thread)->peer_identity_kind == ContactIdKindToString(ContactIdKind::RelayUser) ||
-                          (*thread)->peer_identity_kind == "relay_user");
-  if (!(*thread)->participant_contact_ids.empty()) {
-    if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
-      if (*contact) {
-        for (const ContactId& id : (*contact)->ids) {
+  view.relay_available = false;
+  if (relay_ != nullptr &&
+      ((*thread)->peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) ||
+       (*thread)->peer_identity_kind == "account")) {
+    if (!(*thread)->participant_contact_ids.empty()) {
+      if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
+        if (*contact) {
+          for (const ContactId& id : (*contact)->ids) {
+            if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+              view.relay_available = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (!view.relay_available) {
+      auto by_account = contacts_.FindByIdentity(peer, ContactIdKind::Account);
+      if (by_account && by_account->has_value()) {
+        for (const ContactId& id : (**by_account).ids) {
           if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-            view.relay_available = relay_ != nullptr;
+            view.relay_available = true;
             break;
           }
         }
@@ -690,21 +703,35 @@ void P2pMessagingService::RetryGapSync(const std::string& thread_id,
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {
-  if (!thread.peer_identity_value.empty()) {
-    return thread.peer_identity_value;
-  }
-  if (thread.participant_contact_ids.empty()) {
+  // Communicating identity is Account ID; Brief delivery still needs relay: (M010).
+  auto relay_from_contact = [](const Contact& contact) -> std::optional<std::string> {
+    for (const ContactId& id : contact.ids) {
+      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+        return id.value;
+      }
+    }
     return std::nullopt;
-  }
-  const auto contact = contacts_.Get(thread.participant_contact_ids.front());
-  if (!contact || !*contact) {
-    return std::nullopt;
-  }
-  for (const ContactId& id : (*contact)->ids) {
-    if (id.kind == ContactIdKind::RelayUser) {
-      return id.value;
+  };
+
+  if (!thread.participant_contact_ids.empty()) {
+    const auto contact = contacts_.Get(thread.participant_contact_ids.front());
+    if (contact && *contact) {
+      if (auto relay = relay_from_contact(**contact)) {
+        return relay;
+      }
     }
   }
+
+  if (thread.peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) &&
+      !thread.peer_identity_value.empty()) {
+    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, ContactIdKind::Account);
+    if (by_account && by_account->has_value()) {
+      if (auto relay = relay_from_contact(**by_account)) {
+        return relay;
+      }
+    }
+  }
+
   return std::nullopt;
 }
 
@@ -968,8 +995,8 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     E2eEncryptParams params;
     params.text = text;
     params.channel = E2eRelayPayloadCodec::ChannelFromThread((*thread)->channel);
-    params.peer_contact_id = *peer_relay_id;
-    params.sender_contact_id = identity->relay_user_id;
+    params.peer_contact_id = (*thread)->peer_identity_value;
+    params.sender_contact_id = identity->account_id;
     params.message_id = message.id;
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
@@ -1005,7 +1032,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
   envelope.sender_relay_id = identity->relay_user_id;
-  envelope.sender_contact_id = identity->relay_user_id;
+  envelope.sender_contact_id = identity->account_id;
   envelope.route.kind = "direct";
   envelope.route.channel = (*thread)->channel;
   envelope.body.e2e.payload_b64 = *payload_b64;
@@ -1099,13 +1126,13 @@ Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identi
   const int64_t floor = floor_minor.value_or(identity->initiation_floor);
 
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::RelayUser)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -1121,7 +1148,7 @@ Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identi
   }
 
   ChargeRequiredDetail detail;
-  detail.peer_identity = identity->relay_user_id;
+  detail.peer_identity = identity->account_id.empty() ? identity->relay_user_id : identity->account_id;
   detail.floor_minor = floor;
   detail.currency = kPricingCurrencyId;
   auto detail_json = InitiationBillingCodec::EncodeChargeRequired(detail);
@@ -1139,7 +1166,7 @@ Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identi
   opts.generation = "system";
   opts.update_preview = false;
   opts.prefer_relay = true;
-  opts.sender_contact_id = identity->relay_user_id;
+  opts.sender_contact_id = identity->account_id;
 
   auto sent = SendUserMessage(thread->id, "Charge required", opts);
   if (!sent) {
@@ -1205,7 +1232,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
 
   std::vector<GroupMemberTarget> targets;
   for (const GroupRosterMember& member : *members) {
-    if (member.member_identity == identity->relay_user_id) {
+    if (member.member_identity == identity->account_id) {
       continue;
     }
     GroupMemberTarget target;
@@ -1235,7 +1262,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
 
   const std::string group_id = *(*thread)->group_id;
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-      text, group_id, identity->relay_user_id, message.id, *message.sender_seq, *message.session_epoch,
+      text, group_id, identity->account_id, message.id, *message.sender_seq, *message.session_epoch,
       message.timestamp, targets, psk_store_, resolve_kem, rich_plaintext);
   if (!encrypted) {
     appended->delivery = MessageDelivery::Failed;
@@ -1259,7 +1286,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = message.id;
     envelope.sender_relay_id = identity->relay_user_id;
-    envelope.sender_contact_id = identity->relay_user_id;
+    envelope.sender_contact_id = identity->account_id;
     envelope.route.kind = "group";
     envelope.route.group_id = group_id;
     envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, payload_b64}};
@@ -1518,14 +1545,14 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         PersistRelayCursor(identity->relay_user_id);
       }
       auto messages = std::move(poll->messages);
-      const std::string local_relay_id = identity->relay_user_id;
+      const std::string local_account_id = identity->account_id;
       if (!messages.empty()) {
         log().info << "PollInbox ok n=" << messages.size()
                       << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
       }
 
       // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
-      AppRuntime::PostWorkerCritical( [this, local_relay_id,
+      AppRuntime::PostWorkerCritical( [this, local_account_id, local_relay_id = identity->relay_user_id,
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
         struct UnreadNotice {
@@ -1535,7 +1562,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
-          const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
+          const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           MaybePublishMemberJoinedAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {

@@ -17,7 +17,7 @@ public:
                                     const std::string& peer_identity_value) override;
 
 private:
-  static bool IsRelayUserKind(const std::string& peer_identity_kind);
+  static bool IsAccountKind(const std::string& peer_identity_kind);
 
   PeerSigningKeyStore& store_;
   IDirectoryClient& directory_;

@@ -43,4 +43,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
-| [multi-device-account](multi-device-account/) | **m2a done** — **m2b** client wire next | Account ID directory on Brief; wire hard cut next — [DESIGN](multi-device-account/DESIGN.md) |
+| [multi-device-account](multi-device-account/) | **m2b done** — **m4** link-device next | Account ID on wire + Brief directory; shared DEK at m4 — [DESIGN](multi-device-account/DESIGN.md) |

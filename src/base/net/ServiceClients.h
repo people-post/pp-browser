@@ -46,6 +46,7 @@ public:
   virtual ~IDirectoryClient() = default;
   virtual Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) = 0;
   virtual Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) = 0;
+  virtual Roe<DirectoryHit> LookupByAccount(const std::string& account_id) = 0;
 };
 
 struct RegistrationResult {
