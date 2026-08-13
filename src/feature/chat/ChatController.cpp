@@ -832,7 +832,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     const std::string group_id = *(*thread)->group_id;
     std::string local_identity;
     if (auto identity = facade_->GetIdentity()) {
-      local_identity = identity->relay_user_id;
+      local_identity = identity->account_id;
     }
 
     bool is_owner = false;
@@ -923,7 +923,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           for (const GroupRosterMember& member : successors) {
             std::string label = member.member_identity;
             if (auto contact = facade_->FindContactByIdentity(member.member_identity,
-                                                                                  ContactIdKind::RelayUser)) {
+                                                                                  ContactIdKind::Account)) {
               if (*contact) {
                 label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
                 if (label.empty()) {
@@ -1651,7 +1651,12 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               hit = *shadow;
             } else {
               hit.hit_id = peer_id;
-              hit.ids = {{ContactIdKind::RelayUser, peer_id, true}};
+              if (peer_id.rfind("account:", 0) == 0) {
+                hit.account_id = peer_id;
+                hit.ids = {{ContactIdKind::Account, peer_id, true}};
+              } else {
+                hit.ids = {{ContactIdKind::RelayUser, peer_id, false}};
+              }
             }
             auto created = facade_->AddContactFromDirectoryHit(hit);
             if (!created) {

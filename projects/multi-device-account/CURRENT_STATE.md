@@ -10,7 +10,7 @@
 | Signing | Account ML-DSA-65 for register/API/envelopes |
 | Brief (www) | KEM **1184**; by-account lookup; Account-first search |
 | Directory (client) | `LookupByAccount`; hits/contact primary = Account; keys cached by Account |
-| Wire / threads | `ChatTargetKey` / `sender_contact_id` / AAD / group roster = **Account ID** only (no communicating-identity fallback to `relay:`); `sender_relay_id` / recipient / stream / inbox auth = **`relay:`** route |
+| Wire / threads / **calls** | `ChatTargetKey` / envelopes / AAD / group roster / **call participants** = **Account ID** only; `sender_relay_id` / recipient / stream / inbox auth / dial PeerId = **route** (`relay:` or PeerId) |
 | Vault | Per-profile `vault.bin`; no link-device / shared-DEK path yet |
 | Private PSK | OOB per install; no multi-device sync |
 

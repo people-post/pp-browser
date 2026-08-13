@@ -2,6 +2,10 @@
 
 namespace pbr {
 
+bool IsAccountIdentityValue(const std::string& value) {
+  return value.rfind("account:", 0) == 0;
+}
+
 std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
   for (const ContactId& id : contact.ids) {
     if (id.kind == kind && id.primary && !id.value.empty()) {

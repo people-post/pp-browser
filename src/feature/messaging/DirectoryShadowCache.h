@@ -21,17 +21,21 @@ public:
   /** Fired when a hit is cached (lookup or Put) — used to refresh initiation floors (P001). */
   void SetOnHitCached(std::function<void(const DirectoryHit&)> callback);
 
-  std::optional<DirectoryHit> Get(const std::string& relay_user_id) const;
+  /** Lookup by Account ID or `relay:` route id. */
+  std::optional<DirectoryHit> Get(const std::string& identity) const;
 
-  /** Cache hit returns immediately. Otherwise schedules LookupRelayUser on IO and refreshes UI. */
-  void EnsureLookup(const std::string& relay_user_id);
+  /**
+   * Cache hit returns immediately. Otherwise schedules directory lookup on IO and refreshes UI.
+   * `account:…` → LookupByAccount; `relay:…` → LookupRelayUser.
+   */
+  void EnsureLookup(const std::string& identity);
 
   void Put(const DirectoryHit& hit);
 
 private:
   IDirectoryClient& directory_;
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, DirectoryHit> by_relay_id_;
+  std::unordered_map<std::string, DirectoryHit> by_id_;
   std::unordered_set<std::string> inflight_;
   std::function<void()> on_updated_;
   std::function<void(const DirectoryHit&)> on_hit_cached_;

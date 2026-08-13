@@ -7,6 +7,9 @@
 
 namespace pbr {
 
+/** True when value is a full Account ID (`account:…`, M002). */
+bool IsAccountIdentityValue(const std::string& value);
+
 /** First matching id of kind (primary preferred). */
 std::string PrimaryIdOfKind(const Contact& contact, ContactIdKind kind);
 

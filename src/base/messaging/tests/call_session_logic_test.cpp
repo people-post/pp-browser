@@ -9,10 +9,10 @@ namespace {
 
 TEST(CallSessionLogicTest, SelectEpochCoordinatorMinIdentity) {
   EXPECT_FALSE(CallSessionLogic::SelectEpochCoordinator({}).has_value());
-  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"relay:bob"}), "relay:bob");
-  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"relay:bob", "relay:alice", "relay:carol"}),
-            "relay:alice");
-  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"relay:z", "", "relay:a"}), "relay:a");
+  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"account:bob"}), "account:bob");
+  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"account:bob", "account:alice", "account:carol"}),
+            "account:alice");
+  EXPECT_EQ(*CallSessionLogic::SelectEpochCoordinator({"account:z", "", "account:a"}), "account:a");
 }
 
 TEST(CallSessionLogicTest, TransitionOnRemoteJoined) {
@@ -98,7 +98,7 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
   CallSdpDetail detail;
   detail.call_id = "call:abc";
-  detail.identity = "relay:alice";
+  detail.identity = "account:alice";
   detail.sdp_type = "offer";
   detail.sdp = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n";
 
@@ -117,8 +117,8 @@ TEST(CallControlCodecTest, SdpDetailRoundTrip) {
 TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   CallInviteDetail invite;
   invite.call_id = "call:abc";
-  invite.inviter_identity = "relay:alice";
-  invite.invitee_identity = "relay:bob";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
   invite.listen_multiaddrs = {"/ip4/192.168.1.10/tcp/18517/p2p/12D3KooWAlice"};
   invite.libp2p_peer_id = "12D3KooWAlice";
   invite.caps.present = true;
@@ -138,7 +138,7 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
 
   CallAcceptDetail accept;
   accept.call_id = "call:abc";
-  accept.identity = "relay:bob";
+  accept.identity = "account:bob";
   accept.listen_multiaddrs = {"/ip4/192.168.1.20/tcp/18517/p2p/12D3KooWBob"};
   accept.libp2p_peer_id = "12D3KooWBob";
   accept.caps.present = true;
@@ -164,8 +164,8 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
 TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   CallInviteDetail invite;
   invite.call_id = "call:pay";
-  invite.inviter_identity = "relay:a";
-  invite.invitee_identity = "relay:b";
+  invite.inviter_identity = "account:a";
+  invite.invitee_identity = "account:b";
   invite.offer_amount_minor = 25;
   invite.floor_minor = 20;
   invite.currency = "pp_credit";
@@ -179,7 +179,7 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
 
   CallAcceptDetail accept;
   accept.call_id = "call:pay";
-  accept.identity = "relay:b";
+  accept.identity = "account:b";
   accept.charge_decision = "take_all";
   accept.offer_amount_minor = 25;
   auto encoded_accept = CallControlCodec::EncodeAccept(accept);

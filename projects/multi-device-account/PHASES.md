@@ -44,6 +44,8 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 - [x] History/stream route remains `relay:` (resolve from contact)
 - [x] Migrate or wipe pre-cut `relay:`-keyed local state (pre-release wipe OK — COMPATIBILITY)
 - [x] Promote normative identity note in `docs/contracts/WIRE_SCHEMAS.md`
+- [x] Call stack person identity → Account ID (participants, media stream ids, UI); PeerId/`relay:` stay dial/route
+- [x] Drop communicating-identity fallbacks (direct target, group roster, directory shadow by Account)
 
 ## m3 — Brief multi-device attach polish
 

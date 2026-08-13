@@ -464,7 +464,7 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
 }
 
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
-  if (shadows_ && sender_contact_id.rfind("relay:", 0) == 0) {
+  if (shadows_ && (sender_contact_id.rfind("account:", 0) == 0 || sender_contact_id.rfind("relay:", 0) == 0)) {
     shadows_->EnsureLookup(sender_contact_id);
   }
   return labels_.ResolveSender(sender_contact_id).title;

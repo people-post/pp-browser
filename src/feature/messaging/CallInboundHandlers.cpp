@@ -3,6 +3,7 @@
 #include "base/messaging/CallSessionLogic.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/messaging/PeerCapsLogic.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
@@ -22,7 +23,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
   }
   std::vector<std::string> peer_ids = PeerIdsFromListenMultiaddrs(listen_multiaddrs);
   if (peer_ids.empty() && !identity.empty()) {
-    if (auto found = contacts.FindByIdentity(identity, ContactIdKind::RelayUser);
+    if (auto found = contacts.FindByIdentity(identity, ContactIdKind::Account);
         found && found->has_value()) {
       const std::string peer_id = PeerIdFromContact(**found);
       if (!peer_id.empty()) {
@@ -34,7 +35,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
     if (caps.present) {
       sessions.NotePeerMediaRelayCap(peer_id, caps.media_relay);
     }
-    if (!identity.empty() && identity.rfind("relay:", 0) == 0) {
+    if (IsAccountIdentityValue(identity)) {
       sessions.NoteLibp2pPeerIdForRelay(identity, peer_id);
     }
   }

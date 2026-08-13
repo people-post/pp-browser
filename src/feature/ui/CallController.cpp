@@ -358,7 +358,7 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
   if (identity.empty() || !call_ports_.find_contact_by_identity) {
     return {};
   }
-  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser)) {
+  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::Account)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;

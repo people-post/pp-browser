@@ -20,6 +20,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/BackgroundSyncScheduler.h"
@@ -573,7 +574,7 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
     if (p2p_) {
       p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
     }
-    // Call-media dials peer_key=relay:… while mDNS only knows the libp2p PeerId. Alias on IO
+    // Call-media dials peer_key=account:… while mDNS only knows the libp2p PeerId. Alias on IO
     // here — do not wait for UI RegisterContactEndpoints (moto dogfood: undialable despite LAN ma).
     if (contacts_) {
       if (auto listed = contacts_->List(); listed) {
@@ -839,15 +840,22 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     if (!initiation_billing_) {
       return;
     }
-    std::string relay_id = hit.hit_id;
-    for (const ContactId& id : hit.ids) {
-      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-        relay_id = id.value;
-        break;
+    std::string person_id;
+    if (auto account = PrimaryAccountIdFromHit(hit)) {
+      person_id = *account;
+    } else {
+      for (const ContactId& id : hit.ids) {
+        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          person_id = id.value;
+          break;
+        }
+      }
+      if (person_id.empty()) {
+        person_id = hit.hit_id;
       }
     }
-    if (!relay_id.empty()) {
-      (void)initiation_billing_->SetFloor(relay_id, hit.initiation_floor);
+    if (!person_id.empty()) {
+      (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
     }
   });
 
