@@ -4,6 +4,7 @@
 <!--
   Fallback only. scripts/ios_sign.sh prefers entitlements extracted from the
   provisioning profile (application-identifier, team-identifier, get-task-allow).
+  Device install requires application-identifier — do not ship get-task-allow alone.
 -->
 <plist version="1.0">
 <dict>
