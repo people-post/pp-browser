@@ -69,11 +69,12 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, optional `account_id`, `relay_user_id`, `nickname`, optional `peer_id` in `ids[]`, optional `multiaddrs`, optional `initiation_floor`) |
-| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, optional `account_id`, `signature_alg`, nickname, expires_at, optional `peer_id`, `multiaddrs`, optional `initiation_floor`) |
+| `GET /v1/search?q=` | Search people. **`q=`** matches **nickname**, **`relay:`** id, and **Account ID** (including prefix on `account:…`). Hits: required top-level **`account_id`**; `ids[]` lists **`account` primary**, then `relay_user` / `peer_id`; also `signing_public_key_b64`, `kem_public_key_b64`, `nickname`, optional `multiaddrs`, optional `initiation_floor` ([M011](../../projects/multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) |
+| `GET /v1/users/by-account/:account_id` | **Person** lookup by Account ID (`signing_public_key_b64`, `kem_public_key_b64`, `account_id`, `relay_user_id`, `signature_alg`, nickname, expires_at, optional `peer_id`, `multiaddrs`, optional `initiation_floor`) — **target API** (M011); implement before/with client m2 |
+| `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same key fields; **`account_id` required** when bound) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`) |
-| `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory) |
+| `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory; may echo `account_id`) |
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 

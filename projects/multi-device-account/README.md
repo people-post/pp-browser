@@ -1,8 +1,8 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) — identity/key model agreed; implementation not started  
+**Status:** Design freeze (m0) + **M009–M012** / **D100**; **m1** PQ signing done; next **m2a** Brief directory then **m2b** wire  
 **Owner:** Hongwei + agents  
-**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D099), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
+**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
 ## One-line goal
 
@@ -12,12 +12,12 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 
 | In | Out (for now) |
 |----|----------------|
-| Account ID format + account vs device key split | Nickname / directory cosmetics |
-| Brief: one Account ID → one `relay:` binding per server | Full multi-relay product UX |
-| Shared DEK; per-device `vault.bin` | PIN recovery / cloud vault backup |
+| Account ID format + account vs device key split | Full multi-relay product UX |
+| Brief: Account-first directory early (M011); one Account ID → one `relay:` binding | Nickname cosmetics beyond search/`q=` |
+| Wire/catalog hard cut to Account ID (M009/M010) | **`e2e_public` send** enablement |
+| Shared DEK; per-device `vault.bin` (design; m4) | PIN recovery / cloud vault backup |
 | Private (`e2e`) PSK not auto-synced | Optional private PSK sync |
-| Public(/group) PSK sync policy (direction) | Complete inbox fan-out implementation |
-| Link-device ritual (design) | Calls multi-ring polish |
+| Link-device ritual design (**M012**; implement m4) | Calls multi-ring polish |
 
 ## Documents
 
@@ -32,11 +32,12 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 
 | Phase | Name | Status |
 |-------|------|--------|
-| m0 | Identity/key design freeze | **Done** (docs) |
+| m0 | Identity/key + contact/directory ADR freeze | **Done** (docs) |
 | m1 | Account ID + key split in types/storage | **Done** (PQ signing hard cut) |
-| m2 | Wire / `ChatTargetKey` hard cut to Account ID | Not started |
-| m3 | Brief register binding + directory endpoints | **Brief + client register done**; multi-device attach later |
-| m4 | Link-device + DEK seal + sync policy | Not started |
+| m2a | Brief by-account + Account-first search | **Next** |
+| m2b | Wire / `ChatTargetKey` hard cut to Account ID | Not started |
+| m3 | Multi-device directory attach polish | Not started |
+| m4 | Link-device + DEK seal + sync policy | Not started (M012 frozen) |
 
 ## Normative promotion
 

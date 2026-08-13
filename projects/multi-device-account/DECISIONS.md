@@ -83,3 +83,72 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 **Decision:** Vendor **mlkem-native v2.0.0** (ML-KEM-768, C backend) and **mldsa-native v2.0.0** (ML-DSA-65, C backend) under `third_party/`. Public auto-key uses **ML-KEM-768 only** (no X25519 hybrid). App wrappers: `HybridKem` (ML-KEM-768; name retained) and `MlDsa`. Symmetric stack remains libsodium; libp2p remains BoringSSL/Ed25519 for device Peer ID.  
 **Rationale:** High-assurance PQCP implementations; matches aggressive PQ account model; Brief updates KEM blob size to 1184 in parallel.  
 **Alternatives:** liboqs umbrella; keep X25519+Kyber-draft BoringSSL experimental path.
+
+---
+
+## M009 — ContactIdKind::Account; wire `peer_identity_kind=account`
+
+**Date:** 2026-08-13  
+**Implements:** [M007](#m007--pre-release-hard-cut-communicating-identity--account-id).  
+**Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id).  
+**Decision:**
+
+1. Add **`ContactIdKind::Account`** with wire/string kind **`account`**.
+2. Value is the full Account ID string (`account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` — M002). UTF-8 exact, case-sensitive, no trim.
+3. On contacts, **Account** is the **primary** person id. **`relay_user`** and **`peer_id`** remain secondary (route / endpoint).
+4. Do **not** overload `Custom` or store `account:…` under `relay_user`.
+
+**Rationale:** Matches D079 kind/value model; one communicating identity for multi-device and multi-relay without a second migration.  
+**Alternatives:** Soft dual wire (`relay:` person + Account ID) — rejected (M007); Peer ID as wire person — rejected (multi-device clash).
+
+---
+
+## M010 — Envelope/AAD = Account ID; relay API auth stays `relay:`
+
+**Date:** 2026-08-13  
+**Decision:**
+
+| Surface | Identity |
+|---------|----------|
+| Envelope `sender_contact_id`, `ChatTargetKey`, E2E AAD | **Account ID** (`peer_identity_kind=account`) |
+| Peer signing-key cache / resolver key | **Account ID** |
+| Relay inbox / API auth (`requester`, send parties as route handles, device register) | **`relay:`** (M006 binding) |
+| Optional `sender_relay_id` (if present) | Route metadata only — not communicating identity |
+
+Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/cache); Account ID **must** equal hash(pk) (M002).
+
+**Rationale:** Person vs route split (M001); keeps Brief delivery queue keyed by existing relay binding while threads/PSK state key on portable Account ID.  
+**Alternatives:** Switch inbox auth to Account ID (heavier API churn, no multi-relay gain yet); keep `relay:` on envelopes (rejects M007).
+
+---
+
+## M011 — Brief directory Account-first; by-account lookup; search `q=` matches Account ID
+
+**Date:** 2026-08-13  
+**Ship order:** Brief (www) API **before or in the same window as** client m2 — not a post-m2 polish.  
+**Decision:**
+
+1. **Search** `GET /v1/search?q=`: hits include top-level **`account_id`**; `ids[]` lists **`account` as primary**, then `relay_user` / `peer_id` as secondary. Query matches **nickname**, **`relay:`** id, and **Account ID** (including prefix match on the `account:…` value).
+2. **New** `GET /v1/users/by-account/:account_id` — person lookup returning signing/KEM keys, `relay_user_id`, `signature_alg`, nickname, optional `peer_id` / `multiaddrs`.
+3. Keep `GET /v1/users/:relay_user_id` as **route** lookup; response **must** include `account_id`.
+4. Register finish may echo `account_id`. Until m4, a single `peer_id` + `multiaddrs` is enough (no full `endpoints[]` array required yet).
+
+**Rationale:** Client m2 can resolve signing keys and add-contact by Account ID without a temporary “relay lookup then read account_id” shim.  
+**Alternatives:** Defer by-account until after wire cut (rejected — forces dual-path client); drop route lookup by `relay:` (rejected — inbox still uses relay ids).
+
+---
+
+## M012 — Link-device ritual (deferred until m4)
+
+**Date:** 2026-08-13  
+**Status:** **Design intent frozen; implementation after m2 + M011.**  
+**Decision (when m4 ships):**
+
+1. Transport: **QR primary**, short code fallback.
+2. Seal to new device: Account ID + account ML-DSA secret + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005).
+3. Old device unlocked + explicit confirm; new device shows Account ID fingerprint.
+4. **Per-device inbox cursor** from day one (shared watermark would starve siblings).
+5. Unlink/revoke: sketch only in m4; full revoke UX later.
+
+**Rationale:** Avoid coding link-device until wire and directory are Account-first.  
+**Alternatives:** Shared inbox watermark (rejected); auto-sync all PSKs (rejected — M005).

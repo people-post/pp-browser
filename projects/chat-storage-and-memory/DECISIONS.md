@@ -1235,9 +1235,11 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 ## D092 — Release scope bucket B
 
 **Date:** 2026-07-06  
-**Decision:** First customer release = **v1 + post-v1 polish** (PHASES scope bucket **B**): chat **v2a–v6** + [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier) **plus** post-v4, post-v6b/c/d. Still excludes unless expanded: `e2e_public` auto-key (c3+), group E2E, PQ (c4).  
+**Status:** **Amended by [D100](#d100--release-scope-b-pq-account-id)** for identity / PQ / Account ID wire. Chat v2a–v6 + private E2E polish from Bucket B still apply.  
+**Decision (historical):** First customer release = **v1 + post-v1 polish** (PHASES scope bucket **B**): chat **v2a–v6** + [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier) **plus** post-v4, post-v6b/c/d. Originally excluded: `e2e_public` auto-key (c3+), group E2E, PQ (c4).  
 **Rationale:** Ship core E2E + sync with additive polish phases without opening public tier or group wire work.  
-**Alternatives:** Bucket A (minimal private only); C/D (public tier or PQ — deferred).
+**Alternatives:** Bucket A (minimal private only); C/D (public tier or PQ — deferred).  
+**Amended by:** [D099](#d099--account-id-amends-d096-multi-device), **[D100](#d100--release-scope-b-pq-account-id)**.
 
 ---
 
@@ -1341,7 +1343,7 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 **Date:** 2026-08-11  
 **Amends:** [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route) (person/endpoint/route split; ends “one keypair” for multi-device).  
 **Does not amend:** D082 string rules for `relay:` **as a route id**; D091 (CAIP-10 find-only).  
-**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M007](../multi-device-account/DECISIONS.md)).  
+**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M012](../multi-device-account/DECISIONS.md)).  
 **Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
@@ -1354,21 +1356,39 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 | **Find** | CAIP-10 (optional) | Alias → Account ID |
 
 1. **Account ID** is the communicating-identity target for the pre-release hard cut (`ChatTargetKey` / wire) — see multi-device-account M007; code remains `relay_user` until m2.
-2. **Peer ID** is no longer the account “who”; it is the mesh endpoint for one install (avoids dual-online conflict).
-3. **Brief register binding:** prove account key → at most one `relay_user_id` per Account ID per server (M006).
-4. **Signing / PSK sync / DEK:** owned by e2e E025 and at-rest A010 — not re-specified here.
-5. D015 single-active-sender and D074 `sender_instance_id` remain until multi-writer phases in multi-device-account / public tier work.
+2. **Contact / wire:** `ContactIdKind::Account` / `peer_identity_kind=account` ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount)); envelopes/AAD vs relay auth ([M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)).
+3. **Peer ID** is no longer the account “who”; it is the mesh endpoint for one install (avoids dual-online conflict).
+4. **Brief register binding:** prove account key → at most one `relay_user_id` per Account ID per server (M006). Directory Account-first early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)).
+5. **Signing / PSK sync / DEK:** owned by e2e E025 and at-rest A010 — not re-specified here.
+6. D015 single-active-sender and D074 `sender_instance_id` remain until multi-writer phases in multi-device-account / public tier work.
 
 **Rationale:** Portable multi-device account without overloading Peer ID or `relay:` as the person root; destructive cut acceptable pre-release.  
 **Alternatives:** Keep D096 as-is; soft-cut wire stays `relay:`; account = CAIP-10.
 
 ---
 
+## D100 — Release scope = Bucket B + PQ + Account ID (amends D092)
+
+**Date:** 2026-08-13  
+**Amends:** [D092](#d092--release-scope-bucket-b).  
+**Cross-project:** [multi-device-account M007–M011](../multi-device-account/DECISIONS.md); [e2e-message-crypto](../e2e-message-crypto/) aggressive PQ path.  
+**Decision:** Pre-release messaging/identity scope is **Bucket B plus**:
+
+| Include (with B) | Still deferred (release gates / later) |
+|------------------|----------------------------------------|
+| Aggressive PQ account identity (ML-DSA-65 register/API auth, ML-KEM-768 auto-key) | **m4** link-device / shared DEK ritual ([M012](../multi-device-account/DECISIONS.md#m012--link-device-ritual-deferred-until-m4)) |
+| Account ID on wire, catalog, AAD ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount), [M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)) | **`e2e_public` send** enablement (keys/trust may land earlier) |
+| Brief Account-first directory early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) | Cloud message sync; hard-delete “forget forever”; remote wipe |
+
+Chat v2a–v6 + private E2E polish from Bucket B remain in scope.
+
+**Rationale:** Identity hard-cut is in-scope for the same release as local chat storage; link-device and public auto-key *send* stay gated.  
+**Alternatives:** Keep D092 exclude of PQ/multi-device entirely; ship wire cut without Brief by-account API.
+
+---
+
 ## Open decisions (not yet resolved)
 
-**Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — all chat rollout items resolved 2026-07-06.
+None for this project’s local-storage checklist (resolved 2026-07-06). Identity / PQ / Account ID ADRs live in [multi-device-account/DECISIONS.md](../multi-device-account/DECISIONS.md) and [e2e-message-crypto/DECISIONS.md](../e2e-message-crypto/DECISIONS.md).
 
-**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095 (N ciphertexts per message).
-
-**Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086; auto-key O007/E024.  
-**Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — tracked in [platform-safety-limits/](../platform-safety-limits/), not this checklist.
+**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095; release scope → **D100**.

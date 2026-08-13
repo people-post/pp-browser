@@ -10,6 +10,8 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 - [x] Private PSK not auto-synced (M005)
 - [x] Brief register binding (M006)
 - [x] Hard-cut direction for wire identity (M007)
+- [x] Contact/wire/directory ADRs (**M009–M011**); link-device deferred (**M012**)
+- [x] Release scope B′ (**D100**)
 - [x] Thin amend ADRs in chat-storage / e2e / at-rest
 - [x] Project README + CURRENT_STATE
 
@@ -21,22 +23,33 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 - [x] Unit tests for Account ID encode/decode (M002) — `ml_dsa_test` + identity_store persist
 - [x] Client register + `IdentityStore::SignBytes` / envelope verify use account ML-DSA-65 (hard cut)
 
-## m2 — Wire / thread hard cut
+## m2 — Brief directory (M011) then wire / thread hard cut
 
-- [ ] `ChatTargetKey` / envelope `sender_contact_id` → Account ID
-- [ ] Ingest verify against account signing key
+**Ship Brief API first (or same window), then client wire.**
+
+### m2a — Brief (www)
+
+- [ ] `GET /v1/users/by-account/:account_id`
+- [ ] Search: top-level `account_id`; `ids[]` with `account` primary; **`q=` matches Account ID prefix, nickname, and `relay:`**
+- [ ] Route lookup `GET /v1/users/:relay_user_id` always returns `account_id`
+- [ ] Update [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+
+### m2b — Client wire / catalog
+
+- [ ] `ContactIdKind::Account` / `peer_identity_kind=account` (M009)
+- [ ] `ChatTargetKey` / envelope `sender_contact_id` / AAD → Account ID (M010)
+- [ ] Ingest verify against account signing key; signing cache keyed by Account ID
 - [ ] Migrate or wipe pre-cut `relay:`-keyed local state (pre-release OK)
 - [ ] Promote normative snippets to `docs/contracts/` when behavior ships
 
-## m3 — Brief binding + directory
+## m3 — Brief multi-device attach polish
 
-- [ ] Register proves account key; one `relay:` per Account ID per server
-- [ ] Directory: person = Account ID; list device Peer ID endpoints / multiaddrs
-- [ ] Update `SERVICE_ENDPOINTS` contract when API stabilizes
+- [ ] Directory: list device Peer ID endpoints / multiaddrs (richer than single peer when needed)
+- [ ] Multi-device register/push attach UX as needed
 
-## m4 — Link-device + sync policy
+## m4 — Link-device + sync policy (M012)
 
-- [ ] Link ritual: seal account key + DEK (+ syncable PSKs) to new device
+- [ ] Link ritual: QR + short code; seal account key + DEK (+ syncable PSKs) to new device
 - [ ] New device: own `vault.bin`, own Peer ID, push register
 - [ ] Enforce **no** auto-sync of private (`e2e`) PSKs
 - [ ] Per-device inbox cursor (or equivalent) so ack does not starve siblings

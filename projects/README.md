@@ -9,7 +9,7 @@ Work-in-progress design and implementation tracking for pp-browser. Unlike [`doc
 
 1. Open the project folder for the feature you are working on.
 2. Read **DESIGN.md** (complete spec) and **CURRENT_STATE.md** (today) before coding.
-3. **Human:** unresolved rollout choices live in **[PENDING_DECISIONS.md](PENDING_DECISIONS.md)** — resolve before expanding scope or v6-sync exit criteria.
+3. Record rollout choices in the relevant project **DECISIONS.md** (and promote to [`docs/contracts/`](../docs/contracts/) when behavior ships). Do not keep a separate pending checklist.
 4. Pick tasks from **PHASES.md** (ordering only); for batch pre-release delivery, follow **PHASES § Agent batch delivery** in [chat-storage](chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) and [e2e](e2e-message-crypto/PHASES.md#agent-batch-delivery-order).
 5. Mark items done in the same PR that implements them.
 6. Log non-obvious choices in **DECISIONS.md** (date + rationale).
@@ -43,4 +43,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
-| [multi-device-account](multi-device-account/) | **m1 storage** — m3 client register next | Account ID + per-device Peer ID; shared DEK; account-signed envelopes; private PSK not auto-synced — [DESIGN](multi-device-account/DESIGN.md) |
+| [multi-device-account](multi-device-account/) | **m1 done** — **m2a** Brief directory next | Account ID + per-device Peer ID; M009–M011 frozen; shared DEK at m4 — [DESIGN](multi-device-account/DESIGN.md) |

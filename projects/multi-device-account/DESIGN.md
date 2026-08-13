@@ -1,114 +1,69 @@
 # Multi-device account — design
 
-**Maturity:** Design freeze for identity/key boundary (m0). Pre-release: **destructive** wire/storage changes allowed.  
-**Canonical** for account vs device ids/keys. Related projects hold thin amend ADRs only — do not fork this matrix.
+**Status:** Design freeze (m0) + contact/wire/directory ADRs (**M009–M011**). Implementation: **m1** keys done; Brief **M011** then client **m2**; **m4** after ([M012](DECISIONS.md#m012--link-device-ritual-deferred-until-m4)).  
+**Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
 
 ## Problem
 
-Today one Ed25519 keypair is Peer ID + register proof + envelope signer (D096 “one keypair”). That blocks natural multi-device: two installs sharing Peer ID conflict on the mesh; cloning `identity.enc` races inbox cursors and `sender_seq` (D015).
+Today the product collapses **person**, **device**, and **Brief route** into one handle (`relay:` / Peer ID). That cannot support multiple devices under one person, or one person reachable via more than one relay, without breaking threads, E2E AAD, and contact identity.
 
-## Target layering
+## Goals
 
-```text
-ACCOUNT (shared across linked devices)     DEVICE (per install)
-─────────────────────────────────────      ──────────────────────────────
-Account ID                                 Peer ID (from device keypair)
-Account ML-DSA-65 key → signs envelopes    Device Ed25519 key → dial/Noise
-DEK (master secrets key)                   vault.bin = PIN wrap of same DEK
-Public (/ later group) chat PSKs (sync)    device_id, push token
-relay binding(s) per server                inbox cursor / ack watermark
-Private (e2e) PSKs — only where set up     sender_instance_id
-                                           multiaddrs / listen
-```
+1. One **Account ID** for the person across devices and relays.
+2. Many **device identities** (Peer ID / Ed25519) under that account.
+3. **`relay:`** as a **route** (inbox / API auth), not the person key for chat state.
+4. Shared **DEK** and public/group PSKs across linked devices; private `e2e` PSKs stay device-local (**M005**).
+5. Pre-release **hard-cut** to Account ID on wire and catalog (**M007**) — no dual-id soft migration.
 
-**Slogan (replaces D096 single-device slogan):**  
-**Account ID = who (person). Peer ID = which install (endpoint). Relay = route on a server. CAIP-10 = find/attest.**
+## Non-goals (this project)
 
-## Identity roles
+- Full cloud message sync / CRDT history (**D096** still later).
+- Replacing libp2p Peer ID for transport.
+- Turning Brief into a full IdP beyond directory + route binding.
 
-| Role | Value | Scope | First-class for |
-|------|--------|-------|-----------------|
-| **Account (person)** | `account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` | Shared | Wire communicating identity (hard cut), link-device, DEK realm, directory person |
-| **Endpoint (install)** | libp2p **Peer ID** (device Ed25519) | Per device | Dial/bind, mesh, call media peer |
-| **Route** | `relay:<opaque_id>` | Per relay server, shared on devices using that server | Inbox, Brief register binding |
-| **Find** | CAIP-10 (optional) | Alias | Search / attestation → Account ID (not wire) |
+## Identity model
 
-### Account ID format (frozen)
+| Concept | Format / crypto | Role |
+|---------|-----------------|------|
+| **Account ID** | `account:` + base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk)) | Communicating identity: contacts primary, threads, envelopes, AAD, signing-key cache |
+| **Account signing key** | ML-DSA-65 | Register, Brief API auth, envelope signatures |
+| **Device Peer ID** | libp2p / Ed25519 | Direct streams, dial, call media attach |
+| **Relay user id** | `relay:` + … | Inbox, send route, device↔Brief binding (**M006**) |
+
+**Invariant:** Account ID == hash(account ML-DSA public key). Changing the account signing key changes Account ID (new person).
 
 ```text
-account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65_account_public_key))>
+Account (Account ID + ML-DSA)
+  ├── Device A (Peer ID_A, local DEK unwrap, local e2e PSKs)
+  ├── Device B (Peer ID_B, …)
+  └── Routes: relay:… @ Brief (and later more relays)
 ```
 
-- Full **ML-DSA-65** public key (1952 bytes) is published in directory/identity; id is the hash binding (M002).
-- Base64url, **no padding** — URL-safe, 43 chars after prefix.
-- Wire/storage: UTF-8 exact bytes, case-sensitive, no trim (same discipline as D082).
+## Contact and wire (M009, M010)
 
-### Brief register binding
+- **`ContactIdKind::Account`** / `peer_identity_kind=account`; value = full Account ID string.
+- Account is **primary** on the person; `relay_user` and `peer_id` are secondary.
+- Envelopes: `sender_contact_id` + AAD + `ChatTargetKey` use Account ID.
+- Relay HTTP auth / inbox requester stay **`relay:`**.
 
-On a given Brief (or compatible) server:
+## Brief directory (M011) — ship early
 
-1. Client proves control of the **account** private key (challenge/response).
-2. Server accepts **at most one** active `relay_user_id` per Account ID.
-3. Binding stored: `Account ID ↔ relay_user_id` (+ directory keys).
-4. Other servers may later bind the **same** Account ID to a **different** `relay:` (multi-relay portability).
+| API | Role |
+|-----|------|
+| `GET /v1/search?q=` | Match **nickname**, **`relay:`**, and **Account ID** (incl. prefix). Hits: top-level `account_id`; `ids[]` with `account` **primary**. |
+| `GET /v1/users/by-account/:account_id` | Person lookup (keys, `relay_user_id`, `signature_alg`, …). |
+| `GET /v1/users/:relay_user_id` | Route lookup; response includes `account_id`. |
 
-Devices do **not** each create a new person via register; they attach under the account (push `device_id`, Peer ID endpoints).
+Implement in **www before / with** client m2.
 
-## Keys and signing
+## Threat notes (short)
 
-| Key | Holds | Signs / encrypts |
-|-----|--------|------------------|
-| **Account ML-DSA-65** | All linked devices (under DEK) | **All** relay envelopes (PQ-only) |
-| **Account ML-KEM-768** | Profile (auto-key / directory) | Public-tier `key_init` (PQ-only; no X25519) |
-| **Device Ed25519** | One install | libp2p identity / Noise; **not** envelope `signature` |
-| **DEK** | Logical shared; each device wraps in own `vault.bin` | account material, syncable PSKs at rest |
-| **Chat PSK** | Per `ChatTargetKey` | Message body AEAD (libsodium; unchanged) |
+- Account ML-DSA compromise = full account forge → recovery/revoke later.
+- Link-device is a high-value ceremony (**M012**): confirm on old device; fingerprint Account ID on new; never seal private `e2e` PSKs.
+- Brief sees Account ID ↔ `relay:` binding and pubkeys; not DEK or message plaintext.
 
-**Libs:** `third_party/mldsa-native`, `third_party/mlkem-native` (PQCP v2.0.0 C backends); wrappers `MlDsa`, `HybridKem` in `base/crypto`.  
-**Envelope verify:** friends resolve **ML-DSA-65** account pubkey for Account ID (directory / cache); id must match hash(pk).  
-**Install attribution:** `sender_instance_id` (D074) when multi-writer ships.
+## Open after freeze
 
-## Chat secret sync policy
-
-| Tier | Auto-sync PSK to linked devices? |
-|------|----------------------------------|
-| **Private (`e2e`)** | **No** — only devices that established/imported that PSK |
-| **Public (`e2e_public`)** | **Yes** (with account/DEK sync) when public tier + link ship |
-| **Group** | **Yes** (direction; with group project) |
-
-Private on a new device: OOB/import or explicit user opt-in copy — default is no fan-out.
-
-## Wire / storage direction (hard cut, pre-release)
-
-Target (implementation phases m1–m2):
-
-- `ChatTargetKey` / `sender_contact_id` / AAD use **Account ID** (`peer_identity_kind` TBD: e.g. `account`), not `relay_user` as the person key.
-- `relay:` remains route + Brief binding; inbox delivery uses the binding.
-- Local `thread_id` stays device-local.
-- Destructive vs today’s `relay:`-keyed threads: allowed pre-release (COMPATIBILITY wipe OK in dev).
-
-Exact `ContactIdKind` / envelope field names: implement in m1–m2; record in DECISIONS when coded.
-
-## Link-device (substance only)
-
-1. Existing device unlocked (account key + DEK in memory).
-2. New device: “I already have an account” → QR/short code.
-3. Seal to new device: Account ID, account key material, DEK, public(/group) PSK material as policy allows — **not** private PSKs by default.
-4. New device creates **its** `vault.bin` wrapping the **same** DEK; generates **device** keypair → Peer ID; registers push under account/`relay:` binding.
-
-## Non-goals (m0)
-
-- Nickname / UX chrome copy
-- Device-signed envelopes (S2/S3) — upgrade path later if needed
-- Cloud transcript backup as product
-- Merging cross-relay histories automatically
-
-## Cross-project pointers
-
-| Topic | Home |
-|-------|------|
-| This model | **This DESIGN** |
-| Amends D096 | [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) |
-| Account sign + private PSK policy | [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced) |
-| Shared DEK / per-device vault | [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device) |
-| Push device registry | [push-notifications](../push-notifications/) — remains per-install wake |
+- Unlink / revoke UX beyond m4 sketch.
+- Multi-relay `endpoints[]` richness (M011 allows single `peer_id` until then).
+- Account key rotation (new Account ID) product story.
