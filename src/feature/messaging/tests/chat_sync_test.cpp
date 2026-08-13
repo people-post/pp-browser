@@ -8,7 +8,7 @@
 #include "base/messaging/SyncStateCodec.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/people/ContactsStore.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/DirectoryShadowCache.h"
@@ -55,15 +55,15 @@ public:
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = Ed25519Signer::GenerateKeyPair();
+    auto generated = MlDsa::GenerateKeyPair();
     if (!generated) {
       throw std::runtime_error("Failed to generate peer keys");
     }
     peer_keys = *generated;
-    peer_private_key = peer_keys.private_key;
+    peer_private_key = peer_keys.secret_key;
 
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys.public_key);
+    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
     key_store.Put("relay_user", "relay:peer", record);
 
@@ -139,12 +139,11 @@ public:
     if (!sign_bytes) {
       throw std::runtime_error("Failed to build sign bytes");
     }
-    auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_private_key);
+    auto signature = MlDsa::Sign(peer_private_key, *sign_bytes);
     if (!signature) {
       throw std::runtime_error("Failed to sign envelope");
     }
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   }
 
@@ -191,7 +190,7 @@ public:
   ChatSyncService sync;
   Thread thread;
   std::string local_relay_id;
-  Ed25519KeyPair peer_keys;
+  MlDsaKeyPair peer_keys;
   std::vector<uint8_t> peer_private_key;
 };
 

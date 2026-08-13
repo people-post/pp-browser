@@ -83,13 +83,13 @@ private:
 class MockRegistrationClient : public IRegistrationClient {
 public:
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg = "ed25519",
+                                                 const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
                                                  const std::string& peer_id = "",
                                                  const std::vector<std::string>& multiaddrs = {}) override;
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg = "ed25519",
+                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},
@@ -145,13 +145,13 @@ class HttpRegistrationClient : public IRegistrationClient {
 public:
   explicit HttpRegistrationClient(std::string base_url);
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg = "ed25519",
+                                                 const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
                                                  const std::string& peer_id = "",
                                                  const std::vector<std::string>& multiaddrs = {}) override;
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg = "ed25519",
+                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},

@@ -213,8 +213,9 @@ d0 (complete)
 
 - [x] Choose libs: **mlkem-native** + **mldsa-native** (PQCP v2.0.0), not liboqs/OpenSSL 3.5
 - [x] Vendor lean trees + CMake; `HybridKem` → ML-KEM-768 only; `MlDsa` wrapper + Account ID helper
-- [ ] Wire ML-DSA-65 into envelope signer / register (Brief + `EnvelopeSigner`) — account hard cut
-- [ ] Directory publishes ML-DSA account pubkey; retire Ed25519 as person signer
+- [x] Brief (www): KEM size **1184** + **ml-dsa-65-only** register/API verify + Account ID binding (hard cut; wipe legacy rows)
+- [x] Client register uses account ML-DSA; `IdentityStore::SignBytes` / envelope verify → ML-DSA-65
+- [ ] Wire `ChatTargetKey` / `sender_contact_id` → Account ID (multi-device m2)
 - [ ] Migration: wipe/regenerate legacy Kyber-draft KEM blobs (client path started in IdentityStore)
 
 **Exit criteria:** TBD when threat model and library support firm up.

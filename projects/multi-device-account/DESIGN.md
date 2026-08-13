@@ -13,7 +13,7 @@ Today one Ed25519 keypair is Peer ID + register proof + envelope signer (D096 �
 ACCOUNT (shared across linked devices)     DEVICE (per install)
 ─────────────────────────────────────      ──────────────────────────────
 Account ID                                 Peer ID (from device keypair)
-Account Ed25519 key → signs envelopes      Device Ed25519 key → dial/Noise
+Account ML-DSA-65 key → signs envelopes    Device Ed25519 key → dial/Noise
 DEK (master secrets key)                   vault.bin = PIN wrap of same DEK
 Public (/ later group) chat PSKs (sync)    device_id, push token
 relay binding(s) per server                inbox cursor / ack watermark

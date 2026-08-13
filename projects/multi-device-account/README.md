@@ -33,9 +33,9 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | Phase | Name | Status |
 |-------|------|--------|
 | m0 | Identity/key design freeze | **Done** (docs) |
-| m1 | Account ID + key split in types/storage | Not started |
+| m1 | Account ID + key split in types/storage | **Done** (PQ signing hard cut) |
 | m2 | Wire / `ChatTargetKey` hard cut to Account ID | Not started |
-| m3 | Brief register binding + directory endpoints | Not started |
+| m3 | Brief register binding + directory endpoints | **Brief + client register done**; multi-device attach later |
 | m4 | Link-device + DEK seal + sync policy | Not started |
 
 ## Normative promotion

@@ -3,6 +3,7 @@
 #include "common/Utilities.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/MlDsa.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayStreamKey.h"
@@ -10,7 +11,6 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
 #include "base/people/ContactJson.h"
-#include "base/people/Ed25519Signer.h"
 
 #include <nlohmann/json.hpp>
 
@@ -120,10 +120,9 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   if (!reply_signing_private_key_.empty()) {
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(reply);
     if (sign_bytes) {
-      auto signature = Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()),
-                                           reply_signing_private_key_);
+      auto signature = MlDsa::Sign(reply_signing_private_key_, *sign_bytes);
       if (signature) {
-        reply.signature = *signature;
+        reply.signature = Base64Encode(*signature);
       }
     }
   }

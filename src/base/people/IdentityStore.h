@@ -15,7 +15,7 @@ namespace pbr {
 class IdentityStore : public Module, public IDekConsumer {
 public:
   /** Current identity plaintext JSON schema inside identity.enc. Unversioned files migrate on load. */
-  static constexpr int kSchemaVersion = 1;
+  static constexpr int kSchemaVersion = 2;
 
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
@@ -33,6 +33,9 @@ public:
   Roe<ByteVector> GetEd25519PublicKey() const;
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
+  /** Account ML-DSA-65 secret (raw). Empty/error if not yet minted. */
+  Roe<ByteVector> GetAccountMlDsaPrivateKey() const;
+  Roe<std::string> GetAccountId() const;
   void Flush();
 
 private:

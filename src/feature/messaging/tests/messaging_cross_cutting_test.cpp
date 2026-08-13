@@ -4,12 +4,12 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/crypto/AutoKeyEstablishment.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/crypto/AutoKeyEstablishment.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
@@ -54,14 +54,14 @@ public:
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = Ed25519Signer::GenerateKeyPair();
+    auto generated = MlDsa::GenerateKeyPair();
     if (!generated) {
       throw std::runtime_error("Failed to generate peer keys");
     }
     peer_keys = *generated;
 
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys.public_key);
+    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
     key_store.Put("relay_user", "relay:peer", record);
 
@@ -166,12 +166,11 @@ public:
     if (!sign_bytes) {
       throw std::runtime_error("Failed to build sign bytes");
     }
-    auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_keys.private_key);
+    auto signature = MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
     if (!signature) {
       throw std::runtime_error("Failed to sign envelope");
     }
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   }
 
@@ -184,7 +183,7 @@ public:
   PeerSigningKeyResolver key_resolver;
   RelayReceivePipeline pipeline;
   Thread thread;
-  Ed25519KeyPair peer_keys;
+  MlDsaKeyPair peer_keys;
   std::optional<ByteVector> local_kem_private;
 };
 

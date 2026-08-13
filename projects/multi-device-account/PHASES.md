@@ -15,10 +15,11 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 ## m1 — Types and storage split
 
-- [ ] Account keypair + Account ID in identity model (separate from device key / Peer ID)
-- [ ] Persist account material under DEK; device key local to install
-- [ ] Profile/AAD story compatible with shared DEK across devices
-- [ ] Unit tests for Account ID encode/decode (M002)
+- [x] Account keypair + Account ID in identity model (separate from device key / Peer ID)
+- [x] Persist account material under DEK; device key local to install
+- [x] Profile/AAD story compatible with shared DEK across devices
+- [x] Unit tests for Account ID encode/decode (M002) — `ml_dsa_test` + identity_store persist
+- [x] Client register + `IdentityStore::SignBytes` / envelope verify use account ML-DSA-65 (hard cut)
 
 ## m2 — Wire / thread hard cut
 

@@ -2,13 +2,13 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
+#include "base/crypto/CryptoUtil.h"
 #include "base/crypto/PskFingerprint.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
-#include "base/people/Ed25519Signer.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
@@ -202,7 +202,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     const std::string relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser);
     if (!relay_id.empty() && ports.get_signing_key) {
       if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id)) {
-        if (auto bytes = Ed25519Signer::FromBase64(key->signing_public_key_b64)) {
+        if (auto bytes = Base64Decode(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
           }

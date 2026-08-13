@@ -1114,7 +1114,7 @@ ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
   view.nickname = identity->nickname;
   view.peer_id = identity->peer_id;
   view.relay_id = identity->relay_user_id;
-  view.public_key_b64 = identity->public_key_b64;
+  view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
   return view;
 }

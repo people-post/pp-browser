@@ -5,7 +5,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
@@ -105,10 +105,10 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(identity.LoadOrCreate()));
   PeerSigningKeyStore key_store;
 
-  auto peer_keys = Ed25519Signer::GenerateKeyPair();
+  auto peer_keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(peer_keys));
   PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys->public_key);
+  record.signing_public_key_b64 = Base64Encode(peer_keys->public_key);
   record.source = "test";
   key_store.Put("relay_user", "relay:peer", record);
 
@@ -150,9 +150,9 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   ASSERT_TRUE(static_cast<bool>(sign_bytes));
   auto signature =
-      Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_keys->private_key);
+      MlDsa::Sign(peer_keys->secret_key, *sign_bytes);
   ASSERT_TRUE(static_cast<bool>(signature));
-  envelope.signature = *signature;
+  envelope.signature = Base64Encode(*signature);
 
   const RelayReceiveOutcome outcome = pipeline.ProcessEnvelope(envelope, "relay:local");
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);

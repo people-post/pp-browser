@@ -11,7 +11,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/ContactsStore.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/RelayReceivePipeline.h"
@@ -71,13 +71,13 @@ struct PartyHarness {
       throw std::runtime_error("Failed to update identity");
     }
 
-    auto generated = Ed25519Signer::GenerateKeyPair();
+    auto generated = MlDsa::GenerateKeyPair();
     if (!generated) {
       throw std::runtime_error("Failed to generate peer keys");
     }
     peer_keys = *generated;
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys.public_key);
+    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
     key_store.Put("relay_user", peer_relay, record);
 
@@ -158,11 +158,11 @@ struct PartyHarness {
       throw std::runtime_error("Failed to build sign bytes");
     }
     auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_keys.private_key);
+        MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
     if (!signature) {
       throw std::runtime_error("Failed to sign envelope");
     }
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   }
 
@@ -176,7 +176,7 @@ struct PartyHarness {
   PeerSigningKeyResolver key_resolver;
   GroupInviteGate gate;
   RelayReceivePipeline pipeline;
-  Ed25519KeyPair peer_keys;
+  MlDsaKeyPair peer_keys;
   Thread dm_thread;
   std::string local_relay;
   std::string peer_relay;

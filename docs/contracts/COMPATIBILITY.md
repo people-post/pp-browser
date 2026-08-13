@@ -38,6 +38,18 @@ Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
 **Policy:** unknown junk is safe. Official filenames with unsupported **newer** schemas fail bootstrap until the profile/data dir is reset (Me → Storage, or delete data dir in development). See D016 (no legacy JSON/wire import) vs D069 (migrate shippable SQLite).
 
+### Dev wipe after Brief PQ / Account ID hard cut
+
+When Brief drops classical `relay_users` (ML-DSA-only register), wipe local profiles so clients re-mint account keys and re-register:
+
+| Platform | Script |
+|----------|--------|
+| Linux / macOS | [`scripts/wipe_local_profile.sh`](../../scripts/wipe_local_profile.sh) |
+| Windows | [`scripts/wipe_local_profile.ps1`](../../scripts/wipe_local_profile.ps1) |
+| Android / iOS | Clear app storage by hand (no script) |
+
+Brief-side wipe: www repo `scripts/wipe_relay_pq.sh`.
+
 ---
 
 ## Wire / peer (newer apps)

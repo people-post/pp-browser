@@ -46,6 +46,9 @@ TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
   EXPECT_FALSE(identity->peer_id.empty());
   EXPECT_TRUE(identity->relay_user_id.empty());
   EXPECT_FALSE(identity->registered);
+  EXPECT_FALSE(identity->account_id.empty());
+  EXPECT_EQ(identity->account_id.rfind("account:", 0), 0u);
+  EXPECT_FALSE(identity->account_signing_public_key_b64.empty());
   EXPECT_TRUE(std::filesystem::exists(data_dir_ / "identity.enc"));
 
   auto public_key = Ed25519Signer::FromBase64(identity->public_key_b64);
@@ -57,12 +60,14 @@ TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
 
 TEST_F(IdentityStoreTest, DerivesSamePeerIdAcrossReload) {
   std::string peer_id;
+  std::string account_id;
   {
     IdentityStore store(data_dir_.string(), "test-profile");
     ASSERT_TRUE(store.SetDek(MakeTestDek()));
     auto identity = store.LoadOrCreate();
     ASSERT_TRUE(static_cast<bool>(identity));
     peer_id = identity->peer_id;
+    account_id = identity->account_id;
   }
   EXPECT_TRUE(std::filesystem::exists(data_dir_ / "identity.enc"));
   EXPECT_FALSE(std::filesystem::exists(data_dir_ / "identity.json"));
@@ -71,7 +76,11 @@ TEST_F(IdentityStoreTest, DerivesSamePeerIdAcrossReload) {
   auto identity = reloaded.Get();
   ASSERT_TRUE(static_cast<bool>(identity));
   EXPECT_EQ(identity->peer_id, peer_id);
+  EXPECT_EQ(identity->account_id, account_id);
   EXPECT_TRUE(identity->relay_user_id.empty());
+  auto got_account = reloaded.GetAccountId();
+  ASSERT_TRUE(static_cast<bool>(got_account));
+  EXPECT_EQ(*got_account, account_id);
 }
 
 TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
