@@ -80,5 +80,6 @@ packaging/macos/signing.env
 # iOS signing / export (see packaging/ios/signing.env.example)
 packaging/ios/signing.env
 packaging/ios/ExportOptions.plist
+packaging/ios/*.mobileprovision
 dist-ios/
 dist/

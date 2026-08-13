@@ -169,7 +169,7 @@ source packaging/ios/signing.env
 | `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` | Must match App ID |
 | `IOS_DEVELOPMENT_TEAM` | `YOUR_TEAM_ID` | 10-character Team ID |
 | `IOS_SIGNING_IDENTITY` | `Apple Development: …` | From Keychain |
-| `IOS_PROVISIONING_PROFILE_PATH` | `/path/to/*.mobileprovision` | Development profile |
+| `IOS_PROVISIONING_PROFILE_PATH` | `packaging/ios/*.mobileprovision` | Development profile (gitignored) |
 
 Sign + install on a connected iPhone:
 
