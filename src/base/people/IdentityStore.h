@@ -21,6 +21,11 @@ public:
 
   /** Required before LoadOrCreate/Get/Save — DEK from unlocked DataKeyVault. */
   Roe<void> SetDek(ByteVector dek) override;
+  /**
+   * Swap the in-memory DEK without discarding a loaded identity (link-device
+   * import). Caller must Update/Save next so identity.enc is re-sealed.
+   */
+  Roe<void> ReplaceDekKeepLoaded(ByteVector dek);
   void ClearDek() override;
 
   Roe<LocalIdentity> LoadOrCreate();

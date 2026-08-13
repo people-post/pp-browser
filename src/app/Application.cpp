@@ -539,6 +539,7 @@ bool Application::Initialize(const char* window_title) {
     }
     return vault->ChangePin(current_pin, new_pin);
   };
+  settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
   // Copy ports before BindCommands moves the command bag.
   const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_->BindCommands(std::move(settings_commands));
@@ -685,6 +686,10 @@ bool Application::Initialize(const char* window_title) {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
+    gate_complete.complete_link_device = [this](const std::string& pin, const std::string& bundle_json,
+                                                const bool set_default_pin) {
+      unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
+    };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
@@ -703,6 +708,7 @@ bool Application::Initialize(const char* window_title) {
     prefs.pin_is_default = is_default;
     (void)store_.SaveProfilePrefs(prefs);
   };
+  unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() { pin_gate_->Dismiss(); };
@@ -712,6 +718,20 @@ bool Application::Initialize(const char* window_title) {
   unlock_ports.ui.show_error = [this](const std::string& message) { pin_gate_->ShowError(message); };
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
+  };
+  unlock_ports.import_link_device = [&facade](const std::string& pin,
+                                             const std::string& bundle_json) -> Roe<void> {
+    return facade.ImportLinkDevice(bundle_json, pin);
+  };
+  unlock_ports.ui.on_link_imported = [this, &facade]() {
+    // Import runs before EnsureMessagingReady; push attach after the vault is open.
+    AppRuntime::PostWorkerNormal([this, &facade]() {
+      (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+    });
+    if (chat_) {
+      chat_->ReloadAgentConfig();
+    }
+    UserFeedback::Ok(Tr("pin.link_imported"));
   };
   // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
   unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
@@ -748,6 +768,8 @@ bool Application::Initialize(const char* window_title) {
     pin_actions.on_cancel = [this]() { pin_gate_->OnCancel(); };
     pin_actions.on_set_pin = [this]() { pin_gate_->OnSetPin(); };
     pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
+    pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
+    pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {

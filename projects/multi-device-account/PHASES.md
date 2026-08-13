@@ -64,8 +64,8 @@ One Account → one `relay:` inbox (M006). Client cursors are already per-profil
 - [x] `pp-browser-link-device-v1` codec + unit tests
 - [x] `DataKeyVault::CreateWithDek` (shared DEK, new vault wrap)
 - [x] `LinkDeviceExchange` export/import: account keys + DEK + public PSKs; keep local Peer ID; **no** private `e2e` PSKs (**M014**)
-- [ ] UI: export QR / paste on old device; import + PIN on new profile
-- [ ] Push-register under same `relay:` after import
+- [x] UI: **Copy link payload…** on the old device (Me → Security, registered + unlocked). New install: first-secrets **identity fork** → PIN for this device → paste payload into an **empty vault** (`CreateWithDek`). No in-place Security join. Already a person → **Reset this profile** first.
+- [x] Push-register under same `relay:` after import
 - [ ] Unlink device / revoke sketch (may defer details)
 
 ## m3 — Brief multi-device attach polish (after second Peer ID exists)

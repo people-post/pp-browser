@@ -9,7 +9,8 @@
 | `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK |
 | `EnsureMessagingReady` | **Yes** | `MessagingHub` after profile unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
-| Three-way chooser (A007) | **Yes** | Set PIN / default / Not now on first secrets use |
+| Three-way chooser (A007) | **Yes** | After identity fork **I'm new**: Set PIN / default / Not now |
+| Identity fork (M012) | **Yes** | I'm new vs I already have an account on first secrets use |
 | Default PIN + `pin_is_default` | **Yes** | `PinDefaults.h`; `preferences.json` schema v3 |
 | Silent unlock (default PIN) | **Yes** | Bootstrap + `PromptUnlockIfVaultExists` |
 | Change PIN (Settings) | **Yes** | Me → Security; `DataKeyVault::ChangePin` |

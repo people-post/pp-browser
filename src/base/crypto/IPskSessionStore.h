@@ -38,6 +38,8 @@ public:
   virtual ~IPskSessionStore() = default;
 
   virtual Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& key) const = 0;
+  /** Rows with a master PSK or retired tail (plaintext after DEK decrypt). */
+  virtual Roe<std::vector<PskSessionRecord>> List() const = 0;
   virtual Roe<void> Save(const PskSessionRecord& record) = 0;
   virtual Roe<ByteVector> GenerateMasterPsk() = 0;
   virtual Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const ChatTargetKey& key,

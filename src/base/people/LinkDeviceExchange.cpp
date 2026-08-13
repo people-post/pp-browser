@@ -3,6 +3,8 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 
+#include <optional>
+
 namespace pbr {
 
 namespace {
@@ -74,23 +76,39 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   if (auto valid = LinkDeviceCodec::Validate(*parsed, now_ms); !valid) {
     return valid.error();
   }
-  if (vault.Exists()) {
-    return Error("Profile already has a vault — import on a new device profile");
-  }
 
   auto dek = Base64Decode(parsed->dek_b64);
   if (!dek) {
     return dek.error();
   }
-  if (auto created = vault.CreateWithDek(pin, *dek); !created) {
-    return created.error();
+
+  const bool had_vault = vault.Exists();
+  std::optional<LocalIdentity> loaded;
+  if (had_vault) {
+    auto existing = identity.Get();
+    if (!existing) {
+      return existing.error();
+    }
+    loaded = *existing;
+    if (auto wrapped = vault.ReplaceWithDek(pin, *dek); !wrapped) {
+      return wrapped.error();
+    }
+  } else if (auto wrapped = vault.CreateWithDek(pin, *dek); !wrapped) {
+    return wrapped.error();
   }
-  if (auto set = identity.SetDek(*dek); !set) {
-    return set.error();
-  }
-  auto loaded = identity.LoadOrCreate();
-  if (!loaded) {
-    return loaded.error();
+  if (had_vault) {
+    if (auto keep = identity.ReplaceDekKeepLoaded(*dek); !keep) {
+      return keep.error();
+    }
+  } else {
+    if (auto set = identity.SetDek(*dek); !set) {
+      return set.error();
+    }
+    auto created = identity.LoadOrCreate();
+    if (!created) {
+      return created.error();
+    }
+    loaded = *created;
   }
 
   LocalIdentity next = *loaded;

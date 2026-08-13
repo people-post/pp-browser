@@ -34,6 +34,9 @@ public:
   Roe<void> Unlock(const std::string& pin);
   void Lock();
 
+  /** Re-fan the currently unlocked vault DEK (after link-device wrap of a shared DEK). */
+  Roe<void> RedistributeUnlockedDek();
+
   DataKeyVault* Vault();
   const DataKeyVault* Vault() const;
 

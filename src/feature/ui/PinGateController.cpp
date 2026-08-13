@@ -1,5 +1,6 @@
 #include "feature/ui/PinGateController.h"
 
+#include "base/crypto/PinDefaults.h"
 #include "base/i18n/LocalizationService.h"
 
 namespace pbr {
@@ -19,6 +20,7 @@ void PinGateController::PullBoundPinFields() {
   const PinGateState snap = shell_pin_gate_.pin_gate_snapshot();
   pin_state_.pin = snap.pin;
   pin_state_.pin_confirm = snap.pin_confirm;
+  pin_state_.link_payload = snap.link_payload;
 }
 
 void PinGateController::ApplyPinGate() {
@@ -62,6 +64,27 @@ void PinGateController::ShowError(const std::string& message) {
 
 void PinGateController::Dismiss() {
   pin_state_ = {};
+  link_flow_ = false;
+  pending_link_default_pin_ = false;
+  pending_link_pin_.clear();
+  ApplyPinGate();
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
+  }
+}
+
+void PinGateController::ShowIdentityFork() {
+  if (!shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  link_flow_ = false;
+  pending_link_default_pin_ = false;
+  pending_link_pin_.clear();
+  pin_state_ = {};
+  pin_state_.active = true;
+  pin_state_.identity_fork_mode = true;
+  pin_state_.title = Tr("pin.identity_fork_title").c_str();
+  pin_state_.message = Tr("pin.identity_fork_message").c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -72,6 +95,7 @@ void PinGateController::ShowChooser() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
+  link_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.chooser_mode = true;
@@ -83,10 +107,27 @@ void PinGateController::ShowChooser() {
   }
 }
 
+void PinGateController::ShowLinkChooser() {
+  if (!shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  link_flow_ = true;
+  pin_state_ = {};
+  pin_state_.active = true;
+  pin_state_.chooser_mode = true;
+  pin_state_.title = Tr("pin.link_chooser_title").c_str();
+  pin_state_.message = Tr("pin.link_chooser_message").c_str();
+  ApplyPinGate();
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
+  }
+}
+
 void PinGateController::ShowUnlock() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
+  link_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.create_mode = false;
@@ -102,17 +143,51 @@ void PinGateController::ShowCreate() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
+  pin_state_.identity_fork_mode = false;
+  pin_state_.link_paste_mode = false;
   pin_state_.chooser_mode = false;
   pin_state_.create_mode = true;
   pin_state_.error = "";
   pin_state_.pin = "";
   pin_state_.pin_confirm = "";
   pin_state_.title = Tr("pin.create_title").c_str();
-  pin_state_.message = Tr("pin.create_message").c_str();
+  pin_state_.message = link_flow_ ? Tr("pin.link_create_message").c_str() : Tr("pin.create_message").c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
   }
+}
+
+void PinGateController::ShowLinkPaste() {
+  if (!shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  pin_state_.identity_fork_mode = false;
+  pin_state_.chooser_mode = false;
+  pin_state_.create_mode = false;
+  pin_state_.link_paste_mode = true;
+  pin_state_.error = "";
+  pin_state_.link_payload = "";
+  pin_state_.title = Tr("pin.link_paste_title").c_str();
+  pin_state_.message = Tr("pin.link_paste_message").c_str();
+  ApplyPinGate();
+  if (shell_pin_gate_.remount_pin_gate) {
+    shell_pin_gate_.remount_pin_gate();
+  }
+}
+
+void PinGateController::OnIdentityNew() {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+    return;
+  }
+  ShowChooser();
+}
+
+void PinGateController::OnIdentityLink() {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+    return;
+  }
+  ShowLinkChooser();
 }
 
 void PinGateController::OnSetPin() {
@@ -129,7 +204,16 @@ void PinGateController::OnUseDefaultPin() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
-  if (!pin_state_.active || !pin_state_.chooser_mode || !gate_complete_.complete_with_default_pin) {
+  if (!pin_state_.active || !pin_state_.chooser_mode) {
+    return;
+  }
+  if (link_flow_) {
+    pending_link_pin_ = std::string(kDefaultProfilePin);
+    pending_link_default_pin_ = true;
+    ShowLinkPaste();
+    return;
+  }
+  if (!gate_complete_.complete_with_default_pin) {
     return;
   }
 
@@ -145,7 +229,29 @@ void PinGateController::OnSubmit() {
     return;
   }
   PullBoundPinFields();
-  if (!pin_state_.active || pin_state_.chooser_mode || !gate_complete_.complete_with_pin) {
+  if (!pin_state_.active || pin_state_.chooser_mode || pin_state_.identity_fork_mode) {
+    return;
+  }
+
+  if (pin_state_.link_paste_mode) {
+    if (!gate_complete_.complete_link_device) {
+      return;
+    }
+    const std::string payload = pin_state_.link_payload.c_str();
+    if (payload.empty()) {
+      pin_state_.error = Tr("pin.link_paste_empty").c_str();
+      ApplyPinGate();
+      DirtyPinFields();
+      return;
+    }
+    pin_state_.error = "";
+    ApplyPinGate();
+    DirtyPinFields();
+    gate_complete_.complete_link_device(pending_link_pin_, payload, pending_link_default_pin_);
+    return;
+  }
+
+  if (!gate_complete_.complete_with_pin) {
     return;
   }
 
@@ -170,6 +276,12 @@ void PinGateController::OnSubmit() {
       DirtyPinFields();
       return;
     }
+    if (link_flow_) {
+      pending_link_pin_ = pin;
+      pending_link_default_pin_ = false;
+      ShowLinkPaste();
+      return;
+    }
   }
 
   pin_state_.error = "";
@@ -179,8 +291,12 @@ void PinGateController::OnSubmit() {
 }
 
 void PinGateController::OnCancel() {
-  if (!pin_state_.active || (!pin_state_.create_mode && !pin_state_.chooser_mode) ||
-      !gate_complete_.cancel) {
+  if (!pin_state_.active) {
+    return;
+  }
+  const bool cancellable = pin_state_.create_mode || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
+                           pin_state_.link_paste_mode;
+  if (!cancellable || !gate_complete_.cancel) {
     return;
   }
   gate_complete_.cancel();

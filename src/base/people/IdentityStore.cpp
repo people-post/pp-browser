@@ -173,6 +173,18 @@ Roe<void> IdentityStore::SetDek(ByteVector dek) {
   return {};
 }
 
+Roe<void> IdentityStore::ReplaceDekKeepLoaded(ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+  }
+  dek_ = std::move(dek);
+  return {};
+}
+
 void IdentityStore::ClearDek() {
   std::lock_guard lock(mutex_);
   if (!dek_.empty()) {

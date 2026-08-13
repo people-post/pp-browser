@@ -145,13 +145,16 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
+    ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
+    ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
+    ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_conflict", &host.state_.call_ring.conflict);
@@ -289,6 +292,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
+    ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
+    ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
     ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
@@ -685,7 +690,8 @@ bool ShellHost::HandleDismiss() {
     return true;
   }
   if (state_.pin_gate.active) {
-    if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
+    if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
+        state_.pin_gate.link_paste_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }
@@ -778,13 +784,16 @@ void ShellHost::DirtyFeedback() {
 
 void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
+  DataModelHost::Instance().Dirty("window", "pin_gate_identity_fork_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
 }
 
@@ -1818,6 +1827,14 @@ std::string ShellHost::SerializePinGate() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"pin_gate_title\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
   out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
+  out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
+      << Tr("pin.identity_new") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
+      << Tr("pin.identity_link") << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+      << "</button>";
+  out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
@@ -1826,15 +1843,20 @@ std::string ShellHost::SerializePinGate() const {
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
       << "</button>";
   out << "</div>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"!pin_gate_chooser_mode\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
+         "data-value=\"pin_gate_link_payload\" placeholder=\""
+      << Tr("pin.link_paste_placeholder") << "\"></textarea>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
          "data-value=\"pin_gate_pin\" placeholder=\""
       << Tr("pin.placeholder") << "\"/>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
          "placeholder=\""
       << Tr("pin.confirm_placeholder") << "\"/>";
-  out << "<div class=\"shell-dialog-actions row\" data-if=\"!pin_gate_chooser_mode\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
+  out << "<div class=\"shell-dialog-actions row\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode || pin_gate_link_paste_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
@@ -2784,6 +2806,20 @@ void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::E
                                           const Rml::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_use_default) {
     Instance().pin_gate_actions_.on_use_default();
+  }
+}
+
+void ShellHost::PinGateIdentityNewCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_new) {
+    Instance().pin_gate_actions_.on_identity_new();
+  }
+}
+
+void ShellHost::PinGateIdentityLinkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_link) {
+    Instance().pin_gate_actions_.on_identity_link();
   }
 }
 

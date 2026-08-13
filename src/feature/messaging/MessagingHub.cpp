@@ -1616,6 +1616,14 @@ IdentityStore& MessagingHub::Identity() {
   return *identity_;
 }
 
+IPskSessionStore* MessagingHub::PskStore() {
+  return psk_store_.get();
+}
+
+ProfileSecretsService* MessagingHub::Secrets() {
+  return secrets_;
+}
+
 IDirectoryClient& MessagingHub::Directory() {
   return *directory_;
 }

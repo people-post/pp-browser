@@ -22,6 +22,7 @@ public:
   void ClearDek() override;
 
   Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& key) const override;
+  Roe<std::vector<PskSessionRecord>> List() const override;
   Roe<void> Save(const PskSessionRecord& record) override;
   Roe<ByteVector> GenerateMasterPsk() override;
   Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const ChatTargetKey& key,

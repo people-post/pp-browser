@@ -29,8 +29,10 @@ public:
                                      int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
 
   /**
-   * Fresh profile only: wrap shared DEK into a new vault, keep local device Ed25519 / KEM / Peer ID,
-   * replace account ML-DSA + Account ID + relay binding.
+   * Apply `pp-browser-link-device-v1`: wrap the shared DEK, keep local device
+   * Ed25519 / KEM / Peer ID, replace account ML-DSA + Account ID + relay binding.
+   * Product path is an empty vault (`CreateWithDek`). Existing-vault `ReplaceWithDek`
+   * remains for tests / engine; identity must already be loaded under the current DEK.
    */
   static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
                                             const std::string& bundle_json, std::string_view pin,

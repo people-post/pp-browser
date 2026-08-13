@@ -28,6 +28,12 @@ public:
   Roe<void> Create(std::string_view pin);
   /** New vault wrapping an existing DEK (link-device import — M004/M012). */
   Roe<void> CreateWithDek(std::string_view pin, ByteVector dek);
+  /**
+   * Wrap `dek` with `pin`. If a vault already exists, verifies `pin` first (this
+   * device's PIN), then overwrites the wrap. Product link-device uses
+   * `CreateWithDek` on an empty vault; this remains for tests / engine grafts.
+   */
+  Roe<void> ReplaceWithDek(std::string_view pin, ByteVector dek);
   Roe<void> Unlock(std::string_view pin);
   Roe<void> ChangePin(std::string_view old_pin, std::string_view new_pin);
   void Lock();
@@ -40,6 +46,7 @@ public:
 private:
   Roe<ByteVector> ReadVaultFile() const;
   Roe<void> WriteVaultFile(const PinKdfParams& params, const ByteVector& wrapped_dek) const;
+  Roe<void> WrapAndStore(std::string_view pin, ByteVector dek);
   Roe<ByteVector> WrapDek(const ByteVector& kek, const ByteVector& dek) const;
   Roe<ByteVector> UnwrapDek(const ByteVector& kek, const ByteVector& wrapped) const;
 

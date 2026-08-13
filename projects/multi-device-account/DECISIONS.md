@@ -141,17 +141,18 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M012 — Link-device ritual (deferred until m4)
 
 **Date:** 2026-08-13  
-**Status:** **Design intent frozen; implementation after m2 + M011.**  
-**Decision (when m4 ships):**
+**Updated:** 2026-08-13 — first-run identity fork; Security is export-only.  
+**Status:** **Accepted** (m4b paste path; QR later).  
+**Decision:**
 
-1. Transport: **QR primary**, short code fallback.
+1. Transport this pass: **paste payload** (QR primary still later; short code fallback later).
 2. Seal to new device: Account ID + account ML-DSA secret + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005).
-3. Old device unlocked + explicit confirm; new device shows Account ID fingerprint.
+3. Old device: unlocked + explicit confirm; **Copy link payload…** on Me → Security (registered). New device: first secrets use shows **I'm new on this device** vs **I already have an account**. Link path: PIN for *this* device, then paste into an **empty vault** (`CreateWithDek`). Do not mint a Brief person on the new install first. If the profile is already a person, **Reset this profile** then the same fork — no in-place Security join, no account switcher.
 4. **Per-device inbox cursor** from day one (shared watermark would starve siblings).
 5. Unlink/revoke: sketch only in m4; full revoke UX later.
 
-**Rationale:** Avoid coding link-device until wire and directory are Account-first.  
-**Alternatives:** Shared inbox watermark (rejected); auto-sync all PSKs (rejected — M005).
+**Rationale:** Joining an existing account must not create a throwaway person or graft onto a vault that already wraps a different DEK. Export stays on the used device; import belongs with first secrets use.  
+**Alternatives:** In-place Me → Security import (rejected this pass); shared inbox watermark (rejected); auto-sync all PSKs (rejected — M005).
 
 ---
 

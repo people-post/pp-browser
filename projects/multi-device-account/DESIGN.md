@@ -69,7 +69,7 @@ Account (Account ID + ML-DSA)
 
 ## Link-device bundle (m4b)
 
-Transport: QR primary, short code fallback (**M012**). JSON format **`pp-browser-link-device-v1`**.
+Transport this pass: **paste** (QR primary still later) (**M012**). JSON format **`pp-browser-link-device-v1`**.
 
 **Sealed to new device (never private `e2e` PSKs — M005 / M014):**
 
@@ -82,6 +82,6 @@ Transport: QR primary, short code fallback (**M012**). JSON format **`pp-browser
 | `relay_user_id` | Existing Brief binding |
 | `created_at` / `expires_at` | Default TTL 15 minutes |
 
-**New device after import:** keep local device Ed25519 / Peer ID / KEM; replace account keys + `relay:`; choose PIN → wrap DEK. Push re-attach and UI still follow.
+**New device after import:** keep local device Ed25519 / Peer ID / KEM; replace account keys + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Push re-attach follows after messaging is ready.
 
 **Private Secure (M014):** one session per pair; transfer copies PSK+seq, not a device-keyed thread.

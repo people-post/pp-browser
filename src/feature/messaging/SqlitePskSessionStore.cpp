@@ -19,6 +19,29 @@ std::string ChannelToDb(const CryptoChannel channel) {
   return CryptoChannelToString(channel);
 }
 
+CryptoChannel ChannelFromDb(const std::string& value) {
+  return value == "e2e_public" ? CryptoChannel::E2ePublic : CryptoChannel::E2e;
+}
+
+std::vector<RetiredPskEntry> ParseRetiredPsks(const char* json_text) {
+  std::vector<RetiredPskEntry> retired_psks;
+  if (json_text == nullptr) {
+    return retired_psks;
+  }
+  const nlohmann::json retired = nlohmann::json::parse(json_text, nullptr, false);
+  if (!retired.is_array()) {
+    return retired_psks;
+  }
+  for (const auto& item : retired) {
+    RetiredPskEntry entry;
+    entry.epoch = item.value("epoch", 0u);
+    entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
+    entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
+    retired_psks.push_back(std::move(entry));
+  }
+  return retired_psks;
+}
+
 void ApplyFingerprint(PskSessionRecord& record) {
   record.psk_fingerprint.reset();
   if (!record.master_psk_b64) {
@@ -181,19 +204,7 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
     record.psk_verified_at = sqlite3_column_int64(stmt, 3);
   }
-  if (sqlite3_column_text(stmt, 4)) {
-    const nlohmann::json retired =
-        nlohmann::json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)), nullptr, false);
-    if (retired.is_array()) {
-      for (const auto& item : retired) {
-        RetiredPskEntry entry;
-        entry.epoch = item.value("epoch", 0u);
-        entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
-        entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
-        record.retired_psks.push_back(std::move(entry));
-      }
-    }
-  }
+  record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
   sqlite3_finalize(stmt);
   if (!record.master_psk_b64 && record.retired_psks.empty()) {
     return std::optional<PskSessionRecord>(record);
@@ -203,6 +214,55 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
     return decrypted.error();
   }
   return std::optional<PskSessionRecord>(*decrypted);
+}
+
+Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT peer_identity_kind, peer_identity_value, channel, session_epoch, master_psk_b64, psk_fingerprint, "
+      "psk_verified_at, retired_psks_json FROM chat_targets;";
+  if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare PSK list");
+  }
+  std::vector<PskSessionRecord> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PskSessionRecord record;
+    if (sqlite3_column_text(stmt, 0)) {
+      record.key.peer_identity_kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    if (sqlite3_column_text(stmt, 1)) {
+      record.key.peer_identity_value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    if (sqlite3_column_text(stmt, 2)) {
+      record.key.channel = ChannelFromDb(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
+    }
+    record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 3));
+    if (sqlite3_column_text(stmt, 4)) {
+      record.master_psk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+    }
+    if (sqlite3_column_text(stmt, 5)) {
+      record.psk_fingerprint = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      record.psk_verified_at = sqlite3_column_int64(stmt, 6);
+    }
+    record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7)));
+    if (!record.master_psk_b64 && record.retired_psks.empty()) {
+      continue;
+    }
+    auto decrypted = DecryptRecord(std::move(record));
+    if (!decrypted) {
+      sqlite3_finalize(stmt);
+      return decrypted.error();
+    }
+    rows.push_back(std::move(*decrypted));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
 }
 
 Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
