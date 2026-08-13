@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Fallback only. scripts/ios_sign.sh prefers entitlements extracted from the
+  provisioning profile (application-identifier, team-identifier, get-task-allow).
+-->
 <plist version="1.0">
 <dict>
-  <!-- Required for development installs / debugger attach. -->
   <key>get-task-allow</key>
   <true/>
-  <!-- App Groups / Keychain access groups: add when App ID capabilities are enabled. -->
 </dict>
 </plist>

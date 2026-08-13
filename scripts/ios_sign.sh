@@ -153,6 +153,20 @@ cmd_sign_app() {
   prepare_profile
 
   local entitlements="${IOS_ENTITLEMENTS:-$DEFAULT_ENTITLEMENTS}"
+  local entitlements_tmp=""
+  # Prefer entitlements from the provisioning profile (required for device verify).
+  if [[ -n "${IOS_PROVISIONING_PROFILE_PATH:-}" && -f "${IOS_PROVISIONING_PROFILE_PATH}" ]]; then
+    entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX.plist")"
+    if security cms -D -i "${IOS_PROVISIONING_PROFILE_PATH}" 2>/dev/null \
+        | /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' /dev/stdin >"$entitlements_tmp" 2>/dev/null \
+        && [[ -s "$entitlements_tmp" ]]; then
+      entitlements="$entitlements_tmp"
+      log "Using entitlements from provisioning profile"
+    else
+      rm -f "$entitlements_tmp"
+      entitlements_tmp=""
+    fi
+  fi
   if [[ ! -f "$entitlements" ]]; then
     echo "error: entitlements not found: ${entitlements}" >&2
     exit 1
@@ -184,6 +198,9 @@ cmd_sign_app() {
       || plutil -replace CFBundleIdentifier -string "$bundle_id" "${app_path}/Info.plist"
   fi
 
+  # Drop Finder/zip junk that can break device verification.
+  rm -rf "${app_path}/META-INF" "${app_path}/.DS_Store"
+
   while IFS= read -r -d '' binary; do
     if file "$binary" | grep -q 'Mach-O'; then
       codesign --force --sign "$IOS_SIGNING_IDENTITY" --timestamp=none "$binary" || true
@@ -195,6 +212,8 @@ cmd_sign_app() {
     --generate-entitlement-der \
     --timestamp=none \
     "$app_path"
+
+  [[ -n "$entitlements_tmp" ]] && rm -f "$entitlements_tmp"
 
   codesign --verify --deep --strict --verbose=2 "$app_path"
   log "Signed ${app_path}"

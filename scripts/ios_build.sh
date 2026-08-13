@@ -273,9 +273,17 @@ cmd_run_device() {
 
   local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
   echo "==> Installing on device ${udid}"
-  xcrun devicectl device install app --device "$udid" "$app"
-  echo "==> Launching ${bundle_id}"
-  xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+
+  # Prefer ios-deploy for older devices (iOS ≤17); CoreDevice/devicectl often
+  # only sees newer phones. Fall back to devicectl when ios-deploy is absent.
+  if command -v ios-deploy >/dev/null 2>&1; then
+    ios-deploy --id "$udid" --bundle "$app" --justlaunch
+  elif xcrun devicectl device install app --device "$udid" "$app" 2>/dev/null; then
+    xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+  else
+    echo "error: could not install — need ios-deploy (brew install ios-deploy) or a CoreDevice-paired phone" >&2
+    exit 1
+  fi
   echo "==> Installed and launched ${bundle_id} on ${udid}"
 }
 
