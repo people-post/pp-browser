@@ -1,6 +1,6 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) + **M009–M012** / **D100**; **m1–m2b** done; next **m4** (or m3 polish)  
+**Status:** Design freeze (m0) + **M009–M013** / **D100**; **m1–m2b** done; **m4a** soft-ack next/landing; then **m4b** link-device  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
@@ -36,8 +36,9 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | m1 | Account ID + key split in types/storage | **Done** (PQ signing hard cut) |
 | m2a | Brief by-account + Account-first search | **Done** |
 | m2b | Wire / `ChatTargetKey` hard cut to Account ID | **Done** |
-| m3 | Multi-device directory attach polish | Not started |
-| m4 | Link-device + DEK seal + sync policy | **Next** (M012 frozen) |
+| m4a | Soft inbox ack (shared mailbox; M013) | **Done** |
+| m4b | Link-device + DEK seal + sync policy | **Next** (M012) |
+| m3 | Multi-device directory attach polish | After second Peer ID |
 
 ## Normative promotion
 

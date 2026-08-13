@@ -1,6 +1,6 @@
 # Multi-device account — current state
 
-**As of:** 2026-08-13 (**m2a** + **m2b** landed; m4 link-device next)
+**As of:** 2026-08-13 (**m2b** done; **m4a** soft-ack **done**; **m4b** link-device next)
 
 ## Code today
 
@@ -11,6 +11,7 @@
 | Brief (www) | KEM **1184**; by-account lookup; Account-first search |
 | Directory (client) | `LookupByAccount`; hits/contact primary = Account; keys cached by Account |
 | Wire / threads / **calls** | `ChatTargetKey` / envelopes / AAD / group roster / **call participants** = **Account ID** only; `sender_relay_id` / recipient / stream / inbox auth / dial PeerId = **route** (`relay:` or PeerId) |
+| Inbox | One mailbox per `relay:`; **soft-ack** (M013) — no delete on ack; 90d TTL + soft FIFO cap (~1000–1200) + `clear`; local cursor per profile |
 | Vault | Per-profile `vault.bin`; no link-device / shared-DEK path yet |
 | Private PSK | OOB per install; no multi-device sync |
 
@@ -18,9 +19,10 @@
 
 | Gap | Phase |
 |-----|--------|
-| Multi-device directory attach polish | m3 |
-| Link-device, DEK seal, inbox cursors | m4 |
+| Soft-ack / shared mailbox (M013) | **m4a done** |
+| Link-device, DEK seal | **m4b** (M012) — next |
+| Multi-device directory `endpoints[]` | m3 (after second Peer ID) |
 
 ## Next
 
-**m4** link-device (M012), or **m3** multi-device attach polish if needed first.
+**m4b** link-device ritual (`pp-browser-link-device-v1` seal + vault wrap + push re-attach). Skip interim dogfood wipe until that slice is testable.

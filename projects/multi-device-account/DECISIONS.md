@@ -152,3 +152,23 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Rationale:** Avoid coding link-device until wire and directory are Account-first.  
 **Alternatives:** Shared inbox watermark (rejected); auto-sync all PSKs (rejected — M005).
+
+---
+
+## M013 — Soft inbox ack (shared mailbox; no sibling starve)
+
+**Date:** 2026-08-13  
+**Status:** Accepted (m4a).  
+**Implements:** [M012](#m012--link-device-ritual-deferred-until-m4) §4 (per-device progress) without server `device_id` on poll yet.  
+
+**Decision:**
+
+1. One Account → one `relay_user_id` mailbox (M006). Each device keeps its own local poll cursor (`relay_inbox_cursor.json` per profile).
+2. **`POST /v1/inbox/ack` is soft:** validate cursor; return `{deleted:0}`; **do not** `deleteMany` through the watermark.
+3. Mailbox GC: **90-day TTL** on `relay_messages.created_at` (startup rewrites the TTL index only if `expireAfterSeconds` differs), **soft per-recipient FIFO cap** (trim toward **1000** when over **~1200**; sampled on send), plus account-wide **`/inbox/clear`** (manual recovery). Document that `clear` affects all siblings.
+4. Clients may keep calling ack after ingest (no API break); `deleted` may be 0.
+
+**Follow-up (not m4a):** optional server table of `(relay_user_id, device_id, cursor)` and GC when **min** watermark across registered push devices advances.
+
+**Rationale:** Destructive ack was the only starve point; local cursors were already per-device. Soft-ack unblocks link-device without fan-out copies or signed `device_id` churn.  
+**Alternatives:** Fan-out N rows per device (rejected — cost); require `device_id` on poll day one (deferred); stop calling ack on client only (rejected — leaves misleading “delete” semantics on older messengers).

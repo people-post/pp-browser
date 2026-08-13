@@ -183,22 +183,13 @@ Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_
   if (cursor.empty()) {
     return result;
   }
-  size_t through = 0;
+  // Soft-ack (M013): validate cursor shape only; do not erase shared mock mailbox.
   try {
-    through = static_cast<size_t>(std::stoull(cursor));
+    (void)std::stoull(cursor);
   } catch (...) {
     return Error("Invalid mock inbox cursor");
   }
-  if (through > delivered_.size()) {
-    through = delivered_.size();
-  }
-  result.deleted = static_cast<int64_t>(through);
-  delivered_.erase(delivered_.begin(), delivered_.begin() + static_cast<std::ptrdiff_t>(through));
-  if (poll_index_ >= through) {
-    poll_index_ -= through;
-  } else {
-    poll_index_ = 0;
-  }
+  result.deleted = 0;
   return result;
 }
 

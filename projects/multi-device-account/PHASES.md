@@ -2,6 +2,8 @@
 
 Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
+**Rollout note (2026-08-13):** Skip interim dogfood/wipe between Account-ID cut and multi-device; keep implementing until a coherent multi-device slice is ready to test once.
+
 ## m0 — Design freeze
 
 - [x] Account ID format (M002)
@@ -47,18 +49,28 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 - [x] Call stack person identity → Account ID (participants, media stream ids, UI); PeerId/`relay:` stay dial/route
 - [x] Drop communicating-identity fallbacks (direct target, group roster, directory shadow by Account)
 
-## m3 — Brief multi-device attach polish
+## m4a — Shared mailbox without sibling starve (**M013**)
 
-- [ ] Directory: list device Peer ID endpoints / multiaddrs (richer than single peer when needed)
-- [ ] Multi-device register/push attach UX as needed
+One Account → one `relay:` inbox (M006). Client cursors are already per-profile; **server ack-as-delete** was the starve point.
 
-## m4 — Link-device + sync policy (M012)
+- [x] Messenger: soft-ack (validate cursor; do **not** `deleteMany`) — rely on **90d TTL** + soft per-mailbox FIFO cap (~1000–1200) + optional `clear` for GC
+- [x] Document: `clear` remains account-wide; poll + local `relay_inbox_cursor.json` stay per-device
+- [x] Tests: two consumers / soft-ack leaves rows for sibling poll
+- [x] Client `MockRelayClient::AckInbox` soft-ack aligned
+- [ ] (Follow-up) Optional server per-device watermarks + min-cursor GC — not required for first link
 
-- [ ] Link ritual: QR + short code; seal account key + DEK (+ syncable PSKs) to new device
-- [ ] New device: own `vault.bin`, own Peer ID, push register
+## m4b — Link-device + sync policy (**M012**) — **next**
+
+- [ ] `pp-browser-link-device-v1` codec + unit tests (see DESIGN § Link-device bundle)
+- [ ] Export on old device (unlocked): seal Account ID + ML-DSA sk + DEK (+ public/group PSKs)
+- [ ] Import on new device: own Peer ID, wrap DEK into new `vault.bin`, push-register under same `relay:`
 - [ ] Enforce **no** auto-sync of private (`e2e`) PSKs
-- [ ] Per-device inbox cursor (or equivalent) so ack does not starve siblings
 - [ ] Unlink device / revoke sketch (may defer details)
+
+## m3 — Brief multi-device attach polish (after second Peer ID exists)
+
+- [ ] Directory: list device Peer ID endpoints / multiaddrs (`endpoints[]` when needed)
+- [ ] Dial preference / multi-device register-push UX polish
 
 ## Later (not scheduled here)
 
@@ -66,3 +78,4 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 - Device-attested signing (S2) if compromise model demands it
 - Multi-relay UX beyond binding data model
 - Call multi-ring across device Peer IDs
+- Server min-watermark GC across registered `device_id`s
