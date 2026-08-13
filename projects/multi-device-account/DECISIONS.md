@@ -172,3 +172,22 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Rationale:** Destructive ack was the only starve point; local cursors were already per-device. Soft-ack unblocks link-device without fan-out copies or signed `device_id` churn.  
 **Alternatives:** Fan-out N rows per device (rejected — cost); require `device_id` on poll day one (deferred); stop calling ack on client only (rejected — leaves misleading “delete” semantics on older messengers).
+
+---
+
+## M014 — Private Secure: one session per pair; transferable lock; not device-keyed
+
+**Date:** 2026-08-13  
+**Status:** Accepted (policy for m4b+).  
+**Amends:** [M005](#m005--private-psks-not-auto-synced-publicgroup-may-sync) (UX/isolation, not the no-auto-sync rule).
+
+**Decision:**
+
+1. Private (`e2e`) stays **one `ChatTargetKey` per pair**: Account ID + channel `e2e`. Do **not** put Peer ID / device id on `ChatTargetKey` or the wire.
+2. Link-device does **not** copy private PSKs (M005). “Add this device” / transfer = existing PSK bundle plus seq/epoch (same fingerprint; peer does not re-verify).
+3. A linked install must **not** start a second independent Secure PSK with someone who already has a private session on another of the user’s devices (forks seq/AAD and can latch compromised).
+4. Two devices **both sending** on the same Secure lock is **D074** (`sender_instance_id`), not a new thread id.
+5. Optional later: `secure_session_id` on `route` only if the product wants two concurrent Secure drawers with the same person.
+
+**Rationale:** Person stays Account ID; the lock is portable secrets + seq, not a radio identity.  
+**Alternatives:** Device-keyed private threads (rejected — transfer breaks identity); auto-sync all private PSKs (rejected — M005).

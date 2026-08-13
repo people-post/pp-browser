@@ -59,12 +59,13 @@ One Account → one `relay:` inbox (M006). Client cursors are already per-profil
 - [x] Client `MockRelayClient::AckInbox` soft-ack aligned
 - [ ] (Follow-up) Optional server per-device watermarks + min-cursor GC — not required for first link
 
-## m4b — Link-device + sync policy (**M012**) — **next**
+## m4b — Link-device + sync policy (**M012**)
 
-- [ ] `pp-browser-link-device-v1` codec + unit tests (see DESIGN § Link-device bundle)
-- [ ] Export on old device (unlocked): seal Account ID + ML-DSA sk + DEK (+ public/group PSKs)
-- [ ] Import on new device: own Peer ID, wrap DEK into new `vault.bin`, push-register under same `relay:`
-- [ ] Enforce **no** auto-sync of private (`e2e`) PSKs
+- [x] `pp-browser-link-device-v1` codec + unit tests
+- [x] `DataKeyVault::CreateWithDek` (shared DEK, new vault wrap)
+- [x] `LinkDeviceExchange` export/import: account keys + DEK + public PSKs; keep local Peer ID; **no** private `e2e` PSKs (**M014**)
+- [ ] UI: export QR / paste on old device; import + PIN on new profile
+- [ ] Push-register under same `relay:` after import
 - [ ] Unlink device / revoke sketch (may defer details)
 
 ## m3 — Brief multi-device attach polish (after second Peer ID exists)

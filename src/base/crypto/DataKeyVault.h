@@ -26,6 +26,8 @@ public:
   const std::string& ProfileId() const { return profile_id_; }
 
   Roe<void> Create(std::string_view pin);
+  /** New vault wrapping an existing DEK (link-device import — M004/M012). */
+  Roe<void> CreateWithDek(std::string_view pin, ByteVector dek);
   Roe<void> Unlock(std::string_view pin);
   Roe<void> ChangePin(std::string_view old_pin, std::string_view new_pin);
   void Lock();

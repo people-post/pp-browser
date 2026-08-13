@@ -59,6 +59,18 @@ TEST_F(AtRestCryptoTest, FileCipherRoundTripAndAadBind) {
   EXPECT_FALSE(static_cast<bool>(fail));
 }
 
+TEST_F(AtRestCryptoTest, CreateWithDekRoundTrip) {
+  const auto vault_path = (dir_ / "vault-link.bin").string();
+  ByteVector dek(kDataEncryptionKeySize, 0x7e);
+  DataKeyVault vault(vault_path, "profile-link");
+  ASSERT_TRUE(vault.CreateWithDek("link-pin", dek));
+  EXPECT_EQ(*vault.Dek(), dek);
+
+  DataKeyVault reopened(vault_path, "profile-link");
+  ASSERT_TRUE(reopened.Unlock("link-pin"));
+  EXPECT_EQ(*reopened.Dek(), dek);
+}
+
 TEST_F(AtRestCryptoTest, PinChangeKeepsDekUsable) {
   const auto vault_path = (dir_ / "vault.bin").string();
   DataKeyVault vault(vault_path, "profile-b");

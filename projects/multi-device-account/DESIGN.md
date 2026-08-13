@@ -67,19 +67,21 @@ Account (Account ID + ML-DSA)
 - Multi-relay `endpoints[]` richness (M011 allows single `peer_id` until then).
 - Account key rotation (new Account ID) product story.
 
-## Link-device bundle (m4b draft)
+## Link-device bundle (m4b)
 
-Transport: QR primary, short code fallback (**M012**). Exact JSON versioned as `pp-browser-link-device-v1` (implement in m4b).
+Transport: QR primary, short code fallback (**M012**). JSON format **`pp-browser-link-device-v1`**.
 
-**Sealed to new device (never private `e2e` PSKs):**
+**Sealed to new device (never private `e2e` PSKs — M005 / M014):**
 
 | Field | Notes |
 |-------|--------|
-| `account_id` | Full `account:…` |
-| `account_ml_dsa_sk_b64` | Account signing secret |
-| `dek_b64` | Shared DEK (new device wraps into its own `vault.bin`) |
-| `public_psks[]` / group pair keys | Optional; only non-private tiers (**M005**) |
-| `relay_user_id` | Existing Brief binding to re-attach (push register; same mailbox) |
-| `created_at` / `expires_at` | Short-lived seal |
+| `account_id` | Full `account:…` (must match hash of `account_ml_dsa_pk_b64`) |
+| `account_ml_dsa_pk_b64` / `account_ml_dsa_sk_b64` | Account ML-DSA-65 |
+| `dek_b64` | Shared DEK — new device wraps into its own `vault.bin` (`CreateWithDek`) |
+| `public_psks[]` | Optional; **`e2e_public` only** |
+| `relay_user_id` | Existing Brief binding |
+| `created_at` / `expires_at` | Default TTL 15 minutes |
 
-**New device after import:** mint device Ed25519/Peer ID; choose PIN → wrap DEK; register push under same `relay:`; directory may advertise additional Peer ID (m3).
+**New device after import:** keep local device Ed25519 / Peer ID / KEM; replace account keys + `relay:`; choose PIN → wrap DEK. Push re-attach and UI still follow.
+
+**Private Secure (M014):** one session per pair; transfer copies PSK+seq, not a device-keyed thread.

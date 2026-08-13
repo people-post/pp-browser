@@ -1,6 +1,6 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) + **M009–M013** / **D100**; **m1–m2b** done; **m4a** soft-ack next/landing; then **m4b** link-device  
+**Status:** Design freeze (m0) + **M009–M014** / **D100**; **m1–m2b** + **m4a** done; **m4b** codec/exchange landed (UI next)  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
@@ -37,7 +37,7 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | m2a | Brief by-account + Account-first search | **Done** |
 | m2b | Wire / `ChatTargetKey` hard cut to Account ID | **Done** |
 | m4a | Soft inbox ack (shared mailbox; M013) | **Done** |
-| m4b | Link-device + DEK seal + sync policy | **Next** (M012) |
+| m4b | Link-device + DEK seal + sync policy | **In progress** (codec + exchange; UI next) |
 | m3 | Multi-device directory attach polish | After second Peer ID |
 
 ## Normative promotion

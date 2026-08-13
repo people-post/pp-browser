@@ -1,6 +1,6 @@
 # Multi-device account — current state
 
-**As of:** 2026-08-13 (**m2b** done; **m4a** soft-ack **done**; **m4b** link-device next)
+**As of:** 2026-08-13 (**m4b** codec + exchange landed; UI / push re-attach next)
 
 ## Code today
 
@@ -10,19 +10,20 @@
 | Signing | Account ML-DSA-65 for register/API/envelopes |
 | Brief (www) | KEM **1184**; by-account lookup; Account-first search |
 | Directory (client) | `LookupByAccount`; hits/contact primary = Account; keys cached by Account |
-| Wire / threads / **calls** | `ChatTargetKey` / envelopes / AAD / group roster / **call participants** = **Account ID** only; `sender_relay_id` / recipient / stream / inbox auth / dial PeerId = **route** (`relay:` or PeerId) |
-| Inbox | One mailbox per `relay:`; **soft-ack** (M013) — no delete on ack; 90d TTL + soft FIFO cap (~1000–1200) + `clear`; local cursor per profile |
-| Vault | Per-profile `vault.bin`; no link-device / shared-DEK path yet |
-| Private PSK | OOB per install; no multi-device sync |
+| Wire / threads / **calls** | Person = **Account ID**; route = **`relay:`** / Peer ID |
+| Inbox | Soft-ack (**M013**); 90d TTL + FIFO cap; local cursor per profile |
+| Vault | `CreateWithDek` for link import; per-profile `vault.bin` |
+| Link-device | `pp-browser-link-device-v1` + `LinkDeviceExchange` (no UI yet); public PSKs only |
+| Private PSK | Per device (**M005** / **M014**); one Secure session per pair; not device-keyed |
 
 ## Gap summary
 
 | Gap | Phase |
 |-----|--------|
-| Soft-ack / shared mailbox (M013) | **m4a done** |
-| Link-device, DEK seal | **m4b** (M012) — next |
-| Multi-device directory `endpoints[]` | m3 (after second Peer ID) |
+| Link UI + push re-attach | **m4b** remaining |
+| Multi-device directory `endpoints[]` | m3 |
+| Dual-writer seq on one Secure lock | D074 later |
 
 ## Next
 
-**m4b** link-device ritual (`pp-browser-link-device-v1` seal + vault wrap + push re-attach). Skip interim dogfood wipe until that slice is testable.
+Me → export/import UI, then push-register the new Peer ID under the same `relay:`.

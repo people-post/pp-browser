@@ -4,6 +4,7 @@ set(PP_BASE_PEOPLE_SOURCES
   ContactsStore.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
+  LinkDeviceExchange.cpp
   MeshHopPolicy.cpp
   PeerDisplayLabel.cpp
 )
