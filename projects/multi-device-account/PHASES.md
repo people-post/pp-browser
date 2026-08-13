@@ -29,10 +29,11 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 ### m2a — Brief (www)
 
-- [ ] `GET /v1/users/by-account/:account_id`
-- [ ] Search: top-level `account_id`; `ids[]` with `account` primary; **`q=` matches Account ID prefix, nickname, and `relay:`**
-- [ ] Route lookup `GET /v1/users/:relay_user_id` always returns `account_id`
-- [ ] Update [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+- [x] `GET /v1/users/by-account/:account_id`
+- [x] Search: top-level `account_id`; `ids[]` with `account` primary; **`q=` matches Account ID prefix, nickname, and `relay:`**
+- [x] Route lookup `GET /v1/users/:relay_user_id` always returns `account_id` (when bound)
+- [x] Update [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+- [x] Register finish echoes `account_id`
 
 ### m2b — Client wire / catalog
 

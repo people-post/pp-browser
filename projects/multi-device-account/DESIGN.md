@@ -46,15 +46,14 @@ Account (Account ID + ML-DSA)
 - Envelopes: `sender_contact_id` + AAD + `ChatTargetKey` use Account ID.
 - Relay HTTP auth / inbox requester stay **`relay:`**.
 
-## Brief directory (M011) — ship early
+## Brief directory (M011) — shipped early (m2a)
 
 | API | Role |
 |-----|------|
 | `GET /v1/search?q=` | Match **nickname**, **`relay:`**, and **Account ID** (incl. prefix). Hits: top-level `account_id`; `ids[]` with `account` **primary**. |
 | `GET /v1/users/by-account/:account_id` | Person lookup (keys, `relay_user_id`, `signature_alg`, …). |
 | `GET /v1/users/:relay_user_id` | Route lookup; response includes `account_id`. |
-
-Implement in **www before / with** client m2.
+| `POST /v1/register/finish` | Echoes `account_id`. |
 
 ## Threat notes (short)
 
