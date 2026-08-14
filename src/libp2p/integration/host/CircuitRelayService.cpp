@@ -70,11 +70,12 @@ Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vect
 
 } // namespace
 
-struct CircuitRelayService::Impl {
+struct CircuitRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex handler_mutex;
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
   CircuitRelayAdmissionPolicy admission;
+  std::atomic<bool> stopping{false};
 
   struct ActiveBridgeSession {
     std::shared_ptr<std::atomic<bool>> cancelled;
@@ -87,6 +88,7 @@ struct CircuitRelayService::Impl {
   struct InflightBridge {
     std::shared_ptr<std::atomic<bool>> settled;
     std::shared_ptr<std::promise<Roe<CircuitRelayBridgeResult>>> promise;
+    std::shared_ptr<Stream> stream;
   };
   std::mutex bridge_mu;
   std::vector<InflightBridge> inflight_bridges;
@@ -99,8 +101,38 @@ struct CircuitRelayService::Impl {
         } catch (const std::future_error&) {
         }
       }
+      if (entry.stream) {
+        entry.stream->reset();
+      }
     }
     inflight_bridges.clear();
+  }
+
+  void AttachInflightStream(const std::shared_ptr<std::atomic<bool>>& settled,
+                            const std::shared_ptr<Stream>& stream) {
+    std::lock_guard lock(bridge_mu);
+    for (auto& entry : inflight_bridges) {
+      if (entry.settled == settled) {
+        entry.stream = stream;
+        return;
+      }
+    }
+  }
+
+  template <typename T>
+  bool WaitReadyOrStop(std::future<T>& future, std::chrono::milliseconds wait_for) {
+    const auto deadline = std::chrono::steady_clock::now() + wait_for;
+    for (;;) {
+      if (stopping.load(std::memory_order_acquire)) {
+        return false;
+      }
+      if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {
+        return true;
+      }
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+    }
   }
 
   void CancelAllBridgesLocked() {
@@ -138,24 +170,25 @@ struct CircuitRelayService::Impl {
     const auto cancel_check = [cancelled = session->cancelled]() {
       return cancelled->load(std::memory_order_acquire);
     };
-    host->Post([this, session, client, target, cancel_check]() {
+    auto self = shared_from_this();
+    host->Post([self, session, client, target, cancel_check]() {
       session->to_target = std::make_shared<StreamBridge>();
       session->to_client = std::make_shared<StreamBridge>();
       auto removed = std::make_shared<std::atomic<bool>>(false);
-      auto on_closed = [this, session, removed]() {
+      auto on_closed = [self, session, removed]() {
         if (removed->exchange(true, std::memory_order_acq_rel)) {
           return;
         }
         if (session->cancelled) {
           session->cancelled->store(true, std::memory_order_release);
         }
-        std::lock_guard lock(bridges_mu);
-        RemoveBridgeSessionLocked(session);
+        std::lock_guard lock(self->bridges_mu);
+        self->RemoveBridgeSessionLocked(session);
       };
       session->to_target->Start(client, target, cancel_check, on_closed);
       session->to_client->Start(target, client, cancel_check, on_closed);
-      std::lock_guard lock(bridges_mu);
-      active_bridges.push_back(session);
+      std::lock_guard lock(self->bridges_mu);
+      self->active_bridges.push_back(session);
     });
   }
 
@@ -216,8 +249,9 @@ struct CircuitRelayService::Impl {
       } catch (const std::future_error&) {
       }
     });
-    if (dial_future.wait_for(wait_for) != std::future_status::ready) {
-      out.error = "relay dial timed out";
+    if (!WaitReadyOrStop(dial_future, wait_for)) {
+      out.error = stopping.load(std::memory_order_acquire) ? "circuit-relay aborted"
+                                                           : "relay dial timed out";
       return out;
     }
     auto dialed = dial_future.get();
@@ -243,8 +277,9 @@ struct CircuitRelayService::Impl {
                           } catch (const std::future_error&) {
                           }
                         });
-    if (stream_future.wait_for(wait_for) != std::future_status::ready) {
-      out.error = "relay target stream timed out";
+    if (!WaitReadyOrStop(stream_future, wait_for)) {
+      out.error = stopping.load(std::memory_order_acquire) ? "circuit-relay aborted"
+                                                           : "relay target stream timed out";
       return out;
     }
     auto target_stream_res = stream_future.get();
@@ -273,10 +308,20 @@ struct CircuitRelayService::Impl {
       std::lock_guard<std::mutex> lock(handler_mutex);
       host_for_post = host;
     }
-    if (!host_for_post) {
+    if (!host_for_post || stopping.load(std::memory_order_acquire)) {
+      if (stream) {
+        stream->reset();
+      }
       return;
     }
-    PostLibp2pWorker(*host_for_post, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
+    auto self = shared_from_this();
+    PostLibp2pWorker(*host_for_post, WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
+      if (self->stopping.load(std::memory_order_acquire)) {
+        if (stream) {
+          stream->reset();
+        }
+        return;
+      }
       CircuitRelayBridgeResult result;
       auto frame = ReadExactFrame(stream);
       if (!frame) {
@@ -286,7 +331,7 @@ struct CircuitRelayService::Impl {
         if (root.is_discarded() || !root.is_object()) {
           result.error = "invalid circuit-relay json";
         } else {
-          result = RelayBridge(root, stream);
+          result = self->RelayBridge(root, stream);
           if (result.ok) {
             return;
           }
@@ -305,7 +350,7 @@ struct CircuitRelayService::Impl {
 };
 
 CircuitRelayService::CircuitRelayService(Libp2pHost& host, PeerSessionManager& sessions)
-    : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+    : impl_(std::make_shared<Impl>()), host_(host), sessions_(sessions) {
   impl_->host = &host_;
   impl_->sessions = &sessions_;
 }
@@ -319,14 +364,18 @@ void CircuitRelayService::Start() {
     return;
   }
   started_ = true;
+  impl_->stopping.store(false, std::memory_order_release);
   host_.GetHost().setProtocolHandler({ProtocolName{kCircuitRelayProtocolId}},
-                                     [impl = impl_.get()](libp2p::StreamAndProtocol stream) {
+                                     [impl = impl_](libp2p::StreamAndProtocol stream) {
                                        impl->HandleStream(std::move(stream));
                                      });
 }
 
 void CircuitRelayService::Stop() {
   started_ = false;
+  if (impl_) {
+    impl_->stopping.store(true, std::memory_order_release);
+  }
   AbortInflightRequests();
   std::lock_guard lock(impl_->bridges_mu);
   impl_->CancelAllBridgesLocked();
@@ -408,7 +457,7 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
   auto result_future = result_promise->get_future();
   {
     std::lock_guard lock(impl_->bridge_mu);
-    impl_->inflight_bridges.push_back(Impl::InflightBridge{settled, result_promise});
+    impl_->inflight_bridges.push_back(Impl::InflightBridge{settled, result_promise, {}});
   }
 
   auto finish = [settled, result_promise](Roe<CircuitRelayBridgeResult> value) {
@@ -421,13 +470,30 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
   };
 
   sessions_.OpenStream(relay_peer_key, {ProtocolName{kCircuitRelayProtocolId}},
-                       [&host = host_, frame = *frame, settled, finish](libp2p::StreamAndProtocolOrError stream_res) {
+                       [impl = impl_, frame = *frame, settled, finish](libp2p::StreamAndProtocolOrError stream_res) {
                          if (settled->load(std::memory_order_acquire)) {
+                           if (stream_res) {
+                             stream_res.value().stream->reset();
+                           }
                            return;
                          }
-                         PostLibp2pWorker(host, WorkerLane::Normal,
-                                          [frame, settled, finish, stream_res = std::move(stream_res)]() mutable {
-                                            if (settled->load(std::memory_order_acquire)) {
+                         Libp2pHost* host = nullptr;
+                         {
+                           std::lock_guard lock(impl->handler_mutex);
+                           host = impl->host;
+                         }
+                         if (!host) {
+                           finish(Error("circuit-relay service not ready"));
+                           return;
+                         }
+                         PostLibp2pWorker(*host, WorkerLane::Normal,
+                                          [impl, frame, settled, finish,
+                                           stream_res = std::move(stream_res)]() mutable {
+                                            if (settled->load(std::memory_order_acquire) ||
+                                                impl->stopping.load(std::memory_order_acquire)) {
+                                              if (stream_res) {
+                                                stream_res.value().stream->reset();
+                                              }
                                               return;
                                             }
                                             if (!stream_res) {
@@ -435,17 +501,22 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
                                               return;
                                             }
                                             auto stream = std::move(stream_res.value().stream);
+                                            impl->AttachInflightStream(settled, stream);
+                                            if (settled->load(std::memory_order_acquire)) {
+                                              stream->reset();
+                                              return;
+                                            }
                                             if (!WriteExactFrame(stream, frame)) {
                                               finish(Error("Failed to send circuit-relay request"));
                                               return;
                                             }
                                             if (settled->load(std::memory_order_acquire)) {
-                                              stream->close([](auto&&) {});
+                                              stream->reset();
                                               return;
                                             }
                                             auto response_frame = ReadExactFrame(stream);
                                             if (settled->load(std::memory_order_acquire)) {
-                                              stream->close([](auto&&) {});
+                                              stream->reset();
                                               return;
                                             }
                                             if (!response_frame) {

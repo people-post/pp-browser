@@ -299,21 +299,40 @@ TEST_F(CallMediaDirectServiceTest, ClearInboundHandlerRejectsLateInbound) {
 }
 
 TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
-  // SESSION_MACHINES golden #3: dual dial → one adopt per side; no hang.
+  // SESSION_MACHINES golden #3: dual dial → one shared stream; no hang; no split-brain EOF.
   const std::string call_id = "call-dual-dial";
   ByteVector media_key(32, 0x66);
 
-  a_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool a_got_audio = false;
+  bool b_got_audio = false;
+  std::vector<uint8_t> a_received;
+  std::vector<uint8_t> b_received;
+
+  a_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
+    cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
+      std::lock_guard lock(mu);
+      a_received = opus;
+      a_got_audio = true;
+      cv.notify_all();
+    };
   });
-  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
+    cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
+      std::lock_guard lock(mu);
+      b_received = opus;
+      b_got_audio = true;
+      cv.notify_all();
+    };
   });
 
   CallMediaDirectConnectParams a_params;
@@ -330,10 +349,25 @@ TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
   b_params.media_key = media_key;
   b_params.offerer = true;
 
+  CallMediaDirectCallbacks a_cbs;
+  a_cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
+    std::lock_guard lock(mu);
+    a_received = opus;
+    a_got_audio = true;
+    cv.notify_all();
+  };
+  CallMediaDirectCallbacks b_cbs;
+  b_cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
+    std::lock_guard lock(mu);
+    b_received = opus;
+    b_got_audio = true;
+    cv.notify_all();
+  };
+
   Roe<void> a_result = Error("not run");
   Roe<void> b_result = Error("not run");
-  std::thread ta([&] { a_result = a_call_media_->Connect(a_params, {}, 8000); });
-  std::thread tb([&] { b_result = b_call_media_->Connect(b_params, {}, 8000); });
+  std::thread ta([&] { a_result = a_call_media_->Connect(a_params, std::move(a_cbs), 8000); });
+  std::thread tb([&] { b_result = b_call_media_->Connect(b_params, std::move(b_cbs), 8000); });
   ta.join();
   tb.join();
 
@@ -343,6 +377,20 @@ TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
   EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_TRUE(a_call_media_->IsActive());
   EXPECT_TRUE(b_call_media_->IsActive());
+
+  const std::vector<uint8_t> a_opus = {0xa1, 0xa2};
+  const std::vector<uint8_t> b_opus = {0xb1, 0xb2};
+  ASSERT_TRUE(a_call_media_->SendAudio(a_opus, 1, 0)) << "split-brain adopt EOFs before send";
+  ASSERT_TRUE(b_call_media_->SendAudio(b_opus, 1, 0)) << "split-brain adopt EOFs before send";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return a_got_audio && b_got_audio; }))
+        << "audio must round-trip on the single adopted stream";
+  }
+  EXPECT_EQ(a_received, b_opus);
+  EXPECT_EQ(b_received, a_opus);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
 
   a_call_media_->Detach();
   b_call_media_->Detach();

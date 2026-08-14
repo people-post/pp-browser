@@ -272,6 +272,9 @@ TEST_F(CircuitRelayServiceTest, ConcurrentBridges) {
 }
 
 TEST(CircuitRelayServiceAbortTest, AbortInflightRequest) {
+  // Guard Leave/shutdown: AbortInflightRequests unblocks RequestBridge while the relay
+  // holds the stream and never replies. Do not dial 127.0.0.1:1 — Windows connect-fail
+  // is slow and used to UAF the relay worker during teardown.
   int relay_port = 0;
   int client_port = 0;
 
@@ -286,35 +289,52 @@ TEST(CircuitRelayServiceAbortTest, AbortInflightRequest) {
   auto client_started = test::StartEphemeralLoopbackHost(client_host, client_port);
   ASSERT_TRUE(client_started) << client_started.error().message;
 
-  auto relay_sessions = std::make_unique<PeerSessionManager>(relay_host, config);
   auto client_sessions = std::make_unique<PeerSessionManager>(client_host, config);
-  auto relay_service = std::make_unique<CircuitRelayService>(relay_host, *relay_sessions);
   auto client_service = std::make_unique<CircuitRelayService>(client_host, *client_sessions);
-  relay_service->Start();
 
   auto relay_id = relay_host.LocalPeerIdBase58();
   ASSERT_TRUE(relay_id);
   const std::string relay_ma = test::LoopbackP2pMultiaddr(relay_port, *relay_id);
   ASSERT_TRUE(client_sessions->RegisterEndpoint("relay", relay_ma));
 
+  std::mutex mu;
+  std::condition_variable cv;
+  std::shared_ptr<Stream> held;
+  relay_host.GetHost().setProtocolHandler(
+      {ProtocolName{kCircuitRelayProtocolId}}, [&](libp2p::StreamAndProtocol stream_in) {
+        std::lock_guard lock(mu);
+        held = std::move(stream_in.stream);
+        cv.notify_one();
+      });
+
+  Roe<CircuitRelayBridgeResult> result = Error("not run");
   std::thread waiter([&] {
     CircuitBridgeTarget target;
     target.target_multiaddr =
         "/ip4/127.0.0.1/tcp/1/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
     target.target_protocol = kBridgeTargetProtocol;
-    (void)client_service->RequestBridge("relay", target, 8000);
+    result = client_service->RequestBridge("relay", target, 8000);
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return static_cast<bool>(held); }))
+        << "relay never accepted the circuit-relay stream";
+  }
+
+  const auto t0 = std::chrono::steady_clock::now();
   client_service->AbortInflightRequests();
   waiter.join();
+  EXPECT_LT(std::chrono::steady_clock::now() - t0, std::chrono::seconds(2))
+      << "AbortInflightRequests must unblock RequestBridge promptly";
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "circuit-relay aborted");
 
-  client_service.reset();
-  relay_service.reset();
-  client_sessions.reset();
-  relay_sessions.reset();
+  client_service->Stop();
   client_host.Stop();
   relay_host.Stop();
+  client_service.reset();
+  client_sessions.reset();
 }
 
 } // namespace

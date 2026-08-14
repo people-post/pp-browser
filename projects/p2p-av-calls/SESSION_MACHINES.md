@@ -177,7 +177,7 @@ stateDiagram-v2
   HelloInbound --> Adopting: HelloOk
   HelloInbound --> Idle: HelloFail
   HelloInbound --> Idle: DetachRequested
-  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject (close inbound)
+  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject only if local PeerId > remote
   Adopting --> MediaReady: DuplexStarted
   Adopting --> Failed: AdoptLost
   MediaReady --> Detaching: DetachRequested
@@ -243,7 +243,7 @@ stateDiagram-v2
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Other protocols still on `Blocking*`** | Dial-back, some circuit / media-relay attach JSON still use WorkerPool `BlockingRead`/`Write`. Migrate when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
-| **Dual-dial single `handshake_stream` slot** | Outbound+inbound overlap: one armed handshake owns the cancel/timer slot; the other path keys off `settled`/phase. Works with goldens; a second slot or generation list only if DualDial flakes under load. |
+| **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
 
 ---
 
@@ -286,7 +286,7 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | Second Connect while busy | **Detach-then-Connect** (abort prior waiter, then dial). |
 | Scope | **s2 = call-media only**; media-relay N026 after call-media SM. |
 
-**Glare note (preserve dogfood):** Reject inbound only while outbound **offerer** hello is in flight (`offerer_glare`, set on outbound hello). Do **not** reject inbound during `Dialing` — answerer reverse-dial must still win while offerer `OpenStream` is outstanding.
+**Glare note (preserve dogfood):** Reject inbound only while outbound **offerer** hello is in flight (`offerer_glare`) **and** local PeerId > remote (ICE-style). The lower PeerId yields: abandon outbound, adopt inbound. Do **not** reject inbound during `Dialing`. Dual-dial then shares one stream — loopback `DualDialExactlyOneAdoptEachSide` (audio round-trip).
 
 **Dual-dial concurrency:** A single process may have outbound `Dialing`/`HelloOutbound` overlapping inbound `HelloInbound` until one `AdoptWon`. Phase logs follow the latest transition; outbound callbacks must key off waiter/`stream`/`offerer_glare`, not exclusive `Phase==Dialing`.
 

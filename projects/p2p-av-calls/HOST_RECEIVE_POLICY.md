@@ -41,7 +41,7 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 
 | Request | Admit | Queue / drop | Meter |
 |---------|-------|--------------|-------|
-| Inbound stream | Reject if session already active; reject while outbound hello in flight (glare) | One duplex | — |
+| Inbound stream | Reject if session already active; reject inbound while outbound offerer hello in flight **and** local PeerId > remote (dual-dial shares one stream) | One duplex | — |
 | Hello | Local session + media key (wait ≤8s) | Reject → close | — |
 | Client attach (phone→hop) | After quote/accept/attach handshake | `DuplexFrameSession` on host **io_context** (`write_preferred`, max **4** queued). Subscribe/SendFrame enqueue — no BlockingRead worker + BlockingWrite capture on the same stream. Corrupt frames skipped (do not tear down). | — |
 

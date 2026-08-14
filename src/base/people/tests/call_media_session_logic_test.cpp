@@ -53,5 +53,12 @@ TEST(CallMediaSessionLogicTest, DetachFromDialingGoesIdle) {
   EXPECT_EQ(out.next, CallMediaSessionPhase::Idle);
 }
 
+TEST(CallMediaSessionLogicTest, LocalWinsCallMediaGlareIsTotalOrder) {
+  EXPECT_TRUE(LocalWinsCallMediaGlare("b", "a"));
+  EXPECT_FALSE(LocalWinsCallMediaGlare("a", "b"));
+  EXPECT_FALSE(LocalWinsCallMediaGlare("same", "same"));
+  EXPECT_TRUE(LocalWinsCallMediaGlare("peer", ""));
+}
+
 } // namespace
 } // namespace pbr
