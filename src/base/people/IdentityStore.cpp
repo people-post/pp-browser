@@ -30,6 +30,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
     }
     // Pre-release: drop legacy X25519+Kyber-draft blobs and mint ML-KEM-768.
   }
+  // First create (or size mismatch): mint account KEM. Link-device Import replaces these
+  // with the shared account secret (M015) after LoadOrCreate.
   auto generated = HybridKem::GenerateKeyPair();
   if (!generated) {
     return generated.error();

@@ -172,7 +172,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — hybrid KEM encapsulation for recipient to derive `master_psk` when local PSK missing (E024). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation to the recipient **account** KEM so any linked install can derive `master_psk` when local PSK is missing (E024 / **M015**). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
 
 ### `body.e2e` (group tier — D095, E022)
 

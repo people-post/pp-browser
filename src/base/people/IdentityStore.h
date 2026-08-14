@@ -36,6 +36,7 @@ public:
   /** Raw 32-byte Ed25519 private key for libp2p Host identity binding. */
   Roe<ByteVector> GetEd25519PrivateKey() const;
   Roe<ByteVector> GetEd25519PublicKey() const;
+  /** Account ML-KEM-768 secret (M015). Mints only if identity has no valid KEM yet. */
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
   /** Account ML-DSA-65 secret (raw). Empty/error if not yet minted. */

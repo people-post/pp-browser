@@ -1,5 +1,6 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/HybridKem.h"
 #include "base/crypto/LinkDeviceCodec.h"
 #include "base/crypto/MlDsa.h"
 
@@ -25,6 +26,10 @@ LinkDeviceBundleV1 MakeValidBundle() {
   bundle.account_id = *account_id;
   bundle.account_ml_dsa_pk_b64 = Base64Encode(keys->public_key);
   bundle.account_ml_dsa_sk_b64 = Base64Encode(keys->secret_key);
+  auto kem = HybridKem::GenerateKeyPair();
+  EXPECT_TRUE(kem);
+  bundle.account_kem_pk_b64 = Base64Encode(kem->public_key);
+  bundle.account_kem_sk_b64 = Base64Encode(kem->private_key);
   bundle.dek_b64 = Base64Encode(TestDek());
   bundle.relay_user_id = "relay:alice";
   bundle.nickname = "alice";
@@ -50,6 +55,7 @@ TEST(LinkDeviceCodecTest, SerializeParseRoundTrip) {
   auto parsed = LinkDeviceCodec::Parse(*json);
   ASSERT_TRUE(parsed) << parsed.error().message;
   EXPECT_EQ(parsed->account_id, bundle.account_id);
+  EXPECT_EQ(parsed->account_kem_pk_b64, bundle.account_kem_pk_b64);
   EXPECT_EQ(parsed->relay_user_id, "relay:alice");
   ASSERT_EQ(parsed->public_psks.size(), 1u);
   EXPECT_EQ(parsed->public_psks.front().key.peer_identity_value, "account:bob");
@@ -82,6 +88,13 @@ TEST(LinkDeviceCodecTest, RejectsExpiredBundle) {
 TEST(LinkDeviceCodecTest, RejectsAccountIdMismatch) {
   LinkDeviceBundleV1 bundle = MakeValidBundle();
   bundle.account_id = "account:not-the-key";
+  auto json = LinkDeviceCodec::Serialize(bundle);
+  EXPECT_FALSE(json);
+}
+
+TEST(LinkDeviceCodecTest, RejectsMissingAccountKem) {
+  LinkDeviceBundleV1 bundle = MakeValidBundle();
+  bundle.account_kem_pk_b64.clear();
   auto json = LinkDeviceCodec::Serialize(bundle);
   EXPECT_FALSE(json);
 }

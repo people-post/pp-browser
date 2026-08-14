@@ -332,7 +332,8 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 ## E024 — Auto-key trust anchor for `e2e_public` (O007)
 
 **Date:** 2026-07-02  
-**Cross-project:** [chat-storage D080](../chat-storage-and-memory/DECISIONS.md#d080--inbound-routing-private-find-only-public-auto-create), [D081](../chat-storage-and-memory/DECISIONS.md#d081--peer-signing-key-lookup-before-envelope-verify-e016), [D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).  
+**Updated:** 2026-08-13 — encapsulate-to is the **account** ML-KEM-768 (**M015**); private `e2e` stays device-local.  
+**Cross-project:** [chat-storage D080](../chat-storage-and-memory/DECISIONS.md#d080--inbound-routing-private-find-only-public-auto-create), [D081](../chat-storage-and-memory/DECISIONS.md#d081--peer-signing-key-lookup-before-envelope-verify-e016), [D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024), [multi-device M015](../multi-device-account/DECISIONS.md#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local).  
 **Decision:** Resolve **O007**. **`e2e_public`** auto-key uses **two independent trust anchors**. Neither anchor may be the relay **learning or choosing `master_psk`**.
 
 ### Anchor 1 — Signing (who sent the envelope)
@@ -353,13 +354,13 @@ Receive pipeline step 2 calls the resolver — **do not** hardcode relay HTTP in
 
 | Rule | Detail |
 |------|--------|
-| **Mechanism** | **Peer hybrid KEM only** (E013): **X25519 + ML-KEM-768** between the two peers |
+| **Mechanism** | **Account ML-KEM-768 only** (E026 / **M015**): encapsulate to the **person**, not a device. Directory `kem_public_key_b64` is the account public key; linked devices share the secret |
 | **PSK derivation** | `master_psk = HKDF-SHA256(ikm = kem_shared_secret, salt = "pp-browser-msg-v1", info = "auto-key-v1|channel:e2e_public")` — 32-byte output |
-| **Session keys** | Unchanged (E015): `info = "channel:e2e_public|epoch:{session_epoch}"` from `master_psk` |
-| **KEM public keys** | Each profile publishes hybrid KEM public keys via relay directory (new optional fields on registration / `GET /v1/users`) — relay stores **public** keys only |
+| **Session keys** | Unchanged (E015): `info = "channel:e2e_public|epoch:{session_epoch}"` from `master_psk`. Public **prefers epoch-only** bumps; `rotate_psk` is rare |
+| **KEM public keys** | Each **account** publishes ML-KEM-768 via register / `GET /v1/users` — relay stores **public** keys only. Link-device copies the account KEM secret (**M015**). Private (`e2e`) does **not** use this handshake |
 | **Wire carry** | Optional **`body.e2e.key_init_b64`** on `e2e_public` envelopes when the recipient may not yet hold `master_psk` (first message / auto-create path). Relay may store and forward this blob; it MUST NOT decrypt or replace it |
-| **Receive step 7** | **`AutoKeyEstablishment::DeriveMasterPsk(envelope)`** — decapsulate `key_init_b64` when local `master_psk` missing; else **`IPskSessionStore::ResolveMasterPskForEpoch`** (E018) |
-| **Rejected** | Directory-sealed PSK; relay-generated or relay-held shared secret; relay-assisted PSK distribution where relay learns `master_psk`; classical-only KEM (E013) |
+| **Receive step 7** | **`AutoKeyEstablishment::DeriveMasterPsk(envelope)`** — decapsulate `key_init_b64` with the **local account KEM** secret when local `master_psk` missing; else **`IPskSessionStore::ResolveMasterPskForEpoch`** (E018) |
+| **Rejected** | Directory-sealed PSK; relay-generated or relay-held shared secret; relay-assisted PSK distribution where relay learns `master_psk`; classical-only KEM (E013); per-device KEM + N `key_init`s |
 
 ### Inbound auto-create participant gate (D080)
 
@@ -397,9 +398,9 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 ## E025 — Account envelope signing; private PSK not auto-synced
 
 **Date:** 2026-08-11  
-**Updated:** 2026-08-11 — account signing = **ML-DSA-65** (not Ed25519).  
+**Updated:** 2026-08-13 — public auto-key encapsulate-to is account KEM (**M015**).  
 **Amends:** E016/E024 verify target (account key once Account ID is on wire); E011 private PSK distribution remains OOB — **not** fan-out on link-device.  
-**Canonical:** [multi-device-account](../multi-device-account/) M003, M005, M008 ([DESIGN](../multi-device-account/DESIGN.md)).  
+**Canonical:** [multi-device-account](../multi-device-account/) M003, M005, M008, **M015** ([DESIGN](../multi-device-account/DESIGN.md)).  
 **Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
@@ -407,7 +408,7 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device Ed25519 is for Peer ID / libp2p only.
 2. Friends verify using the **ML-DSA-65** account public key bound to Account ID (hash-binding M002; directory/cache — resolver seam as E016, key kind shifts with D099/m2).
 3. **Private (`e2e`) PSKs are not auto-synced** to linked devices. New device needs OOB/import or explicit opt-in; default link-device does **not** copy private `chat_targets` PSK material.
-4. **Public (`e2e_public`) / group** PSKs **may** sync with account/DEK when those tiers + link-device ship.
+4. **Public (`e2e_public`) / group** conversation PSKs **may** sync with account/DEK when those tiers + link-device ship. Directory auto-key encapsulate-to is the **account KEM** (copied on link — **M015** / E024).
 5. Message **body** encryption remains PSK AEAD on all tiers — device-bound private means **which installs hold the PSK**, not a different cipher.
 
 **Rationale:** One person-level PQ verify path; private tier keeps higher assurance under multi-device account keys.  

@@ -966,6 +966,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
         (void)store_.UpdateMessage(*appended);
         return peer_public.error();
       }
+      // Directory KEM is the recipient account key (M015).
       auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
       if (!established) {
         appended->delivery = MessageDelivery::Failed;

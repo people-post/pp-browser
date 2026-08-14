@@ -1223,7 +1223,7 @@ eip155:{chain_id}:{address}
 | **`Contact.ids[]`** metadata, people search, UI | yes — first-class **lookup** handle (find Peer ID; see [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route)) |
 | On-chain attestation linking **CAIP-10 ↔ Peer ID ↔ signing key** (and optional relay id) | **`[post-v1]`** (E024 Anchor 1) |
 | **`ChatTargetKey.peer_identity_value`** / wire **`sender_contact_id`** | **no** — remains `relay:…` (D082) until deliberate protocol bump; not CAIP-10 |
-| PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK stays peer KEM (E024) |
+| PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK auto-key uses **account** KEM (E024 / **M015**) |
 
 Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future decision — do not overload `eip155:` with non-EVM semantics.
 

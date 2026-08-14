@@ -1,12 +1,12 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) + **M009–M014** / **D100**; **m1–m2b** + **m4a** done; **m4b** first-run link-device + Security export landed  
+**Status:** Design freeze (m0) + **M009–M015** / **D100**; **m1–m2b** + **m4a** done; **m4b** first-run link-device + account KEM + Security export landed  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
 ## One-line goal
 
-One portable **Account ID** across linked devices, with **per-device Peer IDs**, shared **DEK** (per-device vault wrap), **account-signed** envelopes, and **private PSKs not auto-synced** — so multi-device feels like one person without libp2p id conflicts.
+One portable **Account ID** across linked devices, with **per-device Peer IDs**, shared **DEK** (per-device vault wrap), **account KEM** for public/group auto-key, **account-signed** envelopes, and **private PSKs not auto-synced** — so multi-device feels like one person without libp2p id conflicts.
 
 ## Release scope (this project)
 

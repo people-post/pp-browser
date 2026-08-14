@@ -2,6 +2,7 @@
 
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/HybridKem.h"
 #include "base/crypto/MlDsa.h"
 
 #include <nlohmann/json.hpp>
@@ -48,6 +49,14 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
   if (auto sk = RequireB64Size(bundle.account_ml_dsa_sk_b64, kMlDsa65SecretKeyBytes, "Account secret key"); !sk) {
     return sk.error();
   }
+  if (auto kem_pk = RequireB64Size(bundle.account_kem_pk_b64, kHybridKemPublicKeyBytes, "Account KEM public key");
+      !kem_pk) {
+    return kem_pk.error();
+  }
+  if (auto kem_sk = RequireB64Size(bundle.account_kem_sk_b64, kHybridKemPrivateKeyBytes, "Account KEM secret key");
+      !kem_sk) {
+    return kem_sk.error();
+  }
   if (auto dek = RequireB64Size(bundle.dek_b64, kDataEncryptionKeySize, "DEK"); !dek) {
     return dek.error();
   }
@@ -88,6 +97,8 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
   json["account_id"] = bundle.account_id;
   json["account_ml_dsa_pk_b64"] = bundle.account_ml_dsa_pk_b64;
   json["account_ml_dsa_sk_b64"] = bundle.account_ml_dsa_sk_b64;
+  json["account_kem_pk_b64"] = bundle.account_kem_pk_b64;
+  json["account_kem_sk_b64"] = bundle.account_kem_sk_b64;
   json["dek_b64"] = bundle.dek_b64;
   json["relay_user_id"] = bundle.relay_user_id;
   json["nickname"] = bundle.nickname;
@@ -136,6 +147,8 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
   bundle.account_id = parsed.value("account_id", std::string{});
   bundle.account_ml_dsa_pk_b64 = parsed.value("account_ml_dsa_pk_b64", std::string{});
   bundle.account_ml_dsa_sk_b64 = parsed.value("account_ml_dsa_sk_b64", std::string{});
+  bundle.account_kem_pk_b64 = parsed.value("account_kem_pk_b64", std::string{});
+  bundle.account_kem_sk_b64 = parsed.value("account_kem_sk_b64", std::string{});
   bundle.dek_b64 = parsed.value("dek_b64", std::string{});
   bundle.relay_user_id = parsed.value("relay_user_id", std::string{});
   bundle.nickname = parsed.value("nickname", std::string{});

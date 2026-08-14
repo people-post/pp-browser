@@ -53,7 +53,8 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 ## M005 — Private PSKs not auto-synced; public(/group) may sync
 
 **Date:** 2026-08-11  
-**Decision:** **Private (`e2e`) `master_psk` / retired ledger are not auto-synced** to linked devices. Public (`e2e_public`) and group pair keys **may** sync with account/DEK when those tiers + link ship. Body encryption remains PSK AEAD on all tiers — “device-bound private” means **which devices hold the PSK**, not a different cipher.  
+**Updated:** 2026-08-13 — public auto-key uses **account KEM** (copied on link — **M015**); private PSK rule unchanged.  
+**Decision:** **Private (`e2e`) `master_psk` / retired ledger are not auto-synced** to linked devices. Public (`e2e_public`) and group pair keys **may** sync with account/DEK when those tiers + link ship. Directory encapsulate-to is the **account** ML-KEM-768, not a per-device key (**M015**). Body encryption remains PSK AEAD on all tiers — “device-bound private” means **which devices hold the PSK**, not a different cipher.  
 **Rationale:** Preserves private-tier assurance under account signing (S1); stolen/linked laptop does not silently receive every private chat key.  
 **Alternatives:** Sync all PSKs with DEK; device-signed private envelopes only (S3).
 
@@ -146,7 +147,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Decision:**
 
 1. Transport this pass: **paste payload** (QR primary still later; short code fallback later).
-2. Seal to new device: Account ID + account ML-DSA secret + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005).
+2. Seal to new device: Account ID + account ML-DSA secret + **account ML-KEM-768** + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005 / M015). Keep per-device Ed25519 / Peer ID.
 3. Old device: unlocked + explicit confirm; **Copy link payload…** on Me → Security (registered). New device: first secrets use shows **I'm new on this device** vs **I already have an account**. Link path: PIN for *this* device, then paste into an **empty vault** (`CreateWithDek`). Do not mint a Brief person on the new install first. If the profile is already a person, **Reset this profile** then the same fork — no in-place Security join, no account switcher.
 4. **Per-device inbox cursor** from day one (shared watermark would starve siblings).
 5. Unlink/revoke: sketch only in m4; full revoke UX later.
@@ -192,3 +193,21 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Rationale:** Person stays Account ID; the lock is portable secrets + seq, not a radio identity.  
 **Alternatives:** Device-keyed private threads (rejected — transfer breaks identity); auto-sync all private PSKs (rejected — M005).
+
+---
+
+## M015 — Account KEM for public/group auto-key; private e2e stays device-local
+
+**Date:** 2026-08-13  
+**Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) (bundle includes account KEM); [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (encapsulate-to is the person).  
+**Decision:**
+
+1. Directory `kem_public_key_b64` is the **account** ML-KEM-768 public key (same person on every linked device). Register / `GET /v1/users` publish that key. Link-device copies `account_kem_pk_b64` / `account_kem_sk_b64` with account ML-DSA.
+2. Public (`e2e_public`) auto-key and later **group pairwise** encapsulate **once** to that account KEM so every linked install can open `key_init` from the shared mailbox.
+3. Each public conversation still has **one `master_psk` per `ChatTargetKey`** (not one global account PSK). Linked devices **share** that conversation key (link snapshot today; sibling refresh later). Public **prefers epoch-only** bumps; `rotate_psk` is rare.
+4. **Private (`e2e`)** stays device-local: no private PSK in the link bundle (M005 / M014); no account-KEM handshake for Secure.
+5. Device Ed25519 / Peer ID stay per install (dial). Unlink does not revoke account KEM; rotating account KEM is a later recovery story.
+6. **Deferred:** sibling public-PSK + chat-index sync when both devices are reachable; optional relay pin of inbound `key_init`. Do not promise “connect to your other device” until that sync exists. Link payload remains one-shot empty-vault import — not an incremental refresh.
+
+**Rationale:** Messages to the person should be readable on every linked device for public/group; private Secure keeps a stolen laptop from learning those PSKs.  
+**Alternatives:** Per-device KEM + N `key_init`s (rejected — senders must know every laptop; late-linked devices still miss old handshakes); cloud message sync (rejected — D100).

@@ -22,7 +22,9 @@ struct LocalIdentity {
    * Empty until account key material exists.
    */
   std::string account_id;
+  /** Account ML-KEM-768 public key (base64). Directory encapsulate-to for public/group auto-key (M015). */
   std::string kem_public_key_b64;
+  /** Account ML-KEM-768 private key (base64). Copied on link-device; not the device Ed25519. */
   std::string kem_private_key_b64;
   std::string nickname;
   /** Device endpoint: libp2p PeerId base58; derived in memory from device Ed25519 pubkey (M001). */

@@ -39,11 +39,16 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   if (auto filtered = DropPrivatePsks(public_psks); !filtered) {
     return filtered.error();
   }
+  if (identity.kem_public_key_b64.empty() || identity.kem_private_key_b64.empty()) {
+    return Error("Local account KEM unavailable");
+  }
 
   LinkDeviceBundleV1 bundle;
   bundle.account_id = identity.account_id;
   bundle.account_ml_dsa_pk_b64 = identity.account_signing_public_key_b64;
   bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64;
+  bundle.account_kem_pk_b64 = identity.kem_public_key_b64;
+  bundle.account_kem_sk_b64 = identity.kem_private_key_b64;
   bundle.dek_b64 = Base64Encode(dek);
   bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
@@ -115,12 +120,12 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   const std::string device_peer = next.peer_id;
   const std::string device_pk = next.public_key_b64;
   const std::string device_sk = next.private_key_b64;
-  const std::string kem_pk = next.kem_public_key_b64;
-  const std::string kem_sk = next.kem_private_key_b64;
 
   next.account_id = parsed->account_id;
   next.account_signing_public_key_b64 = parsed->account_ml_dsa_pk_b64;
   next.account_signing_private_key_b64 = parsed->account_ml_dsa_sk_b64;
+  next.kem_public_key_b64 = parsed->account_kem_pk_b64;
+  next.kem_private_key_b64 = parsed->account_kem_sk_b64;
   next.relay_user_id = parsed->relay_user_id;
   if (!parsed->nickname.empty()) {
     next.nickname = parsed->nickname;
@@ -129,8 +134,6 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   next.peer_id = device_peer;
   next.public_key_b64 = device_pk;
   next.private_key_b64 = device_sk;
-  next.kem_public_key_b64 = kem_pk;
-  next.kem_private_key_b64 = kem_sk;
 
   auto saved = identity.Update(next);
   if (!saved) {

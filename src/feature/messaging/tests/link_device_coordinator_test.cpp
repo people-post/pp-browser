@@ -121,6 +121,9 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   ASSERT_TRUE(imported) << imported.error().message;
   EXPECT_EQ(imported->identity.account_id, saved->account_id);
   EXPECT_EQ(imported->identity.peer_id, new_peer);
+  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
+  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
+  EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
   ASSERT_EQ(imported->public_psks.size(), 1u);
 
   ChatTargetKey public_key;

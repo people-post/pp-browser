@@ -544,6 +544,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
+          // Account KEM secret (shared across linked devices after import — M015).
           if (auto kem_private = identity_.GetOrCreateHybridKemPrivateKey()) {
             local_kem_private_key = std::move(*kem_private);
           }

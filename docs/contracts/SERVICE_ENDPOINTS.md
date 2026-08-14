@@ -36,9 +36,9 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
 | Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor? }` |
 
-Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** public key (`kem_public_key_b64`), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
+Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
-Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id` and `signature_alg=ml-dsa-65`.
+Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device).
 
 ## HTTP relay API auth (per-request sign bytes)
 

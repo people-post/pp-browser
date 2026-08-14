@@ -63,7 +63,7 @@ One Account → one `relay:` inbox (M006). Client cursors are already per-profil
 
 - [x] `pp-browser-link-device-v1` codec + unit tests
 - [x] `DataKeyVault::CreateWithDek` (shared DEK, new vault wrap)
-- [x] `LinkDeviceExchange` export/import: account keys + DEK + public PSKs; keep local Peer ID; **no** private `e2e` PSKs (**M014**)
+- [x] `LinkDeviceExchange` export/import: account keys + **account KEM** + DEK + public PSKs; keep local Peer ID; **no** private `e2e` PSKs (**M014** / **M015**)
 - [x] UI: **Copy link payload…** on the old device (Me → Security, registered + unlocked). New install: first-secrets **identity fork** → PIN for this device → paste payload into an **empty vault** (`CreateWithDek`). No in-place Security join. Already a person → **Reset this profile** first.
 - [x] Push-register under same `relay:` after import
 - [ ] Unlink device / revoke sketch (may defer details)
@@ -75,6 +75,7 @@ One Account → one `relay:` inbox (M006). Client cursors are already per-profil
 
 ## Later (not scheduled here)
 
+- Sibling public-PSK + chat-index refresh when both devices are reachable (**M015**)
 - Optional private PSK opt-in sync
 - Device-attested signing (S2) if compromise model demands it
 - Multi-relay UX beyond binding data model

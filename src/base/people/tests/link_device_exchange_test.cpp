@@ -63,6 +63,8 @@ TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
   EXPECT_EQ(imported->identity.account_id, old_account);
   EXPECT_EQ(imported->identity.relay_user_id, "relay:alice");
   EXPECT_NE(imported->identity.peer_id, old_peer);
+  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
+  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
   EXPECT_TRUE(imported->identity.registered);
   EXPECT_TRUE(new_vault.Exists());
 
@@ -106,6 +108,9 @@ TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
   ASSERT_TRUE(imported) << imported.error().message;
   EXPECT_EQ(imported->identity.account_id, saved->account_id);
   EXPECT_EQ(imported->identity.peer_id, new_peer);
+  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
+  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
+  EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
   EXPECT_EQ(imported->identity.relay_user_id, "relay:alice");
 
   DataKeyVault reopen(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
@@ -132,6 +137,17 @@ TEST_F(LinkDeviceExchangeTest, CaptureRejectsPrivatePsks) {
   private_row.session_epoch = 1;
   auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), {private_row}, 1);
   EXPECT_FALSE(captured);
+}
+
+TEST_F(LinkDeviceExchangeTest, CaptureRejectsMissingAccountKem) {
+  LocalIdentity identity;
+  identity.account_id = "account:x";
+  identity.account_signing_public_key_b64 = "pk";
+  identity.account_signing_private_key_b64 = "sk";
+  identity.relay_user_id = "relay:x";
+  auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), {}, 1);
+  ASSERT_FALSE(captured);
+  EXPECT_NE(captured.error().message.find("account KEM"), std::string::npos);
 }
 
 } // namespace

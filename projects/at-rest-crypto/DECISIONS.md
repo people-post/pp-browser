@@ -74,7 +74,7 @@
 2. Each install keeps its own **`vault.bin`** — PIN-derived wrap of that DEK (PIN may differ per device).
 3. Link-device seals the DEK to the new install; the new install wraps into its vault (A001 layering unchanged: PIN wraps DEK, DEK encrypts payloads).
 4. **PIN recovery / cloud vault backup** remain out of scope.
-5. Which ciphertext blobs sync under the shared DEK (account key, public PSKs, etc.) is owned by multi-device-account — private PSKs excluded by default (E025).
+5. Which ciphertext blobs sync under the shared DEK (account ML-DSA, **account KEM**, public PSKs, etc.) is owned by multi-device-account — private PSKs excluded by default (E025 / **M015**).
 
 **Rationale:** Per-device vault ≠ per-device master key; minimizes on-disk share while enabling one secrets realm.  
 **Alternatives:** Distinct DEK per device; clone identical `vault.bin` bytes.
