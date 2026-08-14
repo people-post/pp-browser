@@ -1,22 +1,14 @@
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/people/tests/libp2p_ephemeral_listen.h"
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
 #include <future>
 #include <string>
 #include <thread>
-
-#if defined(_WIN32)
-#include <process.h>
-static int ProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static int ProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace {
@@ -24,26 +16,18 @@ namespace {
 class DialBackServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    // Per-process base avoids TIME_WAIT collisions when ctest runs each case in a new
-    // process that would otherwise all start at the same fixed port.
-    static std::atomic<int> port{41000 + (ProcessId() % 2000) * 10};
-    seed_port_ = port.fetch_add(1);
-    client_port_ = port.fetch_add(1);
-
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
 
-    Libp2pHostConfig seed_cfg;
-    seed_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(seed_port_);
-    ASSERT_TRUE(seed_host_.Start(seed_cfg));
+    auto seed_started = test::StartEphemeralLoopbackHost(seed_host_, seed_port_);
+    ASSERT_TRUE(seed_started) << seed_started.error().message;
     seed_sessions_ = std::make_unique<PeerSessionManager>(seed_host_, config);
     seed_dial_back_ = std::make_unique<DialBackService>(seed_host_, *seed_sessions_);
     seed_dial_back_->Start();
 
-    Libp2pHostConfig client_cfg;
-    client_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_port_);
-    ASSERT_TRUE(client_host_.Start(client_cfg));
+    auto client_started = test::StartEphemeralLoopbackHost(client_host_, client_port_);
+    ASSERT_TRUE(client_started) << client_started.error().message;
     client_sessions_ = std::make_unique<PeerSessionManager>(client_host_, config);
     client_dial_back_ = std::make_unique<DialBackService>(client_host_, *client_sessions_);
     client_dial_back_->Start();
@@ -102,17 +86,14 @@ TEST_F(DialBackServiceTest, ProbeFailsForUnreachableTarget) {
 }
 
 TEST_F(DialBackServiceTest, ConcurrentProbesFromTwoClients) {
-  static std::atomic<int> port{42000 + (ProcessId() % 2000) * 10};
-  const int client_b_port = port.fetch_add(1);
-
   PeerSessionConfig config;
   config.dial_timeout = std::chrono::milliseconds(3000);
   config.dial_failure_backoff = std::chrono::milliseconds(100);
 
   Libp2pHost client_b_host;
-  Libp2pHostConfig client_b_cfg;
-  client_b_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_b_port);
-  ASSERT_TRUE(client_b_host.Start(client_b_cfg));
+  int client_b_port = 0;
+  auto client_b_started = test::StartEphemeralLoopbackHost(client_b_host, client_b_port);
+  ASSERT_TRUE(client_b_started) << client_b_started.error().message;
   auto client_b_sessions = std::make_unique<PeerSessionManager>(client_b_host, config);
   auto client_b_dial_back = std::make_unique<DialBackService>(client_b_host, *client_b_sessions);
   client_b_dial_back->Start();

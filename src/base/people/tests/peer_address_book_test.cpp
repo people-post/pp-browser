@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerAddressBook.h"
+#include "base/people/tests/libp2p_ephemeral_listen.h"
 
 #include <libp2p/host/host.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -8,7 +9,6 @@
 #include <gtest/gtest.h>
 
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <span>
 
@@ -18,11 +18,9 @@ namespace {
 class PeerAddressBookTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{41300};
-    const int listen_port = port.fetch_add(1);
-    Libp2pHostConfig host_config;
-    host_config.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(listen_port);
-    ASSERT_TRUE(host_.Start(host_config));
+    int listen_port = 0;
+    auto started = test::StartEphemeralLoopbackHost(host_, listen_port);
+    ASSERT_TRUE(started) << started.error().message;
     auto peer_id = host_.LocalPeerIdBase58();
     ASSERT_TRUE(peer_id);
     local_peer_id_ = *peer_id;
@@ -54,10 +52,9 @@ TEST_F(PeerAddressBookTest, UpsertAndPreferredMultiaddr) {
 TEST_F(PeerAddressBookTest, RejectsPeerIdMismatch) {
   PeerAddressBook book;
   Libp2pHost host2;
-  static std::atomic<int> port{41400};
-  Libp2pHostConfig cfg;
-  cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(port.fetch_add(1));
-  ASSERT_TRUE(host2.Start(cfg));
+  int unused_port = 0;
+  auto started = test::StartEphemeralLoopbackHost(host2, unused_port);
+  ASSERT_TRUE(started) << started.error().message;
   auto other_id = host2.LocalPeerIdBase58();
   ASSERT_TRUE(other_id);
   const std::string wrong_ma = "/ip4/203.0.113.9/tcp/4001/p2p/" + *other_id;

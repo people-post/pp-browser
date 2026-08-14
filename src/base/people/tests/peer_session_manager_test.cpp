@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/people/tests/libp2p_ephemeral_listen.h"
 
 #include <gtest/gtest.h>
 
@@ -21,11 +22,9 @@ protected:
     config.dial_failure_backoff = std::chrono::milliseconds(100);
     config.dial_timeout = std::chrono::milliseconds(500);
 
-    static std::atomic<int> port{41200};
-    const int listen_port = port.fetch_add(1);
-    Libp2pHostConfig host_config;
-    host_config.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(listen_port);
-    ASSERT_TRUE(host_.Start(host_config));
+    int listen_port = 0;
+    auto started = test::StartEphemeralLoopbackHost(host_, listen_port);
+    ASSERT_TRUE(started) << started.error().message;
     sessions_ = std::make_unique<PeerSessionManager>(host_, config);
   }
 
