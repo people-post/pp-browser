@@ -444,9 +444,10 @@ select selectbox option {
   cursor: pointer;
 }
 
-.prompt-emoji-btn-glyph {
-  font-size: 18dp;
-  line-height: 1;
+.prompt-emoji-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
 }
 
 .prompt-send-btn {
@@ -1662,7 +1663,12 @@ select selectbox option {
   left: 24dp;
   right: 24dp;
   bottom: 24dp;
+  display: flex;
+  flex-direction: column;
   padding: 16dp;
+  /* Close button is 40dp at top: 8dp; keep content below it so overflow clip
+     does not crop overlay footers (people picker Cancel / Message). */
+  padding-top: 48dp;
   border-radius: 8dp;
   box-sizing: border-box;
   overflow: hidden;
@@ -1695,9 +1701,10 @@ select selectbox option {
 }
 
 .shell-overlay-body {
-  margin-top: 48dp;
-  height: 100%;
+  flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   clip: always;
 }
@@ -3186,6 +3193,7 @@ call-video-tile {
 .people-picker {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
@@ -3195,7 +3203,6 @@ call-video-tile {
 .people-picker-header {
   align-items: center;
   justify-content: space-between;
-  padding-right: 28dp;
 }
 
 .people-picker-title {
