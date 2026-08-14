@@ -11,7 +11,7 @@
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
-**Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](../../projects/chat-storage-and-memory/DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
+**Identity (D079 / M009–M010):** Wire **`sender_contact_id`** is the sender **Account ID** (`peer_identity_kind = account`, value `account:…`) — not local `Contact.id`, not `relay:`. Brief inbox/API auth, `sender_relay_id`, recipient, and stream parties stay **`relay:`**.
 
 ---
 
@@ -172,7 +172,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — hybrid KEM encapsulation for recipient to derive `master_psk` when local PSK missing (E024). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation to the recipient **account** KEM so any linked install can derive `master_psk` when local PSK is missing (E024 / **M015**). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
 
 ### `body.e2e` (group tier — D095, E022)
 

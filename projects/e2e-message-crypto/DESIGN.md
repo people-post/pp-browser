@@ -98,7 +98,7 @@ No wire-protocol initiator — only UX default (Secure-message starter offers Ge
 | Anchor | Mechanism | v1 | `[post-v1]` |
 |--------|-----------|-----|-------------|
 | **Signing** (who sent) | **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`** | Relay directory + lazy fetch (E016) | On-chain attestation (CAIP-10 linked — D091), **chain-preferred** |
-| **PSK** (body secrecy) | **ML-KEM-768** peer KEM (E026; amends E013) | Peer KEM only | Same — relay never learns `master_psk` |
+| **PSK** (body secrecy) | **ML-KEM-768** **account** KEM (E026 / **M015**; amends E013) | Encapsulate to the person | Same — relay never learns `master_psk` |
 
 **PSK derivation from KEM:**
 
@@ -114,9 +114,9 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 
 **First-message / auto-create path (D080):**
 
-1. Initiator publishes hybrid KEM public keys (directory optional fields).
-2. Initiator runs hybrid KEM toward recipient keys → `master_psk` → encrypts `body.e2e.payload_b64`.
-3. When recipient may lack PSK, envelope includes optional **`body.e2e.key_init_b64`** — KEM encapsulation the receiver decapsulates at receive step 7.
+1. Recipient **account** publishes ML-KEM-768 on the directory (`kem_public_key_b64`). Linked devices share that secret (**M015**).
+2. Initiator encapsulates to the recipient **account** KEM → `master_psk` → encrypts `body.e2e.payload_b64`.
+3. When recipient may lack PSK, envelope includes optional **`body.e2e.key_init_b64`** — KEM encapsulation any linked install of that person can decapsulate at receive step 7.
 4. Relay may store/forward `key_init_b64`; it MUST NOT generate, seal, or learn `master_psk`.
 
 **Rejected:** directory-sealed PSK; relay as PSK broker; blockchain address as wire identity in v1.

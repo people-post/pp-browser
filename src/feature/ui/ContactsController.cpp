@@ -2,13 +2,13 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
+#include "base/crypto/CryptoUtil.h"
 #include "base/crypto/PskFingerprint.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
-#include "base/people/Ed25519Signer.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
@@ -67,6 +67,8 @@ bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
 
 std::string IdentityKindLabel(const ContactIdKind kind) {
   switch (kind) {
+  case ContactIdKind::Account:
+    return "Account ID";
   case ContactIdKind::RelayUser:
     return "Relay ID";
   case ContactIdKind::PeerId:
@@ -106,6 +108,9 @@ std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
 }
 
 std::string PrimaryIdentityValue(const Contact& contact) {
+  if (const std::string account = PrimaryIdOfKind(contact, ContactIdKind::Account); !account.empty()) {
+    return account;
+  }
   if (const std::string relay = PrimaryIdOfKind(contact, ContactIdKind::RelayUser); !relay.empty()) {
     return relay;
   }
@@ -199,10 +204,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
 
   if (ports.snapshot && ports.snapshot().initialized) {
-    const std::string relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser);
-    if (!relay_id.empty() && ports.get_signing_key) {
-      if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id)) {
-        if (auto bytes = Ed25519Signer::FromBase64(key->signing_public_key_b64)) {
+    const std::string account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+    if (!account_id.empty() && ports.get_signing_key) {
+      if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::Account), account_id)) {
+        if (auto bytes = Base64Decode(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
           }
@@ -986,11 +991,19 @@ void ContactsController::OnSyncRemote() {
     return;
   }
   if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
-    contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+    if (!hit->account_id || hit->account_id->empty()) {
+      UserFeedback::Fail("Directory hit missing Account ID");
+      return;
+    }
+    contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
                                               *hit->signing_public_key_b64, "directory");
   }
   if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
-    contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+    if (!hit->account_id || hit->account_id->empty()) {
+      UserFeedback::Fail("Directory hit missing Account ID");
+      return;
+    }
+    contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
                                           *hit->kem_public_key_b64, "directory");
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());

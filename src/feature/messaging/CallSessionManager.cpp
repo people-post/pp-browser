@@ -7,6 +7,7 @@
 #include "base/messaging/InitiationPricing.h"
 #include "base/messaging/PeerCapsLogic.h"
 #include "base/messaging/SendRelayOptions.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
@@ -209,18 +210,18 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
 
 void CallSessionManager::NoteLibp2pPeerIdForRelay(const std::string& relay_identity,
                                                   const std::string& peer_id) {
-  if (relay_identity.empty() || peer_id.empty() || relay_identity.rfind("relay:", 0) != 0) {
+  if (relay_identity.empty() || peer_id.empty() || !IsAccountIdentityValue(relay_identity)) {
     return;
   }
   peer_id_to_relay_[peer_id] = relay_identity;
   if (libp2p_bridge_) {
     libp2p_bridge_->NotePeerIdRelayMapping(peer_id, relay_identity);
   }
-  auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::RelayUser);
+  auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
   if (!found || !found->has_value()) {
     // Non-contact call participants: in-memory map + bridge rebind is enough.
     log().info << "NoteLibp2pPeerIdForRelay map-only (no contact) peer_id=" << peer_id
-               << " relay=" << relay_identity;
+               << " account=" << relay_identity;
     return;
   }
   Contact contact = **found;
@@ -242,11 +243,11 @@ void CallSessionManager::NoteLibp2pPeerIdForRelay(const std::string& relay_ident
   PromoteFlatFieldsToNested(contact);
   SyncContactMirrors(contact);
   if (auto saved = contacts_.Upsert(contact); !saved) {
-    log().warning << "NoteLibp2pPeerIdForRelay contact upsert failed relay=" << relay_identity
+    log().warning << "NoteLibp2pPeerIdForRelay contact upsert failed account=" << relay_identity
                   << " peer=" << peer_id << " err=" << saved.error().message;
     return;
   }
-  log().info << "NoteLibp2pPeerIdForRelay learned peer_id=" << peer_id << " relay=" << relay_identity;
+  log().info << "NoteLibp2pPeerIdForRelay learned peer_id=" << peer_id << " account=" << relay_identity;
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
@@ -279,22 +280,22 @@ void CallSessionManager::NotifyRingChanged() {
 
 Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
   auto identity = identity_.Get();
-  if (!identity || identity->relay_user_id.empty()) {
-    return Error("Local relay identity unavailable");
+  if (!identity || identity->account_id.empty()) {
+    return Error("Local account identity unavailable");
   }
-  return identity->relay_user_id;
+  return identity->account_id;
 }
 
 Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
                                                     const std::string& detail_json, const std::string& display) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::RelayUser)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -412,7 +413,7 @@ Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_i
 
 Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& peer_identity) const {
   ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   target_key.peer_identity_value = peer_identity;
   target_key.channel = CryptoChannel::E2ePublic;
 
@@ -1442,16 +1443,9 @@ Roe<std::optional<std::string>> CallSessionManager::P2pRelayIdentityForLibp2pPee
   if (const auto it = peer_id_to_relay_.find(peer_id); it != peer_id_to_relay_.end()) {
     return std::optional<std::string>{it->second};
   }
-  auto relay_from_contact = [](const Contact& contact) -> std::string {
-    for (const ContactId& id : contact.ids) {
-      if (id.kind == ContactIdKind::RelayUser && id.primary && !id.value.empty()) {
-        return id.value;
-      }
-    }
-    for (const ContactId& id : contact.ids) {
-      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-        return id.value;
-      }
+  auto account_from_contact = [](const Contact& contact) -> std::string {
+    if (auto account = ContactAccountId(contact)) {
+      return *account;
     }
     return {};
   };
@@ -1465,7 +1459,7 @@ Roe<std::optional<std::string>> CallSessionManager::P2pRelayIdentityForLibp2pPee
       if (row.identity.empty()) {
         continue;
       }
-      auto found = contacts_.FindByIdentity(row.identity, ContactIdKind::RelayUser);
+      auto found = contacts_.FindByIdentity(row.identity, ContactIdKind::Account);
       if (!found) {
         return found.error();
       }
@@ -1486,9 +1480,9 @@ Roe<std::optional<std::string>> CallSessionManager::P2pRelayIdentityForLibp2pPee
     if (PeerIdFromContact(contact) != peer_id) {
       continue;
     }
-    const std::string relay = relay_from_contact(contact);
-    if (!relay.empty()) {
-      return std::optional<std::string>{relay};
+    const std::string account = account_from_contact(contact);
+    if (!account.empty()) {
+      return std::optional<std::string>{account};
     }
   }
   return std::optional<std::string>{};

@@ -47,6 +47,7 @@
 namespace pbr {
 
 class AgentSession;
+class IPskSessionStore;
 class ProfileSecretsService;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
@@ -151,6 +152,8 @@ public:
   IThreadStore& Store();
   ContactsStore& Contacts();
   IdentityStore& Identity();
+  IPskSessionStore* PskStore();
+  ProfileSecretsService* Secrets();
   IDirectoryClient& Directory();
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();

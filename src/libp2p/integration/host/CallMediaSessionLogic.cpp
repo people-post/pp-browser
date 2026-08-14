@@ -141,4 +141,11 @@ bool CallMediaFailNotifySuppressed(CallMediaSessionPhase phase) {
   return phase == CallMediaSessionPhase::Idle || phase == CallMediaSessionPhase::Detaching;
 }
 
+bool LocalWinsCallMediaGlare(const std::string& local_peer_id, const std::string& remote_peer_id) {
+  if (local_peer_id.empty() || remote_peer_id.empty()) {
+    return true;
+  }
+  return local_peer_id > remote_peer_id;
+}
+
 } // namespace pbr

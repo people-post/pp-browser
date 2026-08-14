@@ -11,8 +11,8 @@ namespace test {
 /**
  * Bind a loopback libp2p host on an OS-assigned port (`/tcp/0`).
  *
- * Fixed pid-derived ports collide across ctest processes on macOS/Windows when
- * prior listeners leave sockets in TIME_WAIT; ephemeral listen avoids that.
+ * Fixed pid-derived ports collide across ctest processes when prior listeners
+ * leave sockets in TIME_WAIT (Linux/macOS/Windows). Ephemeral listen avoids that.
  */
 inline Roe<void> StartEphemeralLoopbackHost(Libp2pHost& host, int& out_port) {
   Libp2pHostConfig cfg;

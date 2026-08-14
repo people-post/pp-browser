@@ -58,6 +58,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   if (!pin.ready) {
     state.pin_protection_status = "Not set up";
     state.security_can_change_pin = false;
+    state.security_can_export_link = false;
     return;
   }
   if (bootstrap.profile_prefs.pin_is_default) {
@@ -66,6 +67,11 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
     state.pin_protection_status = "Custom PIN";
   }
   state.security_can_change_pin = pin.unlocked;
+  bool registered = false;
+  if (commands_ && commands_->load_profile_identity) {
+    registered = commands_->load_profile_identity().registered == "yes";
+  }
+  state.security_can_export_link = pin.unlocked && registered;
 }
 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,

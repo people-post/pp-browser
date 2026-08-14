@@ -18,7 +18,9 @@ CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, MessagingHub
   };
   ports.local_relay_identity = [&hub]() -> std::optional<std::string> {
     if (auto identity = hub.Identity().Get()) {
-      return identity->relay_user_id;
+      if (!identity->account_id.empty()) {
+        return identity->account_id;
+      }
     }
     return std::nullopt;
   };

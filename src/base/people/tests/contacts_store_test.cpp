@@ -84,14 +84,16 @@ TEST_F(ContactsStoreTest, AddEmptyPersists) {
   EXPECT_TRUE(loaded->value().display_name.empty());
 }
 
-TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByRelayUserAndPreservesLocal) {
+TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   ContactsStore store(data_dir_.string());
 
   DirectoryHit hit;
   hit.hit_id = "relay:bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:bob", true}};
+  hit.account_id = "account:bob";
+  hit.ids = {{ContactIdKind::Account, "account:bob", true},
+             {ContactIdKind::RelayUser, "relay:bob", false}};
   hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
 
   auto first = store.AddFromDirectoryHit(hit);
@@ -113,6 +115,17 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByRelayUserAndPreservesLocal)
   ASSERT_EQ(second->remote.multiaddrs.size(), 1u);
   EXPECT_EQ(second->remote.multiaddrs[0], "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWBob");
   EXPECT_GT(second->remote.fetched_at, 0);
+}
+
+TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
+  ContactsStore store(data_dir_.string());
+  DirectoryHit hit;
+  hit.hit_id = "relay:bob";
+  hit.nickname = "bob";
+  hit.ids = {{ContactIdKind::RelayUser, "relay:bob", true}};
+  auto result = store.AddFromDirectoryHit(hit);
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
 }
 
 TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {

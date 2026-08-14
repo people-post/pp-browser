@@ -29,27 +29,30 @@ TEST(PeerDisplayResolverTest, PrefersContactThenShadowThenShortId) {
 
   Thread thread;
   thread.kind = ThreadKind::Direct;
-  thread.peer_identity_kind = "relay_user";
-  thread.peer_identity_value = "relay:lHaEnkO4vSbVnl6A";
-  thread.title = "relay:lHaEnkO4vSbVnl6A";
+  thread.peer_identity_kind = "account";
+  thread.peer_identity_value = "account:lHaEnkO4vSbVnl6A";
+  thread.title = "account:lHaEnkO4vSbVnl6A";
 
   PeerDisplayLabel raw = resolver.ResolveThread(thread);
   EXPECT_EQ(raw.trust, PeerLabelTrust::RawId);
-  EXPECT_EQ(raw.title, "relay:lHaEnkO4…");
+  EXPECT_EQ(raw.title, "account:lHaE…");
 
   DirectoryHit hit;
   hit.nickname = "alice";
-  hit.ids = {{ContactIdKind::RelayUser, thread.peer_identity_value, true}};
+  hit.account_id = thread.peer_identity_value;
+  hit.ids = {{ContactIdKind::Account, thread.peer_identity_value, true},
+             {ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
   shadows.Put(hit);
   PeerDisplayLabel unverified = resolver.ResolveThread(thread);
   EXPECT_EQ(unverified.trust, PeerLabelTrust::DirectoryUnverified);
-  EXPECT_EQ(unverified.title, "~alice @relay:lHaEnkO4…");
+  EXPECT_EQ(unverified.title, "~alice @account:lHaE…");
 
   Contact contact;
   contact.id = "c1";
   contact.display_name = "Alice Example";
   contact.server_nickname = "alice";
-  contact.ids = {{ContactIdKind::RelayUser, thread.peer_identity_value, true}};
+  contact.ids = {{ContactIdKind::Account, thread.peer_identity_value, true},
+                 {ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
   ASSERT_TRUE(contacts.Upsert(contact));
   PeerDisplayLabel trusted = resolver.ResolveThread(thread);
   EXPECT_EQ(trusted.trust, PeerLabelTrust::Contact);
@@ -76,7 +79,7 @@ TEST(PeerDisplayResolverTest, GroupLocalTitleWinsOverShared) {
 
     GroupMetadata meta;
     meta.group_id = "group:1";
-    meta.owner_identity = "relay:owner";
+    meta.owner_identity = "account:owner";
     meta.title = "Hiking Crew";
     meta.roster_epoch = 1;
     ASSERT_TRUE(roster.UpsertMetadata(meta));

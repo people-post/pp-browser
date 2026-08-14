@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-/** E014 canonical Ed25519 relay envelope signing bytes (base/messaging). */
+/** E014 canonical ML-DSA-65 relay envelope signing bytes (base/messaging). */
 class EnvelopeSigner {
 public:
   static Roe<std::vector<uint8_t>> BuildSignBytes(const RelayEnvelope& envelope);

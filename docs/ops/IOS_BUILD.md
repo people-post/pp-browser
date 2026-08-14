@@ -169,7 +169,7 @@ source packaging/ios/signing.env
 | `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` | Must match App ID |
 | `IOS_DEVELOPMENT_TEAM` | `YOUR_TEAM_ID` | 10-character Team ID |
 | `IOS_SIGNING_IDENTITY` | `Apple Development: …` | From Keychain |
-| `IOS_PROVISIONING_PROFILE_PATH` | `/path/to/*.mobileprovision` | Development profile |
+| `IOS_PROVISIONING_PROFILE_PATH` | `packaging/ios/*.mobileprovision` | Development profile (gitignored) |
 
 Sign + install on a connected iPhone:
 
@@ -231,6 +231,8 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 |---------|------------|
 | `iOS builds require macOS` | Run on a Mac; simulator/device tooling is not available on Linux agents |
 | Codesign / profile mismatch | Ensure App ID, profile, and `IOS_BUNDLE_IDENTIFIER` all match |
+| Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build Frame.app/Frame` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
+| `0xe800003a` / could not be verified | App was signed without `application-identifier`. `ios_sign.sh` must extract entitlements from the `.mobileprovision` (fixed via `plutil -extract`); re-run `sign-app` / `run-device`. |
 | Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
 | Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `Frame.app/assets/` |
 | `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |

@@ -2,6 +2,7 @@
 
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/MlDsa.h"
 #include "base/net/RelaySignBytes.h"
 
 namespace pbr {
@@ -19,7 +20,7 @@ std::vector<uint8_t> BuildRegistrationSignBytes(const std::string& challenge, co
                                                 const std::string& kem_public_key_b64,
                                                 const std::string& signature_alg, const int64_t timestamp) {
   const auto public_key = Base64Decode(public_key_b64);
-  if (!public_key || public_key.value().size() != 32) {
+  if (!public_key || public_key.value().size() != kMlDsa65PublicKeyBytes) {
     return {};
   }
   const auto kem_public_key = Base64Decode(kem_public_key_b64);

@@ -60,7 +60,7 @@ bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
-  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   target.peer_identity_value = envelope.sender_contact_id;
   target.channel = envelope.route.channel;
   return target;
@@ -179,14 +179,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   // Resolve group_id from any membership control we understand, then ignore events for groups
   // the local user has already left/dismissed (prevents transfer-to-leaver resurrection).
   auto local_id = identity_.Get();
-  const std::string local_relay =
-      (local_id && !local_id->relay_user_id.empty()) ? local_id->relay_user_id : std::string();
+  const std::string local_account =
+      (local_id && !local_id->account_id.empty()) ? local_id->account_id : std::string();
 
-  auto ignore_if_not_member = [this, &local_relay](const std::string& group_id) -> Roe<bool> {
-    if (local_relay.empty() || group_id.empty()) {
+  auto ignore_if_not_member = [this, &local_account](const std::string& group_id) -> Roe<bool> {
+    if (local_account.empty() || group_id.empty()) {
       return false;
     }
-    auto is_member = group_roster_.IsMember(group_id, local_relay);
+    auto is_member = group_roster_.IsMember(group_id, local_account);
     if (!is_member) {
       return is_member.error();
     }
@@ -311,7 +311,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberRemovedToRoster(group_roster_, *removed, actor_identity); !applied) {
       return applied.error();
     }
-    if (!local_relay.empty() && removed->member_identity == local_relay) {
+    if (!local_account.empty() && removed->member_identity == local_account) {
       (void)group_roster_.ClearGroupTarget(removed->group_id);
     }
     auto thread = store_.FindGroupThread(removed->group_id);
@@ -544,6 +544,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
+          // Account KEM secret (shared across linked devices after import — M015).
           if (auto kem_private = identity_.GetOrCreateHybridKemPrivateKey()) {
             local_kem_private_key = std::move(*kem_private);
           }
@@ -591,10 +592,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     if (local_relay_user_id.empty()) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing local identity",
-                         "Local relay identity unavailable for decrypt",
+                         "Local account identity unavailable for decrypt",
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
     }
+    const std::string& local_aad_id = local_relay_user_id;
 
     ChatTargetKey target_key;
     target_key.peer_identity_kind = inbound_target.peer_identity_kind;
@@ -613,7 +615,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       local_kem_private_key = std::move(*kem_private);
     }
 
-    auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
+    auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_aad_id, target_key, psk_store_,
                                                            local_kem_private_key);
     if (!decrypted) {
       outcome.decision = IngestDecision::HardReject;
@@ -898,7 +900,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
 
   DirectChatTarget inbound_target;
-  inbound_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  inbound_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   inbound_target.peer_identity_value = envelope.sender_contact_id;
   inbound_target.channel = ThreadChannel::E2ePublic;
 

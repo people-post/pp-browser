@@ -14,6 +14,7 @@ pp_browser_add_base_library(pp_base_crypto
     ProfileSecretsService.cpp
     ProfileUnlockGate.cpp
     PskBundleCodec.cpp
+    LinkDeviceCodec.cpp
     PskFingerprint.cpp
     ReplayWindow.cpp
     SessionKeyDeriver.cpp

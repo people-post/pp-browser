@@ -25,7 +25,6 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 | [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability; **[agent batch waves](PHASES.md#agent-batch-delivery-order)** for pre-release delivery |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
-| [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) | **Human checklist** — scope, relay, libp2p, cross-project open items |
 
 ## v1 implementation order
 
@@ -57,7 +56,7 @@ See [PHASES.md](PHASES.md) for full checklists. For **agent batch delivery** (al
 
 ## Open questions
 
-**Human checklist (scope, relay, libp2p):** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — **all resolved 2026-07-06** ([D092–D095](DECISIONS.md#d092--release-scope-bucket-b)).
+**Release scope:** [D092](DECISIONS.md#d092--release-scope-bucket-b) amended by **[D100](DECISIONS.md#d100--release-scope-b-pq-account-id)** (Bucket B + PQ + Account ID). Identity ADRs: [multi-device-account](../multi-device-account/).
 
 **In this project:** **O008 resolved** → [D095](DECISIONS.md#d095--group-pairwise-wire-shape-o008) (N ciphertexts per message). **O007 resolved** — [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) + [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 

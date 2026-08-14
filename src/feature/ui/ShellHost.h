@@ -202,6 +202,8 @@ public:
   static void PinGateCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateSetPinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateUseDefaultCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateIdentityNewCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateIdentityLinkCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallAcceptCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallAcceptChargeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallDeclineCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

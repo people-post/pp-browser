@@ -111,8 +111,8 @@ std::string MockAssistantRespond(const std::string& query) {
         { "type": "long_list", "title": "Search results", "items": [
           { "title": "Alice Example", "subtitle": "@alice", "meta": "relay:alice123",
             "actions": [
-              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" },
-              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" }
+              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" },
+              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" }
             ]
           }
         ]}
@@ -832,7 +832,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     const std::string group_id = *(*thread)->group_id;
     std::string local_identity;
     if (auto identity = facade_->GetIdentity()) {
-      local_identity = identity->relay_user_id;
+      local_identity = identity->account_id;
     }
 
     bool is_owner = false;
@@ -923,7 +923,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           for (const GroupRosterMember& member : successors) {
             std::string label = member.member_identity;
             if (auto contact = facade_->FindContactByIdentity(member.member_identity,
-                                                                                  ContactIdKind::RelayUser)) {
+                                                                                  ContactIdKind::Account)) {
               if (*contact) {
                 label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
                 if (label.empty()) {
@@ -1651,7 +1651,12 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               hit = *shadow;
             } else {
               hit.hit_id = peer_id;
-              hit.ids = {{ContactIdKind::RelayUser, peer_id, true}};
+              if (peer_id.rfind("account:", 0) == 0) {
+                hit.account_id = peer_id;
+                hit.ids = {{ContactIdKind::Account, peer_id, true}};
+              } else {
+                hit.ids = {{ContactIdKind::RelayUser, peer_id, false}};
+              }
             }
             auto created = facade_->AddContactFromDirectoryHit(hit);
             if (!created) {
@@ -1660,12 +1665,22 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               return;
             }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-              facade_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
-                                                 *hit.signing_public_key_b64, "directory");
+              if (!hit.account_id || hit.account_id->empty()) {
+                UserFeedback::Fail("Directory hit missing Account ID");
+                NotifySurfaceChanged();
+                return;
+              }
+              facade_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+                                              *hit.signing_public_key_b64, "directory");
             }
             if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-              facade_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
-                                             *hit.kem_public_key_b64, "directory");
+              if (!hit.account_id || hit.account_id->empty()) {
+                UserFeedback::Fail("Directory hit missing Account ID");
+                NotifySurfaceChanged();
+                return;
+              }
+              facade_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+                                          *hit.kem_public_key_b64, "directory");
             }
             facade_->RegisterContactDirectEndpoints(*created);
             // Bind stranger DM (empty participants) to the new contact id.
@@ -1740,10 +1755,10 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     bool is_owner = false;
     std::string local_identity;
     if (auto identity = facade_->GetIdentity()) {
-      local_identity = identity->relay_user_id;
+      local_identity = identity->account_id;
       if (auto roster = facade_->ListGroupRoster(group_id)) {
         for (const auto& member : *roster) {
-          if (member.member_identity == identity->relay_user_id && member.role == MemberRole::Owner) {
+          if (member.member_identity == identity->account_id && member.role == MemberRole::Owner) {
             is_owner = true;
             break;
           }
@@ -1783,7 +1798,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
         }
         std::string name = unreachable_id;
         if (auto contact =
-                facade_->FindContactByIdentity(unreachable_id, ContactIdKind::RelayUser)) {
+                facade_->FindContactByIdentity(unreachable_id, ContactIdKind::Account)) {
           if (*contact) {
             name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
             if (name.empty()) {

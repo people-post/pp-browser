@@ -1,8 +1,10 @@
 set(PP_BASE_PEOPLE_SOURCES
   ContactJson.cpp
+  ContactIdentity.cpp
   ContactsStore.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
+  LinkDeviceExchange.cpp
   MeshHopPolicy.cpp
   PeerDisplayLabel.cpp
 )

@@ -134,6 +134,22 @@ Roe<void> ProfileSecretsService::Unlock(const std::string& pin) {
   return {};
 }
 
+Roe<void> ProfileSecretsService::RedistributeUnlockedDek() {
+  if (!initialized_ || !vault_ || !vault_->IsUnlocked()) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile vault is not unlocked");
+  }
+  auto dek = vault_->Dek();
+  if (!dek) {
+    return dek.error();
+  }
+  if (auto distributed = DistributeDek(*dek); !distributed) {
+    return distributed.error();
+  }
+  unlocked_ = true;
+  NotifyUnlocked();
+  return {};
+}
+
 void ProfileSecretsService::Lock() {
   ClearDekConsumers();
   if (vault_) {

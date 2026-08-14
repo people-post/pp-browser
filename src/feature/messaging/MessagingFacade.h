@@ -51,6 +51,8 @@ public:
   void BindAgent(AgentSession& agent);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices(bool show_notifications);
+  Roe<std::string> ExportLinkDevice();
+  Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
   void SuspendLibp2pColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

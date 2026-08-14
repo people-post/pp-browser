@@ -31,6 +31,7 @@
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <functional>
 
 namespace pbr {
 
@@ -255,6 +256,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
+  ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
@@ -323,6 +325,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
+  bindings_.security_can_export_link = ui_state_.security_can_export_link;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.tool_permissions_summary = ui_state_.tool_permissions_summary.c_str();
@@ -468,6 +471,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
+    ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("tool_permissions_summary", &controller.bindings_.tool_permissions_summary);
@@ -508,6 +512,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
     ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
+    ctor.BindEventCallback("export_link_device", &SettingsController::OnExportLinkDeviceCallback);
     ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
     ctor.BindEventCallback("reset_tool_permissions", &SettingsController::OnResetToolPermissionsCallback);
     ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
@@ -579,6 +584,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_size_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
+  host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "tool_permissions_summary");
@@ -1733,6 +1739,11 @@ void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml
   Instance().OnChangePin();
 }
 
+void SettingsController::OnExportLinkDeviceCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnExportLinkDevice();
+}
+
 void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                     const Rml::VariantList& /*args*/) {
   Instance().OnClearUndeliveredOlderThan();
@@ -1850,6 +1861,70 @@ void SettingsController::PerformResetProfile() {
   if (shell_navigation_.request_sync_layout) {
     shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, nullptr);
   }
+}
+
+void SettingsController::EnsureSecurityUnlocked(std::function<void()> then) {
+  const PinProtectionView pin_state =
+      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
+  if (!pin_state.ready) {
+    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
+                      .WithUser(Tr("settings.security.link_device.not_ready")));
+    return;
+  }
+  if (!pin_state.unlocked) {
+    if (!unlock_ensure_.ensure_unlocked) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
+                        .WithUser(Tr("settings.security.link_device.not_ready")));
+      return;
+    }
+    unlock_ensure_.ensure_unlocked([this, then = std::move(then)](const bool unlocked) {
+      if (!unlocked) {
+        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
+                          .WithUser(Tr("settings.security.link_device.not_ready")));
+        return;
+      }
+      then();
+    });
+    return;
+  }
+  then();
+}
+
+void SettingsController::OnExportLinkDevice() {
+  EnsureSecurityUnlocked([this]() {
+    if (!commands_.export_link_device) {
+      ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
+      return;
+    }
+    if (!shell_feedback_.show_confirm) {
+      return;
+    }
+    shell_feedback_.show_confirm(
+        Tr("settings.security.link_device.export_confirm_title"),
+        Tr("settings.security.link_device.export_confirm_message"),
+        [this](const bool ok) {
+          if (!ok) {
+            return;
+          }
+          AppRuntime::PostWorkerNormal([this]() {
+            auto result = commands_.export_link_device ? commands_.export_link_device()
+                                                       : Roe<std::string>{Error("Messaging is not ready")};
+            AppRuntime::PostUI([this, result = std::move(result)]() mutable {
+              if (!result) {
+                ReportFailure(result.error());
+                return;
+              }
+              if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+                system->SetClipboardText(result->c_str());
+              }
+              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+              status_ = "";
+              DirtyAll();
+            });
+          });
+        },
+        {});
+  });
 }
 
 void SettingsController::OnChangePin() {

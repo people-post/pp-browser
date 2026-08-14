@@ -1,35 +1,34 @@
 # Multi-device account — current state
 
-**As of:** 2026-08-11 (m0 design + PQ libs vendored; envelope hard cut not wired)
+**As of:** 2026-08-13 (**m3** `endpoints[]` hard cut + **M016** one-sender help landed)
 
-## Code today (single-device assumptions)
+## Code today
 
 | Area | Behavior |
 |------|----------|
-| `LocalIdentity` | One Ed25519 + KEM keypair; `peer_id` derived in memory; `relay_user_id` after register |
-| KEM | **ML-KEM-768** via `HybridKem` + `third_party/mlkem-native` (legacy 1216 hybrid wiped on size mismatch) |
-| Account ML-DSA | Wrapper `MlDsa` + `third_party/mldsa-native` built/tested; **not** yet envelope/register signer |
-| D096 / Me | Peer ID treated as product “who”; one keypair for Peer ID + register + envelope sign |
-| Wire / threads | `ChatTargetKey` / `sender_contact_id` use `relay_user` + `relay:…` |
-| Vault | Per-profile `vault.bin` wraps DEK; no link-device / shared-DEK path |
-| Private PSK | OOB per install; no multi-device sync story |
-| Push | `device_id` + token under `relay_user_id` (multi-token possible) |
-| Inbox | One `relay_inbox_cursor.json` watermark; ack deletes — not multi-reader |
-| Multi-send | D015 single active sender; D074 `sender_instance_id` reserved unused |
-
-## Target (this project)
-
-See [DESIGN.md](DESIGN.md). m0 decisions: [DECISIONS.md](DECISIONS.md) M001–M008.
+| `LocalIdentity` | Device Ed25519 → Peer ID; account ML-DSA-65 + **account ML-KEM-768** + Account ID in `identity.enc` (schema v2) |
+| Signing | Account ML-DSA-65 for register/API/envelopes |
+| Brief (www) | Account KEM **1184**; by-account lookup; Account-first search; **`endpoints[]`** upserted on register (no top-level `peer_id`) |
+| Directory (client) | `LookupByAccount`; hits/contact primary = Account; parse **`endpoints[]`**; dial prefers newest `updated_at` |
+| Wire / threads / **calls** | Person = **Account ID**; route = **`relay:`** / Peer ID |
+| Inbox | Soft-ack (**M013**); 90d TTL + FIFO cap; local cursor per profile |
+| Vault | `CreateWithDek` / `ReplaceWithDek` for link import; per-profile `vault.bin` |
+| Link-device | `pp-browser-link-device-v1`; copies account ML-DSA + **account KEM** + public PSKs; keeps Peer ID; Me → Security **copy payload** + one-sender help; new device **identity fork** + PIN + paste (empty vault); no private `e2e` PSKs (**M014** / **M015**); push re-attach after import. **No contacts / thread index yet** (**M018**) |
+| Private PSK | Per device (**M005** / **M014**); one Secure session per pair; not device-keyed |
+| Send | **D015** still one active sender; two linked senders can clash seq (**M016**) |
 
 ## Gap summary
 
 | Gap | Phase |
 |-----|--------|
-| Account vs device key material in identity/storage | m1 |
-| Account ID on wire + catalog | m2 |
-| Brief account-proof register + endpoint list | m3 |
-| Link-device, DEK seal, PSK sync policy enforcement | m4 |
+| Contacts + public thread index in paste | **m4c** (**M018**) — next |
+| Unlink / revoke | **m4d** phase 1; KEM rotation later (**M019**) |
+| Sibling public-PSK + chat-index *refresh* | Later (**M015**) — not a second paste |
+| Dual-writer seq | **D074** later |
+| `e2e_public` send | e2e c3+ / **D100** (not this project) |
 
 ## Next
 
-Implement only after m0 review; start at [PHASES.md](PHASES.md) **m1**.
+1. **m4c** paste `contacts[]` + `public_threads[]` (**M018**).
+2. Dogfood two installs, **one sender**.
+3. **m4d** unlink phase 1 (**M019**).

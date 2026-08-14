@@ -1,7 +1,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 
 #include "base/crypto/CryptoUtil.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 
 #include "common/Serialize.hpp"
 
@@ -133,16 +133,22 @@ Roe<bool> EnvelopeSigner::Verify(const RelayEnvelope& envelope, const std::strin
   if (envelope.signature.empty()) {
     return Error("Missing envelope signature");
   }
-  auto sign_bytes = BuildSignBytes(envelope);
+  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   if (!sign_bytes) {
     return sign_bytes.error();
   }
-  const auto public_key = Ed25519Signer::FromBase64(public_key_b64);
+  auto public_key = Base64Decode(public_key_b64);
   if (!public_key) {
     return public_key.error();
   }
-  return Ed25519Signer::Verify(std::string(sign_bytes->begin(), sign_bytes->end()), envelope.signature,
-                               *public_key);
+  if (public_key.value().size() != kMlDsa65PublicKeyBytes) {
+    return Error("Invalid ML-DSA-65 public key size");
+  }
+  auto signature = Base64Decode(envelope.signature);
+  if (!signature) {
+    return signature.error();
+  }
+  return MlDsa::Verify(public_key.value(), sign_bytes.value(), signature.value());
 }
 
 } // namespace pbr

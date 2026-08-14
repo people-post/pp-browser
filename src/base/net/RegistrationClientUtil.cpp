@@ -149,18 +149,21 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   if (!loaded) {
     return loaded.error();
   }
+  if (loaded->account_signing_public_key_b64.empty() || loaded->account_id.empty()) {
+    return Error("account signing key / Account ID not set");
+  }
   if (loaded->kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 not set");
   }
 
-  auto start = registration.StartRegistration(loaded->public_key_b64, nickname, "ed25519",
+  auto start = registration.StartRegistration(loaded->account_signing_public_key_b64, nickname, "ml-dsa-65",
                                               loaded->kem_public_key_b64, loaded->peer_id, multiaddrs);
   if (!start) {
     return start.error();
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRegistrationSignBytes(start->challenge, loaded->public_key_b64,
+  const auto sign_bytes = BuildRegistrationSignBytes(start->challenge, loaded->account_signing_public_key_b64,
                                                      loaded->kem_public_key_b64, start->signature_alg, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build registration sign bytes");
@@ -171,9 +174,9 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return signature.error();
   }
 
-  return registration.FinishRegistration(start->challenge, loaded->public_key_b64, nickname, *signature, timestamp,
-                                         start->signature_alg, loaded->kem_public_key_b64, loaded->peer_id,
-                                         multiaddrs, loaded->initiation_floor);
+  return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
+                                         *signature, timestamp, start->signature_alg, loaded->kem_public_key_b64,
+                                         loaded->peer_id, multiaddrs, loaded->initiation_floor);
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,

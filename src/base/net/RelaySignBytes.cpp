@@ -37,8 +37,8 @@ std::vector<uint8_t> RelaySignOssToBytes(std::ostringstream& oss) {
 }
 
 uint8_t SignatureAlgToWire(const std::string& signature_alg) {
-  if (signature_alg == "ed25519") {
-    return 0;
+  if (signature_alg == "ml-dsa-65") {
+    return 1;
   }
   return 0xFF;
 }

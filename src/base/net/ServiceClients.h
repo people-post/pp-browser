@@ -46,6 +46,7 @@ public:
   virtual ~IDirectoryClient() = default;
   virtual Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) = 0;
   virtual Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) = 0;
+  virtual Roe<DirectoryHit> LookupByAccount(const std::string& account_id) = 0;
 };
 
 struct RegistrationResult {
@@ -72,14 +73,14 @@ public:
   virtual ~IRegistrationClient() = default;
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64,
                                                          const std::string& nickname,
-                                                         const std::string& signature_alg = "ed25519",
+                                                         const std::string& signature_alg = "ml-dsa-65",
                                                          const std::string& kem_public_key_b64 = "",
                                                          const std::string& peer_id = "",
                                                          const std::vector<std::string>& multiaddrs = {}) = 0;
   virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge,
                                                      const std::string& public_key_b64, const std::string& nickname,
                                                      const std::string& signature, int64_t timestamp,
-                                                     const std::string& signature_alg = "ed25519",
+                                                     const std::string& signature_alg = "ml-dsa-65",
                                                      const std::string& kem_public_key_b64 = "",
                                                      const std::string& peer_id = "",
                                                      const std::vector<std::string>& multiaddrs = {},

@@ -3,8 +3,10 @@
 #include "base/data/PricingTypes.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "feature/messaging/LinkDeviceCoordinator.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
+#include "common/Utilities.h"
 
 namespace pbr {
 
@@ -30,6 +32,28 @@ Roe<bool> MessagingFacade::MaybeAutoRenewRegistration(const bool auto_renew_regi
 
 Roe<void> MessagingFacade::SyncPushDevices(const bool show_notifications) {
   return PushDeviceCoordinator::SyncWithPreference(hub_, show_notifications);
+}
+
+Roe<std::string> MessagingFacade::ExportLinkDevice() {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
+      hub_.PskStore() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  return LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
+                                           util::NowUnixMs());
+}
+
+Roe<void> MessagingFacade::ImportLinkDevice(const std::string& bundle_json, const std::string& pin) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
+      hub_.PskStore() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), *hub_.PskStore(),
+                                                hub_.Secrets(), bundle_json, pin, util::NowUnixMs());
+  if (!imported) {
+    return imported.error();
+  }
+  return {};
 }
 
 void MessagingFacade::SuspendLibp2pColdPeers() { hub_.SuspendLibp2pColdPeers(); }

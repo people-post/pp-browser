@@ -10,6 +10,18 @@ if(PP_BROWSER_RELEASE_VERSION STREQUAL "")
   set(PP_BROWSER_RELEASE_VERSION "${PP_BROWSER_VERSION}")
 endif()
 
+# iOS deployment target must be set before project(): Ninja/clang use
+# CMAKE_OSX_DEPLOYMENT_TARGET for -mios-version-min / LC_BUILD_VERSION.minos.
+# XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET alone only affects -G Xcode.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING
+    "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET)")
+  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${PP_BROWSER_IOS_DEPLOYMENT_TARGET}" CACHE STRING
+      "Minimum iOS version for linked binaries" FORCE)
+  endif()
+endif()
+
 if(WIN32)
   # libp2p deps (Boost MASM, BoringSSL NASM) require these for Ninja + MSVC.
   # Generic ASM must also be declared here: vendored libpng does

@@ -117,8 +117,8 @@ PeerDisplayLabel PeerDisplayResolver::ResolveSender(const std::string& sender_co
       }
     }
   }
-  // Sender may be a raw relay id (inbound stranger threads).
-  return ResolveDirectPeer(ContactIdKindToString(ContactIdKind::RelayUser), sender_contact_id);
+  // Sender may be a raw Account ID (inbound stranger threads).
+  return ResolveDirectPeer(ContactIdKindToString(ContactIdKind::Account), sender_contact_id);
 }
 
 } // namespace pbr

@@ -356,7 +356,7 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
         deps_.p2p->RegisterPeerDirectEndpoint(peer_id, ma);
       }
     }
-    if (!peer_id.empty() && identity.rfind("relay:", 0) == 0 && call_sessions_) {
+    if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && call_sessions_) {
       call_sessions_->NoteLibp2pPeerIdForRelay(identity, peer_id);
     }
     log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
@@ -429,11 +429,21 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
   PeerSessionManager& sessions = *Runtime()->Sessions();
   std::string target = peer_key;
   if (deps_.contacts) {
-    if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::RelayUser)) {
+    if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::Account)) {
       if (hit->has_value()) {
         const std::string peer_id = PeerIdFromContact(**hit);
         if (!peer_id.empty()) {
           target = peer_id;
+        }
+      }
+    }
+    if (target == peer_key) {
+      if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::RelayUser)) {
+        if (hit->has_value()) {
+          const std::string peer_id = PeerIdFromContact(**hit);
+          if (!peer_id.empty()) {
+            target = peer_id;
+          }
         }
       }
     }

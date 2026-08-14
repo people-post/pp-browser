@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/people/tests/libp2p_ephemeral_listen.h"
 
 #include "base/people/RelayScope.h"
 
@@ -13,14 +14,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-
-#if defined(_WIN32)
-#include <process.h>
-static int ProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static int ProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace {
@@ -62,31 +55,23 @@ void SendUntilReceived(MediaRelayService& sender, MediaDataFrame frame, std::mut
 class MediaRelayServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{43000 + (ProcessId() % 2000) * 10};
-    hop_port_ = port.fetch_add(1);
-    a_port_ = port.fetch_add(1);
-    b_port_ = port.fetch_add(1);
-
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
 
-    Libp2pHostConfig hop_cfg;
-    hop_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_);
-    ASSERT_TRUE(hop_host_.Start(hop_cfg));
+    auto hop_started = test::StartEphemeralLoopbackHost(hop_host_, hop_port_);
+    ASSERT_TRUE(hop_started) << hop_started.error().message;
     hop_sessions_ = std::make_unique<PeerSessionManager>(hop_host_, config);
     hop_relay_ = std::make_unique<MediaRelayService>(hop_host_, *hop_sessions_);
     hop_relay_->Start();
 
-    Libp2pHostConfig a_cfg;
-    a_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(a_port_);
-    ASSERT_TRUE(a_host_.Start(a_cfg));
+    auto a_started = test::StartEphemeralLoopbackHost(a_host_, a_port_);
+    ASSERT_TRUE(a_started) << a_started.error().message;
     a_sessions_ = std::make_unique<PeerSessionManager>(a_host_, config);
     a_relay_ = std::make_unique<MediaRelayService>(a_host_, *a_sessions_);
 
-    Libp2pHostConfig b_cfg;
-    b_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(b_port_);
-    ASSERT_TRUE(b_host_.Start(b_cfg));
+    auto b_started = test::StartEphemeralLoopbackHost(b_host_, b_port_);
+    ASSERT_TRUE(b_started) << b_started.error().message;
     b_sessions_ = std::make_unique<PeerSessionManager>(b_host_, config);
     b_relay_ = std::make_unique<MediaRelayService>(b_host_, *b_sessions_);
   }

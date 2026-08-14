@@ -20,6 +20,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/BackgroundSyncScheduler.h"
@@ -573,7 +574,7 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
     if (p2p_) {
       p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
     }
-    // Call-media dials peer_key=relay:… while mDNS only knows the libp2p PeerId. Alias on IO
+    // Call-media dials peer_key=account:… while mDNS only knows the libp2p PeerId. Alias on IO
     // here — do not wait for UI RegisterContactEndpoints (moto dogfood: undialable despite LAN ma).
     if (contacts_) {
       if (auto listed = contacts_->List(); listed) {
@@ -717,21 +718,23 @@ void MessagingHub::RegisterContactEndpoints() {
     for (const std::string& ma : contact.multiaddrs) {
       p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
-    const std::string peer_id = PeerIdFromContact(contact);
-    if (!peer_id.empty()) {
+    const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
+    for (const std::string& peer_id : peer_ids) {
       lan_mdns_contact_peer_ids_.insert(peer_id);
     }
-    if (peer_id.empty() || sessions == nullptr) {
+    if (peer_ids.empty() || sessions == nullptr) {
       continue;
     }
-    if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
-      (void)sessions->RegisterEndpoint(peer_id, *ma);
-      sessions->ClearDialBackoff(peer_id);
-      p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
-      if (target.peer_identity_value != peer_id) {
-        (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
-        sessions->ClearDialBackoff(target.peer_identity_value);
-        p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+    for (const std::string& peer_id : peer_ids) {
+      if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
+        (void)sessions->RegisterEndpoint(peer_id, *ma);
+        sessions->ClearDialBackoff(peer_id);
+        p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
+        if (target.peer_identity_value != peer_id) {
+          (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
+          sessions->ClearDialBackoff(target.peer_identity_value);
+          p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+        }
       }
     }
   }
@@ -753,9 +756,16 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
 
   std::string peer_id;
   if (contacts_) {
-    if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+    if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::Account)) {
       if (hit->has_value()) {
         peer_id = PeerIdFromContact(**hit);
+      }
+    }
+    if (peer_id.empty()) {
+      if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+        if (hit->has_value()) {
+          peer_id = PeerIdFromContact(**hit);
+        }
       }
     }
     if (peer_id.empty()) {
@@ -832,15 +842,22 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     if (!initiation_billing_) {
       return;
     }
-    std::string relay_id = hit.hit_id;
-    for (const ContactId& id : hit.ids) {
-      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-        relay_id = id.value;
-        break;
+    std::string person_id;
+    if (auto account = PrimaryAccountIdFromHit(hit)) {
+      person_id = *account;
+    } else {
+      for (const ContactId& id : hit.ids) {
+        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          person_id = id.value;
+          break;
+        }
+      }
+      if (person_id.empty()) {
+        person_id = hit.hit_id;
       }
     }
-    if (!relay_id.empty()) {
-      (void)initiation_billing_->SetFloor(relay_id, hit.initiation_floor);
+    if (!person_id.empty()) {
+      (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
     }
   });
 
@@ -1114,7 +1131,7 @@ ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
   view.nickname = identity->nickname;
   view.peer_id = identity->peer_id;
   view.relay_id = identity->relay_user_id;
-  view.public_key_b64 = identity->public_key_b64;
+  view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
   return view;
 }
@@ -1599,6 +1616,14 @@ ContactsStore& MessagingHub::Contacts() {
 
 IdentityStore& MessagingHub::Identity() {
   return *identity_;
+}
+
+IPskSessionStore* MessagingHub::PskStore() {
+  return psk_store_.get();
+}
+
+ProfileSecretsService* MessagingHub::Secrets() {
+  return secrets_;
 }
 
 IDirectoryClient& MessagingHub::Directory() {

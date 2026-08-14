@@ -16,6 +16,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -138,6 +139,7 @@ private:
     Rml::String profile_size_label;
     Rml::String pin_protection_status;
     bool security_can_change_pin = false;
+    bool security_can_export_link = false;
     Rml::String pin_change_old;
     Rml::String pin_change_new;
     Rml::String pin_change_confirm;
@@ -179,6 +181,7 @@ private:
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnExportLinkDeviceCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -220,6 +223,8 @@ private:
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChangePin();
+  void OnExportLinkDevice();
+  void EnsureSecurityUnlocked(std::function<void()> then);
   void OnClearUndeliveredOlderThan();
   void OnResetToolPermissions();
   void OnResetProfile();

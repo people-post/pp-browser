@@ -12,12 +12,12 @@
 namespace pbr {
 namespace {
 
-GroupInvitePayload MakeInvite(const std::string& inviter = "relay:alice") {
+GroupInvitePayload MakeInvite(const std::string& inviter = "account:alice") {
   GroupInvitePayload invite;
   invite.group_id = "group:test";
   invite.group_title = "Test";
   invite.inviter_identity = inviter;
-  invite.invitee_identity = "relay:bob";
+  invite.invitee_identity = "account:bob";
   invite.invite_nonce = util::GenerateUuid();
   invite.roster_epoch = 1;
   invite.expires_at = util::NowUnixMs() + 7LL * 24 * 60 * 60 * 1000;
@@ -51,7 +51,7 @@ protected:
     contact.display_name = relay_id;
     contact.trust = trust;
     ContactId id;
-    id.kind = ContactIdKind::RelayUser;
+    id.kind = ContactIdKind::Account;
     id.value = relay_id;
     id.primary = true;
     contact.ids.push_back(id);
@@ -67,7 +67,7 @@ protected:
 
 TEST_F(GroupInviteGateTest, ContactsOnlyAllowsKnownInviter) {
   gate_->SetInboundPolicy(GroupInvitePolicy::ContactsOnly);
-  AddContact("relay:alice");
+  AddContact("account:alice");
   auto allowed = gate_->AllowsInboundInvite(MakeInvite());
   ASSERT_TRUE(allowed);
   EXPECT_TRUE(*allowed);
@@ -82,7 +82,7 @@ TEST_F(GroupInviteGateTest, ContactsOnlyRejectsUnknownInviter) {
 
 TEST_F(GroupInviteGateTest, NobodyRejectsAll) {
   gate_->SetInboundPolicy(GroupInvitePolicy::Nobody);
-  AddContact("relay:alice");
+  AddContact("account:alice");
   auto allowed = gate_->AllowsInboundInvite(MakeInvite());
   ASSERT_TRUE(allowed);
   EXPECT_FALSE(*allowed);
@@ -97,7 +97,7 @@ TEST_F(GroupInviteGateTest, EveryoneAllowsUnknown) {
 
 TEST_F(GroupInviteGateTest, BlockedContactRejected) {
   gate_->SetInboundPolicy(GroupInvitePolicy::Everyone);
-  AddContact("relay:alice", TrustLevel::Blocked);
+  AddContact("account:alice", TrustLevel::Blocked);
   auto allowed = gate_->AllowsInboundInvite(MakeInvite());
   ASSERT_TRUE(allowed);
   EXPECT_FALSE(*allowed);
@@ -118,8 +118,8 @@ TEST_F(GroupInviteGateTest, RateLimitRejectsAboveCap) {
     PendingGroupInvite pending;
     pending.invite_nonce = "nonce-" + std::to_string(i);
     pending.group_id = "group:x";
-    pending.inviter_identity = "relay:alice";
-    pending.invitee_identity = "relay:bob";
+    pending.inviter_identity = "account:alice";
+    pending.invitee_identity = "account:bob";
     pending.status = InviteStatus::Pending;
     pending.created_at = util::NowUnixMs();
     ASSERT_TRUE(roster_->UpsertPendingInvite(pending));

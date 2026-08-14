@@ -118,7 +118,7 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
   EXPECT_EQ(response->messages[1].sender_seq, 2u);
-  auto verified = EnvelopeSigner::Verify(response->messages[0], harness.identity.Get()->public_key_b64);
+  auto verified = EnvelopeSigner::Verify(response->messages[0], harness.identity.Get()->account_signing_public_key_b64);
   ASSERT_TRUE(static_cast<bool>(verified));
   EXPECT_TRUE(*verified);
 }

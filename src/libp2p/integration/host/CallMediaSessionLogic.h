@@ -38,4 +38,12 @@ CallMediaSessionPhaseOutcome DecideCallMediaSessionPhase(CallMediaSessionPhase p
  */
 bool CallMediaFailNotifySuppressed(CallMediaSessionPhase phase);
 
+/**
+ * Dual-dial / glare tie-break: the higher libp2p PeerId (base58) keeps outbound
+ * and closes inbound; the lower PeerId yields and adopts inbound. Equal ids are
+ * impossible across two hosts; treated as a loss so both sides cannot keep
+ * independent outbound streams.
+ */
+bool LocalWinsCallMediaGlare(const std::string& local_peer_id, const std::string& remote_peer_id);
+
 } // namespace pbr

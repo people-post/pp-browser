@@ -22,6 +22,7 @@ public:
   void BindShellPinGate(ShellPinGatePorts ports);
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */
+  void ShowIdentityFork();
   void ShowChooser();
   void ShowUnlock();
   void Dismiss();
@@ -29,20 +30,27 @@ public:
   void ShowError(const std::string& message);
 
   void OnSubmit();
-  /** Create / chooser modes only — unlock mode ignores cancel. */
+  /** Create / chooser / identity-fork / link-paste may cancel. Unlock ignores cancel. */
   void OnCancel();
   void OnSetPin();
   void OnUseDefaultPin();
+  void OnIdentityNew();
+  void OnIdentityLink();
   void DirtyPinFields();
 
 private:
   void ShowCreate();
+  void ShowLinkChooser();
+  void ShowLinkPaste();
   void PullBoundPinFields();
   void ApplyPinGate();
 
   UnlockGateCompletePorts gate_complete_;
   ShellPinGatePorts shell_pin_gate_;
   PinGateState pin_state_;
+  bool link_flow_ = false;
+  bool pending_link_default_pin_ = false;
+  std::string pending_link_pin_;
 };
 
 } // namespace pbr

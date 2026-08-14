@@ -3,6 +3,7 @@
 #include "common/Utilities.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/MlDsa.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayStreamKey.h"
@@ -10,7 +11,6 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
 #include "base/people/ContactJson.h"
-#include "base/people/Ed25519Signer.h"
 
 #include <nlohmann/json.hpp>
 
@@ -46,7 +46,9 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   alice.hit_id = "hit_alice";
   alice.display_name = "Alice Example";
   alice.nickname = "alice";
-  alice.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
+  alice.account_id = "account:alice_acct";
+  alice.ids = {{ContactIdKind::Account, "account:alice_acct", true},
+               {ContactIdKind::RelayUser, "relay:alice123", false}};
   alice.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     alice.kem_public_key_b64 = *kem;
@@ -58,7 +60,9 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   bob.hit_id = "hit_bob";
   bob.display_name = "Bob Builder";
   bob.nickname = "bob";
-  bob.ids = {{ContactIdKind::RelayUser, "relay:bob456", true}};
+  bob.account_id = "account:bob_acct";
+  bob.ids = {{ContactIdKind::Account, "account:bob_acct", true},
+             {ContactIdKind::RelayUser, "relay:bob456", false}};
   bob.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     bob.kem_public_key_b64 = *kem;
@@ -74,6 +78,17 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   for (const DirectoryHit& hit : {alice, bob}) {
     if (hit.display_name.find(query) != std::string::npos || hit.nickname.find(query) != std::string::npos) {
       out.push_back(hit);
+      continue;
+    }
+    if (hit.account_id && hit.account_id->find(query) != std::string::npos) {
+      out.push_back(hit);
+      continue;
+    }
+    for (const ContactId& id : hit.ids) {
+      if (id.value.find(query) != std::string::npos) {
+        out.push_back(hit);
+        break;
+      }
     }
   }
   return out;
@@ -92,6 +107,24 @@ Roe<DirectoryHit> MockDirectoryClient::LookupRelayUser(const std::string& relay_
     }
   }
   return Error("Relay user not found");
+}
+
+Roe<DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& account_id) {
+  auto hits = SearchPeople("");
+  if (!hits) {
+    return hits.error();
+  }
+  for (const DirectoryHit& hit : *hits) {
+    if (hit.account_id && *hit.account_id == account_id) {
+      return hit;
+    }
+    for (const ContactId& id : hit.ids) {
+      if (id.kind == ContactIdKind::Account && id.value == account_id) {
+        return hit;
+      }
+    }
+  }
+  return Error("Account not found");
 }
 
 Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
@@ -120,10 +153,9 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   if (!reply_signing_private_key_.empty()) {
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(reply);
     if (sign_bytes) {
-      auto signature = Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()),
-                                           reply_signing_private_key_);
+      auto signature = MlDsa::Sign(reply_signing_private_key_, *sign_bytes);
       if (signature) {
-        reply.signature = *signature;
+        reply.signature = Base64Encode(*signature);
       }
     }
   }
@@ -151,22 +183,13 @@ Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_
   if (cursor.empty()) {
     return result;
   }
-  size_t through = 0;
+  // Soft-ack (M013): validate cursor shape only; do not erase shared mock mailbox.
   try {
-    through = static_cast<size_t>(std::stoull(cursor));
+    (void)std::stoull(cursor);
   } catch (...) {
     return Error("Invalid mock inbox cursor");
   }
-  if (through > delivered_.size()) {
-    through = delivered_.size();
-  }
-  result.deleted = static_cast<int64_t>(through);
-  delivered_.erase(delivered_.begin(), delivered_.begin() + static_cast<std::ptrdiff_t>(through));
-  if (poll_index_ >= through) {
-    poll_index_ -= through;
-  } else {
-    poll_index_ = 0;
-  }
+  result.deleted = 0;
   return result;
 }
 
@@ -183,13 +206,16 @@ Roe<RelayDeleteResult> MockRelayClient::ClearInbox(const std::string& /*requeste
 namespace {
 
 bool EnvelopeMatchesHistoryRequest(const RelayEnvelope& envelope, const ChatHistoryRequest& request) {
-  if (envelope.sender_contact_id != request.peer_identity_value) {
-    return false;
-  }
   const std::string expected_stream =
       BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
-                                 request.session_epoch);
-  if (!envelope.stream_key.empty() && envelope.stream_key != expected_stream) {
+                                   request.session_epoch);
+  if (!envelope.stream_key.empty()) {
+    if (envelope.stream_key != expected_stream) {
+      return false;
+    }
+  } else if (envelope.sender_contact_id != request.peer_identity_value &&
+             envelope.sender_relay_id != request.peer_identity_value) {
+    // Communicating identity may be Account ID while history peer is the Brief relay route (M010).
     return false;
   }
   const uint64_t order = envelope.order_key != 0 ? envelope.order_key : envelope.sender_seq;
@@ -655,6 +681,55 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_
   const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
   if (root.is_discarded() || !root.contains("relay_user_id")) {
     return Error("Invalid relay user lookup JSON");
+  }
+  return DirectoryHitFromJson(root);
+}
+
+namespace {
+
+std::string EncodePathSegment(const std::string& value) {
+  static constexpr char kHex[] = "0123456789ABCDEF";
+  std::string out;
+  out.reserve(value.size() * 3);
+  for (const unsigned char c : value) {
+    const bool unreserved =
+        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+        c == '.' || c == '~';
+    if (unreserved) {
+      out.push_back(static_cast<char>(c));
+    } else {
+      out.push_back('%');
+      out.push_back(kHex[c >> 4]);
+      out.push_back(kHex[c & 0x0F]);
+    }
+  }
+  return out;
+}
+
+} // namespace
+
+Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
+  if (base_url_.empty()) {
+    return Error("Directory base_url not configured");
+  }
+  if (account_id.rfind("account:", 0) != 0) {
+    return Error("account_id must start with account:");
+  }
+  const std::string url = base_url_ + "/v1/users/by-account/" + EncodePathSegment(account_id);
+  const auto response = HttpClient::Get(url);
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code == 404) {
+    return Error("Account not found");
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
+  }
+
+  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
+  if (root.is_discarded() || !root.contains("relay_user_id")) {
+    return Error("Invalid account lookup JSON");
   }
   return DirectoryHitFromJson(root);
 }

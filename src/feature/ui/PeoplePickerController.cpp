@@ -502,7 +502,7 @@ void PeoplePickerController::SyncGroupCallRows() {
       }
     }
     if (!contact && picker_ports_.find_contact_by_identity) {
-      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser); found && *found) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::Account); found && *found) {
         contact = **found;
       }
     }

@@ -262,6 +262,57 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     return handshake_cancelled && handshake_cancelled->load(std::memory_order_acquire);
   }
 
+  bool LocalWinsGlareFor(const std::shared_ptr<Stream>& s) const {
+    if (!host || !s) {
+      return true;
+    }
+    const auto local = host->LocalPeerIdBase58();
+    const auto remote = s->remotePeerId();
+    if (!local || !remote) {
+      return true;
+    }
+    return LocalWinsCallMediaGlare(*local, remote.value().toBase58());
+  }
+
+  /** Glare loser: drop outbound hello so inbound (peer's outbound) can be the one stream. */
+  void AbandonOutboundHandshakeLocked() {
+    offerer_glare = false;
+    if (handshake_cancelled) {
+      handshake_cancelled->store(true, std::memory_order_release);
+    }
+    if (handshake_stream) {
+      ResetQuiet(handshake_stream);
+    }
+    ClearHandshakeLocked();
+  }
+
+  /**
+   * Outbound hello failed but inbound can still win (dual-dial / glare yield). Keep the
+   * Connect waiter instead of Idling.
+   */
+  bool SuppressOutboundHelloFailLocked(const std::shared_ptr<Stream>& s) {
+    if (!ConnectWaiterActiveLocked() || stream) {
+      return false;
+    }
+    if (Phase() == CallMediaSessionPhase::HelloInbound) {
+      offerer_glare = false;
+      if (handshake_stream == s) {
+        ClearHandshakeLocked();
+      }
+      return true;
+    }
+    if (Phase() == CallMediaSessionPhase::HelloOutbound && !LocalWinsGlareFor(s)) {
+      log().info << "Call-media outbound hello lost glare; wait for inbound";
+      offerer_glare = false;
+      SetPhaseLocked(CallMediaSessionPhase::Dialing, CallMediaSessionEvent::HelloFail, phase_call_id);
+      if (handshake_stream == s) {
+        ClearHandshakeLocked();
+      }
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Sole legal phase-transition entry (CallLifecycle-style). Must hold mu.
    * Returns false when the event is ignored for the current phase.
@@ -576,7 +627,7 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   /** Guard for inbound admit (HOST_RECEIVE_POLICY / V033 glare note). */
   enum class InboundAdmit { Accept, RejectNoHandler, RejectActive, RejectGlare };
 
-  InboundAdmit AdmitInboundLocked() {
+  InboundAdmit AdmitInboundLocked(const std::shared_ptr<Stream>& inbound) {
     if (!inbound_handler) {
       return InboundAdmit::RejectNoHandler;
     }
@@ -585,8 +636,10 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
         Phase() == CallMediaSessionPhase::HelloInbound) {
       return InboundAdmit::RejectActive;
     }
-    // Glare: only offerer HelloOutbound rejects inbound. Dialing must still accept reverse-dial.
-    if (Phase() == CallMediaSessionPhase::HelloOutbound && offerer_glare) {
+    // Offerer HelloOutbound: higher PeerId keeps outbound; lower PeerId yields to inbound
+    // so dual-dial shares one stream. Dialing still accepts (answerer reverse-dial).
+    if (Phase() == CallMediaSessionPhase::HelloOutbound && offerer_glare &&
+        LocalWinsGlareFor(inbound)) {
       return InboundAdmit::RejectGlare;
     }
     return InboundAdmit::Accept;
@@ -602,7 +655,7 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     StreamCancelCheck cancel_check;
     {
       std::lock_guard lock(mu);
-      const auto admit = AdmitInboundLocked();
+      const auto admit = AdmitInboundLocked(stream);
       if (admit == InboundAdmit::RejectNoHandler) {
         IgnoreEventLocked(CallMediaSessionEvent::InboundStream, "handler cleared");
         ResetQuiet(stream);
@@ -617,6 +670,9 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
         IgnoreEventLocked(CallMediaSessionEvent::InboundStream, "glare outbound hello");
         ResetQuiet(stream);
         return;
+      }
+      if (Phase() == CallMediaSessionPhase::HelloOutbound) {
+        AbandonOutboundHandshakeLocked();
       }
       (void)ApplyLocked(CallMediaSessionEvent::InboundStream);
       ArmHandshakeLocked(stream);
@@ -711,6 +767,19 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
                     ResetQuiet(stream);
                     return;
                   }
+                  // Dual-dial: higher PeerId keeps outbound — do not ack this inbound.
+                  if (self->offerer_glare && self->LocalWinsGlareFor(stream)) {
+                    self->log().info << "Inbound call-media yields glare call_id=" << params.call_id;
+                    if (self->handshake_cancelled) {
+                      self->handshake_cancelled->store(true, std::memory_order_release);
+                    }
+                    (void)self->ApplyLocked(CallMediaSessionEvent::AdoptLost, params.call_id);
+                    if (self->handshake_stream == stream) {
+                      self->ClearHandshakeLocked();
+                    }
+                    ResetQuiet(stream);
+                    return;
+                  }
                 }
                 if (params.media_key.empty() || params.call_id.empty()) {
                   self->log().warning << "Inbound call-media hello rejected call_id=" << params.call_id
@@ -748,7 +817,13 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
         ResetQuiet(stream);
         return;
       }
-      cancel_check = HandshakeCancelCheck();
+      // HelloInbound already armed the inbound handshake token — do not share it with
+      // outbound hello (yielding inbound would cancel the winning outbound).
+      if (Phase() == CallMediaSessionPhase::HelloInbound) {
+        cancel_check = []() { return false; };
+      } else {
+        cancel_check = HandshakeCancelCheck();
+      }
     }
 
     const std::string role = params.offerer ? "offerer" : "answerer";
@@ -763,11 +838,22 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     AsyncWriteStreamJson(
         stream, hello,
         [self, stream, params = std::move(params), callbacks = std::move(callbacks), settled,
-         cancel_check = std::move(cancel_check)](Roe<void> write_res) mutable {
+         cancel_check](Roe<void> write_res) mutable {
+          const auto outbound_cancelled = [&] {
+            return cancel_check && cancel_check();
+          };
+          if (outbound_cancelled()) {
+            ResetQuiet(stream);
+            return;
+          }
           if (!write_res) {
             self->Log().warning << "Call-media hello write failed peer=" << params.peer_key;
             {
               std::lock_guard lock(self->mu);
+              if (self->SuppressOutboundHelloFailLocked(stream)) {
+                ResetQuiet(stream);
+                return;
+              }
               self->offerer_glare = false;
               (void)self->ApplyLocked(CallMediaSessionEvent::HelloFail, params.call_id);
               self->ClearHandshakeLocked();
@@ -778,8 +864,8 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
           }
           {
             std::lock_guard lock(self->mu);
-            if (settled->load(std::memory_order_acquire) || self->HandshakeCancelledLocked() ||
-                self->stream || self->Phase() == CallMediaSessionPhase::Idle ||
+            if (settled->load(std::memory_order_acquire) || outbound_cancelled() || self->stream ||
+                self->Phase() == CallMediaSessionPhase::Idle ||
                 self->Phase() == CallMediaSessionPhase::Detaching) {
               self->offerer_glare = false;
               if (self->stream) {
@@ -794,13 +880,10 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
 
           AsyncReadStreamJson(
               stream,
-              [self, stream, params = std::move(params), callbacks = std::move(callbacks),
-               settled](Roe<std::string> ack_utf8) mutable {
-                {
-                  std::lock_guard lock(self->mu);
-                  self->offerer_glare = false;
-                }
-                if (settled->load(std::memory_order_acquire)) {
+              [self, stream, params = std::move(params), callbacks = std::move(callbacks), settled,
+               cancel_check](Roe<std::string> ack_utf8) mutable {
+                if (settled->load(std::memory_order_acquire) ||
+                    (cancel_check && cancel_check())) {
                   ResetQuiet(stream);
                   return;
                 }
@@ -845,6 +928,10 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
                                       << " err=" << why;
                   {
                     std::lock_guard lock(self->mu);
+                    if (self->SuppressOutboundHelloFailLocked(stream)) {
+                      ResetQuiet(stream);
+                      return;
+                    }
                     (void)self->ApplyLocked(CallMediaSessionEvent::HelloFail, params.call_id);
                     self->ClearHandshakeLocked();
                     self->CompleteConnectLocked(Error(why));
@@ -859,13 +946,19 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
                   std::lock_guard lock(self->mu);
                   if (self->stream || self->Phase() == CallMediaSessionPhase::Idle ||
                       self->Phase() == CallMediaSessionPhase::Detaching ||
-                      self->HandshakeCancelledLocked()) {
+                      self->HandshakeCancelledLocked() || (cancel_check && cancel_check())) {
                     ResetQuiet(stream);
                     if (self->stream) {
                       self->FinishOutboundConnectLocked({}, params.call_id);
                     } else {
                       self->ClearHandshakeLocked();
                     }
+                    return;
+                  }
+                  if (self->Phase() == CallMediaSessionPhase::HelloInbound &&
+                      !self->LocalWinsGlareFor(stream)) {
+                    self->log().info << "Call-media outbound yields glare call_id=" << params.call_id;
+                    ResetQuiet(stream);
                     return;
                   }
                   (void)self->ApplyLocked(CallMediaSessionEvent::HelloOk, params.call_id);
@@ -1073,8 +1166,18 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              ResetQuiet(stream);
                              return;
                            }
-                           // Preserve dogfood glare: only offerer outbound rejects inbound.
+                           // Offerer outbound hello: glare bit lets HelloOutbound reject inbound
+                           // only when this PeerId wins the dual-dial tie-break.
                            impl->offerer_glare = params.offerer;
+                           if (impl->Phase() == CallMediaSessionPhase::HelloInbound &&
+                               params.offerer && !impl->LocalWinsGlareFor(stream)) {
+                             impl->offerer_glare = false;
+                             impl->Log().info
+                                 << "Call-media skip outbound hello (inbound wins glare) call_id="
+                                 << params.call_id;
+                             ResetQuiet(stream);
+                             return;
+                           }
                            if (impl->Phase() == CallMediaSessionPhase::HelloOutbound) {
                              impl->ArmHandshakeLocked(stream);
                            }

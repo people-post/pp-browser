@@ -153,6 +153,50 @@ cmd_sign_app() {
   prepare_profile
 
   local entitlements="${IOS_ENTITLEMENTS:-$DEFAULT_ENTITLEMENTS}"
+  local entitlements_tmp=""
+  # Prefer entitlements from the provisioning profile (required for device verify).
+  # PlistBuddy cannot reliably read Entitlements from a pipe — decode to a file first.
+  if [[ -n "${IOS_PROVISIONING_PROFILE_PATH:-}" && -f "${IOS_PROVISIONING_PROFILE_PATH}" ]]; then
+    local profile_plist
+    profile_plist="$(mktemp "${TMPDIR:-/tmp}/frame-profile.XXXXXX.plist")"
+    entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX.plist")"
+    if security cms -D -i "${IOS_PROVISIONING_PROFILE_PATH}" >"$profile_plist" 2>/dev/null \
+        && plutil -extract Entitlements xml1 -o "$entitlements_tmp" "$profile_plist" 2>/dev/null \
+        && [[ -s "$entitlements_tmp" ]]; then
+      entitlements="$entitlements_tmp"
+      log "Using entitlements from provisioning profile"
+    else
+      rm -f "$entitlements_tmp"
+      entitlements_tmp=""
+      # Synthesize the minimum development entitlements Apple verifies on install.
+      if [[ -n "${IOS_DEVELOPMENT_TEAM:-}" && -n "${IOS_BUNDLE_IDENTIFIER:-}" ]]; then
+        entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX.plist")"
+        cat >"$entitlements_tmp" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>application-identifier</key>
+  <string>${IOS_DEVELOPMENT_TEAM}.${IOS_BUNDLE_IDENTIFIER}</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>${IOS_DEVELOPMENT_TEAM}</string>
+  <key>get-task-allow</key>
+  <true/>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>${IOS_DEVELOPMENT_TEAM}.*</string>
+  </array>
+</dict>
+</plist>
+EOF
+        entitlements="$entitlements_tmp"
+        warn "Synthesized entitlements for ${IOS_DEVELOPMENT_TEAM}.${IOS_BUNDLE_IDENTIFIER}"
+      else
+        warn "Could not extract entitlements from profile; falling back to ${entitlements}"
+      fi
+    fi
+    rm -f "$profile_plist"
+  fi
   if [[ ! -f "$entitlements" ]]; then
     echo "error: entitlements not found: ${entitlements}" >&2
     exit 1
@@ -184,6 +228,9 @@ cmd_sign_app() {
       || plutil -replace CFBundleIdentifier -string "$bundle_id" "${app_path}/Info.plist"
   fi
 
+  # Drop Finder/zip junk that can break device verification.
+  rm -rf "${app_path}/META-INF" "${app_path}/.DS_Store"
+
   while IFS= read -r -d '' binary; do
     if file "$binary" | grep -q 'Mach-O'; then
       codesign --force --sign "$IOS_SIGNING_IDENTITY" --timestamp=none "$binary" || true
@@ -195,6 +242,8 @@ cmd_sign_app() {
     --generate-entitlement-der \
     --timestamp=none \
     "$app_path"
+
+  [[ -n "$entitlements_tmp" ]] && rm -f "$entitlements_tmp"
 
   codesign --verify --deep --strict --verbose=2 "$app_path"
   log "Signed ${app_path}"

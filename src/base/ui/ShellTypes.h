@@ -146,13 +146,18 @@ struct DialogState {
 /** PIN unlock / create / chooser overlay. Unlock is mandatory; create and chooser may cancel. */
 struct PinGateState {
   bool active = false;
+  /** No vault yet: I'm new vs I already have an account. */
+  bool identity_fork_mode = false;
   bool chooser_mode = false;
   bool create_mode = false;
+  /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
+  bool link_paste_mode = false;
   Rml::String title;
   Rml::String message;
   Rml::String error;
   Rml::String pin;
   Rml::String pin_confirm;
+  Rml::String link_payload;
   std::function<void(bool unlocked)> on_result;
 };
 
