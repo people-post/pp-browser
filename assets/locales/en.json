@@ -188,6 +188,7 @@
     "settings.security.clear_undelivered.not_ready": "Unlock and register before clearing the delivery queue.",
     "settings.security.link_device": "Link another device",
     "settings.security.link_device.help": "Copy a 15-minute payload on this device. On the new install, choose I already have an account when asked. Private Secure chats are not copied.",
+    "settings.security.link_device.send_hint": "Linked devices share this account. Send from one device at a time for now; all linked devices can receive.",
     "settings.security.link_device.reset_hint": "Already using this device as a different account? Reset this profile in Storage first.",
     "settings.security.link_device.export": "Copy link payload…",
     "settings.security.link_device.export_confirm_title": "Copy link payload?",

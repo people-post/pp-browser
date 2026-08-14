@@ -132,9 +132,9 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Decision:**
 
 1. **Search** `GET /v1/search?q=`: hits include top-level **`account_id`**; `ids[]` lists **`account` as primary**, then `relay_user` / `peer_id` as secondary. Query matches **nickname**, **`relay:`** id, and **Account ID** (including prefix match on the `account:…` value).
-2. **New** `GET /v1/users/by-account/:account_id` — person lookup returning signing/KEM keys, `relay_user_id`, `signature_alg`, nickname, optional `peer_id` / `multiaddrs`.
+2. **New** `GET /v1/users/by-account/:account_id` — person lookup returning signing/KEM keys, `relay_user_id`, `signature_alg`, nickname, **`endpoints[]`** ([M017](#m017--directory-endpoints-per-device-no-last-write-wins)).
 3. Keep `GET /v1/users/:relay_user_id` as **route** lookup; response **must** include `account_id`.
-4. Register finish may echo `account_id`. **Amended by [M017](#m017--directory-endpoints-per-device-no-last-write-wins):** do not last-write-wins a single `peer_id`. Until m3 ships, code may still store one `peer_id` + `multiaddrs`.
+4. Register finish may echo `account_id`. **Amended by [M017](#m017--directory-endpoints-per-device-no-last-write-wins):** upsert `endpoints[]` by this device’s `peer_id`; directory responses do not emit top-level `peer_id` / `multiaddrs`.
 
 **Rationale:** Client m2 can resolve signing keys and add-contact by Account ID without a temporary “relay lookup then read account_id” shim.  
 **Alternatives:** Defer by-account until after wire cut (rejected — forces dual-path client); drop route lookup by `relay:` (rejected — inbox still uses relay ids).
@@ -240,6 +240,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M017 — Directory `endpoints[]` per device; no last-write-wins
 
 **Date:** 2026-08-13  
+**Updated:** 2026-08-13 — hard cut: directory responses are `endpoints[]` only (no top-level `peer_id`).  
 **Status:** Accepted (m3).  
 **Amends:** [M011](#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id) §4.  
 **Ship order:** Brief (www) **before or with** the client — same rule as M011.
@@ -248,7 +249,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 1. Each Account ID on a Brief server has **`endpoints[]`**: `{ peer_id, multiaddrs[], updated_at }` (libp2p Peer ID per install). Push `device_id` stays a separate table (M013 / push-notifications).
 2. **`POST /v1/register/finish`** (and renew) **upserts** this device’s row by `peer_id`. It must **not** delete or overwrite sibling rows. Omitting `peer_id` leaves `endpoints[]` unchanged.
-3. **`GET /v1/users/by-account/:account_id`**, **`GET /v1/users/:relay_user_id`**, and search hits **return `endpoints[]`**. Keep top-level `peer_id` / `multiaddrs` as a **convenience** = preferred / last-`updated_at` row so older clients still parse.
+3. **`GET /v1/users/by-account/:account_id`**, **`GET /v1/users/:relay_user_id`**, and search hits **return `endpoints[]`**. Do **not** emit top-level `peer_id` / `multiaddrs` (pre-release hard cut). `ids[]` still lists each endpoint Peer ID as secondary.
 4. Client dial: LAN / already-open session if present; else newest `updated_at`; else first endpoint. Call multi-ring across endpoints is later.
 5. Promote the shipped shape into [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) in the same window as m3.
 

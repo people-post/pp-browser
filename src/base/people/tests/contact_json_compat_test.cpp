@@ -87,6 +87,7 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   hit.signing_public_key_b64 = "sig";
   hit.kem_public_key_b64 = "kem";
   hit.initiation_floor = 55;
+  hit.endpoints = {{"12D3KooWX", {"/ip4/1.2.3.4/tcp/1/p2p/12D3KooWX"}, 99}};
 
   const DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   EXPECT_EQ(again.hit_id, hit.hit_id);
@@ -95,6 +96,33 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   ASSERT_TRUE(again.kem_public_key_b64.has_value());
   EXPECT_EQ(*again.kem_public_key_b64, "kem");
   EXPECT_EQ(again.initiation_floor, 55);
+  ASSERT_EQ(again.endpoints.size(), 1u);
+  EXPECT_EQ(again.endpoints[0].peer_id, "12D3KooWX");
+  EXPECT_EQ(again.endpoints[0].updated_at, 99);
+  ASSERT_EQ(again.multiaddrs.size(), 1u);
+}
+
+TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
+  const nlohmann::json json = {{"relay_user_id", "relay:y"},
+                               {"nickname", "y"},
+                               {"peer_id", "12D3Legacy"},
+                               {"multiaddrs", nlohmann::json::array({"/ip4/9.9.9.9/tcp/1"})},
+                               {"endpoints", nlohmann::json::array({nlohmann::json{
+                                   {"peer_id", "12D3New"},
+                                   {"multiaddrs", nlohmann::json::array({"/ip4/1.1.1.1/tcp/1"})},
+                                   {"updated_at", 5}}})}};
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  ASSERT_EQ(hit.endpoints.size(), 1u);
+  EXPECT_EQ(hit.endpoints[0].peer_id, "12D3New");
+  ASSERT_EQ(hit.multiaddrs.size(), 1u);
+  EXPECT_EQ(hit.multiaddrs[0], "/ip4/1.1.1.1/tcp/1");
+  bool saw_legacy = false;
+  for (const ContactId& id : hit.ids) {
+    if (id.kind == ContactIdKind::PeerId && id.value == "12D3Legacy") {
+      saw_legacy = true;
+    }
+  }
+  EXPECT_FALSE(saw_legacy);
 }
 
 TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {

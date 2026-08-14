@@ -1,6 +1,6 @@
 # Multi-device account
 
-**Status:** Design freeze (m0) + **M009–M019** / **D100**; **m1–m2b** + **m4a–m4b** done; next **m3** `endpoints[]` (**M017**) then **m4c** paste contacts (**M018**)  
+**Status:** Design freeze (m0) + **M009–M019** / **D100**; **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts (**M018**)  
 **Owner:** Hongwei + agents  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
@@ -40,8 +40,8 @@ One portable **Account ID** across linked devices, with **per-device Peer IDs**,
 | m2b | Wire / `ChatTargetKey` hard cut to Account ID | **Done** |
 | m4a | Soft inbox ack (shared mailbox; M013) | **Done** |
 | m4b | Link-device + DEK seal + sync policy | **Done** (first-run paste; QR later) |
-| m3 | Directory `endpoints[]` (M017) + one-sender help (M016) | **Next** |
-| m4c | Paste contacts + public thread index (M018) | After m3 |
+| m3 | Directory `endpoints[]` (M017) + one-sender help (M016) | **Done** (hard cut; no top-level `peer_id`) |
+| m4c | Paste contacts + public thread index (M018) | **Next** |
 | m4d | Unlink phase 1 (M019) | After m3 |
 
 ## Normative promotion

@@ -718,21 +718,23 @@ void MessagingHub::RegisterContactEndpoints() {
     for (const std::string& ma : contact.multiaddrs) {
       p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
-    const std::string peer_id = PeerIdFromContact(contact);
-    if (!peer_id.empty()) {
+    const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
+    for (const std::string& peer_id : peer_ids) {
       lan_mdns_contact_peer_ids_.insert(peer_id);
     }
-    if (peer_id.empty() || sessions == nullptr) {
+    if (peer_ids.empty() || sessions == nullptr) {
       continue;
     }
-    if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
-      (void)sessions->RegisterEndpoint(peer_id, *ma);
-      sessions->ClearDialBackoff(peer_id);
-      p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
-      if (target.peer_identity_value != peer_id) {
-        (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
-        sessions->ClearDialBackoff(target.peer_identity_value);
-        p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+    for (const std::string& peer_id : peer_ids) {
+      if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
+        (void)sessions->RegisterEndpoint(peer_id, *ma);
+        sessions->ClearDialBackoff(peer_id);
+        p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
+        if (target.peer_identity_value != peer_id) {
+          (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
+          sessions->ClearDialBackoff(target.peer_identity_value);
+          p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+        }
       }
     }
   }

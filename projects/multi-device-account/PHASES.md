@@ -4,7 +4,7 @@ Ordering only. Spec: [DESIGN.md](DESIGN.md). ADRs: [DECISIONS.md](DECISIONS.md).
 
 **Rollout note (2026-08-13):** Skip interim dogfood/wipe between Account-ID cut and multi-device; keep implementing until a coherent multi-device slice is ready to test once.
 
-**Next:** **m3** (`endpoints[]`, **M017**) → **m4c** (contacts + public index in paste, **M018**) → dogfood two installs with **one sender** (**M016**) → unlink phase 1 (**M019**).
+**Next:** **m4c** (contacts + public index in paste, **M018**) → dogfood two installs with **one sender** (**M016**) → unlink phase 1 (**M019**).
 
 ## m0 — Design freeze
 
@@ -72,14 +72,14 @@ One Account → one `relay:` inbox (M006). Client cursors are already per-profil
 
 ## m3 — Directory `endpoints[]` (**M017**)
 
-Brief first (or same window), then client. Stops last-write-wins of a single `peer_id`.
+Brief first (or same window), then client. Stops last-write-wins of a single `peer_id`. Hard cut: no top-level `peer_id` / `multiaddrs` on directory responses.
 
-- [ ] Brief: persist `endpoints[]` (`peer_id`, `multiaddrs[]`, `updated_at`) per Account ID
-- [ ] Register/renew **upserts** this device’s row; does not delete siblings
-- [ ] `GET /v1/users/by-account/:account_id`, route lookup, and search hits return `endpoints[]`; keep top-level `peer_id` as last-`updated_at` convenience
-- [ ] Client: publish this install’s Peer ID on register/renew; parse `endpoints[]` for dial (LAN / open session, else newest `updated_at`)
-- [ ] Promote shipped shape into [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
-- [ ] Me → Security: one-active-sender help next to **Copy link payload…** (**M016**)
+- [x] Brief: persist `endpoints[]` (`peer_id`, `multiaddrs[]`, `updated_at`) per Account ID
+- [x] Register/renew **upserts** this device’s row; does not delete siblings
+- [x] `GET /v1/users/by-account/:account_id`, route lookup, and search hits return `endpoints[]` only
+- [x] Client: publish this install’s Peer ID on register/renew; parse `endpoints[]` for dial (LAN / open session, else newest `updated_at`)
+- [x] Promote shipped shape into [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+- [x] Me → Security: one-active-sender help next to **Copy link payload…** (**M016**)
 
 ## m4c — Paste contacts + public thread index (**M018**)
 

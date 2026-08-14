@@ -29,6 +29,7 @@
         <div class="stack settings-actions">
           <p class="text">{{i18n:settings.security.link_device}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.help}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.link_device.send_hint}}</p>
           <p class="text muted settings-help">{{i18n:settings.security.link_device.reset_hint}}</p>
           <button class="btn" type="button" data-if="security_can_export_link"
                   data-event-click="export_link_device()">

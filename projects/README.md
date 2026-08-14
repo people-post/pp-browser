@@ -43,4 +43,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
-| [multi-device-account](multi-device-account/) | **m4b paste landed** — **m3 `endpoints[]` next** (M017); then paste contacts (M018) | Account ID on wire; shared DEK + account KEM + first-run link-device — [DESIGN](multi-device-account/DESIGN.md) |
+| [multi-device-account](multi-device-account/) | **m3 `endpoints[]` landed** — **m4c** paste contacts next (M018) | Account ID on wire; shared DEK + account KEM + first-run link-device — [DESIGN](multi-device-account/DESIGN.md) |

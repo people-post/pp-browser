@@ -224,20 +224,32 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
   if (target.peer_identity_value.empty()) {
     return;
   }
-  for (const std::string& ma : contact.multiaddrs) {
-    RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
+  const auto register_ma = [this](const std::string& dial_key, const std::string& multiaddr) {
+    if (!dial_key.empty() && !multiaddr.empty()) {
+      RegisterPeerDirectEndpoint(dial_key, multiaddr);
+    }
+  };
+  if (!contact.remote.endpoints.empty()) {
+    for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
+      for (const std::string& ma : endpoint.multiaddrs) {
+        register_ma(endpoint.peer_id, ma);
+        register_ma(target.peer_identity_value, ma);
+      }
+    }
+  } else {
+    for (const std::string& ma : contact.multiaddrs) {
+      register_ma(target.peer_identity_value, ma);
+    }
   }
   if (peer_sessions_ == nullptr) {
     return;
   }
-  const std::string peer_id = PeerIdFromContact(contact);
-  if (peer_id.empty()) {
-    return;
-  }
-  if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
-    RegisterPeerDirectEndpoint(peer_id, *ma);
-    if (target.peer_identity_value != peer_id) {
-      RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+  for (const std::string& peer_id : PeerIdsFromContact(contact)) {
+    if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
+      register_ma(peer_id, *ma);
+      if (target.peer_identity_value != peer_id) {
+        register_ma(target.peer_identity_value, *ma);
+      }
     }
   }
 }

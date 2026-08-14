@@ -69,14 +69,12 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search people. **`q=`** matches **nickname**, **`relay:`** id, and **Account ID** (including prefix on `account:…`). Hits: top-level **`account_id`** when bound; `ids[]` lists **`account` primary**, then `relay_user` / `peer_id`; also `signing_public_key_b64`, `kem_public_key_b64`, `nickname`, optional `multiaddrs`, optional `initiation_floor` ([M011](../../projects/multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) |
-| `GET /v1/users/by-account/:account_id` | **Person** lookup by Account ID (`signing_public_key_b64`, `kem_public_key_b64`, `account_id`, `relay_user_id`, `signature_alg`, nickname, expires_at, optional `peer_id`, `multiaddrs`, optional `initiation_floor`) |
+| `GET /v1/search?q=` | Search people. **`q=`** matches **nickname**, **`relay:`** id, and **Account ID** (including prefix on `account:…`). Hits: top-level **`account_id`** when bound; `ids[]` lists **`account` primary**, then `relay_user` / each `peer_id`; **`endpoints[]`** (`peer_id`, `multiaddrs[]`, `updated_at` Unix ms); `signing_public_key_b64`, `kem_public_key_b64`, `nickname`, optional `initiation_floor`. No top-level `peer_id` / `multiaddrs` ([M017](../../projects/multi-device-account/DECISIONS.md#m017--directory-endpoints-per-device-no-last-write-wins)) |
+| `GET /v1/users/by-account/:account_id` | **Person** lookup by Account ID (`signing_public_key_b64`, `kem_public_key_b64`, `account_id`, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `initiation_floor`) |
 | `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same key fields; **`account_id` required** when bound) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
-| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`) |
-| `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory; echoes **`account_id`**) |
-
-**m3 (not yet shipped):** [M017](../../projects/multi-device-account/DECISIONS.md#m017--directory-endpoints-per-device-no-last-write-wins) — register **upserts** `endpoints[]` (`peer_id`, `multiaddrs[]`, `updated_at`) per Account ID instead of last-write-wins `peer_id`. Lookups and search hits return the array; top-level `peer_id` / `multiaddrs` stay the preferred / last-`updated_at` convenience field. Promote this row to the table above when m3 ships.
+| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, this-device `peer_id`, `multiaddrs`) |
+| `POST /v1/register/finish` | Finish/renew registration (same this-device reachability fields; **upserts** that Peer ID into `endpoints[]`; unsigned advisory; echoes **`account_id`**) |
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 

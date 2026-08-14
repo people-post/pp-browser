@@ -1,6 +1,6 @@
 # Multi-device account — design
 
-**Status:** Design freeze (m0) + **M009–M019**. Implementation: **m1–m2b** + **m4a–m4b** done; next **m3** directory `endpoints[]` (**M017**), then **m4c** paste contacts/index (**M018**). Unlink after m3 (**M019**).  
+**Status:** Design freeze (m0) + **M009–M019**. Implementation: **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts/index (**M018**). Unlink after m3 (**M019**).  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
 
 ## Problem
@@ -48,16 +48,16 @@ Account (Account ID + ML-DSA + account KEM)
 - Envelopes: `sender_contact_id` + AAD + `ChatTargetKey` use Account ID.
 - Relay HTTP auth / inbox requester stay **`relay:`**.
 
-## Brief directory (M011) — shipped early (m2a); endpoints in m3
+## Brief directory (M011) — shipped early (m2a); `endpoints[]` (M017)
 
 | API | Role |
 |-----|------|
-| `GET /v1/search?q=` | Match **nickname**, **`relay:`**, and **Account ID** (incl. prefix). Hits: top-level `account_id`; `ids[]` with `account` **primary**. |
-| `GET /v1/users/by-account/:account_id` | Person lookup (keys, `relay_user_id`, `signature_alg`, …). |
-| `GET /v1/users/:relay_user_id` | Route lookup; response includes `account_id`. |
-| `POST /v1/register/finish` | Echoes `account_id`. **m3 (M017):** upsert this device’s `endpoints[]` row; do not last-write-wins a single `peer_id`. |
+| `GET /v1/search?q=` | Match **nickname**, **`relay:`**, and **Account ID** (incl. prefix). Hits: top-level `account_id`; `ids[]` with `account` **primary**; **`endpoints[]`**. |
+| `GET /v1/users/by-account/:account_id` | Person lookup (keys, `relay_user_id`, `signature_alg`, **`endpoints[]`**). |
+| `GET /v1/users/:relay_user_id` | Route lookup; response includes `account_id` + **`endpoints[]`**. |
+| `POST /v1/register/finish` | Echoes `account_id`. Upserts this device’s `endpoints[]` row by `peer_id`; does not last-write-wins. |
 
-Until m3 ships, Brief still stores one `peer_id` + `multiaddrs`. Target: `endpoints[]` of `{ peer_id, multiaddrs[], updated_at }`; top-level `peer_id` remains last-`updated_at` convenience for old clients.
+No top-level `peer_id` / `multiaddrs` on directory responses (pre-release hard cut). Register still sends **this install’s** `peer_id` + `multiaddrs` to upsert.
 
 ## Dogfood send (M016)
 

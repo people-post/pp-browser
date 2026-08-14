@@ -188,6 +188,7 @@
     "settings.security.clear_undelivered.not_ready": "请先解锁并完成网络注册，再清理投递队列。",
     "settings.security.link_device": "关联另一台设备",
     "settings.security.link_device.help": "在本机复制一份 15 分钟有效的载荷。在新安装上，当被询问时选择“我已有账号”。私密安全聊天不会复制。",
+    "settings.security.link_device.send_hint": "关联的设备共用此账号。请暂时只在一台设备上发送；所有关联设备都可以接收。",
     "settings.security.link_device.reset_hint": "本机已作为另一个账号使用？请先在存储中重置此个人资料。",
     "settings.security.link_device.export": "复制关联载荷…",
     "settings.security.link_device.export_confirm_title": "复制关联载荷？",
