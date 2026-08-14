@@ -146,7 +146,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — recovery UX per D038.  
-**Decision:** v1 assumes **one active sending client per profile identity** per **E2E** chat target (D045). Running the same identity on two devices without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease in v1.  
+**Updated:** 2026-08-13 — linked *devices* allowed; still one *sender* ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)). Dual-writer remains D074.  
+**Decision:** v1 assumes **one active sending client per profile identity** per **E2E** chat target (D045). Linked installs of the same Account ID may all **receive**; **two senders** without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease until D074.  
 **Rationale:** Per-chat-target seq is simple and sufficient pre-launch; multi-device coordination is a large protocol surface.  
 **Alternatives:** Device-scoped seq in envelope; central seq lease via relay; per-device PSK.
 
@@ -1341,9 +1342,10 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 ## D099 — Account ID amends D096 (multi-device)
 
 **Date:** 2026-08-11  
+**Updated:** 2026-08-13 — D015 is one *sender* not one device ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)).  
 **Amends:** [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route) (person/endpoint/route split; ends “one keypair” for multi-device).  
 **Does not amend:** D082 string rules for `relay:` **as a route id**; D091 (CAIP-10 find-only).  
-**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M012](../multi-device-account/DECISIONS.md)).  
+**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M019](../multi-device-account/DECISIONS.md)).  
 **Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
@@ -1360,7 +1362,7 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 3. **Peer ID** is no longer the account “who”; it is the mesh endpoint for one install (avoids dual-online conflict).
 4. **Brief register binding:** prove account key → at most one `relay_user_id` per Account ID per server (M006). Directory Account-first early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)).
 5. **Signing / PSK sync / DEK:** owned by e2e E025 and at-rest A010 — not re-specified here.
-6. D015 single-active-sender and D074 `sender_instance_id` remain until multi-writer phases in multi-device-account / public tier work.
+6. D015 is **one sender**, not one device: linked installs may receive ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)). D074 `sender_instance_id` remains until a multi-writer phase.
 
 **Rationale:** Portable multi-device account without overloading Peer ID or `relay:` as the person root; destructive cut acceptable pre-release.  
 **Alternatives:** Keep D096 as-is; soft-cut wire stays `relay:`; account = CAIP-10.
@@ -1370,19 +1372,21 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 ## D100 — Release scope = Bucket B + PQ + Account ID (amends D092)
 
 **Date:** 2026-08-13  
+**Updated:** 2026-08-13 — link-device paste (**M012** m4b) landed; remaining multi-device follow-ups live in that project (**M016–M019**).  
 **Amends:** [D092](#d092--release-scope-bucket-b).  
-**Cross-project:** [multi-device-account M007–M011](../multi-device-account/DECISIONS.md); [e2e-message-crypto](../e2e-message-crypto/) aggressive PQ path.  
+**Cross-project:** [multi-device-account M007–M019](../multi-device-account/DECISIONS.md); [e2e-message-crypto](../e2e-message-crypto/) aggressive PQ path.  
 **Decision:** Pre-release messaging/identity scope is **Bucket B plus**:
 
 | Include (with B) | Still deferred (release gates / later) |
 |------------------|----------------------------------------|
-| Aggressive PQ account identity (ML-DSA-65 register/API auth, ML-KEM-768 auto-key) | **m4** link-device / shared DEK ritual ([M012](../multi-device-account/DECISIONS.md#m012--link-device-ritual-deferred-until-m4)) |
-| Account ID on wire, catalog, AAD ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount), [M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)) | **`e2e_public` send** enablement (keys/trust may land earlier) |
-| Brief Account-first directory early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) | Cloud message sync; hard-delete “forget forever”; remote wipe |
+| Aggressive PQ account identity (ML-DSA-65 register/API auth, ML-KEM-768 auto-key) | **`e2e_public` send** enablement (keys/trust may land earlier) |
+| Account ID on wire, catalog, AAD ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount), [M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)) | Cloud message sync; hard-delete “forget forever”; remote wipe |
+| Brief Account-first directory early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) | Dual-writer D074; unlink KEM rotation ([M019](../multi-device-account/DECISIONS.md#m019--unlink-local-forget-kem-rotation-is-revoke) phase 2) |
+| Link-device paste + shared DEK ([M012](../multi-device-account/DECISIONS.md#m012--link-device-ritual-deferred-until-m4) m4b) | Live sibling chat-index refresh (not a second paste) |
 
-Chat v2a–v6 + private E2E polish from Bucket B remain in scope.
+Chat v2a–v6 + private E2E polish from Bucket B remain in scope. Multi-device **m3 `endpoints[]`** and **m4c** contacts-in-paste are tracked in [multi-device-account PHASES](../multi-device-account/PHASES.md), not as chat-storage gates.
 
-**Rationale:** Identity hard-cut is in-scope for the same release as local chat storage; link-device and public auto-key *send* stay gated.  
+**Rationale:** Identity hard-cut is in-scope for the same release as local chat storage; public auto-key *send* stays gated.  
 **Alternatives:** Keep D092 exclude of PQ/multi-device entirely; ship wire cut without Brief by-account API.
 
 ---

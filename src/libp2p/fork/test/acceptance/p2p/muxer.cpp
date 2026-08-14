@@ -5,6 +5,8 @@
  */
 
 #include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/scheduler/asio_scheduler_backend.hpp>
@@ -172,8 +174,8 @@ struct Server : public std::enable_shared_from_this<Server> {
 
   size_t clientsConnected = 0;
   size_t streamsCreated = 0;
-  size_t streamReads = 0;
-  size_t streamWrites = 0;
+  std::atomic<size_t> streamReads{0};
+  std::atomic<size_t> streamWrites{0};
 
  private:
   template <typename... Args>
@@ -444,6 +446,17 @@ TEST_P(MuxerAcceptanceTest, ParallelEcho) {
         context->run_for(10000ms);
 
         if (--clients_running == 0) {
+          // The last echo is often already readable here before the server's
+          // yamux write-completion increments streamWrites. Stopping the
+          // server io_context from this thread drops that handler
+          // (macOS CI: 599 vs 600).
+          const size_t expected_writes =
+              static_cast<size_t>(totalClients) * streams * rounds;
+          const auto deadline = std::chrono::steady_clock::now() + 2000ms;
+          while (server->streamWrites.load() < expected_writes
+                 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(1ms);
+          }
           server_context->stop();
         }
 
@@ -465,8 +478,8 @@ TEST_P(MuxerAcceptanceTest, ParallelEcho) {
   EXPECT_EQ(server->streamsCreated, totalClients * streams);
 
   // GE instead of EQ here is due to readSome() and segmentation
-  EXPECT_GE(server->streamReads, totalClients * streams * rounds);
-  EXPECT_GE(server->streamWrites, totalClients * streams * rounds);
+  EXPECT_GE(server->streamReads.load(), totalClients * streams * rounds);
+  EXPECT_GE(server->streamWrites.load(), totalClients * streams * rounds);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllMuxers,

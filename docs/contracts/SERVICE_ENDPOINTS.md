@@ -76,6 +76,8 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`) |
 | `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory; echoes **`account_id`**) |
 
+**m3 (not yet shipped):** [M017](../../projects/multi-device-account/DECISIONS.md#m017--directory-endpoints-per-device-no-last-write-wins) — register **upserts** `endpoints[]` (`peer_id`, `multiaddrs[]`, `updated_at`) per Account ID instead of last-write-wins `peer_id`. Lookups and search hits return the array; top-level `peer_id` / `multiaddrs` stay the preferred / last-`updated_at` convenience field. Promote this row to the table above when m3 ships.
+
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 
 ## Client compatibility discovery
