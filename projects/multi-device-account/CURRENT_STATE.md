@@ -13,7 +13,7 @@
 | Wire / threads / **calls** | Person = **Account ID**; route = **`relay:`** / Peer ID |
 | Inbox | Soft-ack (**M013**); 90d TTL + FIFO cap; local cursor per profile |
 | Vault | `CreateWithDek` / `ReplaceWithDek` for link import; per-profile `vault.bin` |
-| Link-device | `pp-browser-link-device-v1`; copies account ML-DSA + **account KEM** + public PSKs; keeps Peer ID; Me → Security **copy payload** + one-sender help; new device **identity fork** + PIN + paste (empty vault); no private `e2e` PSKs (**M014** / **M015**); push re-attach after import. **No contacts / thread index yet** (**M018**) |
+| Link-device | `pp-browser-link-device-v1`; copies account ML-DSA + **account KEM** + **account-scope** public PSKs (**M020**); keeps Peer ID; Me → Security **copy payload** + one-sender help; new device **identity fork** + PIN + paste (empty vault); no private `e2e` PSKs (**M014** / **M015**); push re-attach after import. **No contacts / thread index yet** (**M018**) |
 | Private PSK | Per device (**M005** / **M014**); one Secure session per pair; not device-keyed |
 | Send | **D015** still one active sender; two linked senders can clash seq (**M016**) |
 
@@ -23,6 +23,7 @@
 |-----|--------|
 | Contacts + public thread index in paste | **m4c** (**M018**) — next |
 | Unlink / revoke | **m4d** phase 1; KEM rotation later (**M019**) |
+| Device-scoped public PSK filter | **M020** (with e2e E027) |
 | Sibling public-PSK + chat-index *refresh* | Later (**M015**) — not a second paste |
 | Dual-writer seq | **D074** later |
 | `e2e_public` send | e2e c3+ / **D100** (not this project) |

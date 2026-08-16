@@ -31,6 +31,13 @@ struct PskSessionRecord {
   std::optional<std::string> psk_fingerprint;
   std::optional<int64_t> psk_verified_at;
   std::vector<RetiredPskEntry> retired_psks;
+  PublicKeyScope key_scope = PublicKeyScope::Account;
+  std::optional<std::string> thread_kem_pk_b64;
+  std::optional<std::string> thread_kem_sk_b64;
+  std::optional<std::string> peer_thread_kem_pk_b64;
+  std::optional<int64_t> last_psk_rotate_at;
+  uint32_t psk_rotate_msg_count = 0;
+  std::optional<std::string> last_rotation_id;
 };
 
 class IPskSessionStore {

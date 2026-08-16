@@ -9,6 +9,7 @@
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ReactionTypes.h"
 #include "base/ui/ChatFormHelper.h"
 #include "common/EmojiKey.h"
@@ -673,6 +674,9 @@ std::string InboxController::BuildSystemRml(const ThreadMessage& message) const 
       return InjectEntryPlaceholders(html, message.id);
     }
     return html;
+  }
+  if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
+    return SystemLineRml("They're using only this device for new messages.");
   }
   return SystemLineRml(message.text);
 }

@@ -31,6 +31,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     P2pMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp
+    PublicPskLockCoordinator.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
     RelayDirectoryKemKeyResolver.cpp

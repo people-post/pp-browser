@@ -39,6 +39,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");
   DataModelHost::Instance().Dirty("chat", "show_gap_banner");
   DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
+  DataModelHost::Instance().Dirty("chat", "show_locked_out_banner");
   DataModelHost::Instance().Dirty("chat", "show_psk_setup_banner");
   DataModelHost::Instance().Dirty("chat", "show_psk_import");
   DataModelHost::Instance().Dirty("chat", "psk_has_key");

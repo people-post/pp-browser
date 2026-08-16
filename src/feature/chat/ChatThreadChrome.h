@@ -43,6 +43,7 @@ public:
     bool& show_thread_menu;
     bool& show_gap_banner;
     bool& show_compromised_banner;
+    bool& show_locked_out_banner;
     bool& show_psk_setup_banner;
     bool& show_psk_import;
     bool& psk_has_key;

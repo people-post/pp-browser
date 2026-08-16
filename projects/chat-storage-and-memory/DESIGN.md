@@ -94,7 +94,7 @@ Product P2P chat has **three tiers**. **All three** encrypt message bodies E2E o
 |-----------|-----------------|------------------------|----------------------|
 | **Key establishment** | Manual OOB PSK + mandatory fingerprint (E011) | Hybrid KEM PSK + signing resolver (E013/E024) | Auto pairwise keys on join (E022, O008) |
 | **Send gate** | Block until `psk_verified_at` | Send when auto key ready; fingerprint optional | Send when membership keys ready |
-| **Key rotation** | User-driven; recommend on compromise | Automatic; prefer **epoch-only** bumps; less frequent `rotate_psk` to ease history recovery | Rotate affected pair keys on membership change |
+| **Key rotation** | User-driven; recommend on compromise | Account-scope: no auto-`rotate_psk`. **Use only this device…** then D2D auto-rekey when both locked (E027 / D101) | Rotate affected pair keys on membership change |
 | **Retired PSK ledger** | Cap 8 epochs (D086) | Higher cap / longer retention (product tuning) | Per-pair ledgers |
 | **`sender_seq` + sync** | Full D013 + D058 backfill | Same sync path; **relaxed** on soft failures (D046) | Per-sender seq in `(group_id, session_epoch)` scope (D076) |
 | **Ingest on seq conflict** | Pause + rotate or pause only (D038) | `continue_anyway` / LWW default (D046) | Same as public direct |

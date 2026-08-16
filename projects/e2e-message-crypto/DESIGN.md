@@ -121,6 +121,8 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 
 **Rejected:** directory-sealed PSK; relay as PSK broker; blockchain address as wire identity in v1.
 
+**Device-lock / D2D rekey (E027):** Account-scope public chats do **not** auto-`rotate_psk`. Either side may send `psk_rotate` (system control) after the thread exists. New PSK is in `key_init_b64` wrapped to account KEM or conversation KEM — never under the old PSK. Quiet auto-`rotate_psk` only when both sides are device-bound. See [E027](DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound).
+
 **Module map (target):**
 
 | Type | Location |

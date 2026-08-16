@@ -12,6 +12,9 @@ Roe<std::vector<LinkDevicePublicPsk>> LinkDeviceCoordinator::CollectPublicPsks(I
     if (record.key.channel != CryptoChannel::E2ePublic || !record.master_psk_b64) {
       continue;
     }
+    if (record.key_scope != PublicKeyScope::Account) {
+      continue;
+    }
     LinkDevicePublicPsk row;
     row.key = record.key;
     row.session_epoch = record.session_epoch;

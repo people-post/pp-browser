@@ -62,4 +62,20 @@ Roe<AutoKeyEncapsulation> AutoKeyEstablishment::EncapsulateForRecipient(const By
   return result;
 }
 
+Roe<std::string> AutoKeyEstablishment::HashKeyInitB64(const std::string& key_init_b64) {
+  auto raw = Base64Decode(key_init_b64);
+  if (!raw) {
+    return raw.error();
+  }
+  if (raw->empty()) {
+    return Error("Empty key_init");
+  }
+  EnsureSodiumInit();
+  ByteVector digest(crypto_generichash_BYTES);
+  if (crypto_generichash(digest.data(), digest.size(), raw->data(), raw->size(), nullptr, 0) != 0) {
+    return Error("key_init hash failed");
+  }
+  return BytesToHex(digest);
+}
+
 } // namespace pbr

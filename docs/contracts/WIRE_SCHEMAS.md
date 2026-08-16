@@ -172,7 +172,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation to the recipient **account** KEM so any linked install can derive `master_psk` when local PSK is missing (E024 / **M015**). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
 
 ### `body.e2e` (group tier — D095, E022)
 
@@ -227,6 +227,18 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `detail` | **LenUtf8** (empty = zero length) |
 
 **Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`. Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
+
+**Public device-lock `control_type=psk_rotate` (E027 / D101)** — `e2e_public` only. `detail` is JSON:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `rotation_id` | string | UUID; concurrent winner = lexicographically greater |
+| `new_epoch` | number | u32 `session_epoch` after adopt |
+| `wrap_kind` | string | `account_kem` \| `thread_kem` |
+| `thread_kem_pk_b64` | string | Initiator conversation ML-KEM-768 public key |
+| `key_init_hash` | string | BLAKE2b-256 of raw `key_init` bytes, lowercase hex |
+
+AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
 
 **`content_type = annotation`:**
 

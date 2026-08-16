@@ -55,7 +55,8 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 
 **Date:** 2026-08-11  
 **Updated:** 2026-08-13 — public auto-key uses **account KEM** (copied on link — **M015**); private PSK rule unchanged.  
-**Decision:** **Private (`e2e`) `master_psk` / retired ledger are not auto-synced** to linked devices. Public (`e2e_public`) and group pair keys **may** sync with account/DEK when those tiers + link ship. Directory encapsulate-to is the **account** ML-KEM-768, not a per-device key (**M015**). Body encryption remains PSK AEAD on all tiers — “device-bound private” means **which devices hold the PSK**, not a different cipher.  
+**Updated:** 2026-08-15 — only `key_scope=account` public PSKs sync on link (**M020**).  
+**Decision:** **Private (`e2e`) `master_psk` / retired ledger are not auto-synced** to linked devices. Public (`e2e_public`) and group pair keys **may** sync with account/DEK when `key_scope=account` ([M020](#m020--device-scoped-public-psks-stay-off-the-link-bundle)). Directory encapsulate-to is the **account** ML-KEM-768, not a per-device key (**M015**). Body encryption remains PSK AEAD on all tiers — “device-bound private” means **which devices hold the PSK**, not a different cipher.  
 **Rationale:** Preserves private-tier assurance under account signing (S1); stolen/linked laptop does not silently receive every private chat key.  
 **Alternatives:** Sync all PSKs with DEK; device-signed private envelopes only (S3).
 
@@ -204,12 +205,13 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Date:** 2026-08-13  
 **Updated:** 2026-08-13 — unlink vs KEM rotation (**M019**); paste contacts/index is not live sibling sync (**M018**).  
+**Updated:** 2026-08-15 — device-scoped public PSKs stay off the link bundle (**M020**).  
 **Amends:** [M012](#m012--link-device-ritual-deferred-until-m4) (bundle includes account KEM); [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (encapsulate-to is the person).  
 **Decision:**
 
 1. Directory `kem_public_key_b64` is the **account** ML-KEM-768 public key (same person on every linked device). Register / `GET /v1/users` publish that key. Link-device copies `account_kem_pk_b64` / `account_kem_sk_b64` with account ML-DSA.
 2. Public (`e2e_public`) auto-key and later **group pairwise** encapsulate **once** to that account KEM so every linked install can open `key_init` from the shared mailbox.
-3. Each public conversation still has **one `master_psk` per `ChatTargetKey`** (not one global account PSK). Linked devices **share** that conversation key (link snapshot today; sibling refresh later). Public **prefers epoch-only** bumps; `rotate_psk` is rare.
+3. Each public conversation still has **one `master_psk` per `ChatTargetKey`** (not one global account PSK). Linked devices **share** that conversation key when `key_scope=account` (link snapshot today; sibling refresh later). Public **does not auto-`rotate_psk`** on account scope; explicit device-lock and D2D auto-rekey are **[E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound)** / **[M020](#m020--device-scoped-public-psks-stay-off-the-link-bundle)**.
 4. **Private (`e2e`)** stays device-local: no private PSK in the link bundle (M005 / M014); no account-KEM handshake for Secure.
 5. Device Ed25519 / Peer ID stay per install (dial). Unlink does not revoke account KEM; rotating account KEM is the revoke story (**M019**).
 6. **Deferred:** sibling public-PSK + chat-index *refresh* when both devices are reachable; optional relay pin of inbound `key_init`. Do not promise “connect to your other device” until that sync exists. Link payload remains one-shot empty-vault import — not an incremental refresh. **m4c** may snapshot contacts + public thread index in that one-shot (**M018**); that is not live sync.
@@ -293,3 +295,22 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 
 **Rationale:** A “Unlink…” control that only deletes local files would over-promise. Naming KEM rotation as revoke keeps M015 honest and unblocks a truthful phase-1 control after directory endpoints exist.  
 **Alternatives:** Local-forget only with no rotation story (rejected — stolen laptop keeps account KEM); remote wipe as unlink (rejected — D100); rotate Account ID on unlink (rejected — breaks every contact’s person key).
+
+---
+
+## M020 — Device-scoped public PSKs stay off the link bundle
+
+**Date:** 2026-08-15  
+**Status:** Accepted.  
+**Amends:** [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §3; [M005](#m005--private-psks-not-auto-synced-publicgroup-may-sync); [M012](#m012--link-device-ritual-deferred-until-m4) `public_psks[]`.  
+**Cross-project:** [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound), [D101](../chat-storage-and-memory/DECISIONS.md#d101--public-key_scope-psk_rotate-ingest-and-rotation-policy).
+
+**Decision:**
+
+1. Directory / first-message public auto-key remains the **account** ML-KEM-768 (M015). Group pairwise encapsulate-to stays account KEM. Private `e2e` unchanged.
+2. After **E027** device-lock, that conversation’s `master_psk` (and conversation KEM secret) MUST **not** appear in `public_psks[]` on `pp-browser-link-device-v1`. `LinkDeviceCoordinator::CollectPublicPsks` copies only rows with `key_scope=account`.
+3. A newly linked install that still holds account KEM can open **account-scope** `key_init`s from the mailbox. It cannot open `wrap_kind=thread_kem` blobs, and it must not receive device-scoped PSKs via paste.
+4. Conversation KEM secrets are install-local (DEK-wrapped on `chat_targets`), never in the link bundle.
+
+**Rationale:** Link-device is how public chats follow the person. Once the user opts a thread onto one device, copying that PSK would undo the lock.  
+**Alternatives:** Copy all public PSKs then mark locked-out on the new device (rejected — new device would briefly hold the key); include conversation KEM sk in the bundle (rejected — that is the lock).

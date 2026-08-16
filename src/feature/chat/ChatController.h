@@ -163,6 +163,7 @@ private:
     bool show_thread_menu = false;
     bool show_gap_banner = false;
     bool show_compromised_banner = false;
+    bool show_locked_out_banner = false;
     bool show_psk_setup_banner = false;
     bool show_psk_import = false;
     bool psk_has_key = false;
@@ -250,6 +251,7 @@ private:
   void OnImportPsk();
   void OnVerifyPsk();
   void OnRotatePskExport();
+  void OnLockPublicToThisDevice();
   /** From Home landing: mint AI thread, switch to Sessions, open chat. */
   bool EnsureHomeOutboundSession();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);

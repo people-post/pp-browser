@@ -286,6 +286,13 @@
     "chat.status.online": "在线",
     "chat.status.offline": "离线",
     "chat.composer_placeholder": "输入消息",
+    "chat.device_lock.menu": "仅在此设备使用…",
+    "chat.device_lock.confirm_title": "仅在此设备使用？",
+    "chat.device_lock.confirm_body": "之后的新消息只会出现在此安装上。其他设备仍保留旧记录。这不是「私密」或「安全」聊天。",
+    "chat.device_lock.subtitle_all": "加密 · 你的所有设备",
+    "chat.device_lock.subtitle_this": "加密 · 仅此设备",
+    "chat.device_lock.subtitle_locked_out": "加密 · 在另一台设备上继续",
+    "chat.device_lock.locked_out_body": "此聊天在另一台设备上继续。你仍可在此阅读旧消息。",
 
     "call.status.couldnt_connect": "无法连接",
     "call.status.calling": "呼叫中…",

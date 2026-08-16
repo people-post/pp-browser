@@ -100,6 +100,7 @@ After m3 so Brief can drop the Peer ID row.
 
 ## Later (not scheduled here)
 
+- Device-scoped public PSKs stay off `public_psks[]` (**M020**)
 - Unlink phase 2: account KEM rotation + remaining-device refresh (**M019**)
 - Sibling public-PSK + chat-index *refresh* when both devices are reachable (**M015**)
 - Private Secure “add this device” transfer UX (**M014**)

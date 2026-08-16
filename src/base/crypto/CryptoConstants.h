@@ -24,6 +24,9 @@ inline constexpr uint32_t kMaxRetiredPskEpochs = 8;
 
 inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxPskBundleBytes = 4 * 1024;
+/** Quiet auto-`rotate_psk` on public `device_pair` (E027). */
+inline constexpr uint32_t kPublicPskAutoRotateMsgCount = 100;
+inline constexpr int64_t kPublicPskAutoRotateIntervalMs = 7LL * 24 * 60 * 60 * 1000;
 /** ML-DSA-65 secret is ~4 KiB; leave room for public PSKs (M012). */
 inline constexpr size_t kMaxLinkDeviceBundleBytes = 96 * 1024;
 inline constexpr int64_t kLinkDeviceDefaultTtlMs = 15 * 60 * 1000;

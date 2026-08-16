@@ -34,7 +34,7 @@ Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 | Orphan `threads/{id}/` with `thread.db` | Re-cataloged as AI threads |
 | Corrupt / **newer** `manifest` / prefs / `profiles.json` / `config_version` | Bootstrap **error** → process exit 1 (not a crash) |
 | Wrong `vault.bin` magic/version; bad `identity.enc` | Unlock **error** |
-| SQLite `user_version` | Create schema at v1; production bumps must **migrate** (D069) — not wipe |
+| SQLite `user_version` | Wipe-out: CREATE TABLE at the current schema (`profile.db` **3** includes `key_scope` / conversation KEM — D101). Leftover older `profile.db` is not a supported upgrade — wipe the profile. Additive `ALTER` may still run locally as a convenience, not a dual-parser promise. |
 
 **Policy:** unknown junk is safe. Official filenames with unsupported **newer** schemas fail bootstrap until the profile/data dir is reset (Me → Storage, or delete data dir in development). See D016 (no legacy JSON/wire import) vs D069 (migrate shippable SQLite).
 

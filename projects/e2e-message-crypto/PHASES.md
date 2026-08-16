@@ -20,6 +20,7 @@ This file has **two orderings**:
 | c2 | 5 | c1; chat [v2b](../chat-storage-and-memory/PHASES.md) + [v6](../chat-storage-and-memory/PHASES.md) | Private `e2e` encrypt/decrypt on relay |
 | c3 | 6 | c2; chat v2b “Secure message” | PSK UX, rotation, verify gate |
 | c3+ | 7 | c3 | `e2e_public` auto-key (E013/E024) |
+| c3++ | — | c3+ | Public 1:1 device-lock rekey (E027) |
 | c4 | — (deferred) | c3+ | Post-quantum hybrid |
 
 ---
@@ -204,6 +205,20 @@ d0 (complete)
 - [ ] Optional: QR encode/decode for PSK
 
 **Exit criteria:** User can start e2e thread, verify fingerprint, send/receive, rotate after simulated epoch bump.
+
+---
+
+## Phase c3++ — Public 1:1 device-lock rekey (E027)
+
+**Goal:** Account-KEM default stays. Explicit **Use only this device…** on public 1:1. Quiet auto-`rotate_psk` only when both sides are device-bound. Device-scoped PSKs off the link bundle (M020 / D101).
+
+- [ ] `chat_targets` `key_scope` + conversation KEM columns (`profile.db` user_version 3)
+- [ ] `psk_rotate` system control + wrap to account vs conversation KEM
+- [ ] Sibling `locked_out` path; link-device copies only `key_scope=account`
+- [ ] Thread menu + confirm + banners; auto-rekey watermark on `device_pair`
+- [ ] Tests: lock, sibling lock-out, both-lock, concurrent winner, auto-rekey gate
+
+**Exit criteria:** Two profiles: lock from A, B sees notice, A's other install is locked out; after both lock, auto-rekey wraps to conversation KEMs.
 
 ---
 

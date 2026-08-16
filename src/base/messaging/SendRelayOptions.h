@@ -19,6 +19,11 @@ struct SendRelayOptions {
   std::optional<std::string> payload_json;
   /** Skip libp2p direct chat (call-control must not block IO on OpenStream). */
   bool prefer_relay = false;
+  /**
+   * When set, attach this `key_init_b64` and encrypt with the **current** stored PSK
+   * (E027 `psk_rotate` — do not first-message encapsulate).
+   */
+  std::optional<std::string> key_init_b64;
 };
 
 } // namespace pbr

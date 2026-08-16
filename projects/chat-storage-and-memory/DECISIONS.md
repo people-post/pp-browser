@@ -1148,6 +1148,7 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 ## D089 — Three chat tiers; both direct tiers E2E (E021)
 
 **Date:** 2026-07-02  
+**Updated:** 2026-08-15 — public rotation: account-scope no auto-`rotate_psk`; device-lock / D2D auto-rekey (**D101** / **E027**).  
 **Cross-project:** [e2e-message-crypto E021](../e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089), [E022](../e2e-message-crypto/DECISIONS.md#e022--group-e2e-pairwise-sender-keys), [E023](../e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090).  
 **Amends:** D004, D013, D018, D045, D046, D062, D080, D076, D063; **no `public_relay`** (D090).  
 **Decision:** Product P2P chat has **three tiers**. **All three** use symmetric E2E body encryption on the wire (relay sees ciphertext). They differ by **priority** and **policy defaults**, not by whether bodies are encrypted.
@@ -1168,7 +1169,7 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 | Ingest on seq conflict | Strict D013; pause + rotate or pause only (D038) | Relaxed default: `continue_anyway` / LWW (D046 rules) | Same as public direct |
 | Multi-device | Unsupported v1 → compromise (D015) | Target: supported (D074 extension) | Target: supported |
 | Inbound shell | Find-only; reject without row (D062) | Auto-create thread + keys on first message | Auto on invite/join |
-| Key rotation | User-driven; recommend on compromise | Automatic; **prefer epoch-only** and less frequent `rotate_psk` to preserve history recovery | Pair-key rotation on membership change |
+| Key rotation | User-driven; recommend on compromise | Account-scope: no auto-`rotate_psk` (E027). User **Use only this device…** then D2D auto-rekey when both locked (D101) | Pair-key rotation on membership change |
 | Retired PSK ledger | Cap 8 epochs (D086) | Higher cap or longer retention (product tuning) | Per-pair ledgers |
 
 **Wire (direct):** **`e2e`** and **`e2e_public` only** — see [D090](#d090--no-public_relay--plaintext-direct-wire). **Message** → `e2e_public`; **Secure message** → `e2e`.
@@ -1388,6 +1389,35 @@ Chat v2a–v6 + private E2E polish from Bucket B remain in scope. Multi-device *
 
 **Rationale:** Identity hard-cut is in-scope for the same release as local chat storage; public auto-key *send* stays gated.  
 **Alternatives:** Keep D092 exclude of PQ/multi-device entirely; ship wire cut without Brief by-account API.
+
+---
+
+## D101 — Public `key_scope`, `psk_rotate` ingest, and rotation policy
+
+**Date:** 2026-08-15  
+**Status:** Accepted.  
+**Amends:** [D089](#d089--three-chat-tiers-both-direct-tiers-e2e-e021) rotation row; [D084](#d084--psk-columns-on-chat_targets-in-profiledb-e008) columns; two PSKs at the same epoch are a hard crypto failure — not [D046](#d046--relaxed-ingest-tier-default-for-public-direct-strict-only-in-v1-private) LWW.  
+**Cross-project:** [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound), [M020](../multi-device-account/DECISIONS.md#m020--device-scoped-public-psks-stay-off-the-link-bundle), [D085](#d085--passive-epoch-advance-peer-bumps-first).
+
+**Decision:**
+
+1. Additive `chat_targets` columns (`profile.db` `PRAGMA user_version` 3):
+   - `key_scope` TEXT NOT NULL DEFAULT `'account'` — `account` | `device_self` | `device_pair` | `locked_out`
+   - `thread_kem_pk_b64` / `thread_kem_sk_b64` (local conversation ML-KEM-768; sk DEK-wrapped like `master_psk_b64`)
+   - `peer_thread_kem_pk_b64`
+   - `last_psk_rotate_at` INTEGER (unix ms)
+   - `psk_rotate_msg_count` INTEGER NOT NULL DEFAULT 0 (messages in current epoch toward the auto-rekey watermark)
+2. Inbound `control_type=psk_rotate` on `e2e_public` only. Decrypt the payload with the **current** PSK first. Then verify `key_init_hash`, decapsulate `key_init` with the secret named by `wrap_kind`, install the new `master_psk` + epoch (D083 retired ledger + D085 adopt), store initiator `thread_kem_pk_b64` as `peer_thread_kem_pk_b64`. Do **not** treat this `key_init` as first-message auto-key (`ResolveOrDeriveMasterPsk` stays “PSK missing” only).
+3. **Scope transitions:**
+   - This install initiates lock: `account` → `device_self` (or `device_self` → `device_pair` if `peer_thread_kem_pk` already set).
+   - Peer lock received and `key_init` opens: if local already `device_self`, go `device_pair`; else stay `account` (peer locked themselves; we still have account-scope access).
+   - `key_init` fails after a valid notice: `locked_out`. Compose disabled. Banner. Old local history stays (D048). Old-epoch relay ciphertext still decrypts via retired ledger.
+4. Two different PSKs at the same `session_epoch` = **hard crypto failure** on all tiers — not D046 LWW.
+5. D080 public auto-create is unchanged for account-scope first messages.
+6. Unlock / restore to account scope is out of this slice.
+
+**Rationale:** Scope and conversation KEM must live next to the PSK (same `ChatTargetKey` row) so link-device, ingest, and the thread menu share one source of truth.  
+**Alternatives:** New `route.channel` (rejected — would fork another thread identity); store conversation KEM only in memory (rejected — must survive restart).
 
 ---
 

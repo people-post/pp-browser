@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/crypto/CryptoTypes.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/IThreadStore.h"
@@ -113,6 +114,9 @@ public:
   Roe<void> ImportPskRawBase64(const std::string& thread_id, const std::string& raw_b64);
   Roe<void> MarkPskVerified(const std::string& thread_id);
   Roe<std::string> RotatePskAndExportBundle(const std::string& thread_id);
+  Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
+  Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id);
+  Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
   void RegisterContactDirectEndpoints(const Contact& contact);
   void RegisterPeerSigningKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                               const std::string& source);

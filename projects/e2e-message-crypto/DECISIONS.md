@@ -333,6 +333,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 
 **Date:** 2026-07-02  
 **Updated:** 2026-08-13 — encapsulate-to is the **account** ML-KEM-768 (**M015**); private `e2e` stays device-local.  
+**Updated:** 2026-08-15 — public `rotate_psk` policy: account-scope chats do not auto-rotate; device-lock is [E027](#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound).  
 **Cross-project:** [chat-storage D080](../chat-storage-and-memory/DECISIONS.md#d080--inbound-routing-private-find-only-public-auto-create), [D081](../chat-storage-and-memory/DECISIONS.md#d081--peer-signing-key-lookup-before-envelope-verify-e016), [D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024), [multi-device M015](../multi-device-account/DECISIONS.md#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local).  
 **Decision:** Resolve **O007**. **`e2e_public`** auto-key uses **two independent trust anchors**. Neither anchor may be the relay **learning or choosing `master_psk`**.
 
@@ -356,7 +357,7 @@ Receive pipeline step 2 calls the resolver — **do not** hardcode relay HTTP in
 |------|--------|
 | **Mechanism** | **Account ML-KEM-768 only** (E026 / **M015**): encapsulate to the **person**, not a device. Directory `kem_public_key_b64` is the account public key; linked devices share the secret |
 | **PSK derivation** | `master_psk = HKDF-SHA256(ikm = kem_shared_secret, salt = "pp-browser-msg-v1", info = "auto-key-v1|channel:e2e_public")` — 32-byte output |
-| **Session keys** | Unchanged (E015): `info = "channel:e2e_public|epoch:{session_epoch}"` from `master_psk`. Public **prefers epoch-only** bumps; `rotate_psk` is rare |
+| **Session keys** | Unchanged (E015): `info = "channel:e2e_public|epoch:{session_epoch}"` from `master_psk`. Account-scope public does **not** auto-`rotate_psk` (**E027**); epoch-only bumps remain for reset |
 | **KEM public keys** | Each **account** publishes ML-KEM-768 via register / `GET /v1/users` — relay stores **public** keys only. Link-device copies the account KEM secret (**M015**). Private (`e2e`) does **not** use this handshake |
 | **Wire carry** | Optional **`body.e2e.key_init_b64`** on `e2e_public` envelopes when the recipient may not yet hold `master_psk` (first message / auto-create path). Relay may store and forward this blob; it MUST NOT decrypt or replace it |
 | **Receive step 7** | **`AutoKeyEstablishment::DeriveMasterPsk(envelope)`** — decapsulate `key_init_b64` with the **local account KEM** secret when local `master_psk` missing; else **`IPskSessionStore::ResolveMasterPskForEpoch`** (E018) |
@@ -431,3 +432,29 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 
 **Rationale:** Aggressive PQ for auto-key; PQCP C backend; drops draft Kyber + classical KEM half.  
 **Alternatives:** Keep X25519+ML-KEM hybrid; liboqs.
+
+---
+
+## E027 — Public 1:1 device-lock rekey; auto-`rotate_psk` only when both sides are device-bound
+
+**Date:** 2026-08-15  
+**Status:** Accepted.  
+**Amends:** [E024](#e024--auto-key-trust-anchor-for-e2e_public-o007) (public rotation policy); [E011](#e011--psk-establishment-ux-private-manual-public-automated-e021) (public rotate is in-band, not OOB); [E018](#e018--retired-psk-ledger-for-historical-decrypt-after-rotate_psk) (public lock uses the same retired ledger).  
+**Cross-project:** [M020](../multi-device-account/DECISIONS.md#m020--device-scoped-public-psks-stay-off-the-link-bundle), [D101](../chat-storage-and-memory/DECISIONS.md#d101--public-key_scope-psk_rotate-ingest-and-rotation-policy), [D085](../chat-storage-and-memory/DECISIONS.md#d085--passive-epoch-advance-peer-bumps-first), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021).
+
+**Decision:**
+
+1. **Default public 1:1** stays account-KEM auto-key (**M015** / E024). No chooser on start or accept. Group and private `e2e` are unchanged. Account-scope public chats do **not** auto-`rotate_psk`. Epoch-only bumps remain for reset (D014).
+2. After a public 1:1 thread exists, either side may **Use only this device…**. That is an in-band `rotate_psk`: new random `master_psk`, `session_epoch++`, old PSK retired (E018). The peer does **not** confirm; they auto-adopt (D085) and see a system line. The tap locks **the initiator’s other installs** only. Unlock / “use all devices again” is out of this slice.
+3. **Wire:** `content_type=system`, `control_type=psk_rotate`, on `e2e_public` only. AEAD payload uses the **current** `master_psk` so every install that already has the key can read the notice. The **new** PSK is **not** wrapped under the old PSK. It travels in `body.e2e.key_init_b64`, encapsulated to:
+   - peer **account KEM** if the peer has not published a conversation KEM (`wrap_kind=account_kem` — first lock);
+   - peer **conversation KEM** once present (`wrap_kind=thread_kem` — second lock and D2D auto-rekey).
+4. `detail` JSON (inside AEAD) MUST include `rotation_id` (UUID), `new_epoch` (u32), `wrap_kind` (`account_kem` | `thread_kem`), initiator `thread_kem_pk_b64` (ML-KEM-768 public, RFC 4648), and `key_init_hash` (BLAKE2b-256 of the raw `key_init` bytes, hex). A swapped `key_init` that does not match `key_init_hash` is a hard reject. E014 `body_hash` still does not cover `key_init` (E009).
+5. On lock, the initiator generates a **conversation ML-KEM-768** keypair for this `ChatTargetKey`. The secret stays on this install (DEK-wrapped on disk). The public key is in `detail.thread_kem_pk_b64`. The peer stores it as `peer_thread_kem_pk` and uses it for later wraps to that person.
+6. **Concurrent rotations:** both control messages use the **old** epoch. Winner = lexicographically greater `rotation_id` (UUID string, case-sensitive). Loser aborts. An inbound `psk_rotate` aborts an in-flight local lock. Two different PSKs at the same epoch = **hard crypto failure**, not public LWW (D046).
+7. **Auto-`rotate_psk`** (quiet, same control type, wrap to conversation KEMs) runs only when `key_scope=device_pair` (both sides have locked). Trigger: next outbound send after **100 messages in this epoch** or **7 days** since `last_psk_rotate_at`. Not on `account` or `device_self`. Delay while a 1:1 call is active; refuse user lock while a call is active.
+8. Do **not** reuse private OOB `RotatePskAndExportBundle` for this path.
+
+**Rationale:** Account KEM keeps public chat fluent across linked devices. An explicit lock is the honest no-confirm story (each side drops only their own siblings). Wrapping a new PSK under the old PSK would give every sibling the new key. Auto-rekey before both sides publish conversation KEMs can undo a lock or brick the peer’s other devices without consent.
+
+**Alternatives:** Chooser on start/accept (rejected — fights public fluency); one tap locks both parties’ devices (rejected — consent change for the peer); wrap new PSK under old PSK (rejected — does not exclude siblings); per-device directory KEM + N `key_init`s (rejected — M015); unlock in this slice (deferred).

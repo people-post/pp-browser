@@ -37,6 +37,8 @@ private:
   Roe<void> RequireDek() const;
   Roe<std::string> EncryptPskB64(const std::string& plaintext_b64) const;
   Roe<std::string> DecryptPskB64(const std::string& ciphertext_b64) const;
+  Roe<std::string> EncryptFieldB64(const std::string& plaintext_b64, const char* aad_kind) const;
+  Roe<std::string> DecryptFieldB64(const std::string& ciphertext_b64, const char* aad_kind) const;
   Roe<PskSessionRecord> DecryptRecord(PskSessionRecord record) const;
   Roe<PskSessionRecord> EncryptRecord(PskSessionRecord record) const;
 

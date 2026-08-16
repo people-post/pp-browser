@@ -50,7 +50,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Verify gate (`psk_verified_at`) | **Implemented** | `ChatController::OnVerifyPsk`, send blocked until verified |
 | `rotate_psk` + bundle export | **Implemented** | `PskSessionCoordinator::RotatePskAndExportBundle`, compromised banner |
 | Signing key fingerprint on add-contact | **Implemented** (display-only) | `contact_detail.rml`, `ContactsController` |
-| `e2e_public` send | **Still disabled** | c3+ auto-key |
+| `e2e_public` send | **Implemented** (auto-key) | `P2pMessagingService::SendUserMessage` |
+| Public device-lock rekey (E027) | **Next** | `PublicPskLockCoordinator` |
 
 ## Related messaging (today)
 
@@ -75,7 +76,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 ## Known gaps (summary)
 
-1. **c3+** — `e2e_public` hybrid KEM auto-key and send enablement.
+1. **c3++** — public 1:1 device-lock rekey (E027).
 2. QR encode/decode for PSK (optional stretch).
 3. Manual two-profile live-relay walkthrough (dev QA).
 4. **c1 rule still applies:** no messaging includes inside `base/crypto`.
