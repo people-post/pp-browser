@@ -26,7 +26,7 @@ ADR-style log. Newest first within each ID series. Prefix **I** (interface / int
 
 **Rationale:** Same Operate intent must support chip-confirm vs auto-run vs later watchers. Encoding only in free-text `synthesis_hints` is too weak for policy and tests.
 
-**v1 note:** Horizon may be almost always `turn`; Autonomous Monitor is post-v1 but the field exists so we do not paint into a corner.
+**v1 note:** Horizon may be almost always `turn`; Autonomous Monitor is **`[later]`** but the field exists so we do not paint into a corner.
 
 ---
 

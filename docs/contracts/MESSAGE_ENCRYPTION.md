@@ -12,7 +12,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 
 - **256-bit pre-shared key (PSK)** per `ChatTargetKey` on direct tiers (`e2e`, `e2e_public`).
 - **Private direct (`e2e`):** PSK distributed out-of-band with mandatory fingerprint verification (E011).
-- **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024 — post c3+); encapsulate to the recipient **account** ML-KEM-768 (**M015**). Signing via `IPeerSigningKeyResolver` (relay v1, on-chain attestation `[post-v1]`).
+- **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024); encapsulate to the recipient **account** ML-KEM-768 (**M015**). Signing via `IPeerSigningKeyResolver` (relay v1, on-chain attestation `[later]`).
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).

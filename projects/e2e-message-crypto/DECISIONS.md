@@ -123,7 +123,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-07-02  
 **Updated:** 2026-07-02 — reopened for UX-first group tier with pairwise keys (E022, D089).  
-**Decision:** **Group E2E** is **`[post-v1]`** — not in c1–c3. When implemented: **pairwise sender-keys** (encrypt per member using pair-wise secrets), **not** a single shared group PSK and **not** MLS in the first slice. Ingest policy matches **`e2e_public`** (relaxed default — D046). Wire shape: **N ciphertexts per message** ([chat-storage D095](../chat-storage-and-memory/DECISIONS.md#d095--group-pairwise-wire-shape-o008)).  
+**Decision:** **Group E2E** is in product (after c1–c3). It uses: **pairwise sender-keys** (encrypt per member using pair-wise secrets), **not** a single shared group PSK and **not** MLS in the first slice. Ingest policy matches **`e2e_public`** (relaxed default — D046). Wire shape: **N ciphertexts per message** ([chat-storage D095](../chat-storage-and-memory/DECISIONS.md#d095--group-pairwise-wire-shape-o008)).  
 **Rationale:** Single group PSK is weak on membership change; MLS is heavy UX; pairwise model reuses 1:1 crypto machinery and matches user preference for pair keys.  
 **Alternatives:** Shared group PSK (rejected); MLS (deferred); group out of scope entirely (superseded — E022).
 
@@ -182,7 +182,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 |-------|-----------|
 | **Source of truth (relay)** | Directory exposes **`signing_public_key_b64`** (32-byte Ed25519, RFC 4648 base64) per **`relay_user`** id — on search hits and via **`GET /v1/users/{relay_user_id}`** lazy lookup. Relay already receives `public_key` at registration. |
 | **Persist at add-contact** | **`AddFromDirectoryHit`** (and manual add flows) write the key into **`PeerSigningKeyStore`** when directory supplies it. **`DirectoryHit`** gains optional **`signing_public_key_b64`** on the primary `relay_user` hit. |
-| **OOB verification** | On add, display **BLAKE2b-256 fingerprint** of the decoded public key (same grouped-hex style as PSK — E011). **`[v1]`** display-only; **`[post-v1]`** optional explicit fingerprint-confirm step before trust. |
+| **OOB verification** | On add, display **BLAKE2b-256 fingerprint** of the decoded public key (same grouped-hex style as PSK — E011). Display-only; **`[later]`** optional explicit fingerprint-confirm step before trust. |
 | **Lazy fetch** | If ingest needs a key not cached (e.g. ephemeral public preview — D080): **`GET /v1/users/{relay_user_id}`**, cache in store, then verify. **Fail closed** if lookup fails. |
 | **Rotation** | Relay updates directory mapping when user re-registers with a new key. Client may refresh on verify failure. **New `relay_user` id** → new communicating identity → **new thread** (D079); same identity + new key → update store, no new thread. |
 | **Rejected** | Embed key or fingerprint in **`sender_relay_id`** / **`sender_contact_id`**; **`ContactIdKind::SigningKey`** mixed into `ids[]`; TOFU pin on first message without directory or OOB; infer full public key from `relay:` + base64 prefix (today's local `substr(0,12)` bootstrap is **not** reversible). |
@@ -274,7 +274,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 | `master_psk_b64` | Decodes to 32 bytes — key for **`active_epoch`** (live send/recv) |
 | `retired_epochs` | Optional array; max **`kMaxRetiredPskEpochs` (8)** entries; each `epoch` < `active_epoch`; strictly increasing epochs; no duplicates |
 
-**Export (initiator after `rotate_psk`):** include `active_epoch` + new `master_psk_b64` + retired tail — up to **8** most recent epochs in `(active_epoch - K .. active_epoch - 1]` from local `retired_psks_json` plus the epoch just retired. Serialized bundle ≤ **`kMaxPskBundleBytes` (4 KiB)**.
+**Export (initiator after `rotate_psk`):** include `active_epoch` + new `master_psk_b64` + retired tail — up to **8** most recent epochs in `(active_epoch - K.. active_epoch - 1]` from local `retired_psks_json` plus the epoch just retired. Serialized bundle ≤ **`kMaxPskBundleBytes` (4 KiB)**.
 
 **Import (innocent peer):** validate → merge `retired_epochs` into `chat_targets.retired_psks_json` (dedupe by epoch) → set active PSK + **`session_epoch = active_epoch`** → reset `next_outgoing_seq = 1` → cancel old-epoch pending/outbox (D068/D086) — one **`profile.db` txn**. Show active fingerprint (E011). If export was truncated (peer rotated more than K times offline), disclose that relay ciphertext **outside the retired tail** may not decrypt on this device.
 
@@ -301,7 +301,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 
 **Engineering posture:** UX-first tiers accept policy tradeoffs (relaxed ingest D046, auto rotation tuned for history recovery, multi-device target) while still using AEAD, signed envelopes, pinned signing keys (E016), and seq in AAD.
 
-**Phasing:** c1–c3 target **private direct (`e2e`)** only. **`e2e_public`** after c3 + auto-key path. **Group** `[post-v1]` (E022).
+**Phasing:** c1–c3 target **private direct (`e2e`)** only. **`e2e_public`** after c3 + auto-key path. **Group** (E022).
 
 **Rationale:** “Public” chat must not mean relay-readable plaintext; users still get a strict tier for high-assurance contacts.  
 **Alternatives:** Plaintext direct wire (rejected — D090); single tier with security slider (rejected).
@@ -344,9 +344,9 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 | **API** | **`IPeerSigningKeyResolver::Resolve(kind, identity_value)`** → `{ signing_public_key_b64, fingerprint, source, source_ref?, trusted_at? }` |
 | **Cache** | **`PeerSigningKeyStore`** — same key as E016; persist resolver results with **provenance** (`source`: `relay_directory`, `manual_paste`, `on_chain`, …; `source_ref`: tx hash / registry id when applicable) |
 | **v1 backends** | **`RelayDirectoryResolver`** — directory search hit + lazy **`GET /v1/users/{relay_user_id}`** (E016/D081); **`ManualPasteResolver`** — user paste at add-contact |
-| **`[post-v1]` backend** | **`OnChainAttestationResolver`** — verify on-chain attestation (CAIP-10 → Peer ID / communicating identity — D091/D096) binding `(peer_identity_kind, peer_identity_value)` → `signing_public_key_b64` |
+| **`[later]` backend** | **`OnChainAttestationResolver`** — verify on-chain attestation (CAIP-10 → Peer ID / communicating identity — D091/D096) binding `(peer_identity_kind, peer_identity_value)` → `signing_public_key_b64` |
 | **v1 ingest policy** | **Relay directory** — fail closed if key missing or verify fails (D081) |
-| **`[post-v1]` ingest policy** | **Chain-preferred** — when a valid on-chain attestation exists for the communicating identity, it **confirms or overrides** the relay key; relay-only binding accepted when no chain attestation is present |
+| **`[later]` ingest policy** | **Chain-preferred** — when a valid on-chain attestation exists for the communicating identity, it **confirms or overrides** the relay key; relay-only binding accepted when no chain attestation is present |
 | **Rejected** | Relay as sole long-term trust with no upgrade path; TOFU pin on first message without directory; key embedded in `sender_contact_id` (E016) |
 
 Receive pipeline step 2 calls the resolver — **do not** hardcode relay HTTP in the ingest path.
@@ -447,8 +447,8 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 1. **Default public 1:1** stays account-KEM auto-key (**M015** / E024). No chooser on start or accept. Group and private `e2e` are unchanged. Account-scope public chats do **not** auto-`rotate_psk`. Epoch-only bumps remain for reset (D014).
 2. After a public 1:1 thread exists, either side may **Use only this device…**. That is an in-band `rotate_psk`: new random `master_psk`, `session_epoch++`, old PSK retired (E018). The peer does **not** confirm; they auto-adopt (D085) and see a system line. The tap locks **the initiator’s other installs** only. Unlock / “use all devices again” is out of this slice.
 3. **Wire:** `content_type=system`, `control_type=psk_rotate`, on `e2e_public` only. AEAD payload uses the **current** `master_psk` so every install that already has the key can read the notice. The **new** PSK is **not** wrapped under the old PSK. It travels in `body.e2e.key_init_b64`, encapsulated to:
-   - peer **account KEM** if the peer has not published a conversation KEM (`wrap_kind=account_kem` — first lock);
-   - peer **conversation KEM** once present (`wrap_kind=thread_kem` — second lock and D2D auto-rekey).
+ - peer **account KEM** if the peer has not published a conversation KEM (`wrap_kind=account_kem` — first lock);
+ - peer **conversation KEM** once present (`wrap_kind=thread_kem` — second lock and D2D auto-rekey).
 4. `detail` JSON (inside AEAD) MUST include `rotation_id` (UUID), `new_epoch` (u32), `wrap_kind` (`account_kem` | `thread_kem`), initiator `thread_kem_pk_b64` (ML-KEM-768 public, RFC 4648), and `key_init_hash` (BLAKE2b-256 of the raw `key_init` bytes, hex). A swapped `key_init` that does not match `key_init_hash` is a hard reject. E014 `body_hash` still does not cover `key_init` (E009).
 5. On lock, the initiator generates a **conversation ML-KEM-768** keypair for this `ChatTargetKey`. The secret stays on this install (DEK-wrapped on disk). The public key is in `detail.thread_kem_pk_b64`. The peer stores it as `peer_thread_kem_pk` and uses it for later wraps to that person.
 6. **Concurrent rotations:** both control messages use the **old** epoch. Winner = lexicographically greater `rotation_id` (UUID string, case-sensitive). Loser aborts. An inbound `psk_rotate` aborts an in-flight local lock. Two different PSKs at the same epoch = **hard crypto failure**, not public LWW (D046).

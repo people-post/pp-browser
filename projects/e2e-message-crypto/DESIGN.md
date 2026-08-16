@@ -20,7 +20,7 @@ Full tier policy matrix: [chat-storage DESIGN § Three chat tiers](../chat-stora
 |------|-----------------|---------------|
 | Private direct | `e2e` | c1–c3 (manual PSK, strict ingest) |
 | Public direct | `e2e_public` | After c3 + auto-key (E013/E024) |
-| Group | `route.kind=group` | `[post-v1]` pairwise sender-keys (E022) |
+| Group | `route.kind=group` | pairwise sender-keys (E022) |
 
 Legacy **`public_relay`** is **not supported** (D090/E023).
 
@@ -37,7 +37,7 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 | Future CRQC harvest-now-decrypt-later on **symmetric** E2E | 256-bit PSK + XChaCha20 | — (if PSK established OOB as random 256 bits) |
 | Local disk theft | — | PSK in JSON store until keychain (E008) |
 
-**Out of scope c1–c3:** Group E2E (E022 — `[post-v1]`); forward secrecy without rotation policy; hiding message existence from relay.
+**Out of scope c1–c3:** Group E2E (E022, later than c1–c3); forward secrecy without rotation policy; hiding message existence from relay.
 
 ## Crypto stack
 
@@ -73,7 +73,7 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 
 - **Size:** 32 bytes (256 bits) from CSPRNG.
 - **Private direct (`e2e`):** Out-of-band distribution — copy-paste, in-person, etc. **Initial setup (E011):** either peer generates; generating side **exports** raw base64 + fingerprint; peer **imports** paste. **`rotate_psk`:** initiator **exports** **`pp-browser-psk-bundle-v1`** JSON; innocent peer **imports** — active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
-- **Public direct (`e2e_public`):** Hybrid KEM establishment (E013/E024) — peer agreement for `master_psk`; signing trust via **`IPeerSigningKeyResolver`** (relay v1, on-chain attestation `[post-v1]`). No mandatory OOB PSK fingerprint before first send; optional verify deferred.
+- **Public direct (`e2e_public`):** Hybrid KEM establishment (E013/E024) — peer agreement for `master_psk`; signing trust via **`IPeerSigningKeyResolver`** (relay v1, on-chain attestation `[later]`). No mandatory OOB PSK fingerprint before first send; optional verify deferred.
 - **Verification (private tier):** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex; compare OOB, then user explicitly confirms before first **`e2e`** send. Persist **`psk_verified_at`** on `chat_targets`; clear on PSK replace/import/rotation.
 
 **Initial establishment flow (epoch 1):**
@@ -95,7 +95,7 @@ No wire-protocol initiator — only UX default (Secure-message starter offers Ge
 
 **Two independent anchors** — see [E024](DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007):
 
-| Anchor | Mechanism | v1 | `[post-v1]` |
+| Anchor | Mechanism | Now | Later |
 |--------|-----------|-----|-------------|
 | **Signing** (who sent) | **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`** | Relay directory + lazy fetch (E016) | On-chain attestation (CAIP-10 linked — D091), **chain-preferred** |
 | **PSK** (body secrecy) | **ML-KEM-768** **account** KEM (E026 / **M015**; amends E013) | Encapsulate to the person | Same — relay never learns `master_psk` |
@@ -188,7 +188,7 @@ Envelope signatures (E014) bind envelope fields and body hash; they do **not** c
 3. **Add contact** → persist via resolver; show BLAKE2b fingerprint for OOB compare with peer (same display rules as PSK — E011).
 4. **Manual add** → user may paste `signing_public_key_b64` when directory is unavailable.
 5. **Lazy fetch** — `RelayDirectoryResolver` calls `GET /v1/users/{relay_user_id}` when a message arrives from an unknown `sender_contact_id` (D080 ephemeral public); cache then verify. Missing key → **hard reject** (same as invalid signature).
-6. **`[post-v1]`** — **`OnChainAttestationResolver`** confirms/overrides relay binding using CAIP-10-linked on-chain attestation (D091); **chain-preferred** when attestation exists.
+6. **`[later]`** — **`OnChainAttestationResolver`** confirms/overrides relay binding using CAIP-10-linked on-chain attestation (D091); **chain-preferred** when attestation exists.
 
 **Storage:** `profiles/{profile_id}/crypto/signing_keys.json` — map key `identity:{kind}:{value}` → `{ signing_public_key_b64, fingerprint }`. Not in AAD, not on wire, not in `Contact.id`.
 
@@ -231,9 +231,9 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 
 - **Sender** builds AAD with `peer_contact_id` = recipient's **communicating identity value**, `sender_contact_id` = sender's **communicating identity value** (fixed for the thread — D079).
 - **Receiver** verifies before decrypt:
-  - `peer_contact_id` = **local self** communicating identity value (this profile's outbound identity for the thread transport — e.g. own `relay_user` id);
-  - `sender_contact_id` = `envelope.sender_contact_id` = thread **`ChatTargetKey.peer_identity_value`**;
-  - `channel`, `message_id`, `sender_seq`, `session_epoch`, `timestamp` = corresponding **envelope** fields (after signature verify).
+ - `peer_contact_id` = **local self** communicating identity value (this profile's outbound identity for the thread transport — e.g. own `relay_user` id);
+ - `sender_contact_id` = `envelope.sender_contact_id` = thread **`ChatTargetKey.peer_identity_value`**;
+ - `channel`, `message_id`, `sender_seq`, `session_epoch`, `timestamp` = corresponding **envelope** fields (after signature verify).
 - `sender_seq` must match outer signed envelope and local `ThreadMessage` for `relay_visible` rows.
 - Decrypt with wrong AAD → MUST fail (no silent ignore).
 - Local-only rows (`relay_visible=false`) are not encrypted for relay. **`local:self`** is never in AAD.
@@ -334,7 +334,7 @@ Big-endian integers. String fields use **LenUtf8** (D088). **Sign bytes** = doma
 | 90 | var | `message_id` — **LenUtf8** |
 | | var | `sender_contact_id` — **LenUtf8** |
 
-**`[post-v1]` group route:** under a new `envelope_version`, append **`group_id` LenUtf8** after `sender_contact_id` when `route_kind=group`.
+**Group route:** under a new `envelope_version`, append **`group_id` LenUtf8** after `sender_contact_id` when `route_kind=group`.
 
 ### Body hash (`body_hash`)
 
@@ -480,7 +480,7 @@ Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.
 8. **Passive adopt (D085):** when peer bumps first with **epoch-only** (D014), innocent device updates `chat_targets` on first successful ingest. **`rotate_psk`:** innocent peer installs **rich OOB bundle** (E020/D086) before decrypt; bundle sets `session_epoch` + retired ledger at import.
 9. **Multi-hop rotation (O006/D086):** bundle retired tail (max 8 epochs) covers skipped intermediate keys; relay ciphertext outside the tail is not guaranteed decryptable.
 
-**`[post-v1]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension); not in v1 (D046).
+**`[later]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046); not on private (D046).
 
 ## Post-quantum migration (phase c4)
 

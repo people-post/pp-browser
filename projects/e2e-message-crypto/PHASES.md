@@ -7,7 +7,7 @@ This file has **two orderings**:
 | Ordering | Use when |
 |----------|----------|
 | **Phase sections below** (d0 → c1 → c2 → …) | Traceability, exit criteria, dependencies |
-| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel with [chat-storage waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) |
+| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all in-scope work before a single release — parallel with [chat-storage waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) |
 
 ---
 
@@ -49,7 +49,7 @@ d0 (complete)
 | **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `P2pMessagingService` in `base/crypto` |
 | **5** | **c2** | `P2pMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
 | **6** | **c3** | Generate/export/import PSK; fingerprint gate; rotation bundle (D086); compromise hooks to chat D038 | User verify + send/receive + simulated epoch bump |
-| **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Out of v1 batch unless scope expands |
+| **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Landed |
 
 ### Agent session reading list
 
@@ -198,7 +198,7 @@ d0 (complete)
 - [x] **Export** epoch-1 key: raw base64 + Copy + fingerprint display (E011)
 - [x] **Import** PSK: raw base64 (E011) or bundle on rotation (E020/D086)
 - [x] Fingerprint compare + explicit confirm; persist **`psk_verified_at`**; E2E send gate until verified (E011)
-- [x] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
+- [x] Add-contact: display signing-key fingerprint (E016); **`[later]`** explicit confirm
 - [x] Key rotation flow: `rotate_psk` → export **`pp-browser-psk-bundle-v1`** (E020/D086); append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
 - [x] Bundle import: merge retired tail, cap at **`kMaxRetiredPskEpochs` (8)**; truncate disclosure when export omits older epochs
 - [x] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
@@ -241,7 +241,7 @@ d0 (complete)
 
 - Chaos-based encryption
 - Replacing BoringSSL with libsodium globally
-- **Group E2E** — `[post-v1]` pairwise sender-keys (E022)
+- **Group E2E** — pairwise sender-keys (E022)
 - **Public tier auto-key** — after c3 (E021/E013/E024)
 - libp2p direct transport crypto rewrite
 - Encrypting `identity.json` at rest — **done** in [at-rest-crypto](../at-rest-crypto/) (`identity.enc` + PIN vault)
@@ -257,8 +257,9 @@ d0 (complete)
   → chat v3 ∥ v4
   → chat v6 (schema → pipeline → sync → libp2p → integrity)
   → c2 → c3
-  → c3+ / c4 (e2e_public auto-key, then PQ) — post-v1 unless in scope
-  → group E2E (E022, post-v1)
+  → c3+ (e2e_public auto-key — landed) → c3++ device-lock (E027)
+  → group E2E (E022 — landed)
+  → c4 PQ
 ```
 
 ---
