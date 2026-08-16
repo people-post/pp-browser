@@ -1,7 +1,7 @@
 #pragma once
 
-#include "libp2p/integration/host/Reachability.h"
-#include "libp2p/integration/host/RelayRuntimeStats.h"
+#include "base/p2p/Reachability.h"
+#include "base/p2p/RelayRuntimeStats.h"
 
 #include <cstddef>
 #include <functional>

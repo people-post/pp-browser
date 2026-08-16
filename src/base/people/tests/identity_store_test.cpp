@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
-#include "libp2p/integration/host/PeerIdUtil.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include <filesystem>
 #include <fstream>

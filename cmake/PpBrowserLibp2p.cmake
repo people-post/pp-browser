@@ -1,6 +1,7 @@
-# libp2p fork configuration and pp-browser integration glue.
+# libp2p fork configuration (product glue lives in src/base/p2p).
 
 include(PpBrowserWarnings)
+include(PpBrowserLib)
 
 function(pp_browser_define_libp2p_options)
   if(PP_BROWSER_IS_MOBILE)
@@ -14,7 +15,7 @@ function(pp_browser_define_libp2p_options)
 endfunction()
 
 function(pp_browser_configure_libp2p_fork)
-  pp_configure_status("Configuring in-tree libp2p (src/libp2p)...")
+  pp_configure_status("Configuring in-tree libp2p (src/lib/libp2p)...")
 
   set(PACKAGE_MANAGER vendored CACHE STRING "" FORCE)
   if(PP_BROWSER_IS_MOBILE)
@@ -28,62 +29,4 @@ function(pp_browser_configure_libp2p_fork)
   endif()
   set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
   set(CLANG_FORMAT OFF CACHE BOOL "" FORCE)
-endfunction()
-
-function(pp_browser_add_libp2p_integration)
-  add_library(pp_libp2p_integration STATIC
-    host/Libp2pHost.cpp
-    host/PeerAddressBook.cpp
-    host/CircuitBridgeTarget.cpp
-    host/IdentifyIntegrationService.cpp
-    host/AdvertisedAddrPublisher.cpp
-    host/PeerSessionManager.cpp
-    host/PeerIdUtil.cpp
-    host/NodeRuntime.cpp
-    host/MeshHost.cpp
-    host/DialBackService.cpp
-    host/StreamJsonFrame.cpp
-    host/StreamFrameIo.cpp
-    host/Libp2pScheduler.cpp
-    host/Reachability.cpp
-    host/ReachabilityService.cpp
-    host/NatTraversal.cpp
-    host/CircuitRelayService.cpp
-    host/MediaRelayService.cpp
-    host/MediaRelayHostInbound.cpp
-    host/MediaRelayClientAttach.cpp
-    host/MediaRelayFrames.cpp
-    host/MediaRelayAttachSm.cpp
-    host/MediaRelayLogic.cpp
-    host/LanMdnsDiscovery.cpp
-    host/CallMediaDirectService.cpp
-    host/CallMediaSessionLogic.cpp
-    host/CallMediaFrameCrypto.cpp
-  )
-  target_include_directories(pp_libp2p_integration PUBLIC
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include)
-  target_link_libraries(pp_libp2p_integration PUBLIC
-    pp_common
-    p2p
-    p2p_identify
-    p2p_peer_id
-    p2p_wire
-    nlohmann_json::nlohmann_json)
-  if(WIN32)
-    target_link_libraries(pp_libp2p_integration PUBLIC ws2_32 iphlpapi)
-  endif()
-  if(TARGET miniupnpc-static)
-    target_link_libraries(pp_libp2p_integration PRIVATE miniupnpc-static)
-    target_compile_definitions(pp_libp2p_integration PUBLIC PP_BROWSER_HAS_MINIUPNPC)
-    target_include_directories(pp_libp2p_integration PRIVATE
-      ${CMAKE_SOURCE_DIR}/third_party/miniupnpc/include
-      ${CMAKE_BINARY_DIR}/third_party/miniupnpc)
-  endif()
-  pp_browser_apply_warnings(pp_libp2p_integration)
-endfunction()
-
-function(pp_browser_add_libp2p_includes target)
-  target_include_directories(${target} PUBLIC
-    ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include)
 endfunction()

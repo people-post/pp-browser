@@ -2,28 +2,28 @@
 
 **Tier:** architecture
 
-pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/libp2p/fork/` as a **hard fork** (committed source, no git submodule).
+pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/lib/libp2p/` as a **hard fork** (committed source, no git submodule).
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `src/libp2p/fork/` | Upstream-shaped cpp-libp2p (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
-| `src/libp2p/fork/example/` | Sample programs (built when `PP_BROWSER_LIBP2P_EXAMPLES=ON`) |
-| `src/libp2p/fork/test/` | Unit tests (built when `PP_BROWSER_LIBP2P_TESTING=ON` or coverage enabled) |
-| `src/libp2p/fork/housekeeping/` | Coverage and local dev scripts |
-| `src/libp2p/integration/host/` | `Libp2pHost` app glue (compiled into `pp_base`) |
+| `src/lib/libp2p/` | Upstream-shaped cpp-libp2p (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
+| `src/lib/libp2p/example/` | Sample programs (built when `PP_BROWSER_LIBP2P_EXAMPLES=ON`) |
+| `src/lib/libp2p/test/` | Unit tests (built when `PP_BROWSER_LIBP2P_TESTING=ON` or coverage enabled) |
+| `src/lib/libp2p/housekeeping/` | Coverage and local dev scripts |
+| `src/base/p2p/` | `Libp2pHost` app glue (compiled into `pp_base`) |
 
-Dependency rule inside the libp2p subtree:
+Dependency rule:
 
 ```
-integration/host → fork/include (public API only)
-fork/src → fork/include
+base/p2p → lib/libp2p/include (public API only)
+lib/libp2p/src → lib/libp2p/include
 ```
 
 ## Provenance
 
-See [`src/libp2p/fork/UPSTREAM.json`](../../src/libp2p/fork/UPSTREAM.json) for the upstream commit SHA.
+See [`src/lib/libp2p/UPSTREAM.json`](../../src/lib/libp2p/UPSTREAM.json) for the upstream commit SHA.
 
 Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-06-13).
 
@@ -49,7 +49,7 @@ When `PP_BROWSER_LIBP2P_TESTING` or `PP_BROWSER_LIBP2P_COVERAGE` is ON, googlete
 
 ## Patching policy
 
-Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/libp2p/integration/`, which is pp-browser-owned glue).
+Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/base/p2p/`, which is pp-browser-owned glue).
 
 **pp-browser fork changes (initial import):**
 
@@ -68,7 +68,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `protocol/identify/identify_delta.cpp` — create `IdentifyDeltaWire` once when sending multiple added/removed protocols (was resetting delta each loop iteration)
-- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
+- **Handwritten protobuf wire** — `src/lib/libp2p/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
 - `connection/stream_and_protocol.hpp` — forward-declare `struct Stream` (matches `stream.hpp`) so first-party `-Werror` builds do not trip `-Wmismatched-tags`
 - `host/host.hpp` / `network/dialer.hpp` — `PeerInfo{.id=…, .addresses={}}` so first-party `-Werror` builds that include these headers do not trip `-Wmissing-field-initializers`
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
@@ -96,7 +96,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 ## Integration status
 
-libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/libp2p/integration/host/`:
+libp2p is built in-tree via `add_subdirectory(src/lib)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/base/p2p/`:
 
 - `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
 - `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.

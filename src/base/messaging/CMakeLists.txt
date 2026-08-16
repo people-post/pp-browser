@@ -48,8 +48,6 @@ pp_browser_add_base_library(pp_base_messaging
     sodium
     SQLite::SQLite3)
 
-pp_browser_add_base_p2p_includes(pp_base_messaging)
-
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
 endif()

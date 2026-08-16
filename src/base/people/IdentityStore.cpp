@@ -9,7 +9,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
 #include "base/people/Ed25519Signer.h"
-#include "libp2p/integration/host/PeerIdUtil.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include <filesystem>
 #include <fstream>

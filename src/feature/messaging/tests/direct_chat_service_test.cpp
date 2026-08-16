@@ -2,9 +2,9 @@
 
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/people/tests/libp2p_ephemeral_listen.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/tests/libp2p_ephemeral_listen.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 

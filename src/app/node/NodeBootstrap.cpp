@@ -7,9 +7,9 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/Reachability.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 

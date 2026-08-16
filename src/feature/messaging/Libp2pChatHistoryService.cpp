@@ -3,8 +3,8 @@
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
-#include "libp2p/integration/host/Libp2pWorker.h"
-#include "libp2p/integration/host/StreamFrameIo.h"
+#include "base/p2p/Libp2pWorker.h"
+#include "base/p2p/StreamFrameIo.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>

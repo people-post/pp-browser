@@ -10,13 +10,13 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "libp2p/integration/host/CallMediaDirectService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/MeshHost.h"
-#include "libp2p/integration/host/NodeRuntime.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/MeshHost.h"
+#include "base/p2p/NodeRuntime.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <functional>
 #include <memory>

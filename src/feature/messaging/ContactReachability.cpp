@@ -2,7 +2,7 @@
 
 #include "base/people/ContactIdentity.h"
 #include "base/people/MeshHopPolicy.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/PeerSessionManager.h"
 
 namespace pbr {
 

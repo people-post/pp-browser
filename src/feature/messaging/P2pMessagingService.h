@@ -20,8 +20,8 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/net/ServiceClients.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <atomic>
 #include <functional>

@@ -150,13 +150,13 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 
 | Concern | Location |
 |---------|----------|
-| Frame IO | `src/libp2p/integration/host/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
-| JSON frames | `src/libp2p/integration/host/StreamJsonFrame.*` |
+| Frame IO | `src/base/p2p/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
+| JSON frames | `src/base/p2p/StreamJsonFrame.*` |
 | Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
 | Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
 | Limits | `src/base/messaging/MessagingLimits.h` |
-| Exact read | `src/libp2p/fork/include/libp2p/basic/read.hpp` |
-| Noise caps | `src/libp2p/fork/include/libp2p/security/noise/crypto/state.hpp` |
+| Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
+| Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |
 | Tests | `src/base/people/tests/stream_frame_io_test.cpp` |
 
 ## Design notes

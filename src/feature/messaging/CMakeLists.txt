@@ -42,7 +42,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_feature_ai
     pp_base_crypto
     pp_base_media
-    pp_libp2p_integration
+    pp_base_p2p
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime

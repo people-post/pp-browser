@@ -79,7 +79,7 @@
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>

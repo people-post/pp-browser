@@ -12,7 +12,7 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `OsFile`, `OsTime`, etc. No Win32 or POSIX headers outside the platform layer (except render GL integration; see below).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
 4. **Process runtime** (threads, lifecycle, branding) lives in [`src/base/runtime/`](../../src/base/runtime/) — not here.
-5. **Render GL / GLES** stays in [`src/render/integration/platform/`](../../src/render/integration/platform/) per SRC_LAYOUT; do not move GL lifecycle into `base/platform`.
+5. **Render GL / GLES** stays in [`src/base/render/platform/`](../../src/base/render/platform/) per SRC_LAYOUT; do not move GL lifecycle into `base/platform`.
 
 ## Directory layout
 
@@ -29,8 +29,8 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 | `base/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `base/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `base/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
-| `render/integration/platform/GlBackend.h` | GLES vs desktop GL selection |
-| `render/integration/platform/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
+| `base/render/platform/GlBackend.h` | GLES vs desktop GL selection |
+| `base/render/platform/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
 
 ## User-facing OS tips (i18n)
 
@@ -62,9 +62,9 @@ Regressions are caught by [`scripts/check_platform_ifdefs.sh`](../../scripts/che
 Allowed paths for OS preprocessor branches:
 
 - `src/base/platform/` (including `os/` and `desktop/`)
-- `src/render/integration/` (GL/GLES backends)
-- `src/render/fork/` (upstream; not product policy)
-- `src/libp2p/fork/` (upstream; not product policy)
+- `src/base/render/` (GL/GLES backends)
+- `src/lib/rmlui/` (upstream; not product policy)
+- `src/lib/libp2p/` (upstream; not product policy)
 
 **Not allowed** (after consolidation): `src/feature/`, `src/base/data/`, `src/base/net/`, `src/base/ai/`, `src/app/Application.cpp`.
 
@@ -73,5 +73,5 @@ Allowed paths for OS preprocessor branches:
 1. If it is a path, notification, credential, or OS tip → extend or add an `I*` interface implementation under `base/platform/`.
 2. If it is process threading / lifecycle / scheduling → `base/runtime/` (`AppRuntime`, `AppLifecycle`).
 3. If it is a syscall (file sync, subprocess, time) → add to `base/platform/os/`.
-4. If it is GL/GLES or SDL window backend → `render/integration/platform/`.
+4. If it is GL/GLES or SDL window backend → `base/render/platform/`.
 5. Wire registration in `PlatformServices::Register()` for mobile overrides; desktop defaults stay in interface singletons.

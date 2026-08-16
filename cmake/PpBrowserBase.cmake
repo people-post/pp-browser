@@ -1,4 +1,3 @@
-include(PpBrowserLibp2p)
 include(PpBrowserWarnings)
 
 function(pp_browser_add_base_library target)
@@ -10,10 +9,6 @@ function(pp_browser_add_base_library target)
     target_link_libraries(${target} PRIVATE ${ARG_PRIVATE_LIBS})
   endif()
   pp_browser_apply_warnings(${target})
-endfunction()
-
-function(pp_browser_add_base_p2p_includes target)
-  pp_browser_add_libp2p_includes(${target})
 endfunction()
 
 function(pp_browser_add_base_folder_tests lib_target test_target)

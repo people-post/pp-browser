@@ -14,11 +14,10 @@ add_executable(pp-node
 
 target_include_directories(pp-node PRIVATE
   ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
 )
 
 target_link_libraries(pp-node PRIVATE
-  pp_libp2p_integration
+  pp_base_p2p
   pp_base_people
   pp_base_crypto
   pp_base_data
@@ -42,10 +41,9 @@ add_executable(pp-node-probe
 )
 target_include_directories(pp-node-probe PRIVATE
   ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
 )
 target_link_libraries(pp-node-probe PRIVATE
-  pp_libp2p_integration
+  pp_base_p2p
   pp_common
   Threads::Threads
 )

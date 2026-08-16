@@ -1,0 +1,28 @@
+# Owned hard forks (lib layer). Product glue lives under src/base/{p2p,render}.
+
+include(PpBrowserLibp2p)
+include(PpBrowserRender)
+
+pp_browser_configure_libp2p_fork()
+if(TESTING OR COVERAGE)
+  enable_testing()
+endif()
+if(PP_BROWSER_LIBP2P_TESTING OR PP_BROWSER_LIBP2P_COVERAGE)
+  add_subdirectory(libp2p)
+else()
+  add_subdirectory(libp2p EXCLUDE_FROM_ALL)
+endif()
+pp_configure_status("libp2p fork configured")
+
+if(NOT PP_BROWSER_HEADLESS)
+  pp_browser_configure_rmlui_fork()
+  if(RMLUI_TESTS)
+    enable_testing()
+  endif()
+  if(PP_BROWSER_BUILD_TESTS)
+    add_subdirectory(rmlui)
+  else()
+    add_subdirectory(rmlui EXCLUDE_FROM_ALL)
+  endif()
+  pp_configure_status("RmlUi fork configured")
+endif()

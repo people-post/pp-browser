@@ -29,7 +29,7 @@ Product UX already has [`CallLifecycle`](../../src/feature/messaging/CallLifecyc
 3. Timeout / cancel / Detach complete through the machine (no orphan waiters).
 4. Observability — INFO `phase=… event=…` so dogfood can triage “stuck in HelloInbound” vs “MediaReady but silent.”
 5. Behavior-preserving migration — dogfood scenarios stay green.
-6. Layer clarity — transport SM in `libp2p/integration/host`; product SM stays in `feature/messaging`.
+6. Layer clarity — transport SM in `base/p2p`; product SM stays in `feature/messaging`.
 
 ## Non-goals
 
@@ -53,7 +53,7 @@ flowchart TB
     Bridge[CallLibp2pMediaBridge]
     Topo[CallTopologyController]
   end
-  subgraph host [libp2p/integration/host — transport]
+  subgraph host [base/p2p — transport]
     CM[CallMediaDirectService<br/>CallMediaSession SM]
     MR[MediaRelayService<br/>Attach SM + HostSession]
     Frame[DuplexFrameSession<br/>StreamIoPolicy pipe]
@@ -129,7 +129,7 @@ Cancel flags without `reset()` are insufficient while `libp2p::read`/`write` is 
 
 ## Call-media session machine
 
-**Code today:** [`CallMediaDirectService`](../../src/libp2p/integration/host/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
+**Code today:** [`CallMediaDirectService`](../../src/base/p2p/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
 **Policy rows:** [HOST_RECEIVE_POLICY — 1:1 media](HOST_RECEIVE_POLICY.md#11-media-host-call-media).  
 **Product reporter:** `CallLibp2pMediaBridge` → `CallLifecycle` (`DirectConnected` / `ConnectFailed`).
 

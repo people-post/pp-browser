@@ -44,9 +44,9 @@ flowchart TB
     CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
   end
 
-  subgraph sidecars["fork sidecars"]
-    RmlUi["RmlUi Context<br/><small>render/fork + integration</small>"]
-    Libp2p["Libp2pHost<br/><small>libp2p/fork + integration</small>"]
+  subgraph libs["lib + base glue"]
+    RmlUi["RmlUi Context<br/><small>lib/rmlui + base/render</small>"]
+    Libp2p["Libp2pHost<br/><small>lib/libp2p + base/p2p</small>"]
   end
 
   Application --> ConfigApplyBridge
@@ -103,7 +103,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["MessagingHub<br/><small>feature/messaging/</small>"]
-    Mesh["MeshHost<br/><small>libp2p/integration/host/ — shared w/ pp-node</small>"]
+    Mesh["MeshHost<br/><small>base/p2p/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>base/ui/</small>"]
@@ -259,7 +259,7 @@ flowchart TB
 
   subgraph libp2p_stack["libp2p host"]
     LpIo["Libp2pHost io_thread_<br/><small>boost::asio::io_context::run</small>"]
-    Host["libp2p::Host<br/><small>libp2p/fork — Yamux + Noise</small>"]
+    Host["libp2p::Host<br/><small>lib/libp2p — Yamux + Noise</small>"]
     LpIo --> Host
   end
 
@@ -282,7 +282,7 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **libp2p IO** | `Libp2pHost` | `libp2p/integration/host/` | `boost::asio::io_context` run loop |
+| **libp2p IO** | `Libp2pHost` | `base/p2p/` | `boost::asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
 | **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
@@ -305,7 +305,7 @@ Full model: [THREADING.md](THREADING.md).
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
-| **MeshHost** | `libp2p/integration/host/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **MeshHost** | `base/p2p/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
 | **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, libp2p media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
 | **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
@@ -333,5 +333,5 @@ Full model: [THREADING.md](THREADING.md).
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `base/runtime/` | UI mailbox + worker pool + coordinator |
-| **Libp2pHost** | `libp2p/integration/host/` | Vendored host + asio IO thread |
+| **Libp2pHost** | `base/p2p/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `base/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

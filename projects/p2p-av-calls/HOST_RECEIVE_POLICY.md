@@ -101,4 +101,4 @@ Hop stays **blind** (no decode, no call keys).
 - Paid pricing / C↑ node capacity auction  
 - Congestion-control feedback protocol (RTCP-like) — later  
 - Video publish on libp2p (deferred)  
-Fork `src/libp2p/fork` internals except via integration services
+Fork `src/lib/libp2p` internals except via integration services

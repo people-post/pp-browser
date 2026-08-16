@@ -7,7 +7,7 @@
 **Calls overview:** [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) (V033)  
 **Admit / QoS:** [HOST_RECEIVE_POLICY.md](../p2p-av-calls/HOST_RECEIVE_POLICY.md) · [V032](../p2p-av-calls/DECISIONS.md#v032--media-qos-enforcement-playout-sfu-e2e)  
 **Framing:** [N021](DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)  
-**Code today:** [`MediaRelayService`](../../src/libp2p/integration/host/MediaRelayService.cpp) + internal [`MediaRelayServiceImpl.h`](../../src/libp2p/integration/host/MediaRelayServiceImpl.h)
+**Code today:** [`MediaRelayService`](../../src/base/p2p/MediaRelayService.cpp) + internal [`MediaRelayServiceImpl.h`](../../src/base/p2p/MediaRelayServiceImpl.h)
 
 Design for the **inbound control handshake** (`quote` → `accept` → `attach`) and how it relates to `HostSession` / participant duplex — without turning fan-out QoS into a giant state machine.
 

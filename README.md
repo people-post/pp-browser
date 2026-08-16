@@ -9,7 +9,7 @@ Branding rationale, icon mockups, and review checklist: [docs/ui/PRODUCT_BRANDIN
 ## Features
 
 - Cross-platform native window (Linux, Windows, macOS)
-- Vendored RmlUi source under `src/render/fork/`
+- Vendored RmlUi source under `src/lib/rmlui/`
 - MCP-oriented action routing and LLM UI generation scaffolding
 
 ## Build
@@ -18,6 +18,6 @@ See [docs/ops/BUILD.md](docs/ops/BUILD.md). Documentation map: [docs/README.md](
 
 ## Third-party notice
 
-RmlUi is vendored at `src/render/fork/` (MIT). Provenance: `src/render/fork/UPSTREAM.json`.
+RmlUi is vendored at `src/lib/rmlui/` (MIT). Provenance: `src/lib/rmlui/UPSTREAM.json`.
 
 Lato font in `assets/fonts/` is from RmlUi samples (SIL Open Font License).

@@ -49,7 +49,7 @@
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"

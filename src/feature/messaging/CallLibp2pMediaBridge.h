@@ -6,7 +6,7 @@
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "libp2p/integration/host/CallMediaDirectService.h"
+#include "base/p2p/CallMediaDirectService.h"
 
 #include "common/Module.h"
 

@@ -66,17 +66,18 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
 endif()
 
+include(PpBrowserLib)
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
-  ${CMAKE_SOURCE_DIR}/src/render/fork/Source/Core/FontEngineHarfBuzz
+  ${PP_LIB_RMLUI_ROOT}/Source/Core/FontEngineHarfBuzz
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
   pp_common
-  pp_rmlui_backend
+  pp_base_render
+  pp_base_p2p
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json

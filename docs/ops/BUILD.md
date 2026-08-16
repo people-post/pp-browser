@@ -46,7 +46,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
+RmlUi is **hard-forked** under `src/lib/rmlui/`. libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
@@ -221,7 +221,7 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) under [`src/render/fork/Tests/`](../src/render/fork/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
 - GoogleTest module suites under `src/.../tests/`.
 
 All suites are discovered through CTest. To run RmlUi fork tests:

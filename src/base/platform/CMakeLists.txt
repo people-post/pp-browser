@@ -109,7 +109,7 @@ pp_browser_add_base_library(pp_base_platform
   PUBLIC_LIBS
     pp_base_platform_core
     pp_base_runtime
-    pp_rmlui_backend
+    pp_base_render
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})

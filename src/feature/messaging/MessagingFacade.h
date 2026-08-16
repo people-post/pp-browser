@@ -19,7 +19,7 @@
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
 #include "feature/messaging/PskSessionCoordinator.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 
 #include <cstdint>
 #include <functional>

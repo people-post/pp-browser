@@ -118,7 +118,7 @@ May **display** UPnP/mapped state; do not toggle capabilities here.
 | Layer | Owns |
 |-------|------|
 | **This project** | Status cluster UX, popover, shell bindings, status icons |
-| **feature/messaging + libp2p/integration** | Brief poll health, host/reachability/help signals; `RelayRuntimeStats` snapshot API |
+| **feature/messaging + base/p2p** | Brief poll health, host/reachability/help signals; `RelayRuntimeStats` snapshot API |
 | **Me → Network (settings)** | Configuration toggles, full connection card, nudge ack |
 | **Chat / Calls** | Peer-scoped and call-scoped status |
 | **ShellHost** | Visibility, dirty chrome, click → popover |

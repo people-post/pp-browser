@@ -25,16 +25,16 @@
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/DialBackService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/LanMdnsDiscovery.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/Reachability.h"
-#include "libp2p/integration/host/ReachabilityService.h"
-#include "libp2p/integration/host/MeshHost.h"
-#include "libp2p/integration/host/NodeRuntime.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/DialBackService.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/LanMdnsDiscovery.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/Reachability.h"
+#include "base/p2p/ReachabilityService.h"
+#include "base/p2p/MeshHost.h"
+#include "base/p2p/NodeRuntime.h"
+#include "base/p2p/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
 
 #include <cstdint>
@@ -60,7 +60,7 @@ class SqlitePskSessionStore;
  * - **MessagingCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
  * - **MeshHost (`mesh_`):** shared with headless `pp-node` — NodeRuntime + dial-back +
- *   circuit/media relay + reachability (`libp2p/integration/host/MeshHost`).
+ *   circuit/media relay + reachability (`base/p2p/MeshHost`).
  * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, libp2p media bridge,
  *   CallMediaDirect, dial/hop helpers.
  *

@@ -81,6 +81,7 @@ endif()
 
 include(Platform)
 include(PpBrowserWarnings)
+include(PpBrowserLib)
 include(PpBrowserLibp2p)
 pp_browser_define_libp2p_options()
 
@@ -95,10 +96,8 @@ include(dependencies)
 include(Progress)
 find_package(Threads REQUIRED)
 
-if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(src/render)
-endif()
-add_subdirectory(src/libp2p)
+# Owned forks before layered src/ so base/feature can link them.
+add_subdirectory(src/lib)
 
 if(PP_BROWSER_BUILD_TESTS)
   pp_configure_status("Configuring tests...")

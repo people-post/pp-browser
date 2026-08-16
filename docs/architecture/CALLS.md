@@ -272,7 +272,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `base/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
-| Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
+| Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
 
@@ -432,8 +432,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/messaging/CallMediaHost.h` | Narrow host façade for libp2p media side effects |
 | `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
-| `src/libp2p/integration/host/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
-| `src/libp2p/integration/host/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
+| `src/base/p2p/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
+| `src/base/p2p/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
@@ -447,7 +447,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
 | `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
-| `src/libp2p/integration/host/MediaRelayService.*` | Blind SFU |
+| `src/base/p2p/MediaRelayService.*` | Blind SFU |
 
 ---
 

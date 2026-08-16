@@ -1,9 +1,9 @@
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/Libp2pWorker.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
-#include "libp2p/integration/host/StreamFrameIo.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/Libp2pWorker.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/PeerSessionManager.h"
+#include "base/p2p/StreamFrameIo.h"
 
 #include "common/Logger.h"
 

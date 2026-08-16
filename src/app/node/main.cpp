@@ -7,7 +7,7 @@
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 
 #include <atomic>
 #include <chrono>

@@ -20,7 +20,7 @@ set(PP_FEATURE_MODULE_LIBS
 add_library(pp_feature INTERFACE)
 target_link_libraries(pp_feature INTERFACE
   ${PP_FEATURE_MODULE_LIBS}
-  pp_rmlui_backend
+  pp_base_render
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json

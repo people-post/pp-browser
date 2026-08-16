@@ -2,75 +2,74 @@
 
 **Tier:** architecture
 
-`src/` is organized in four layers plus fork sidecars. See dependency rules before adding includes.
+`src/` is organized in five layers. See dependency rules before adding includes.
 
 ## Layers
 
 | Layer | Path | Role |
 |-------|------|------|
 | Common | [`src/common/`](../../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
-| Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, data, people, messaging/ai/ui building blocks |
+| Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi, libp2p); may use `third_party` (+ optionally `common`); not product domain |
+| Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, p2p/render glue, data, people, messaging/ai/ui |
 | Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
-
-**Fork sidecars** (not layers): [`src/render/`](../../src/render/), [`src/libp2p/`](../../src/libp2p/)
 
 ## Dependency rule
 
 ```
-app → feature → base → common
+app → feature → base → lib → common
 ```
 
-No upward `#include` across layers. Forks are used at the base/feature boundary (`pp_rmlui_backend`, `libp2p/integration/`).
+`lib` and `common` may use `third_party`. No upward `#include` across layers.
 
-## Render subtree (`src/render/`)
+## Lib subtree (`src/lib/`)
 
 | Path | Role |
 |------|------|
-| `render/fork/` | Upstream-shaped RmlUi hard fork (`Include/`, `Source/`, `CMake/`) |
-| `render/fork/reference/backends/` | Upstream sample backends (reference only; not linked) |
-| `render/integration/platform/` | SDL platform adapter |
-| `render/integration/renderer/` | OpenGL3 render interface |
-| `render/integration/host/` | `BrowserHost` bootstrap |
+| `lib/rmlui/` | Upstream-shaped RmlUi hard fork (`Include/`, `Source/`, `CMake/`, `Tests/`) |
+| `lib/rmlui/reference/backends/` | Upstream sample backends (reference only; not linked) |
+| `lib/libp2p/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
+| `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
+
+Path constants: [`cmake/PpBrowserLib.cmake`](../../cmake/PpBrowserLib.cmake) (`PP_LIB_RMLUI_*`, `PP_LIB_LIBP2P_*`).
+
+## Base glue for forks
+
+| Path | Role |
+|------|------|
+| `base/render/platform/` | SDL platform adapter |
+| `base/render/renderer/` | OpenGL3 render interface |
+| `base/render/host/` | `BrowserHost` bootstrap |
+| `base/p2p/` | `Libp2pHost`, mesh/relay/stream glue |
 
 Dependency rule:
 
 ```
-integration/host → integration/platform + integration/renderer → fork/Include (public API only)
+base/render → lib/rmlui/Include (public API only)
+base/p2p → lib/libp2p/include (public API only)
+feature/ui → base/render
+feature/messaging → base/p2p
 ```
 
 Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src/feature/ui/`.
-
-## libp2p subtree (`src/libp2p/`)
-
-| Path | Role |
-|------|------|
-| `libp2p/fork/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
-| `libp2p/fork/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI); app + muxer tests |
-| `libp2p/fork/example/` | Sample programs (`PP_BROWSER_LIBP2P_EXAMPLES`); may still use DI injectors |
-| `libp2p/fork/test/` | Unit tests (`PP_BROWSER_LIBP2P_TESTING` / coverage) |
-| `libp2p/integration/host/` | `Libp2pHost` bootstrap glue (stub; chat history uses `createExplicitHost`) |
-
-Dependency rule:
-
-```
-feature/messaging → fork/include (createExplicitHost)
-integration/host → fork/include (public API only)
-```
 
 ## Base subfolders
 
 | Path | Contents |
 |------|----------|
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, lifecycle, branding/version |
-| `base/platform/` | OS adapters: SDL glue, paths, assets, credentials, notifications |
+| `base/platform/` | OS adapters: SDL glue, paths, assets, credentials, notifications (no GL) |
+| `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing) |
+| `base/render/` | RmlUi SDL/GL backend (`pp_base_render`) |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
 | `base/messaging/` | Thread types, JSON store, parsers |
-| `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + platform HW H264 (libp2p/SFU packet transport) |
+| `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + platform HW H264 |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
+
+Acyclic order (excerpt): `crypto` → `p2p` → `people`. `p2p` may include header-only `people/RelayScope.h` but must not link `pp_base_people`.
 
 ## Feature subfolders
 
@@ -97,29 +96,29 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | Target | Layer |
 |--------|-------|
 | `pp_common` | common |
-| `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_messaging`) |
+| `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_p2p`, `pp_base_render`) |
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
-| `pp_feature_*` | feature — one static library per module folder (e.g. `pp_feature_messaging`, `pp_feature_chat`) |
+| `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
-| `pp_rmlui_backend` | render integration (SDL/GL glue; defined in [`src/render/CMakeLists.txt`](../../src/render/CMakeLists.txt)) |
-| `pp_libp2p_integration` | libp2p integration glue (defined in [`src/libp2p/integration/CMakeLists.txt`](../../src/libp2p/integration/CMakeLists.txt)) |
 | `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
-Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix (e.g. `pp_browser_feature_chat_test`) to avoid name clashes with base suites.
+Base module tests compile to one executable per folder (e.g. `pp_browser_p2p_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
 
-Fork-sidecar CMake helpers live in `cmake/PpBrowserRender.cmake` and `cmake/PpBrowserLibp2p.cmake` (mirroring `cmake/PpBrowserBase.cmake` and `cmake/PpBrowserFeature.cmake`).
+Fork configure helpers: `cmake/PpBrowserLib.cmake`, `cmake/PpBrowserRender.cmake`, `cmake/PpBrowserLibp2p.cmake`.
 
 ## Test placement
 
-- Fork-level RmlUi tests live in [`src/render/fork/Tests/`](../../src/render/fork/Tests/) (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
+- Fork-level RmlUi tests live in [`src/lib/rmlui/Tests/`](../../src/lib/rmlui/Tests/) (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
+- Libp2p glue tests live under [`src/base/p2p/tests/`](../../src/base/p2p/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
-- Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on; helpers live in `cmake/PpBrowserBase.cmake`, `cmake/PpBrowserFeature.cmake`, `cmake/PpBrowserRender.cmake`, and `cmake/PpBrowserLibp2p.cmake`.
+- Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
 
 ## Litmus tests
 
 - **Common:** reusable in another project; no pp-browser domain types.
-- **Base:** product-specific but single-purpose (one store, one client, one parser).
+- **Lib:** owned upstream-shaped library; no `base`/`feature`/`app`.
+- **Base:** product-specific but single-purpose (one store, one client, one parser, or one glue module).
 - **Feature:** coordinates multiple base modules into a workflow or screen.
 - **App:** exists only to run and wire the product.
 
@@ -130,9 +129,12 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 ```cpp
 #include "common/Logger.h"
 #include "base/data/Config.h"
+#include "base/p2p/Libp2pHost.h"
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```
+
+Fork public APIs use their upstream include style (`<RmlUi/...>`, `<libp2p/...>`), with include roots from `pp_base_render` / `pp_base_p2p` PUBLIC dirs.
 
 ### Prefer include over forward declaration
 
