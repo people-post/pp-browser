@@ -563,6 +563,146 @@ TEST_F(StreamFrameIoTest, DuplexSessionEchoesOnSameStream) {
   EXPECT_EQ(*echo, payload);
 }
 
+TEST_F(StreamFrameIoTest, DuplexWriteCallbackAndReadOnce) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got_req = false;
+  bool wrote_ack = false;
+  std::vector<uint8_t> request;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          auto duplex = std::make_shared<DuplexFrameSession>();
+          auto policy = ControlJsonIoPolicy(b_host_.IoExecutor());
+          duplex->Start(
+              stream,
+              [&, duplex](Roe<std::vector<uint8_t>> frame) {
+                if (!frame) {
+                  return false;
+                }
+                {
+                  std::lock_guard lock(mu);
+                  request = *frame;
+                  got_req = true;
+                }
+                cv.notify_one();
+                const std::vector<uint8_t> ack = {'o', 'k'};
+                duplex->EnqueueOutbound(ack, [&, duplex](Roe<void> wrote) {
+                  {
+                    std::lock_guard lock(mu);
+                    wrote_ack = static_cast<bool>(wrote);
+                  }
+                  cv.notify_one();
+                  duplex->Stop();
+                });
+                return true;
+              },
+              [] { return false; }, std::move(policy));
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  auto open_res = open_future.get();
+  ASSERT_TRUE(open_res);
+  auto client_stream = open_res.value().stream;
+
+  std::mutex client_mu;
+  std::condition_variable client_cv;
+  bool got_ack = false;
+  std::vector<uint8_t> ack_body;
+  a_host_.Post([&, client_stream]() {
+    auto duplex = std::make_shared<DuplexFrameSession>();
+    auto policy = ControlJsonIoPolicy(a_host_.IoExecutor());
+    const std::vector<uint8_t> payload = {'p', 'i', 'n', 'g'};
+    (void)duplex->EnqueueOutbound(payload);
+    duplex->Start(
+        client_stream,
+        [&, duplex](Roe<std::vector<uint8_t>> frame) {
+          if (!frame) {
+            return false;
+          }
+          {
+            std::lock_guard lock(client_mu);
+            ack_body = *frame;
+            got_ack = true;
+          }
+          client_cv.notify_one();
+          return false;
+        },
+        [] { return false; }, std::move(policy));
+  });
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got_req && wrote_ack; }));
+  }
+  EXPECT_EQ(request, (std::vector<uint8_t>{'p', 'i', 'n', 'g'}));
+  EXPECT_TRUE(wrote_ack);
+
+  {
+    std::unique_lock lock(client_mu);
+    ASSERT_TRUE(client_cv.wait_for(lock, std::chrono::seconds(3), [&] { return got_ack; }));
+  }
+  EXPECT_EQ(ack_body, (std::vector<uint8_t>{'o', 'k'}));
+}
+
+TEST_F(StreamFrameIoTest, DuplexDropOldestPolicy) {
+  std::mutex mu;
+  std::condition_variable cv;
+  int drops = 0;
+  size_t last_backlog = 0;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          auto duplex = std::make_shared<DuplexFrameSession>();
+          auto policy = CallMediaIoPolicy();
+          policy.max_outbound_frames = 1;
+          policy.on_outbound_drop = [&]() {
+            std::lock_guard lock(mu);
+            ++drops;
+            cv.notify_one();
+          };
+          duplex->Start(
+              stream,
+              [](Roe<std::vector<uint8_t>>) { return true; },
+              [] { return false; }, std::move(policy));
+          duplex->EnqueueOutbound(std::vector<uint8_t>{1});
+          duplex->EnqueueOutbound(std::vector<uint8_t>{2});
+          duplex->EnqueueOutbound(std::vector<uint8_t>{3});
+          {
+            std::lock_guard lock(mu);
+            last_backlog = duplex->OutboundBacklog();
+          }
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  ASSERT_TRUE(open_future.get());
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return drops >= 1; }));
+  }
+  EXPECT_GE(drops, 1);
+  EXPECT_LE(last_backlog, 2u);
+}
+
 TEST(Libp2pSchedulerTest, PostsControlToWorkerPool) {
   Libp2pHost host;
   Libp2pHostConfig cfg;

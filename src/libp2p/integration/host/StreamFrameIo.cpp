@@ -10,6 +10,7 @@
 #include <cstring>
 #include <future>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace pbr {
@@ -327,61 +328,6 @@ void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
   });
 }
 
-void AsyncLengthPrefixedWriter::Start(std::shared_ptr<Stream> stream) {
-  stream_ = std::move(stream);
-  running_.store(true, std::memory_order_release);
-  PumpWrite();
-}
-
-void AsyncLengthPrefixedWriter::Stop() {
-  running_.store(false, std::memory_order_release);
-  queue_.clear();
-  stream_.reset();
-}
-
-bool AsyncLengthPrefixedWriter::Enqueue(const std::vector<uint8_t>& body, WriteCallback on_done) {
-  if (!running_.load(std::memory_order_acquire) || !stream_) {
-    return false;
-  }
-  PendingWrite pending;
-  pending.frame = std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body));
-  pending.on_done = std::move(on_done);
-  queue_.push_back(std::move(pending));
-  PumpWrite();
-  return true;
-}
-
-void AsyncLengthPrefixedWriter::PumpWrite() {
-  if (!running_.load(std::memory_order_acquire) || write_inflight_ || !stream_) {
-    return;
-  }
-  if (queue_.empty()) {
-    return;
-  }
-  PendingWrite pending = std::move(queue_.front());
-  queue_.erase(queue_.begin());
-  write_inflight_ = true;
-  auto self = shared_from_this();
-  libp2p::write(stream_, *pending.frame, [self, pending = std::move(pending)](outcome::result<void> result) mutable {
-    self->write_inflight_ = false;
-    if (pending.on_done) {
-      if (result) {
-        pending.on_done({});
-      } else {
-        pending.on_done(Error(std::string("Failed to write length-prefixed frame: ") + result.error().message()));
-      }
-    }
-    if (!self->running_.load(std::memory_order_acquire)) {
-      return;
-    }
-    if (!result) {
-      self->Stop();
-      return;
-    }
-    self->PumpWrite();
-  });
-}
-
 void StreamBridge::Start(std::shared_ptr<Stream> from, std::shared_ptr<Stream> to, StreamCancelCheck is_cancelled,
                          std::function<void()> on_closed, size_t chunk_bytes) {
   from_ = std::move(from);
@@ -507,9 +453,8 @@ void DuplexFrameSession::OnReadDeadline() {
 }
 
 void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_frame,
-                               StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config,
-                               ClosedCallback on_closed, size_t max_outbound_frames,
-                               std::function<void()> on_outbound_drop, bool write_preferred) {
+                               StreamCancelCheck is_cancelled, StreamIoPolicy policy,
+                               ClosedCallback on_closed) {
   if (!stream || !on_frame) {
     return;
   }
@@ -517,10 +462,14 @@ void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_f
   on_frame_ = std::move(on_frame);
   is_cancelled_ = std::move(is_cancelled);
   on_closed_ = std::move(on_closed);
-  config_ = std::move(config);
-  max_outbound_frames_ = max_outbound_frames;
-  on_outbound_drop_ = std::move(on_outbound_drop);
-  write_preferred_ = write_preferred;
+  config_ = std::move(policy.frame);
+  drop_ = policy.drop;
+  max_outbound_frames_ = policy.max_outbound_frames;
+  on_outbound_drop_ = std::move(policy.on_outbound_drop);
+  write_preferred_ = policy.write_preferred;
+  read_once_ = policy.read_once;
+  read_completed_ = false;
+  closed_ = false;
   deadline_generation_ = std::make_shared<std::atomic<uint64_t>>(0);
   running_.store(true, std::memory_order_release);
   PumpWrite();
@@ -528,11 +477,12 @@ void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_f
 }
 
 void DuplexFrameSession::Stop() {
+  closed_ = true;
   running_.store(false, std::memory_order_release);
   CancelReadDeadline();
   read_inflight_ = false;
   write_inflight_ = false;
-  outbound_.clear();
+  FailPendingWrites(Error("duplex stopped"));
   outbound_backlog_.store(0, std::memory_order_relaxed);
   stream_.reset();
   on_frame_ = {};
@@ -545,19 +495,40 @@ void DuplexFrameSession::PublishBacklog() {
   outbound_backlog_.store(n, std::memory_order_relaxed);
 }
 
-bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
-  if (!running_.load(std::memory_order_acquire) || !stream_) {
+void DuplexFrameSession::FailPendingWrites(const Error& error) {
+  std::vector<PendingWrite> pending;
+  pending.swap(outbound_);
+  for (auto& item : pending) {
+    if (item.on_done) {
+      item.on_done(error);
+    }
+  }
+}
+
+bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done) {
+  if (closed_ || (running_.load(std::memory_order_acquire) && !stream_)) {
     return false;
   }
   if (max_outbound_frames_ > 0 && outbound_.size() >= max_outbound_frames_) {
+    if (drop_ != StreamIoPolicy::Drop::Oldest) {
+      return false;
+    }
+    PendingWrite dropped = std::move(outbound_.front());
     outbound_.erase(outbound_.begin());
+    if (dropped.on_done) {
+      dropped.on_done(Error("outbound frame dropped"));
+    }
     if (on_outbound_drop_) {
       on_outbound_drop_();
     }
   }
-  outbound_.push_back(std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body)));
+  PendingWrite pending;
+  pending.frame = std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body));
+  pending.on_done = std::move(on_done);
+  outbound_.push_back(std::move(pending));
   PublishBacklog();
-  if (write_preferred_ || (!read_inflight_ && !write_inflight_)) {
+  if (running_.load(std::memory_order_acquire) &&
+      (write_preferred_ || (!read_inflight_ && !write_inflight_))) {
     PumpWrite();
   }
   return true;
@@ -648,6 +619,9 @@ void DuplexFrameSession::OnReadBody(outcome::result<void> result) {
 
 void DuplexFrameSession::DeliverFrame(std::vector<uint8_t> body) {
   read_inflight_ = false;
+  if (read_once_) {
+    read_completed_ = true;
+  }
   bool keep_open = true;
   if (on_frame_) {
     keep_open = on_frame_(std::move(body));
@@ -671,15 +645,27 @@ void DuplexFrameSession::PumpWrite() {
     MaybeResumeRead();
     return;
   }
-  auto frame = outbound_.front();
+  PendingWrite pending = std::move(outbound_.front());
   outbound_.erase(outbound_.begin());
   write_inflight_ = true;
   PublishBacklog();
   auto self = shared_from_this();
-  libp2p::write(stream_, *frame, [self, frame](outcome::result<void> result) {
+  libp2p::write(stream_, *pending.frame,
+                [self, pending = std::move(pending)](outcome::result<void> result) mutable {
     self->write_inflight_ = false;
     self->PublishBacklog();
-    if (!self->running_.load(std::memory_order_acquire)) {
+    const bool running = self->running_.load(std::memory_order_acquire);
+    if (pending.on_done) {
+      if (!running) {
+        pending.on_done(Error("duplex stopped"));
+      } else if (!result) {
+        pending.on_done(Error(std::string("Failed to write length-prefixed frame: ") +
+                              result.error().message()));
+      } else {
+        pending.on_done({});
+      }
+    }
+    if (!running) {
       return;
     }
     if (!result) {
@@ -692,7 +678,7 @@ void DuplexFrameSession::PumpWrite() {
           logging::getLogger("DuplexFrameSession").warning
               << "write_failed_kept_open n=" << n;
         }
-        self->outbound_.clear();
+        self->FailPendingWrites(Error("outbound write failed"));
         self->PublishBacklog();
         if (self->on_outbound_drop_) {
           self->on_outbound_drop_();
@@ -712,6 +698,9 @@ void DuplexFrameSession::MaybeResumeRead() {
       !stream_) {
     return;
   }
+  if (read_once_ && read_completed_) {
+    return;
+  }
   if (!write_preferred_ && (write_inflight_ || !outbound_.empty())) {
     return;
   }
@@ -728,12 +717,13 @@ void DuplexFrameSession::CloseSession(const char* reason) {
   if (!running_.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
+  closed_ = true;
   const char* tag = (reason && reason[0]) ? reason : "unknown";
   logging::getLogger("DuplexFrameSession").warning << "CloseSession reason=" << tag;
   CancelReadDeadline();
   read_inflight_ = false;
   write_inflight_ = false;
-  outbound_.clear();
+  FailPendingWrites(Error(std::string("duplex closed: ") + tag));
   outbound_backlog_.store(0, std::memory_order_relaxed);
   stream_.reset();
   on_frame_ = {};

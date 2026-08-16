@@ -56,7 +56,7 @@ flowchart TB
   subgraph host [libp2p/integration/host — transport]
     CM[CallMediaDirectService<br/>CallMediaSession SM]
     MR[MediaRelayService<br/>Attach SM + HostSession]
-    Frame[DuplexFrameSession<br/>Idle/Header/Body only]
+    Frame[DuplexFrameSession<br/>StreamIoPolicy pipe]
   end
   Life -->|"DirectConnected / ConnectFailed"| Bridge
   Bridge -->|"Connect / Detach / events"| CM
@@ -71,8 +71,10 @@ flowchart TB
 | **Bridge / Topology** | When to dial, retry, SoftMigrate, attach | Internal host phase bits |
 | **CallMediaDirectService SM** | One active 1:1 media session | Invite TTL, N025 listen desire |
 | **MediaRelay attach SM** | Per-inbound-stream control handshake | Hop eligibility / pricing (mesh) |
-| **DuplexFrameSession** | Frame R/W phases | Session admit / glare |
+| **DuplexFrameSession** | Frame R/W + `StreamIoPolicy` (cap / drop / `read_once`) | Session admit / glare / call / thread state |
 | **Fork Router** | Multiselect → handler | App session policy |
+
+Chat and chat-history **use the same pipe** (`ControlJsonIoPolicy`); they still have **no** product state machine (linear request/response — V033 non-goal).
 
 **Two machines, not one.** Call-media is “one active duplex.” Media-relay is “many HostSessions × participants × per-stream control.” Specs live next to their owners: this file (call-media) and [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md).
 

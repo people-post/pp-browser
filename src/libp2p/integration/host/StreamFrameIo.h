@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "libp2p/integration/host/Libp2pExecutorLimits.h"
 
 #include <libp2p/connection/stream.hpp>
 
@@ -32,6 +33,71 @@ struct LengthPrefixedFrameConfig {
   /** Host io_context executor — required for async/duplex read_timeout. */
   boost::asio::any_io_executor timer_executor{};
 };
+
+/** App-level QoS for one DuplexFrameSession (not Yamux / not the peer). */
+enum class StreamIoClass {
+  Realtime,
+  Interactive,
+  Control,
+  Bulk,
+};
+
+struct StreamIoPolicy {
+  enum class Drop { Never, Oldest };
+
+  StreamIoClass cls = StreamIoClass::Control;
+  Drop drop = Drop::Never;
+  /** Queued frames (not counting the in-flight write). 0 = unbounded. */
+  size_t max_outbound_frames = 0;
+  bool write_preferred = false;
+  /** Stop reading after the first successful frame (chat / history one-shot). */
+  bool read_once = false;
+  LengthPrefixedFrameConfig frame;
+  std::function<void()> on_outbound_drop;
+};
+
+inline StreamIoPolicy CallMediaIoPolicy() {
+  StreamIoPolicy policy;
+  policy.cls = StreamIoClass::Realtime;
+  policy.drop = StreamIoPolicy::Drop::Oldest;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxCallMediaOutboundFrames;
+  policy.write_preferred = true;
+  policy.frame.max_frame_bytes = Libp2pExecutorLimits::kMaxCallMediaFrameBytes;
+  return policy;
+}
+
+inline StreamIoPolicy MediaRelayHopIoPolicy() {
+  StreamIoPolicy policy;
+  policy.cls = StreamIoClass::Realtime;
+  policy.drop = StreamIoPolicy::Drop::Oldest;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames;
+  policy.write_preferred = true;
+  policy.frame.max_frame_bytes = Libp2pExecutorLimits::kMaxMediaDataFrameBytes;
+  policy.frame.allow_empty_body = true;
+  return policy;
+}
+
+inline StreamIoPolicy MediaRelayClientIoPolicy() {
+  StreamIoPolicy policy = MediaRelayHopIoPolicy();
+  policy.cls = StreamIoClass::Interactive;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames;
+  return policy;
+}
+
+inline StreamIoPolicy ControlJsonIoPolicy(
+    boost::asio::any_io_executor timer_executor,
+    std::chrono::milliseconds read_timeout = kDefaultControlFrameReadTimeout,
+    size_t max_frame_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes) {
+  StreamIoPolicy policy;
+  policy.cls = StreamIoClass::Control;
+  policy.drop = StreamIoPolicy::Drop::Never;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.read_once = true;
+  policy.frame.max_frame_bytes = max_frame_bytes;
+  policy.frame.read_timeout = read_timeout;
+  policy.frame.timer_executor = std::move(timer_executor);
+  return policy;
+}
 
 std::vector<uint8_t> EncodeLengthPrefixedFrame(const std::vector<uint8_t>& body);
 uint64_t DecodeLengthPrefixedHeader(const std::vector<uint8_t>& header8);
@@ -81,28 +147,6 @@ private:
   std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };
 
-/** Async length-prefixed frame writer with an outbound queue. */
-class AsyncLengthPrefixedWriter : public std::enable_shared_from_this<AsyncLengthPrefixedWriter> {
-public:
-  using WriteCallback = std::function<void(Roe<void>)>;
-
-  void Start(std::shared_ptr<libp2p::connection::Stream> stream);
-  void Stop();
-  bool Enqueue(const std::vector<uint8_t>& body, WriteCallback on_done = {});
-
-private:
-  void PumpWrite();
-
-  std::shared_ptr<libp2p::connection::Stream> stream_;
-  std::atomic<bool> running_{false};
-  bool write_inflight_ = false;
-  struct PendingWrite {
-    std::shared_ptr<std::vector<uint8_t>> frame;
-    WriteCallback on_done;
-  };
-  std::vector<PendingWrite> queue_;
-};
-
 /** Byte pump from one stream to another on the host io thread. */
 class StreamBridge : public std::enable_shared_from_this<StreamBridge> {
 public:
@@ -141,15 +185,15 @@ public:
   using FrameHandler = std::function<bool(Roe<std::vector<uint8_t>> body)>;
   /** reason is a stable short tag (e.g. read_eof, framing, handler, write_failed, stop). */
   using ClosedCallback = std::function<void(const char* reason)>;
+  using WriteCallback = std::function<void(Roe<void>)>;
 
   void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameHandler on_frame,
-             StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {},
-             ClosedCallback on_closed = {}, size_t max_outbound_frames = 0,
-             std::function<void()> on_outbound_drop = {}, bool write_preferred = false);
+             StreamCancelCheck is_cancelled, StreamIoPolicy policy = {},
+             ClosedCallback on_closed = {});
   void Stop();
 
-  /** Queue a frame body (length prefix added on write). Io-thread safe after Start. */
-  bool EnqueueOutbound(std::vector<uint8_t> body);
+  /** Queue a frame body (length prefix added on write). Io-thread affine after Start. */
+  bool EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done = {});
 
   /** Queued frames + in-flight write (0 if idle). Safe from any thread. */
   size_t OutboundBacklog() const {
@@ -157,6 +201,11 @@ public:
   }
 
 private:
+  struct PendingWrite {
+    std::shared_ptr<std::vector<uint8_t>> frame;
+    WriteCallback on_done;
+  };
+
   void PublishBacklog();
   void BeginRead();
   void OnReadHeader(outcome::result<void> result);
@@ -164,6 +213,7 @@ private:
   void DeliverFrame(std::vector<uint8_t> body);
   void PumpWrite();
   void MaybeResumeRead();
+  void FailPendingWrites(const Error& error);
   void CloseSession(const char* reason);
   void ArmReadDeadline();
   void CancelReadDeadline();
@@ -174,16 +224,20 @@ private:
   StreamCancelCheck is_cancelled_;
   ClosedCallback on_closed_;
   LengthPrefixedFrameConfig config_;
+  StreamIoPolicy::Drop drop_ = StreamIoPolicy::Drop::Never;
   size_t max_outbound_frames_ = 0;
   std::function<void()> on_outbound_drop_;
   bool write_preferred_ = false;
+  bool read_once_ = false;
+  bool read_completed_ = false;
+  bool closed_ = false;
   std::atomic<bool> running_{false};
   std::atomic<size_t> outbound_backlog_{0};
   bool read_inflight_ = false;
   bool write_inflight_ = false;
   libp2p::Bytes header_buf_;
   libp2p::Bytes payload_buf_;
-  std::vector<std::shared_ptr<std::vector<uint8_t>>> outbound_;
+  std::vector<PendingWrite> outbound_;
   std::shared_ptr<boost::asio::steady_timer> read_timer_;
   std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };

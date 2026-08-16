@@ -404,6 +404,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         done->set_value();
         return;
       }
+      auto policy = MediaRelayClientIoPolicy();
       duplex->Start(
           stream,
           [self, epoch](Roe<std::vector<uint8_t>> frame_res) {
@@ -432,7 +433,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             return true;
           },
           [cancelled]() { return cancelled && cancelled->load(std::memory_order_acquire); },
-          MediaDataFrameConfig(),
+          std::move(policy),
           [self, epoch, cancelled](const char* reason) {
             // Intentional Detach/Stop sets cancelled before Stop (on_closed cleared) or bumps epoch.
             if (cancelled && cancelled->load(std::memory_order_acquire)) {
@@ -465,10 +466,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             if (handler) {
               handler();
             }
-          },
-          Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames,
-          []() {},
-          /*write_preferred=*/true);
+          });
       done->set_value();
     });
     fut.wait();
@@ -725,6 +723,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       const auto cancel_check = [cancelled = part->duplex_cancelled]() {
         return cancelled && cancelled->load(std::memory_order_acquire);
       };
+      auto policy = MediaRelayHopIoPolicy();
+      policy.on_outbound_drop = [self, session, part]() {
+        std::lock_guard<std::mutex> lock(self->mu);
+        ++part->drops_queue;
+        ++session->drops_total;
+        ++session->drops_queue;
+      };
       part->duplex->Start(
           part->stream,
           [self, session, part](Roe<std::vector<uint8_t>> frame_res) {
@@ -733,18 +738,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             }
             return self->ProcessParticipantFrame(session, part, *frame_res);
           },
-          cancel_check, MediaDataFrameConfig(),
+          cancel_check, std::move(policy),
           [self, session, part](const char* reason) {
             self->CleanupParticipant(session, part, reason);
-          },
-          Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames,
-          [self, session, part]() {
-            std::lock_guard<std::mutex> lock(self->mu);
-            ++part->drops_queue;
-            ++session->drops_total;
-            ++session->drops_queue;
-          },
-          /*write_preferred=*/true);
+          });
       done->set_value();
     });
     fut.wait();

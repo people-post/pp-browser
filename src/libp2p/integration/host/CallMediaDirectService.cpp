@@ -29,17 +29,8 @@ using libp2p::Bytes;
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
 
-constexpr size_t kMaxCallMediaFrameBytes = 16 * 1024;
-constexpr size_t kMaxOutboundFrames = 64;
 /** Default bound for hello/ack IO when Connect does not supply timeout_ms (inbound-only). */
 constexpr int kDefaultHandshakeTimeoutMs = 15000;
-
-LengthPrefixedFrameConfig CallMediaFrameConfig() {
-  LengthPrefixedFrameConfig config;
-  config.max_frame_bytes = kMaxCallMediaFrameBytes;
-  config.allow_empty_body = false;
-  return config;
-}
 
 void ResetQuiet(const std::shared_ptr<Stream>& stream) {
   if (stream) {
@@ -516,20 +507,20 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
           self->log().warning << "Call-media outbound queue full; dropping oldest";
         }
       };
+      auto policy = CallMediaIoPolicy();
+      policy.on_outbound_drop = on_drop;
       self->duplex->Start(
           s,
           [self](Roe<std::vector<uint8_t>> frame) { return self->HandleMediaFrame(std::move(frame)); },
           [cancelled = self->duplex_cancelled]() {
             return cancelled && cancelled->load(std::memory_order_acquire);
           },
-          CallMediaFrameConfig(),
+          std::move(policy),
           [self](const char* reason) {
             self->Fail(std::string("call-media stream closed (") +
                            (reason && reason[0] ? reason : "unknown") + ")",
                        CallMediaSessionEvent::DuplexEof);
-          },
-          kMaxOutboundFrames, on_drop,
-          /*write_preferred=*/true);
+          });
       {
         std::lock_guard lock(self->mu);
         if (!self->ApplyLocked(CallMediaSessionEvent::DuplexStarted, self->active_params.call_id) &&
