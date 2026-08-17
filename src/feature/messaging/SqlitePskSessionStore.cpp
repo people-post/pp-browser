@@ -64,6 +64,18 @@ SqlitePskSessionStore::SqlitePskSessionStore(std::string profile_db_path, std::s
   }
 }
 
+SqlitePskSessionStore::~SqlitePskSessionStore() {
+  std::lock_guard lock(mutex_);
+  if (db_) {
+    sqlite3_close(db_);
+    db_ = nullptr;
+  }
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+    dek_.clear();
+  }
+}
+
 Roe<void> SqlitePskSessionStore::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
