@@ -11,8 +11,11 @@
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
+#include "common/Utilities.h"
+
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 
 namespace pbr {
 namespace {
@@ -33,31 +36,26 @@ ByteVector TestMasterPsk() {
   return psk;
 }
 
-std::filesystem::path MakeLockDir(const std::string& suffix) {
-  auto dir = std::filesystem::temp_directory_path() / ("pp_public_lock_" + suffix);
-  std::filesystem::remove_all(dir);
-  return dir;
-}
-
 struct LockFixture {
   std::filesystem::path dir;
-  SqliteThreadStore store;
-  SqlitePskSessionStore psk_store;
-  PublicPskLockCoordinator lock;
+  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<SqlitePskSessionStore> psk_store;
+  std::unique_ptr<PublicPskLockCoordinator> lock;
   std::string thread_id;
   ChatTargetKey key;
 
   explicit LockFixture(const std::string& suffix)
-      : dir(MakeLockDir(suffix)),
-        store(dir.string()),
-        psk_store(store.ProfileDbPath(), suffix),
-        lock(store, psk_store) {
-    EXPECT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
+      : dir(std::filesystem::temp_directory_path() / ("pp_public_lock_" + suffix + "_" + util::GenerateUuid())) {
+    std::filesystem::remove_all(dir);
+    store = std::make_unique<SqliteThreadStore>(dir.string());
+    psk_store = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), suffix);
+    lock = std::make_unique<PublicPskLockCoordinator>(*store, *psk_store);
+    EXPECT_TRUE(static_cast<bool>(psk_store->SetDek(TestDek())));
     DirectChatTarget target;
     target.peer_identity_kind = "account";
     target.peer_identity_value = "account:bob";
     target.channel = ThreadChannel::E2ePublic;
-    auto thread = store.FindOrCreateDirectThread(target, "contact-bob", "Bob");
+    auto thread = store->FindOrCreateDirectThread(target, "contact-bob", "Bob");
     EXPECT_TRUE(static_cast<bool>(thread));
     thread_id = thread->id;
     key.peer_identity_kind = "account";
@@ -68,10 +66,15 @@ struct LockFixture {
     record.session_epoch = 1;
     record.master_psk_b64 = Base64Encode(TestMasterPsk());
     record.key_scope = PublicKeyScope::Account;
-    EXPECT_TRUE(static_cast<bool>(psk_store.Save(record)));
+    EXPECT_TRUE(static_cast<bool>(psk_store->Save(record)));
   }
 
-  ~LockFixture() { std::filesystem::remove_all(dir); }
+  ~LockFixture() {
+    lock.reset();
+    psk_store.reset();
+    store.reset();
+    std::filesystem::remove_all(dir);
+  }
 };
 
 ThreadMessage RotateMessage(const PskRotateDetail& detail) {
@@ -96,12 +99,12 @@ TEST(PublicPskLockCoordinatorTest, HashMismatchRejects) {
   LockFixture alice("hash");
   auto bob_kem = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob_kem));
-  auto plan = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 1000);
+  auto plan = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 1000);
   ASSERT_TRUE(static_cast<bool>(plan)) << plan.error().message;
   plan->detail.key_init_hash = std::string(64, '0');
   auto message = RotateMessage(plan->detail);
   auto envelope = RotateEnvelope(plan->key_init_b64, plan->old_epoch);
-  auto applied = alice.lock.ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:bob", 1001);
+  auto applied = alice.lock->ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:bob", 1001);
   ASSERT_FALSE(static_cast<bool>(applied));
   EXPECT_NE(applied.error().message.find("key_init_hash"), std::string::npos);
 }
@@ -112,24 +115,24 @@ TEST(PublicPskLockCoordinatorTest, SiblingOfLockerLocksOut) {
   auto alice_kem = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob_kem));
   ASSERT_TRUE(static_cast<bool>(alice_kem));
-  auto plan = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 1000);
+  auto plan = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 1000);
   ASSERT_TRUE(static_cast<bool>(plan)) << plan.error().message;
-  ASSERT_TRUE(static_cast<bool>(alice.lock.AbortPrepare(*plan)));
+  ASSERT_TRUE(static_cast<bool>(alice.lock->AbortPrepare(*plan)));
 
-  PskSessionRecord sibling = alice.psk_store.Load(alice.key)->value();
+  PskSessionRecord sibling = alice.psk_store->Load(alice.key)->value();
   sibling.last_rotation_id.reset();
   sibling.thread_kem_pk_b64.reset();
   sibling.thread_kem_sk_b64.reset();
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(sibling)));
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(sibling)));
 
   auto message = RotateMessage(plan->detail);
   auto envelope = RotateEnvelope(plan->key_init_b64, plan->old_epoch);
   envelope.sender_contact_id = "account:alice";
   auto applied =
-      alice.lock.ApplyInbound(alice.thread_id, envelope, message, alice_kem->private_key, "account:alice", 1001);
+      alice.lock->ApplyInbound(alice.thread_id, envelope, message, alice_kem->private_key, "account:alice", 1001);
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
   EXPECT_EQ(*applied, PublicKeyScope::LockedOut);
-  auto loaded = alice.psk_store.Load(alice.key);
+  auto loaded = alice.psk_store->Load(alice.key);
   ASSERT_TRUE(static_cast<bool>(loaded));
   ASSERT_TRUE(loaded->has_value());
   EXPECT_EQ(loaded->value().key_scope, PublicKeyScope::LockedOut);
@@ -144,19 +147,19 @@ TEST(PublicPskLockCoordinatorTest, PeerAdoptsAndInitiatorLocks) {
   bob_target.peer_identity_kind = "account";
   bob_target.peer_identity_value = "account:alice";
   bob_target.channel = ThreadChannel::E2ePublic;
-  auto bob_thread = bob.store.FindOrCreateDirectThread(bob_target, "contact-alice", "Alice");
+  auto bob_thread = bob.store->FindOrCreateDirectThread(bob_target, "contact-alice", "Alice");
   ASSERT_TRUE(static_cast<bool>(bob_thread));
   bob.thread_id = bob_thread->id;
   PskSessionRecord bob_record;
   bob_record.key = bob.key;
   bob_record.session_epoch = 1;
   bob_record.master_psk_b64 = Base64Encode(TestMasterPsk());
-  ASSERT_TRUE(static_cast<bool>(bob.psk_store.Save(bob_record)));
-  PublicPskLockCoordinator bob_lock(bob.store, bob.psk_store);
+  ASSERT_TRUE(static_cast<bool>(bob.psk_store->Save(bob_record)));
+  PublicPskLockCoordinator bob_lock(*bob.store, *bob.psk_store);
 
   auto bob_kem = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob_kem));
-  auto plan = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 2000);
+  auto plan = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 2000);
   ASSERT_TRUE(static_cast<bool>(plan)) << plan.error().message;
   EXPECT_EQ(plan->detail.wrap_kind, kPskRotateWrapAccountKem);
   EXPECT_EQ(plan->next_scope, PublicKeyScope::DeviceSelf);
@@ -169,12 +172,12 @@ TEST(PublicPskLockCoordinatorTest, PeerAdoptsAndInitiatorLocks) {
   ASSERT_TRUE(static_cast<bool>(bob_scope)) << bob_scope.error().message;
   EXPECT_EQ(*bob_scope, PublicKeyScope::Account);
 
-  ASSERT_TRUE(static_cast<bool>(alice.lock.Commit(*plan, 2002)));
-  auto alice_scope = alice.lock.GetKeyScope(alice.thread_id);
+  ASSERT_TRUE(static_cast<bool>(alice.lock->Commit(*plan, 2002)));
+  auto alice_scope = alice.lock->GetKeyScope(alice.thread_id);
   ASSERT_TRUE(static_cast<bool>(alice_scope));
   EXPECT_EQ(*alice_scope, PublicKeyScope::DeviceSelf);
 
-  auto bob_loaded = bob.psk_store.Load(bob.key);
+  auto bob_loaded = bob.psk_store->Load(bob.key);
   ASSERT_TRUE(static_cast<bool>(bob_loaded) && bob_loaded->has_value());
   EXPECT_EQ(bob_loaded->value().session_epoch, 2u);
   EXPECT_NE(*bob_loaded->value().master_psk_b64, Base64Encode(TestMasterPsk()));
@@ -185,16 +188,16 @@ TEST(PublicPskLockCoordinatorTest, SecondLockUsesConversationKem) {
   LockFixture alice("pair_a");
   auto bob_kem = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob_kem));
-  auto first = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 3000);
+  auto first = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 3000);
   ASSERT_TRUE(static_cast<bool>(first));
-  ASSERT_TRUE(static_cast<bool>(alice.lock.Commit(*first, 3001)));
+  ASSERT_TRUE(static_cast<bool>(alice.lock->Commit(*first, 3001)));
 
-  PskSessionRecord record = alice.psk_store.Load(alice.key)->value();
+  PskSessionRecord record = alice.psk_store->Load(alice.key)->value();
   record.key_scope = PublicKeyScope::Account;
   record.peer_thread_kem_pk_b64 = record.thread_kem_pk_b64;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(record)));
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
 
-  auto second = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 3002);
+  auto second = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 3002);
   ASSERT_TRUE(static_cast<bool>(second)) << second.error().message;
   EXPECT_EQ(second->detail.wrap_kind, kPskRotateWrapThreadKem);
   EXPECT_EQ(second->next_scope, PublicKeyScope::DevicePair);
@@ -204,7 +207,7 @@ TEST(PublicPskLockCoordinatorTest, ConcurrentInboundWinnerAbortsLocalCommit) {
   LockFixture alice("race");
   auto bob_kem = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob_kem));
-  auto local = alice.lock.PrepareLock(alice.thread_id, bob_kem->public_key, 4000);
+  auto local = alice.lock->PrepareLock(alice.thread_id, bob_kem->public_key, 4000);
   ASSERT_TRUE(static_cast<bool>(local));
 
   PskRotateDetail inbound = local->detail;
@@ -226,11 +229,11 @@ TEST(PublicPskLockCoordinatorTest, ConcurrentInboundWinnerAbortsLocalCommit) {
   auto envelope = RotateEnvelope(established->key_init_b64, 1);
   envelope.sender_contact_id = "account:bob";
   auto applied =
-      alice.lock.ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:alice", 4001);
+      alice.lock->ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:alice", 4001);
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
 
-  ASSERT_TRUE(static_cast<bool>(alice.lock.Commit(*local, 4002)));
-  auto loaded = alice.psk_store.Load(alice.key);
+  ASSERT_TRUE(static_cast<bool>(alice.lock->Commit(*local, 4002)));
+  auto loaded = alice.psk_store->Load(alice.key);
   ASSERT_TRUE(static_cast<bool>(loaded) && loaded->has_value());
   EXPECT_EQ(*loaded->value().last_rotation_id, inbound.rotation_id);
   EXPECT_EQ(loaded->value().session_epoch, 2u);
@@ -238,33 +241,33 @@ TEST(PublicPskLockCoordinatorTest, ConcurrentInboundWinnerAbortsLocalCommit) {
 
 TEST(PublicPskLockCoordinatorTest, AutoRekeyOnlyWhenBothDeviceBound) {
   LockFixture alice("auto");
-  EXPECT_FALSE(*alice.lock.ShouldAutoRekey(alice.thread_id, 10));
+  EXPECT_FALSE(*alice.lock->ShouldAutoRekey(alice.thread_id, 10));
 
-  auto loaded = alice.psk_store.Load(alice.key);
+  auto loaded = alice.psk_store->Load(alice.key);
   PskSessionRecord record = loaded->value();
   record.key_scope = PublicKeyScope::DevicePair;
   record.peer_thread_kem_pk_b64 = "dGVzdA==";
   record.psk_rotate_msg_count = kPublicPskAutoRotateMsgCount;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(record)));
-  EXPECT_TRUE(*alice.lock.ShouldAutoRekey(alice.thread_id, 10));
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
+  EXPECT_TRUE(*alice.lock->ShouldAutoRekey(alice.thread_id, 10));
 
   record.psk_rotate_msg_count = 0;
   record.last_psk_rotate_at = 1;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(record)));
-  EXPECT_TRUE(*alice.lock.ShouldAutoRekey(alice.thread_id, 1 + kPublicPskAutoRotateIntervalMs));
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
+  EXPECT_TRUE(*alice.lock->ShouldAutoRekey(alice.thread_id, 1 + kPublicPskAutoRotateIntervalMs));
 
   record.key_scope = PublicKeyScope::DeviceSelf;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(record)));
-  EXPECT_FALSE(*alice.lock.ShouldAutoRekey(alice.thread_id, 1 + kPublicPskAutoRotateIntervalMs));
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
+  EXPECT_FALSE(*alice.lock->ShouldAutoRekey(alice.thread_id, 1 + kPublicPskAutoRotateIntervalMs));
 }
 
 TEST(PublicPskLockCoordinatorTest, LinkExportOmitsDeviceScopedPsk) {
   LockFixture alice("link");
-  auto loaded = alice.psk_store.Load(alice.key);
+  auto loaded = alice.psk_store->Load(alice.key);
   PskSessionRecord record = loaded->value();
   record.key_scope = PublicKeyScope::DeviceSelf;
-  ASSERT_TRUE(static_cast<bool>(alice.psk_store.Save(record)));
-  auto collected = LinkDeviceCoordinator::CollectPublicPsks(alice.psk_store);
+  ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
+  auto collected = LinkDeviceCoordinator::CollectPublicPsks(*alice.psk_store);
   ASSERT_TRUE(static_cast<bool>(collected));
   EXPECT_TRUE(collected->empty());
 }
