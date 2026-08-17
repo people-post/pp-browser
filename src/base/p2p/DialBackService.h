@@ -49,7 +49,7 @@ public:
 
 private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::shared_ptr<Impl> impl_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
   bool started_ = false;

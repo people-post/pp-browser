@@ -26,7 +26,7 @@ struct CallMediaSessionPhaseOutcome {
 
 /**
  * Pure call-media phase table (V033). Logging / SetPhase / stream IO stay in
- * CallMediaDirectService::Impl.
+ * CallMediaSession.
  */
 CallMediaSessionPhaseOutcome DecideCallMediaSessionPhase(CallMediaSessionPhase phase,
                                                          CallMediaSessionEvent ev,

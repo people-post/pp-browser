@@ -1,6 +1,7 @@
 #include "base/p2p/DialBackService.h"
 
 #include "base/p2p/Libp2pWorker.h"
+#include "base/p2p/SettledWait.h"
 #include "base/p2p/StreamJsonFrame.h"
 
 #include <libp2p/connection/stream.hpp>
@@ -74,7 +75,7 @@ DialBackProbeResult DialTargets(PeerSessionManager& sessions,
 
 } // namespace
 
-struct DialBackService::Impl {
+struct DialBackService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex handler_mutex;
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
@@ -85,7 +86,8 @@ struct DialBackService::Impl {
       return;
     }
     auto stream = std::move(stream_and_protocol.stream);
-    PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
+    auto self = shared_from_this();
+    PostLibp2pWorker(*host, WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
       auto json_utf8 = BlockingReadStreamJson(stream);
       if (!json_utf8) {
         stream->close([](auto&&) {});
@@ -99,7 +101,7 @@ struct DialBackService::Impl {
         const std::string op = root.value("op", "");
         if (op != "probe") {
           result.error = "unsupported op";
-        } else if (!sessions) {
+        } else if (!self->sessions) {
           result.error = "dial-back service not ready";
         } else {
           std::vector<std::string> targets;
@@ -111,7 +113,7 @@ struct DialBackService::Impl {
             }
           }
           const int timeout_ms = root.value("timeout_ms", 8000);
-          result = DialTargets(*sessions, targets, timeout_ms);
+          result = DialTargets(*self->sessions, targets, timeout_ms);
         }
       }
 
@@ -128,7 +130,7 @@ struct DialBackService::Impl {
 };
 
 DialBackService::DialBackService(Libp2pHost& host, PeerSessionManager& sessions)
-    : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+    : impl_(std::make_shared<Impl>()), host_(host), sessions_(sessions) {
   impl_->host = &host_;
   impl_->sessions = &sessions_;
 }
@@ -143,7 +145,7 @@ void DialBackService::Start() {
   }
   started_ = true;
   host_.GetHost().setProtocolHandler({ProtocolName{kDialBackProtocolId}},
-                                     [impl = impl_.get()](libp2p::StreamAndProtocol stream) {
+                                     [impl = impl_](libp2p::StreamAndProtocol stream) {
                                        impl->HandleStream(std::move(stream));
                                      });
 }
@@ -172,52 +174,46 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
       {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000},
   };
 
-  std::shared_ptr<std::promise<Roe<DialBackProbeResult>>> result_promise =
-      std::make_shared<std::promise<Roe<DialBackProbeResult>>>();
-  auto result_future = result_promise->get_future();
+  SettledWait<DialBackProbeResult> wait;
 
   sessions_.OpenStream(seed_peer_key, {ProtocolName{kDialBackProtocolId}},
-                       [&host = host_, request = request.dump(), result_promise](
+                       [&host = host_, request = request.dump(), wait](
                            libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
                          PostLibp2pWorker(host, WorkerLane::Normal,
-                                          [request, result_promise,
+                                          [request, wait,
                                            stream_res = std::move(stream_res)]() mutable {
                                             if (!stream_res) {
-                                              result_promise->set_value(Error("dial-back stream open failed"));
+                                              wait.Finish(Error("dial-back stream open failed"));
                                               return;
                                             }
                                             auto stream = std::move(stream_res.value().stream);
                                             if (!BlockingWriteStreamJson(stream, request)) {
-                                              result_promise->set_value(Error("Failed to send dial-back probe"));
+                                              wait.Finish(Error("Failed to send dial-back probe"));
                                               return;
                                             }
                                             auto response_json = BlockingReadStreamJson(stream);
                                             stream->close([](auto&&) {});
                                             if (!response_json) {
-                                              result_promise->set_value(
-                                                  Error("Failed to read dial-back response"));
+                                              wait.Finish(Error("Failed to read dial-back response"));
                                               return;
                                             }
                                             nlohmann::json root =
                                                 nlohmann::json::parse(*response_json, nullptr, false);
                                             if (root.is_discarded() || !root.is_object()) {
-                                              result_promise->set_value(Error("invalid dial-back response"));
+                                              wait.Finish(Error("invalid dial-back response"));
                                               return;
                                             }
                                             DialBackProbeResult parsed;
                                             parsed.ok = root.value("ok", false);
                                             parsed.dialed = root.value("dialed", "");
                                             parsed.error = root.value("error", "");
-                                            result_promise->set_value(parsed);
+                                            wait.Finish(parsed);
                                           });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
-  if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    return Error("dial-back probe timed out");
-  }
-  return result_future.get();
+  return wait.Wait(std::chrono::milliseconds(wait_ms), Error("dial-back probe timed out"));
 }
 
 } // namespace pbr

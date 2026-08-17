@@ -125,6 +125,8 @@ struct MediaDataFrame {
 std::vector<uint8_t> EncodeMediaDataFrame(const MediaDataFrame& frame);
 Roe<MediaDataFrame> DecodeMediaDataFrame(const std::vector<uint8_t>& body);
 
+class MediaRelayRuntime;
+
 /**
  * Blind multiplexed media forwarder (n4-media / N018–N021).
  * Control: length-prefixed JSON. Data: length-prefixed binary frames (version byte 1).
@@ -211,8 +213,7 @@ public:
   static constexpr size_t kMaxParticipantsPerSession = 8;
 
 private:
-  struct Impl;
-  std::shared_ptr<Impl> impl_;
+  std::shared_ptr<MediaRelayRuntime> runtime_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
   bool started_ = false;

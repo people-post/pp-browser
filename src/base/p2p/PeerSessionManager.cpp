@@ -892,43 +892,48 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
     host_.GetHost().newStream(info, std::move(protocols),
                               [this, peer_relay_user_id, cb = std::move(cb), proto_log](
                                   libp2p::StreamAndProtocolOrError stream_res) mutable {
-                                {
-                                  std::lock_guard lock(mutex_);
-                                  if (!stream_res) {
-                                    auto ep = endpoints_.find(peer_relay_user_id);
-                                    if (ep != endpoints_.end()) {
-                                      ep->second.dial_failed_until =
-                                          std::chrono::steady_clock::now() + config_.dial_failure_backoff;
-                                      ep->second.last_error = "libp2p chat stream open failed";
-                                    }
-                                  } else {
-                                    auto ep = endpoints_.find(peer_relay_user_id);
-                                    if (ep != endpoints_.end()) {
-                                      ep->second.last_error.clear();
-                                    }
-                                    TouchPeerLocked(peer_relay_user_id);
-                                  }
-                                }
-                                if (!stream_res) {
-                                  std::string detail;
-                                  try {
-                                    detail = stream_res.error().message();
-                                  } catch (...) {
-                                    detail = "unknown";
-                                  }
-                                  log().warning
-                                      << "OpenStream newStream cb fail peer=" << peer_relay_user_id
-                                      << " proto=" << proto_log << " err=" << detail;
-                                } else {
-                                  log().warning
-                                      << "OpenStream newStream cb ok peer=" << peer_relay_user_id
-                                      << " proto=" << proto_log;
-                                }
-                                if (cb) {
-                                  cb(std::move(stream_res));
-                                }
+                                OnNewStreamResult(peer_relay_user_id, proto_log, std::move(cb),
+                                                  std::move(stream_res));
                               });
   });
+}
+
+void PeerSessionManager::OnNewStreamResult(const std::string& peer_relay_user_id,
+                                           const std::string& proto_log, StreamCb cb,
+                                           libp2p::StreamAndProtocolOrError stream_res) {
+  {
+    std::lock_guard lock(mutex_);
+    if (!stream_res) {
+      auto ep = endpoints_.find(peer_relay_user_id);
+      if (ep != endpoints_.end()) {
+        ep->second.dial_failed_until =
+            std::chrono::steady_clock::now() + config_.dial_failure_backoff;
+        ep->second.last_error = "libp2p chat stream open failed";
+      }
+    } else {
+      auto ep = endpoints_.find(peer_relay_user_id);
+      if (ep != endpoints_.end()) {
+        ep->second.last_error.clear();
+      }
+      TouchPeerLocked(peer_relay_user_id);
+    }
+  }
+  if (!stream_res) {
+    std::string detail;
+    try {
+      detail = stream_res.error().message();
+    } catch (...) {
+      detail = "unknown";
+    }
+    log().warning << "OpenStream newStream cb fail peer=" << peer_relay_user_id
+                  << " proto=" << proto_log << " err=" << detail;
+  } else {
+    log().warning << "OpenStream newStream cb ok peer=" << peer_relay_user_id
+                  << " proto=" << proto_log;
+  }
+  if (cb) {
+    cb(std::move(stream_res));
+  }
 }
 
 void PeerSessionManager::SweepIdle() {

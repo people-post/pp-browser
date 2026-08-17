@@ -175,6 +175,8 @@ private:
   void EnsureConnectionOnIo(const std::string& peer_relay_user_id, std::function<void(Roe<void>)> on_complete);
   void InstallConnectionHandler();
   void OnInboundConnection(libp2p::peer::PeerInfo info);
+  void OnNewStreamResult(const std::string& peer_relay_user_id, const std::string& proto_log,
+                         StreamCb cb, libp2p::StreamAndProtocolOrError stream_res);
   void MaybeHydrateEndpointFromBookLocked(const std::string& peer_relay_user_id);
   PeerAddrSource SourceForEndpointKey(const std::string& peer_relay_user_id) const;
   std::optional<std::string> PeerIdBase58ForKeyLocked(const std::string& peer_relay_user_id) const;

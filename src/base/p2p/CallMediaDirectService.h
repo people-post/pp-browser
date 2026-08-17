@@ -61,6 +61,8 @@ struct CallMediaDirectCallbacks {
   std::function<void(const std::string& error)> on_failed;
 };
 
+class CallMediaSession;
+
 /**
  * 1:1 libp2p call-media transport (m1 / V026).
  * Opus payloads are AEAD-encrypted under the shared call media key before send.
@@ -99,8 +101,7 @@ public:
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
 
 private:
-  struct Impl;
-  std::shared_ptr<Impl> impl_;
+  std::shared_ptr<CallMediaSession> session_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
   bool started_ = false;

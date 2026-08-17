@@ -33,6 +33,8 @@ struct CircuitRelayAdmissionPolicy {
   std::unordered_set<std::string> contact_peer_ids;
 };
 
+class CircuitRelayRuntime;
+
 /**
  * Custom circuit relay (n3): relay host bridges a stream to a target multiaddr.
  * Not libp2p circuit-relay v2 — integration-layer protocol like DialBackService.
@@ -72,8 +74,7 @@ public:
                                               int timeout_ms = 8000);
 
 private:
-  struct Impl;
-  std::shared_ptr<Impl> impl_;
+  std::shared_ptr<CircuitRelayRuntime> runtime_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
   bool started_ = false;

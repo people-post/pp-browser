@@ -12,11 +12,13 @@
 #include "base/p2p/MediaRelayFrames.h"
 #include "base/p2p/MediaRelayLogic.h"
 #include "base/p2p/StreamFrameIo.h"
+#include "base/p2p/SettledWait.h"
 #include "base/p2p/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
+#include <libp2p/connection/stream_and_protocol.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
@@ -172,7 +174,8 @@ using media_relay_detail::kDefaultSessionDownBps;
 using media_relay_detail::kDefaultCeilingBytes;
 using media_relay_detail::kMaxOutboundBacklog;
 
-struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
+class MediaRelayRuntime : public std::enable_shared_from_this<MediaRelayRuntime> {
+public:
   std::mutex mu;
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
@@ -376,7 +379,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  void StartClientDuplex(const std::shared_ptr<Impl>& self) {
+  void StartClientDuplex(const std::shared_ptr<MediaRelayRuntime>& self) {
     if (!host) {
       return;
     }
@@ -754,6 +757,14 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol);
   void HandleInboundBody(std::shared_ptr<Stream> stream);
+  void RunQuoteExchange(nlohmann::json req, bool circuit_backed,
+                        libp2p::StreamAndProtocolOrError stream_res,
+                        const SettledWait<MediaRelayQuote>& wait);
+  void RunClientAttachOnWorker(const std::string& quote_id, const std::string& call_id,
+                               const std::string& auth_stub,
+                               std::function<void(MediaDataFrame)> on_frame,
+                               std::shared_ptr<std::atomic<bool>> settled,
+                               libp2p::StreamAndProtocolOrError stream_res);
 
   /** Cancel all HostSession participants and drop quote/session maps (Service Stop). */
   void ShutdownHostSessions() {

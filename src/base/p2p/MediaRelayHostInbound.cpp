@@ -1,8 +1,8 @@
-#include "base/p2p/MediaRelayServiceImpl.h"
+#include "base/p2p/MediaRelayRuntime.h"
 
 namespace pbr {
 
-void MediaRelayService::Impl::HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
+void MediaRelayRuntime::HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
     if (!host) {
       return;
     }
@@ -13,7 +13,7 @@ void MediaRelayService::Impl::HandleInbound(libp2p::StreamAndProtocol stream_and
     });
   }
 
-void MediaRelayService::Impl::HandleInboundBody(std::shared_ptr<Stream> stream) {
+void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
     // Per-inbound-stream attach SM (N026). HostSession remains a map object; this only
     // sequences quote → accept → attach on one control stream.
     MediaRelayAttachSm sm;

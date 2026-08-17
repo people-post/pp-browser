@@ -649,8 +649,17 @@ void DuplexFrameSession::PumpWrite() {
   outbound_.erase(outbound_.begin());
   write_inflight_ = true;
   PublishBacklog();
+  // Take frame before the write call: init-captures in the completion lambda may
+  // move `pending` before `*pending.frame` is evaluated (unspecified arg order).
+  auto frame = pending.frame;
+  if (!frame) {
+    write_inflight_ = false;
+    PublishBacklog();
+    MaybeResumeRead();
+    return;
+  }
   auto self = shared_from_this();
-  libp2p::write(stream_, *pending.frame,
+  libp2p::write(stream_, *frame,
                 [self, pending = std::move(pending)](outcome::result<void> result) mutable {
     self->write_inflight_ = false;
     self->PublishBacklog();
