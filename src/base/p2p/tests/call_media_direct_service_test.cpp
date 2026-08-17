@@ -398,5 +398,70 @@ TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
   EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+/** B-TEARDOWN (Tier B): K connect→audio→detach cycles must leave both sides Idle and reusable. */
+TEST_F(CallMediaDirectServiceTest, ConnectDetachKCycleNoHang) {
+  constexpr int kCycles = 5;
+  const ByteVector media_key(32, 0x42);
+
+  for (int cycle = 0; cycle < kCycles; ++cycle) {
+    const std::string call_id = "call-kcycle-" + std::to_string(cycle);
+    std::mutex mu;
+    std::condition_variable cv;
+    bool connected = false;
+    bool got_audio = false;
+
+    b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+      params.media_key = media_key;
+      params.call_id = call_id;
+      params.media_epoch = 1;
+      params.offerer = false;
+      cbs.on_connected = [&] {
+        std::lock_guard lock(mu);
+        connected = true;
+        cv.notify_one();
+      };
+      cbs.on_audio = [&](const std::vector<uint8_t>&) {
+        std::lock_guard lock(mu);
+        got_audio = true;
+        cv.notify_one();
+      };
+    });
+
+    CallMediaDirectConnectParams params;
+    params.peer_key = "b";
+    params.call_id = call_id;
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = true;
+
+    CallMediaDirectCallbacks cbs;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      connected = true;
+      cv.notify_one();
+    };
+
+    ASSERT_TRUE(a_call_media_->Connect(params, cbs, 5000)) << "cycle " << cycle;
+    {
+      std::unique_lock lock(mu);
+      ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return connected; }))
+          << "cycle " << cycle << " connect";
+    }
+
+    const std::vector<uint8_t> opus = {static_cast<uint8_t>(0x10 + cycle)};
+    ASSERT_TRUE(a_call_media_->SendAudio(opus, 1, 0)) << "cycle " << cycle;
+    {
+      std::unique_lock lock(mu);
+      ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }))
+          << "cycle " << cycle << " audio";
+    }
+
+    a_call_media_->Detach();
+    b_call_media_->Detach();
+    EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
+    EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
+  }
+}
+
 } // namespace
 } // namespace pbr

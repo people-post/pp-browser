@@ -71,6 +71,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
+| [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Tiered testing; `N-*` / `B-*` purposes; inventory; CI ladder |
 | [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
 | [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize Frame.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |

@@ -1,7 +1,7 @@
 # pp-node image / deploy smoke tests
 
 **Tier:** ops dogfood  
-**Related:** [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md#pp-node-deploy-overlays), [BUILD.md](../../docs/ops/BUILD.md#headless-mesh-node-pp-node)
+**Related:** [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md#pp-node-deploy-overlays), [BUILD.md](../../docs/ops/BUILD.md#headless-mesh-node-pp-node), [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (purpose IDs `N-*` / tiers; L2 = **N-FANOUT**)
 
 Automated checks for a **running** `pp-node` (Docker image, compose, or bare binary). These complement in-process gtests (`circuit_relay_service_test`, `media_relay_service_test`, …) which already own protocol correctness.
 
@@ -9,21 +9,24 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 |-------|----------------|---------|--------|
 | **L0** | Process up; `/healthz` + `/status`; caps **started** (`circuit_relay` / `media_relay` flags) | `scripts/pp_node_image_smoke.sh` | **Done** |
 | **L1** | From outside the hop: dial peer; **media** `RequestQuote`; **circuit** bridge + payload to a local target | `pp-node-probe` + `scripts/pp_node_relay_smoke.sh` | **Done** (scaffold) |
-| **L2** | Multi-container topology (hop + 2 clients, fan-out / SoftMigrate-style) | Compose + probe or gtest-shaped harness | **Deferred** — see below |
+| **L2** | **N-FANOUT:** hop in container + two client hosts in probe; attach×2 + frame fan-out | `docker-compose.relay-smoke.yml` + `pp-node-probe --mode media-fanout` + `scripts/pp_node_fanout_smoke.sh` | **Done** (scaffold) |
+| **N-CAP** | Soft media attach capacity curve | `pp-node-probe --mode media-cap` + `scripts/pp_node_cap_smoke.sh` | **Done** (soft SLO N≤8) |
 
 ## CI / release
 
 Node images ship on the **`pp-node/v*`** train ([`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)), independent of app `v*` tags. Cut tags from **`main`**; day-to-day work is on **`develop`**. See [RELEASE.md](../../docs/ops/RELEASE.md).
 
-Release CI runs **L0** against the pushed image. Run L0/L1 locally against compose as below. **L2** (multi-container fan-out) remains deferred.
+Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against compose as below. Gate **L2** in nightly/release only once stable (not every PR).
 
 ## Prerequisites
 
 ```bash
 # Local dogfood container (status published on host :18518)
 docker compose -f packaging/pp-node/docker-compose.yml up -d --build
+# or L2-oriented hop:
+docker compose -f packaging/pp-node/docker-compose.relay-smoke.yml up -d --build
 
-# L1 probe binary (desktop build tree)
+# Probe binary (desktop build tree)
 cmake --build build --target pp-node-probe -j
 ```
 
@@ -51,7 +54,7 @@ Does **not** open libp2p streams.
 ./scripts/pp_node_relay_smoke.sh --l0-only
 ```
 
-`pp-node-probe` (under `src/app/node/probe/`):
+`pp-node-probe` (under `src/app/node/probe/`), default `--mode l1`:
 
 1. Builds hop multiaddr from `/status` (`0.0.0.0` → `127.0.0.1`)
 2. Starts ephemeral client + bridge-target hosts on loopback
@@ -64,27 +67,33 @@ Limitations (intentional for a thin L1):
 - Circuit bridge needs the hop to **dial back** to the probe’s target. Against Docker, set `PP_NODE_PROBE_ADVERTISE_HOST` (or rely on auto `docker0` / bridge gateway); `127.0.0.1` only works for a hop on the same host network namespace
 - Admission policies that require contacts may reject strangers — org seed volunteer profile should allow probe
 
-## L2 — Multi-node compose (resume later)
+## L2 — N-FANOUT (hop process + two clients)
 
-Goal: CI/dogfood topology mirroring `MediaRelayServiceTest` / `CircuitMediaRelayComposeTest` **across containers**.
+Purpose **N-FANOUT** in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md): prove attach×2 and frame delivery against a **packaged hop** (not only in-process gtests).
 
-Suggested shape (not implemented):
+Shape (implemented):
 
 ```text
-services:
-  hop:     # pp-node image, caps on, status + listen published
-  client-a: # probe or thin client image; dials hop; AcceptAndAttach
-  client-b: # second attach + Subscribe; assert fan-out frame
+hop:        pp-node container (docker-compose.relay-smoke.yml or docker-compose.yml)
+client-a/b: two Libp2pHost + MediaRelayService instances inside pp-node-probe --mode media-fanout
 ```
 
-Work items when resuming:
+Clients share the probe process; the hop is a separate process/network namespace — enough to catch packaging/admission/env issues that loopback gtests miss. Full three-container clients remain optional later.
 
-1. Compose file under `packaging/pp-node/` (e.g. `docker-compose.relay-smoke.yml`) with fixed ports / shared network
-2. Extend `pp-node-probe` with `--mode=media-fanout` (quote → attach ×2 → send frame) **or** ship a second binary reused from test helpers
-3. Optional dial-back check: client listen + hop `DialBackService` probe via `/status` reachability fields
-4. Gate in release/nightly CI only if runners have nested Docker + enough time (full libp2p build already heavy)
+```bash
+docker compose -f packaging/pp-node/docker-compose.relay-smoke.yml up -d --build
+cmake --build build --target pp-node-probe -j
+./scripts/pp_node_fanout_smoke.sh   # L0 then media-fanout
+```
 
-Do **not** reimplement full gtest matrices in shell; keep L2 as orchestration around the same integration APIs.
+`pp-node-probe --mode media-fanout`:
+
+1. Resolves hop multiaddr (script from `/status`, or `--hop`)
+2. Starts two ephemeral client hosts
+3. `RequestQuote` ×2 → `AcceptAndAttach` ×2 → `Subscribe` on B → `SendFrame` from A
+4. Asserts B receives the frame payload
+
+Do **not** reimplement full gtest matrices in shell; L2 orchestrates the same `MediaRelayService` APIs as `QuoteAcceptAttachFanout`.
 
 ## Mapping to existing unit tests
 
@@ -93,15 +102,18 @@ Do **not** reimplement full gtest matrices in shell; keep L2 as orchestration ar
 | Bridge framing, admission masks, fan-out QoS | In-tree gtests |
 | Image ENTRYPOINT / env overlays / status flags | L0 |
 | “Can a peer outside the container use this hop?” | L1 |
-| Two phones + hop on a bridge network | L2 |
+| Packaged hop + attach×2 + frame (N-FANOUT) | L2 |
+| Two phones + hop on a bridge network | Manual dogfood / later three-container |
 
 ## Quick reference
 
 | Env | Role |
 |-----|------|
-| `PP_NODE_STATUS_URL` | L0/L1 status base URL |
+| `PP_NODE_STATUS_URL` | L0/L1/L2 status base URL |
 | `PP_NODE_STATUS_TOKEN` | Optional Bearer |
 | `PP_NODE_EXPECT_CIRCUIT` / `PP_NODE_EXPECT_MEDIA` | L0 expected flags (`1`/`0`) |
-| `PP_NODE_PROBE_HOP` | L1 hop multiaddr override |
-| `PP_NODE_PROBE_ADVERTISE_HOST` | Host IP the Docker hop can dial for circuit target (often `docker0` gateway) |
+| `PP_NODE_PROBE_HOP` | Hop multiaddr override |
+| `PP_NODE_PROBE_MODE` | `l1` (default), `media-fanout`, or `media-cap` |
+| `PP_NODE_PROBE_ATTACHERS` | N for `media-cap` (default 4) |
+| `PP_NODE_PROBE_ADVERTISE_HOST` | Host IP the Docker hop can dial for L1 circuit target (often `docker0` gateway) |
 | `PP_NODE_PROBE_BIN` | Path to `pp-node-probe` |
