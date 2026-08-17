@@ -18,6 +18,7 @@
 #include <libp2p/crypto/hmac_provider/hmac_provider_impl.hpp>
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 #include <libp2p/crypto/key_validator/key_validator_impl.hpp>
+#include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
@@ -302,13 +303,16 @@ namespace libp2p::injector {
     auto secp256k1_provider =
         std::make_shared<crypto::secp256k1::Secp256k1ProviderImpl>(csprng);
     auto hmac_provider = std::make_shared<crypto::hmac::HmacProviderImpl>();
+    auto mldsa_provider =
+        std::make_shared<crypto::mldsa::MlDsaProviderImpl>();
     std::shared_ptr<crypto::CryptoProvider> crypto_provider =
         std::make_shared<crypto::CryptoProviderImpl>(csprng,
                                                      ed25519_provider,
                                                      rsa_provider,
                                                      ecdsa_provider,
                                                      secp256k1_provider,
-                                                     hmac_provider);
+                                                     hmac_provider,
+                                                     mldsa_provider);
     auto validator =
         std::make_shared<crypto::validator::KeyValidatorImpl>(crypto_provider);
 
@@ -328,6 +332,7 @@ namespace libp2p::injector {
         di::bind<crypto::secp256k1::Secp256k1Provider>().to(std::move(secp256k1_provider)),
         di::bind<crypto::aes::AesCtr>().to<crypto::aes::AesCtrImpl>(),
         di::bind<crypto::hmac::HmacProvider>().to<crypto::hmac::HmacProviderImpl>(),
+        di::bind<crypto::mldsa::MlDsaProvider>().to(std::move(mldsa_provider)),
         di::bind<crypto::CryptoProvider>().to<crypto::CryptoProviderImpl>(),
         di::bind<crypto::marshaller::KeyMarshaller>().to<crypto::marshaller::KeyMarshallerImpl>(),
         di::bind<peer::IdentityManager>().to<peer::IdentityManagerImpl>(),

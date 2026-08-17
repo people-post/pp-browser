@@ -347,6 +347,7 @@ namespace libp2p::security::noise {
     message_patterns_ = std::move(config.pattern_.messages);
     is_initiator_ = config.is_initiator_;
     should_write_ = is_initiator_;
+    message_idx_ = 0;
     if (config.local_ephemeral_keypair_) {
       local_ephemeral_kp_ = std::move(config.local_ephemeral_keypair_.value());
     }
