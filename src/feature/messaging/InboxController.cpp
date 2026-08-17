@@ -9,7 +9,10 @@
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/PskRotateCodec.h"
+#include "base/messaging/ReactionTypes.h"
 #include "base/ui/ChatFormHelper.h"
+#include "common/EmojiKey.h"
 #include "common/Utilities.h"
 
 #include <nlohmann/json.hpp>
@@ -19,6 +22,7 @@
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 namespace pbr {
 
@@ -461,7 +465,7 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
 }
 
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
-  if (shadows_ && sender_contact_id.rfind("relay:", 0) == 0) {
+  if (shadows_ && (sender_contact_id.rfind("account:", 0) == 0 || sender_contact_id.rfind("relay:", 0) == 0)) {
     shadows_->EnsureLookup(sender_contact_id);
   }
   return labels_.ResolveSender(sender_contact_id).title;
@@ -671,6 +675,9 @@ std::string InboxController::BuildSystemRml(const ThreadMessage& message) const 
     }
     return html;
   }
+  if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
+    return SystemLineRml("They're using only this device for new messages.");
+  }
   return SystemLineRml(message.text);
 }
 
@@ -744,7 +751,8 @@ bool InboxController::HasLocalMessagesBefore(const std::string& thread_id,
 }
 
 std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
-    const std::string& thread_id, std::optional<int64_t> oldest_inclusive) const {
+    const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+    std::optional<int64_t> newest_inclusive) const {
   std::vector<MessageDisplayRow> rows;
   std::vector<ThreadMessage> messages;
   std::optional<int64_t> before;
@@ -775,6 +783,14 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       break;
     }
     before = page_oldest;
+  }
+
+  if (newest_inclusive.has_value()) {
+    messages.erase(std::remove_if(messages.begin(), messages.end(),
+                                  [&](const ThreadMessage& m) {
+                                    return m.display_order > *newest_inclusive;
+                                  }),
+                   messages.end());
   }
 
   std::unordered_map<std::string, size_t> row_index_by_id;
@@ -821,9 +837,31 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     rows.push_back(std::move(row));
   }
 
+  // D098 — resolve latest reaction/reaction_clear per (sender, target, emoji_key), then group counts.
+  struct ActiveReaction {
+    std::string emoji_display;
+    std::string emoji_key;
+    std::string sender_contact_id;
+    int64_t display_order = 0;
+  };
+  std::map<std::string, ActiveReaction> latest_by_sender_emoji; // key: target|sender|emoji_key
+  std::vector<ThreadMessage> non_reaction_annotations;
+
+  auto annotation_fields = [](const ThreadMessage& annotation) -> std::optional<ChatAnnotationFields> {
+    auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
+    if (!fields) {
+      ChatAnnotationFields fallback;
+      fallback.annotation_type = kAnnotationTypeReaction;
+      fallback.target_message_id = annotation.target_message_id.value_or("");
+      fallback.value = annotation.text;
+      fallback.text = annotation.text;
+      return fallback;
+    }
+    return *fields;
+  };
+
   for (const ThreadMessage& annotation : pending_annotations) {
-    const std::string target_id =
-        annotation.target_message_id.value_or("");
+    const std::string target_id = annotation.target_message_id.value_or("");
     if (target_id.empty()) {
       orphan_annotations.push_back(annotation);
       continue;
@@ -837,10 +875,113 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     ++annotation_count_by_target[target_id];
-    const std::string badge =
-        "<span class=\"chat-annotation-badge\" title=\"" +
-        StructuredTextParser::EscapeText(annotation.text) + "\">" +
-        StructuredTextParser::EscapeText(annotation.text) + "</span>";
+
+    auto fields = annotation_fields(annotation);
+    if (!fields || !IsReactionAnnotationType(fields->annotation_type)) {
+      non_reaction_annotations.push_back(annotation);
+      continue;
+    }
+    const std::string emoji_raw = fields->value.empty() ? annotation.text : fields->value;
+    const std::string emoji_key = NormalizeEmojiKey(emoji_raw);
+    if (emoji_key.empty()) {
+      continue;
+    }
+    const std::string map_key = target_id + "|" + annotation.sender_contact_id + "|" + emoji_key;
+    ActiveReaction& slot = latest_by_sender_emoji[map_key];
+    if (annotation.display_order < slot.display_order && !slot.emoji_key.empty()) {
+      continue;
+    }
+    slot.display_order = annotation.display_order;
+    slot.sender_contact_id = annotation.sender_contact_id;
+    slot.emoji_key = emoji_key;
+    if (fields->annotation_type == kAnnotationTypeReactionClear) {
+      slot.emoji_display.clear(); // cleared
+    } else {
+      slot.emoji_display = annotation.text.empty() ? emoji_raw : annotation.text;
+    }
+  }
+
+  struct ChipAgg {
+    std::string emoji_display;
+    std::string emoji_key;
+    size_t count = 0;
+    bool mine = false;
+  };
+  std::unordered_map<std::string, std::vector<ChipAgg>> chips_by_target;
+
+  for (const auto& [map_key, slot] : latest_by_sender_emoji) {
+    if (slot.emoji_display.empty()) {
+      continue; // cleared
+    }
+    const size_t bar = map_key.find('|');
+    if (bar == std::string::npos) {
+      continue;
+    }
+    const std::string target_id = map_key.substr(0, bar);
+    auto& chips = chips_by_target[target_id];
+    ChipAgg* found = nullptr;
+    for (ChipAgg& chip : chips) {
+      if (chip.emoji_key == slot.emoji_key) {
+        found = &chip;
+        break;
+      }
+    }
+    if (!found) {
+      chips.push_back(ChipAgg{slot.emoji_display, slot.emoji_key, 0, false});
+      found = &chips.back();
+    }
+    ++found->count;
+    if (slot.sender_contact_id == kLocalSelfContactId) {
+      found->mine = true;
+    }
+  }
+
+  auto escape_js_arg = [](const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char ch : value) {
+      if (ch == '\\' || ch == '\'') {
+        out.push_back('\\');
+      }
+      out.push_back(ch);
+    }
+    return out;
+  };
+
+  for (auto& [target_id, chips] : chips_by_target) {
+    const auto row_it = row_index_by_id.find(target_id);
+    if (row_it == row_index_by_id.end() || chips.empty()) {
+      continue;
+    }
+    std::ostringstream chip_rml;
+    chip_rml << "<div class=\"chat-reaction-row\">";
+    for (const ChipAgg& chip : chips) {
+      chip_rml << "<button class=\"chat-reaction-chip";
+      if (chip.mine) {
+        chip_rml << " chat-reaction-chip--mine";
+      }
+      chip_rml << "\" type=\"button\" data-event-click=\"toggle_reaction('" << escape_js_arg(target_id) << "', '"
+               << escape_js_arg(chip.emoji_display) << "')\">"
+               << StructuredTextParser::EscapeText(chip.emoji_display);
+      if (chip.count > 1) {
+        chip_rml << " " << chip.count;
+      }
+      chip_rml << "</button>";
+    }
+    chip_rml << "</div>";
+    rows[row_it->second].content_rml =
+        (std::string(rows[row_it->second].content_rml.c_str()) + chip_rml.str()).c_str();
+  }
+
+  for (const ThreadMessage& annotation : non_reaction_annotations) {
+    const std::string target_id = annotation.target_message_id.value_or("");
+    const auto row_it = row_index_by_id.find(target_id);
+    if (row_it == row_index_by_id.end()) {
+      continue;
+    }
+    const std::string badge = "<span class=\"chat-annotation-badge\" title=\"" +
+                              StructuredTextParser::EscapeText(annotation.text) + "\">" +
+                              StructuredTextParser::EscapeText(annotation.text) + "</span>";
     rows[row_it->second].content_rml =
         (std::string(rows[row_it->second].content_rml.c_str()) + badge).c_str();
   }
@@ -850,9 +991,10 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     row.message_id = annotation.id.c_str();
     row.display_order = annotation.display_order;
     row.sender_label = ResolveSenderLabel(annotation.sender_contact_id).c_str();
+    const std::string orphan_text = annotation.text.empty() ? "?" : annotation.text;
     row.content_rml =
         ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +
-         StructuredTextParser::EscapeText(annotation.text) +
+         StructuredTextParser::EscapeText(orphan_text) +
          "</span> <span class=\"text-xs\">(unlinked)</span></div>")
             .c_str();
     row.row_class = "message-row-annotation-orphan";

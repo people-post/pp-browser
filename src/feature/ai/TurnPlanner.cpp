@@ -31,10 +31,10 @@ std::vector<ChatMessage> BuildPlannerMessages(const std::vector<ChatMessage>& co
 } // namespace
 
 Roe<TurnPlan> TurnPlanner::PlanOnce(const LlmClient& llm, const std::vector<ChatMessage>& messages,
-                                    const std::vector<std::string>& allowed_tools, const std::string& user_request,
-                                    const bool repair, const std::string& invalid_output,
-                                    const std::string& error_message) {
-  const std::string planner_prompt = PromptBuilder::BuildPlannerPrompt();
+                                    const std::string& tools_summary, const std::vector<std::string>& allowed_tools,
+                                    const std::string& user_request, const bool repair,
+                                    const std::string& invalid_output, const std::string& error_message) {
+  const std::string planner_prompt = PromptBuilder::BuildPlannerPrompt(tools_summary);
   std::vector<ChatMessage> request_messages =
       BuildPlannerMessages(messages, planner_prompt, repair, invalid_output, error_message);
 
@@ -61,10 +61,10 @@ Roe<TurnPlan> TurnPlanner::PlanOnce(const LlmClient& llm, const std::vector<Chat
 Roe<TurnPlan> TurnPlanner::Plan(const LlmClient& llm, const std::vector<ChatMessage>& context_messages,
                                 const std::string& tools_summary, const std::vector<std::string>& allowed_tools,
                                 const std::string& user_request) {
-  (void)tools_summary;
+  const std::string planner_prompt = PromptBuilder::BuildPlannerPrompt(tools_summary);
 
   ChatCompletionRequest first_request;
-  first_request.messages = BuildPlannerMessages(context_messages, PromptBuilder::BuildPlannerPrompt(), false, {}, {});
+  first_request.messages = BuildPlannerMessages(context_messages, planner_prompt, false, {}, {});
 
   auto first_response = llm.Complete(first_request);
   if (!first_response) {
@@ -78,7 +78,8 @@ Roe<TurnPlan> TurnPlanner::Plan(const LlmClient& llm, const std::vector<ChatMess
   auto plan = ParseTurnPlanFromLlmOutput(first_output, TurnPlanSource::Planner);
   if (!plan) {
     const std::string first_error = plan.error().message;
-    auto repaired = PlanOnce(llm, context_messages, allowed_tools, user_request, true, first_output, first_error);
+    auto repaired =
+        PlanOnce(llm, context_messages, tools_summary, allowed_tools, user_request, true, first_output, first_error);
     if (repaired) {
       return repaired;
     }
@@ -89,8 +90,8 @@ Roe<TurnPlan> TurnPlanner::Plan(const LlmClient& llm, const std::vector<ChatMess
   auto validated = ValidateTurnPlan(std::move(*plan), allowed_tools);
   if (!validated) {
     const std::string validation_error = validated.error().message;
-    auto repaired =
-        PlanOnce(llm, context_messages, allowed_tools, user_request, true, first_output, validation_error);
+    auto repaired = PlanOnce(llm, context_messages, tools_summary, allowed_tools, user_request, true, first_output,
+                             validation_error);
     if (repaired) {
       return repaired;
     }

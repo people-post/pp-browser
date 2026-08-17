@@ -1,0 +1,63 @@
+      <div class="settings-section stack">
+        <p class="text muted">{{i18n:settings.security.protection}} <span data-rml="pin_protection_status"></span></p>
+        <p class="text muted" data-if="pin_protection_status == 'App default'">
+          {{i18n:settings.security.default_hint}}
+        </p>
+        <p class="text muted" data-if="pin_protection_status == 'Not set up'">
+          {{i18n:settings.security.not_setup_hint}}
+        </p>
+        <div data-if="security_can_change_pin" class="stack">
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.current_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_old" placeholder="Current PIN"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.new_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_new" placeholder="At least 4 characters"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.confirm_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_confirm" placeholder="Confirm new PIN"/>
+          </label>
+          <div class="settings-actions row">
+            <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
+          </div>
+        </div>
+        <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
+          Unlock your profile to change the PIN.
+        </p>
+        <div class="stack settings-actions">
+          <p class="text">{{i18n:settings.security.link_device}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.link_device.help}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.link_device.send_hint}}</p>
+          <p class="text muted settings-help">{{i18n:settings.security.link_device.reset_hint}}</p>
+          <button class="btn" type="button" data-if="security_can_export_link"
+                  data-event-click="export_link_device()">
+            {{i18n:settings.security.link_device.export}}
+          </button>
+        </div>
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_group_invite_policy()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.security.group_invites}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="group_invite_policy_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.security.group_invites.help}}</p>
+        <div class="stack settings-actions">
+          <p class="text">{{i18n:settings.security.tool_permissions}}: <span data-rml="tool_permissions_summary"></span></p>
+          <p class="text muted settings-help">{{i18n:settings.security.tool_permissions.help}}</p>
+          <button class="btn" type="button" data-if="tool_permissions_has_saved"
+                  data-event-click="reset_tool_permissions()">
+            {{i18n:settings.security.tool_permissions.reset}}
+          </button>
+        </div>
+        <div class="stack settings-actions">
+          <p class="text muted settings-help">{{i18n:settings.security.clear_undelivered.help}}</p>
+          <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
+            {{i18n:settings.security.clear_undelivered}}
+          </button>
+        </div>
+      </div>
+

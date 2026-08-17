@@ -401,9 +401,7 @@ struct CallMediaEngine::Impl {
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
-#if defined(__ANDROID__)
-    SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
-#endif
+    CallAudioSession::ClearCaptureAudioHints();
   }
 
   void JoinCaptureThread() {
@@ -426,7 +424,7 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
-        std::fill(mix.begin(), mix.end(), 0);
+        std::fill(mix.begin(), mix.end(), int16_t{0});
         bool any = false;
         double pressure = 0.0;
         uint64_t ticks = 0;
@@ -542,16 +540,11 @@ struct CallMediaEngine::Impl {
                             SDL_AudioDeviceID* out_dev) {
     *out_stream = nullptr;
     *out_dev = 0;
-#if defined(__ANDROID__)
-    constexpr int kAttempts = 4;
-    constexpr int kRetryDelayMs[] = {0, 80, 200, 400};
-#else
-    constexpr int kAttempts = 1;
-    constexpr int kRetryDelayMs[] = {0};
-#endif
+    const int kAttempts = CallAudioSession::CaptureOpenAttemptCount();
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-      if (kRetryDelayMs[attempt] > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs[attempt]));
+      const int delay_ms = CallAudioSession::CaptureOpenRetryDelayMs(attempt);
+      if (delay_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
       if (!capture_running.load(std::memory_order_relaxed)) {
         return false;
@@ -582,16 +575,7 @@ struct CallMediaEngine::Impl {
       return ok.error();
     }
 
-#if defined(__ANDROID__)
-    // Phones: VoIP usage so MODE_IN_COMMUNICATION doesn't duck MEDIA (see SDL_aaudio patch).
-    // Speaker-only tablets: leave default MEDIA — paired with MODE_NORMAL in MainActivity
-    // (API < 28 cannot set AAUDIO_USAGE_VOICE_COMMUNICATION; IN_COMMUNICATION+MEDIA is whisper-quiet).
-    if (CallAudioSession::SupportsSpeakerToggle()) {
-      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "1");
-    } else {
-      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
-    }
-#endif
+    CallAudioSession::ApplyCaptureAudioHints();
     CallAudioSession::ActivateForVoipCall();
 
     SDL_AudioSpec want{};
@@ -662,10 +646,11 @@ struct CallMediaEngine::Impl {
             std::lock_guard lock(mutex);
             CloseAudioDevicesLocked();
           }
-#if defined(__ANDROID__)
-          // Let OEM speaker route settle (Moto MotSpeakerHelper safety ramp) before reopen.
-          std::this_thread::sleep_for(std::chrono::milliseconds(150));
-#endif
+          const int settle_ms = CallAudioSession::CaptureReopenSettleDelayMs();
+          if (settle_ms > 0) {
+            // Android: let OEM speaker route settle (Moto MotSpeakerHelper safety ramp).
+            std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
+          }
           SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
           if (auto audio = OpenAudioDevices(); !audio) {
             SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
@@ -709,7 +694,7 @@ struct CallMediaEngine::Impl {
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
               }
-              std::fill(pcm.begin(), pcm.end(), 0);
+              std::fill(pcm.begin(), pcm.end(), int16_t{0});
               paced_silence_frame = true;
               // Fall through to encode/send silence so tx_alive stays true.
             } else {
@@ -728,14 +713,14 @@ struct CallMediaEngine::Impl {
             std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
             pending.erase(pending.begin(), pending.begin() + kFrameSamples);
             if (muted.load(std::memory_order_relaxed)) {
-              std::fill(pcm.begin(), pcm.end(), 0);
+              std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
             }
           }
         } else {
-          std::fill(pcm.begin(), pcm.end(), 0);
+          std::fill(pcm.begin(), pcm.end(), int16_t{0});
           SmoothLevel(local_input_level, 0.f);
           paced_silence_frame = true;
           if (!can_send) {

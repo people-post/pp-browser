@@ -3,6 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Remember whether the caller set IOS_PLATFORM before our default (used by resolve_ios_platform).
+if [[ -n "${IOS_PLATFORM+x}" ]]; then
+  IOS_PLATFORM_EXPLICIT=1
+fi
 IOS_PLATFORM="${IOS_PLATFORM:-simulator}"
 BUILD_TYPE="${CMAKE_BUILD_TYPE:-Debug}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-${ROOT}/install-ios}"
@@ -20,6 +24,7 @@ Commands:
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
   run-sim           Boot a simulator if needed, install Frame.app, and launch
+  run-device         Sign (if configured) and install+launch on a connected iPhone
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
 
@@ -31,9 +36,11 @@ Environment:
   PP_BROWSER_RELEASE_VERSION  Full version string (e.g. 0.1.0-rc1)
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
+  IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
+  IOS_DEPLOYMENT_TARGET     Minimum iOS version (default: 15.0; sets CMAKE_OSX_DEPLOYMENT_TARGET)
 
 Requires (macOS only):
-  Xcode 15+ with iOS SDK
+  Xcode matching the device iOS major (iOS 26.x → Xcode 26.x)
   CMake 3.24+
   Ninja (recommended)
   Perl (lsquic codegen)
@@ -62,12 +69,39 @@ build_dir() {
   fi
 }
 
+# When IOS_PLATFORM was left at the script default, prefer the more recently
+# configured tree so `build`/`install` after `configure-device` hit device.
+resolve_ios_platform() {
+  if [[ -n "${IOS_PLATFORM_EXPLICIT:-}" ]]; then
+    return 0
+  fi
+  local device_cache="${ROOT}/build-ios-device/CMakeCache.txt"
+  local sim_cache="${ROOT}/build-ios-simulator/CMakeCache.txt"
+  if [[ -f "$device_cache" && -f "$sim_cache" ]]; then
+    if [[ "$device_cache" -nt "$sim_cache" ]]; then
+      IOS_PLATFORM=device
+    else
+      IOS_PLATFORM=simulator
+    fi
+  elif [[ -f "$device_cache" ]]; then
+    IOS_PLATFORM=device
+  elif [[ -f "$sim_cache" ]]; then
+    IOS_PLATFORM=simulator
+  fi
+}
+
 common_cmake_args() {
+  # Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET. Without this, Ninja stamps
+  # LC_BUILD_VERSION.minos = SDK version (e.g. 18.0) and the app is killed on
+  # older devices at launch (e.g. iOS 16).
+  local deployment_target="${IOS_DEPLOYMENT_TARGET:-15.0}"
   local -a args=(
     -S "${ROOT}"
     -B "$(build_dir)"
     -DCMAKE_SYSTEM_NAME=iOS
     -DCMAKE_OSX_ARCHITECTURES=arm64
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="${deployment_target}"
+    -DPP_BROWSER_IOS_DEPLOYMENT_TARGET="${deployment_target}"
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
     -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}"
     -DPP_BROWSER_PACKAGED_BUILD=ON
@@ -107,11 +141,15 @@ configure_ios() {
 
 cmd_build() {
   require_macos
+  resolve_ios_platform
+  echo "==> Building iOS (${IOS_PLATFORM}) in $(build_dir)"
   cmake --build "$(build_dir)" --config "${BUILD_TYPE}" -j
 }
 
 cmd_install() {
   require_macos
+  resolve_ios_platform
+  echo "==> Installing iOS (${IOS_PLATFORM}) from $(build_dir)"
   cmake --install "$(build_dir)" --config "${BUILD_TYPE}"
   local app="${INSTALL_PREFIX}/Frame.app"
   if [[ -d "$app" ]]; then
@@ -216,6 +254,75 @@ for devices in data.get('devices', {}).values():
   echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name pp-browser-debug.log -exec cat {} \\;"
 }
 
+pick_physical_device_udid() {
+  xcrun xctrace list devices 2>/dev/null | python3 -c "
+import re, sys
+text = sys.stdin.read()
+# Prefer lines like: Name (iOS ver) (UDID) that are not Simulator
+for line in text.splitlines():
+    if 'Simulator' in line:
+        continue
+    m = re.search(r'\(([0-9A-Fa-f-]{25,})\)\s*$', line.strip())
+    if not m:
+        continue
+    udid = m.group(1)
+    # Skip Mac hosts (no iOS version in name typically uses different shape)
+    if 'Mac' in line and 'iPhone' not in line and 'iPad' not in line:
+        continue
+    if 'iPhone' in line or 'iPad' in line or re.search(r'\(\d+\.\d+', line):
+        print(udid)
+        raise SystemExit(0)
+raise SystemExit(1)
+"
+}
+
+cmd_run_device() {
+  require_macos
+  local app="${INSTALL_PREFIX}/Frame.app"
+  if [[ ! -d "$app" ]]; then
+    echo "error: ${app} not found — run './scripts/ios_build.sh device' first" >&2
+    exit 1
+  fi
+
+  local signing_env="${ROOT}/packaging/ios/signing.env"
+  if [[ -f "$signing_env" ]]; then
+    # shellcheck disable=SC1090
+    set -a
+    # shellcheck disable=SC1091
+    source "$signing_env"
+    set +a
+  fi
+
+  if [[ -x "${ROOT}/scripts/ios_sign.sh" ]]; then
+    echo "==> Signing ${app}"
+    "${ROOT}/scripts/ios_sign.sh" sign-app "$app"
+  fi
+
+  local udid="${IOS_DEVICE_UDID:-}"
+  if [[ -z "$udid" ]]; then
+    if ! udid="$(pick_physical_device_udid)"; then
+      echo "error: no connected physical iPhone/iPad found" >&2
+      echo "hint: unlock the phone, trust this Mac, then: xcrun xctrace list devices" >&2
+      exit 1
+    fi
+  fi
+
+  local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
+  echo "==> Installing on device ${udid}"
+
+  # Prefer ios-deploy for older devices (iOS ≤17); CoreDevice/devicectl often
+  # only sees newer phones. Fall back to devicectl when ios-deploy is absent.
+  if command -v ios-deploy >/dev/null 2>&1; then
+    ios-deploy --id "$udid" --bundle "$app" --justlaunch
+  elif xcrun devicectl device install app --device "$udid" "$app" 2>/dev/null; then
+    xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+  else
+    echo "error: could not install — need ios-deploy (brew install ios-deploy) or a CoreDevice-paired phone" >&2
+    exit 1
+  fi
+  echo "==> Installed and launched ${bundle_id} on ${udid}"
+}
+
 cmd_clean() {
   rm -rf "${ROOT}/build-ios-simulator" "${ROOT}/build-ios-device" "${ROOT}/build-ios-xcode"
 }
@@ -225,10 +332,12 @@ main() {
   case "${cmd}" in
     configure-sim)
       IOS_PLATFORM=simulator
+      IOS_PLATFORM_EXPLICIT=1
       configure_ios
       ;;
     configure-device)
       IOS_PLATFORM=device
+      IOS_PLATFORM_EXPLICIT=1
       configure_ios
       ;;
     build)
@@ -239,12 +348,14 @@ main() {
       ;;
     sim)
       IOS_PLATFORM=simulator
+      IOS_PLATFORM_EXPLICIT=1
       configure_ios
       cmd_build
       cmd_install
       ;;
     device)
       IOS_PLATFORM=device
+      IOS_PLATFORM_EXPLICIT=1
       configure_ios
       cmd_build
       cmd_install
@@ -252,8 +363,12 @@ main() {
     run-sim)
       cmd_run_sim
       ;;
+    run-device)
+      cmd_run_device
+      ;;
     xcode)
       IOS_PLATFORM=simulator
+      IOS_PLATFORM_EXPLICIT=1
       GENERATOR=Xcode
       configure_ios
       echo "==> Open $(build_dir)/pp-browser.xcodeproj in Xcode (if generated)"

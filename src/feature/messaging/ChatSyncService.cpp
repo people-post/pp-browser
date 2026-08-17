@@ -4,15 +4,16 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/people/ContactTypes.h"
+#include "base/people/ContactsStore.h"
 
 #include <algorithm>
 
 namespace pbr {
 
-ChatSyncService::ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
-                                 RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+ChatSyncService::ChatSyncService(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts,
+                                 IRelayClient* relay, RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                                  IChatHistoryPeerClient* peer_client)
-    : store_(store), identity_(identity), relay_(relay), peer_client_(peer_client),
+    : store_(store), identity_(identity), contacts_(contacts), relay_(relay), peer_client_(peer_client),
       receive_pipeline_(receive_pipeline), inbox_(inbox) {}
 
 void ChatSyncService::SetOnMessagesChanged(std::function<void()> callback) {
@@ -35,8 +36,35 @@ Roe<ChatHistoryRequest> ChatSyncService::BuildRequest(const Thread& thread, cons
   ChatHistoryRequest request;
   request.requester_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
   request.requester_identity_value = local_identity->relay_user_id;
-  request.peer_identity_kind = thread.peer_identity_kind;
-  request.peer_identity_value = thread.peer_identity_value;
+  // History/stream routing stays on Brief relay ids (M010); thread peer is Account ID.
+  std::string peer_relay;
+  if (!thread.participant_contact_ids.empty()) {
+    if (auto contact = contacts_.Get(thread.participant_contact_ids.front()); contact && *contact) {
+      for (const ContactId& id : (*contact)->ids) {
+        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          peer_relay = id.value;
+          break;
+        }
+      }
+    }
+  }
+  if (peer_relay.empty() && thread.peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) &&
+      !thread.peer_identity_value.empty()) {
+    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, ContactIdKind::Account);
+    if (by_account && by_account->has_value()) {
+      for (const ContactId& id : (**by_account).ids) {
+        if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          peer_relay = id.value;
+          break;
+        }
+      }
+    }
+  }
+  if (peer_relay.empty()) {
+    return Error("Direct thread missing peer relay route for history");
+  }
+  request.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  request.peer_identity_value = peer_relay;
   request.channel = thread.channel;
   request.session_epoch = session_epoch;
   request.limit = std::min(limit, kMaxPollBatchMessages);
@@ -120,11 +148,11 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
       *request.max_sender_seq < sync_state->loaded_min_seq;
 
   auto identity = identity_.Get();
-  const std::string local_relay_id = identity ? (*identity).relay_user_id : std::string{};
+  const std::string local_account_id = identity ? (*identity).account_id : std::string{};
 
   for (const RelayEnvelope& envelope : response.messages) {
     const RelayReceiveOutcome outcome =
-        receive_pipeline_.ProcessEnvelope(envelope, local_relay_id, authorized_older_backfill, transport);
+        receive_pipeline_.ProcessEnvelope(envelope, local_account_id, authorized_older_backfill, transport);
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;

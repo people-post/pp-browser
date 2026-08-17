@@ -19,6 +19,29 @@ std::string ChannelToDb(const CryptoChannel channel) {
   return CryptoChannelToString(channel);
 }
 
+CryptoChannel ChannelFromDb(const std::string& value) {
+  return value == "e2e_public" ? CryptoChannel::E2ePublic : CryptoChannel::E2e;
+}
+
+std::vector<RetiredPskEntry> ParseRetiredPsks(const char* json_text) {
+  std::vector<RetiredPskEntry> retired_psks;
+  if (json_text == nullptr) {
+    return retired_psks;
+  }
+  const nlohmann::json retired = nlohmann::json::parse(json_text, nullptr, false);
+  if (!retired.is_array()) {
+    return retired_psks;
+  }
+  for (const auto& item : retired) {
+    RetiredPskEntry entry;
+    entry.epoch = item.value("epoch", 0u);
+    entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
+    entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
+    retired_psks.push_back(std::move(entry));
+  }
+  return retired_psks;
+}
+
 void ApplyFingerprint(PskSessionRecord& record) {
   record.psk_fingerprint.reset();
   if (!record.master_psk_b64) {
@@ -38,6 +61,18 @@ SqlitePskSessionStore::SqlitePskSessionStore(std::string profile_db_path, std::s
   redirectLogger("SqlitePskSessionStore");
   if (profile_id_.empty()) {
     profile_id_ = "default";
+  }
+}
+
+SqlitePskSessionStore::~SqlitePskSessionStore() {
+  std::lock_guard lock(mutex_);
+  if (db_) {
+    sqlite3_close(db_);
+    db_ = nullptr;
+  }
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+    dek_.clear();
   }
 }
 
@@ -68,12 +103,13 @@ Roe<void> SqlitePskSessionStore::RequireDek() const {
   return {};
 }
 
-Roe<std::string> SqlitePskSessionStore::EncryptPskB64(const std::string& plaintext_b64) const {
+Roe<std::string> SqlitePskSessionStore::EncryptFieldB64(const std::string& plaintext_b64,
+                                                       const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
   const ByteVector plain(plaintext_b64.begin(), plaintext_b64.end());
-  const std::string aad = FileCipher::BuildAad("psk", profile_id_);
+  const std::string aad = FileCipher::BuildAad(aad_kind, profile_id_);
   auto cipher = FileCipher::Encrypt(dek_, plain, aad);
   if (!cipher) {
     return cipher.error();
@@ -81,7 +117,8 @@ Roe<std::string> SqlitePskSessionStore::EncryptPskB64(const std::string& plainte
   return Base64Encode(*cipher);
 }
 
-Roe<std::string> SqlitePskSessionStore::DecryptPskB64(const std::string& ciphertext_b64) const {
+Roe<std::string> SqlitePskSessionStore::DecryptFieldB64(const std::string& ciphertext_b64,
+                                                       const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
@@ -89,12 +126,20 @@ Roe<std::string> SqlitePskSessionStore::DecryptPskB64(const std::string& ciphert
   if (!blob) {
     return blob.error();
   }
-  const std::string aad = FileCipher::BuildAad("psk", profile_id_);
+  const std::string aad = FileCipher::BuildAad(aad_kind, profile_id_);
   auto plain = FileCipher::Decrypt(dek_, *blob, aad);
   if (!plain) {
     return plain.error();
   }
   return std::string(plain->begin(), plain->end());
+}
+
+Roe<std::string> SqlitePskSessionStore::EncryptPskB64(const std::string& plaintext_b64) const {
+  return EncryptFieldB64(plaintext_b64, "psk");
+}
+
+Roe<std::string> SqlitePskSessionStore::DecryptPskB64(const std::string& ciphertext_b64) const {
+  return DecryptFieldB64(ciphertext_b64, "psk");
 }
 
 Roe<PskSessionRecord> SqlitePskSessionStore::DecryptRecord(PskSessionRecord record) const {
@@ -114,6 +159,13 @@ Roe<PskSessionRecord> SqlitePskSessionStore::DecryptRecord(PskSessionRecord reco
       return decrypted.error();
     }
     entry.master_psk_b64 = *decrypted;
+  }
+  if (record.thread_kem_sk_b64) {
+    auto decrypted = DecryptFieldB64(*record.thread_kem_sk_b64, "thread_kem_sk");
+    if (!decrypted) {
+      return decrypted.error();
+    }
+    record.thread_kem_sk_b64 = *decrypted;
   }
   return record;
 }
@@ -136,6 +188,13 @@ Roe<PskSessionRecord> SqlitePskSessionStore::EncryptRecord(PskSessionRecord reco
     }
     entry.master_psk_b64 = *encrypted;
   }
+  if (record.thread_kem_sk_b64) {
+    auto encrypted = EncryptFieldB64(*record.thread_kem_sk_b64, "thread_kem_sk");
+    if (!encrypted) {
+      return encrypted.error();
+    }
+    record.thread_kem_sk_b64 = *encrypted;
+  }
   return record;
 }
 
@@ -157,7 +216,9 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "SELECT session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json FROM chat_targets "
+      "SELECT session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
+      "key_scope, thread_kem_pk_b64, thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, "
+      "psk_rotate_msg_count, last_rotation_id FROM chat_targets "
       "WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK load");
@@ -181,21 +242,28 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
     record.psk_verified_at = sqlite3_column_int64(stmt, 3);
   }
-  if (sqlite3_column_text(stmt, 4)) {
-    const nlohmann::json retired =
-        nlohmann::json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)), nullptr, false);
-    if (retired.is_array()) {
-      for (const auto& item : retired) {
-        RetiredPskEntry entry;
-        entry.epoch = item.value("epoch", 0u);
-        entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
-        entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
-        record.retired_psks.push_back(std::move(entry));
-      }
-    }
+  record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
+  if (sqlite3_column_text(stmt, 5)) {
+    record.key_scope = PublicKeyScopeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)));
+  }
+  if (sqlite3_column_text(stmt, 6)) {
+    record.thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+  }
+  if (sqlite3_column_text(stmt, 7)) {
+    record.thread_kem_sk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+  }
+  if (sqlite3_column_text(stmt, 8)) {
+    record.peer_thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+  }
+  if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
+    record.last_psk_rotate_at = sqlite3_column_int64(stmt, 9);
+  }
+  record.psk_rotate_msg_count = static_cast<uint32_t>(sqlite3_column_int(stmt, 10));
+  if (sqlite3_column_text(stmt, 11)) {
+    record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
   }
   sqlite3_finalize(stmt);
-  if (!record.master_psk_b64 && record.retired_psks.empty()) {
+  if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
     return std::optional<PskSessionRecord>(record);
   }
   auto decrypted = DecryptRecord(std::move(record));
@@ -203,6 +271,75 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
     return decrypted.error();
   }
   return std::optional<PskSessionRecord>(*decrypted);
+}
+
+Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT peer_identity_kind, peer_identity_value, channel, session_epoch, master_psk_b64, psk_fingerprint, "
+      "psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, thread_kem_sk_b64, "
+      "peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id FROM chat_targets;";
+  if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare PSK list");
+  }
+  std::vector<PskSessionRecord> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PskSessionRecord record;
+    if (sqlite3_column_text(stmt, 0)) {
+      record.key.peer_identity_kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    if (sqlite3_column_text(stmt, 1)) {
+      record.key.peer_identity_value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    if (sqlite3_column_text(stmt, 2)) {
+      record.key.channel = ChannelFromDb(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
+    }
+    record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 3));
+    if (sqlite3_column_text(stmt, 4)) {
+      record.master_psk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+    }
+    if (sqlite3_column_text(stmt, 5)) {
+      record.psk_fingerprint = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      record.psk_verified_at = sqlite3_column_int64(stmt, 6);
+    }
+    record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7)));
+    if (sqlite3_column_text(stmt, 8)) {
+      record.key_scope = PublicKeyScopeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)));
+    }
+    if (sqlite3_column_text(stmt, 9)) {
+      record.thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+    }
+    if (sqlite3_column_text(stmt, 10)) {
+      record.thread_kem_sk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+    }
+    if (sqlite3_column_text(stmt, 11)) {
+      record.peer_thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+    }
+    if (sqlite3_column_type(stmt, 12) != SQLITE_NULL) {
+      record.last_psk_rotate_at = sqlite3_column_int64(stmt, 12);
+    }
+    record.psk_rotate_msg_count = static_cast<uint32_t>(sqlite3_column_int(stmt, 13));
+    if (sqlite3_column_text(stmt, 14)) {
+      record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 14));
+    }
+    if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
+      continue;
+    }
+    auto decrypted = DecryptRecord(std::move(record));
+    if (!decrypted) {
+      sqlite3_finalize(stmt);
+      return decrypted.error();
+    }
+    rows.push_back(std::move(*decrypted));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
 }
 
 Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
@@ -229,12 +366,16 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
-      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
+      "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
       "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
-      "retired_psks_json=excluded.retired_psks_json;";
+      "retired_psks_json=excluded.retired_psks_json, key_scope=excluded.key_scope, "
+      "thread_kem_pk_b64=excluded.thread_kem_pk_b64, thread_kem_sk_b64=excluded.thread_kem_sk_b64, "
+      "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
+      "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK save");
   }
@@ -259,6 +400,33 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
     sqlite3_bind_null(stmt, 8);
   }
   sqlite3_bind_text(stmt, 9, retired_json.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 10, PublicKeyScopeToString(to_save.key_scope), -1, SQLITE_TRANSIENT);
+  if (to_save.thread_kem_pk_b64) {
+    sqlite3_bind_text(stmt, 11, to_save.thread_kem_pk_b64->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 11);
+  }
+  if (to_save.thread_kem_sk_b64) {
+    sqlite3_bind_text(stmt, 12, to_save.thread_kem_sk_b64->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 12);
+  }
+  if (to_save.peer_thread_kem_pk_b64) {
+    sqlite3_bind_text(stmt, 13, to_save.peer_thread_kem_pk_b64->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 13);
+  }
+  if (to_save.last_psk_rotate_at) {
+    sqlite3_bind_int64(stmt, 14, *to_save.last_psk_rotate_at);
+  } else {
+    sqlite3_bind_null(stmt, 14);
+  }
+  sqlite3_bind_int(stmt, 15, static_cast<int>(to_save.psk_rotate_msg_count));
+  if (to_save.last_rotation_id) {
+    sqlite3_bind_text(stmt, 16, to_save.last_rotation_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 16);
+  }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to save PSK row");
@@ -346,6 +514,13 @@ Roe<void> SqlitePskSessionStore::ImportPskBundle(const ChatTargetKey& key, const
   record.psk_verified_at = std::nullopt;
   if (auto existing = Load(key); existing && existing->has_value()) {
     record.retired_psks = PskBundleCodec::MergeRetired(existing->value().retired_psks, bundle.retired_epochs);
+    record.key_scope = existing->value().key_scope;
+    record.thread_kem_pk_b64 = existing->value().thread_kem_pk_b64;
+    record.thread_kem_sk_b64 = existing->value().thread_kem_sk_b64;
+    record.peer_thread_kem_pk_b64 = existing->value().peer_thread_kem_pk_b64;
+    record.last_psk_rotate_at = existing->value().last_psk_rotate_at;
+    record.psk_rotate_msg_count = existing->value().psk_rotate_msg_count;
+    record.last_rotation_id = existing->value().last_rotation_id;
   } else {
     record.retired_psks = bundle.retired_epochs;
   }

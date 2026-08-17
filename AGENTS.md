@@ -6,37 +6,37 @@ This document orients coding agents working in this repository.
 
 pp-browser is a native AI-oriented UI shell:
 
-- **SDL3 + OpenGL3** — windowing (`src/render/integration/`)
-- **Hard-forked RmlUi** — UI layout in `src/render/fork/`
-- **Hard-forked libp2p** — P2P networking in `src/libp2p/fork/`
+- **SDL3 + OpenGL3** — windowing (`src/base/render/`)
+- **Hard-forked RmlUi** — UI layout in `src/lib/rmlui/`
+- **Hard-forked libp2p** — P2P networking in `src/lib/libp2p/`
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
-- **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
+- **Five-layer source tree** — `src/common/`, `src/lib/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + libp2p; call media on libp2p — V026). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
 ## RmlUi is maintained in-tree
 
-We **own and modify** the vendored copy under [`src/render/fork/`](src/render/fork/). It is not a submodule.
+We **own and modify** the vendored copy under [`src/lib/rmlui/`](src/lib/rmlui/). It is not a submodule.
 
 - Edit RmlUi directly when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific SDL/GL glue stays in [`src/render/integration/`](src/render/integration/), not in the fork.
+- App-specific SDL/GL glue stays in [`src/base/render/`](src/base/render/), not in the fork.
 
 ### Fork features (pp-browser)
 
 | Feature | Location | Usage |
 |---------|----------|--------|
-| Text selection in static content | `src/render/fork/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
-| User-agent baseline styles | `src/render/fork/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
-| List markers (workaround) | `src/render/fork/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md) |
+| Text selection in static content | `src/lib/rmlui/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
+| User-agent baseline styles | `src/lib/rmlui/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
+| List markers (workaround) | `src/lib/rmlui/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md) |
 
 ## libp2p is maintained in-tree
 
-We **own and modify** the hard fork under [`src/libp2p/fork/`](src/libp2p/fork/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
+We **own and modify** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
 
 - Edit libp2p directly when protocol or transport changes are needed.
 - Document fork-specific changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
-- App-specific glue lives in [`src/libp2p/integration/host/`](src/libp2p/integration/host/) (not in the fork proper).
+- App-specific glue lives in [`src/base/p2p/`](src/base/p2p/) (not in the fork proper).
 - Import/update libp2p deps with `./scripts/libp2p_vendor_import.sh`.
 
 ## UI generation constraints
@@ -62,6 +62,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
+| Libp2p stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/base/p2p/StreamFrameIo.*` |
 | P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done; **N023** relay scope ([RELAY_SCOPE.md](projects/p2p-mesh/RELAY_SCOPE.md)); **N022** invest libp2p; **N026** media-relay attach SM design ([MEDIA_RELAY_ATTACH.md](projects/p2p-mesh/MEDIA_RELAY_ATTACH.md)) |
 | P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** libp2p media (**m1** mobile LAN OK; **m2** teardown done); **V033** session SMs + circuit compose; **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
@@ -70,6 +71,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |
+| Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) — **m3 `endpoints[]` landed**; next **m4c** paste contacts (M018) — amends D096 (D099), E025, A010 |
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — ADR A007 in [projects/at-rest-crypto/DECISIONS.md](projects/at-rest-crypto/DECISIONS.md) |
 | Chat storage / memory | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — **Waves 1–2 done**; Wave 3 next (v3 ∥ v4) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/runtime/`, `src/base/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
@@ -77,6 +79,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
+| Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
 | Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md) |
 | UI vs functional decoupling | [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](docs/architecture/RUNTIME_COMPOSITION.md) |
@@ -90,3 +93,4 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
 - Respect layer dependencies: `app → feature → base → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
+- **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).

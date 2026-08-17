@@ -79,8 +79,13 @@ Choose the lightest primitive that fits the user task:
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
 | **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Compact Me: profile and preferences without switching `nav_tab` | Me settings list/detail inside sheet |
-| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`) |
+| **Bottom chrome** | `SetBottomChrome` / `ClearBottomChrome` | IME-replacement bottom panel: remount-only, no scrim, latched IME height | Mobile/compact emoji **Insert** |
+| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji **React** / expanded Insert overlay |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
+
+`PaneSpec.return_focus_id` (optional): when set, `PushLayer` restores that element on close instead of the live focus target (e.g. expanded emoji Insert → `#draft-input`).
+
+Bottom chrome mounts into `#shell-emoji-keyboard-mount` (sibling of `#shell-root`), lifts `#shell-root` by panel height, and dismisses via Back/Escape (`HandleDismiss`) or the composer ☺ toggle — not a dimming scrim. Open/close remounts that mount only (same deferral rule as call chrome); it does not `SyncLayout` the shell tree.
 
 **Do not** stack `ShellFeedback::ShowPrompt` on top of an active `PushLayer` flow. Keep wizard steps in the same overlay (or push a dedicated step view on the overlay stack).
 
@@ -95,7 +100,9 @@ Choose the lightest primitive that fits the user task:
 | PIN gate / unlock_in_progress | `DirtyPinGate()` |
 | Activity / statusbar / titlebar / fonts | `DirtyStatusChrome()` |
 | Full refresh after shell remount | `DirtyWindow()` (calls all domains; used by `SyncLayout`) |
-| Shell tree change (nav, panes, overlays, dialog, layout mode) | `RequestSyncLayout(reason)` |
+| Shell tree change (nav, panes, overlays, layout mode) | `RequestSyncLayout(reason)` |
+| Dialog open / close | `RemountDialogChrome()` (not full `SyncLayout`) |
+| PIN gate show / dismiss / mode change | `RemountPinGateChrome()` (not full `SyncLayout`) |
 | Call chrome labels / icons / meters (layer already mounted) | `apply_chrome_update(DirtyOnly)` → `DirtyCallChrome()` |
 | Call ring / in-call layer appear or disappear | `apply_chrome_update(Remount)` → `RemountCallChrome()` (not full `SyncLayout`) |
 | Periodic poll / tick | Reconcile state only; remount **iff** structure changed; dirty only when bindings changed |
@@ -110,11 +117,11 @@ Call chrome stays special-cased (`CallController` + `CallChromeSync`). See [SHEL
 
 Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. `CallController` classifies changes and notifies ShellHost via `apply_chrome_update` — it does **not** call grab-bag `DirtyWindow`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Control *presence* (stage / retry / invite / speaker button / roster) and **chrome mode** (Expanded / Immersive / Minimized — V031) also remount. Mute / speaker / camera icon toggles use `DirtyCallChrome` + single SVG `data-attr-src` (and `--on` class) — not remount/bake, and not dual `data-if` SVGs. Meter/pulse/elapsed ticks use `DirtyCallChrome` only. After each in-call remount, `ShellCallChromeGesture` re-attaches to `#shell-call-chrome-root` (or the minimized chip).
 
-`RemountCallChrome` **defers** `MountInner` to the next UI turn (same reason as deferred `SyncLayout`): doing it inside an Rml Leave/Accept click destroys the event target mid-dispatch and can segfault. `SyncLayout` still fills mounts synchronously after the shell remount.
+`RemountCallChrome` **defers** `MountInner` to the next UI turn (same reason as deferred `SyncLayout`): doing it inside an Rml Leave/Accept click destroys the event target mid-dispatch and can segfault. `SyncLayout` still fills mounts synchronously after the shell remount. `RemountDialogChrome` / `RemountPinGateChrome` use the same deferral.
 
-**Why not always-mounted `data-if` for the Accept layer?** Binding state can be true and the frame loop can Present while Rml `data-if` leaves the overlay at `display:none`. Dialogs already use presence-based mount (`SerializeDialog` empty vs HTML). Call chrome follows that pattern scoped to dedicated mounts so chat panes stay intact. Inner `data-if` (conflict copy, video stage/PiP) remains fine for fields *inside* an already-mounted layer.
+**Why not always-mounted `data-if` for the Accept layer?** Binding state can be true and the frame loop can Present while Rml `data-if` leaves the overlay at `display:none`. Dialogs already use presence-based mount (`SerializeDialog` empty vs HTML) into `#shell-dialog-mount`. Call chrome and PIN gate follow that pattern on dedicated mounts so chat panes stay intact. Inner `data-if` (conflict copy, video stage/PiP) remains fine for fields *inside* an already-mounted layer.
 
-Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog.
+Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close` → `RemountDialogChrome`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog. PIN gate show/dismiss uses `RemountPinGateChrome` via `ShellPinGatePorts::remount_pin_gate`.
 
 Timers (e.g. foreground relay poll) must never remount “just in case.”
 

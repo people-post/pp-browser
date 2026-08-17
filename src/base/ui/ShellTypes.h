@@ -93,6 +93,17 @@ struct PaneSpec {
   PaneRole role = PaneRole::Primary;
   Rml::String toolbar_label;
   bool provides_composer = false;
+  /**
+   * When non-empty, PushLayer stores this element id for RestoreFocus on close
+   * instead of the live focus element (often the button that opened the overlay).
+   */
+  std::string return_focus_id;
+};
+
+/** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
+struct BottomChromeSpec {
+  std::string key;
+  std::string rml_path;
 };
 
 struct PaneState {
@@ -103,6 +114,8 @@ struct PaneState {
 struct OverlayEntry {
   int id = 0;
   OverlayKind kind = OverlayKind::Generic;
+  /** ViewCatalog key (e.g. emoji_picker); used for presentation variants. */
+  std::string key;
   std::string rml_path;
   std::function<void(bool)> on_result;
 };
@@ -133,13 +146,18 @@ struct DialogState {
 /** PIN unlock / create / chooser overlay. Unlock is mandatory; create and chooser may cancel. */
 struct PinGateState {
   bool active = false;
+  /** No vault yet: I'm new vs I already have an account. */
+  bool identity_fork_mode = false;
   bool chooser_mode = false;
   bool create_mode = false;
+  /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
+  bool link_paste_mode = false;
   Rml::String title;
   Rml::String message;
   Rml::String error;
   Rml::String pin;
   Rml::String pin_confirm;
+  Rml::String link_payload;
   std::function<void(bool unlocked)> on_result;
 };
 
@@ -149,6 +167,10 @@ struct CallRingState {
   bool pulse = false;
   /** True when Accept would end an existing local call. */
   bool conflict = false;
+  /** P001: initiation offer > 0 — show waive / take-all actions. */
+  bool show_pricing = false;
+  /** Take-all enabled only when settlement rails exist. */
+  bool accept_charge_enabled = false;
   Rml::String call_id;
   Rml::String caller_label;
   Rml::String media_label;
@@ -156,6 +178,9 @@ struct CallRingState {
   Rml::String conflict_hint;
   Rml::String accept_label;
   Rml::String decline_label;
+  Rml::String pricing_label;
+  Rml::String accept_charge_label;
+  Rml::String accept_charge_hint;
 };
 
 /** One row in the in-call participant roster strip. */

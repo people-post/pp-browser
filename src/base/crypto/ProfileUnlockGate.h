@@ -15,7 +15,9 @@ namespace pbr {
  * Application fills from feature PinGateController. Not a singleton.
  */
 struct ProfileUnlockUiPorts {
-  /** No vault yet — three-way chooser. */
+  /** No vault yet — I'm new vs I already have an account. Falls back to show_chooser. */
+  std::function<void()> show_identity_fork;
+  /** No vault, "I'm new" — three-way PIN chooser. */
   std::function<void()> show_chooser;
   /** Existing vault, custom PIN — blocking unlock modal. */
   std::function<void()> show_unlock;
@@ -27,6 +29,8 @@ struct ProfileUnlockUiPorts {
   std::function<void(const std::string& message)> show_error;
   /** After chooser "Just continue" provisions the default PIN successfully. */
   std::function<void()> on_default_provisioned;
+  /** After first-run link-device import succeeds (UI thread). */
+  std::function<void()> on_link_imported;
 };
 
 /**
@@ -40,6 +44,8 @@ struct ProfileUnlockPorts {
 
   std::function<bool()> pin_is_default;
   std::function<void(bool is_default)> set_pin_is_default;
+  /** Empty-vault link-device: wrap shared DEK with `pin` and apply the bundle. */
+  std::function<Roe<void>(const std::string& pin, const std::string& bundle_json)> import_link_device;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -81,6 +87,8 @@ public:
   void CompleteWithPin(const std::string& pin, bool create_mode);
   /** UI: chooser "use default PIN" (async when run_heavy is set). */
   void CompleteWithDefaultPin();
+  /** UI: first-run "I already have an account" after PIN + paste. */
+  void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
   /** UI: cancel chooser / create only. */
   void Cancel();
 
@@ -88,6 +96,7 @@ private:
   ProfileSecretsService& Secrets();
   Roe<void> UnlockAndReady(const std::string& pin);
   void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);
+  void RequestShowIdentityFork(std::function<void(bool)> done);
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);

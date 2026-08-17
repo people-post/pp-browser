@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
@@ -15,16 +16,18 @@
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
+#include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/net/ServiceClients.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -59,6 +62,18 @@ public:
                                      const SendRelayOptions& options = {});
   Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text,
                                       const SendRelayOptions& options = {});
+  /**
+   * P001: re-lock peer initiation billing (`charge_required` system message) then MarkClosed locally.
+   * `floor_minor` defaults to local identity initiation_floor when nullopt.
+   */
+  Roe<void> SendChargeRequired(const std::string& peer_identity,
+                               std::optional<int64_t> floor_minor = std::nullopt);
+  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
+  Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
+                                  const std::string& emoji);
+  Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
+                                   const std::string& emoji);
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);
@@ -77,6 +92,7 @@ public:
   void SetRelayClient(IRelayClient* relay);
   void SetCallSessionManager(CallSessionManager* calls);
   void SetGroupMembership(GroupMembershipService* groups);
+  void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
@@ -96,6 +112,10 @@ public:
   Roe<uint32_t> StartNewSecureChat(const std::string& thread_id);
   /** E020 — rotate PSK, bump epoch, return OOB bundle JSON. */
   Roe<std::string> RotatePskAndExportBundle(const std::string& thread_id);
+  /** E027 — public 1:1 in-band device-lock (not private OOB rotate). */
+  Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
+  Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id) const;
+  Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id) const;
   /** D038 — pause ingest/outbound without rotating keys. */
   Roe<void> PauseIntegrityOnly(const std::string& thread_id);
 
@@ -145,6 +165,9 @@ private:
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
   bool IsPskReadyToSend(const std::string& thread_id) const;
+  bool HasActiveLocalCall() const;
+  Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
+  Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope);
   void LoadPersistedRelayCursor(const std::string& relay_user_id);
@@ -164,6 +187,7 @@ private:
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
+  InitiationBillingStore* initiation_billing_ = nullptr;
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;
@@ -173,6 +197,8 @@ private:
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
+  PublicPskLockCoordinator public_lock_;
+  CallSessionManager* call_sessions_ = nullptr;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const std::string&)> on_delivery_notice_;

@@ -46,7 +46,7 @@ feature/ui
 ## PIN policy
 
 - Collected in-app (`PinGateController` overlay). CLI/env optional for automation.
-- **No vault:** defer until first secrets use; three-way chooser (A007) — custom PIN, Just continue (app default), or cancel.
+- **No vault:** defer until first secrets use; identity fork then A007 chooser (I'm new) or link-device paste (I already have an account).
 - **Vault + `pin_is_default`:** silent unlock at bootstrap and UI load; toast nudges user to Me → Security.
 - **Vault + custom PIN:** blocking unlock after UI load (mandatory; no cancel).
 - **Change PIN:** Me → Security when unlocked; clears `pin_is_default`.

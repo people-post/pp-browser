@@ -7,6 +7,7 @@
 #include "feature/settings/SettingsUiState.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -15,6 +16,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,8 +29,6 @@ class Context;
 }
 
 namespace pbr {
-
-class ProfileUnlockGate;
 
 class SettingsController : public Module {
 public:
@@ -61,7 +61,7 @@ public:
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
   bool RegisterModel(Rml::Context* context);
@@ -139,11 +139,14 @@ private:
     Rml::String profile_size_label;
     Rml::String pin_protection_status;
     bool security_can_change_pin = false;
+    bool security_can_export_link = false;
     Rml::String pin_change_old;
     Rml::String pin_change_new;
     Rml::String pin_change_confirm;
     Rml::String group_invite_policy = "contacts_only";
     Rml::String group_invite_policy_label = "Contacts only";
+    Rml::String tool_permissions_summary = "None saved";
+    bool tool_permissions_has_saved = false;
     Rml::String app_name;
     Rml::String app_version;
   };
@@ -178,7 +181,9 @@ private:
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnExportLinkDeviceCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
@@ -193,6 +198,8 @@ private:
   bool ComputeNetworkAttention() const;
   SessionStore& Store();
   void FinishPaneResync();
+  /** Mount selected section RML into #settings-section-mount (one section at a time). */
+  void MountSelectedSettingsSection();
   void OnSelectSection(const std::string& section_id);
   void OpenSettingsDetailPane();
   bool CloseSettingsDetailPane();
@@ -216,7 +223,10 @@ private:
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChangePin();
+  void OnExportLinkDevice();
+  void EnsureSecurityUnlocked(std::function<void()> then);
   void OnClearUndeliveredOlderThan();
+  void OnResetToolPermissions();
   void OnResetProfile();
   void PerformResetProfile();
   void OnChooseTheme(Rml::Event& ev);
@@ -249,7 +259,7 @@ private:
   SettingsCommands commands_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
+  UnlockEnsurePorts unlock_ensure_;
 
   static SettingsController* installed_instance_;
 };

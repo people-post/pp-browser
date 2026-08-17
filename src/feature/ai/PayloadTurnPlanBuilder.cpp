@@ -8,10 +8,6 @@ namespace pbr {
 
 namespace {
 
-bool Contains(const std::string& haystack, const std::string& needle) {
-  return haystack.find(needle) != std::string::npos;
-}
-
 std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
                                 const std::string& default_value = {}) {
   if (!json.contains(key)) {

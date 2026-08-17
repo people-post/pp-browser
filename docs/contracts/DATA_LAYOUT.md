@@ -33,11 +33,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 1; unversioned migrates on unlock)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor)
+  initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
   contacts.json             # address book (schema_version 1: local + remote + overrides{}); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK columns encrypted)
+    profile.db              # thread catalog, outbox, chat_targets (PSK + conversation KEM columns encrypted; user_version 3)
     {thread_id}/
       thread.db             # messages, memory, sync_state (plaintext — D048)
       blobs/                # attachment placeholder
@@ -76,5 +77,18 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |
 | `compact_chrome_frost` | `preferences.json` | boolean, schema v8; default true; dogfood off in JSON |
 | `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
+| `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
+| `recent_emojis` | `preferences.json` | string array, schema v12 — MRU glyphs for the in-app emoji picker (cap 36) |
+
+`tool_permissions` shape:
+
+```json
+"tool_permissions": {
+  "schema_version": 1,
+  "defaults": { "read": "allow", "write": "ask", "destructive": "ask" },
+  "by_tool": { "add_contact": { "decision": "allow" } },
+  "by_provider": {}
+}
+```
 
 Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.

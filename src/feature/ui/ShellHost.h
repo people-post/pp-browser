@@ -4,7 +4,11 @@
 #include "base/data/UserPreferences.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingShellPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
+#include "feature/ui/ShellCallChromePorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
@@ -26,10 +30,6 @@ class Element;
 }
 
 namespace pbr {
-
-class PinGateController;
-class FlowCoordinator;
-class CallController;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -80,9 +80,9 @@ public:
   void OpenStatusbarPopover();
   void CloseStatusbarPopover();
   void ToggleStatusbarPopover();
-  void BindPinGate(PinGateController& pin_gate);
-  void BindFlowCoordinator(FlowCoordinator& flow);
-  void BindCallController(CallController& call);
+  void BindPinGateActions(PinGateActionPorts ports);
+  void BindFlowCoordinator(FlowCoordinatorPorts ports);
+  void BindCallActions(CallActionsPorts ports);
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -90,6 +90,10 @@ public:
   /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
    *  Defers to the next UI turn so Rml click handlers are not mid-dispatch on destroyed nodes. */
   void RemountCallChrome();
+  /** Mount/clear alert/confirm/prompt into #shell-dialog-mount (not full SyncLayout). */
+  void RemountDialogChrome();
+  /** Mount/clear PIN gate into #shell-pin-gate-mount (not full SyncLayout). */
+  void RemountPinGateChrome();
   void Update(Rml::Context* context);
   /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(Rml::Context* context);
@@ -142,8 +146,13 @@ public:
   void DirtyStatusChrome();
   /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
-  /** ShellHost applies Remount or DirtyCallChrome + force-frame for call chrome updates. */
-  void ApplyCallChromeUpdate(CallChromeUpdate update);
+  /**
+   * Copy presenter call-chrome snapshot into State, then Remount or DirtyCallChrome + force-frame.
+   * Classification (None / DirtyOnly / Remount) is owned by CallController.
+   */
+  void ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update);
+  /** Copy presenter PIN gate snapshot into State (binding target). */
+  void ApplyPinGateState(const PinGateState& state);
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
@@ -162,6 +171,17 @@ public:
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
   void RefreshSafeAreaInsets(Rml::Context* context);
+
+  /**
+   * Mobile/compact IME-replacement bottom panel (no scrim, remount-only).
+   * Dismisses the OSK and latches height from the last IME inset (or a default).
+   * @return false when bottom-chrome presentation is not used (expanded desktop).
+   */
+  bool SetBottomChrome(const BottomChromeSpec& spec);
+  void ClearBottomChrome();
+  bool BottomChromeOpen() const { return bottom_chrome_open_; }
+  bool UsesBottomChromePresentation() const;
+  void SetOnBottomChromeDismissed(std::function<void()> callback);
 
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
@@ -182,7 +202,10 @@ public:
   static void PinGateCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateSetPinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateUseDefaultCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateIdentityNewCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateIdentityLinkCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallAcceptCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallAcceptChargeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallDeclineCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallLeaveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallRetryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -218,6 +241,7 @@ private:
   std::string SerializeCompactBase() const;
   std::string SerializeAccountSheet() const;
   std::string SerializeOverlays() const;
+  std::string SerializeBottomChrome() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
   std::string SerializeCallRing() const;
@@ -225,6 +249,9 @@ private:
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();
+  void RemountBottomChrome();
+  void FlushRemountBottomChrome();
+  void RemountBottomChromeNow();
   void MountNavRail();
   void MountNavContent();
   void MountComposer();
@@ -243,6 +270,10 @@ private:
   void FlushPendingSyncLayout();
   void RemountCallChromeNow();
   void FlushRemountCallChrome();
+  void RemountDialogChromeNow();
+  void FlushRemountDialogChrome();
+  void RemountPinGateChromeNow();
+  void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
@@ -273,6 +304,15 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
+  int last_ime_bottom_dp_ = 0;
+  /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
+  int bottom_chrome_height_dp_ = 0;
+  bool bottom_chrome_open_ = false;
+  std::string bottom_chrome_key_;
+  std::string bottom_chrome_rml_path_;
+  bool remount_bottom_chrome_pending_ = false;
+  std::function<void()> on_bottom_chrome_dismissed_;
   LayoutMode last_synced_mode_ = LayoutMode::Expanded;
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;
@@ -282,6 +322,8 @@ private:
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool remount_call_chrome_pending_ = false;
+  bool remount_dialog_chrome_pending_ = false;
+  bool remount_pin_gate_chrome_pending_ = false;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
@@ -297,9 +339,9 @@ private:
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
   bool statusbar_popover_needs_position_ = false;
-  PinGateController* pin_gate_ = nullptr;
-  FlowCoordinator* flow_ = nullptr;
-  CallController* call_ = nullptr;
+  PinGateActionPorts pin_gate_actions_;
+  FlowCoordinatorPorts flow_coordinator_;
+  CallActionsPorts call_actions_;
 
   static ShellHost* installed_instance_;
 };

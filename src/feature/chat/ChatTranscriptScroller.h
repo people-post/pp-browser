@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ui/ChatWidgetTypes.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 
 #include <RmlUi/Core/Types.h>
 
@@ -29,7 +29,7 @@ public:
   };
 
   ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready);
-  void BindChatPorts(MessagingChatPorts ports);
+  void BindMessagingFacade(MessagingFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
 
@@ -44,6 +44,15 @@ public:
   bool IsPinnedToBottom() const { return pinned_to_bottom_; }
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
   std::optional<int64_t>& LoadedMinDisplayOrder() { return loaded_min_display_order_; }
+  const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }
+
+  /**
+   * Cap `messages` to kMaxMessagesDomWindow. When pinned, drop oldest and raise loaded_min.
+   * When unpinned (history), drop newest and set loaded_max. Returns true if trimmed.
+   */
+  static bool TrimDomWindow(std::vector<MessageDisplayRow>& messages, bool pinned_to_bottom,
+                            std::optional<int64_t>& loaded_min, std::optional<int64_t>& loaded_max,
+                            bool& has_more_local_history);
 
   /** Call at start of SyncDisplayFromThread; returns true if active thread id changed. */
   bool BeginDisplaySync(const std::string& thread_id);
@@ -77,11 +86,13 @@ private:
   bool has_more_local_history_ = false;
   std::string scroll_thread_id_;
   std::optional<int64_t> loaded_min_display_order_;
+  /** When set, transcript window excludes tip rows newer than this (after history trim). */
+  std::optional<int64_t> loaded_max_display_order_;
   std::optional<float> pending_scroll_height_before_;
   std::optional<float> pending_scroll_top_before_;
   float last_messages_scroll_height_ = 0.f;
   int unread_while_scrolled_ = 0;
-  MessagingChatPorts chat_ports_;
+  MessagingFacade* facade_ = nullptr;
 };
 
 } // namespace pbr

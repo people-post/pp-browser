@@ -2,11 +2,21 @@
 
 set(PP_BROWSER_IOS_BUNDLE_ID "dev.pp-browser.ios" CACHE STRING "iOS CFBundleIdentifier")
 set(PP_BROWSER_IOS_BUNDLE_NAME "Frame" CACHE STRING "iOS CFBundleDisplayName / bundle folder")
-set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET)")
+# Prefer the value set before project() in the top-level CMakeLists (required for Ninja).
+if(NOT PP_BROWSER_IOS_DEPLOYMENT_TARGET)
+  set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING
+    "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET)")
+endif()
 
 function(pp_browser_configure_ios_app target)
   if(NOT PP_BROWSER_IS_IOS)
     return()
+  endif()
+
+  # Reinforce for Ninja incremental builds / late includes (no-op if already set).
+  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "${PP_BROWSER_IOS_DEPLOYMENT_TARGET}")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${PP_BROWSER_IOS_DEPLOYMENT_TARGET}" CACHE STRING
+      "Minimum iOS version for linked binaries" FORCE)
   endif()
 
   set(_ios_info_plist "${CMAKE_SOURCE_DIR}/packaging/ios/Info.plist")

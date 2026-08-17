@@ -30,7 +30,8 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };
-  navigation.fonts_ready = [&shell]() -> bool& { return shell.State().fonts_ready; };
+  navigation.set_fonts_ready = [&shell](const bool ready) { shell.State().fonts_ready = ready; };
+  navigation.fonts_ready = [&shell]() { return shell.State().fonts_ready; };
   navigation.set_nav_badges = [&shell](const NavBadgeState& badges) {
     shell.State().nav_badges = badges;
     shell.DirtyNavChrome();
@@ -40,6 +41,10 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.close_auxiliary = [&shell]() { shell.CloseAuxiliary(); };
   navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
   navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
+  navigation.set_bottom_chrome = [&shell](const BottomChromeSpec& spec) { return shell.SetBottomChrome(spec); };
+  navigation.clear_bottom_chrome = [&shell]() { shell.ClearBottomChrome(); };
+  navigation.bottom_chrome_open = [&shell]() { return shell.BottomChromeOpen(); };
+  navigation.uses_bottom_chrome = [&shell]() { return shell.UsesBottomChromePresentation(); };
   return navigation;
 }
 

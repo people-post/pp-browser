@@ -46,11 +46,11 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
+RmlUi is **hard-forked** under `src/lib/rmlui/`. libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
-Chat/CJK fonts (Noto Sans CJK Regular + Noto Emoji) ship under `assets/fonts/`. To refresh them:
+Chat/CJK fonts (Noto Sans CJK Regular + **Noto Color Emoji** CBDT, with monochrome Noto Emoji as secondary fallback) ship under `assets/fonts/`. FreeType is built with libpng so CBDT color bitmaps load. To refresh fonts:
 
 ```bash
 ./scripts/fonts_import_noto.sh
@@ -67,6 +67,8 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
+First-party targets (`src/common`, `src/base`, `src/feature`, `src/app`, and render/libp2p integration glue) compile with `-Wall -Wextra` (MSVC `/W4`) and treat warnings as errors by default (`PP_BROWSER_WARNINGS_AS_ERRORS=ON`). On GCC/Clang, `-Wmissing-field-initializers` and `-Wunused-parameter` are suppressed (noisy with aggregate init and interface overrides). On MSVC, `_CRT_SECURE_NO_WARNINGS`, `/wd4100` (unused parameter), and `/wd4458` (member shadowing; GCC has no `-Wshadow` by default) are applied for the same reasons. Disable the whole policy with `-DPP_BROWSER_WARNINGS_AS_ERRORS=OFF` if you need a temporary escape hatch. Vendored `third_party/` and the RmlUi / libp2p forks keep their own warning settings.
+
 Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
 
 ```bash
@@ -74,6 +76,19 @@ rm -rf build/third_party/sdl3
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
+
+### Owned forks (RmlUi / libp2p)
+
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+
+| Option | Default (desktop) | Effect |
+|--------|-------------------|--------|
+| `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
+| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
+| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
+| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
+
+Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
 ### libp2p tests and coverage
 
@@ -154,7 +169,7 @@ cmake --build build -j --target pp-node
   - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh).
-- **Image smoke (L0/L1):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md) — `scripts/pp_node_image_smoke.sh`, `scripts/pp_node_relay_smoke.sh`, `pp-node-probe` (L2 multi-container deferred).
+- **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
 - **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; cut tags from **`main`**. Tip development is on **`develop`**. See [RELEASE.md](RELEASE.md).
 - **Node release CI** builds on Ubuntu 24.04 (same family as `ubuntu:24.04` image), attaches a Linux tarball to the **pp-node** GitHub Release, pushes GHCR, and runs L0 smoke.
 - Local tarball + image smoke (on Ubuntu 24.04):
@@ -162,9 +177,8 @@ cmake --build build -j --target pp-node
 ```bash
 sudo apt-get install -y cmake ninja-build ccache pkg-config
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-docker build -t pp-node:local dist/pp-node/docker
-docker compose -f packaging/pp-node/docker-compose.yml up -d
-./scripts/pp_node_relay_smoke.sh   # L0 HTTP; L1 if pp-node-probe built
+./scripts/pp_local_test.sh run --suite node   # hop + L0/L1/N-FANOUT/N-CAP N=4
+# or manual compose + ./scripts/pp_node_relay_smoke.sh
 ```
 
   Keep build host and image on the same Ubuntu 24.04 family so glibc matches.
@@ -211,6 +225,17 @@ Do **not** pass `-DPP_BROWSER_HEADLESS=ON` for the GUI app — that option is fo
 
 Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 
+## Lint (include / ifdef policy)
+
+Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu: `sudo apt install ripgrep`.
+
+```bash
+./scripts/check_feature_includes.sh
+./scripts/check_platform_ifdefs.sh
+```
+
+OS `#ifdef`s belong in `src/base/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
+
 ## Tests
 
 ```bash
@@ -219,10 +244,12 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) under [`src/render/fork/Tests/`](../src/render/fork/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
 - GoogleTest module suites under `src/.../tests/`.
 
-All suites are discovered through CTest. To run RmlUi fork tests:
+All suites are discovered through CTest. **Writing new tests:** temp SQLite dirs must use a gtest fixture and close stores before `remove_all` — Windows CI fails otherwise; see [TEST_STRATEGY.md § Unit test conventions](TEST_STRATEGY.md#unit-test-conventions).
+
+To run RmlUi fork tests:
 
 ```bash
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure

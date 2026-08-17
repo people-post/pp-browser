@@ -4,6 +4,7 @@
   </div>
 
   <div class="settings-detail-body stack">
-    {{include:settings_sections}}
+    <div id="settings-section-mount-pane"></div>
+    <p class="text muted" data-if="status != ''" data-rml="status"></p>
   </div>
 </div>

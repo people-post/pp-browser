@@ -1,7 +1,7 @@
 #pragma once
 
-#include "libp2p/integration/host/Reachability.h"
-#include "libp2p/integration/host/RelayRuntimeStats.h"
+#include "base/p2p/Reachability.h"
+#include "base/p2p/RelayRuntimeStats.h"
 
 #include <cstddef>
 #include <functional>
@@ -152,8 +152,32 @@ struct MessagingShellPorts {
   std::function<void()> open_network_settings;
 };
 
+class MeshHost;
 class MessagingHub;
 
+/**
+ * Hub-owned bits shell chrome still needs that do not live on MeshHost.
+ * Mesh reads (host running, reachability, relay load) come from the MeshHost*
+ * accessor passed alongside; everything here is projected off the hub.
+ */
+struct MessagingShellPortsDeps {
+  /** Current mesh host; null before the libp2p stack is up (degrade gracefully). */
+  std::function<MeshHost*()> mesh;
+  std::function<bool()> messaging_ready;
+  std::function<BriefRelayHealth()> brief_health;
+  std::function<bool()> help_network_enabled;
+  std::function<std::string()> last_libp2p_error;
+  std::function<void()> retest_reachability;
+  std::function<RelayRuntimeStats()> relay_load_stats;
+};
+
+/** Collect circuit + media relay serving stats from a (possibly null) mesh host. */
+RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh);
+
+/** Core builder: mesh reads via deps.mesh(), hub-owned bits via the deps lambdas. */
+MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps);
+
+/** Thin wrapper: passes hub.Mesh() + hub-projected lambdas to the core builder. */
 MessagingShellPorts MakeMessagingShellPorts(MessagingHub& hub);
 
 } // namespace pbr

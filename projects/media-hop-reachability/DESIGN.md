@@ -9,7 +9,7 @@
 
 ## Overview
 
-Peers (and SoftMigrate) must **dial a media hop by PeerId** under real NATs. That dialability story lives in the **vendored libp2p fork** and thin `libp2p/integration` hosts — not in call signaling or a second NAT toolkit.
+Peers (and SoftMigrate) must **dial a media hop by PeerId** under real NATs. That dialability story lives in the **vendored libp2p fork** and thin `base/p2p` hosts — not in call signaling or a second NAT toolkit.
 
 SoftMigrate (and future 1:1 libp2p voice) **selects** hops and opens `media_relay`; reachability is a **stack precondition**. Hop relays stay **blind**; app E2E call keys remain in the call layer.
 

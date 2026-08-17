@@ -2,6 +2,7 @@ pp_browser_add_base_library(pp_base_ui
   SOURCES
     ChatFormHelper.cpp
     ContextMenuHost.cpp
+    EmojiCatalog.cpp
     InputCoordinator.cpp
     RmlVariantHelpers.cpp
     Theme.cpp
@@ -9,7 +10,7 @@ pp_browser_add_base_library(pp_base_ui
   PUBLIC_LIBS
     pp_base_platform
     pp_base_i18n
-    pp_rmlui_backend
+    pp_base_render
     RmlUi::Core
     nlohmann_json::nlohmann_json)
 

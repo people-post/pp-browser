@@ -16,12 +16,15 @@ set(PP_BROWSER_APP_SOURCES
   PeoplePickerShellBridge.cpp
 )
 
+include(PpBrowserWarnings)
+
 if(ANDROID)
   add_library(${PP_BROWSER_APP_TARGET} SHARED ${PP_BROWSER_APP_SOURCES})
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES OUTPUT_NAME main)
 else()
   add_executable(${PP_BROWSER_APP_TARGET} ${PP_BROWSER_APP_SOURCES})
 endif()
+pp_browser_apply_warnings(${PP_BROWSER_APP_TARGET})
 
 option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
 
@@ -63,17 +66,18 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
 endif()
 
+include(pp_lib_paths)
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
-  ${CMAKE_SOURCE_DIR}/src/render/fork/Source/Core/FontEngineHarfBuzz
+  ${PP_LIB_RMLUI_ROOT}/Source/Core/FontEngineHarfBuzz
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
   pp_common
-  pp_rmlui_backend
+  pp_base_render
+  pp_base_p2p
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json

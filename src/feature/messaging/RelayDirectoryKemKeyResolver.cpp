@@ -7,8 +7,8 @@ namespace pbr {
 RelayDirectoryKemKeyResolver::RelayDirectoryKemKeyResolver(PeerKemKeyStore& store, IDirectoryClient& directory)
     : store_(store), directory_(directory) {}
 
-bool RelayDirectoryKemKeyResolver::IsRelayUserKind(const std::string& peer_identity_kind) {
-  return peer_identity_kind == ContactIdKindToString(ContactIdKind::RelayUser) || peer_identity_kind == "relay_user";
+bool RelayDirectoryKemKeyResolver::IsAccountKind(const std::string& peer_identity_kind) {
+  return peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) || peer_identity_kind == "account";
 }
 
 Roe<PeerKemKeyRecord> RelayDirectoryKemKeyResolver::Resolve(const std::string& peer_identity_kind,
@@ -17,11 +17,11 @@ Roe<PeerKemKeyRecord> RelayDirectoryKemKeyResolver::Resolve(const std::string& p
     return *cached;
   }
 
-  if (!IsRelayUserKind(peer_identity_kind)) {
-    return Error("Peer KEM public key not found");
+  if (!IsAccountKind(peer_identity_kind)) {
+    return Error("Peer KEM public key requires account identity");
   }
 
-  auto hit = directory_.LookupRelayUser(peer_identity_value);
+  auto hit = directory_.LookupByAccount(peer_identity_value);
   if (!hit) {
     return hit.error();
   }

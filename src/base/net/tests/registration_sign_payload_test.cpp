@@ -1,5 +1,6 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/MlDsa.h"
 #include "base/net/RegistrationSignPayload.h"
 
 #include <gtest/gtest.h>
@@ -9,7 +10,9 @@
 namespace pbr {
 namespace {
 
-constexpr const char kVectorPublicKeyB64[] = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+std::string VectorMlDsaPublicKeyB64(uint8_t fill = 0x42) {
+  return Base64Encode(std::vector<uint8_t>(kMlDsa65PublicKeyBytes, fill));
+}
 
 std::string VectorKemPublicKeyB64(uint8_t fill = 0x43) {
   return Base64Encode(std::vector<uint8_t>(kHybridKemPublicKeyBytes, fill));
@@ -18,16 +21,17 @@ std::string VectorKemPublicKeyB64(uint8_t fill = 0x43) {
 } // namespace
 
 TEST(RegistrationSignPayloadTest, BuildRegistrationSignBytesBindsKemKey) {
-  const auto bytes = BuildRegistrationSignBytes("ch-1", kVectorPublicKeyB64, VectorKemPublicKeyB64(), "ed25519",
-                                                1700000000000);
-  ASSERT_EQ(bytes.size(), 1299u);
+  const auto bytes = BuildRegistrationSignBytes("ch-1", VectorMlDsaPublicKeyB64(), VectorKemPublicKeyB64(),
+                                                "ml-dsa-65", 1700000000000);
+  // domain+NUL + ver + len-prefixed "ch-1" + ML-DSA-65 pk + ML-KEM-768 pk + alg + i64 ts
+  ASSERT_EQ(bytes.size(), kMlDsa65PublicKeyBytes + kHybridKemPublicKeyBytes + 51u);
   EXPECT_EQ(bytes[bytes.size() - 10], 0x43);
-  EXPECT_EQ(bytes[bytes.size() - 9], 0x00);
+  EXPECT_EQ(bytes[bytes.size() - 9], 0x01); // ml-dsa-65 wire alg
   EXPECT_EQ(bytes[bytes.size() - 8], 0x00);
   EXPECT_EQ(bytes[bytes.size() - 1], 0x00);
 
-  const auto other_bytes = BuildRegistrationSignBytes("ch-1", kVectorPublicKeyB64, VectorKemPublicKeyB64(0x44),
-                                                      "ed25519", 1700000000000);
+  const auto other_bytes = BuildRegistrationSignBytes("ch-1", VectorMlDsaPublicKeyB64(), VectorKemPublicKeyB64(0x44),
+                                                      "ml-dsa-65", 1700000000000);
   EXPECT_NE(bytes, other_bytes);
 }
 

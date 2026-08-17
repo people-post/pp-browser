@@ -1,5 +1,6 @@
 #include "app/ConfigApplyBridge.h"
 
+#include "base/runtime/AppRuntime.h"
 #include "base/ui/Theme.h"
 
 #include <RmlUi/Core/Context.h>
@@ -72,15 +73,21 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
 
   const ShellHost::ChromePrefs chrome = ShellHost::ProjectChrome(prefs);
   if (!last_chrome_ || chrome != *last_chrome_) {
-    const ShellHost::ChromePrefs* previous = last_chrome_ ? &*last_chrome_ : nullptr;
+    std::optional<ShellHost::ChromePrefs> previous = last_chrome_;
     last_chrome_ = chrome;
-    ApplyChrome(chrome, previous);
+    // SaveProfilePrefs may run on a worker (agent settings tools). Theme / shell chrome
+    // touch RmlUi and must apply on the UI thread.
+    AppRuntime::PostUI([this, next = chrome, previous = std::move(previous)]() {
+      ApplyChrome(next, previous ? &*previous : nullptr);
+    });
   }
 
   const LocalizationService::Prefs locale = LocalizationService::Project(prefs);
   if (!last_locale_ || locale != *last_locale_) {
     last_locale_ = locale;
-    LocalizationService::Instance().Apply(locale);
+    // SaveProfilePrefs may run on a worker (agent settings tools). Locale listeners
+    // remount chrome / touch RmlUi and must run on the UI thread.
+    AppRuntime::PostUI([locale]() { LocalizationService::Instance().Apply(locale); });
   }
 }
 

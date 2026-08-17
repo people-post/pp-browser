@@ -4,24 +4,16 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "base/p2p/tests/libp2p_ephemeral_listen.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
 #include <string>
-
-#if defined(_WIN32)
-#include <process.h>
-static int ProcessId() { return _getpid(); }
-#else
-#include <unistd.h>
-static int ProcessId() { return static_cast<int>(getpid()); }
-#endif
 
 namespace pbr {
 namespace {
@@ -106,34 +98,27 @@ public:
 class Libp2pChatHistoryServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{47000 + (ProcessId() % 2000) * 10};
-    responder_port_ = port.fetch_add(1);
-    client_port_ = port.fetch_add(1);
-
     harness_ = std::make_unique<HistoryHarness>("svc");
 
     PeerSessionConfig config;
     config.dial_timeout = std::chrono::milliseconds(3000);
     config.dial_failure_backoff = std::chrono::milliseconds(100);
 
-    Libp2pHostConfig responder_cfg;
-    responder_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(responder_port_);
-    ASSERT_TRUE(responder_host_.Start(responder_cfg));
+    auto responder_started = test::StartEphemeralLoopbackHost(responder_host_, responder_port_);
+    ASSERT_TRUE(responder_started) << responder_started.error().message;
     responder_sessions_ = std::make_unique<PeerSessionManager>(responder_host_, config);
     responder_history_ = std::make_unique<Libp2pChatHistoryService>(
         responder_host_, *responder_sessions_, harness_->store, harness_->identity, harness_->psk_store);
 
-    Libp2pHostConfig client_cfg;
-    client_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_port_);
-    ASSERT_TRUE(client_host_.Start(client_cfg));
+    auto client_started = test::StartEphemeralLoopbackHost(client_host_, client_port_);
+    ASSERT_TRUE(client_started) << client_started.error().message;
     client_sessions_ = std::make_unique<PeerSessionManager>(client_host_, config);
     client_history_ = std::make_unique<Libp2pChatHistoryService>(client_host_, *client_sessions_, harness_->store,
                                                                    harness_->identity, harness_->psk_store);
 
     auto responder_id = responder_host_.LocalPeerIdBase58();
     ASSERT_TRUE(responder_id);
-    const std::string responder_ma =
-        "/ip4/127.0.0.1/tcp/" + std::to_string(responder_port_) + "/p2p/" + *responder_id;
+    const std::string responder_ma = test::LoopbackP2pMultiaddr(responder_port_, *responder_id);
     ASSERT_TRUE(client_sessions_->RegisterEndpoint("relay:responder", responder_ma));
 
     responder_history_->Start();

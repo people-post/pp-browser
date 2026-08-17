@@ -3,12 +3,13 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/PeerSigningKeyStore.h"
+#include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/people/ContactsStore.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/DirectoryShadowCache.h"
@@ -49,27 +50,36 @@ public:
         labels(contacts, shadows),
         inbox(store, contacts, labels, &shadows),
         receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
-        sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
+        sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = Ed25519Signer::GenerateKeyPair();
+    auto generated = MlDsa::GenerateKeyPair();
     if (!generated) {
       throw std::runtime_error("Failed to generate peer keys");
     }
     peer_keys = *generated;
-    peer_private_key = peer_keys.private_key;
+    peer_private_key = peer_keys.secret_key;
 
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys.public_key);
+    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("relay_user", "relay:peer", record);
+    key_store.Put("account", "account:peer", record);
+
+    Contact peer_contact;
+    peer_contact.id = "contact-peer";
+    peer_contact.remote.ids = {{ContactIdKind::Account, "account:peer", true},
+                               {ContactIdKind::RelayUser, "relay:peer", false}};
+    SyncContactMirrors(peer_contact);
+    if (!contacts.Upsert(peer_contact)) {
+      throw std::runtime_error("Failed to upsert peer contact");
+    }
 
     DirectChatTarget target;
-    target.peer_identity_kind = "relay_user";
-    target.peer_identity_value = "relay:peer";
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = "account:peer";
     target.channel = ThreadChannel::E2e;
 
     auto created = store.FindOrCreateDirectThread(target, "contact-peer", "Peer");
@@ -90,6 +100,7 @@ public:
       }
     }
     local_relay_id = identity.Get()->relay_user_id;
+    local_account_id = identity.Get()->account_id;
 
     PskSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
@@ -110,7 +121,7 @@ public:
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = "peer-msg-" + std::to_string(seq);
     envelope.sender_relay_id = "relay:peer";
-    envelope.sender_contact_id = "relay:peer";
+    envelope.sender_contact_id = "account:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2e;
 
@@ -121,8 +132,8 @@ public:
     E2eEncryptParams params;
     params.text = text;
     params.channel = CryptoChannel::E2e;
-    params.peer_contact_id = local_relay_id;
-    params.sender_contact_id = "relay:peer";
+    params.peer_contact_id = local_account_id;
+    params.sender_contact_id = "account:peer";
     params.message_id = envelope.message_id;
     params.sender_seq = seq;
     params.session_epoch = 1;
@@ -135,16 +146,17 @@ public:
     envelope.sender_seq = seq;
     envelope.session_epoch = 1;
     envelope.timestamp = static_cast<int64_t>(seq);
+    envelope.stream_key =
+        BuildCanonicalRelayStreamKey(local_relay_id, "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
       throw std::runtime_error("Failed to build sign bytes");
     }
-    auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_private_key);
+    auto signature = MlDsa::Sign(peer_private_key, *sign_bytes);
     if (!signature) {
       throw std::runtime_error("Failed to sign envelope");
     }
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   }
 
@@ -191,7 +203,8 @@ public:
   ChatSyncService sync;
   Thread thread;
   std::string local_relay_id;
-  Ed25519KeyPair peer_keys;
+  std::string local_account_id;
+  MlDsaKeyPair peer_keys;
   std::vector<uint8_t> peer_private_key;
 };
 
@@ -223,7 +236,7 @@ TEST(ChatSyncTest, ReceivePipelineIngestsGapFill) {
   harness.SeedPeerSeq(1, "one");
 
   const RelayReceiveOutcome outcome =
-      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_relay_id);
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptContiguous);
   EXPECT_TRUE(outcome.persisted);
 }
@@ -304,7 +317,7 @@ TEST(ChatSyncTest, LateFillAcceptsAfterAuthoritativeEmptyClose) {
 
   harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
   const RelayReceiveOutcome outcome =
-      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_relay_id);
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptLateFill);
   EXPECT_TRUE(outcome.persisted);
 
@@ -359,7 +372,7 @@ TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {
   harness.SeedPeerSeq(1, "one");
 
   const RelayReceiveOutcome gap_outcome =
-      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"), harness.local_relay_id);
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"), harness.local_account_id);
   EXPECT_EQ(gap_outcome.decision, IngestDecision::AcceptGap);
 
   harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
@@ -452,7 +465,7 @@ TEST(ChatSyncTest, RelayFetch403ForNonPartyReturnsError) {
 
   ChatHistoryRequest request;
   request.requester_identity_kind = "relay_user";
-  request.requester_identity_value = harness.local_relay_id;
+  request.requester_identity_value = harness.local_account_id;
   request.peer_identity_kind = "relay_user";
   request.peer_identity_value = "relay:peer";
   request.channel = ThreadChannel::E2e;

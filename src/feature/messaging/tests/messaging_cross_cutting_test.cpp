@@ -4,12 +4,12 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/crypto/AutoKeyEstablishment.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/crypto/AutoKeyEstablishment.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
@@ -54,20 +54,20 @@ public:
       throw std::runtime_error("Failed to set test DEK");
     }
 
-    auto generated = Ed25519Signer::GenerateKeyPair();
+    auto generated = MlDsa::GenerateKeyPair();
     if (!generated) {
       throw std::runtime_error("Failed to generate peer keys");
     }
     peer_keys = *generated;
 
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Ed25519Signer::ToBase64(peer_keys.public_key);
+    record.signing_public_key_b64 = Base64Encode(peer_keys.public_key);
     record.source = "test";
-    key_store.Put("relay_user", "relay:peer", record);
+    key_store.Put("account", "account:peer", record);
 
     DirectChatTarget target;
-    target.peer_identity_kind = "relay_user";
-    target.peer_identity_value = "relay:peer";
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = "account:peer";
     target.channel = channel;
 
     auto created = store.FindOrCreateDirectThread(target, "contact-peer", "Peer");
@@ -75,6 +75,11 @@ public:
       throw std::runtime_error("Failed to create thread");
     }
     thread = *created;
+
+    if (!identity.LoadOrCreate()) {
+      throw std::runtime_error("Failed to load local identity");
+    }
+    local_account_id = identity.Get()->account_id;
 
     if (channel == ThreadChannel::E2e) {
       PskSessionRecord psk;
@@ -86,9 +91,6 @@ public:
         throw std::runtime_error("Failed to save test PSK");
       }
     } else if (channel == ThreadChannel::E2ePublic) {
-      if (!identity.LoadOrCreate()) {
-        throw std::runtime_error("Failed to load local identity");
-      }
       auto kem_private = identity.GetOrCreateHybridKemPrivateKey();
       if (!kem_private) {
         throw std::runtime_error("Failed to load local KEM key");
@@ -102,7 +104,7 @@ public:
     RelayEnvelope envelope;
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = message_id;
-    envelope.sender_contact_id = "relay:peer";
+    envelope.sender_contact_id = "account:peer";
     envelope.sender_relay_id = "relay:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = channel;
@@ -114,8 +116,8 @@ public:
       E2eEncryptParams params;
       params.text = text;
       params.channel = CryptoChannel::E2e;
-      params.peer_contact_id = "relay:local";
-      params.sender_contact_id = "relay:peer";
+      params.peer_contact_id = local_account_id;
+      params.sender_contact_id = "account:peer";
       params.message_id = envelope.message_id;
       params.sender_seq = seq;
       params.session_epoch = 1;
@@ -141,8 +143,8 @@ public:
       E2eEncryptParams params;
       params.text = text;
       params.channel = CryptoChannel::E2ePublic;
-      params.peer_contact_id = "relay:local";
-      params.sender_contact_id = "relay:peer";
+      params.peer_contact_id = local_account_id;
+      params.sender_contact_id = "account:peer";
       params.message_id = envelope.message_id;
       params.sender_seq = seq;
       params.session_epoch = 1;
@@ -166,12 +168,11 @@ public:
     if (!sign_bytes) {
       throw std::runtime_error("Failed to build sign bytes");
     }
-    auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), peer_keys.private_key);
+    auto signature = MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
     if (!signature) {
       throw std::runtime_error("Failed to sign envelope");
     }
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   }
 
@@ -184,7 +185,8 @@ public:
   PeerSigningKeyResolver key_resolver;
   RelayReceivePipeline pipeline;
   Thread thread;
-  Ed25519KeyPair peer_keys;
+  MlDsaKeyPair peer_keys;
+  std::string local_account_id;
   std::optional<ByteVector> local_kem_private;
 };
 
@@ -194,11 +196,11 @@ TEST(MessagingCrossCuttingTest, DuplicateRelayMessageIdIsBenignDuplicate) {
   PipelineHarness harness("dedup", ThreadChannel::E2e);
   const RelayEnvelope envelope = harness.MakeSignedEnvelope("dup-msg-1", 1, "hello", ThreadChannel::E2e);
 
-  const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(first.decision, IngestDecision::AcceptBootstrap);
   EXPECT_TRUE(first.persisted);
 
-  const RelayReceiveOutcome second = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome second = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(second.decision, IngestDecision::BenignDuplicate);
   EXPECT_FALSE(second.persisted);
 
@@ -214,7 +216,7 @@ TEST(MessagingCrossCuttingTest, OversizeEnvelopeHardRejected) {
   const ByteVector huge(kMaxRelayEnvelopeBytes + 1, static_cast<uint8_t>('a'));
   envelope.body.e2e.payload_b64 = Base64Encode(huge);
 
-  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
 }
@@ -223,10 +225,10 @@ TEST(MessagingCrossCuttingTest, FindOnlyRejectsUnknownSenderThread) {
   PipelineHarness harness("find_only", ThreadChannel::E2e);
 
   RelayEnvelope envelope = harness.MakeSignedEnvelope("unknown-peer-msg", 1, "hello", ThreadChannel::E2e);
-  envelope.sender_contact_id = "relay:stranger";
+  envelope.sender_contact_id = "account:stranger";
   envelope.sender_relay_id = "relay:stranger";
 
-  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
   // Stale/unknown peer traffic is silent — no receive_failure UI spam.
@@ -238,7 +240,7 @@ TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesEncryptedAutoKeyPath) {
   const RelayEnvelope envelope =
       harness.MakeSignedEnvelope("public-msg-1", 1, "public hello", ThreadChannel::E2ePublic);
 
-  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
+  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);
   EXPECT_TRUE(outcome.persisted);
 
@@ -255,8 +257,8 @@ TEST(MessagingCrossCuttingTest, ChatTargetRoutingFindsDirectThread) {
   SqliteThreadStore store(data_dir.string());
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:routed";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:routed";
   target.channel = ThreadChannel::E2e;
 
   auto created = store.FindOrCreateDirectThread(target, "contact-routed", "Routed");

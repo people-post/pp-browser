@@ -126,9 +126,9 @@ Roe<void> DataKeyVault::WriteVaultFile(const PinKdfParams& params, const ByteVec
   return AtomicFileWrite::Write(vault_path_, out);
 }
 
-Roe<void> DataKeyVault::Create(std::string_view pin) {
-  if (Exists()) {
-    return Error("vault.bin already exists");
+Roe<void> DataKeyVault::WrapAndStore(std::string_view pin, ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
   }
   auto params = PinKeyDeriver::GenerateParams();
   if (!params) {
@@ -138,9 +138,6 @@ Roe<void> DataKeyVault::Create(std::string_view pin) {
   if (!kek) {
     return kek.error();
   }
-  EnsureSodiumInit();
-  ByteVector dek(kDataEncryptionKeySize);
-  randombytes_buf(dek.data(), dek.size());
   auto wrapped = WrapDek(*kek, dek);
   sodium_memzero(kek->data(), kek->size());
   if (!wrapped) {
@@ -154,6 +151,32 @@ Roe<void> DataKeyVault::Create(std::string_view pin) {
   Lock();
   dek_ = std::move(dek);
   return {};
+}
+
+Roe<void> DataKeyVault::Create(std::string_view pin) {
+  EnsureSodiumInit();
+  ByteVector dek(kDataEncryptionKeySize);
+  randombytes_buf(dek.data(), dek.size());
+  return CreateWithDek(pin, std::move(dek));
+}
+
+Roe<void> DataKeyVault::CreateWithDek(std::string_view pin, ByteVector dek) {
+  if (Exists()) {
+    return Error("vault.bin already exists");
+  }
+  return WrapAndStore(pin, std::move(dek));
+}
+
+Roe<void> DataKeyVault::ReplaceWithDek(std::string_view pin, ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  if (Exists()) {
+    if (auto unlocked = Unlock(pin); !unlocked) {
+      return unlocked.error();
+    }
+  }
+  return WrapAndStore(pin, std::move(dek));
 }
 
 Roe<void> DataKeyVault::Unlock(std::string_view pin) {

@@ -3,9 +3,10 @@
 #include "base/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/MediaRelayService.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/MeshHost.h"
 
 namespace pbr {
 namespace {
@@ -177,15 +178,20 @@ void FillSlotTitles(StatusbarClusterSnapshot& snap) {
   }
 }
 
-RelayRuntimeStats CollectRelayRuntimeStats(MessagingHub& hub) {
+} // namespace
+
+RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
   RelayRuntimeStats stats;
-  if (CircuitRelayService* circuit = hub.CircuitRelay()) {
+  if (!mesh) {
+    return stats;
+  }
+  if (CircuitRelayService* circuit = mesh->CircuitRelay()) {
     stats.circuit_serving = circuit->IsStarted();
     if (stats.circuit_serving) {
       stats.circuit = circuit->RuntimeStats();
     }
   }
-  if (MediaRelayService* media = hub.MediaRelay()) {
+  if (MediaRelayService* media = mesh->MediaRelay()) {
     stats.media_serving = media->IsStarted();
     if (stats.media_serving) {
       stats.media = media->RuntimeStats();
@@ -193,8 +199,6 @@ RelayRuntimeStats CollectRelayRuntimeStats(MessagingHub& hub) {
   }
   return stats;
 }
-
-} // namespace
 
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, bool has_libp2p_error,
@@ -324,31 +328,48 @@ StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, Bri
   return snap;
 }
 
-MessagingShellPorts MakeMessagingShellPorts(MessagingHub& hub) {
+MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
   MessagingShellPorts ports;
-  ports.statusbar_cluster = [&hub]() -> StatusbarClusterSnapshot {
-    const bool ready = hub.IsMessagingReady();
-    Libp2pHost* host = hub.Libp2p();
+  ports.statusbar_cluster = [deps]() -> StatusbarClusterSnapshot {
+    MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
+    const bool ready = deps.messaging_ready && deps.messaging_ready();
+    Libp2pHost* host = mesh ? mesh->Host() : nullptr;
     const bool running = host && host->IsRunning();
-    const bool has_error = !hub.LastLibp2pError().empty();
-    const RelayRuntimeStats load = CollectRelayRuntimeStats(hub);
-    return BuildStatusbarClusterSnapshot(ready, MapBriefHealth(hub.P2p().BriefRelayHealth()), running,
-                                         has_error, hub.Reachability().status,
-                                         hub.IsHelpNetworkEnabled(), load);
+    const bool has_error = deps.last_libp2p_error && !deps.last_libp2p_error().empty();
+    const ReachabilityStatus status = mesh ? mesh->Reachability().Snapshot().status : ReachabilityStatus::Unknown;
+    const bool help = deps.help_network_enabled && deps.help_network_enabled();
+    const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
+    const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
+    return BuildStatusbarClusterSnapshot(ready, brief, running, has_error, status, help, load);
   };
-  ports.statusbar_popover = [&hub]() -> StatusbarPopoverSnapshot {
-    const bool ready = hub.IsMessagingReady();
-    Libp2pHost* host = hub.Libp2p();
+  ports.statusbar_popover = [deps]() -> StatusbarPopoverSnapshot {
+    MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
+    const bool ready = deps.messaging_ready && deps.messaging_ready();
+    Libp2pHost* host = mesh ? mesh->Host() : nullptr;
     const bool running = host && host->IsRunning();
-    const ReachabilitySnapshot reach = hub.Reachability();
-    const RelayRuntimeStats load = CollectRelayRuntimeStats(hub);
-    return BuildStatusbarPopoverSnapshot(ready, MapBriefHealth(hub.P2p().BriefRelayHealth()), running,
-                                         hub.LastLibp2pError(), reach.status, reach.signals.has_global_ipv6,
-                                         reach.signals.dial_back_ok, reach.signals.upnp_mapped,
-                                         hub.IsHelpNetworkEnabled(), load);
+    const ReachabilitySnapshot reach = mesh ? mesh->Reachability().Snapshot() : ReachabilitySnapshot{};
+    const std::string last_error = deps.last_libp2p_error ? deps.last_libp2p_error() : std::string{};
+    const bool help = deps.help_network_enabled && deps.help_network_enabled();
+    const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
+    const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
+    return BuildStatusbarPopoverSnapshot(ready, brief, running, last_error, reach.status,
+                                         reach.signals.has_global_ipv6, reach.signals.dial_back_ok,
+                                         reach.signals.upnp_mapped, help, load);
   };
-  ports.retest_reachability = [&hub]() { hub.RunReachabilityProbe(false); };
+  ports.retest_reachability = std::move(deps.retest_reachability);
   return ports;
+}
+
+MessagingShellPorts MakeMessagingShellPorts(MessagingHub& hub) {
+  MessagingShellPortsDeps deps;
+  deps.mesh = [&hub]() -> MeshHost* { return hub.Mesh(); };
+  deps.messaging_ready = [&hub]() { return hub.IsMessagingReady(); };
+  deps.brief_health = [&hub]() { return MapBriefHealth(hub.P2p().BriefRelayHealth()); };
+  deps.help_network_enabled = [&hub]() { return hub.IsHelpNetworkEnabled(); };
+  deps.last_libp2p_error = [&hub]() { return hub.LastLibp2pError(); };
+  deps.retest_reachability = [&hub]() { hub.RunReachabilityProbe(false); };
+  deps.relay_load_stats = [&hub]() { return CollectRelayRuntimeStats(hub.Mesh()); };
+  return MakeMessagingShellPorts(std::move(deps));
 }
 
 } // namespace pbr

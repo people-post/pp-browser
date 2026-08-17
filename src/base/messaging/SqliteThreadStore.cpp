@@ -22,7 +22,7 @@ namespace pbr {
 
 namespace {
 
-constexpr int kProfileUserVersion = 2;
+constexpr int kProfileUserVersion = 3;
 constexpr int kThreadUserVersion = 1;
 
 /** sqlite3_column_text NULL → empty; never construct std::string from nullptr. */
@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS chat_targets (
   psk_fingerprint TEXT,
   psk_verified_at INTEGER,
   retired_psks_json TEXT,
+  key_scope TEXT NOT NULL DEFAULT 'account',
+  thread_kem_pk_b64 TEXT,
+  thread_kem_sk_b64 TEXT,
+  peer_thread_kem_pk_b64 TEXT,
+  last_psk_rotate_at INTEGER,
+  psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0,
+  last_rotation_id TEXT,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
@@ -172,6 +179,25 @@ Roe<void> MigrateProfileDb(sqlite3* db, int from_version) {
       const std::string& msg = result.error().message;
       if (msg.find("duplicate column") == std::string::npos) {
         return result.error();
+      }
+    }
+  }
+  if (from_version < 3) {
+    const char* kAdds[] = {
+        "ALTER TABLE chat_targets ADD COLUMN key_scope TEXT NOT NULL DEFAULT 'account';",
+        "ALTER TABLE chat_targets ADD COLUMN thread_kem_pk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN thread_kem_sk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN peer_thread_kem_pk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN last_psk_rotate_at INTEGER;",
+        "ALTER TABLE chat_targets ADD COLUMN psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE chat_targets ADD COLUMN last_rotation_id TEXT;",
+    };
+    for (const char* sql : kAdds) {
+      if (auto result = ExecSql(db, sql); !result) {
+        const std::string& msg = result.error().message;
+        if (msg.find("duplicate column") == std::string::npos) {
+          return result.error();
+        }
       }
     }
   }
@@ -1087,6 +1113,31 @@ Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const st
   const bool found = sqlite3_step(stmt) == SQLITE_ROW;
   sqlite3_finalize(stmt);
   return found;
+}
+
+Roe<int64_t> SqliteThreadStore::CountAnnotationsForTarget(const std::string& thread_id,
+                                                          const std::string& target_message_id) const {
+  if (target_message_id.empty()) {
+    return int64_t{0};
+  }
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "SELECT COUNT(*) FROM messages WHERE content_type = 'annotation' AND "
+                         "target_message_id = ?;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare annotation count query");
+  }
+  sqlite3_bind_text(stmt, 1, target_message_id.c_str(), -1, SQLITE_TRANSIENT);
+  int64_t count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
 }
 
 Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {

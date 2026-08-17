@@ -35,14 +35,16 @@ Five top-level folders. Two sub-trees under `ai/`.
 
 ```
 src/feature/
-├── settings/     Config apply logic, section handlers (no messaging/chat deps)
-├── ai/           Agent session, turn pipeline, UI generation
+├── settings/     Config apply logic, section handlers + SettingsTools (no messaging/chat/ai deps)
+├── ai/           Agent session, turn pipeline, UI generation; BuildToolRegistryFromConfig
 │   ├── tools/        Web search, MCP tool adapters
 │   └── bindings/     RmlUi action routing, bindings manifest
-├── messaging/    MessagingHub, P2P/relay/sync orchestration
+├── messaging/    MessagingHub (MessagingCore assembler), MeshHost consumer, CallStack, MessagingFacade
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
-└── chat/         Chat controller, agent↔hub wiring, messaging agent tools
+└── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
+
+`IToolProvider` / `ToolRegistry` live in `base/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
 
 **Domain grouping (mental model):**
 
@@ -100,7 +102,7 @@ chat
 2. **Shared structs go low** — if feature and base both need a DTO, move it to the owning base module (or a dedicated `*Types.h` there).
 3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `base/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 4. **Cross-controller wiring stays in app** — tool registration, tab ticks, and `ActionRouter` model-dirty callbacks belong in `src/app/`, not feature headers.
-5. **Fork glue stays at the edge** — RmlUi via `pp_rmlui_backend` in `ui/`, `chat/`, and `ai/bindings/`; libp2p public API via `src/libp2p/fork/include/` in `messaging/`.
+5. **Fork glue stays at the edge** — RmlUi via `pp_base_render` in `ui/`, `chat/`, and `ai/bindings/`; libp2p via `pp_base_p2p` in `messaging/` (forks under `src/lib/`).
 
 ---
 
@@ -113,18 +115,27 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | Pattern | Location | Purpose |
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` |
+| `CallActionsPorts` | `ui/CallActionsPorts.h` | Call chrome/actions for chat, shell, people-picker; Application fills from `CallController` |
+| `CallFunctionalPorts` | `messaging/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
+| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over `CallStack` session/lifecycle (bound to `MessagingHub::CallStackRef()`; no leaky CSM/Lifecycle ports) |
+| `CallStack` | `messaging/CallStack.h` | Owns call media/CSM/lifecycle/bridge/CallMediaDirect/relay+dial+circuit clients; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()` |
 | `ContactsNotifyPorts` | `ui/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
+| `UnlockEnsurePorts` | `ui/UnlockEnsurePorts.h` | Ensure unlocked / unlock-in-progress; Application fills from `ProfileUnlockGate` |
+| `FlowCoordinatorPorts` | `ui/FlowCoordinatorPorts.h` | Modal begin/end/dismiss; Application fills from `FlowCoordinator` |
+| `BadgeNotifyPorts` | `ui/BadgeNotifyPorts.h` | Badge refresh / sessions unread for chat; Application fills from `BadgeAggregator` |
+| `PinGateActionPorts` | `ui/PinGateActionPorts.h` | PIN overlay submit/cancel/chooser; Application fills from `PinGateController` |
 | `PeoplePickerNotifyPorts` | `ui/PeoplePickerNotifyPorts.h` | Open-picker hooks for chat/call; Application fills from `PeoplePickerController` |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind |
 | `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
 | `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
 | `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
+| `MessagingFacade` | `messaging/MessagingFacade.h` | Non-owning wrapper over `MessagingHub&`; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (replaces the `MessagingChatPorts` mega-struct) |
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; app-owned presenters + ports |
 | App-owned presenters | `app/Application.cpp` | `unique_ptr` for shell + all presenters; `InstallInstance` for RmlUi static callbacks |
 | `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
 | SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |
-| Hub-and-spoke within messaging | `MessagingHub` referenced from `MessageRouter`, `InboxController`, etc. | Orchestration inside single target `pp_feature_messaging` (compile coupling, not a link-cycle) |
+| Hub-and-spoke within messaging | `MessagingHub` (`MessagingCore`) owns stores/inbox/P2P + `MeshHost` + `CallStack` | Assembler inside `pp_feature_messaging`; mesh shared with `pp-node` via MeshHost |
 | App-level wiring | `app/Application.cpp`, `app/ConfigApplyBridge.cpp` | Cross-controller callbacks and SessionStore → slice fan-out stay in `app/` per SRC_LAYOUT |
 
 ### Intentional one-way edges (not cycles)
@@ -141,7 +152,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |-------------|-------|-------|
 | `pp_browser_*_test` (base) | `pp_common` + module under test | Base macro in [`cmake/PpBrowserBase.cmake`](../../cmake/PpBrowserBase.cmake) |
 | `pp_browser_feature_*_test` | `pp_feature` + `pp_base` + `pp_common` | By design — feature tests may pull the full stack |
-| `rmlui_unit_tests` | doctest + RmlUi fork | [`src/render/fork/Tests/`](../render/fork/Tests/); includes fork `ClickRouting` cases |
+| `rmlui_unit_tests` | doctest + RmlUi fork | [`src/lib/rmlui/Tests/`](../lib/rmlui/Tests/); includes fork `ClickRouting` cases |
 
 Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base tests must not depend on `pp_feature`.
 
@@ -163,7 +174,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 1. Find the module that **owns** the screen, session, or multi-module workflow.
 2. Follow the dependency principles above; respect CMake `PUBLIC_LIBS` order in the owning folder's `CMakeLists.txt`.
 3. Add tests in `src/feature/<module>/tests/` (`*_test.cpp` files). One executable per folder is created automatically (`pp_browser_feature_<module>_test`).
-4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) before pushing.
+4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) and [`scripts/check_platform_ifdefs.sh`](../../scripts/check_platform_ifdefs.sh) before pushing.
 5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) or [`docs/ui/`](../../docs/ui/) when wire formats or UI contracts change.
 
 ---
@@ -172,7 +183,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 
 | Doc | Why |
 |-----|-----|
-| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Full four-layer layout, fork sidecars, test placement |
+| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Five-layer layout (common/lib/base/feature/app), test placement |
 | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state, config, actions, events; app-owned presenters |
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |

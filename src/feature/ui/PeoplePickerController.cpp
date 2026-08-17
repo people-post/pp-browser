@@ -12,11 +12,11 @@
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/ContactReachability.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/FlowCoordinator.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/UserFeedback.h"
 
 #include <algorithm>
@@ -132,20 +132,20 @@ void PeoplePickerController::BindPickerPorts(MessagingPeoplePickerPorts ports) {
   picker_ports_ = std::move(ports);
 }
 
-void PeoplePickerController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void PeoplePickerController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 void PeoplePickerController::BindChatPorts(ChatSessionPorts ports) {
   chat_ports_ = std::move(ports);
 }
 
-void PeoplePickerController::BindFlowCoordinator(FlowCoordinator& flow) {
-  flow_ = &flow;
+void PeoplePickerController::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_coordinator_ = std::move(ports);
 }
 
-void PeoplePickerController::BindCallController(CallController& call) {
-  call_ = &call;
+void PeoplePickerController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 void PeoplePickerController::BindShellNavigation(ShellNavigationPorts ports) {
@@ -340,10 +340,10 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 }
 
 void PeoplePickerController::RegisterFlow() {
-  if (!flow_) {
+  if (!flow_coordinator_.begin_modal) {
     return;
   }
-  flow_->BeginModal(
+  flow_coordinator_.begin_modal(
       layer_id_,
       [this]() {
         if (step_ == kStepName) {
@@ -356,8 +356,8 @@ void PeoplePickerController::RegisterFlow() {
 }
 
 void PeoplePickerController::Close() {
-  if (flow_) {
-    flow_->EndModal();
+  if (flow_coordinator_.end_modal) {
+    flow_coordinator_.end_modal();
   }
   const int closing_id = layer_id_;
   layer_id_ = -1;
@@ -502,7 +502,7 @@ void PeoplePickerController::SyncGroupCallRows() {
       }
     }
     if (!contact && picker_ports_.find_contact_by_identity) {
-      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser); found && *found) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::Account); found && *found) {
         contact = **found;
       }
     }
@@ -548,8 +548,8 @@ void PeoplePickerController::SyncGroupCallRows() {
 void PeoplePickerController::SyncCallAddGuestRows() {
   rows_.clear();
   identity_for_contact_.clear();
-  if (!MessagingInitialized() || call_id_.empty() || !call_ || !contacts_ports_.list_contacts ||
-      !picker_ports_.list_call_participants) {
+  if (!MessagingInitialized() || call_id_.empty() || !call_actions_.invite_identities ||
+      !contacts_ports_.list_contacts || !picker_ports_.list_call_participants) {
     return;
   }
   std::unordered_set<std::string> joined_identities;
@@ -820,7 +820,7 @@ void PeoplePickerController::OnConfirm() {
 }
 
 void PeoplePickerController::OnStartCall() {
-  if (!call_) {
+  if (!call_actions_.invite_identities && !call_actions_.start_with_invitees) {
     UserFeedback::Fail("Calls unavailable");
     return;
   }
@@ -853,11 +853,15 @@ void PeoplePickerController::OnStartCall() {
   Close();
   NotifySurfaceChanged();
   if (mode == PeoplePickerMode::CallAddGuest) {
-    call_->InviteIdentitiesToActiveCall(identities);
+    if (call_actions_.invite_identities) {
+      call_actions_.invite_identities(identities);
+    }
     return;
   }
   if (mode == PeoplePickerMode::GroupCall) {
-    (void)call_->StartCallWithInvitees(call_thread_id, call_video, identities);
+    if (call_actions_.start_with_invitees) {
+      (void)call_actions_.start_with_invitees(call_thread_id, call_video, identities);
+    }
   }
 }
 
@@ -908,10 +912,10 @@ void PeoplePickerController::FinishOpenThread() {
 }
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     return;
   }
-  unlock_gate_->EnsureUnlocked([this, contact_id](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this, contact_id](const bool unlocked) {
     if (!unlocked) {
       ShowToast(Tr("people_picker.pin_required"));
       NotifySurfaceChanged();
@@ -943,10 +947,10 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
 
 void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>& member_contact_ids,
                                                   std::string title) {
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     return;
   }
-  unlock_gate_->EnsureUnlocked([this, member_contact_ids,
+  unlock_ensure_.ensure_unlocked([this, member_contact_ids,
                                                 title = TrimTitle(std::move(title))](const bool unlocked) {
     if (!unlocked) {
       ShowToast(Tr("people_picker.pin_required"));

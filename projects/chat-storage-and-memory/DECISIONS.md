@@ -86,7 +86,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Updated:** 2026-06-30 — unified backfill (D058); user-initiated sync in v6 (D059); scroll backfill still deferred (D052).  
-**Decision:** **E2E direct tiers** (`e2e`, `e2e_public`) P2P history sync uses **`FetchChatTargetMessages`** (D058): **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll; **(3) user-initiated sync** — thread menu / retry banner (D059). **Scroll-driven history backfill** is **deferred** (D052) — v1 scroll-up uses local `GetMessagesPage` only. Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap. **`[v1]`** implements sync for **`e2e` (private)** only; **`e2e_public`** uses the same machinery when the public tier ships (D089).  
+**Decision:** **E2E direct tiers** (`e2e`, `e2e_public`) P2P history sync uses **`FetchChatTargetMessages`** (D058): **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll; **(3) user-initiated sync** — thread menu / retry banner (D059). **Scroll-driven history backfill** is **deferred** (D052) — v1 scroll-up uses local `GetMessagesPage` only. Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap. Both **`e2e`** and **`e2e_public`** use this machinery (D089).  
 **Rationale:** Tail + gap covers live private-chat reliability; scroll backfill is lower pre-launch value.  
 **Alternatives:** Three modes in v1 (original D009); poll cursor only.
 
@@ -116,7 +116,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Updated:** 2026-06-29 — shared modes deferred; see [PHASES.md](PHASES.md) § Deferred.  
-**Decision:** v1 ships **local `@ai` only**. **`[post-v1]`:** `@ai+` / `@ai++` — [DESIGN.md § `@ai` in direct threads](DESIGN.md#ai-in-direct-threads-d012).  
+**Decision:** **Local `@ai`** plus shared `@ai+` / `@ai++` — [DESIGN.md § `@ai` in direct threads](DESIGN.md#ai-in-direct-threads-d012).  
 **Rationale:** Matches shipped behavior; shared modes deferred.  
 **Alternatives:** Three modes in v1 (original D012).
 
@@ -146,7 +146,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — recovery UX per D038.  
-**Decision:** v1 assumes **one active sending client per profile identity** per **E2E** chat target (D045). Running the same identity on two devices without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease in v1.  
+**Updated:** 2026-08-13 — linked *devices* allowed; still one *sender* ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)). Dual-writer remains D074.  
+**Decision:** v1 assumes **one active sending client per profile identity** per **E2E** chat target (D045). Linked installs of the same Account ID may all **receive**; **two senders** without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease until D074.  
 **Rationale:** Per-chat-target seq is simple and sufficient pre-launch; multi-device coordination is a large protocol surface.  
 **Alternatives:** Device-scoped seq in envelope; central seq lease via relay; per-device PSK.
 
@@ -256,7 +257,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-30 — minimal `text` payload in v2a-p2p wire (D063); v4 validator hardening.  
-**Decision:** One wire/disk payload shape: binary **ChatPayload** inside E2E AEAD plaintext (D087/D090). **v2a-p2p** ships **`body.e2e.payload_b64`** on direct wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
+**Decision:** One wire/disk payload shape: binary **ChatPayload** inside E2E AEAD plaintext (D087/D090). **v2a-p2p** ships **`body.e2e.payload_b64`** on direct wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. Rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
 **Rationale:** One parser path; wire lands with routing cutover; v4 deepens validation without second break.  
 **Alternatives:** All types in v1 (original D026); flat `body.text` until v4 (rejected — D063).
 
@@ -524,8 +525,8 @@ No hard max file size in v1.
 ## D046 — Relaxed ingest tier-default for public direct; strict-only in v1 private
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-02 — three tiers (D089); relaxed ingest is **default for `e2e_public` and group**; **`e2e` private** keeps strict-only in `[v1]`.  
-**Decision:** On soft integrity failure in **`e2e` (private direct) `[v1]`**, user picks **Start new secure chat** or **Pause only** — no `continue_anyway`. **`e2e_public`** and **`group`** use **`ingest_policy=relaxed`** by default with **`continue_anyway`** / LWW rules per [DESIGN § Relaxed ingest](DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046) — ships **with** the public/group tier (auto-key c3+ for `e2e_public`), not as an optional add-on after private v6. Hard crypto failures (bad sig, decrypt fail) remain non-overridable on all tiers.  
+**Updated:** 2026-07-02 — three tiers (D089); relaxed ingest is **default for `e2e_public` and group**; **`e2e` private** keeps strict-only.  
+**Decision:** On soft integrity failure in **`e2e` (private direct)**, user picks **Start new secure chat** or **Pause only** — no `continue_anyway`. **`e2e_public`** and **`group`** use **`ingest_policy=relaxed`** by default with **`continue_anyway`** / LWW rules per [DESIGN § Relaxed ingest](DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046) — ships **with** the public/group tier (auto-key c3+ for `e2e_public`), not as an optional add-on after private v6. Hard crypto failures (bad sig, decrypt fail) remain non-overridable on all tiers.  
 **Rationale:** Security-first tier must not silently merge conflicting seq; UX-first tiers accept tradeoffs and auto-recover where possible.  
 **Alternatives:** Global strict for all E2E (original D046 — rejected for public/group tiers).
 
@@ -582,7 +583,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-30 — user-initiated sync in v6 via D059 (same D058 primitive); scroll trigger remains post-v1.  
-**Decision:** **No fetch when user scrolls to top** in v1. Scroll-up uses **`GetMessagesPage`** on local transcript only. E2E v6 sync: **tail + gap repair + user-initiated sync** (D009, D059) via **`FetchChatTargetMessages`** (D058). **`[post-v1]`** scroll-triggered history backfill: [DESIGN.md § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).  
+**Decision:** **No fetch when user scrolls to top** in v1. Scroll-up uses **`GetMessagesPage`** on local transcript only. E2E v6 sync: **tail + gap repair + user-initiated sync** (D009, D059) via **`FetchChatTargetMessages`** (D058). Scroll-triggered history backfill: [DESIGN.md § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).  
 **Rationale:** Scroll UX is extra surface; manual sync covers explicit “get history from peer” in v6.  
 **Alternatives:** Three sync modes in v1 including scroll (original D009).
 
@@ -621,7 +622,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — identity-keyed `ChatTargetKey` (D079); inbound channel split (D080).  
-**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** resolve **`ChatTargetKey`** from **`envelope.sender_contact_id`** (communicating identity **value**, D079) + **`envelope.route.channel`** + inferred **`peer_identity_kind`** (v1: `relay_user` for relay path). **Outbound:** `FindOrCreateDirectThread` → persist to `local_thread_id`. **Inbound:** see D080 (`e2e` find-only; `e2e_public` auto-create after decrypt). Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages`** per D027 / [WIRE_SCHEMAS § ChatHistoryRequest](WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060).  
+**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** resolve **`ChatTargetKey`** from **`envelope.sender_contact_id`** (communicating identity **value**, D079) + **`envelope.route.channel`** + inferred **`peer_identity_kind`** (v1: `relay_user` for relay path). **Outbound:** `FindOrCreateDirectThread` → persist to `local_thread_id`. **Inbound:** see D080 (`e2e` find-only; `e2e_public` auto-create after decrypt). Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (`group`: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages`** per D027 / [WIRE_SCHEMAS § ChatHistoryRequest](WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060).  
 **Rationale:** Each device owns storage layout; logical conversation is `ChatTargetKey`; group-ready `route` object; one clean protocol cut with D016 wipe.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); flat `channel` field without `route` (rejected — poor group extensibility).
 
@@ -658,10 +659,10 @@ No hard max file size in v1.
 
 ---
 
-## D059 — User-initiated sync from peer (`[v1]` v6)
+## D059 — User-initiated sync from peer (v6)
 
 **Date:** 2026-06-30  
-**Decision:** E2E direct threads expose **user-initiated sync** in v6 (thread menu **Sync with peer**; gap banner **Retry sync**). Invokes **`FetchChatTargetMessages`** (D058): tail refresh + repair known gaps + optional older range `(history_floor_seq, loaded_min_seq)` when `loaded_min_seq > floor + 1`. **Failed outbound** rows (`delivery=pending`/`failed`) are **not** fixed by peer sync — user **retries send** or clears (D017/D024), **except while compromised** (D068). Copy must distinguish “sync missing messages from peer” vs “retry unsent message.” v6 ships with **relay fallback** when direct is unavailable; peer-direct (D060) preferred when libp2p is up. Scroll-to-top fetch remains **`[post-v1]`** (D052) — uses the same primitive.  
+**Decision:** E2E direct threads expose **user-initiated sync** in v6 (thread menu **Sync with peer**; gap banner **Retry sync**). Invokes **`FetchChatTargetMessages`** (D058): tail refresh + repair known gaps + optional older range `(history_floor_seq, loaded_min_seq)` when `loaded_min_seq > floor + 1`. **Failed outbound** rows (`delivery=pending`/`failed`) are **not** fixed by peer sync — user **retries send** or clears (D017/D024), **except while compromised** (D068). Copy must distinguish “sync missing messages from peer” vs “retry unsent message.” v6 ships with **relay fallback** when direct is unavailable; peer-direct (D060) preferred when libp2p is up. Scroll-to-top fetch uses the same primitive (D052).  
 **Rationale:** Users expect direct P2P to resolve receive-side holes and older history; local-first outbox covers send-side failures separately.  
 **Alternatives:** Scroll-only manual backfill (rejected); block composer until send succeeds (rejected).
 
@@ -855,7 +856,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — group tier UX-first E2E with pairwise keys (D089, E022).  
-**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_identity_kind, peer_identity_value, session_epoch)` is the **1:1 specialization**; groups use `(scope_kind, scope_id, session_epoch)` with **`scope_id = group_id`**. Group crypto: **pairwise sender-keys**, not a single group PSK (E022). Ingest policy matches **`e2e_public`** (relaxed default — D046).  
+**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_identity_kind, peer_identity_value, session_epoch)` is the **1:1 specialization**; groups use `(scope_kind, scope_id, session_epoch)` with **`scope_id = group_id`**. Group crypto: **pairwise sender-keys**, not a single group PSK (E022). Ingest policy matches **`e2e_public`** (relaxed default — D046).  
 **Rationale:** Avoid second catalog migration when groups arrive; pairwise keys align with UX-first tier without a weak shared group secret.  
 **Alternatives:** Add `group_id` only when groups ship (acceptable but higher migration cost); single group PSK (rejected — E022); reuse `ChatTargetKey` for groups (rejected — D056).
 
@@ -890,7 +891,7 @@ No hard max file size in v1.
 2. **`ChatTargetKey`** (direct P2P) = **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** bound when the thread is created, plus channel. **Not** local `Contact.id`. Same human with two messaging identities (e.g. two `relay_user` ids, or relay vs libp2p `peer_id`) → **separate threads** and separate PSK/seq state. Identity is **fixed for the life of the thread** — do not switch mid-thread; open a new thread for a new identity.
 3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:abc123`, libp2p peer id string — see D082) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
 4. **Outbound identity** for a thread is implied by transport + thread binding — user does **not** pick among their identities per send within the same thread. Relay threads use the profile's primary **`relay_user`** identity; future libp2p-direct threads use the bound **`peer_id`**.
-5. **`threads.participant_contact_ids`** stores the local **Contact.id** (UI grouping, contact card). **`chat_targets`** and catalog denorm store **`peer_identity_kind`** + **`peer_identity_value`**. **`[post-v1]`** optional local merge: relate multiple identities to one Contact without merging threads.
+5. **`threads.participant_contact_ids`** stores the local **Contact.id** (UI grouping, contact card). **`chat_targets`** and catalog denorm store **`peer_identity_kind`** + **`peer_identity_value`**. **`[later]`** optional local merge: relate multiple identities to one Contact without merging threads.
 6. **PSK + seq/epoch** on **`chat_targets`** PK `(peer_identity_kind, peer_identity_value, channel)` — see [e2e-message-crypto E008/D084](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred). **HKDF `info`** uses `channel` + `epoch` only (E015) — not identity strings; pair scoping is the per-target `master_psk`.
 
 **Rationale:** Separates address-book identity from routable messaging endpoints; fixes AAD self-check ambiguity; matches existing `ContactId` vector model; supports identity rotation as new thread + epoch without conflating local contacts.  
@@ -984,7 +985,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 
 **Date:** 2026-07-02  
 **Cross-project:** [e2e-message-crypto E008](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
-**Decision:** E2E PSK material is stored on **`profile.db` → `chat_targets`**, not in `profiles/{id}/crypto/sessions.json` or per-thread `thread.db`. Columns ( **`e2e` and `e2e_public` channels** ):
+**Decision:** E2E PSK material is stored on **`profile.db` → `chat_targets`**, not in `profiles/{id}/crypto/sessions.json` or per-thread `thread.db`. Columns ( **`e2e` and `e2e_public` channels**):
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -1147,6 +1148,7 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 ## D089 — Three chat tiers; both direct tiers E2E (E021)
 
 **Date:** 2026-07-02  
+**Updated:** 2026-08-15 — public rotation: account-scope no auto-`rotate_psk`; device-lock / D2D auto-rekey (**D101** / **E027**).  
 **Cross-project:** [e2e-message-crypto E021](../e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089), [E022](../e2e-message-crypto/DECISIONS.md#e022--group-e2e-pairwise-sender-keys), [E023](../e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090).  
 **Amends:** D004, D013, D018, D045, D046, D062, D080, D076, D063; **no `public_relay`** (D090).  
 **Decision:** Product P2P chat has **three tiers**. **All three** use symmetric E2E body encryption on the wire (relay sees ciphertext). They differ by **priority** and **policy defaults**, not by whether bodies are encrypted.
@@ -1167,12 +1169,12 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 | Ingest on seq conflict | Strict D013; pause + rotate or pause only (D038) | Relaxed default: `continue_anyway` / LWW (D046 rules) | Same as public direct |
 | Multi-device | Unsupported v1 → compromise (D015) | Target: supported (D074 extension) | Target: supported |
 | Inbound shell | Find-only; reject without row (D062) | Auto-create thread + keys on first message | Auto on invite/join |
-| Key rotation | User-driven; recommend on compromise | Automatic; **prefer epoch-only** and less frequent `rotate_psk` to preserve history recovery | Pair-key rotation on membership change |
+| Key rotation | User-driven; recommend on compromise | Account-scope: no auto-`rotate_psk` (E027). User **Use only this device…** then D2D auto-rekey when both locked (D101) | Pair-key rotation on membership change |
 | Retired PSK ledger | Cap 8 epochs (D086) | Higher cap or longer retention (product tuning) | Per-pair ledgers |
 
 **Wire (direct):** **`e2e`** and **`e2e_public` only** — see [D090](#d090--no-public_relay--plaintext-direct-wire). **Message** → `e2e_public`; **Secure message** → `e2e`.
 
-**Phasing:** `[v1]` ships **private direct** (`e2e` strict) per v6 plan. **Public direct** (`e2e_public`) when auto-key lands (c3+). **Group** `[post-v1]` (E022).
+**Phasing:** **private direct** (`e2e` strict), **public direct** (`e2e_public` auto-key), and **group** (E022) are in product.
 
 **Rationale:** Users expect “public” chat to be convenient, not relay-readable plaintext; security-sensitive users still get a strict tier.  
 **Alternatives:** Plaintext `public_relay` (rejected — D090); single direct tier with security slider (rejected).
@@ -1221,9 +1223,9 @@ eip155:{chain_id}:{address}
 | Use | Allowed |
 |-----|---------|
 | **`Contact.ids[]`** metadata, people search, UI | yes — first-class **lookup** handle (find Peer ID; see [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route)) |
-| On-chain attestation linking **CAIP-10 ↔ Peer ID ↔ signing key** (and optional relay id) | **`[post-v1]`** (E024 Anchor 1) |
+| On-chain attestation linking **CAIP-10 ↔ Peer ID ↔ signing key** (and optional relay id) | **`[later]`** (E024 Anchor 1) |
 | **`ChatTargetKey.peer_identity_value`** / wire **`sender_contact_id`** | **no** — remains `relay:…` (D082) until deliberate protocol bump; not CAIP-10 |
-| PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK stays peer KEM (E024) |
+| PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK auto-key uses **account** KEM (E024 / **M015**) |
 
 Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future decision — do not overload `eip155:` with non-EVM semantics.
 
@@ -1235,9 +1237,11 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 ## D092 — Release scope bucket B
 
 **Date:** 2026-07-06  
-**Decision:** First customer release = **v1 + post-v1 polish** (PHASES scope bucket **B**): chat **v2a–v6** + [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier) **plus** post-v4, post-v6b/c/d. Still excludes unless expanded: `e2e_public` auto-key (c3+), group E2E, PQ (c4).  
+**Status:** **Amended by [D100](#d100--release-scope-b-pq-account-id)** for identity / PQ / Account ID wire. Chat v2a–v6 + private E2E polish from Bucket B still apply.  
+**Decision (historical):** First customer release = **v1 + post-v1 polish** (PHASES scope bucket **B**): chat **v2a–v6** + [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier) **plus** post-v4, post-v6b/c/d. Originally excluded: `e2e_public` auto-key (c3+), group E2E, PQ (c4).  
 **Rationale:** Ship core E2E + sync with additive polish phases without opening public tier or group wire work.  
-**Alternatives:** Bucket A (minimal private only); C/D (public tier or PQ — deferred).
+**Alternatives:** Bucket A (minimal private only); C/D (public tier or PQ — deferred).  
+**Amended by:** [D099](#d099--account-id-amends-d096-multi-device), **[D100](#d100--release-scope-b-pq-account-id)**.
 
 ---
 
@@ -1273,8 +1277,9 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 
 **Date:** 2026-07-09  
 **Updated:** 2026-07-09 — clarify chain vs peer vs relay roles.  
+**Updated:** 2026-08-11 — **amended by [D099](#d099--account-id-amends-d096-multi-device)** for multi-device account root (pre-release). Until m1–m2 land, **code still matches the single-device table below**.  
 **Amends UX of:** D082 (relay-user string remains wire format).  
-**Cross-project:** [D091](#d091--blockchain-contact-id-caip-10-e024), [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).  
+**Cross-project:** [D091](#d091--blockchain-contact-id-caip-10-e024), [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007), [multi-device-account](../multi-device-account/).  
 **Decision:**
 
 Identity strings serve different verbs — do not treat them as interchangeable “user ids”:
@@ -1291,10 +1296,12 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 4. **v1 wire unchanged:** `ChatTargetKey` / `sender_contact_id` / AAD continue to use `peer_identity_kind = relay_user` and `relay:…` until a deliberate protocol bump to `peer_id` threads (D079). Target directory map: `CAIP-10 | nickname | relay_id → Peer ID`.
 5. **One keypair:** The Ed25519 key in `identity.json` is the source for Peer ID derivation, message signing, and registration proofs.
 
-**Slogan:** Peer ID = who. Chain account = how you find who. Relay = how messages route today.
+**Slogan (single-device era):** Peer ID = who. Chain account = how you find who. Relay = how messages route today.
 
 **Rationale:** Dialable P2P identity exists before relay registration; wallet search and attestation must not be confused with the network id or the v1 transport account.  
 **Alternatives:** Keep relay-first Settings (rejected); CAIP-10 as Me primary / wire id in v1 (rejected — D091); flip wire to Peer ID in the same change (rejected — protocol bump).
+
+**Superseded in part by D099** for multi-device: person = Account ID; Peer ID = device endpoint; relay = route binding; account key signs (not one keypair for all roles). Canonical matrix: [multi-device-account DESIGN](../multi-device-account/DESIGN.md).
 
 ---
 
@@ -1314,11 +1321,108 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 ---
 
+## D098 — Reaction annotations (`reaction` / `reaction_clear`)
+
+**Date:** 2026-08-08  
+**Decision:**
+
+1. Message reactions use existing `content_type=annotation` rows (D005/D026) — not in-place mutations of the target.
+2. **`value` is a plain UTF-8 emoji string** (codec/tests). Documentary nested `{ "emoji": "…" }` shapes are rejected.
+3. **Add:** `annotation_type=reaction`, `text` = display glyph, `value` = emoji, `target_message_id` set. Store original UTF-8; compare with `NormalizeEmojiKey` (strip trailing `U+FE0F`).
+4. **Remove (toggle off):** append `annotation_type=reaction_clear` with the same `target_message_id` + `value` emoji key and empty `text`. Display keeps the **latest** row per `(sender_contact_id, target_message_id, emoji_key)`; clear wins.
+5. Both types count toward **`kMaxAnnotationsPerTarget`** (D042); enforce on compose and ingest persist.
+6. Mobile: OS emoji keyboard for composer text; reaction UX uses a fixed preset strip + **More…** opening the in-app emoji picker (curated catalog; recently used in profile prefs). Composer ☺ opens the same picker for insert.
+
+**Rationale:** Reuses the shipped annotation path; append-only sync stays simple; toggle without mutating history.  
+**Alternatives:** Mutate target row likes array (rejected — D005); nested JSON `value` object (rejected — codec is string); full Unicode dump (rejected — curated catalog + OS paste for rare glyphs).
+
+**Follow-up (2026-08-10):** In-app emoji catalog is no longer deferred for insert / reaction **More…** — see `EmojiCatalog` + `EmojiPickerController`.
+
+---
+
+## D099 — Account ID amends D096 (multi-device)
+
+**Date:** 2026-08-11  
+**Updated:** 2026-08-13 — D015 is one *sender* not one device ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)).  
+**Amends:** [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route) (person/endpoint/route split; ends “one keypair” for multi-device).  
+**Does not amend:** D082 string rules for `relay:` **as a route id**; D091 (CAIP-10 find-only).  
+**Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M019](../multi-device-account/DECISIONS.md)).  
+**Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+
+**Decision:**
+
+| Role | Value | Scope |
+|------|--------|-------|
+| **Account (person)** | `account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` | Shared across linked devices |
+| **Endpoint (install)** | libp2p **Peer ID** from **device** keypair | Per device |
+| **Route** | `relay:<opaque_id>` | Per relay server binding |
+| **Find** | CAIP-10 (optional) | Alias → Account ID |
+
+1. **Account ID** is the communicating-identity target for the pre-release hard cut (`ChatTargetKey` / wire) — see multi-device-account M007; code remains `relay_user` until m2.
+2. **Contact / wire:** `ContactIdKind::Account` / `peer_identity_kind=account` ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount)); envelopes/AAD vs relay auth ([M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)).
+3. **Peer ID** is no longer the account “who”; it is the mesh endpoint for one install (avoids dual-online conflict).
+4. **Brief register binding:** prove account key → at most one `relay_user_id` per Account ID per server (M006). Directory Account-first early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)).
+5. **Signing / PSK sync / DEK:** owned by e2e E025 and at-rest A010 — not re-specified here.
+6. D015 is **one sender**, not one device: linked installs may receive ([M016](../multi-device-account/DECISIONS.md#m016--dogfood-one-active-sender-on-linked-devices)). D074 `sender_instance_id` remains until a multi-writer phase.
+
+**Rationale:** Portable multi-device account without overloading Peer ID or `relay:` as the person root; destructive cut acceptable pre-release.  
+**Alternatives:** Keep D096 as-is; soft-cut wire stays `relay:`; account = CAIP-10.
+
+---
+
+## D100 — Release scope = Bucket B + PQ + Account ID (amends D092)
+
+**Date:** 2026-08-13  
+**Updated:** 2026-08-13 — link-device paste (**M012** m4b) landed; remaining multi-device follow-ups live in that project (**M016–M019**).  
+**Amends:** [D092](#d092--release-scope-bucket-b).  
+**Cross-project:** [multi-device-account M007–M019](../multi-device-account/DECISIONS.md); [e2e-message-crypto](../e2e-message-crypto/) aggressive PQ path.  
+**Decision:** Pre-release messaging/identity scope is **Bucket B plus**:
+
+| Include (with B) | Still deferred (release gates / later) |
+|------------------|----------------------------------------|
+| Aggressive PQ account identity (ML-DSA-65 register/API auth, ML-KEM-768 auto-key) | **`e2e_public` send** enablement (keys/trust may land earlier) |
+| Account ID on wire, catalog, AAD ([M009](../multi-device-account/DECISIONS.md#m009--contactidkindaccount-wire-peer_identity_kindaccount), [M010](../multi-device-account/DECISIONS.md#m010--envelopeaad--account-id-relay-api-auth-stays-relay)) | Cloud message sync; hard-delete “forget forever”; remote wipe |
+| Brief Account-first directory early ([M011](../multi-device-account/DECISIONS.md#m011--brief-directory-account-first-by-account-lookup-search-q-matches-account-id)) | Dual-writer D074; unlink KEM rotation ([M019](../multi-device-account/DECISIONS.md#m019--unlink-local-forget-kem-rotation-is-revoke) phase 2) |
+| Link-device paste + shared DEK ([M012](../multi-device-account/DECISIONS.md#m012--link-device-ritual-deferred-until-m4) m4b) | Live sibling chat-index refresh (not a second paste) |
+
+Chat v2a–v6 + private E2E polish from Bucket B remain in scope. Multi-device **m3 `endpoints[]`** and **m4c** contacts-in-paste are tracked in [multi-device-account PHASES](../multi-device-account/PHASES.md), not as chat-storage gates.
+
+**Rationale:** Identity hard-cut is in-scope for the same release as local chat storage; public auto-key *send* stays gated.  
+**Alternatives:** Keep D092 exclude of PQ/multi-device entirely; ship wire cut without Brief by-account API.
+
+---
+
+## D101 — Public `key_scope`, `psk_rotate` ingest, and rotation policy
+
+**Date:** 2026-08-15  
+**Status:** Accepted.  
+**Amends:** [D089](#d089--three-chat-tiers-both-direct-tiers-e2e-e021) rotation row; [D084](#d084--psk-columns-on-chat_targets-in-profiledb-e008) columns; two PSKs at the same epoch are a hard crypto failure — not [D046](#d046--relaxed-ingest-tier-default-for-public-direct-strict-only-in-v1-private) LWW.  
+**Cross-project:** [E027](../e2e-message-crypto/DECISIONS.md#e027--public-11-device-lock-rekey-auto-rotate_psk-only-when-both-sides-are-device-bound), [M020](../multi-device-account/DECISIONS.md#m020--device-scoped-public-psks-stay-off-the-link-bundle), [D085](#d085--passive-epoch-advance-peer-bumps-first).
+
+**Decision:**
+
+1. Additive `chat_targets` columns (`profile.db` `PRAGMA user_version` 3):
+ - `key_scope` TEXT NOT NULL DEFAULT `'account'` — `account` | `device_self` | `device_pair` | `locked_out`
+ - `thread_kem_pk_b64` / `thread_kem_sk_b64` (local conversation ML-KEM-768; sk DEK-wrapped like `master_psk_b64`)
+ - `peer_thread_kem_pk_b64`
+ - `last_psk_rotate_at` INTEGER (unix ms)
+ - `psk_rotate_msg_count` INTEGER NOT NULL DEFAULT 0 (messages in current epoch toward the auto-rekey watermark)
+2. Inbound `control_type=psk_rotate` on `e2e_public` only. Decrypt the payload with the **current** PSK first. Then verify `key_init_hash`, decapsulate `key_init` with the secret named by `wrap_kind`, install the new `master_psk` + epoch (D083 retired ledger + D085 adopt), store initiator `thread_kem_pk_b64` as `peer_thread_kem_pk_b64`. Do **not** treat this `key_init` as first-message auto-key (`ResolveOrDeriveMasterPsk` stays “PSK missing” only).
+3. **Scope transitions:**
+ - This install initiates lock: `account` → `device_self` (or `device_self` → `device_pair` if `peer_thread_kem_pk` already set).
+ - Peer lock received and `key_init` opens: if local already `device_self`, go `device_pair`; else stay `account` (peer locked themselves; we still have account-scope access).
+ - `key_init` fails after a valid notice: `locked_out`. Compose disabled. Banner. Old local history stays (D048). Old-epoch relay ciphertext still decrypts via retired ledger.
+4. Two different PSKs at the same `session_epoch` = **hard crypto failure** on all tiers — not D046 LWW.
+5. D080 public auto-create is unchanged for account-scope first messages.
+6. Unlock / restore to account scope is out of this slice.
+
+**Rationale:** Scope and conversation KEM must live next to the PSK (same `ChatTargetKey` row) so link-device, ingest, and the thread menu share one source of truth.  
+**Alternatives:** New `route.channel` (rejected — would fork another thread identity); store conversation KEM only in memory (rejected — must survive restart).
+
+---
+
 ## Open decisions (not yet resolved)
 
-**Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — all chat rollout items resolved 2026-07-06.
+None for this project’s local-storage checklist (resolved 2026-07-06). Identity / PQ / Account ID ADRs live in [multi-device-account/DECISIONS.md](../multi-device-account/DECISIONS.md) and [e2e-message-crypto/DECISIONS.md](../e2e-message-crypto/DECISIONS.md).
 
-**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095 (N ciphertexts per message).
-
-**Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086; auto-key O007/E024.  
-**Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — tracked in [platform-safety-limits/](../platform-safety-limits/), not this checklist.
+**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095; release scope → **D100**.

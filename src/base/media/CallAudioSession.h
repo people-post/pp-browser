@@ -18,6 +18,16 @@ bool SupportsSpeakerToggle();
 bool IsSpeakerphoneOn();
 void SetSpeakerphoneOn(bool on);
 
+/** SDL capture-open attempts (Android OEM AAudio races; 1 elsewhere). */
+int CaptureOpenAttemptCount();
+/** Delay before attempt `index` (0-based). */
+int CaptureOpenRetryDelayMs(int attempt_index);
+/** Sleep before reopening capture after a speaker-route change. 0 elsewhere. */
+int CaptureReopenSettleDelayMs();
+/** Platform SDL audio hints around capture (AAudio voice-communication on Android). */
+void ApplyCaptureAudioHints();
+void ClearCaptureAudioHints();
+
 } // namespace CallAudioSession
 
 } // namespace pbr

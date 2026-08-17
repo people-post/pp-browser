@@ -83,6 +83,23 @@ void ProfileUnlockGate::ReportError(const std::string& message) {
   }
 }
 
+void ProfileUnlockGate::RequestShowIdentityFork(std::function<void(bool)> done) {
+  if (done) {
+    pending_.push_back(std::move(done));
+  }
+  if (showing_) {
+    return;
+  }
+  showing_ = true;
+  if (ports_.ui.show_identity_fork) {
+    ports_.ui.show_identity_fork();
+    return;
+  }
+  if (ports_.ui.show_chooser) {
+    ports_.ui.show_chooser();
+  }
+}
+
 void ProfileUnlockGate::RequestShowChooser(std::function<void(bool)> done) {
   if (done) {
     pending_.push_back(std::move(done));
@@ -194,7 +211,7 @@ void ProfileUnlockGate::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     return;
   }
   if (!Secrets().HasVault()) {
-    RequestShowChooser(std::move(done));
+    RequestShowIdentityFork(std::move(done));
     return;
   }
   if (ports_.pin_is_default && ports_.pin_is_default()) {
@@ -240,7 +257,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
         on_done(work());
       }
     } else {
-      // No vault yet — leave locked until a feature calls EnsureUnlocked (chooser).
+      // No vault yet — leave locked until a feature calls EnsureUnlocked (identity fork).
       DrainQueue(false);
     }
     return;
@@ -263,6 +280,53 @@ void ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool creat
 void ProfileUnlockGate::CompleteWithDefaultPin() {
   RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/true,
                          /*clear_default_pin=*/false);
+}
+
+void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::string& bundle_json,
+                                           const bool set_default_pin) {
+  if (unlock_in_progress_) {
+    return;
+  }
+  if (!ports_.import_link_device) {
+    ReportError("Link import is not available");
+    return;
+  }
+  SetUnlockInProgress(true);
+  StartupMark("link_device_import_begin");
+
+  auto work = [this, pin, bundle_json]() -> Roe<void> {
+    if (auto imported = ports_.import_link_device(pin, bundle_json); !imported) {
+      return imported.error();
+    }
+    return UnlockAndReady(pin);
+  };
+  auto on_done = [this, set_default_pin](Roe<void> result) {
+    if (!result) {
+      StartupMark("link_device_import_fail");
+      ReportError(result.error().message);
+      return;
+    }
+    if (set_default_pin && ports_.set_pin_is_default) {
+      ports_.set_pin_is_default(true);
+    }
+    if (!set_default_pin && ports_.set_pin_is_default) {
+      ports_.set_pin_is_default(false);
+    }
+    StartupMark("link_device_import_ok");
+    if (set_default_pin && ports_.ui.on_default_provisioned) {
+      ports_.ui.on_default_provisioned();
+    }
+    if (ports_.ui.on_link_imported) {
+      ports_.ui.on_link_imported();
+    }
+    Finish(true);
+  };
+
+  if (ports_.run_heavy) {
+    ports_.run_heavy(std::move(work), std::move(on_done));
+    return;
+  }
+  on_done(work());
 }
 
 void ProfileUnlockGate::Cancel() {

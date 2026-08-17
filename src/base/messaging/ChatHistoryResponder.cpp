@@ -22,6 +22,15 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
     return Error("History row missing seq fields");
   }
 
+  auto local = identity.Get();
+  if (!local) {
+    return local.error();
+  }
+  const std::string local_account_id =
+      !local->account_id.empty() ? local->account_id : local_relay_user_id;
+  const std::string peer_communicating_id =
+      !thread.peer_identity_value.empty() ? thread.peer_identity_value : peer_relay_user_id;
+
   std::optional<std::string> payload_b64;
   if (E2eRelayPayloadCodec::RequiresEncryption(thread.channel)) {
     const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
@@ -36,8 +45,8 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
     E2eEncryptParams params;
     params.text = message.text;
     params.channel = E2eRelayPayloadCodec::ChannelFromThread(thread.channel);
-    params.peer_contact_id = peer_relay_user_id;
-    params.sender_contact_id = local_relay_user_id;
+    params.peer_contact_id = peer_communicating_id;
+    params.sender_contact_id = local_account_id;
     params.message_id = message.id;
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
@@ -59,7 +68,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
   envelope.sender_relay_id = local_relay_user_id;
-  envelope.sender_contact_id = local_relay_user_id;
+  envelope.sender_contact_id = local_account_id;
   envelope.route.kind = "direct";
   envelope.route.channel = thread.channel;
   envelope.body.e2e.payload_b64 = *payload_b64;

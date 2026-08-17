@@ -30,10 +30,10 @@ TEST(SfuAttachFanoutTest, ClearsConsumedQuoteId) {
 }
 
 TEST(SfuAttachFanoutTest, PublisherStreamIdStable) {
-  EXPECT_EQ(PublisherStreamIdForIdentity("relay:alice"),
-            PublisherStreamIdForIdentity("relay:alice"));
-  EXPECT_NE(PublisherStreamIdForIdentity("relay:alice"),
-            PublisherStreamIdForIdentity("relay:bob"));
+  EXPECT_EQ(PublisherStreamIdForIdentity("account:alice"),
+            PublisherStreamIdForIdentity("account:alice"));
+  EXPECT_NE(PublisherStreamIdForIdentity("account:alice"),
+            PublisherStreamIdForIdentity("account:bob"));
   EXPECT_EQ(PublisherStreamIdForIdentity(""), 1u);
 }
 

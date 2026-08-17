@@ -3,6 +3,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -34,18 +35,22 @@ void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::s
 
 namespace {
 
-std::optional<std::string> PrimaryRelayIdFromHit(const DirectoryHit& hit) {
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.primary) {
-      return id.value;
-    }
+void RegisterKeysFromHit(P2pMessagingService* p2p, const DirectoryHit& hit) {
+  if (!p2p) {
+    return;
   }
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::RelayUser) {
-      return id.value;
-    }
+  const auto account_id = PrimaryAccountIdFromHit(hit);
+  if (!account_id) {
+    return;
   }
-  return std::nullopt;
+  if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
+    p2p->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *account_id,
+                                *hit.signing_public_key_b64, "directory");
+  }
+  if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+    p2p->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
+                            "directory");
+  }
 }
 
 } // namespace
@@ -65,18 +70,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       contact_id = payload["contact_id"].get<std::string>();
     } else     if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
       const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
-      if (p2p_ && hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-        if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
-          p2p_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
-                                       *hit.signing_public_key_b64, "directory");
-        }
-      }
-      if (p2p_ && hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-        if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
-          p2p_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
-                                  *hit.kem_public_key_b64, "directory");
-        }
-      }
+      RegisterKeysFromHit(p2p_, hit);
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
         return contact.error();
@@ -132,18 +126,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       return Error("Missing directory_hit");
     }
     const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
-    if (p2p_ && hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-      if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
-        p2p_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
-                                     *hit.signing_public_key_b64, "directory");
-      }
-    }
-    if (p2p_ && hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-      if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
-        p2p_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
-                                *hit.kem_public_key_b64, "directory");
-      }
-    }
+    RegisterKeysFromHit(p2p_, hit);
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
       return contact.error();
@@ -311,13 +294,13 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (roster) {
       auto local = identity_.Get();
       for (const GroupRosterMember& member : *roster) {
-        if (local && member.member_identity == local->relay_user_id) {
+        if (local && member.member_identity == local->account_id) {
           continue;
         }
         if (groups_->IsMemberUnreachable(group_id, member.member_identity)) {
           continue;
         }
-        if (auto contact = contacts_.FindByIdentity(member.member_identity, ContactIdKind::RelayUser)) {
+        if (auto contact = contacts_.FindByIdentity(member.member_identity, ContactIdKind::Account)) {
           if (*contact) {
             member_contact_ids.push_back((*contact)->id);
           }

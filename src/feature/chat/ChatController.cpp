@@ -1,10 +1,11 @@
 #include <stdexcept>
 #include "feature/chat/ChatController.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/ui/ShellSetupPorts.h"
 #include "feature/chat/ChatDataModel.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/ui/BadgeAggregator.h"
+#include "feature/ui/BadgeNotifyPorts.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/i18n/ScriptLanguageDetector.h"
 #include "base/runtime/AppLifecycle.h"
@@ -30,21 +31,25 @@
 #include "base/people/ContactJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/ReactionTypes.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
-#include "base/crypto/ProfileUnlockGate.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/SettingsController.h"
+#include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -62,6 +67,8 @@
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
+#include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/SystemInterface.h>
 
 #include <optional>
@@ -104,8 +111,8 @@ std::string MockAssistantRespond(const std::string& query) {
         { "type": "long_list", "title": "Search results", "items": [
           { "title": "Alice Example", "subtitle": "@alice", "meta": "relay:alice123",
             "actions": [
-              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" },
-              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" }
+              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" },
+              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"account\",\"value\":\"account:alice123\",\"primary\":true},{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":false}]}}" }
             ]
           }
         ]}
@@ -269,6 +276,7 @@ ChatController::ChatController()
                  .show_thread_menu = chat_.show_thread_menu,
                  .show_gap_banner = chat_.show_gap_banner,
                  .show_compromised_banner = chat_.show_compromised_banner,
+                 .show_locked_out_banner = chat_.show_locked_out_banner,
                  .show_psk_setup_banner = chat_.show_psk_setup_banner,
                  .show_psk_import = chat_.show_psk_import,
                  .psk_has_key = chat_.psk_has_key,
@@ -299,10 +307,14 @@ ChatController::ChatController()
       });
 }
 
-void ChatController::BindChatPorts(MessagingChatPorts ports) {
-  chat_ports_ = std::move(ports);
-  scroller_.BindChatPorts(chat_ports_);
-  chrome_.BindChatPorts(chat_ports_);
+void ChatController::BindMessagingFacade(MessagingFacade* facade) {
+  facade_ = facade;
+  scroller_.BindMessagingFacade(facade);
+  chrome_.BindMessagingFacade(facade);
+}
+
+void ChatController::BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook) {
+  register_messaging_tools_ = std::move(hook);
 }
 
 void ChatController::BindAgentPorts(AgentUiPorts ports) {
@@ -315,6 +327,44 @@ void ChatController::BindContactsNotify(ContactsNotifyPorts ports) {
 
 void ChatController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
+}
+
+void ChatController::BindEmojiPickerNotify(EmojiPickerNotifyPorts ports) {
+  emoji_picker_notify_ = std::move(ports);
+}
+
+void ChatController::InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus) {
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (key.empty() || chat_.compose_disabled) {
+    return;
+  }
+  const std::string next = std::string(chat_.draft.c_str()) + key;
+  chat_.draft = next.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  if (!draft) {
+    return;
+  }
+  draft->SetValue(next.c_str());
+  const Rml::String value = draft->GetValue();
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+  if (!restore_composer_focus) {
+    // Keyboard-panel multi-insert: caret only (unfocused SetSelectionRange does not OSK).
+    draft->SetSelectionRange(end, end);
+    return;
+  }
+  // Popover close remounts via SyncLayout; place caret after remount too.
+  focus_draft_after_sync_ = true;
+  draft->Focus();
+  draft->SetSelectionRange(end, end);
+}
+
+void ChatController::ReactWithEmoji(const std::string& message_id, const std::string& emoji) {
+  ToggleReaction(message_id, emoji);
 }
 
 bool ChatController::AgentReady() const {
@@ -333,8 +383,8 @@ void ChatController::BindShellSetup(ShellSetupPorts ports) {
 }
 
 bool ChatController::MessagingInitialized() const {
-  if (chat_ports_.snapshot) {
-    return chat_ports_.snapshot().initialized;
+  if (facade_) {
+    return facade_->Snapshot().initialized;
   }
   if (messaging_ui_.snapshot) {
     return messaging_ui_.snapshot().initialized;
@@ -343,8 +393,8 @@ bool ChatController::MessagingInitialized() const {
 }
 
 bool ChatController::MessagingReady() const {
-  if (chat_ports_.snapshot) {
-    return chat_ports_.snapshot().messaging_ready;
+  if (facade_) {
+    return facade_->Snapshot().messaging_ready;
   }
   if (messaging_ui_.snapshot) {
     return messaging_ui_.snapshot().messaging_ready;
@@ -354,8 +404,8 @@ bool ChatController::MessagingReady() const {
 
 const std::string& ChatController::ActiveThreadId() const {
   static const std::string kEmpty;
-  if (chat_ports_.active_thread_id) {
-    return chat_ports_.active_thread_id();
+  if (facade_) {
+    return facade_->ActiveThreadId();
   }
   return kEmpty;
 }
@@ -364,20 +414,20 @@ void ChatController::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
-void ChatController::BindBadgeAggregator(BadgeAggregator& badges) {
-  badges_ = &badges;
+void ChatController::BindBadgeNotify(BadgeNotifyPorts ports) {
+  badge_notify_ = std::move(ports);
 }
 
 void ChatController::BindInputCoordinator(InputCoordinator& input) {
   input_ = &input;
 }
 
-void ChatController::BindCallController(CallController& call) {
-  call_ = &call;
+void ChatController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
-void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void ChatController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
@@ -411,8 +461,8 @@ ShellChromeSnapshot ChatController::ChromeSnapshot() const {
 ChatSurfaceSnapshot ChatController::BuildSurfaceSnapshot() const {
   ChatSurfaceSnapshot snap;
   snap.has_active_thread = !ActiveThreadId().empty();
-  if (badges_) {
-    snap.sessions_unread = badges_->State().sessions_unread;
+  if (badge_notify_.sessions_unread) {
+    snap.sessions_unread = badge_notify_.sessions_unread();
   }
   return snap;
 }
@@ -556,6 +606,20 @@ void ChatController::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml:
   Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
 }
 
+void ChatController::ToggleReactionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().ToggleReaction(std::string(args[0].Get<Rml::String>().c_str()),
+                            std::string(args[1].Get<Rml::String>().c_str()));
+}
+
+void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                             const Rml::VariantList& /*args*/) {
+  Instance().OpenEmojiInsertMenu(&ev);
+}
+
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
@@ -604,8 +668,8 @@ void ChatController::StartVoiceCallCallback(Rml::DataModelHandle /*model*/, Rml:
                                             const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_) {
-    self.call_->StartVoiceCall(thread_id);
+  if (!thread_id.empty() && self.call_actions_.start_voice) {
+    self.call_actions_.start_voice(thread_id);
   }
 }
 
@@ -613,8 +677,8 @@ void ChatController::StartVideoCallCallback(Rml::DataModelHandle /*model*/, Rml:
                                             const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_) {
-    self.call_->StartVideoCall(thread_id);
+  if (!thread_id.empty() && self.call_actions_.start_video) {
+    self.call_actions_.start_video(thread_id);
   }
 }
 
@@ -708,7 +772,7 @@ void ChatController::OnHomeTabActivated() {
   if (!messaging_ready_) {
     return;
   }
-  chat_ports_.clear_active_thread();
+  facade_->ClearActiveThread();
   working_set_.ClearAll();
   ShellSetPrimaryPane("home");
   RefreshFromMessaging();
@@ -724,9 +788,9 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
-  if (chat_ports_.open_thread(thread_id)) {
+  if (facade_->OpenThread(thread_id)) {
     ILocalNotifier::Instance().ClearForThread(thread_id);
-    chat_ports_.maybe_tail_sync(thread_id);
+    facade_->MaybeTailSync(thread_id);
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
   }
@@ -738,7 +802,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   }
 
   auto finish_close = [this, thread_id]() {
-    if (!chat_ports_.close_thread(thread_id)) {
+    if (!facade_->CloseThread(thread_id)) {
       UserFeedback::Fail("Could not delete conversation");
       NotifySurfaceChanged();
       return;
@@ -760,22 +824,22 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   };
 
   auto dismiss_and_close = [this, finish_close](const std::string& group_id) {
-    (void)chat_ports_.dismiss_local_group(group_id);
+    (void)facade_->DismissLocalGroup(group_id);
     finish_close();
   };
 
-  auto thread = chat_ports_.get_thread(thread_id);
+  auto thread = facade_->GetThread(thread_id);
   if (thread && *thread && (*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
     const std::string group_id = *(*thread)->group_id;
     std::string local_identity;
-    if (auto identity = chat_ports_.get_identity()) {
-      local_identity = identity->relay_user_id;
+    if (auto identity = facade_->GetIdentity()) {
+      local_identity = identity->account_id;
     }
 
     bool is_owner = false;
-    if (auto owner = chat_ports_.is_local_owner(group_id)) {
+    if (auto owner = facade_->IsLocalOwner(group_id)) {
       is_owner = *owner;
-    } else if (auto roster = chat_ports_.list_group_roster(group_id)) {
+    } else if (auto roster = facade_->ListGroupRoster(group_id)) {
       for (const GroupRosterMember& member : *roster) {
         if (member.member_identity == local_identity && member.role == MemberRole::Owner) {
           is_owner = true;
@@ -785,7 +849,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     }
 
     std::vector<GroupRosterMember> members;
-    if (auto roster = chat_ports_.list_group_roster(group_id)) {
+    if (auto roster = facade_->ListGroupRoster(group_id)) {
       members = *roster;
     }
 
@@ -794,14 +858,14 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       if (member.member_identity == local_identity) {
         continue;
       }
-      if (chat_ports_.is_member_unreachable(group_id, member.member_identity)) {
+      if (facade_->IsMemberUnreachable(group_id, member.member_identity)) {
         continue;
       }
       successors.push_back(member);
     }
 
     bool owner_on_roster = false;
-    if (auto owner_id = chat_ports_.owner_identity(group_id)) {
+    if (auto owner_id = facade_->OwnerIdentity(group_id)) {
       for (const GroupRosterMember& member : members) {
         if (member.member_identity == *owner_id) {
           owner_on_roster = true;
@@ -829,7 +893,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                      if (!ok) {
                                        return;
                                      }
-                                     if (auto left = chat_ports_.leave_group(group_id); !left) {
+                                     if (auto left = facade_->LeaveGroup(group_id); !left) {
                                        dismiss_and_close(group_id);
                                        return;
                                      }
@@ -859,8 +923,8 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           std::vector<ContextMenuAction> actions;
           for (const GroupRosterMember& member : successors) {
             std::string label = member.member_identity;
-            if (auto contact = chat_ports_.find_contact_by_identity(member.member_identity,
-                                                                                  ContactIdKind::RelayUser)) {
+            if (auto contact = facade_->FindContactByIdentity(member.member_identity,
+                                                                                  ContactIdKind::Account)) {
               if (*contact) {
                 label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
                 if (label.empty()) {
@@ -874,7 +938,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                 "Transfer to " + label,
                 nullptr,
                 [this, finish_close, group_id, successor]() {
-                  if (auto left = chat_ports_.leave_as_owner(group_id, successor); !left) {
+                  if (auto left = facade_->LeaveAsOwner(group_id, successor); !left) {
                     UserFeedback::Fail(left.error().message);
                     NotifySurfaceChanged();
                     return;
@@ -916,7 +980,7 @@ void ChatController::OnClearHistory() {
     return;
   }
 
-  auto thread = chat_ports_.get_active_thread();
+  auto thread = facade_->GetActiveThread();
   const bool is_ai = thread && thread->kind == ThreadKind::Ai;
   std::string message =
       "Remove all messages on this device? The thread stays in your sidebar. "
@@ -933,7 +997,7 @@ void ChatController::OnClearHistory() {
           if (!ok) {
             return;
           }
-          if (!chat_ports_.clear_thread_history(thread_id, forget_memory)) {
+          if (!facade_->ClearThreadHistory(thread_id, forget_memory)) {
             return;
           }
           chat_.draft = "";
@@ -950,7 +1014,7 @@ void ChatController::OnClearHistory() {
                                  if (!ok) {
                                    return;
                                  }
-                                 if (!chat_ports_.clear_thread_history(thread_id, false)) {
+                                 if (!facade_->ClearThreadHistory(thread_id, false)) {
                                    return;
                                  }
                                  chat_.draft = "";
@@ -979,7 +1043,7 @@ void ChatController::OnForgetMemory() {
         if (!ok) {
           return;
         }
-        if (!chat_ports_.forget_thread_memory(thread_id)) {
+        if (!facade_->ForgetThreadMemory(thread_id)) {
           return;
         }
         NotifySurfaceChanged();
@@ -1001,7 +1065,7 @@ void ChatController::SendSharedAssistantRelay(const std::string& thread_id, cons
   if (!messaging_ready_ || plain_text.empty()) {
     return;
   }
-  auto thread = chat_ports_.get_thread(thread_id);
+  auto thread = facade_->GetThread(thread_id);
   if (!thread || !*thread) {
     return;
   }
@@ -1014,7 +1078,7 @@ void ChatController::SendSharedAssistantRelay(const std::string& thread_id, cons
     opts.seq_owner_contact_id = (*thread)->participant_contact_ids.front();
   }
   opts.update_preview = true;
-  (void)chat_ports_.send_user_message(thread_id, plain_text, opts);
+  (void)facade_->SendUserMessage(thread_id, plain_text, opts);
 }
 
 void ChatController::RefreshFromMessaging() {
@@ -1023,12 +1087,12 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
-  if (badges_) {
-    badges_->Refresh();
+  if (badge_notify_.refresh) {
+    badge_notify_.refresh();
   }
   // Inbox ingest (incl. call_invite) completes on IO; reconcile ring after messages change.
-  if (call_) {
-    call_->RefreshPendingRing();
+  if (call_actions_.refresh_pending_ring) {
+    call_actions_.refresh_pending_ring();
   }
   DirtyChat();
   DirtyShell();
@@ -1058,7 +1122,7 @@ void ChatController::SyncShellSessions() {
     return;
   }
   shell_.sessions.clear();
-  auto threads = chat_ports_.list_threads();
+  auto threads = facade_->ListThreads();
   if (!threads) {
     return;
   }
@@ -1070,8 +1134,8 @@ void ChatController::SyncShellSessions() {
   for (const Thread& thread : sorted_threads) {
     SessionRow row;
     row.id = thread.id.c_str();
-    row.title = chat_ports_.resolve_thread_label
-                    ? chat_ports_.resolve_thread_label(thread).title.c_str()
+    row.title = facade_
+                    ? facade_->ResolveThreadLabel(thread).title.c_str()
                     : thread.title.c_str();
     row.preview = thread.preview.c_str();
     row.kind = SessionVisualKind(thread);
@@ -1145,6 +1209,29 @@ void ChatController::OnRotatePskExport() {
   chrome_.OnRotatePskExport();
 }
 
+void ChatController::OnLockPublicToThisDevice() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  ShowConfirm(Tr("chat.device_lock.confirm_title"), Tr("chat.device_lock.confirm_body"),
+              [this, thread_id](bool ok) {
+                if (!ok) {
+                  return;
+                }
+                WithSecrets([this, thread_id]() {
+                  auto locked = facade_->LockPublicThreadToThisDevice(thread_id);
+                  if (!locked) {
+                    ShowToast(locked.error().message);
+                  }
+                  RefreshFromMessaging();
+                });
+              });
+}
+
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
 }
@@ -1161,7 +1248,7 @@ void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
   }
-  if (!chat_ports_.get_active_thread || !chat_ports_.get_active_thread()) {
+  if (!facade_ || !facade_->GetActiveThread()) {
     chrome_.ResetPanelState();
     return;
   }
@@ -1172,8 +1259,9 @@ void ChatController::SyncDisplayFromThread() {
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
   const size_t prev_count = chat_.messages.size();
 
-  chat_.messages = chat_ports_.build_display_rows
-      ? chat_ports_.build_display_rows(thread_id, scroller_.LoadedMinDisplayOrder())
+  chat_.messages = facade_
+      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder(),
+                                  scroller_.LoadedMaxDisplayOrder())
       : std::vector<MessageDisplayRow>{};
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
@@ -1186,6 +1274,25 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
   if (payload && !payload->empty()) {
     const nlohmann::json action_json = nlohmann::json::parse(*payload, nullptr, false);
     if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
+        action_json["type"].get<std::string>() == "tool_permission") {
+      const std::string approval_id =
+          action_json.contains("approval_id") && action_json["approval_id"].is_string()
+              ? action_json["approval_id"].get<std::string>()
+              : "";
+      const std::string decision = action_json.contains("decision") && action_json["decision"].is_string()
+                                       ? action_json["decision"].get<std::string>()
+                                       : "";
+      if (!agent_ports_.resume_tool_permission) {
+        ShowToast("Assistant is not ready for permission decisions.");
+        return;
+      }
+      auto resumed = agent_ports_.resume_tool_permission(approval_id, decision, message);
+      if (!resumed) {
+        ShowToast(resumed.error().message);
+      }
+      return;
+    }
+    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
         action_json["type"].get<std::string>() == "fork_group") {
       const std::string confirmed_payload = *payload;
       ShowConfirm("Start a new group?",
@@ -1194,7 +1301,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             if (!ok) {
               return;
             }
-            auto result = chat_ports_.dispatch_action(confirmed_payload);
+            auto result = facade_->DispatchAction(confirmed_payload);
             if (!result) {
               log().warning << "Local action failed: " << result.error().message;
               ShowToast(result.error().message);
@@ -1220,7 +1327,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
           });
       return;
     }
-    auto result = chat_ports_.dispatch_action(*payload);
+    auto result = facade_->DispatchAction(*payload);
     if (!result) {
       // Never re-route the same action payload through MessageRouter — that loops
       // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
@@ -1275,7 +1382,7 @@ void ChatController::OnNewChat() {
     return;
   }
 
-  (void)chat_ports_.create_new_ai_thread();
+  (void)facade_->CreateNewAiThread();
   chat_.draft = "";
   chat_.status = "";
   chat_.loading = false;
@@ -1296,6 +1403,149 @@ void ChatController::OnNewMessage() {
   if (people_picker_notify_.open_free) {
     people_picker_notify_.open_free();
   }
+}
+
+namespace {
+
+const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
+
+std::string FindMessageIdFromElement(Rml::Element* element) {
+  for (Rml::Element* cur = element; cur; cur = cur->GetParentNode()) {
+    if (cur->HasAttribute("message-id")) {
+      const Rml::String value = cur->GetAttribute("message-id", Rml::String());
+      return std::string(value.c_str());
+    }
+  }
+  return {};
+}
+
+} // namespace
+
+void ChatController::ToggleReaction(const std::string& message_id, const std::string& emoji) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (key.empty()) {
+    return;
+  }
+
+  // If local already has this emoji active on the target, clear; else add.
+  bool mine_active = false;
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, 500);
+  if (page) {
+    struct Slot {
+      int64_t order = -1;
+      bool active = false;
+    };
+    Slot latest;
+    for (const ThreadMessage& message : *page) {
+      if (message.content_type != ChatContentType::Annotation) {
+        continue;
+      }
+      if (message.sender_contact_id != kLocalSelfContactId) {
+        continue;
+      }
+      if (!message.target_message_id || *message.target_message_id != message_id) {
+        continue;
+      }
+      auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+      std::string annotation_type = kAnnotationTypeReaction;
+      std::string value = message.text;
+      if (fields) {
+        annotation_type = fields->annotation_type;
+        value = fields->value.empty() ? message.text : fields->value;
+      }
+      if (!IsReactionAnnotationType(annotation_type)) {
+        continue;
+      }
+      if (NormalizeEmojiKey(value) != key) {
+        continue;
+      }
+      if (message.display_order >= latest.order) {
+        latest.order = message.display_order;
+        latest.active = annotation_type == kAnnotationTypeReaction;
+      }
+    }
+    mine_active = latest.active;
+  }
+
+  auto sent = mine_active ? facade_->ClearReaction(thread_id, message_id, key)
+                          : facade_->SendReaction(thread_id, message_id, key);
+  if (!sent) {
+    if (shell_feedback_.show_toast) {
+      shell_feedback_.show_toast(sent.error().message, ToastDuration::Short);
+    }
+    return;
+  }
+  SyncDisplayFromThread();
+  NotifySurfaceChanged();
+}
+
+void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
+  if (emoji_picker_notify_.open_react) {
+    emoji_picker_notify_.open_react(message_id);
+    return;
+  }
+  if (!shell_feedback_.show_prompt) {
+    return;
+  }
+  shell_feedback_.show_prompt(
+      "React", "Pick an emoji (use the keyboard emoji key on mobile).", "",
+      [this, message_id](bool confirmed, std::string value) {
+        if (!confirmed) {
+          return;
+        }
+        ToggleReaction(message_id, value);
+      });
+}
+
+void ChatController::OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position) {
+  if (message_id.empty()) {
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  for (const char* emoji : kReactionPresets) {
+    actions.push_back({
+        std::string("react_") + emoji,
+        emoji,
+        nullptr,
+        [this, message_id, emoji]() { ToggleReaction(message_id, emoji); },
+    });
+  }
+  actions.push_back({
+      "react_more",
+      "More…",
+      nullptr,
+      [this, message_id]() { ShowReactionMorePrompt(message_id); },
+  });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
+  if (chat_.compose_disabled) {
+    return;
+  }
+  if (emoji_picker_notify_.open_insert) {
+    emoji_picker_notify_.open_insert();
+    return;
+  }
+  // Fallback when picker is not wired (tests / headless): keep preset strip.
+  const Rml::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : Rml::Vector2i(120, 120);
+  std::vector<ContextMenuAction> actions;
+  for (const char* emoji : kReactionPresets) {
+    actions.push_back({
+        std::string("insert_") + emoji,
+        emoji,
+        nullptr,
+        [this, emoji]() { InsertEmojiIntoDraft(emoji); },
+    });
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
 void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
@@ -1331,6 +1581,19 @@ void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
   const Rml::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
+  if (chat_.thread_is_public && messaging_ready_ && facade_) {
+    const std::string thread_id = ActiveThreadId();
+    auto can_lock = facade_->CanLockPublicToThisDevice(thread_id);
+    if (can_lock && *can_lock) {
+      actions.push_back({
+          "lock_public_device",
+          Tr("chat.device_lock.menu"),
+          nullptr,
+          [this]() { OnLockPublicToThisDevice(); },
+          "../icons/lock.svg",
+      });
+    }
+  }
   if (chat_.show_sync_with_peer && !chat_.sync_in_progress) {
     actions.push_back({
         "sync_with_peer",
@@ -1370,7 +1633,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
   if (!messaging_ready_ || !chat_.show_peer_sheet) {
     return;
   }
-  auto thread = chat_ports_.get_active_thread();
+  auto thread = facade_->GetActiveThread();
   if (!thread) {
     return;
   }
@@ -1379,13 +1642,13 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
 
   std::vector<ContextMenuAction> actions;
   if (thread->kind == ThreadKind::Direct) {
-    const PeerDisplayLabel label = chat_ports_.resolve_thread_label(*thread);
+    const PeerDisplayLabel label = facade_->ResolveThreadLabel(*thread);
     const std::string peer_id = thread->peer_identity_value;
     std::optional<std::string> dm_contact_id = label.contact_id;
     if (!dm_contact_id && !thread->participant_contact_ids.empty()) {
       const std::string& candidate = thread->participant_contact_ids.front();
       if (!candidate.empty()) {
-        if (auto contact = chat_ports_.get_contact(candidate); contact && *contact) {
+        if (auto contact = facade_->GetContact(candidate); contact && *contact) {
           dm_contact_id = candidate;
         }
       }
@@ -1421,38 +1684,53 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           nullptr,
           [this, peer_id]() {
             DirectoryHit hit;
-            if (auto shadow = chat_ports_.get_directory_shadow(peer_id)) {
+            if (auto shadow = facade_->GetDirectoryShadow(peer_id)) {
               hit = *shadow;
             } else {
               hit.hit_id = peer_id;
-              hit.ids = {{ContactIdKind::RelayUser, peer_id, true}};
+              if (peer_id.rfind("account:", 0) == 0) {
+                hit.account_id = peer_id;
+                hit.ids = {{ContactIdKind::Account, peer_id, true}};
+              } else {
+                hit.ids = {{ContactIdKind::RelayUser, peer_id, false}};
+              }
             }
-            auto created = chat_ports_.add_contact_from_directory_hit(hit);
+            auto created = facade_->AddContactFromDirectoryHit(hit);
             if (!created) {
               UserFeedback::Fail("Could not add contact");
               NotifySurfaceChanged();
               return;
             }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-              chat_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
-                                                 *hit.signing_public_key_b64, "directory");
+              if (!hit.account_id || hit.account_id->empty()) {
+                UserFeedback::Fail("Directory hit missing Account ID");
+                NotifySurfaceChanged();
+                return;
+              }
+              facade_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+                                              *hit.signing_public_key_b64, "directory");
             }
             if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-              chat_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
-                                             *hit.kem_public_key_b64, "directory");
+              if (!hit.account_id || hit.account_id->empty()) {
+                UserFeedback::Fail("Directory hit missing Account ID");
+                NotifySurfaceChanged();
+                return;
+              }
+              facade_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+                                          *hit.kem_public_key_b64, "directory");
             }
-            chat_ports_.register_contact_direct_endpoints(*created);
+            facade_->RegisterContactDirectEndpoints(*created);
             // Bind stranger DM (empty participants) to the new contact id.
             ThreadChannel channel = ThreadChannel::E2ePublic;
-            if (auto active = chat_ports_.get_active_thread();
+            if (auto active = facade_->GetActiveThread();
                 active && active->kind == ThreadKind::Direct) {
               channel = active->channel;
             }
-            (void)chat_ports_.find_or_create_direct_thread(created->id, channel);
+            (void)facade_->FindOrCreateDirectThread(created->id, channel);
             if (contacts_notify_.select_contact) {
               contacts_notify_.select_contact(created->id);
             }
-            chat_ports_.notify_thread_changed();
+            facade_->NotifyThreadChanged();
           },
           "../icons/contacts.svg",
       });
@@ -1476,7 +1754,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     const std::string thread_id = thread->id;
     const std::string group_id = *thread->group_id;
     const std::string current_local = thread->local_title;
-    const PeerDisplayLabel label = chat_ports_.resolve_thread_label(*thread);
+    const PeerDisplayLabel label = facade_->ResolveThreadLabel(*thread);
     const std::string shared_default = label.shared_title.value_or(thread->title);
 
     actions.push_back({
@@ -1490,7 +1768,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                 if (!ok) {
                   return;
                 }
-                if (auto saved = chat_ports_.set_thread_local_title(thread_id, value); !saved) {
+                if (auto saved = facade_->SetThreadLocalTitle(thread_id, value); !saved) {
                   UserFeedback::Fail(saved.error().message);
                 }
                 NotifySurfaceChanged();
@@ -1504,7 +1782,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "Clear my name",
           nullptr,
           [this, thread_id]() {
-            (void)chat_ports_.set_thread_local_title(thread_id, "");
+            (void)facade_->SetThreadLocalTitle(thread_id, "");
             NotifySurfaceChanged();
           },
           "../icons/trash.svg",
@@ -1513,18 +1791,18 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
 
     bool is_owner = false;
     std::string local_identity;
-    if (auto identity = chat_ports_.get_identity()) {
-      local_identity = identity->relay_user_id;
-      if (auto roster = chat_ports_.list_group_roster(group_id)) {
+    if (auto identity = facade_->GetIdentity()) {
+      local_identity = identity->account_id;
+      if (auto roster = facade_->ListGroupRoster(group_id)) {
         for (const auto& member : *roster) {
-          if (member.member_identity == identity->relay_user_id && member.role == MemberRole::Owner) {
+          if (member.member_identity == identity->account_id && member.role == MemberRole::Owner) {
             is_owner = true;
             break;
           }
         }
       }
     }
-    const bool owner_unreachable = chat_ports_.is_owner_unreachable(group_id);
+    const bool owner_unreachable = facade_->IsOwnerUnreachable(group_id);
     if (is_owner) {
       actions.push_back({
           "rename_for_everyone",
@@ -1541,23 +1819,23 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                     NotifySurfaceChanged();
                     return;
                   }
-                  if (auto renamed = chat_ports_.rename_group_shared(group_id, value); !renamed) {
+                  if (auto renamed = facade_->RenameGroupShared(group_id, value); !renamed) {
                     UserFeedback::Fail(renamed.error().message);
                   } else {
-                    chat_ports_.notify_thread_changed();
+                    facade_->NotifyThreadChanged();
                   }
                   NotifySurfaceChanged();
                 });
           },
           "../icons/group.svg",
       });
-      for (const std::string& unreachable_id : chat_ports_.list_unreachable_members(group_id)) {
+      for (const std::string& unreachable_id : facade_->ListUnreachableMembers(group_id)) {
         if (unreachable_id == local_identity) {
           continue;
         }
         std::string name = unreachable_id;
         if (auto contact =
-                chat_ports_.find_contact_by_identity(unreachable_id, ContactIdKind::RelayUser)) {
+                facade_->FindContactByIdentity(unreachable_id, ContactIdKind::Account)) {
           if (*contact) {
             name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
             if (name.empty()) {
@@ -1577,11 +1855,11 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                       return;
                     }
                     if (auto removed =
-                            chat_ports_.remove_member_by_identity(group_id, unreachable_id);
+                            facade_->RemoveMemberByIdentity(group_id, unreachable_id);
                         !removed) {
                       UserFeedback::Fail(removed.error().message);
                     } else {
-                      chat_ports_.notify_thread_changed();
+                      facade_->NotifyThreadChanged();
                     }
                     NotifySurfaceChanged();
                   });
@@ -1630,9 +1908,15 @@ void ChatController::OnShellLayoutSynced() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  if (Rml::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-    draft->Focus();
+  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  if (!draft) {
+    return;
   }
+  draft->Focus();
+  const Rml::String value = draft->GetValue();
+  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+  draft->SetSelectionRange(end, end);
 }
 
 void ChatController::SubmitForm(const std::string& entry_id, const std::string& form_id) {
@@ -1712,7 +1996,7 @@ void ChatController::UpdateSidebarPreview(const std::string& preview_text) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  (void)chat_ports_.update_preview(thread_id, preview_text);
+  (void)facade_->UpdatePreview(thread_id, preview_text);
   SyncShellSessions();
   DirtyShell();
 }
@@ -1721,7 +2005,7 @@ bool ChatController::EnsureHomeOutboundSession() {
   if (!messaging_ready_) {
     return false;
   }
-  if (!chat_ports_.create_new_ai_thread()) {
+  if (!facade_->CreateNewAiThread()) {
     return false;
   }
   ShellSelectNavTab(NavTab::Sessions);
@@ -1757,8 +2041,8 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
 
   const bool use_mock_reply = !use_llm_;
   bool expect_agent_work = use_mock_reply;
-  if (!expect_agent_work && messaging_ready_ && chat_ports_.has_router && chat_ports_.has_router()) {
-    expect_agent_work = chat_ports_.expects_agent_work(
+  if (!expect_agent_work && messaging_ready_ && facade_ && facade_->HasRouter()) {
+    expect_agent_work = facade_->ExpectsAgentWork(
         ActiveThreadId(), trimmed, user_payload);
   } else if (!expect_agent_work) {
     expect_agent_work = true;
@@ -1780,7 +2064,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     user_message.text = trimmed;
     user_message.timestamp = util::NowUnixMs();
     user_message.transport = MessageTransport::Local;
-    (void)chat_ports_.append_message(user_message);
+    (void)facade_->AppendMessage(user_message);
     SyncDisplayFromThread();
     DirtyChatTurns();
     log().debug << "Using mock assistant response";
@@ -1789,10 +2073,16 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     return;
   }
 
-  if (messaging_ready_ && chat_ports_.has_router && chat_ports_.has_router()) {
+  if (messaging_ready_ && facade_ && facade_->HasRouter()) {
     log().info << "Routing message via MessageRouter";
-    (void)chat_ports_.route_message(ActiveThreadId(), trimmed,
-                                                  std::move(user_payload));
+    auto routed = facade_->RouteMessage(ActiveThreadId(), trimmed, std::move(user_payload));
+    if (!routed) {
+      chat_.loading = false;
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      DirtyChatChrome();
+      SyncDisplayFromThread();
+      return;
+    }
     SyncDisplayFromThread();
     return;
   }
@@ -1809,7 +2099,7 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
   }
 
   const std::string thread_id = ActiveThreadId();
-  auto messages = chat_ports_.get_messages_page(thread_id, std::nullopt, 10000);
+  auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
     return;
   }
@@ -1856,13 +2146,13 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     }
     if (messaging_ready_) {
       const std::string active_thread = thread_id.empty() ? ActiveThreadId() : thread_id;
-      auto messages = chat_ports_.get_messages_page(active_thread, std::nullopt, 10000);
+      auto messages = facade_->GetMessagesPage(active_thread, std::nullopt, 10000);
       if (messages) {
         for (ThreadMessage& message : *messages) {
           if (message.id == entry_id) {
             message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
                                   R"( selectable="text"><p class="error">)" + StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
-            (void)chat_ports_.update_message(message);
+            (void)facade_->UpdateMessage(message);
             break;
           }
         }
@@ -1891,14 +2181,14 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
 
     if (messaging_ready_) {
       const std::string active_thread = thread_id.empty() ? ActiveThreadId() : thread_id;
-      auto messages = chat_ports_.get_messages_page(active_thread, std::nullopt, 10000);
+      auto messages = facade_->GetMessagesPage(active_thread, std::nullopt, 10000);
       bool updated = false;
       if (messages) {
         for (ThreadMessage& message : *messages) {
           if (message.id == entry_id) {
             message.content_rml = assistant_open + hydrated + "</div>";
             message.chat_actions = chat_actions;
-            (void)chat_ports_.update_message(message);
+            (void)facade_->UpdateMessage(message);
             updated = true;
             break;
           }
@@ -1914,9 +2204,9 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
         ai_message.chat_actions = chat_actions;
         ai_message.timestamp = util::NowUnixMs();
         ai_message.transport = MessageTransport::Local;
-        (void)chat_ports_.append_message(ai_message);
+        (void)facade_->AppendMessage(ai_message);
       }
-      (void)chat_ports_.update_preview(active_thread, parsed.rml);
+      (void)facade_->UpdatePreview(active_thread, parsed.rml);
     }
 
     working_set_.ApplyFromParse(entry_id, parsed.working_set_candidates);
@@ -2007,20 +2297,20 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
 }
 
 void ChatController::WithSecrets(std::function<void()> action) {
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     if (action) {
       action();
     }
     return;
   }
-  if (unlock_gate_->IsUnlockInProgress()) {
+  if (unlock_ensure_.is_unlock_in_progress && unlock_ensure_.is_unlock_in_progress()) {
     ShowToast(Tr("startup.still_preparing"));
     NotifySurfaceChanged();
   }
-  unlock_gate_->EnsureUnlocked(
+  unlock_ensure_.ensure_unlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
-          if (!unlock_gate_->IsUnlockInProgress()) {
+          if (!unlock_ensure_.is_unlock_in_progress || !unlock_ensure_.is_unlock_in_progress()) {
             ShowToast("PIN required to continue");
             NotifySurfaceChanged();
           }
@@ -2048,7 +2338,7 @@ void ChatController::RefreshLlmSetupBanner() {
   if (ResolvePreset(config) == "brief") {
     std::string brief_key;
     if (MessagingReady()) {
-      if (auto identity = chat_ports_.get_identity()) {
+      if (auto identity = facade_->GetIdentity()) {
         brief_key = identity->brief_llm_api_key;
       }
     }
@@ -2077,27 +2367,27 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
-  if (IThreadStore* store = chat_ports_.thread_store ? chat_ports_.thread_store() : nullptr) {
+  if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {
     if (agent_ports_.set_thread_store) {
       agent_ports_.set_thread_store(store);
     }
   }
-  if (chat_ports_.bind_agent && agent_ports_.with_session) {
-    agent_ports_.with_session([&](AgentSession& agent) { chat_ports_.bind_agent(agent); });
+  if (facade_ && agent_ports_.with_session) {
+    agent_ports_.with_session([&](AgentSession& agent) { facade_->BindAgent(agent); });
   }
   chat_.compose_disabled = false;
   DirtyChatChrome();
-  chat_ports_.set_on_messages_changed([this]() {
+  facade_->SetOnMessagesChanged([this]() {
     RefreshFromMessaging();
     if (contacts_notify_.refresh) {
       contacts_notify_.refresh();
     }
   });
-  chat_ports_.set_on_delivery_notice([this](const std::string& message) {
+  facade_->SetOnDeliveryNotice([this](const std::string& message) {
     ShowToast(message);
     NotifySurfaceChanged();
   });
-  chat_ports_.set_on_background_unread(
+  facade_->SetOnBackgroundUnread(
       [this](std::string title, std::string body, std::string thread_id) {
         if (!Store().Snapshot().profile_prefs.show_notifications) {
           return;
@@ -2117,26 +2407,26 @@ void ChatController::WireMessagingBindings() {
       if (!MessagingReady()) {
         return;
       }
-      if (chat_ports_.sync_push_devices) {
-        (void)chat_ports_.sync_push_devices(Store().Snapshot().profile_prefs.show_notifications);
+      if (facade_) {
+        (void)facade_->SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
       }
     });
   });
-  if (chat_ports_.sync_push_devices) {
-    (void)chat_ports_.sync_push_devices(Store().Snapshot().profile_prefs.show_notifications);
+  if (facade_) {
+    (void)facade_->SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
   }
-  chat_ports_.set_on_thread_changed([this]() {
+  facade_->SetOnThreadChanged([this]() {
     RefreshFromMessaging();
     if (contacts_notify_.refresh) {
       contacts_notify_.refresh();
     }
   });
-  if (chat_ports_.has_router && chat_ports_.has_router()) {
-    chat_ports_.set_on_local_action(
+  if (facade_ && facade_->HasRouter()) {
+    facade_->SetOnLocalAction(
         [this](const std::string& message, const std::optional<std::string>& payload) {
           HandleLocalAction(message, payload);
         });
-    chat_ports_.set_shared_ai_confirm_callback(
+    facade_->SetSharedAiConfirmCallback(
         [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,
                std::function<void(bool confirmed, bool dont_ask_again)> done) {
           const char* mode_label = mode == AtAiMode::SharedFull ? "share the prompt and reply" : "share the AI reply";
@@ -2146,29 +2436,29 @@ void ChatController::WireMessagingBindings() {
               "Don't ask again for this conversation", false,
               [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
                 if (ok && dont_ask) {
-                  chat_ports_.mark_shared_ai_confirmed(thread_id);
+                  facade_->MarkSharedAiConfirmed(thread_id);
                 }
                 done(ok, dont_ask);
               });
         });
   }
-  chat_ports_.set_on_action_message([this](const std::string& message) {
+  facade_->SetOnActionMessage([this](const std::string& message) {
     ShowToast(message);
     NotifySurfaceChanged();
   });
   RefreshFromMessaging();
-  chat_ports_.tail_sync_active_e2e_thread();
+  facade_->TailSyncActiveE2eThread();
 
   const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
-  auto renew = chat_ports_.maybe_auto_renew_registration
-      ? chat_ports_.maybe_auto_renew_registration(auto_renew)
+  auto renew = facade_
+      ? facade_->MaybeAutoRenewRegistration(auto_renew)
       : Roe<bool>(false);
   if (!renew) {
     log().warning << "Auto-renew registration failed: " << renew.error().message;
   } else if (*renew) {
     log().info << "Network registration auto-renewed";
   } else {
-    auto identity = chat_ports_.get_identity();
+    auto identity = facade_->GetIdentity();
     if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
       UserFeedback::NeedsSetup("Network registration expires soon — renew in Me → Profile");
     }
@@ -2192,7 +2482,7 @@ bool ChatController::Setup(Rml::Context* context) {
     }
     const std::string active = ActiveThreadId();
     if (!active.empty() && MessagingReady()) {
-      chat_ports_.warm_peer_for_thread(active);
+      facade_->WarmPeerForThread(active);
     }
   });
   const AppConfig& config = Store().Snapshot().config;
@@ -2269,6 +2559,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_thread_menu", &controller.chat_.show_thread_menu);
         ctor.Bind("show_gap_banner", &controller.chat_.show_gap_banner);
         ctor.Bind("show_compromised_banner", &controller.chat_.show_compromised_banner);
+        ctor.Bind("show_locked_out_banner", &controller.chat_.show_locked_out_banner);
         ctor.Bind("show_psk_setup_banner", &controller.chat_.show_psk_setup_banner);
         ctor.Bind("show_psk_import", &controller.chat_.show_psk_import);
         ctor.Bind("psk_has_key", &controller.chat_.psk_has_key);
@@ -2283,6 +2574,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
+        ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
+        ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
@@ -2356,9 +2649,29 @@ bool ChatController::Setup(Rml::Context* context) {
   if (shell_setup_.initialize) {
     shell_setup_.initialize(context);
   }
+
+  ContextMenuHost::Instance().RegisterProvider([this](const ContextMenuRequest& request) {
+    std::vector<ContextMenuAction> actions;
+    if (!messaging_ready_ || chat_.compose_disabled) {
+      return actions;
+    }
+    const std::string message_id = FindMessageIdFromElement(request.target);
+    if (message_id.empty()) {
+      return actions;
+    }
+    const Rml::Vector2i pos = request.position;
+    actions.push_back({
+        "react_message",
+        "React…",
+        nullptr,
+        [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
+    });
+    return actions;
+  });
+
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
-  if (shell_setup_.fonts_ready) {
-    shell_setup_.fonts_ready() = !UiLanguageNeedsCjkFonts();
+  if (shell_setup_.set_fonts_ready) {
+    shell_setup_.set_fonts_ready(!UiLanguageNeedsCjkFonts());
   }
 
   shell_setup_.register_pane(
@@ -2447,7 +2760,7 @@ void ChatController::Apply(const AgentConfig& config) {
     runtime.llm.require_api_key = true;
     std::string brief_key;
     if (MessagingInitialized() && MessagingReady()) {
-      if (auto identity = chat_ports_.get_identity()) {
+      if (auto identity = facade_->GetIdentity()) {
         brief_key = identity->brief_llm_api_key;
       }
     }
@@ -2466,8 +2779,8 @@ void ChatController::Apply(const AgentConfig& config) {
   if (!AgentConfigured() || runtime != last_agent_runtime_) {
     if (agent_ports_.set_tool_registration_hook) {
       agent_ports_.set_tool_registration_hook([this](ToolRegistry& tools) {
-        if (MessagingInitialized() && chat_ports_.register_messaging_tools) {
-          chat_ports_.register_messaging_tools(tools);
+        if (MessagingInitialized() && register_messaging_tools_) {
+          register_messaging_tools_(tools);
         }
       });
     }
@@ -2496,7 +2809,7 @@ void ChatController::OnApplicationPause() {
     agent_ports_.cancel();
   }
   if (messaging_ready_) {
-    chat_ports_.suspend_libp2p_cold_peers();
+    facade_->SuspendLibp2pColdPeers();
   }
 }
 
@@ -2534,28 +2847,14 @@ void ChatController::Shutdown() {
   AppLifecycle::ClearForegroundListeners();
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   // MessagingReady / ReachabilityUpdated are owned by Application.
-  if (MessagingInitialized()) {
-    if (chat_ports_.set_on_messages_changed) {
-      chat_ports_.set_on_messages_changed(nullptr);
-    }
-    if (chat_ports_.set_on_delivery_notice) {
-      chat_ports_.set_on_delivery_notice(nullptr);
-    }
-    if (chat_ports_.set_on_background_unread) {
-      chat_ports_.set_on_background_unread(nullptr);
-    }
-    if (chat_ports_.set_on_thread_changed) {
-      chat_ports_.set_on_thread_changed(nullptr);
-    }
-    if (chat_ports_.set_on_action_message) {
-      chat_ports_.set_on_action_message(nullptr);
-    }
-    if (chat_ports_.set_on_local_action) {
-      chat_ports_.set_on_local_action(nullptr);
-    }
-    if (chat_ports_.set_shared_ai_confirm_callback) {
-      chat_ports_.set_shared_ai_confirm_callback(nullptr);
-    }
+  if (MessagingInitialized() && facade_) {
+    facade_->SetOnMessagesChanged(nullptr);
+    facade_->SetOnDeliveryNotice(nullptr);
+    facade_->SetOnBackgroundUnread(nullptr);
+    facade_->SetOnThreadChanged(nullptr);
+    facade_->SetOnActionMessage(nullptr);
+    facade_->SetOnLocalAction(nullptr);
+    facade_->SetSharedAiConfirmCallback(nullptr);
   }
   if (AgentReady()) {
     StartupPhase phase("Shutdown::AgentSession");

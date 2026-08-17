@@ -26,7 +26,7 @@ ADR-style log. Newest first within each ID series. Prefix **I** (interface / int
 
 **Rationale:** Same Operate intent must support chip-confirm vs auto-run vs later watchers. Encoding only in free-text `synthesis_hints` is too weak for policy and tests.
 
-**v1 note:** Horizon may be almost always `turn`; Autonomous Monitor is post-v1 but the field exists so we do not paint into a corner.
+**v1 note:** Horizon may be almost always `turn`; Autonomous Monitor is **`[later]`** but the field exists so we do not paint into a corner.
 
 ---
 
@@ -54,12 +54,25 @@ ADR-style log. Newest first within each ID series. Prefix **I** (interface / int
 
 ---
 
+## I005 — In-chat tool permissions (parked approval)
+
+**Date:** 2026-08-09  
+**Status:** Accepted
+
+**Decision:** Mutating agent tools (`ToolMeta.risk` write/destructive, or `mutating`) default to **Ask**. Confirmation is an **in-chat `choice` block** (Allow once / Always allow / Deny), not a modal. The runtime keeps **at most one parked approval** per agent session; out-of-sequence or stale clicks fail closed with typed errors (`approval_not_found`, `approval_superseded`, `approval_already_resolved`, `approval_expired`, `turn_busy`). Always/Never persist in profile `preferences.json` → `tool_permissions`; Me → Security can reset them. Refinement-loop mutations that still need Ask are denied with a tool error (no second park).
+
+**Rationale:** Conversation-first UX; avoids async multi-task queues; reuses chip/payload plumbing; aligns with Confirm commitment (I002 / OI002).
+
+**Alternatives rejected:** (1) Modal `ShowConfirm` for every mutate. (2) Unlimited parallel parked tool jobs. (3) Persisting “allow once.”
+
+---
+
 ## Open questions
 
 | ID | Question | Notes |
 |----|----------|-------|
 | OI001 | Soft-default if planner omits `act`? | Prefer hard validate + repair; soft default only if models flake in practice |
-| OI002 | Confirm vs Execute allowlist for Operate | Start Confirm-heavy; allowlist PeerId add + open existing thread? |
+| OI002 | Confirm vs Execute allowlist for Operate | Partially answered by I005 (risk defaults + Always allow). PeerId Execute allowlist still open. |
 | OI003 | PeerId-only contacts without multiaddr | Enough for address book v1; dial may need multiaddr later |
 | OI004 | Where to promote stable doc | `docs/AI_CENTRIC_INTERFACE.md` vs section in AGENT_CONVERSATION |
 

@@ -10,11 +10,11 @@
 #include "base/ui/RmlVariantHelpers.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PinGateController.h"
-#include "feature/ui/CallController.h"
+#include "feature/ui/CallActionsPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
-#include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
@@ -23,10 +23,12 @@
 #include "RmlUi_Backend.h"
 
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Log.h>
+#include <RmlUi/Core/SystemInterface.h>
 
 #include <algorithm>
 #include <chrono>
@@ -70,6 +72,11 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
   return cls;
 }
 
+/** Bottom inset at or above this is treated as IME (not home-indicator only). */
+constexpr int kImeLatchMinDp = 120;
+/** Fallback emoji panel height when the OSK has never been shown this session. */
+constexpr int kDefaultEmojiKeyboardPanelDp = 280;
+
 } // namespace
 
 ShellHost* ShellHost::installed_instance_ = nullptr;
@@ -97,16 +104,16 @@ void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
 }
 
-void ShellHost::BindPinGate(PinGateController& pin_gate) {
-  pin_gate_ = &pin_gate;
+void ShellHost::BindPinGateActions(PinGateActionPorts ports) {
+  pin_gate_actions_ = std::move(ports);
 }
 
-void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
-  flow_ = &flow;
+void ShellHost::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_coordinator_ = std::move(ports);
 }
 
-void ShellHost::BindCallController(CallController& call) {
-  call_ = &call;
+void ShellHost::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 
@@ -138,13 +145,16 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
+    ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
+    ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
+    ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_conflict", &host.state_.call_ring.conflict);
@@ -154,6 +164,11 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
+    ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
+    ctor.Bind("call_ring_pricing_label", &host.state_.call_ring.pricing_label);
+    ctor.Bind("call_ring_accept_charge_label", &host.state_.call_ring.accept_charge_label);
+    ctor.Bind("call_ring_accept_charge_enabled", &host.state_.call_ring.accept_charge_enabled);
+    ctor.Bind("call_ring_accept_charge_hint", &host.state_.call_ring.accept_charge_hint);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -277,7 +292,10 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
+    ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
+    ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
     ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
@@ -540,9 +558,14 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   OverlayEntry entry;
   entry.id = AllocateOverlayId();
   entry.kind = OverlayKind::Generic;
+  entry.key = spec.key;
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
   state_.overlay_stack.push_back(std::move(entry));
-  SaveFocus();
+  if (!spec.return_focus_id.empty()) {
+    saved_focus_id_ = spec.return_focus_id.c_str();
+  } else {
+    SaveFocus();
+  }
   RequestSyncLayout();
   return state_.overlay_stack.back().id;
 }
@@ -552,8 +575,8 @@ void ShellHost::CloseLayer(int layer_id) {
     return;
   }
   const int closing_id = layer_id < 0 ? state_.overlay_stack.back().id : layer_id;
-  if (flow_) {
-    flow_->NotifyLayerClosing(closing_id);
+  if (flow_coordinator_.notify_layer_closing) {
+    flow_coordinator_.notify_layer_closing(closing_id);
   }
   if (layer_id < 0) {
     state_.overlay_stack.pop_back();
@@ -583,6 +606,8 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
     return DismissTarget::CompactChatOverlay;
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
+  case InterruptionKind::CallRing:
+  case InterruptionKind::CallInProgress:
   case InterruptionKind::None:
     return DismissTarget::None;
   }
@@ -665,15 +690,24 @@ bool ShellHost::HandleDismiss() {
     return true;
   }
   if (state_.pin_gate.active) {
-    if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
-      if (pin_gate_) {
-        pin_gate_->OnCancel();
+    if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
+        state_.pin_gate.link_paste_mode) {
+      if (pin_gate_actions_.on_cancel) {
+        pin_gate_actions_.on_cancel();
       }
     }
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
-  if (flow_ && flow_->HandleDismiss()) {
+  if (bottom_chrome_open_) {
+    if (on_bottom_chrome_dismissed_) {
+      on_bottom_chrome_dismissed_();
+    } else {
+      ClearBottomChrome();
+    }
+    return true;
+  }
+  if (flow_coordinator_.handle_dismiss && flow_coordinator_.handle_dismiss()) {
     RequestSyncLayout();
     return true;
   }
@@ -750,13 +784,16 @@ void ShellHost::DirtyFeedback() {
 
 void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
+  DataModelHost::Instance().Dirty("window", "pin_gate_identity_fork_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
 }
 
@@ -834,6 +871,11 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
+  DataModelHost::Instance().Dirty("window", "call_ring_pricing_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_enabled");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -867,7 +909,9 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
 }
 
-void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
+void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update) {
+  state_.call_ring = snapshot.ring;
+  state_.call_in_progress = snapshot.in_progress;
   // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
   // that remounts chat panes and broke Samsung Accept hit-testing).
   if (update == CallChromeUpdate::Remount) {
@@ -877,6 +921,10 @@ void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
   Backend::RequestForceFrame();
+}
+
+void ShellHost::ApplyPinGateState(const PinGateState& state) {
+  state_.pin_gate = state;
 }
 
 void ShellHost::RequestRemountNavRail() {
@@ -1053,9 +1101,23 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
 void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
   (void)context;
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
+  if (sdl.bottom_dp >= kImeLatchMinDp) {
+    last_ime_bottom_dp_ = sdl.bottom_dp;
+    if (bottom_chrome_open_) {
+      bottom_chrome_height_dp_ = std::max(bottom_chrome_height_dp_, last_ime_bottom_dp_);
+    }
+  }
+
   const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
-  const int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
+  int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
+  if (bottom_chrome_open_) {
+    // Keep the shell lifted at the bottom-chrome height while the OSK is dismissed.
+    effective_bottom = std::max(effective_bottom, bottom_chrome_height_dp_);
+  }
   if (effective_top == state_.safe_area_top_dp && effective_bottom == state_.safe_area_bottom_dp) {
+    if (bottom_chrome_open_) {
+      ApplySafeAreaLayout();
+    }
     return;
   }
   state_.safe_area_top_dp = effective_top;
@@ -1063,13 +1125,58 @@ void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
   ApplySafeAreaLayout();
 }
 
+bool ShellHost::UsesBottomChromePresentation() const {
+  return Platform::IsMobile() || state_.layout_mode == LayoutMode::Compact;
+}
+
+void ShellHost::SetOnBottomChromeDismissed(std::function<void()> callback) {
+  on_bottom_chrome_dismissed_ = std::move(callback);
+}
+
+bool ShellHost::SetBottomChrome(const BottomChromeSpec& spec) {
+  if (!UsesBottomChromePresentation() || spec.key.empty()) {
+    return false;
+  }
+  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    system->DeactivateKeyboard();
+  }
+  bottom_chrome_open_ = true;
+  bottom_chrome_key_ = spec.key;
+  bottom_chrome_rml_path_ = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
+  bottom_chrome_height_dp_ =
+      std::max(last_ime_bottom_dp_ > 0 ? last_ime_bottom_dp_ : 0, kDefaultEmojiKeyboardPanelDp);
+  state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, bottom_chrome_height_dp_);
+  RemountBottomChrome();
+  ApplySafeAreaLayout();
+  Backend::RequestForceFrame();
+  return true;
+}
+
+void ShellHost::ClearBottomChrome() {
+  if (!bottom_chrome_open_) {
+    return;
+  }
+  bottom_chrome_open_ = false;
+  bottom_chrome_height_dp_ = 0;
+  bottom_chrome_key_.clear();
+  bottom_chrome_rml_path_.clear();
+  RemountBottomChrome();
+  // Re-read SDL insets now that the synthetic panel is gone.
+  RefreshSafeAreaInsets(context_);
+  Backend::RequestForceFrame();
+}
+
 void ShellHost::ApplySafeAreaLayout() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
   const float titlebar_dp = state_.titlebar_visible ? config_.titlebar_height_dp : 0.f;
+  // Bottom chrome paints in a sibling of #shell-root. Keep the document
+  // full-bleed and lift #shell-root by the panel height so nav stays above it
+  // (same visual as OSK document-bottom inset).
+  const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
-      config_, state_.safe_area_top_dp, state_.safe_area_bottom_dp, titlebar_dp);
+      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp);
   Rml::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](Rml::Element* element, const char* property, float value_dp) {
@@ -1086,7 +1193,10 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc, "bottom", layout.shell_bottom_dp);
   set_dp(doc->GetElementById("shell-root"), "top", layout.content_top_dp);
   const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
-  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp);
+  const float bottom_chrome_dp =
+      bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
+  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
+  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   // Absolute toast stack is positioned from the chrome top edge (ignores padding).
   set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
@@ -1096,16 +1206,23 @@ void ShellHost::ApplySafeAreaLayout() {
                                    5.f, state_.titlebar_traffic_lights);
   }
 
+  if (Rml::Element* panel = doc->GetElementById("shell-emoji-keyboard-panel")) {
+    set_dp(panel, "height",
+           bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
+  }
+
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
+  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome.
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   // Auxiliary sheet sits above the nav rail; account sheet covers it and draws from
   // the shell bottom (safe-area already applied via document bottom inset).
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
   set_dp(doc->GetElementById("shell-account-sheet"), "bottom", layout.chrome_bottom_dp);
-  // Chat overlay hides the nav rail — no extra bottom padding beyond shell inset.
+  // Chat overlay fills shell-root (already lifted); no extra bottom inset.
+  set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
@@ -1640,10 +1757,30 @@ std::string ShellHost::SerializeOverlays() const {
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";
-    out << "<button class=\"shell-close-btn\" data-event-click=\"close_layer(" << overlay.id << ")\">×</button>";
+    out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer("
+        << overlay.id << ")\">";
+    out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
     out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
     out << "</div></div>";
   }
+  return out.str();
+}
+
+std::string ShellHost::SerializeBottomChrome() const {
+  if (!bottom_chrome_open_ || bottom_chrome_key_.empty()) {
+    return {};
+  }
+  std::ostringstream out;
+  // No scrim: IME-replacement chrome; chat stays interactive (back / toggle dismiss).
+  out << "<div class=\"shell-layer shell-layer-emoji-keyboard\" data-model=\"window\">";
+  out << "<div class=\"shell-emoji-keyboard-panel surface-chrome";
+  if (state_.reduce_transparency) {
+    out << " surface-chrome--solid";
+  }
+  out << "\" id=\"shell-emoji-keyboard-panel\">";
+  out << "<div class=\"shell-emoji-keyboard-body\" id=\"shell-bottom-chrome-body\"></div>";
+  out << "</div></div>";
   return out.str();
 }
 
@@ -1690,6 +1827,14 @@ std::string ShellHost::SerializePinGate() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"pin_gate_title\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
   out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
+  out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
+      << Tr("pin.identity_new") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
+      << Tr("pin.identity_link") << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+      << "</button>";
+  out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
@@ -1698,15 +1843,20 @@ std::string ShellHost::SerializePinGate() const {
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
       << "</button>";
   out << "</div>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"!pin_gate_chooser_mode\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
+         "data-value=\"pin_gate_link_payload\" placeholder=\""
+      << Tr("pin.link_paste_placeholder") << "\"></textarea>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
          "data-value=\"pin_gate_pin\" placeholder=\""
       << Tr("pin.placeholder") << "\"/>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
          "placeholder=\""
       << Tr("pin.confirm_placeholder") << "\"/>";
-  out << "<div class=\"shell-dialog-actions row\" data-if=\"!pin_gate_chooser_mode\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
+  out << "<div class=\"shell-dialog-actions row\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode || pin_gate_link_paste_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
@@ -1729,12 +1879,21 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
+  out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
+         "data-rml=\"call_ring_pricing_label\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
   out << "<button class=\"btn btn-primary shell-call-accept\" "
          "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
+  out << "</div>";
+  out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
+  out << "<button class=\"btn btn-secondary\" type=\"button\" "
+         "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
+         "data-event-click=\"call_accept_charge()\" data-rml=\"call_ring_accept_charge_label\"></button>";
+  out << "<p class=\"text-xs shell-dialog-message\" data-if=\"!call_ring_accept_charge_enabled\" "
+         "data-rml=\"call_ring_accept_charge_hint\"></p>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -1985,10 +2144,11 @@ std::string ShellHost::SerializeShellRoot() const {
   out << SerializeTransientLayer();
   out << SerializeOverlays();
   out << SerializeDialog();
-  // Call chrome mounts stay empty here; RemountCallChrome fills them (avoids full-shell remount).
+  // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
+  out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
-  out << SerializePinGate();
+  out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
   return out.str();
 }
 
@@ -2229,7 +2389,49 @@ void ShellHost::MountPaneBodies() {
     }
   }
 
+  RemountBottomChromeNow();
   RefreshDismissGestures();
+}
+
+void ShellHost::RemountBottomChrome() {
+  if (remount_bottom_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_bottom_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountBottomChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountBottomChrome() {
+  if (!remount_bottom_chrome_pending_) {
+    return;
+  }
+  remount_bottom_chrome_pending_ = false;
+  RemountBottomChromeNow();
+}
+
+void ShellHost::RemountBottomChromeNow() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  Rml::Element* mount = doc->GetElementById("shell-emoji-keyboard-mount");
+  if (!mount) {
+    return;
+  }
+  const std::string html = SerializeBottomChrome();
+  RmlMount::MountInner(mount, html);
+  if (!html.empty()) {
+    Rml::Element* target = doc->GetElementById("shell-bottom-chrome-body");
+    if (target && !bottom_chrome_rml_path_.empty()) {
+      const std::string body = ViewCatalog::LoadBody(bottom_chrome_rml_path_);
+      if (!body.empty()) {
+        RmlMount::MountInner(target, body);
+      }
+    }
+  }
+  ApplySafeAreaLayout();
 }
 
 void ShellHost::SyncLayout() {
@@ -2244,7 +2446,11 @@ void ShellHost::SyncLayout() {
   last_synced_mode_ = mode;
   MountPaneBodies();
   remount_call_chrome_pending_ = false;
+  remount_dialog_chrome_pending_ = false;
+  remount_pin_gate_chrome_pending_ = false;
+  RemountDialogChromeNow();
   RemountCallChromeNow();
+  RemountPinGateChromeNow();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -2316,28 +2522,28 @@ void ShellHost::AttachCallChromeGesture() {
   }
   ShellCallChromeGesture::Callbacks callbacks;
   callbacks.on_minimize = [this]() {
-    if (call_) {
-      call_->MinimizeChrome();
+    if (call_actions_.minimize_chrome) {
+      call_actions_.minimize_chrome();
     }
   };
   callbacks.on_immersive = [this]() {
-    if (call_) {
-      call_->ImmersiveChrome();
+    if (call_actions_.immersive_chrome) {
+      call_actions_.immersive_chrome();
     }
   };
   callbacks.on_expand = [this]() {
-    if (call_) {
-      call_->ExpandChrome();
+    if (call_actions_.expand_chrome) {
+      call_actions_.expand_chrome();
     }
   };
   callbacks.on_restore = [this]() {
-    if (call_) {
-      call_->RestoreChromeFromMinimized();
+    if (call_actions_.restore_chrome_from_minimized) {
+      call_actions_.restore_chrome_from_minimized();
     }
   };
   callbacks.on_chip_corner = [this](int corner) {
-    if (call_) {
-      call_->SetMinimizedCorner(corner);
+    if (call_actions_.set_minimized_corner) {
+      call_actions_.set_minimized_corner(corner);
     }
   };
   call_chrome_gesture_.Attach(root, context_, state_.call_in_progress.mode, std::move(callbacks),
@@ -2361,6 +2567,78 @@ void ShellHost::RemountCallChromeNow() {
   }
   DirtyCallChrome();
   AttachCallChromeGesture();
+}
+
+void ShellHost::RemountDialogChrome() {
+  if (remount_dialog_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_dialog_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountDialogChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountDialogChrome() {
+  if (!remount_dialog_chrome_pending_) {
+    return;
+  }
+  remount_dialog_chrome_pending_ = false;
+  RemountDialogChromeNow();
+  AppRuntime::PostUI([]() {
+    ShellHost::Instance().DirtyFeedback();
+    Backend::RequestForceFrame();
+  });
+}
+
+void ShellHost::RemountDialogChromeNow() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  if (Rml::Element* mount = doc->GetElementById("shell-dialog-mount")) {
+    RmlMount::MountInner(mount, SerializeDialog());
+  }
+  DirtyFeedback();
+}
+
+void ShellHost::RemountPinGateChrome() {
+  if (remount_pin_gate_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_pin_gate_chrome_pending_ = true;
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountPinGateChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountPinGateChrome() {
+  if (!remount_pin_gate_chrome_pending_) {
+    return;
+  }
+  remount_pin_gate_chrome_pending_ = false;
+  RemountPinGateChromeNow();
+  AppRuntime::PostUI([]() {
+    ShellHost::Instance().DirtyPinGate();
+    Backend::RequestForceFrame();
+  });
+}
+
+void ShellHost::RemountPinGateChromeNow() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  if (Rml::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
+    RmlMount::MountInner(mount, SerializePinGate());
+  }
+  DirtyPinGate();
 }
 
 void ShellHost::Update(Rml::Context* context) {
@@ -2505,121 +2783,143 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSubmit();
+  if (Instance().pin_gate_actions_.on_submit) {
+    Instance().pin_gate_actions_.on_submit();
   }
 }
 
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnCancel();
+  if (Instance().pin_gate_actions_.on_cancel) {
+    Instance().pin_gate_actions_.on_cancel();
   }
 }
 
 void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnSetPin();
+  if (Instance().pin_gate_actions_.on_set_pin) {
+    Instance().pin_gate_actions_.on_set_pin();
   }
 }
 
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
-  if (auto* pin_gate = Instance().pin_gate_) {
-    pin_gate->OnUseDefaultPin();
+  if (Instance().pin_gate_actions_.on_use_default) {
+    Instance().pin_gate_actions_.on_use_default();
+  }
+}
+
+void ShellHost::PinGateIdentityNewCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_new) {
+    Instance().pin_gate_actions_.on_identity_new();
+  }
+}
+
+void ShellHost::PinGateIdentityLinkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_link) {
+    Instance().pin_gate_actions_.on_identity_link();
   }
 }
 
 void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
   Instance().log().warning << "call_accept click";
-  if (auto* call = Instance().call_) {
-    call->AcceptIncoming();
+  if (Instance().call_actions_.accept_incoming) {
+    Instance().call_actions_.accept_incoming();
+  }
+}
+
+void ShellHost::CallAcceptChargeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& /*args*/) {
+  Instance().log().warning << "call_accept_charge click";
+  if (Instance().call_actions_.accept_incoming_with_charge) {
+    Instance().call_actions_.accept_incoming_with_charge();
   }
 }
 
 void ShellHost::CallDeclineCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->DeclineIncoming();
+  if (Instance().call_actions_.decline_incoming) {
+    Instance().call_actions_.decline_incoming();
   }
 }
 
 void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->LeaveActive();
+  if (Instance().call_actions_.leave_active) {
+    Instance().call_actions_.leave_active();
   }
 }
 
 void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RetryConnect();
+  if (Instance().call_actions_.retry_connect) {
+    Instance().call_actions_.retry_connect();
   }
 }
 
 void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                  const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleMute();
+  if (Instance().call_actions_.toggle_mute) {
+    Instance().call_actions_.toggle_mute();
   }
 }
 
 void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleCamera();
+  if (Instance().call_actions_.toggle_camera) {
+    Instance().call_actions_.toggle_camera();
   }
 }
 
 void ShellHost::CallSpeakerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ToggleSpeaker();
+  if (Instance().call_actions_.toggle_speaker) {
+    Instance().call_actions_.toggle_speaker();
   }
 }
 
 void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->OpenMidCallInvitePicker();
+  if (Instance().call_actions_.open_mid_call_invite_picker) {
+    Instance().call_actions_.open_mid_call_invite_picker();
   }
 }
 
 void ShellHost::CallMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                      const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->MinimizeChrome();
+  if (Instance().call_actions_.minimize_chrome) {
+    Instance().call_actions_.minimize_chrome();
   }
 }
 
 void ShellHost::CallExpandCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ExpandChrome();
+  if (Instance().call_actions_.expand_chrome) {
+    Instance().call_actions_.expand_chrome();
   }
 }
 
 void ShellHost::CallImmersiveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ImmersiveChrome();
+  if (Instance().call_actions_.immersive_chrome) {
+    Instance().call_actions_.immersive_chrome();
   }
 }
 
 void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->RestoreChromeFromMinimized();
+  if (Instance().call_actions_.restore_chrome_from_minimized) {
+    Instance().call_actions_.restore_chrome_from_minimized();
   }
 }
 
 void ShellHost::CallDetailsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& /*args*/) {
-  if (auto* call = Instance().call_) {
-    call->ShowCallDetails();
+  if (Instance().call_actions_.show_call_details) {
+    Instance().call_actions_.show_call_details();
   }
 }
 

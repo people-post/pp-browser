@@ -39,9 +39,10 @@
 ## A007 — Three-way PIN chooser; default PIN; silent unlock
 
 **Date:** 2026-07-12  
-**Decision:** On first secrets use when no `vault.bin` exists, show a three-way chooser: **Set a PIN** (custom create flow), **Just continue** (auto-create vault with `kDefaultProfilePin` = `123456` from `src/base/crypto/PinDefaults.h`), or **Not now** (defer). Persist `pin_is_default: true` in `preferences.json` (schema v3) when the default path is chosen; clear it on **Change PIN** in Me → Security (`DataKeyVault::ChangePin`). When `pin_is_default` is true, bootstrap and `PromptUnlockIfVaultExists` attempt silent unlock with the default PIN — no blocking modal unless unlock fails. Custom-PIN profiles keep A006 blocking unlock. Show a one-time toast after default provisioning pointing to Me → Security.  
-**Rationale:** Reduces friction for users who want E2E/register without choosing a PIN upfront; keeps encryption on by default while making stronger protection opt-up via Settings. `pin_is_default` avoids Argon2 probing on every startup for custom-PIN users.  
-**Alternatives:** Hardcoded default without flag; nag on every secrets action; truly unprotected (no vault) mode.
+**Updated:** 2026-08-13 — identity fork precedes the chooser (M012).  
+**Decision:** On first secrets use when no `vault.bin` exists, show **I'm new on this device** vs **I already have an account** first. **I'm new** then shows the three-way chooser: **Set a PIN** (custom create flow), **Just continue** (auto-create vault with `kDefaultProfilePin` = `123456` from `src/base/crypto/PinDefaults.h`), or **Not now** (defer). **I already have an account** uses the same PIN choices for *this* device, then paste a link payload into an empty vault (shared DEK; [M012](../multi-device-account/DECISIONS.md#m012--link-device-ritual-deferred-until-m4)). Persist `pin_is_default: true` in `preferences.json` (schema v3) when the default path is chosen; clear it on **Change PIN** in Me → Security (`DataKeyVault::ChangePin`). When `pin_is_default` is true, bootstrap and `PromptUnlockIfVaultExists` attempt silent unlock with the default PIN — no blocking modal unless unlock fails. Custom-PIN profiles keep A006 blocking unlock. Show a one-time toast after default provisioning pointing to Me → Security. `--pin` / `PP_BROWSER_PIN` still take the create path.  
+**Rationale:** Reduces friction for users who want E2E/register without choosing a PIN upfront; keeps encryption on by default while making stronger protection opt-up via Settings. `pin_is_default` avoids Argon2 probing on every startup for custom-PIN users. Link-device must not mint a Brief person before wrapping the shared DEK.  
+**Alternatives:** Hardcoded default without flag; nag on every secrets action; truly unprotected (no vault) mode; in-place Security import (rejected — M012).
 
 ## A008 — IDekConsumer registry for DEK fan-out
 
@@ -57,3 +58,23 @@
 **Decision:** Move `vault.bin`, PIN unlock, and `IDekConsumer` fan-out from `MessagingHub` to `ProfileSecretsService` (`base/crypto`). Bootstrap initializes the profile service before the hub. `MessagingHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P after `ProfileSecretsService::IsUnlocked()`. UI/settings use the profile service for vault state and Change PIN; messaging features use `IsMessagingReady()`.  
 **Rationale:** Profile PIN/DEK is app-wide infrastructure, not messaging-specific; enables future non-messaging encrypted stores without depending on the hub.  
 **Alternatives:** Keep vault in MessagingHub with `IDekConsumer` only (A008); fat `Application` owner (rejected — app wires, base owns domain).
+
+---
+
+## A010 — Shared DEK; per-device vault wrap (multi-device)
+
+**Date:** 2026-08-11  
+**Amends:** README “multi-device vault sync” out-of-scope — **shared DEK + link seal** is now in scope under [multi-device-account](../multi-device-account/) (not a second vault product).  
+**Canonical:** [multi-device-account M004](../multi-device-account/DECISIONS.md#m004--shared-dek-per-device-vault-wrap).  
+**Cross-project:** [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced).
+
+**Decision:**
+
+1. Linked devices share one **DEK** (account secrets realm).
+2. Each install keeps its own **`vault.bin`** — PIN-derived wrap of that DEK (PIN may differ per device).
+3. Link-device seals the DEK to the new install; the new install wraps into its vault (A001 layering unchanged: PIN wraps DEK, DEK encrypts payloads).
+4. **PIN recovery / cloud vault backup** remain out of scope.
+5. Which ciphertext blobs sync under the shared DEK (account ML-DSA, **account KEM**, public PSKs, etc.) is owned by multi-device-account — private PSKs excluded by default (E025 / **M015**).
+
+**Rationale:** Per-device vault ≠ per-device master key; minimizes on-disk share while enabling one secrets realm.  
+**Alternatives:** Distinct DEK per device; clone identical `vault.bin` bytes.

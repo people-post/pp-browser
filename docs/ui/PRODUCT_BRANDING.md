@@ -40,10 +40,10 @@ Messaging, contacts, and related tools are **essential but secondary** — they 
 
 ## Icon — decision
 
-### Chosen: portal viewport (soft sky palette)
+### Chosen: portal viewport (balanced soft sky)
 
 **Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png)  
-**Source mockup:** [`icon-mockup-08-soft-sky.png`](../../assets/branding/mockups/icon-mockup-08-soft-sky.png)
+**Source mockup:** [`icon-mockup-11-balanced-sky.png`](../../assets/branding/mockups/icon-mockup-11-balanced-sky.png)
 
 A soft portal/window frame containing clean geometric content blocks and a small action accent, with a thin line to an external node suggesting API/intent input.
 
@@ -65,16 +65,18 @@ A soft portal/window frame containing clean geometric content blocks and a small
 | `icon-mockup-03-speech-viewport.png` | Speech bubble as viewport | Conversation is the primary entry metaphor |
 | `icon-mockup-04-monogram-portal.png` | Letterform portal + action arrow | Monogram-first brand (pairs with a single-letter name) |
 | `icon-mockup-05`–`07` | Light warm palettes (blush / sunny / berry) | Warmer “care” emotional brand |
+| `icon-mockup-08-soft-sky.png` | Earlier high-key soft sky (superseded by 11) | Historical — too light / soft outer halo |
 | `icon-mockup-09-silver-cyan.png` | Silver gray + cyan accent | Cooler / more neon accent |
 | `icon-mockup-10-slate-indigo.png` | Pale slate + indigo accent | Deeper blue, more solemn |
 
 ### Visual system (icon)
 
-- **Shape:** rounded squircle with **transparent corners** (RGBA); one strong silhouette + one accent.
-- **Palette:** cool light gray-blue base (`#F0F4F8`), white portal, soft slate content bars, sky-blue action accent (`#4A7CF0`) — aligns with UI `accent-primary`.
-- **Style:** flat / soft; no glossy browser bezel or skeuomorphic chrome.
+- **Shape:** rounded squircle with **hard transparent margin + corners** (RGBA); no outer glow or colored bevel in the PNG — OS dock/launcher shadows stay outside the asset. Keep **~10% transparent padding** per side on the 1024² master so the Dock silhouette matches typical macOS icons (tighter padding reads oversized).
+- **Palette:** deeper cool slate plate (`#BECCDE`), white portal frame, thin `#4a6cf7` hairline on the portal’s inner edge, darker slate content bars (`#7084A0`), single accent (`#4a6cf7`) on the CTA bar + external node — matches UI `accent-primary`.
+- **Contrast hierarchy:** plate → white frame → accent (three clear value steps). Do not fill the whole portal frame solid blue (keeps the viewport/window read).
+- **Style:** flat / soft; depth only *inside* the squircle (portal drop + node contact shadow).
 - **Density:** at 32×32, recognize portal + one accent only; social hints stay subtle.
-- **Dock / launcher:** opaque light fills only inside the squircle; outside corners are alpha=0 so the icon blends with the desktop (do not ship an opaque square canvas).
+- **Dock / launcher:** opaque fills only inside the squircle; outside the mask is alpha=0 (do not ship an opaque square canvas).
 
 ### Clichés rejected
 
@@ -172,7 +174,7 @@ Renaming the executable binary or GitHub repo is out of scope for branding alone
 
 ```
 assets/branding/
-  app-icon.png          # Primary portal viewport (soft sky)
+  app-icon.png          # Primary portal viewport (balanced soft sky)
   app-icon.ico          # Windows executable icon
   app-icon.rc           # Windows resource script
   mockups/
@@ -183,9 +185,10 @@ assets/branding/
     icon-mockup-05-soft-blush.png        # light warm: peach cream + rose-coral
     icon-mockup-06-sunny-care.png        # light warm: sunny cream + apricot
     icon-mockup-07-apricot-berry.png     # light warm: apricot blush + berry
-    icon-mockup-08-soft-sky.png          # adopted: gray-blue + sky blue
+    icon-mockup-08-soft-sky.png          # earlier high-key soft sky
     icon-mockup-09-silver-cyan.png       # light cool: silver gray + cyan
     icon-mockup-10-slate-indigo.png      # light cool: slate + indigo blue
+    icon-mockup-11-balanced-sky.png      # adopted: deeper plate + #4a6cf7 hairline
 ```
 
 ---

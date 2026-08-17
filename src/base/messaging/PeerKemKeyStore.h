@@ -15,7 +15,7 @@ struct PeerKemKeyRecord {
   std::optional<std::string> source_ref;
 };
 
-/** Local hybrid KEM public key cache keyed by communicating identity (E024). */
+/** Local cache of **account** KEM public keys, keyed by communicating identity (E024 / M015). */
 class PeerKemKeyStore {
 public:
   void Put(const std::string& peer_identity_kind, const std::string& peer_identity_value, PeerKemKeyRecord record);

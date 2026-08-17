@@ -15,15 +15,17 @@ namespace pbr {
 
 namespace {
 
-Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, const std::string& pin) {
+Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, ProfileSecretsService& secrets,
+                                    const std::string& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
-  return UnlockProfileSecretsAndReady(ProfileSecretsService::Instance(), pin,
+  return UnlockProfileSecretsAndReady(secrets, pin,
                                       [&messaging]() { return messaging.EnsureMessagingReady(); });
 }
 
 } // namespace
 
-Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHub& messaging) {
+Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHub& messaging,
+                                    ProfileSecretsService& secrets) {
   PlatformServices::Register();
   InstallPlatformLogSink();
 
@@ -69,8 +71,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHu
   }
   StartupMark("bootstrap_after_prefs");
 
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_data_dir); !secrets) {
-    return secrets.error();
+  if (auto initialized = secrets.Initialize(profile_data_dir); !initialized) {
+    return initialized.error();
   }
 
   if (auto hub = [&]() -> Roe<void> {
@@ -84,7 +86,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHu
   // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
-    if (auto unlocked = UnlockProfileForBootstrap(messaging, *pin); !unlocked) {
+    if (auto unlocked = UnlockProfileForBootstrap(messaging, secrets, *pin); !unlocked) {
       return unlocked.error();
     }
   }

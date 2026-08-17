@@ -1,4 +1,5 @@
 #include "common/Logger.h"
+#include "common/CivilTime.h"
 
 #include <chrono>
 #include <ctime>
@@ -26,8 +27,14 @@ std::string getCurrentTimestamp() {
                 now.time_since_epoch()) %
             1000;
 
+  std::tm local{};
+  if (!civil_time::LocalTime(time, &local)) {
+    // Avoid "??-" trigraph sequences under -Werror=trigraphs.
+    return std::string("??") + "??" + "-" + "??" + "-" + "??" + " ??:??:??." + "???";
+  }
+
   std::stringstream ss;
-  ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+  ss << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
   ss << '.' << std::setfill('0') << std::setw(3) << ms.count();
   return ss.str();
 }
@@ -65,7 +72,7 @@ FileHandler::~FileHandler() {
   }
 }
 
-void FileHandler::emit(Level level, const std::string &loggerName,
+void FileHandler::emit(Level level, const std::string & /*loggerName*/,
                        const std::string &message) {
   if (level < level_) {
     return;

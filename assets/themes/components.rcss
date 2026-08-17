@@ -424,6 +424,30 @@ select selectbox option {
 .prompt-composer-leading {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.prompt-emoji-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-emoji-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
 }
 
 .prompt-send-btn {
@@ -856,6 +880,17 @@ select selectbox option {
   left: 0;
   right: 0;
   bottom: 0;
+}
+
+/* Sibling of #shell-root — holds the mobile/compact emoji keyboard panel. */
+.shell-emoji-keyboard-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
 }
 
 .shell-banner {
@@ -1305,24 +1340,21 @@ select selectbox option {
   margin: 0;
 }
 
-/* Circular close with cross icon (overrides absolute overlay .shell-close-btn). */
+/* Header flow (overrides absolute overlay .shell-close-btn). */
 .shell-account-sheet-header .shell-close-btn {
   position: relative;
   top: auto;
   right: auto;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 32dp;
   height: 32dp;
   min-width: 32dp;
-  padding: 0;
   border-radius: 16dp;
 }
 
 .shell-account-sheet-header .shell-close-btn svg {
-  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
 }
 
 .shell-account-sheet-body {
@@ -1572,6 +1604,28 @@ select selectbox option {
   z-index: 50;
 }
 
+/* Dialog / PIN: empty mounts must not steal hits; children re-enable pointer-events. */
+.shell-overlay-chrome-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.shell-overlay-chrome-mount--dialog {
+  z-index: 50;
+}
+
+.shell-overlay-chrome-mount--pin {
+  z-index: 55;
+}
+
+.shell-overlay-chrome-mount .shell-layer {
+  pointer-events: auto;
+}
+
 /* Call chrome: empty mounts must not steal hits; children re-enable pointer-events. */
 .shell-call-chrome-mount {
   position: absolute;
@@ -1609,30 +1663,50 @@ select selectbox option {
   left: 24dp;
   right: 24dp;
   bottom: 24dp;
+  display: flex;
+  flex-direction: column;
   padding: 16dp;
+  /* Close button is 40dp at top: 8dp; keep content below it so overflow clip
+     does not crop overlay footers (people picker Cancel / Message). */
+  padding-top: 48dp;
   border-radius: 8dp;
   box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
 }
 
 .shell-close-btn {
   position: absolute;
   top: 8dp;
   right: 8dp;
-  width: auto;
-  min-width: 32dp;
-  padding: 4dp 10dp;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+  min-width: 40dp;
+  padding: 0;
   margin-bottom: 0;
   border: 0;
+  border-radius: 20dp;
   font-family: LatoLatin;
-  font-size: 14dp;
-  border-radius: 6dp;
   cursor: pointer;
 }
 
+.shell-close-btn svg {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
 .shell-overlay-body {
-  margin-top: 32dp;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: auto;
+  clip: always;
 }
 
 .shell-dialog {
@@ -2280,6 +2354,28 @@ call-video-tile {
   border-radius: 4dp;
   background-color: rgba(128, 128, 128, 0.15);
   font-size: 11dp;
+}
+
+.chat-reaction-row {
+  display: block;
+  margin-top: 4dp;
+}
+
+.chat-reaction-chip {
+  display: inline-block;
+  min-width: 44dp;
+  min-height: 32dp;
+  margin-right: 6dp;
+  margin-top: 2dp;
+  padding: 4dp 10dp;
+  border-radius: 16dp;
+  background-color: rgba(128, 128, 128, 0.12);
+  font-size: 14dp;
+  text-align: center;
+}
+
+.chat-reaction-chip--mine {
+  background-color: rgba(64, 128, 255, 0.18);
 }
 
 .chat-system-line {
@@ -3097,6 +3193,7 @@ call-video-tile {
 .people-picker {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
@@ -3106,7 +3203,6 @@ call-video-tile {
 .people-picker-header {
   align-items: center;
   justify-content: space-between;
-  padding-right: 28dp;
 }
 
 .people-picker-title {
@@ -3382,4 +3478,172 @@ call-video-tile {
 
 .context-menu-item--selected .context-menu-item-label {
   font-weight: bold;
+}
+
+/* Emoji / bottom-chrome IME panel (mobile / compact). No scrim — chat stays interactive. */
+.shell-layer-emoji-keyboard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.shell-layer-emoji-keyboard .shell-emoji-keyboard-panel {
+  pointer-events: auto;
+}
+
+.shell-emoji-keyboard-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 280dp;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12dp 12dp 0 0;
+  padding: 8dp 8dp 4dp 8dp;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Force scissor even when flex children absorb overflow (scroll lives on .emoji-picker-body). */
+  clip: always;
+  z-index: 51;
+}
+
+.shell-emoji-keyboard-body {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  clip: always;
+}
+
+.shell-emoji-keyboard-body .emoji-picker {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Emoji picker overlay (expanded desktop modal) */
+.emoji-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  gap: 8dp;
+  overflow: hidden;
+}
+
+.emoji-picker-header {
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.emoji-picker-title {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 18dp;
+  font-weight: bold;
+}
+
+.emoji-picker-main {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+}
+
+.emoji-picker-rail {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 48dp;
+  overflow: auto;
+  padding: 4dp 0;
+  gap: 2dp;
+}
+
+.emoji-picker-rail-tab {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-width: 0;
+  border-radius: 8dp;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.emoji-picker-rail-glyph {
+  font-size: 20dp;
+  line-height: 1.2;
+}
+
+.emoji-picker-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  clip: always;
+  padding: 0 8dp 12dp 8dp;
+}
+
+.emoji-picker-section {
+  display: block;
+  margin-bottom: 8dp;
+}
+
+.emoji-picker-section-label {
+  position: sticky;
+  top: 0dp;
+  z-index: 1;
+  padding: 6dp 4dp;
+}
+
+.emoji-picker-section-label-text {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 12dp;
+  font-weight: bold;
+}
+
+.emoji-picker-cells {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 2dp;
+}
+
+.emoji-picker-cell {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-width: 0;
+  border-radius: 8dp;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.emoji-picker-cell-glyph {
+  font-size: 24dp;
+  line-height: 1.2;
 }

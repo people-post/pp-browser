@@ -42,14 +42,14 @@ TEST_F(CallSessionStoreTest, UpsertSessionAndParticipants) {
 
   CallParticipant alice;
   alice.call_id = session.call_id;
-  alice.identity = "relay:alice";
+  alice.identity = "account:alice";
   alice.state = CallParticipantState::Joined;
   alice.joined_at = session.created_at;
   ASSERT_TRUE(calls_->UpsertParticipant(alice));
 
   CallParticipant bob;
   bob.call_id = session.call_id;
-  bob.identity = "relay:bob";
+  bob.identity = "account:bob";
   bob.state = CallParticipantState::Ringing;
   ASSERT_TRUE(calls_->UpsertParticipant(bob));
 
@@ -64,21 +64,21 @@ TEST_F(CallSessionStoreTest, UpsertSessionAndParticipants) {
 
   PendingCallInvite invite;
   invite.call_id = session.call_id;
-  invite.inviter_identity = "relay:alice";
-  invite.invitee_identity = "relay:bob";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
   invite.media_mode = CallMediaMode::Voice;
   invite.created_at = session.created_at;
   invite.expires_at = session.created_at + 60'000;
   invite.status = "pending";
   ASSERT_TRUE(calls_->UpsertPendingInvite(invite));
 
-  auto pending = calls_->ListPendingInvitesForInvitee("relay:bob");
+  auto pending = calls_->ListPendingInvitesForInvitee("account:bob");
   ASSERT_TRUE(pending);
   ASSERT_EQ(pending->size(), 1u);
   EXPECT_EQ(pending->front().call_id, session.call_id);
 
-  ASSERT_TRUE(calls_->UpdateInviteStatus(session.call_id, "relay:bob", "accepted"));
-  auto after = calls_->LoadPendingInvite(session.call_id, "relay:bob");
+  ASSERT_TRUE(calls_->UpdateInviteStatus(session.call_id, "account:bob", "accepted"));
+  auto after = calls_->LoadPendingInvite(session.call_id, "account:bob");
   ASSERT_TRUE(after && after->has_value());
   EXPECT_EQ((*after)->status, "accepted");
 }
@@ -96,7 +96,7 @@ TEST_F(CallSessionStoreTest, UpsertPreservesFirstJoinedAt) {
 
   CallParticipant moto;
   moto.call_id = session.call_id;
-  moto.identity = "relay:moto";
+  moto.identity = "account:moto";
   moto.state = CallParticipantState::Joined;
   moto.joined_at = 1000;
   ASSERT_TRUE(calls_->UpsertParticipant(moto));
@@ -125,7 +125,7 @@ TEST_F(CallSessionStoreTest, UpsertTakesEarlierJoinedAtFromRoster) {
 
   CallParticipant owner;
   owner.call_id = session.call_id;
-  owner.identity = "relay:linux";
+  owner.identity = "account:linux";
   owner.state = CallParticipantState::Joined;
   owner.joined_at = 5000; // wrong/late local stamp
   ASSERT_TRUE(calls_->UpsertParticipant(owner));

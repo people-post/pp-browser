@@ -2,9 +2,9 @@
 
 Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake).
 
-RmlUi remains a hard fork under [`src/render/fork/`](../src/render/fork/), not in this directory.
+RmlUi remains a hard fork under [`src/lib/rmlui/`](../src/lib/rmlui/), not in this directory.
 
-libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), not here. This directory holds **libp2p's external dependencies**.
+libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies**.
 
 ## Libraries
 
@@ -17,6 +17,8 @@ libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), no
 | `sdl3_image/` | [libsdl-org/SDL_image](https://github.com/libsdl-org/SDL_image) | `release-3.2.4` | Zlib |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `libsodium/` | [jedisct1/libsodium](https://github.com/jedisct1/libsodium) | `1.0.20-RELEASE` | ISC |
+| `mlkem-native/` | [pq-code-package/mlkem-native](https://github.com/pq-code-package/mlkem-native) | `v2.0.0` | Apache-2.0 / ISC / MIT |
+| `mldsa-native/` | [pq-code-package/mldsa-native](https://github.com/pq-code-package/mldsa-native) | `v2.0.0` | Apache-2.0 / ISC / MIT |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
 
 ### libp2p dependencies (when enabled)
@@ -38,7 +40,7 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | `boost_di/` | qdrvm/boost-di | |
 | `zlib/` | qdrvm/zlib 1.3.0-p1 | For lsquic |
 
-libp2p wire codecs are handwritten (`src/libp2p/fork/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.
+libp2p wire codecs are handwritten (`src/lib/libp2p/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|

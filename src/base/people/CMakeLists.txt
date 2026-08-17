@@ -1,8 +1,10 @@
 set(PP_BASE_PEOPLE_SOURCES
   ContactJson.cpp
+  ContactIdentity.cpp
   ContactsStore.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
+  LinkDeviceExchange.cpp
   MeshHopPolicy.cpp
   PeerDisplayLabel.cpp
 )
@@ -15,7 +17,7 @@ pp_browser_add_base_library(pp_base_people
     pp_base_crypto
     nlohmann_json::nlohmann_json
     sodium
-    pp_libp2p_integration)
+    pp_base_p2p)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

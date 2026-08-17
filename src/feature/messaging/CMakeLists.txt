@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     CallLifecycle.cpp
     CallInboundHandlers.cpp
     CallSessionManager.cpp
+    CallStack.cpp
     CallTopologyController.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
@@ -20,8 +21,9 @@ pp_browser_add_feature_library(pp_feature_messaging
     MobileEphemeralListenGate.cpp
     ContactReachability.cpp
     MessagingContactsPorts.cpp
-    MessagingChatPorts.cpp
-    MessagingCallPorts.cpp
+    MessagingFacade.cpp
+    CallFunctionalPorts.cpp
+    CallUiBackend.cpp
     MessagingShellPorts.cpp
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp
@@ -29,7 +31,9 @@ pp_browser_add_feature_library(pp_feature_messaging
     P2pMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp
+    PublicPskLockCoordinator.cpp
     PushDeviceCoordinator.cpp
+    LinkDeviceCoordinator.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
@@ -38,7 +42,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_feature_ai
     pp_base_crypto
     pp_base_media
-    pp_libp2p_integration
+    pp_base_p2p
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime

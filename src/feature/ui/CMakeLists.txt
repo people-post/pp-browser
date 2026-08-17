@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ContactsChromeSync.cpp
     ContactsController.cpp
     PeoplePickerController.cpp
+    EmojiPickerController.cpp
     DataModelHost.cpp
     DocumentLoader.cpp
     FlowCoordinator.cpp
@@ -37,7 +38,7 @@ pp_browser_add_feature_library(pp_feature_ui
   PUBLIC_LIBS
     pp_feature_settings
     pp_feature_messaging
-    pp_rmlui_backend
+    pp_base_render
     RmlUi::Core
     nlohmann_json::nlohmann_json)
 

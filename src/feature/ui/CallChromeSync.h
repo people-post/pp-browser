@@ -18,6 +18,8 @@ struct CallChromeLayer {
   bool in_call_remote_video = false;
   bool in_call_local_preview = false;
   bool ring_conflict = false;
+  bool ring_show_pricing = false;
+  bool ring_accept_charge_enabled = false;
   std::string ring_call_id;
   std::string in_call_id;
   std::string in_call_subtitle;
@@ -27,6 +29,9 @@ struct CallChromeLayer {
   std::string ring_conflict_hint;
   std::string ring_accept_label;
   std::string ring_decline_label;
+  std::string ring_pricing_label;
+  std::string ring_accept_charge_label;
+  std::string ring_accept_charge_hint;
   std::string in_call_title;
   int in_call_mic_level = 0;
   int in_call_peer_level = 0;

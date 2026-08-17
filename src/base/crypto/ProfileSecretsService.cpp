@@ -7,11 +7,6 @@
 
 namespace pbr {
 
-ProfileSecretsService& ProfileSecretsService::Instance() {
-  static ProfileSecretsService service;
-  return service;
-}
-
 Roe<void> ProfileSecretsService::Initialize(const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -134,6 +129,22 @@ Roe<void> ProfileSecretsService::Unlock(const std::string& pin) {
     return distributed.error();
   }
 
+  unlocked_ = true;
+  NotifyUnlocked();
+  return {};
+}
+
+Roe<void> ProfileSecretsService::RedistributeUnlockedDek() {
+  if (!initialized_ || !vault_ || !vault_->IsUnlocked()) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile vault is not unlocked");
+  }
+  auto dek = vault_->Dek();
+  if (!dek) {
+    return dek.error();
+  }
+  if (auto distributed = DistributeDek(*dek); !distributed) {
+    return distributed.error();
+  }
   unlocked_ = true;
   NotifyUnlocked();
   return {};

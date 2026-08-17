@@ -3,16 +3,20 @@
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/ui/EmojiPickerNotifyPorts.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/BadgeNotifyPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -39,10 +43,7 @@ class Element;
 
 namespace pbr {
 
-class BadgeAggregator;
-class CallController;
 class InputCoordinator;
-class ProfileUnlockGate;
 
 class ChatController : public Module {
 public:
@@ -90,16 +91,26 @@ public:
   using SessionRow = SessionDisplayRow;
 
   bool Setup(Rml::Context* context);
-  void BindChatPorts(MessagingChatPorts ports);
+  /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
+  void BindMessagingFacade(MessagingFacade* facade);
+  /** App-wired hook so messaging tool registration stays in Application (no feature/chat→hub edge). */
+  void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
+  void BindEmojiPickerNotify(EmojiPickerNotifyPorts ports);
+  /** Append a normalized emoji glyph to the composer draft (used by emoji picker).
+   *  @param restore_composer_focus When true (popover), focus the composer after insert.
+   *         When false (keyboard panel), advance caret only so the OSK stays dismissed. */
+  void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true);
+  /** Toggle a reaction from the emoji picker (public for Application wiring). */
+  void ReactWithEmoji(const std::string& message_id, const std::string& emoji);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
-  void BindBadgeAggregator(BadgeAggregator& badges);
+  void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
-  void BindCallController(CallController& call);
-  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindCallActions(CallActionsPorts ports);
+  void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app ChatShellBridge. Clear via BindSurfaceNotify({}). */
@@ -152,6 +163,7 @@ private:
     bool show_thread_menu = false;
     bool show_gap_banner = false;
     bool show_compromised_banner = false;
+    bool show_locked_out_banner = false;
     bool show_psk_setup_banner = false;
     bool show_psk_import = false;
     bool psk_has_key = false;
@@ -189,6 +201,8 @@ private:
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleReactionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenEmojiInsertCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -237,10 +251,15 @@ private:
   void OnImportPsk();
   void OnVerifyPsk();
   void OnRotatePskExport();
+  void OnLockPublicToThisDevice();
   /** From Home landing: mint AI thread, switch to Sessions, open chat. */
   bool EnsureHomeOutboundSession();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
+  void ToggleReaction(const std::string& message_id, const std::string& emoji);
+  void OpenEmojiInsertMenu(Rml::Event* ev);
+  void OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position);
+  void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);
   void CalendarNext(const std::string& entry_id);
@@ -301,16 +320,18 @@ private:
   bool AgentConfigured() const;
 
   Rml::Context* context_ = nullptr;
-  MessagingChatPorts chat_ports_;
+  MessagingFacade* facade_ = nullptr;
+  std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
   PeoplePickerNotifyPorts people_picker_notify_;
+  EmojiPickerNotifyPorts emoji_picker_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
-  BadgeAggregator* badges_ = nullptr;
+  BadgeNotifyPorts badge_notify_;
   InputCoordinator* input_ = nullptr;
-  CallController* call_ = nullptr;
-  ProfileUnlockGate* unlock_gate_ = nullptr;
+  CallActionsPorts call_actions_;
+  UnlockEnsurePorts unlock_ensure_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   ChatSurfaceNotifyPorts surface_notify_;

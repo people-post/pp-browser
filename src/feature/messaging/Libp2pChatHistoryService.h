@@ -5,8 +5,8 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <memory>
 #include <string>
@@ -40,9 +40,6 @@ private:
   std::unique_ptr<Impl> impl_;
   Libp2pHost& host_;
   PeerSessionManager& sessions_;
-  IThreadStore& store_;
-  IdentityStore& identity_;
-  IPskSessionStore& psk_store_;
   bool started_ = false;
 };
 

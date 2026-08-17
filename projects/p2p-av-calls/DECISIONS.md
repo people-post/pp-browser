@@ -708,7 +708,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 **Date:** 2026-08-07  
 **Status:** Accepted (**s2a done** — call-media phases in code; media-relay N026 **s3a+s3b done**; circuit compose loopbacks green)  
-**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** libp2p host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `libp2p/integration/host`.
+**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** libp2p host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `base/p2p`.
 
 | Rule | Detail |
 |------|--------|

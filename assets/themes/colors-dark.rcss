@@ -69,6 +69,14 @@ selection {
   image-color: #ffffff;
 }
 
+.prompt-emoji-btn svg {
+  image-color: #9ca3af;
+}
+
+.prompt-emoji-btn:hover svg {
+  image-color: #e5e7eb;
+}
+
 .btn-secondary,
 .chat-suggestion {
   background-color: #374151;
@@ -711,7 +719,16 @@ select selectbox option:hover {
 
 .shell-close-btn {
   background-color: #374151;
-  color: #f9fafb;
+  color: #ffffff;
+}
+
+.shell-close-btn:hover,
+.shell-close-btn:focus {
+  background-color: #4b5563;
+}
+
+.shell-close-btn svg {
+  image-color: #ffffff;
 }
 
 .shell-dialog {
@@ -1135,6 +1152,18 @@ select selectbox option:hover {
 .people-picker-member-chip {
   background-color: #1e293b;
   color: #c7d2fe;
+}
+
+.emoji-picker-section-label {
+  background-color: #1f2937;
+}
+
+.emoji-picker-section-label-text {
+  color: #9ca3af;
+}
+
+.emoji-picker-rail-tab--active {
+  background-color: #374151;
 }
 
 .contacts-trust-btn--active {

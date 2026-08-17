@@ -17,8 +17,8 @@ SDL events
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| Platform | `src/render/integration/platform/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
-| RmlUi core | `src/render/fork/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
+| Platform | `src/base/render/platform/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
+| RmlUi core | `src/lib/rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide selection; desktop drag-select; touch word select via long-press / double-tap |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
 | Context menu | `src/base/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
@@ -26,7 +26,7 @@ SDL events
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
-`src/render/fork/reference/backends/` is an upstream reference copy. The running app compiles only `src/render/integration/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
+`src/lib/rmlui/reference/backends/` is an upstream reference copy. The running app compiles only `src/base/render/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
 
 ## Event flow (keyboard)
 
@@ -109,7 +109,7 @@ cmake --build build -j
 ./build/src/app/pp-browser
 ```
 
-Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.cpp) in `pp_rmlui_backend` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.
+Implementation: [`TouchSimOverlay`](src/base/render/host/TouchSimOverlay.cpp) in `pp_base_render` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.
 
 ## Context menu
 
@@ -119,9 +119,11 @@ Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.
 - Menu actions run on **mousedown** (capture phase) so child `#text` nodes do not block item hits.
 - Copy uses text **snapshotted when the menu opens**, because the subsequent menu-item mousedown would otherwise clear selection before the action runs.
 - After Copy / Select All / Paste, `SelectionController::FinalizeSelection()` and `OnPointerUp()` clear any lingering static-text drag state.
-- Editor Select All refocuses the control and calls `SetSelectionRange(0, INT_MAX)` directly (bypasses focus guard in `Select()`).
+- Editor Select All refocuses the control and calls `SetSelectionRange(0, INT_MAX)` directly (bypasses focus guard in `Select()`). Unfocused `SetSelectionRange` updates the caret index without activating the OSK.
 
 Register extra actions with `ContextMenuHost::RegisterProvider`.
+
+**Chat reactions:** long-press / right-click a message row (`message-id` attribute) adds **React…**, which opens a preset emoji strip (plus **More…**). **More…** and the composer ☺ button open the in-app emoji picker (`emoji_picker`: category rail + sticky section labels + scroll-spy). On mobile/compact **Insert** uses shell **bottom chrome** (IME-replacement): latched IME height, OSK dismissed, no dimming scrim, remount-only into `#shell-emoji-keyboard-mount`. Dismiss with Back/Escape or tap ☺ again. Expanded desktop **Insert** and all **React** picks use a `PushLayer` overlay (scrim OK). On mobile/compact (**bottom chrome**), **Insert** stays open for multi-tap and advances the caret without focusing the composer (OSK stays dismissed). Expanded overlay **Insert** closes on pick; `PaneSpec.return_focus_id` restores `#draft-input`, and the caret is placed after the glyph. **React** picks are single-shot and close on pick. Recently used glyphs persist in profile prefs. OS paste / OSK remains available for rare glyphs not in the curated catalog. Tapping a reaction chip calls `toggle_reaction(message_id, emoji)`. Composer Left/Right/Backspace move by grapheme cluster so OSK multi-codepoint emoji edit correctly.
 
 ## Textarea selection
 

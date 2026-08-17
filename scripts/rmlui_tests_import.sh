@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Import upstream RmlUi test trees into the hard fork under src/render/fork/.
+# Import upstream RmlUi test trees into the hard fork under src/lib/rmlui/.
 # Safe to re-run when bumping the fork version.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FORK="${ROOT}/src/render/fork"
+FORK="${ROOT}/src/lib/rmlui"
 TMP="${ROOT}/.rmlui_tests_import_tmp"
 
 RMLUI_REPO="https://github.com/mikke89/RmlUi.git"

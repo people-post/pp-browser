@@ -15,7 +15,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
-**Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client auto-`ack`s through the cursor (`POST …/v1/inbox/ack`) so consumed rows are deleted. Messenger also TTL-expires rows after **14 days**. Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — this is unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
+**Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
 **Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`. Unit tests may construct `MockRelayClient` directly. See [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
 
@@ -147,7 +147,11 @@ Outbound `SendUserMessage` tries libp2p direct first when the peer has a registe
 
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
+**On-wire framing & failure handling** (length-prefixed JSON on Noise+Yamux, shorter/longer/hang budgets): [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md).
+
 ## Identity model
+
+**Code today** (single-device): table below. **Multi-device target** (pre-release design freeze): Account ID = person; Peer ID = per-device endpoint; `relay:` = route binding — [multi-device-account](../../projects/multi-device-account/) ([D099](../../projects/chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device)).
 
 | Role | Example | Use |
 |------|---------|-----|
@@ -198,7 +202,10 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle, shared `Libp2pHost` / `PeerSessionManager` |
+| `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
+| `src/base/p2p/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
 | `src/feature/messaging/P2pMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |

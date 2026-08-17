@@ -261,19 +261,37 @@ std::vector<MeshHopCandidate> RankMediaHopsEscalating(
   return result;
 }
 
-std::string PeerIdFromContact(const Contact& contact) {
+std::vector<std::string> PeerIdsFromContact(const Contact& contact) {
+  std::vector<std::string> out;
+  const auto add = [&](const std::string& peer_id) {
+    if (peer_id.empty() || std::find(out.begin(), out.end(), peer_id) != out.end()) {
+      return;
+    }
+    out.push_back(peer_id);
+  };
+  if (const DirectoryEndpoint* preferred = PreferredDirectoryEndpoint(contact.remote.endpoints)) {
+    add(preferred->peer_id);
+  }
+  for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
+    add(endpoint.peer_id);
+  }
   for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId && !id.value.empty()) {
-      return id.value;
+    if (id.kind == ContactIdKind::PeerId) {
+      add(id.value);
     }
   }
   for (const std::string& ma : contact.multiaddrs) {
-    const std::string pid = PeerIdFromMultiaddr(ma);
-    if (!pid.empty()) {
-      return pid;
-    }
+    add(PeerIdFromMultiaddr(ma));
   }
-  return {};
+  return out;
+}
+
+std::string PeerIdFromContact(const Contact& contact) {
+  const std::vector<std::string> ids = PeerIdsFromContact(contact);
+  if (ids.empty()) {
+    return {};
+  }
+  return ids.front();
 }
 
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
@@ -349,7 +367,8 @@ bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& pe
     return false;
   }
   for (const Contact& contact : contacts) {
-    if (PeerIdFromContact(contact) == peer_id) {
+    const std::vector<std::string> ids = PeerIdsFromContact(contact);
+    if (std::find(ids.begin(), ids.end(), peer_id) != ids.end()) {
       return true;
     }
   }
@@ -360,11 +379,12 @@ std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts) {
   std::vector<std::string> out;
   std::unordered_set<std::string> seen;
   for (const Contact& contact : contacts) {
-    const std::string peer_id = PeerIdFromContact(contact);
-    if (peer_id.empty() || !seen.insert(peer_id).second) {
-      continue;
+    for (const std::string& peer_id : PeerIdsFromContact(contact)) {
+      if (peer_id.empty() || !seen.insert(peer_id).second) {
+        continue;
+      }
+      out.push_back(peer_id);
     }
-    out.push_back(peer_id);
   }
   return out;
 }

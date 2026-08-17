@@ -70,14 +70,23 @@ struct ShellNavigationPorts {
   std::function<void()> request_remount_nav_rail;
   std::function<void(bool visible, const Rml::String& message)> set_activity;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
-  /** Bootstrap / deferred font load — UI-owned chrome readiness flag. */
-  std::function<bool&()> fonts_ready;
+  /** Bootstrap / deferred font load — UI-owned chrome readiness flag (apply / read-only). */
+  std::function<void(bool)> set_fonts_ready;
+  std::function<bool()> fonts_ready;
   std::function<void(const NavBadgeState& badges)> set_nav_badges;
   std::function<void(bool available)> set_auxiliary_available;
   std::function<void()> open_auxiliary;
   std::function<void()> close_auxiliary;
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
+  /**
+   * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
+   * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).
+   */
+  std::function<bool(const BottomChromeSpec& spec)> set_bottom_chrome;
+  std::function<void()> clear_bottom_chrome;
+  std::function<bool()> bottom_chrome_open;
+  std::function<bool()> uses_bottom_chrome;
 };
 
 class ShellHost;

@@ -1,0 +1,2 @@
+pp_browser_add_base_folder_tests(pp_base_p2p pp_browser_p2p_test
+  LINK_LIBS nlohmann_json::nlohmann_json pp_base_people)

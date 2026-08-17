@@ -8,8 +8,8 @@ RelayDirectorySigningKeyResolver::RelayDirectorySigningKeyResolver(PeerSigningKe
                                                                  IDirectoryClient& directory)
     : store_(store), directory_(directory) {}
 
-bool RelayDirectorySigningKeyResolver::IsRelayUserKind(const std::string& peer_identity_kind) {
-  return peer_identity_kind == ContactIdKindToString(ContactIdKind::RelayUser) || peer_identity_kind == "relay_user";
+bool RelayDirectorySigningKeyResolver::IsAccountKind(const std::string& peer_identity_kind) {
+  return peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) || peer_identity_kind == "account";
 }
 
 Roe<PeerSigningKeyRecord> RelayDirectorySigningKeyResolver::Resolve(const std::string& peer_identity_kind,
@@ -18,11 +18,11 @@ Roe<PeerSigningKeyRecord> RelayDirectorySigningKeyResolver::Resolve(const std::s
     return *cached;
   }
 
-  if (!IsRelayUserKind(peer_identity_kind)) {
-    return Error("Peer signing key not found");
+  if (!IsAccountKind(peer_identity_kind)) {
+    return Error("Peer signing key requires account identity");
   }
 
-  auto hit = directory_.LookupRelayUser(peer_identity_value);
+  auto hit = directory_.LookupByAccount(peer_identity_value);
   if (!hit) {
     return hit.error();
   }

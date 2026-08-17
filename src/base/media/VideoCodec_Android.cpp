@@ -801,7 +801,7 @@ void AndroidVideoCodec::ResetDecoder() {
 
 } // namespace
 
-std::unique_ptr<IVideoCodec> CreateAndroidVideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   AMediaCodec* probe = AMediaCodec_createEncoderByType("video/avc");
   if (!probe) {
     return MakeUnavailableVideoCodec("MediaCodec H264 encode unavailable on this device");

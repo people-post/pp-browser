@@ -1,7 +1,6 @@
 #include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
-#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SchemaVersion.h"
@@ -9,12 +8,14 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
+#include "base/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
-#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ProfileSettingsSection.h"
+#include "feature/ui/RmlMount.h"
+#include "feature/ui/UnlockEnsurePorts.h"
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
@@ -24,11 +25,13 @@
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <functional>
 
 namespace pbr {
 
@@ -164,8 +167,8 @@ ShellChromeSnapshot SettingsController::ChromeSnapshot() const {
   return {};
 }
 
-void SettingsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
-  unlock_gate_ = &unlock_gate;
+void SettingsController::BindUnlockEnsure(UnlockEnsurePorts ports) {
+  unlock_ensure_ = std::move(ports);
 }
 
 SettingsCommands& SettingsController::Commands() {
@@ -253,8 +256,11 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
+  ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
+  ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
+  ui_state_.tool_permissions_has_saved = bindings_.tool_permissions_has_saved;
 
   ui_state_.mcp_servers.clear();
   ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
@@ -319,8 +325,11 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
+  bindings_.security_can_export_link = ui_state_.security_can_export_link;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
+  bindings_.tool_permissions_summary = ui_state_.tool_permissions_summary.c_str();
+  bindings_.tool_permissions_has_saved = ui_state_.tool_permissions_has_saved;
   bindings_.app_name = ui_state_.app_name.c_str();
   bindings_.app_version = ui_state_.app_version.c_str();
 
@@ -462,8 +471,11 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
+    ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
+    ctor.Bind("tool_permissions_summary", &controller.bindings_.tool_permissions_summary);
+    ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
@@ -500,7 +512,9 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
     ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
+    ctor.BindEventCallback("export_link_device", &SettingsController::OnExportLinkDeviceCallback);
     ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
+    ctor.BindEventCallback("reset_tool_permissions", &SettingsController::OnResetToolPermissionsCallback);
     ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
   });
 }
@@ -570,8 +584,11 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_size_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
+  host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
+  host.Dirty("settings", "tool_permissions_summary");
+  host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
   host.Dirty("settings", "pin_change_old");
@@ -586,6 +603,7 @@ void SettingsController::FinishPaneResync() {
   if (context_) {
     context_->Update();
   }
+  MountSelectedSettingsSection();
   // Select widgets can emit a spurious change on the frame after remount.
   AppRuntime::PostUI([this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
@@ -599,9 +617,43 @@ void SettingsController::FinishPaneResync() {
     if (context_) {
       context_->Update();
     }
+    MountSelectedSettingsSection();
     suppress_auto_save_ = false;
     UiEditSession::Instance().EndRemount();
   });
+}
+
+void SettingsController::MountSelectedSettingsSection() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  const bool use_sheet_mount = show_detail_ || in_account_sheet_ || chrome.account_sheet_open;
+  const char* mount_id = use_sheet_mount ? "settings-section-mount-sheet" : "settings-section-mount-pane";
+  Rml::Element* mount = doc->GetElementById(mount_id);
+  if (!mount) {
+    // Fallback: try the other mount if layout migration left only one present.
+    mount = doc->GetElementById(use_sheet_mount ? "settings-section-mount-pane" : "settings-section-mount-sheet");
+  }
+  if (!mount) {
+    return;
+  }
+  if (selected_id_.empty()) {
+    RmlMount::MountInner(mount, {});
+    return;
+  }
+  const std::string key = "settings_section_" + std::string(selected_id_.c_str());
+  const std::string body = ViewCatalog::LoadBody(key);
+  if (body.empty()) {
+    log().error << "Failed to load settings section body for '" << key << "'";
+    return;
+  }
+  RmlMount::MountInner(mount, body);
+  DirtyAll();
 }
 
 void SettingsController::OnShellLayoutSynced() {
@@ -1570,11 +1622,11 @@ void SettingsController::OnRegisterProfile() {
   CommitProfileNickname(/*show_toast=*/false);
   PullBindingsToUiState();
   const bool renewing = ui_state_.profile_registered == "yes";
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
     return;
   }
-  unlock_gate_->EnsureUnlocked([this, renewing](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this, renewing](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
@@ -1604,11 +1656,11 @@ void SettingsController::OnRegisterProfile() {
 
 void SettingsController::OnRotateBriefLlmKey() {
   PullBindingsToUiState();
-  if (!unlock_gate_) {
+  if (!unlock_ensure_.ensure_unlocked) {
     ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
     return;
   }
-  unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
@@ -1687,9 +1739,46 @@ void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml
   Instance().OnChangePin();
 }
 
+void SettingsController::OnExportLinkDeviceCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnExportLinkDevice();
+}
+
 void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                     const Rml::VariantList& /*args*/) {
   Instance().OnClearUndeliveredOlderThan();
+}
+
+void SettingsController::OnResetToolPermissionsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                        const Rml::VariantList& /*args*/) {
+  Instance().OnResetToolPermissions();
+}
+
+void SettingsController::OnResetToolPermissions() {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(
+      Tr("settings.security.tool_permissions.reset_title"),
+      Tr("settings.security.tool_permissions.reset_message"),
+      [this](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
+        if (!security) {
+          return;
+        }
+        PullBindingsToUiState();
+        if (auto reset = security->ResetToolPermissions(ui_state_, Store()); !reset) {
+          ReportFailure(reset.error());
+          return;
+        }
+        PushUiStateToBindings();
+        DirtyAll(false);
+        MaybeShowSaveToast("security");
+      },
+      {});
 }
 
 void SettingsController::OnClearUndeliveredOlderThan() {
@@ -1774,18 +1863,84 @@ void SettingsController::PerformResetProfile() {
   }
 }
 
+void SettingsController::EnsureSecurityUnlocked(std::function<void()> then) {
+  const PinProtectionView pin_state =
+      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
+  if (!pin_state.ready) {
+    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
+                      .WithUser(Tr("settings.security.link_device.not_ready")));
+    return;
+  }
+  if (!pin_state.unlocked) {
+    if (!unlock_ensure_.ensure_unlocked) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
+                        .WithUser(Tr("settings.security.link_device.not_ready")));
+      return;
+    }
+    unlock_ensure_.ensure_unlocked([this, then = std::move(then)](const bool unlocked) {
+      if (!unlocked) {
+        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")
+                          .WithUser(Tr("settings.security.link_device.not_ready")));
+        return;
+      }
+      then();
+    });
+    return;
+  }
+  then();
+}
+
+void SettingsController::OnExportLinkDevice() {
+  EnsureSecurityUnlocked([this]() {
+    if (!commands_.export_link_device) {
+      ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
+      return;
+    }
+    if (!shell_feedback_.show_confirm) {
+      return;
+    }
+    shell_feedback_.show_confirm(
+        Tr("settings.security.link_device.export_confirm_title"),
+        Tr("settings.security.link_device.export_confirm_message"),
+        [this](const bool ok) {
+          if (!ok) {
+            return;
+          }
+          AppRuntime::PostWorkerNormal([this]() {
+            auto result = commands_.export_link_device ? commands_.export_link_device()
+                                                       : Roe<std::string>{Error("Messaging is not ready")};
+            AppRuntime::PostUI([this, result = std::move(result)]() mutable {
+              if (!result) {
+                ReportFailure(result.error());
+                return;
+              }
+              if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+                system->SetClipboardText(result->c_str());
+              }
+              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+              status_ = "";
+              DirtyAll();
+            });
+          });
+        },
+        {});
+  });
+}
+
 void SettingsController::OnChangePin() {
-  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
+  const PinProtectionView pin_state =
+      commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
+  if (!pin_state.ready) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
                       .WithUser("Set up key protection first"));
     return;
   }
-  if (!ProfileSecretsService::Instance().IsUnlocked()) {
-    if (!unlock_gate_) {
+  if (!pin_state.unlocked) {
+    if (!unlock_ensure_.ensure_unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
       return;
     }
-    unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
+    unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
       if (!unlocked) {
         ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
         return;
@@ -1812,12 +1967,11 @@ void SettingsController::OnChangePin() {
     return;
   }
 
-  DataKeyVault* vault = ProfileSecretsService::Instance().Vault();
-  if (vault == nullptr) {
+  if (!commands_.change_pin) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
     return;
   }
-  if (auto changed = vault->ChangePin(old_pin, new_pin); !changed) {
+  if (auto changed = commands_.change_pin(old_pin, new_pin); !changed) {
     ReportFailure(changed.error());
     return;
   }

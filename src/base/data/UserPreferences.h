@@ -1,8 +1,10 @@
 #pragma once
 
+#include "base/data/ToolPermissions.h"
 #include "common/Error.h"
 
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -33,7 +35,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 10;
+  static constexpr int kSchemaVersion = 12;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -62,6 +64,10 @@ struct ProfilePreferences {
    * Cleared when status becomes reachable so a later regression can nudge again.
    */
   std::string reachability_nudge_acked_status;
+  /** Agent tool trust: ask / allow / deny by tool or provider (schema v11). */
+  ToolPermissionsPrefs tool_permissions;
+  /** MRU emoji glyphs for the in-app picker (schema v12; cap enforced by EmojiCatalog). */
+  std::vector<std::string> recent_emojis;
 };
 
 class UserPreferences {

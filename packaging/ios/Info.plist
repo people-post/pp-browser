@@ -23,6 +23,9 @@
   <string>0.1.0</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <!-- Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET. -->
+  <key>MinimumOSVersion</key>
+  <string>15.0</string>
   <!-- Shown: SDL prefersStatusBarHidden follows non-fullscreen window flags. -->
   <key>UIStatusBarHidden</key>
   <false/>

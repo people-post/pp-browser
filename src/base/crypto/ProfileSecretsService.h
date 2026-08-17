@@ -13,10 +13,13 @@
 
 namespace pbr {
 
-/** Profile PIN vault and DEK fan-out — app-wide; independent of messaging. */
+/**
+ * Profile PIN vault and DEK fan-out — app-owned; independent of messaging.
+ * Owned by Application (desktop/mobile) and NodeBootstrap (headless); not a singleton.
+ */
 class ProfileSecretsService {
 public:
-  static ProfileSecretsService& Instance();
+  ProfileSecretsService() = default;
 
   Roe<void> Initialize(const std::string& profile_data_dir);
   void Shutdown();
@@ -31,6 +34,9 @@ public:
   Roe<void> Unlock(const std::string& pin);
   void Lock();
 
+  /** Re-fan the currently unlocked vault DEK (after link-device wrap of a shared DEK). */
+  Roe<void> RedistributeUnlockedDek();
+
   DataKeyVault* Vault();
   const DataKeyVault* Vault() const;
 
@@ -40,8 +46,6 @@ public:
   void SetOnUnlocked(std::function<void()> callback);
 
 private:
-  ProfileSecretsService() = default;
-
   Roe<void> DistributeDek(const ByteVector& dek);
   void ClearDekConsumers();
   void NotifyUnlocked();

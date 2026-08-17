@@ -1,6 +1,6 @@
 # P2P A/V calls — design
 
-**Product design + open decisions** for voice/video calls (entities, lifecycle, crypto, invite rules). Maturity tags: **`[v1]`** ships in first call slice; **`[v1.1]`** next; **`[future]`** deferred.
+**Product design + open decisions** for voice/video calls (entities, lifecycle, crypto, invite rules). Maturity tags: unmarked items ship in the first call slice; **`[later]`** next; **`[future]`** deferred.
 
 **Code map** (modules, layers, extraction target — single source): [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md).  
 **ADRs:** [DECISIONS.md](DECISIONS.md). **Dogfood board:** [CURRENT_STATE.md](CURRENT_STATE.md).
@@ -11,9 +11,9 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 
 ## Resolved product decisions
 
-| # | Topic | v1 behavior |
+| # | Topic | First-slice behavior |
 |---|--------|-------------|
-| 1 | Scope | 1:1 + group, voice + video, mobile included — one v1, phased delivery |
+| 1 | Scope | 1:1 + group, voice + video, mobile included — one first slice, phased delivery |
 | 2 | Media stack | **Hybrid (Option C):** mesh signaling + WebRTC-shaped media; mesh SFU/TURN fallback |
 | 3 | Start authority | Any **group member** may start a call linked to that group; 1:1 either peer |
 | 4 | Guests / late join | **Invite only** — join without joining the chat group; mid-call invites OK |
@@ -54,7 +54,7 @@ Detail and rationale: [DECISIONS.md](DECISIONS.md). Do not duplicate the code-mo
 
 ---
 
-## Entities `[v1]`
+## Entities
 
 ### `call_id`
 
@@ -99,7 +99,7 @@ Schema details land with a1 (migrations + store API).
 
 ---
 
-## Lifecycle `[v1]`
+## Lifecycle
 
 ```text
 1. Initiate
@@ -135,7 +135,7 @@ Schema details land with a1 (migrations + store API).
 
 ---
 
-## Signaling events `[v1]`
+## Signaling events
 
 Delivered as E2E **direct** `ChatPayload` **system** messages (V012) to each target — pairwise only (not group N-ciphertext). Reuses outbox, ingest, and sync. Exact binary/`detail` JSON freezes in a6; logical `control_type` values:
 
@@ -160,11 +160,11 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 | `call_started` | Session created from that thread |
 | `call_ended` | Session ended (duration optional in detail JSON) |
 
-`[v1.1]` missed / declined hints.
+`[later]` missed / declined hints.
 
 ---
 
-## Media plane `[v1]`
+## Media plane
 
 ### Stack (V001)
 
@@ -221,7 +221,7 @@ Consumes p2p-mesh **n4-media** (N017–N021):
 
 ---
 
-## Media crypto `[v1]`
+## Media crypto
 
 ### Shared call media key
 
@@ -247,7 +247,7 @@ Threat note: a leaver who retained the old key can decrypt grace-window packets;
 
 ---
 
-## Push: `call_wake` `[v1]`
+## Push: `call_wake`
 
 Extends [push-notifications](../push-notifications/) (P001 opaque wakes).
 
@@ -260,11 +260,11 @@ Extends [push-notifications](../push-notifications/) (P001 opaque wakes).
 
 Desktop dead-process: no remote wake (P004) — documented limitation.
 
-CallKit / ConnectionService full OS integration: `[v1.1]` / platform follow-up; v1 may use high-priority local notification → tap → in-app ring.
+CallKit / ConnectionService full OS integration: `[later]` / platform follow-up; v1 may use high-priority local notification → tap → in-app ring.
 
 ---
 
-## UI sketch `[v1]`
+## UI sketch
 
 | Surface | Behavior |
 |---------|----------|
@@ -274,7 +274,7 @@ CallKit / ConnectionService full OS integration: `[v1.1]` / platform follow-up; 
 | Origin thread | `call_started` / `call_ended` bubbles |
 | Invite | Share invite into a DM (guest) or pick member |
 
-### In-call modes `[v1]` (V031)
+### In-call modes (V031)
 
 | Mode | Behavior |
 |------|----------|

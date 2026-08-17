@@ -14,9 +14,11 @@
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ContextMenuHost.h"
+#include "base/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
+#include "feature/settings/SettingsTools.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
@@ -28,11 +30,14 @@
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/AgentUiPorts.h"
-#include "feature/messaging/MessagingCallPorts.h"
-#include "feature/messaging/MessagingChatPorts.h"
+#include "feature/messaging/CallFunctionalPorts.h"
+#include "feature/messaging/CallUiBackend.h"
+#include "feature/messaging/MessagingFacade.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
+#include "feature/ui/BadgeNotifyPorts.h"
+#include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
@@ -40,7 +45,9 @@
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/ChatSurfaceNotifyPorts.h"
+#include "feature/ui/FlowCoordinatorPorts.h"
 #include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
+#include "feature/ui/PinGateActionPorts.h"
 #include "feature/ui/ShellChromeApplyPorts.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/BadgeAggregator.h"
@@ -49,8 +56,12 @@
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/PinGateController.h"
+#include "feature/ui/UnlockEnsurePorts.h"
+#include "feature/ui/UnlockGateCompletePorts.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/ui/EmojiPickerController.h"
+#include "feature/ui/EmojiPickerNotifyPorts.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellFeedbackPorts.h"
@@ -68,7 +79,7 @@
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -173,8 +184,11 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
+  secrets_ = std::make_unique<ProfileSecretsService>();
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
+  messaging_->BindSecrets(*secrets_);
+  messaging_facade_ = std::make_unique<MessagingFacade>(*messaging_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -184,6 +198,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
+  call_ui_ = std::make_unique<CallUiBackend>(messaging_->CallStackRef());
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
@@ -193,6 +208,8 @@ Application::Application() {
   people_picker_shell_bridge_ = std::make_unique<PeoplePickerShellBridge>();
   people_picker_ = std::make_unique<PeoplePickerController>();
   PeoplePickerController::InstallInstance(*people_picker_);
+  emoji_picker_ = std::make_unique<EmojiPickerController>();
+  EmojiPickerController::InstallInstance(*emoji_picker_);
   chat_ = std::make_unique<ChatController>();
   ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
@@ -201,10 +218,12 @@ Application::Application() {
 }
 
 Application::~Application() {
+  EmojiPickerController::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();
   Shutdown();
+  messaging_facade_.reset();
   messaging_.reset();
 }
 
@@ -212,11 +231,15 @@ MessagingHub& Application::Messaging() {
   return *messaging_;
 }
 
+ProfileSecretsService& Application::Secrets() {
+  return *secrets_;
+}
+
 void Application::ShutdownMessaging() {
   if (!messaging_ || !messaging_->IsInitialized()) {
-    if (ProfileSecretsService::Instance().IsInitialized()) {
+    if (secrets_ && secrets_->IsInitialized()) {
       StartupPhase phase("Shutdown::ProfileSecrets");
-      ProfileSecretsService::Instance().Shutdown();
+      secrets_->Shutdown();
     }
     return;
   }
@@ -224,9 +247,9 @@ void Application::ShutdownMessaging() {
     StartupPhase phase("Shutdown::MessagingHub");
     messaging_->Shutdown();
   }
-  if (ProfileSecretsService::Instance().IsInitialized()) {
+  if (secrets_ && secrets_->IsInitialized()) {
     StartupPhase phase("Shutdown::ProfileSecrets");
-    ProfileSecretsService::Instance().Shutdown();
+    secrets_->Shutdown();
   }
 }
 
@@ -255,7 +278,7 @@ Roe<void> Application::ResetActiveProfile() {
     return manifest.error();
   }
 
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
+  if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
     return secrets.error();
   }
 
@@ -405,40 +428,41 @@ bool Application::Initialize(const char* window_title) {
     DataModelHost::Instance().Dirty(model, binding);
   });
   MessagingHub& messaging = Messaging();
+  MessagingFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
-  settings_commands.load_profile_identity = [&messaging]() {
-    return messaging.LoadProfileIdentityView();
+  settings_commands.load_profile_identity = [&facade]() {
+    return facade.LoadProfileIdentityView();
   };
-  settings_commands.save_profile_nickname = [&messaging](const std::string& nickname) {
-    return messaging.SaveProfileNickname(nickname);
+  settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
+    return facade.SaveProfileNickname(nickname);
   };
-  settings_commands.register_identity = [this, &messaging](const RegisterIdentityArgs& args) {
-    auto result = messaging.RegisterIdentity(args.nickname);
+  settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
+    auto result = facade.RegisterIdentity(args.nickname);
     if (result) {
       chat_->ReloadAgentConfig();
     }
     return result;
   };
-  settings_commands.rotate_brief_llm_key = [this, &messaging]() {
-    auto result = messaging.RotateBriefLlmKey();
+  settings_commands.rotate_brief_llm_key = [this, &facade]() {
+    auto result = facade.RotateBriefLlmKey();
     if (result) {
       chat_->ReloadAgentConfig();
     }
     return result;
   };
-  settings_commands.clear_undelivered_older_than = [&messaging](int days) -> Roe<void> {
-    if (!messaging.IsInitialized() || !messaging.IsMessagingReady()) {
+  settings_commands.clear_undelivered_older_than = [&facade](int days) -> Roe<void> {
+    if (!facade.IsInitialized() || !facade.IsMessagingReady()) {
       return Error("Messaging is not ready");
     }
-    if (auto cleared = messaging.P2p().ClearUndeliveredOlderThan(days); !cleared) {
+    if (auto cleared = facade.ClearUndeliveredOlderThan(days); !cleared) {
       return cleared.error();
     }
     return {};
   };
-  settings_commands.run_reachability_probe = [&messaging](bool try_upnp) {
-    messaging.RunReachabilityProbe(try_upnp);
+  settings_commands.run_reachability_probe = [&facade](bool try_upnp) {
+    facade.RunReachabilityProbe(try_upnp);
   };
-  settings_commands.try_upnp_port_mapping = [&messaging]() { messaging.TryUpnpPortMapping(); };
+  settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
@@ -447,27 +471,30 @@ bool Application::Initialize(const char* window_title) {
     return LocalizationService::Instance().AvailableLocales();
   };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
-    if (auto* ctx = Rml::GetContext("main")) {
-      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
-    }
+    // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
+    AppRuntime::PostUI([appearance_pref]() {
+      if (auto* ctx = Rml::GetContext("main")) {
+        Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
+      }
+    });
   };
   settings_commands.session_store = [this]() -> SessionStore& { return store_; };
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
-  settings_commands.messaging_ready = [&messaging]() {
-    return messaging.IsInitialized() && messaging.IsMessagingReady();
+  settings_commands.messaging_ready = [&facade]() {
+    return facade.IsInitialized() && facade.IsMessagingReady();
   };
-  settings_commands.last_libp2p_error = [&messaging]() -> std::string {
-    if (!messaging.IsInitialized()) {
+  settings_commands.last_libp2p_error = [&facade]() -> std::string {
+    if (!facade.IsInitialized()) {
       return {};
     }
-    return messaging.LastLibp2pError();
+    return facade.LastLibp2pError();
   };
-  settings_commands.load_reachability = [&messaging]() {
+  settings_commands.load_reachability = [&facade]() {
     SettingsReachabilityView view;
-    if (!messaging.IsInitialized()) {
+    if (!facade.IsInitialized()) {
       return view;
     }
-    const ReachabilitySnapshot snap = messaging.Reachability();
+    const ReachabilitySnapshot snap = facade.Reachability();
     switch (snap.status) {
     case ReachabilityStatus::Checking:
       view.status = SettingsReachabilityView::Status::Checking;
@@ -497,13 +524,24 @@ bool Application::Initialize(const char* window_title) {
       badges_->Refresh();
     }
   };
-  settings_commands.load_pin_protection = []() {
+  settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
-    auto& secrets = ProfileSecretsService::Instance();
+    ProfileSecretsService& secrets = *secrets_;
     view.ready = secrets.IsInitialized() && secrets.HasVault();
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
+  settings_commands.change_pin = [this](const std::string& current_pin,
+                                        const std::string& new_pin) -> Roe<void> {
+    DataKeyVault* vault = secrets_->Vault();
+    if (vault == nullptr) {
+      return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
+    }
+    return vault->ChangePin(current_pin, new_pin);
+  };
+  settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  // Copy ports before BindCommands moves the command bag.
+  const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_->BindCommands(std::move(settings_commands));
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
@@ -533,17 +571,18 @@ bool Application::Initialize(const char* window_title) {
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
-  MessagingChatPorts messaging_chat_ports = MakeMessagingChatPorts(messaging);
-  messaging_chat_ports.register_messaging_tools = [&messaging](ToolRegistry& tools) {
-    RegisterMessagingTools(tools, messaging);
-  };
-  chat_->BindChatPorts(std::move(messaging_chat_ports));
+  chat_->BindMessagingFacade(messaging_facade_.get());
+  chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
+    RegisterMessagingTools(tools, *messaging_facade_);
+    RegisterSettingsTools(tools, settings_tool_ports);
+  });
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
   chat_->BindMessagingUi(std::move(messaging_ui));
 
   contacts_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  call_->BindCallPorts(MakeMessagingCallPorts(messaging, store_.IsInitialized() ? &store_ : nullptr));
+  call_->BindCallPorts(
+      MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
@@ -557,21 +596,23 @@ bool Application::Initialize(const char* window_title) {
         people_picker_shell_bridge_->OnSurface(snap);
       },
   });
+  emoji_picker_->BindShellNavigation(shell_navigation);
+  emoji_picker_->BindShellFeedback(shared_feedback);
+  emoji_picker_->BindSessionStore(store_);
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
-  badges_->BindSource([this, &messaging, &shell]() {
+  badges_->BindSource([this, &facade, &shell]() {
     BadgeUnreadInputs inputs;
-    if (!messaging.IsInitialized()) {
+    if (!facade.IsInitialized()) {
       return inputs;
     }
-    auto& inbox = messaging.Inbox();
-    const int total = inbox.SumUnread();
+    const int total = facade.SumUnread();
     int deduction = 0;
     if (shell.State().nav_tab == NavTab::Sessions) {
-      const std::string& active_id = inbox.ActiveThreadId();
+      const std::string& active_id = facade.ActiveThreadId();
       if (!active_id.empty()) {
-        auto thread = messaging.Store().GetThread(active_id);
+        auto thread = facade.GetThread(active_id);
         if (thread && *thread) {
           deduction = (*thread)->unread_count;
         }
@@ -582,19 +623,76 @@ bool Application::Initialize(const char* window_title) {
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.libp2p.node_enabled) {
-      const ReachabilitySnapshot snap = messaging.Reachability();
+      const ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(
           true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
     return inputs;
   });
-  chat_->BindBadgeAggregator(*badges_);
+  {
+    BadgeNotifyPorts badge_notify;
+    badge_notify.refresh = [this]() {
+      if (badges_) {
+        badges_->Refresh();
+      }
+    };
+    badge_notify.sessions_unread = [this]() {
+      return badges_ ? badges_->State().sessions_unread : 0;
+    };
+    chat_->BindBadgeNotify(std::move(badge_notify));
+  }
   chat_->BindInputCoordinator(*input_);
-  chat_->BindCallController(*call_);
+  {
+    CallActionsPorts call_actions;
+    call_actions.start_voice = [this](const std::string& thread_id) {
+      return call_->StartVoiceCall(thread_id);
+    };
+    call_actions.start_video = [this](const std::string& thread_id) {
+      return call_->StartVideoCall(thread_id);
+    };
+    call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
+      call_->InviteIdentitiesToActiveCall(identities);
+    };
+    call_actions.start_with_invitees =
+        [this](const std::string& thread_id, bool video, const std::vector<std::string>& identities) {
+          return call_->StartCallWithInvitees(thread_id, video, identities);
+        };
+    call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
+    call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
+    call_actions.leave_active = [this]() { call_->LeaveActive(); };
+    call_actions.retry_connect = [this]() { call_->RetryConnect(); };
+    call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
+    call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
+    call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
+    call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
+    call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
+    call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
+    call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };
+    call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
+    call_actions.set_minimized_corner = [this](int corner) { call_->SetMinimizedCorner(corner); };
+    call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
+    chat_->BindCallActions(call_actions);
+    shell_->BindCallActions(call_actions);
+    people_picker_->BindCallActions(std::move(call_actions));
+  }
 
-  unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
-  pin_gate_->BindGate(*unlock_gate_);
+  unlock_gate_->BindSecrets(*secrets_);
+  {
+    UnlockGateCompletePorts gate_complete;
+    gate_complete.complete_with_pin = [this](const std::string& pin, const bool create_mode) {
+      unlock_gate_->CompleteWithPin(pin, create_mode);
+    };
+    gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
+    gate_complete.complete_link_device = [this](const std::string& pin, const std::string& bundle_json,
+                                                const bool set_default_pin) {
+      unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
+    };
+    gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
+    pin_gate_->BindGateComplete(std::move(gate_complete));
+  }
   ProfileUnlockPorts unlock_ports;
   unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
   unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
@@ -610,6 +708,7 @@ bool Application::Initialize(const char* window_title) {
     prefs.pin_is_default = is_default;
     (void)store_.SaveProfilePrefs(prefs);
   };
+  unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() { pin_gate_->Dismiss(); };
@@ -620,6 +719,20 @@ bool Application::Initialize(const char* window_title) {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
+  unlock_ports.import_link_device = [&facade](const std::string& pin,
+                                             const std::string& bundle_json) -> Roe<void> {
+    return facade.ImportLinkDevice(bundle_json, pin);
+  };
+  unlock_ports.ui.on_link_imported = [this, &facade]() {
+    // Import runs before EnsureMessagingReady; push attach after the vault is open.
+    AppRuntime::PostWorkerNormal([this, &facade]() {
+      (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
+    });
+    if (chat_) {
+      chat_->ReloadAgentConfig();
+    }
+    UserFeedback::Ok(Tr("pin.link_imported"));
+  };
   // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
   unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
                               std::function<void(Roe<void>)> on_done) {
@@ -629,7 +742,17 @@ bool Application::Initialize(const char* window_title) {
   };
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
-  chat_->BindUnlockGate(*unlock_gate_);
+  {
+    UnlockEnsurePorts unlock_ensure;
+    unlock_ensure.ensure_unlocked = [this](std::function<void(bool)> done) {
+      unlock_gate_->EnsureUnlocked(std::move(done));
+    };
+    unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
+    chat_->BindUnlockEnsure(unlock_ensure);
+    settings_->BindUnlockEnsure(unlock_ensure);
+    contacts_->BindUnlockEnsure(unlock_ensure);
+    people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
+  }
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {
@@ -639,19 +762,48 @@ bool Application::Initialize(const char* window_title) {
     };
     shell_->BindShellMessaging(std::move(shell_messaging));
   }
-  shell_->BindPinGate(*pin_gate_);
-  shell_->BindFlowCoordinator(*flow_);
-  shell_->BindCallController(*call_);
-  settings_->BindUnlockGate(*unlock_gate_);
-  contacts_->BindUnlockGate(*unlock_gate_);
-  people_picker_->BindUnlockGate(*unlock_gate_);
-  people_picker_->BindFlowCoordinator(*flow_);
-  people_picker_->BindCallController(*call_);
+  {
+    PinGateActionPorts pin_actions;
+    pin_actions.on_submit = [this]() { pin_gate_->OnSubmit(); };
+    pin_actions.on_cancel = [this]() { pin_gate_->OnCancel(); };
+    pin_actions.on_set_pin = [this]() { pin_gate_->OnSetPin(); };
+    pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
+    pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
+    pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
+    shell_->BindPinGateActions(std::move(pin_actions));
+  }
+  {
+    FlowCoordinatorPorts flow_ports;
+    flow_ports.begin_modal =
+        [this](int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel) {
+          flow_->BeginModal(layer_id, std::move(on_step_back), std::move(on_cancel));
+        };
+    flow_ports.end_modal = [this]() { flow_->EndModal(); };
+    flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
+    flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
+    shell_->BindFlowCoordinator(flow_ports);
+    people_picker_->BindFlowCoordinator(flow_ports);
+    emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
+  }
 
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (agent_session_) {
+    agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
+    agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.tool_permissions = permissions;
+      prefs.schema_version = ProfilePreferences::kSchemaVersion;
+      return store_.SaveProfilePrefs(prefs);
+    });
+    store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
+      if (agent_session_) {
+        agent_session_->SetToolPermissions(prefs.tool_permissions);
+      }
+    });
+  }
 
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";
@@ -665,6 +817,11 @@ bool Application::Initialize(const char* window_title) {
 
   if (!people_picker_->RegisterModel(context)) {
     log().error << "PeoplePickerController RegisterModel failed";
+    return false;
+  }
+
+  if (!emoji_picker_->RegisterModel(context)) {
+    log().error << "EmojiPickerController RegisterModel failed";
     return false;
   }
 
@@ -682,6 +839,19 @@ bool Application::Initialize(const char* window_title) {
   chat_people_picker_notify.open_free = [this]() { people_picker_->OpenFree(); };
   chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
+
+  EmojiPickerNotifyPorts emoji_notify;
+  emoji_notify.open_insert = [this]() {
+    emoji_picker_->OpenInsert([this](std::string emoji, bool restore_focus) {
+      chat_->InsertEmojiIntoDraft(emoji, restore_focus);
+    });
+  };
+  emoji_notify.open_react = [this](const std::string& message_id) {
+    emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
+      chat_->ReactWithEmoji(message_id, emoji);
+    });
+  };
+  chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
   call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video) {
@@ -714,10 +884,11 @@ bool Application::Initialize(const char* window_title) {
       chat_shell_bridge_->Clear();
     }
     chat_->BindShellSetup({});
-    chat_->BindChatPorts({});
+    chat_->BindMessagingFacade(nullptr);
     chat_->BindAgentPorts({});
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
+    chat_->BindEmojiPickerNotify({});
     chat_->BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
@@ -731,6 +902,11 @@ bool Application::Initialize(const char* window_title) {
     }
     people_picker_->BindContactsPorts({});
     people_picker_->BindPickerPorts({});
+    if (emoji_picker_) {
+      emoji_picker_->BindShellNavigation({});
+      emoji_picker_->BindShellFeedback({});
+      emoji_picker_->BindFlowCoordinator({});
+    }
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
@@ -744,12 +920,38 @@ bool Application::Initialize(const char* window_title) {
     }
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
+      pin_gate_->BindGateComplete({});
     }
     if (call_) {
       call_->BindCallPorts({});
       call_->BindShellCallChrome({});
       call_->BindPeoplePickerNotify({});
     }
+    if (chat_) {
+      chat_->BindCallActions({});
+      chat_->BindBadgeNotify({});
+      chat_->BindUnlockEnsure({});
+    }
+    if (shell_) {
+      shell_->BindCallActions({});
+      shell_->BindPinGateActions({});
+      shell_->BindFlowCoordinator({});
+    }
+    if (people_picker_) {
+      people_picker_->BindCallActions({});
+      people_picker_->BindUnlockEnsure({});
+      people_picker_->BindFlowCoordinator({});
+    }
+    if (emoji_picker_) {
+      emoji_picker_->BindFlowCoordinator({});
+    }
+    if (settings_) {
+      settings_->BindUnlockEnsure({});
+    }
+    if (contacts_) {
+      contacts_->BindUnlockEnsure({});
+    }
+    call_ui_.reset();
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
     }
@@ -768,6 +970,11 @@ bool Application::Initialize(const char* window_title) {
   people_picker_->BindChatPorts(std::move(chat_ports));
 
   WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  shell_->SetOnBottomChromeDismissed([this]() {
+    if (emoji_picker_) {
+      emoji_picker_->Close();
+    }
+  });
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();
@@ -789,7 +996,7 @@ bool Application::Initialize(const char* window_title) {
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      const ReachabilitySnapshot snap = Messaging().Reachability();
+      const ReachabilitySnapshot snap = messaging_facade_->Reachability();
       if (snap.status == ReachabilityStatus::Reachable) {
         ProfilePreferences prefs = store_.Snapshot().profile_prefs;
         if (!prefs.reachability_nudge_acked_status.empty()) {
@@ -807,6 +1014,7 @@ bool Application::Initialize(const char* window_title) {
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
+    ViewCatalog::ClearCache();
     shell_->RequestSyncLayout(true);
     if (auto* ctx = Rml::GetContext("main")) {
       ApplyUiDocumentLanguage(ctx);
@@ -924,10 +1132,11 @@ void Application::Shutdown() {
     chat_shell_bridge_->Clear();
   }
   chat_->BindShellSetup({});
-  chat_->BindChatPorts({});
+  chat_->BindMessagingFacade(nullptr);
   chat_->BindAgentPorts({});
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
+  chat_->BindEmojiPickerNotify({});
   chat_->BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});
@@ -938,6 +1147,11 @@ void Application::Shutdown() {
   people_picker_->BindSurfaceNotify({});
   if (people_picker_shell_bridge_) {
     people_picker_shell_bridge_->Clear();
+  }
+  if (emoji_picker_) {
+    emoji_picker_->BindShellNavigation({});
+    emoji_picker_->BindShellFeedback({});
+    emoji_picker_->BindFlowCoordinator({});
   }
   people_picker_->BindContactsPorts({});
   people_picker_->BindPickerPorts({});
@@ -954,12 +1168,35 @@ void Application::Shutdown() {
   }
   if (pin_gate_) {
     pin_gate_->BindShellPinGate({});
+    pin_gate_->BindGateComplete({});
   }
   if (call_) {
     call_->BindCallPorts({});
     call_->BindShellCallChrome({});
     call_->BindPeoplePickerNotify({});
   }
+  if (chat_) {
+    chat_->BindCallActions({});
+    chat_->BindBadgeNotify({});
+    chat_->BindUnlockEnsure({});
+  }
+  if (shell_) {
+    shell_->BindCallActions({});
+    shell_->BindPinGateActions({});
+    shell_->BindFlowCoordinator({});
+  }
+  if (people_picker_) {
+    people_picker_->BindCallActions({});
+    people_picker_->BindUnlockEnsure({});
+    people_picker_->BindFlowCoordinator({});
+  }
+  if (settings_) {
+    settings_->BindUnlockEnsure({});
+  }
+  if (contacts_) {
+    contacts_->BindUnlockEnsure({});
+  }
+  call_ui_.reset();
   shell_->BindShellMessaging({});
   ChatController::ClearInstance();
   ShellHost::ClearInstance();

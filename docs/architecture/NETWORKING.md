@@ -23,7 +23,7 @@ Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects
 
 ## Libp2p investment
 
-The **vendored** fork under [`src/libp2p/fork/`](../../src/libp2p/fork/) is a product surface, not a thin dependency. Mesh work continues to deepen:
+The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is a product surface, not a thin dependency. Mesh work continues to deepen:
 
 - Peer discovery and dialability (peerstore / Identify, contacts, bootstrap, later directory/DHT)
 - Reachability (listen, UPnP, dial-back, circuit → PeerId-friendly paths)
@@ -31,6 +31,10 @@ The **vendored** fork under [`src/libp2p/fork/`](../../src/libp2p/fork/) is a pr
 - Price incentives (quotes, ceilings, volunteer → paid regulation)
 
 **Hop reachability** is implemented **inside** that stack ([media-hop-reachability](../../projects/media-hop-reachability/) — program + consume; [H001](../../projects/media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-libp2p) / [H007](../../projects/media-hop-reachability/DECISIONS.md#h007--no-app-layer-hop-candidate-exchange-as-product-path)). SoftMigrate must not grow a parallel NAT toolkit.
+
+**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (shared) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
+
+`MeshHost` ([`src/base/p2p/`](../../src/base/p2p/)) is the **shared mesh composition root** — `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths. Mesh UX reads through `MeshHost` (via `MessagingHub::Mesh()`), not ad-hoc hub forwards.
 
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+).
 
@@ -42,5 +46,6 @@ Call **media** product path is **libp2p-only** (voice-first): direct peer stream
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — overall shape  
 - [P2P_MESSAGING.md](P2P_MESSAGING.md) — messaging  
+- [LIBP2P_STREAMS.md](LIBP2P_STREAMS.md) — stream framing, exchanges, size/hang handling  
 - [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md) — fork deltas  
 - [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) — wire/compat  

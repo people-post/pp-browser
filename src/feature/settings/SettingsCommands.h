@@ -50,6 +50,10 @@ struct SettingsCommands {
   std::function<void()> refresh_nav_badges;
 
   std::function<PinProtectionView()> load_pin_protection;
+  /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
+  std::function<Roe<void>(const std::string& current_pin, const std::string& new_pin)> change_pin;
+  /** Copy a time-limited link-device payload (account keys + shared DEK + public PSKs). */
+  std::function<Roe<std::string>()> export_link_device;
 };
 
 } // namespace pbr

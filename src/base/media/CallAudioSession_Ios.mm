@@ -1,5 +1,7 @@
 #include "base/media/CallAudioSession.h"
 
+#include <TargetConditionals.h>
+
 #if defined(__APPLE__) && TARGET_OS_IPHONE
 
 #import <AVFoundation/AVFoundation.h>
@@ -75,6 +77,21 @@ void SetSpeakerphoneOn(bool on) {
   ApplyRoute(on);
   (void)error;
 }
+
+int CaptureOpenAttemptCount() {
+  return 1;
+}
+
+int CaptureOpenRetryDelayMs(int /*attempt_index*/) {
+  return 0;
+}
+
+int CaptureReopenSettleDelayMs() {
+  return 0;
+}
+
+void ApplyCaptureAudioHints() {}
+void ClearCaptureAudioHints() {}
 
 } // namespace CallAudioSession
 } // namespace pbr

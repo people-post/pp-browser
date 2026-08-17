@@ -7,7 +7,7 @@ This file has **two orderings**:
 | Ordering | Use when |
 |----------|----------|
 | **Phase sections below** (d0 → c1 → c2 → …) | Traceability, exit criteria, dependencies |
-| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel with [chat-storage waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) |
+| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all in-scope work before a single release — parallel with [chat-storage waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) |
 
 ---
 
@@ -20,6 +20,7 @@ This file has **two orderings**:
 | c2 | 5 | c1; chat [v2b](../chat-storage-and-memory/PHASES.md) + [v6](../chat-storage-and-memory/PHASES.md) | Private `e2e` encrypt/decrypt on relay |
 | c3 | 6 | c2; chat v2b “Secure message” | PSK UX, rotation, verify gate |
 | c3+ | 7 | c3 | `e2e_public` auto-key (E013/E024) |
+| c3++ | — | c3+ | Public 1:1 device-lock rekey (E027) |
 | c4 | — (deferred) | c3+ | Post-quantum hybrid |
 
 ---
@@ -48,7 +49,7 @@ d0 (complete)
 | **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `P2pMessagingService` in `base/crypto` |
 | **5** | **c2** | `P2pMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
 | **6** | **c3** | Generate/export/import PSK; fingerprint gate; rotation bundle (D086); compromise hooks to chat D038 | User verify + send/receive + simulated epoch bump |
-| **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Out of v1 batch unless scope expands |
+| **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Landed |
 
 ### Agent session reading list
 
@@ -197,7 +198,7 @@ d0 (complete)
 - [x] **Export** epoch-1 key: raw base64 + Copy + fingerprint display (E011)
 - [x] **Import** PSK: raw base64 (E011) or bundle on rotation (E020/D086)
 - [x] Fingerprint compare + explicit confirm; persist **`psk_verified_at`**; E2E send gate until verified (E011)
-- [x] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
+- [x] Add-contact: display signing-key fingerprint (E016); **`[later]`** explicit confirm
 - [x] Key rotation flow: `rotate_psk` → export **`pp-browser-psk-bundle-v1`** (E020/D086); append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
 - [x] Bundle import: merge retired tail, cap at **`kMaxRetiredPskEpochs` (8)**; truncate disclosure when export omits older epochs
 - [x] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
@@ -207,14 +208,30 @@ d0 (complete)
 
 ---
 
-## Phase c4 — Post-quantum migration (deferred)
+## Phase c3++ — Public 1:1 device-lock rekey (E027)
 
-**Goal:** Hybrid classical + PQ for automated keying and/or signatures where EC is used.
+**Goal:** Account-KEM default stays. Explicit **Use only this device…** on public 1:1. Quiet auto-`rotate_psk` only when both sides are device-bound. Device-scoped PSKs off the link bundle (M020 / D101).
 
-- [ ] Evaluate liboqs vs OpenSSL OQS provider vs BoringSSL PQ APIs
-- [ ] Hybrid KEM (X25519 + ML-KEM-768) for optional automated PSK setup (E013)
-- [ ] Hybrid or PQ signatures for relay envelope (ML-DSA)
-- [ ] Migration: dual-verify during transition window
+- [ ] `chat_targets` `key_scope` + conversation KEM columns (`profile.db` user_version 3)
+- [ ] `psk_rotate` system control + wrap to account vs conversation KEM
+- [ ] Sibling `locked_out` path; link-device copies only `key_scope=account`
+- [ ] Thread menu + confirm + banners; auto-rekey watermark on `device_pair`
+- [ ] Tests: lock, sibling lock-out, both-lock, concurrent winner, auto-rekey gate
+
+**Exit criteria:** Two profiles: lock from A, B sees notice, A's other install is locked out; after both lock, auto-rekey wraps to conversation KEMs.
+
+---
+
+## Phase c4 — Post-quantum migration
+
+**Goal:** PQ account signing + ML-KEM auto-key (aggressive PQ — E026 / multi-device M008).
+
+- [x] Choose libs: **mlkem-native** + **mldsa-native** (PQCP v2.0.0), not liboqs/OpenSSL 3.5
+- [x] Vendor lean trees + CMake; `HybridKem` → ML-KEM-768 only; `MlDsa` wrapper + Account ID helper
+- [x] Brief (www): KEM size **1184** + **ml-dsa-65-only** register/API verify + Account ID binding (hard cut; wipe legacy rows)
+- [x] Client register uses account ML-DSA; `IdentityStore::SignBytes` / envelope verify → ML-DSA-65
+- [ ] Wire `ChatTargetKey` / `sender_contact_id` → Account ID (multi-device m2)
+- [ ] Migration: wipe/regenerate legacy Kyber-draft KEM blobs (client path started in IdentityStore)
 
 **Exit criteria:** TBD when threat model and library support firm up.
 
@@ -224,7 +241,7 @@ d0 (complete)
 
 - Chaos-based encryption
 - Replacing BoringSSL with libsodium globally
-- **Group E2E** — `[post-v1]` pairwise sender-keys (E022)
+- **Group E2E** — pairwise sender-keys (E022)
 - **Public tier auto-key** — after c3 (E021/E013/E024)
 - libp2p direct transport crypto rewrite
 - Encrypting `identity.json` at rest — **done** in [at-rest-crypto](../at-rest-crypto/) (`identity.enc` + PIN vault)
@@ -240,8 +257,9 @@ d0 (complete)
   → chat v3 ∥ v4
   → chat v6 (schema → pipeline → sync → libp2p → integrity)
   → c2 → c3
-  → c3+ / c4 (e2e_public auto-key, then PQ) — post-v1 unless in scope
-  → group E2E (E022, post-v1)
+  → c3+ (e2e_public auto-key — landed) → c3++ device-lock (E027)
+  → group E2E (E022 — landed)
+  → c4 PQ
 ```
 
 ---

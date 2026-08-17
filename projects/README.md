@@ -9,7 +9,7 @@ Work-in-progress design and implementation tracking for pp-browser. Unlike [`doc
 
 1. Open the project folder for the feature you are working on.
 2. Read **DESIGN.md** (complete spec) and **CURRENT_STATE.md** (today) before coding.
-3. **Human:** unresolved rollout choices live in **[PENDING_DECISIONS.md](PENDING_DECISIONS.md)** — resolve before expanding scope or v6-sync exit criteria.
+3. Record rollout choices in the relevant project **DECISIONS.md** (and promote to [`docs/contracts/`](../docs/contracts/) when behavior ships). Do not keep a separate pending checklist.
 4. Pick tasks from **PHASES.md** (ordering only); for batch pre-release delivery, follow **PHASES § Agent batch delivery** in [chat-storage](chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) and [e2e](e2e-message-crypto/PHASES.md#agent-batch-delivery-order).
 5. Mark items done in the same PR that implements them.
 6. Log non-obvious choices in **DECISIONS.md** (date + rationale).
@@ -38,7 +38,10 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
+| [pricing](pricing/) | **P001 first slice** | Initiation floor + media quote gates (no payment rails) — [DECISIONS](pricing/DECISIONS.md) |
 | [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — N022 invest; **N023 relay scope** spec | Libp2p deepen; scope escalation; HTTP settle preferred — [RELAY_SCOPE](p2p-mesh/RELAY_SCOPE.md) |
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
+| [multi-device-account](multi-device-account/) | **m3 `endpoints[]` landed** — **m4c** paste contacts next (M018) | Account ID on wire; shared DEK + account KEM + first-run link-device — [DESIGN](multi-device-account/DESIGN.md) |
+| [libp2p-pq-transport](libp2p-pq-transport/) | **Phases 0–5 landed** | Full-PQ Noise (ML-KEM-768) + device PeerId (ML-DSA-65) hard cut — [CURRENT_STATE](libp2p-pq-transport/CURRENT_STATE.md) |

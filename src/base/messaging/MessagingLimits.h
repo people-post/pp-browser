@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace pbr {
 
@@ -23,6 +24,8 @@ inline constexpr size_t kDefaultTailSyncLimit = 50;
 /** D059 — one older-history page per user-initiated sync. */
 inline constexpr size_t kUserSyncOlderHistoryLimit = 25;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
+/** Cap on chat transcript rows kept in the Rml `messages` data-for window. */
+inline constexpr size_t kMaxMessagesDomWindow = 200;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
 /** D042 — cap merged annotations per target message. */
 inline constexpr size_t kMaxAnnotationsPerTarget = 32;

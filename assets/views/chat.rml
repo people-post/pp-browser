@@ -63,6 +63,9 @@
     <button class="chat-suggestion" data-event-click="start_new_secure_chat()">New epoch (same key)</button>
     <button class="chat-suggestion" data-event-click="pause_integrity_only()">Pause only</button>
   </div>
+  <div class="chat-gap-banner stack" data-if="show_locked_out_banner && !sync_in_progress">
+    <p class="text muted">{{i18n:chat.device_lock.locked_out_body}}</p>
+  </div>
   <div class="chat-gap-banner stack" data-if="show_psk_setup_banner && !sync_in_progress">
     <p class="text muted" data-if="!psk_has_key">Share your encryption key with this contact out of band, then verify the fingerprint before sending.</p>
     <p class="text muted" data-if="psk_has_key && !psk_verified">Compare this fingerprint with your contact, then confirm verification before sending.</p>
@@ -86,7 +89,7 @@
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">
-      <div data-for="row : messages" data-class="row.row_class">
+      <div data-for="row : messages" data-class="row.row_class" data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
         </p>

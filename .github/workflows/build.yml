@@ -7,6 +7,17 @@ on:
     branches: [develop, main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Feature include edges
+        run: ./scripts/check_feature_includes.sh
+      - name: Platform ifdef locations
+        run: ./scripts/check_platform_ifdefs.sh
+
   build:
     strategy:
       fail-fast: false

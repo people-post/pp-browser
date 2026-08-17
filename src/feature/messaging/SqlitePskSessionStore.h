@@ -17,11 +17,13 @@ namespace pbr {
 class SqlitePskSessionStore : public Module, public IPskSessionStore, public IDekConsumer {
 public:
   explicit SqlitePskSessionStore(std::string profile_db_path, std::string profile_id = {});
+  ~SqlitePskSessionStore();
 
   Roe<void> SetDek(ByteVector dek) override;
   void ClearDek() override;
 
   Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& key) const override;
+  Roe<std::vector<PskSessionRecord>> List() const override;
   Roe<void> Save(const PskSessionRecord& record) override;
   Roe<ByteVector> GenerateMasterPsk() override;
   Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const ChatTargetKey& key,
@@ -36,6 +38,8 @@ private:
   Roe<void> RequireDek() const;
   Roe<std::string> EncryptPskB64(const std::string& plaintext_b64) const;
   Roe<std::string> DecryptPskB64(const std::string& ciphertext_b64) const;
+  Roe<std::string> EncryptFieldB64(const std::string& plaintext_b64, const char* aad_kind) const;
+  Roe<std::string> DecryptFieldB64(const std::string& ciphertext_b64, const char* aad_kind) const;
   Roe<PskSessionRecord> DecryptRecord(PskSessionRecord record) const;
   Roe<PskSessionRecord> EncryptRecord(PskSessionRecord record) const;
 

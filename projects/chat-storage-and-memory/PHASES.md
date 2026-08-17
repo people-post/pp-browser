@@ -1,13 +1,13 @@
 # Phased roadmap
 
-**[DESIGN.md](DESIGN.md) is the authoritative specification** (complete system with `[v1]` / `[post-v1]` tags). **This file orders work only** — checklists, exit criteria, and traceability. Rationale: [DECISIONS.md](DECISIONS.md).
+**[DESIGN.md](DESIGN.md) is the authoritative specification** (complete system; unmarked vs **`[later]`** / **`[future]`**). **This file orders work only** — checklists, exit criteria, and traceability. Rationale: [DECISIONS.md](DECISIONS.md).
 
 This file has **two orderings**:
 
 | Ordering | Use when |
 |----------|----------|
 | **Phase sections below** (v2a → v2b → …) | Incremental rollout, traceability, exit criteria |
-| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel waves, merged gates |
+| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all in-scope work before a single release — parallel waves, merged gates |
 
 Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [docs/contracts/WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md).
 
@@ -19,12 +19,12 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 
 | Phase | Agent wave | Primary DESIGN sections | Maturity shipped |
 |-------|------------|-------------------------|------------------|
-| v2a | 1–2 | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
-| v2b | 2 | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` tier **data model** (shells + badges); functional `e2e_public` gated until c3 |
-| v3 | 3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
-| v4 | 3 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
-| v6 | 4 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
-| post-v4 | 6 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) (`[post-v1]` rows) | Rich payload types |
+| v2a | 1–2 | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | SQLite + transcript |
+| v2b | 2 | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar) | Tier **data model** (shells + badges); `e2e_public` compose now enabled (c3+) |
+| v3 | 3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | compaction + forget |
+| v4 | 3 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | text/system + transport column |
+| v6 | 4 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | E2E tail + gap + user sync |
+| post-v4 | 6 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) | Rich payload types |
 | post-v6b | 6 | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
 | post-v6c | 6 | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
 | post-v6d | 6 | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
@@ -235,7 +235,7 @@ Existing foundation this project builds on.
 
 **Goal:** Same contact can have two isolated **E2E** direct thread **shells** — private (strict, functional in v6) and public (UX-first target, **gated** until auto-key c3+).
 
-**Design refs:** [Three chat tiers](DESIGN.md#three-chat-tiers-d089), [Thread](DESIGN.md#thread), [Sidebar `[v1]`](DESIGN.md#sidebar-v1), [Chat target](DESIGN.md#chat-target-long-lived-direct-p2p).
+**Design refs:** [Three chat tiers](DESIGN.md#three-chat-tiers-d089), [Thread](DESIGN.md#thread), [Sidebar](DESIGN.md#sidebar), [Chat target](DESIGN.md#chat-target-long-lived-direct-p2p).
 
 ### Model
 
@@ -299,7 +299,7 @@ Existing foundation this project builds on.
 
 **Goal:** Full **ChatPayload validator** (D026, D050) on the **same wire shape** shipped in v2a-p2p (D063) — no envelope break. Strip remote `content_rml`; persist `transport` (badge UI in post-v6d).
 
-**Design refs:** [ChatPayload `[v1]`](DESIGN.md#chatpayload-unified-message-body--d026), [Wire cutover phasing](DESIGN.md#wire-cutover-phasing-d063), [Transport `[v1]`](DESIGN.md#transport-provenance-d051), [Three chat tiers](DESIGN.md#three-chat-tiers-d089).
+**Design refs:** [ChatPayload ](DESIGN.md#chatpayload-unified-message-body--d026), [Wire cutover phasing](DESIGN.md#wire-cutover-phasing-d063), [Transport ](DESIGN.md#transport-provenance-d051), [Three chat tiers](DESIGN.md#three-chat-tiers-d089).
 
 ### Message schema
 
@@ -327,11 +327,11 @@ Existing foundation this project builds on.
 
 **Agent batch:** Split into sub-packages **v6-schema → v6-pipeline → v6-sync → v6-libp2p → v6-integrity** — see [§ Agent batch delivery](#agent-batch-delivery-order) wave 4. Land tests with each sub-package.
 
-**Goal:** **Private direct (`e2e`)** chat detects missing peer messages and syncs reliably. **`e2e_public`** uses same sync machinery when that tier ships (relaxed ingest — D046). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
+**Goal:** **Private direct (`e2e`)** chat detects missing peer messages and syncs reliably. **`e2e_public`** uses the same sync machinery (relaxed ingest — D046). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
 
 **Depends on:** v2b, v4; relay `GET /v1/chat-targets/messages` (D027, D056) with **chat-target authorization**; libp2p history protocol (D060) when direct transport available.
 
-**Design refs:** [P2P sync `[v1]` modes](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [User-initiated sync](DESIGN.md#user-initiated-sync-ux-d059), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity `[v1]`](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
+**Design refs:** [P2P sync modes](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [User-initiated sync](DESIGN.md#user-initiated-sync-ux-d059), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity ](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
 
 ### v6-schema — Schema and persistence
 
@@ -402,7 +402,7 @@ Existing foundation this project builds on.
 
 ## Phase post-v4 — Rich ChatPayload types
 
-**Goal:** Enable `[post-v1]` payload types from [DESIGN § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).
+**Goal:** Enable payload types from [DESIGN § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).
 
 **Depends on:** v4 validator + `BuildDisplayRows` branching.
 
@@ -428,7 +428,7 @@ Existing foundation this project builds on.
 
 ## Phase post-v6d — Per-message transport badge UI (D051)
 
-**Goal:** [DESIGN § Transport — `[post-v1]`](DESIGN.md#transport-provenance-d051).
+**Goal:** [DESIGN § Transport provenance](DESIGN.md#transport-provenance-d051).
 
 **Depends on:** v4 `transport` column populated; libp2p direct path when available.
 
@@ -439,7 +439,7 @@ Existing foundation this project builds on.
 
 ## Phase post-v6e — Relaxed ingest (merged — see public tier)
 
-**Status:** **Merged into `e2e_public` / group tier milestone** (D046). Relaxed ingest is the **default** policy when those tiers ship — not a separate optional phase after private v6.
+**Status:** **Merged into `e2e_public` / group tier milestone** (D046). Relaxed ingest is the **default** policy for those tiers — not a separate optional phase after private v6.
 
 **When enabling public direct (e2e c3+):**
 
@@ -511,7 +511,7 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 | 2026-06-29 | D037: clear history floor = sync exclusion + silent discard; amend D010/D013 |
 | 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |
 | 2026-06-29 | D056: local `thread_id`; wire `ChatTargetKey` + `route`; no `thread_id` on envelope/AAD; supersedes D053 |
-| 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
+| 2026-06-29 | DESIGN: single grand spec; PHASES traceability + named post-v4 / post-v6* phases |
 | 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |
 | 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |

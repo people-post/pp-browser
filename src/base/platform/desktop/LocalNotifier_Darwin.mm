@@ -8,7 +8,6 @@
 
 #if !TARGET_OS_IPHONE
 
-#import <CoreServices/CoreServices.h>
 #import <Foundation/Foundation.h>
 #import <UserNotifications/UserNotifications.h>
 
@@ -32,9 +31,14 @@ static constexpr const char* kFrameIdPrefix = "frame-msg-";
   (void)center;
   (void)notification;
   if (@available(macOS 11, *)) {
-    completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionSound);
+    // Banner/List replaced Alert (deprecated on macOS 11+).
+    completionHandler(UNNotificationPresentationOptionList | UNNotificationPresentationOptionBanner |
+                      UNNotificationPresentationOptionSound);
   } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound);
+#pragma clang diagnostic pop
   }
 }
 
@@ -87,15 +91,9 @@ bool IsAppBundle() {
   if (!bundle_url) {
     return false;
   }
-  CFStringRef uti = nullptr;
-  const bool ok = CFURLCopyResourcePropertyForKey(bundle_url, kCFURLTypeIdentifierKey, &uti, nullptr);
-  bool is_bundle = false;
-  if (ok && uti) {
-    is_bundle = UTTypeConformsTo(uti, kUTTypeApplicationBundle);
-    CFRelease(uti);
-  }
-  CFRelease(bundle_url);
-  return is_bundle;
+  // .app path is enough for UNUserNotificationCenter; avoids deprecated UTI helpers.
+  NSURL* url = CFBridgingRelease(bundle_url);
+  return [[url pathExtension] caseInsensitiveCompare:@"app"] == NSOrderedSame;
 }
 
 bool EnsureInitLocked() {

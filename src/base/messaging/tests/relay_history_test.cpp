@@ -4,7 +4,7 @@
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientsImpl.h"
-#include "base/people/Ed25519Signer.h"
+#include "base/crypto/MlDsa.h"
 
 #include <gtest/gtest.h>
 
@@ -12,10 +12,9 @@ TEST(RelayHistoryTest, MockFetchFiltersBySeqRange) {
   using namespace pbr;
 
   MockRelayClient relay;
-  const auto test_private_key = HexToBytes(
-      "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-  ASSERT_TRUE(test_private_key);
-  relay.SetReplySigningPrivateKey(*test_private_key);
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(static_cast<bool>(keys));
+  relay.SetReplySigningPrivateKey(keys->secret_key);
 
   auto make_envelope = [&](uint64_t seq, const std::string& text) {
     RelayEnvelope envelope;
@@ -37,10 +36,9 @@ TEST(RelayHistoryTest, MockFetchFiltersBySeqRange) {
     envelope.timestamp = static_cast<int64_t>(seq);
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     EXPECT_TRUE(sign_bytes);
-    auto signature =
-        Ed25519Signer::Sign(std::string(sign_bytes->begin(), sign_bytes->end()), *test_private_key);
+    auto signature = MlDsa::Sign(keys->secret_key, *sign_bytes);
     EXPECT_TRUE(signature);
-    envelope.signature = *signature;
+    envelope.signature = Base64Encode(*signature);
     return envelope;
   };
 

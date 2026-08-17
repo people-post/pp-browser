@@ -1,1 +1,0 @@
-pp_browser_add_libp2p_integration()

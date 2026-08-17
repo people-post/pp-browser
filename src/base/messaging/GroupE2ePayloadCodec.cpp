@@ -4,12 +4,14 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/people/ContactJson.h"
+#include "base/people/ContactTypes.h"
 
 namespace pbr {
 
 ChatTargetKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity) {
   ChatTargetKey key;
-  key.peer_identity_kind = "relay_user";
+  key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   key.peer_identity_value = member_identity;
   key.channel = CryptoChannel::E2ePublic;
   return key;
@@ -23,7 +25,8 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
     const std::string& message_id, const uint64_t sender_seq, const uint32_t session_epoch, const int64_t timestamp,
     const std::vector<GroupMemberTarget>& members, IPskSessionStore& psk_store,
-    const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public) {
+    const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public,
+    const std::optional<std::vector<uint8_t>>& chat_payload_plaintext) {
   (void)group_id;
   GroupEncryptResult result;
   for (const GroupMemberTarget& member : members) {
@@ -76,7 +79,11 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     params.sender_seq = sender_seq;
     params.session_epoch = session_epoch;
     params.timestamp = timestamp;
-    auto encrypted = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
+    auto encrypted =
+        (chat_payload_plaintext && !chat_payload_plaintext->empty())
+            ? E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *chat_payload_plaintext, master_psk,
+                                                                  key_init_b64)
+            : E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
     if (!encrypted) {
       result.failed_member_identities.push_back(member.member_identity);
       continue;
@@ -108,7 +115,7 @@ Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelo
   direct_envelope.body.e2e.member_payloads = std::nullopt;
 
   ChatTargetKey target_key;
-  target_key.peer_identity_kind = "relay_user";
+  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   target_key.peer_identity_value = envelope.sender_contact_id;
   target_key.channel = CryptoChannel::E2ePublic;
   return E2eRelayPayloadCodec::DecryptEnvelope(direct_envelope, local_contact_id, target_key, psk_store,

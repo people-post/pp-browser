@@ -1,6 +1,8 @@
 #include "feature/chat/ChatThreadChrome.h"
 
 #include "feature/chat/ChatDataModel.h"
+#include "base/crypto/CryptoTypes.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/PeerDisplayLabel.h"
@@ -10,8 +12,8 @@
 
 namespace pbr {
 
-void ChatThreadChrome::BindChatPorts(MessagingChatPorts ports) {
-  chat_ports_ = std::move(ports);
+void ChatThreadChrome::BindMessagingFacade(MessagingFacade* facade) {
+  facade_ = facade;
 }
 
 void ChatThreadChrome::BindShellNavigation(ShellNavigationPorts ports) {
@@ -27,12 +29,6 @@ namespace {
 void NotifySurfaceChanged(const std::function<void()>& notify) {
   if (notify) {
     notify();
-  }
-}
-
-void ShowToast(const ShellFeedbackPorts& ports, const std::string& message) {
-  if (ports.show_toast) {
-    ports.show_toast(message, ToastDuration::Short);
   }
 }
 
@@ -58,12 +54,12 @@ void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const 
   }
 }
 
-bool PortsMessagingReady(const MessagingChatPorts& ports) {
-  return ports.snapshot && ports.snapshot().messaging_ready;
+bool PortsMessagingReady(MessagingFacade* facade) {
+  return facade && facade->Snapshot().messaging_ready;
 }
 
-std::string ActiveThreadId(const MessagingChatPorts& ports) {
-  return ports.active_thread_id ? ports.active_thread_id() : std::string{};
+std::string ActiveThreadId(MessagingFacade* facade) {
+  return facade ? facade->ActiveThreadId() : std::string{};
 }
 
 } // namespace
@@ -93,6 +89,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.show_gap_banner = false;
   view_.show_older_history_hint = false;
   view_.show_compromised_banner = false;
+  view_.show_locked_out_banner = false;
   view_.show_psk_setup_banner = false;
   view_.show_psk_import = false;
   view_.psk_has_key = false;
@@ -115,20 +112,20 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.show_peer_link = false;
   view_.show_peer_link_banner = false;
   view_.show_retry_peer_dial = false;
-  if (!messaging_ready_ || !PortsMessagingReady(chat_ports_)) {
+  if (!messaging_ready_ || !PortsMessagingReady(facade_)) {
     return;
   }
-  if (!chat_ports_.get_active_thread) {
+  if (!facade_) {
     return;
   }
-  auto thread = chat_ports_.get_active_thread();
+  auto thread = facade_->GetActiveThread();
   if (!thread || thread->kind != ThreadKind::Direct) {
     return;
   }
-  if (!chat_ports_.get_thread_peer_link) {
+  if (!facade_) {
     return;
   }
-  const ThreadPeerLinkView link = chat_ports_.get_thread_peer_link(thread->id);
+  const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
   view_.show_peer_link = !link.status_label.empty();
   view_.peer_link_status = link.status_label.c_str();
   view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
@@ -140,12 +137,12 @@ void ChatThreadChrome::Update() {
   if (!messaging_ready_) {
     return;
   }
-  if (!chat_ports_.get_active_thread) {
+  if (!facade_) {
     return;
   }
-  if (auto thread = chat_ports_.get_active_thread()) {
+  if (auto thread = facade_->GetActiveThread()) {
     const PeerDisplayLabel label =
-        chat_ports_.resolve_thread_label ? chat_ports_.resolve_thread_label(*thread) : PeerDisplayLabel{};
+        facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
     view_.thread_title = label.title.c_str();
     view_.thread_encrypted = thread->encrypted;
     const Rml::String visual_kind = SessionVisualKind(*thread);
@@ -162,6 +159,7 @@ void ChatThreadChrome::Update() {
     view_.show_gap_banner = false;
     view_.show_older_history_hint = false;
     view_.show_compromised_banner = false;
+    view_.show_locked_out_banner = false;
     view_.show_psk_setup_banner = false;
     view_.show_psk_import = false;
     view_.psk_has_key = false;
@@ -169,10 +167,10 @@ void ChatThreadChrome::Update() {
     view_.psk_fingerprint = "";
     view_.psk_export_b64 = "";
     if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
-      if (chat_ports_.get_chat_target_session_epoch) {
-        if (auto epoch = chat_ports_.get_chat_target_session_epoch(thread->id)) {
-          if (chat_ports_.get_peer_sync_state) {
-            if (auto sync_state = chat_ports_.get_peer_sync_state(thread->id, *epoch)) {
+      if (facade_) {
+        if (auto epoch = facade_->GetChatTargetSessionEpoch(thread->id)) {
+          if (facade_) {
+            if (auto sync_state = facade_->GetPeerSyncState(thread->id, *epoch)) {
               const bool compromised = sync_state->phase == PeerSyncPhase::Compromised;
               view_.show_compromised_banner = compromised;
               view_.compose_disabled = compromised;
@@ -196,23 +194,23 @@ void ChatThreadChrome::Update() {
       }
 
       if (!view_.show_compromised_banner) {
-        if (!PortsMessagingReady(chat_ports_)) {
+        if (!PortsMessagingReady(facade_)) {
           view_.show_psk_setup_banner = true;
           view_.compose_disabled = true;
-        } else if (chat_ports_.get_psk_status) {
-          if (auto status = chat_ports_.get_psk_status(thread->id)) {
+        } else if (facade_) {
+          if (auto status = facade_->GetPskStatus(thread->id)) {
             view_.psk_has_key = status->has_psk;
             view_.psk_verified = status->verified;
             view_.psk_fingerprint = status->fingerprint.c_str();
             view_.show_psk_setup_banner = !status->has_psk || !status->verified;
             if (status->has_psk) {
-              if (chat_ports_.get_psk_export_view) {
-                if (auto exported = chat_ports_.get_psk_export_view(thread->id)) {
+              if (facade_) {
+                if (auto exported = facade_->GetPskExportView(thread->id)) {
                   view_.psk_export_b64 = exported->master_psk_b64.c_str();
                 }
               }
-            } else if (chat_ports_.ensure_psk_generated) {
-              if (auto generated = chat_ports_.ensure_psk_generated(thread->id)) {
+            } else if (facade_) {
+              if (auto generated = facade_->EnsurePskGenerated(thread->id)) {
                 view_.psk_has_key = true;
                 view_.psk_fingerprint = generated->fingerprint.c_str();
                 view_.psk_export_b64 = generated->master_psk_b64.c_str();
@@ -224,16 +222,42 @@ void ChatThreadChrome::Update() {
         }
       }
     } else if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic) {
-      view_.compose_disabled = !PortsMessagingReady(chat_ports_);
+      view_.compose_disabled = !PortsMessagingReady(facade_);
+      if (facade_) {
+        if (auto scope = facade_->GetPublicKeyScope(thread->id)) {
+          if (*scope == PublicKeyScope::LockedOut) {
+            view_.show_locked_out_banner = true;
+            view_.compose_disabled = true;
+          }
+        }
+      }
     } else if (thread->kind == ThreadKind::Group) {
-      view_.compose_disabled = !PortsMessagingReady(chat_ports_);
+      view_.compose_disabled = !PortsMessagingReady(facade_);
+    }
+    // P001: unpaid initiation floor blocks compose (same gate as outbound send).
+    if (!view_.compose_disabled && thread->kind == ThreadKind::Direct &&
+        !thread->peer_identity_value.empty() && facade_ &&
+        facade_->IsInitiationOutboundBlocked(thread->peer_identity_value)) {
+      view_.compose_disabled = true;
+      if (view_.status.empty()) {
+        view_.status = Tr("call.error.payment_unavailable").c_str();
+      }
     }
     if (thread->kind == ThreadKind::Ai) {
       view_.thread_subtitle = "Local assistant";
       view_.draft_placeholder = "Ask anything…";
     } else if (thread->kind == ThreadKind::Direct) {
       if (thread->channel == ThreadChannel::E2ePublic) {
-        view_.thread_subtitle = "Encrypted · easy start";
+        view_.thread_subtitle = Tr("chat.device_lock.subtitle_all").c_str();
+        if (facade_) {
+          if (auto scope = facade_->GetPublicKeyScope(thread->id)) {
+            if (*scope == PublicKeyScope::DeviceSelf || *scope == PublicKeyScope::DevicePair) {
+              view_.thread_subtitle = Tr("chat.device_lock.subtitle_this").c_str();
+            } else if (*scope == PublicKeyScope::LockedOut) {
+              view_.thread_subtitle = Tr("chat.device_lock.subtitle_locked_out").c_str();
+            }
+          }
+        }
         view_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       } else if (thread->channel == ThreadChannel::E2e) {
         view_.thread_subtitle = "Verified private · E2E";
@@ -247,13 +271,13 @@ void ChatThreadChrome::Update() {
       }
     } else {
       std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
-      if (PortsMessagingReady(chat_ports_) && thread->group_id) {
-        if (chat_ports_.list_group_roster) {
-          if (auto roster = chat_ports_.list_group_roster(*thread->group_id)) {
+      if (PortsMessagingReady(facade_) && thread->group_id) {
+        if (facade_) {
+          if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
             roster_label += " · " + std::to_string(roster->size()) + " members";
           }
         }
-        if (chat_ports_.is_owner_unreachable && chat_ports_.is_owner_unreachable(*thread->group_id)) {
+        if (facade_ && facade_->IsOwnerUnreachable(*thread->group_id)) {
           roster_label += " · Owner unreachable";
         }
       }
@@ -290,6 +314,7 @@ void ChatThreadChrome::Update() {
     view_.show_gap_banner = false;
     view_.show_older_history_hint = false;
     view_.show_compromised_banner = false;
+    view_.show_locked_out_banner = false;
     view_.show_psk_setup_banner = false;
     view_.show_psk_import = false;
     view_.psk_has_key = false;
@@ -305,13 +330,13 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
     return false;
   }
   last_peer_link_poll_ = now;
-  if (!messaging_ready_ || !PortsMessagingReady(chat_ports_)) {
+  if (!messaging_ready_ || !PortsMessagingReady(facade_)) {
     return false;
   }
-  if (!chat_ports_.get_active_thread) {
+  if (!facade_) {
     return false;
   }
-  auto thread = chat_ports_.get_active_thread();
+  auto thread = facade_->GetActiveThread();
   if (!thread || thread->kind != ThreadKind::Direct) {
     return false;
   }
@@ -327,15 +352,15 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
 }
 
 void ChatThreadChrome::OnRetryPeerDial() {
-  if (!messaging_ready_ || !PortsMessagingReady(chat_ports_)) {
+  if (!messaging_ready_ || !PortsMessagingReady(facade_)) {
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
-  if (chat_ports_.retry_peer_dial) {
-    chat_ports_.retry_peer_dial(thread_id);
+  if (facade_) {
+    facade_->RetryPeerDial(thread_id);
   }
   UpdatePeerLink();
   DirtyChatHeader();
@@ -345,11 +370,11 @@ void ChatThreadChrome::OnLoadOlderHistory() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
-  if (!chat_ports_.scroll_backfill) {
+  if (!facade_) {
     return;
   }
 
@@ -357,7 +382,7 @@ void ChatThreadChrome::OnLoadOlderHistory() {
   view_.status = "Loading older messages…";
   DirtyChatChrome();
 
-  chat_ports_.scroll_backfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
+  facade_->ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     view_.status = "";
     if (!result) {
@@ -384,11 +409,11 @@ void ChatThreadChrome::OnSyncWithPeer() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
-  if (!chat_ports_.sync_with_peer) {
+  if (!facade_) {
     return;
   }
 
@@ -396,7 +421,7 @@ void ChatThreadChrome::OnSyncWithPeer() {
   view_.status = "Syncing missing messages from peer…";
   DirtyChatChrome();
 
-  chat_ports_.sync_with_peer(thread_id, [this](Roe<ChatSyncResult> result) {
+  facade_->SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
       view_.status = result->ingested > 0 ? "Sync complete." : "Up to date with peer.";
@@ -415,11 +440,11 @@ void ChatThreadChrome::OnRetryGapSync() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
-  if (!chat_ports_.retry_gap_sync) {
+  if (!facade_) {
     return;
   }
 
@@ -427,7 +452,7 @@ void ChatThreadChrome::OnRetryGapSync() {
   view_.status = "Retrying sync for missing messages…";
   DirtyChatChrome();
 
-  chat_ports_.retry_gap_sync(thread_id, [this](Roe<ChatSyncResult> result) {
+  facade_->RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
       if (result->ingested > 0 || result->empty_gap_closed) {
@@ -451,7 +476,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
     return;
   }
   with_secrets_([this]() {
-    const std::string thread_id = ActiveThreadId(chat_ports_);
+    const std::string thread_id = ActiveThreadId(facade_);
     if (thread_id.empty()) {
       return;
     }
@@ -464,10 +489,10 @@ void ChatThreadChrome::OnStartNewSecureChat() {
           if (!ok) {
             return;
           }
-          if (!chat_ports_.start_new_secure_chat) {
+          if (!facade_) {
             return;
           }
-          auto result = chat_ports_.start_new_secure_chat(thread_id);
+          auto result = facade_->StartNewSecureChat(thread_id);
           if (!result) {
             view_.status = result.error().message.c_str();
           } else {
@@ -486,15 +511,15 @@ void ChatThreadChrome::OnPauseIntegrityOnly() {
   if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
-  if (!chat_ports_.pause_integrity_only) {
+  if (!facade_) {
     return;
   }
 
-  if (!chat_ports_.pause_integrity_only(thread_id)) {
+  if (!facade_->PauseIntegrityOnly(thread_id)) {
     return;
   }
   view_.status = "Messaging paused until you rotate the encryption key.";
@@ -510,14 +535,14 @@ void ChatThreadChrome::OnCopyPskKey() {
     return;
   }
   with_secrets_([this]() {
-    const std::string thread_id = ActiveThreadId(chat_ports_);
+    const std::string thread_id = ActiveThreadId(facade_);
     if (thread_id.empty()) {
       return;
     }
-    if (!chat_ports_.ensure_psk_generated) {
+    if (!facade_) {
       return;
     }
-    auto exported = chat_ports_.ensure_psk_generated(thread_id);
+    auto exported = facade_->EnsurePskGenerated(thread_id);
     if (!exported) {
       view_.status = exported.error().message.c_str();
       DirtyChatChrome();
@@ -544,13 +569,13 @@ void ChatThreadChrome::OnImportPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!PortsMessagingReady(chat_ports_)) {
+  if (!PortsMessagingReady(facade_)) {
     if (with_secrets_) {
       with_secrets_([this]() { OnImportPsk(); });
     }
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
@@ -562,8 +587,8 @@ void ChatThreadChrome::OnImportPsk() {
   }
 
   if (pasted.find('{') != std::string::npos) {
-    if (chat_ports_.import_psk_bundle_json) {
-      if (auto imported = chat_ports_.import_psk_bundle_json(thread_id, pasted); !imported) {
+    if (facade_) {
+      if (auto imported = facade_->ImportPskBundleJson(thread_id, pasted); !imported) {
         view_.status = imported.error().message.c_str();
       } else {
         view_.psk_import_text = "";
@@ -571,8 +596,8 @@ void ChatThreadChrome::OnImportPsk() {
         view_.status = "Encryption key installed. Verify the fingerprint before sending.";
       }
     }
-  } else if (chat_ports_.import_psk_raw_base64) {
-    if (auto imported = chat_ports_.import_psk_raw_base64(thread_id, pasted); !imported) {
+  } else if (facade_) {
+    if (auto imported = facade_->ImportPskRawBase64(thread_id, pasted); !imported) {
       view_.status = imported.error().message.c_str();
     } else {
       view_.psk_import_text = "";
@@ -591,13 +616,13 @@ void ChatThreadChrome::OnVerifyPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!PortsMessagingReady(chat_ports_)) {
+  if (!PortsMessagingReady(facade_)) {
     if (with_secrets_) {
       with_secrets_([this]() { OnVerifyPsk(); });
     }
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
@@ -610,10 +635,10 @@ void ChatThreadChrome::OnVerifyPsk() {
         if (!confirmed || !checked) {
           return;
         }
-        if (!chat_ports_.mark_psk_verified) {
+        if (!facade_) {
           return;
         }
-        auto result = chat_ports_.mark_psk_verified(thread_id);
+        auto result = facade_->MarkPskVerified(thread_id);
         if (!result) {
           view_.status = result.error().message.c_str();
         } else {
@@ -631,13 +656,13 @@ void ChatThreadChrome::OnRotatePskExport() {
   if (!messaging_ready_) {
     return;
   }
-  if (!PortsMessagingReady(chat_ports_)) {
+  if (!PortsMessagingReady(facade_)) {
     if (with_secrets_) {
       with_secrets_([this]() { OnRotatePskExport(); });
     }
     return;
   }
-  const std::string thread_id = ActiveThreadId(chat_ports_);
+  const std::string thread_id = ActiveThreadId(facade_);
   if (thread_id.empty()) {
     return;
   }
@@ -650,10 +675,10 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (!ok) {
           return;
         }
-        if (!chat_ports_.rotate_psk_and_export_bundle) {
+        if (!facade_) {
           return;
         }
-        auto bundle = chat_ports_.rotate_psk_and_export_bundle(thread_id);
+        auto bundle = facade_->RotatePskAndExportBundle(thread_id);
         if (!bundle) {
           view_.status = bundle.error().message.c_str();
           DirtyChatChrome();

@@ -11,7 +11,7 @@
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
-**Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](../../projects/chat-storage-and-memory/DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
+**Identity (D079 / M009–M010):** Wire **`sender_contact_id`** is the sender **Account ID** (`peer_identity_kind = account`, value `account:…`) — not local `Contact.id`, not `relay:`. Brief inbox/API auth, `sender_relay_id`, recipient, and stream parties stay **`relay:`**.
 
 ---
 
@@ -162,17 +162,17 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 
 ### `Route`
 
-| `kind` | Fields | Maturity |
-|--------|--------|----------|
-| `direct` | `channel`: `e2e` \| `e2e_public` | **`[v1]`** private; **`[post-v1]`** public |
-| `group` | `group_id`: string | **`[v1]`** (Bucket C) |
+| `kind` | Fields |
+|--------|--------|
+| `direct` | `channel`: `e2e` \| `e2e_public` |
+| `group` | `group_id`: string |
 
 ### `body.e2e` (direct tiers — D090, E024)
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — hybrid KEM encapsulation for recipient to derive `master_psk` when local PSK missing (E024). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
 
 ### `body.e2e` (group tier — D095, E022)
 
@@ -199,13 +199,13 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | | var | `text` — **LenUtf8** |
 | | var | **Type tail** — inline fields below (not a nested length blob) |
 
-| `content_type` | Value | Maturity |
-|----------------|-------|----------|
-| `text` | `0` | **`[v1]`** |
-| `system` | `1` | **`[v1]`** |
-| `annotation` | `2` | **`[post-v1]`** |
-| `contact_card` | `3` | **`[post-v1]`** |
-| `crypto_tx` | `4` | **`[post-v1]`** |
+| `content_type` | Value |
+|----------------|-------|
+| `text` | `0` |
+| `system` | `1` |
+| `annotation` | `2` |
+| `contact_card` | `3` |
+| `crypto_tx` | `4` |
 
 **Rules:** reject unknown `content_type` on relay ingest (D050). Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
@@ -228,7 +228,30 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 
 **Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`. Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
 
-**`[post-v1]`** types: documented sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
+**Public device-lock `control_type=psk_rotate` (E027 / D101)** — `e2e_public` only. `detail` is JSON:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `rotation_id` | string | UUID; concurrent winner = lexicographically greater |
+| `new_epoch` | number | u32 `session_epoch` after adopt |
+| `wrap_kind` | string | `account_kem` \| `thread_kem` |
+| `thread_kem_pk_b64` | string | Initiator conversation ML-KEM-768 public key |
+| `key_init_hash` | string | BLAKE2b-256 of raw `key_init` bytes, lowercase hex |
+
+AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b64`.
+
+**`content_type = annotation`:**
+
+| Field | Encoding |
+|-------|----------|
+| `sub_version` | `u8` = **`1`** |
+| `annotation_type` | **LenUtf8** — `reaction` (add) or `reaction_clear` (remove); other types reserved |
+| `target_message_id` | **LenUtf8** (UUID of target message) |
+| `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
+
+Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+
+Rich types: further sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
 
 ### Frozen vectors (BLAKE2b-256 of `0x01` ‖ bytes)
 
@@ -336,16 +359,16 @@ Stream-shaped relay response:
 
 Chat-shaped response (libp2p / documentation):
 
-  "peer_identity_kind": "relay_user",
-  "peer_identity_value": "relay:peer",
-  "channel": "e2e",
-  "session_epoch": 1,
-  "messages": [],
-  "has_more": false,
-  "cursor": {
-    "next_min_sender_seq": null,
-    "next_max_sender_seq": null
-  }
+ "peer_identity_kind": "relay_user",
+ "peer_identity_value": "relay:peer",
+ "channel": "e2e",
+ "session_epoch": 1,
+ "messages": [],
+ "has_more": false,
+ "cursor": {
+ "next_min_sender_seq": null,
+ "next_max_sender_seq": null
+ }
 }
 ```
 

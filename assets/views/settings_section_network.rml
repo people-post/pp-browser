@@ -1,0 +1,102 @@
+      <div class="settings-section stack">
+        <div class="settings-toggle-row row" data-if="show_node_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.help_network}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="node_enabled == 'on'"
+                  data-event-click="toggle_node_enabled()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_node_toggle">{{i18n:settings.network.help_network_hint}}</p>
+
+        <div class="settings-subcard stack" data-if="show_connection_card">
+          <p class="settings-label">{{i18n:settings.network.connection.title}}</p>
+          <p class="text"><span class="settings-chip" data-rml="reachability_status_label"></span></p>
+          <p class="text muted" data-rml="reachability_summary"></p>
+          <div class="settings-actions row">
+            <button class="btn btn-secondary" type="button" data-event-click="retest_reachability()">
+              {{i18n:settings.network.connection.retest}}
+            </button>
+            <button class="btn btn-secondary" type="button" data-event-click="try_upnp_port()">
+              {{i18n:settings.network.connection.try_upnp}}
+            </button>
+            <button class="btn btn-secondary" type="button" data-event-click="show_reachability_help()">
+              {{i18n:settings.network.connection.learn}}
+            </button>
+          </div>
+          <div class="stack" data-if="show_reachability_help && reachability_help_kind == 'outbound_only'">
+            <p class="text muted">{{i18n:settings.network.help.outbound_only}}</p>
+            <p class="text muted">{{i18n:settings.network.help.skip_relay}}</p>
+            <button class="btn btn-secondary" type="button" data-event-click="dismiss_reachability_help()">
+              {{i18n:settings.network.help.ack_relay}}
+            </button>
+          </div>
+          <div class="stack" data-if="show_reachability_help && reachability_help_kind == 'blocked'">
+            <p class="text muted">{{i18n:settings.network.help.blocked}}</p>
+            <p class="text muted">{{i18n:settings.network.help.skip_relay}}</p>
+            <button class="btn btn-secondary" type="button" data-event-click="dismiss_reachability_help()">
+              {{i18n:settings.network.help.ack_relay}}
+            </button>
+          </div>
+          <div class="stack" data-if="show_reachability_help && reachability_help_kind == 'reachable'">
+            <p class="text muted">{{i18n:settings.network.help.reachable}}</p>
+            <button class="btn btn-secondary" type="button" data-event-click="dismiss_reachability_help()">
+              {{i18n:common.not_now}}
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-toggle-row row" data-if="show_circuit_relay_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.circuit_relay}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="circuit_relay_enabled == 'on'"
+                  data-event-click="toggle_circuit_relay()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
+
+        <div class="settings-toggle-row row" data-if="show_media_relay_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.media_relay}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="media_relay_enabled == 'on'"
+                  data-event-click="toggle_media_relay()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
+
+        <div class="settings-toggle-row row" data-if="show_prefer_contacts_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.prefer_contacts}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"
+                  data-event-click="toggle_prefer_contacts()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
+
+        <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
+          <span class="settings-label">{{i18n:settings.network.listen}}</span>
+          <p class="text muted" data-rml="libp2p_listen_multiaddr"></p>
+        </label>
+        <p class="text muted settings-help" data-if="libp2p_status_message != ''"
+           data-rml="libp2p_status_message"></p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.relay}}</span>
+          <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.directory}}</span>
+          <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.registration}}</span>
+          <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+

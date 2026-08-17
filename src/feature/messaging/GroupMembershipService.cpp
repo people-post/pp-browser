@@ -30,10 +30,10 @@ Roe<std::string> GroupMembershipService::LocalRelayIdentity() const {
   if (!id) {
     return id.error();
   }
-  if (id->relay_user_id.empty()) {
-    return Error("Local relay identity unavailable");
+  if (id->account_id.empty()) {
+    return Error("Local account identity unavailable");
   }
-  return id->relay_user_id;
+  return id->account_id;
 }
 
 Roe<std::string> GroupMembershipService::ResolveRelayIdentity(const std::string& contact_id) const {
@@ -46,7 +46,7 @@ Roe<std::string> GroupMembershipService::ResolveRelayIdentity(const std::string&
   }
   const DirectChatTarget target = DirectChatTargetFromContact(**contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
-    return Error("Contact has no routable relay identity");
+    return Error("Contact has no Account ID");
   }
   return target.peer_identity_value;
 }
@@ -222,13 +222,13 @@ Roe<void> GroupMembershipService::SendInviteResponseDirectMessage(const std::str
                                                                   const std::string& group_id,
                                                                   const GroupMembershipControlType response_type) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = inviter_identity;
-  if (auto contact = contacts_.FindByIdentity(inviter_identity, ContactIdKind::RelayUser)) {
+  if (auto contact = contacts_.FindByIdentity(inviter_identity, ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -387,7 +387,7 @@ Roe<void> GroupMembershipService::ResolveInviteCard(const std::string& inviter_i
                                                     const std::string& invite_nonce, const InviteStatus status,
                                                     const std::string& status_text) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
   auto thread = store_.FindDirectThread(direct_target);
@@ -423,13 +423,13 @@ Roe<void> GroupMembershipService::SendMembershipDirectMessage(const std::string&
                                                               const std::string& detail_json,
                                                               const std::string& display) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::RelayUser)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -755,12 +755,12 @@ Roe<Thread> GroupMembershipService::OpenOwnerDirectMessage(const std::string& ow
     return Error("owner_identity required");
   }
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = owner_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
   std::string contact_id;
   std::string title = owner_identity;
-  if (auto contact = contacts_.FindByIdentity(owner_identity, ContactIdKind::RelayUser)) {
+  if (auto contact = contacts_.FindByIdentity(owner_identity, ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;

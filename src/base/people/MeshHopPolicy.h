@@ -108,8 +108,11 @@ std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> 
                                                   const std::string& local_peer_id,
                                                   const std::string& local_multiaddr = {});
 
-/** PeerId from a contact row (ContactIdKind::PeerId or multiaddr /p2p/). */
+/** Preferred PeerId from a contact (newest directory endpoint, else first PeerId / multiaddr). */
 std::string PeerIdFromContact(const Contact& contact);
+
+/** All device Peer IDs on a contact (directory endpoints + PeerId ids + multiaddrs). */
+std::vector<std::string> PeerIdsFromContact(const Contact& contact);
 
 /** True if peer_id appears as ContactIdKind::PeerId on any contact. */
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id);

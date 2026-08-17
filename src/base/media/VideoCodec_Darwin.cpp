@@ -4,6 +4,7 @@
 
 #if defined(__APPLE__)
 
+#include <TargetConditionals.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMedia/CoreMedia.h>
 #include <CoreVideo/CoreVideo.h>
@@ -289,8 +290,18 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
 
   CFMutableDictionaryRef encoder_spec = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  // On iOS this key is only public from 17.4; older OS still HW-encodes by default.
+  // Without a guard, -Wunguarded-availability-new fails when targeting iOS < 17.4.
+#if TARGET_OS_IPHONE
+  if (__builtin_available(iOS 17.4, *)) {
+    CFDictionarySetValue(encoder_spec,
+                         kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
+                         kCFBooleanTrue);
+  }
+#else
   CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
                        kCFBooleanTrue);
+#endif
 #if defined(kVTVideoEncoderSpecification_EnableLowLatencyRateControl)
   // Prefer 1-in-1-out HW encode so CompleteFrames does not flush multi-frame Annex-B blobs
   // that break Linux's VA-API slice decoder (Android MediaCodec tolerates them).
@@ -674,7 +685,7 @@ void VideoToolboxVideoCodec::DecompressionOutputCallback(void* decompression_out
 
 } // namespace
 
-std::unique_ptr<IVideoCodec> CreateDarwinVideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   // Cheap capability probe mirroring the Win32 Create*-time failure
   // contract: if this device cannot stand up an H264 compression session at
   // all, fall back to the unavailable stub instead of returning a codec

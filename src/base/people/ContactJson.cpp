@@ -6,6 +6,8 @@ namespace pbr {
 
 std::string ContactIdKindToString(const ContactIdKind kind) {
   switch (kind) {
+  case ContactIdKind::Account:
+    return "account";
   case ContactIdKind::RelayUser:
     return "relay_user";
   case ContactIdKind::PeerId:
@@ -15,10 +17,13 @@ std::string ContactIdKindToString(const ContactIdKind kind) {
   case ContactIdKind::Custom:
     return "custom";
   }
-  return "relay_user";
+  return "account";
 }
 
 ContactIdKind ContactIdKindFromString(const std::string& value) {
+  if (value == "account") {
+    return ContactIdKind::Account;
+  }
   if (value == "peer_id") {
     return ContactIdKind::PeerId;
   }
@@ -28,7 +33,11 @@ ContactIdKind ContactIdKindFromString(const std::string& value) {
   if (value == "custom") {
     return ContactIdKind::Custom;
   }
-  return ContactIdKind::RelayUser;
+  if (value == "relay_user") {
+    return ContactIdKind::RelayUser;
+  }
+  // Unknown kinds must not silently become relay_user (M009).
+  return ContactIdKind::Custom;
 }
 
 std::string TrustLevelToString(const TrustLevel level) {
@@ -58,6 +67,15 @@ namespace {
 bool HasRelayUserId(const std::vector<ContactId>& ids, const std::string& relay_user_id) {
   for (const ContactId& id : ids) {
     if (id.kind == ContactIdKind::RelayUser && id.value == relay_user_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasAccountId(const std::vector<ContactId>& ids, const std::string& account_id) {
+  for (const ContactId& id : ids) {
+    if (id.kind == ContactIdKind::Account && id.value == account_id) {
       return true;
     }
   }
@@ -124,6 +142,40 @@ void ParseMultiaddrsArray(const nlohmann::json& json, std::vector<std::string>& 
   }
 }
 
+nlohmann::json EndpointsToJson(const std::vector<DirectoryEndpoint>& endpoints) {
+  nlohmann::json out = nlohmann::json::array();
+  for (const DirectoryEndpoint& endpoint : endpoints) {
+    out.push_back({{"peer_id", endpoint.peer_id},
+                   {"multiaddrs", MultiaddrsToJson(endpoint.multiaddrs)},
+                   {"updated_at", endpoint.updated_at}});
+  }
+  return out;
+}
+
+void ParseEndpointsArray(const nlohmann::json& json, std::vector<DirectoryEndpoint>& endpoints) {
+  if (!json.is_array()) {
+    return;
+  }
+  for (const auto& item : json) {
+    if (!item.is_object()) {
+      continue;
+    }
+    DirectoryEndpoint endpoint;
+    if (item.contains("peer_id") && item["peer_id"].is_string()) {
+      endpoint.peer_id = item["peer_id"].get<std::string>();
+    }
+    if (item.contains("multiaddrs")) {
+      ParseMultiaddrsArray(item["multiaddrs"], endpoint.multiaddrs);
+    }
+    if (item.contains("updated_at") && item["updated_at"].is_number_integer()) {
+      endpoint.updated_at = item["updated_at"].get<int64_t>();
+    }
+    if (!endpoint.peer_id.empty()) {
+      endpoints.push_back(std::move(endpoint));
+    }
+  }
+}
+
 } // namespace
 
 nlohmann::json ContactToJson(const Contact& contact) {
@@ -131,6 +183,7 @@ nlohmann::json ContactToJson(const Contact& contact) {
   SyncContactMirrors(mirrored);
   nlohmann::json remote = {{"nickname", mirrored.remote.nickname},
                            {"ids", IdsToJson(mirrored.remote.ids)},
+                           {"endpoints", EndpointsToJson(mirrored.remote.endpoints)},
                            {"multiaddrs", MultiaddrsToJson(mirrored.remote.multiaddrs)}};
   if (mirrored.remote.fetched_at > 0) {
     remote["fetched_at"] = mirrored.remote.fetched_at;
@@ -162,6 +215,9 @@ Contact ContactFromJson(const nlohmann::json& json) {
         contact.remote.nickname = remote["nickname"].get<std::string>();
       }
       AppendContactIdsFromJson(remote, contact.remote.ids);
+      if (remote.contains("endpoints")) {
+        ParseEndpointsArray(remote["endpoints"], contact.remote.endpoints);
+      }
       if (remote.contains("multiaddrs")) {
         ParseMultiaddrsArray(remote["multiaddrs"], contact.remote.multiaddrs);
       }
@@ -218,7 +274,11 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
                         {"display_name", hit.display_name},
                         {"nickname", hit.nickname},
                         {"ids", IdsToJson(hit.ids)},
-                        {"multiaddrs", MultiaddrsToJson(hit.multiaddrs)}};
+                        {"endpoints", EndpointsToJson(hit.endpoints)},
+                        {"initiation_floor", hit.initiation_floor}};
+  if (hit.account_id && !hit.account_id->empty()) {
+    out["account_id"] = *hit.account_id;
+  }
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
     out["signing_public_key_b64"] = *hit.signing_public_key_b64;
   }
@@ -240,6 +300,19 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
     hit.nickname = json["nickname"].get<std::string>();
   }
   AppendContactIdsFromJson(json, hit.ids);
+  if (json.contains("account_id") && json["account_id"].is_string()) {
+    const std::string account_id = json["account_id"].get<std::string>();
+    if (!account_id.empty()) {
+      hit.account_id = account_id;
+      if (!HasAccountId(hit.ids, account_id)) {
+        // Insert Account as primary; demote prior primary flags.
+        for (ContactId& id : hit.ids) {
+          id.primary = false;
+        }
+        hit.ids.insert(hit.ids.begin(), {ContactIdKind::Account, account_id, true});
+      }
+    }
+  }
   if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
     const std::string relay_user_id = json["relay_user_id"].get<std::string>();
     if (!relay_user_id.empty()) {
@@ -247,7 +320,7 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
         hit.hit_id = relay_user_id;
       }
       if (!HasRelayUserId(hit.ids, relay_user_id)) {
-        hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
+        hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, hit.ids.empty()});
       }
     }
   }
@@ -260,14 +333,12 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
     hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
   }
-  if (json.contains("peer_id") && json["peer_id"].is_string()) {
-    const std::string peer_id = json["peer_id"].get<std::string>();
-    if (!peer_id.empty() && !HasPeerId(hit.ids, peer_id)) {
-      hit.ids.push_back({ContactIdKind::PeerId, peer_id, false});
-    }
+  if (json.contains("endpoints")) {
+    ParseEndpointsArray(json["endpoints"], hit.endpoints);
   }
-  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
-    ParseMultiaddrsArray(json["multiaddrs"], hit.multiaddrs);
+  FlattenDirectoryEndpoints(hit.ids, hit.multiaddrs, hit.endpoints);
+  if (json.contains("initiation_floor") && json["initiation_floor"].is_number_integer()) {
+    hit.initiation_floor = json["initiation_floor"].get<int64_t>();
   }
   return hit;
 }

@@ -6,9 +6,12 @@
 
 namespace pbr {
 
+class ProfileSecretsService;
+
 class Bootstrap {
 public:
-  static Roe<BootstrapResult> Run(const BootstrapOptions& options, MessagingHub& messaging);
+  static Roe<BootstrapResult> Run(const BootstrapOptions& options, MessagingHub& messaging,
+                                  ProfileSecretsService& secrets);
 };
 
 } // namespace pbr

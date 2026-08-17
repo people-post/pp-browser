@@ -1,6 +1,6 @@
-#include "libp2p/integration/host/CallMediaFrameCrypto.h"
-#include "libp2p/integration/host/LanMdnsDiscovery.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/CallMediaFrameCrypto.h"
+#include "base/p2p/LanMdnsDiscovery.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 

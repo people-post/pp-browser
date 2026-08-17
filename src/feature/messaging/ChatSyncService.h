@@ -12,6 +12,7 @@
 
 namespace pbr {
 
+class ContactsStore;
 class InboxController;
 
 struct ChatSyncResult {
@@ -22,7 +23,7 @@ struct ChatSyncResult {
 /** D058 unified E2E backfill — peer-direct (D060) then relay (D027). */
 class ChatSyncService {
 public:
-  ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
+  ChatSyncService(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts, IRelayClient* relay,
                   RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                   IChatHistoryPeerClient* peer_client = nullptr);
 
@@ -56,6 +57,7 @@ private:
 
   IThreadStore& store_;
   IdentityStore& identity_;
+  ContactsStore& contacts_;
   IRelayClient* relay_ = nullptr;
   IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;

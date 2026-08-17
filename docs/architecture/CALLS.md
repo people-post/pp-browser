@@ -264,6 +264,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL | `base/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `base/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
+| Call stack ownership (CSM + lifecycle + media bridge + CallMediaDirect + relay/dial/circuit clients) | `feature/messaging` | **`CallStack`** | Owns call-media unique_ptrs; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds it |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Thin orchestrator |
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
 | 1:1 libp2p dial + connect-fail / Retry | `feature/messaging` | **`CallLibp2pMediaBridge`** | Primary 1:1 media path |
@@ -271,7 +272,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `base/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
-| Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
+| Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
 
@@ -279,8 +280,8 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 
 ## Major systems (relationships)
 
-### MessagingHub
-Owns `CallSessionManager` + `CallLifecycle`, wires `MediaRelayDeps` (relay service, peer sessions, bootstrap seeds), executes N025 listen from lifecycle desire, and routes inbound call controls via `RelayReceivePipeline` → `ApplyInboundControl`.
+### MessagingHub / CallStack
+`CallStack` (feature/messaging) owns the call-media objects — `CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`, `CallSessionManager`, `CallLifecycle`, `CallLibp2pMediaBridge`, `CallMediaDirectService`, `MediaRelayServiceClient`, `PeerSessionDialRegistry`, `CircuitHopReachClient` — plus `WireMediaRelayDeps`, lifecycle binding, N025 listen desire, and the call-scoped reachability helpers (`TryEnsureCallMediaReachable` / `TryEnsureCircuitHopReachable`). `MessagingHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `OnMeshServicesStarted`; `StopLibp2p` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → `mesh_->Stop()` → `FinishMeshStop`.
 
 ### CallSessionManager (façade)
 **Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
@@ -310,7 +311,7 @@ Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attach
 
 **Guest duplex recovery:** if a phone’s media-relay client duplex dies mid-call (`CloseSession` / hop `CleanupParticipant`), `MediaRelayService` notifies topology; guests re-`AcceptAndAttach` + re-subscribe without restarting capture (keeps publisher `stream_id`). Logs: `DuplexFrameSession CloseSession reason=…`, `client duplex lost`, `Guest SFU duplex lost — reattach`.
 
-**1:1 → SFU track hygiene:** inbound call-media must map `remotePeerId` → that peer’s `relay:` via in-memory `peer_id_to_relay_` (from Invite/Accept `libp2p_peer_id` and/or listen `/p2p/`), optional contact upsert, and bridge `NotePeerIdRelayMapping` — never `P2pPeerIdentityForCall`, never hash bare PeerId. Works for **non-contact** call mates (map does not require a contact row). `BeginSession` / deferred `on_audio` rebinds when relay identity arrives after hello. After SoftMigrate attach, 1:1 `on_audio` is ignored; `ReleaseDirect` must **not** clear live media_relay tracks. Engine drops `stream_id==1` (empty identity).
+**1:1 → SFU track hygiene:** inbound call-media must map `remotePeerId` → that peer’s **Account ID** via in-memory `peer_id_to_relay_` (from Invite/Accept `libp2p_peer_id` and/or listen `/p2p/`), optional contact upsert, and bridge `NotePeerIdRelayMapping` — never `P2pPeerIdentityForCall`, never hash bare PeerId. Works for **non-contact** call mates (map does not require a contact row). `BeginSession` / deferred `on_audio` rebinds when Account identity arrives after hello. After SoftMigrate attach, 1:1 `on_audio` is ignored; `ReleaseDirect` must **not** clear live media_relay tracks. Engine drops `stream_id==1` (empty identity).
 
 **SoftMigrate 1:1 close race:** PreferLocal `ReleaseDirect` closes the call-media stream while capture stays up. Guests must not treat `read_eof` / `stream closed` as `ConnectFailed` when media is still active, SFU attach is expected (`Joined|Ringing|Invited` ≥ 3 / `sfu_hint` / attach-wait), or attach is already live. Hop side delays `ReleaseDirect` (~3.5s) and re-fans `CallSfuAttach` immediately before teardown (PreferLocal hop only — guests must not announce as hop owner).
 
@@ -431,8 +432,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/messaging/CallMediaHost.h` | Narrow host façade for libp2p media side effects |
 | `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
-| `src/libp2p/integration/host/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
-| `src/libp2p/integration/host/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
+| `src/base/p2p/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
+| `src/base/p2p/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
@@ -446,7 +447,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
 | `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
-| `src/libp2p/integration/host/MediaRelayService.*` | Blind SFU |
+| `src/base/p2p/MediaRelayService.*` | Blind SFU |
 
 ---
 

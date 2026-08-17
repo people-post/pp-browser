@@ -81,7 +81,7 @@ public:
     std::string detail_json;
   };
 
-  std::string local_identity = "relay:B";
+  std::string local_identity = "account:B";
   std::vector<std::string> leave_calls;
   std::vector<FanOut> fanouts;
   std::vector<Direct> directs;
@@ -141,6 +141,8 @@ public:
     q.ok = true;
     q.quote_id = "quote-" + std::to_string(quote_calls);
     q.a_up_bps = 64000;
+    q.rate = quote_rate;
+    q.pricing_mode = quote_rate > 0 ? "paid" : "volunteer";
     return q;
   }
 
@@ -204,6 +206,7 @@ public:
   std::string local_peer_id = "12D3KooWLocal";
   bool started = true;
   bool quote_ok = true;
+  double quote_rate = 0.0;
   bool attach_ok = true;
   bool local_hop_ok = true;
   std::string quote_error = "media-relay stream open failed: protocol not supported";
@@ -294,8 +297,8 @@ protected:
 
 TEST_F(CallTopologyControllerTest, LocalJoinedWithoutHintDoesNotQuote) {
   const std::string call_id = "call:wait";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:C";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:C";
 
   auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint);
   ASSERT_TRUE(ok);
@@ -305,8 +308,8 @@ TEST_F(CallTopologyControllerTest, LocalJoinedWithoutHintDoesNotQuote) {
 
 TEST_F(CallTopologyControllerTest, MidCallNonInitiatorDoesNotQuote) {
   const std::string call_id = "call:mid-b";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:B";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
 
   auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_TRUE(ok);
@@ -317,8 +320,8 @@ TEST_F(CallTopologyControllerTest, MidCallNonInitiatorDoesNotQuote) {
 TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
   const std::string call_id = "call:mid";
   // A earliest (sticky initiator / payer); picks on roster or accept.
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   // Exercise remote hop path (PreferLocal would short-circuit to AttachAsLocalHop).
   relay_->started = false;
 
@@ -339,8 +342,8 @@ TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
 
 TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   const std::string call_id = "call:fail";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = false;
   relay_->quote_ok = false;
   relay_->quote_error = "media-relay stream open failed: protocol not supported";
@@ -352,17 +355,35 @@ TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   EXPECT_TRUE(host_->fanouts.empty());
 }
 
+TEST_F(CallTopologyControllerTest, PaidQuoteBlockedWithoutPaymentRails) {
+  const std::string call_id = "call:paid";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
+  relay_->started = false;
+  relay_->quote_rate = 1.25;
+
+  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  ASSERT_FALSE(ok);
+  EXPECT_GE(relay_->quote_calls, 1);
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_TRUE(host_->fanouts.empty());
+  // SoftMigrateNoHopMessage: all payment_unavailable → dedicated media copy (key or localized).
+  EXPECT_TRUE(ok.error().message.find("payment_unavailable_media") != std::string::npos ||
+              ok.error().message.find("require payment") != std::string::npos)
+      << ok.error().message;
+}
+
 TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
   const std::string call_id = "call:local-hop";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = true;
 
   // In-call contact B is dialable — PreferInCall would pick B without PreferLocal.
   Contact b;
   b.id = "contact-b";
   b.display_name = "B";
-  b.ids = {{ContactIdKind::RelayUser, "relay:B", true},
+  b.ids = {{ContactIdKind::Account, "account:B", true},
            {ContactIdKind::PeerId, "12D3KooWInCallB", false}};
   b.multiaddrs = {"/ip4/10.0.0.2/tcp/1/p2p/12D3KooWInCallB"};
   PromoteFlatFieldsToNested(b);
@@ -395,8 +416,8 @@ TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
 
 TEST_F(CallTopologyControllerTest, EphemeralStartedDoesNotPreferLocalWithoutFlag) {
   const std::string call_id = "call:ephemeral-no-local";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = true; // mobile ephemeral also IsStarted
 
   CallTopologyController::MediaRelayDeps deps;
@@ -442,8 +463,8 @@ TEST_F(CallTopologyControllerTest, AttachSelfHopUsesLocalPublisher) {
 
 TEST_F(CallTopologyControllerTest, IceRecoverNonCoordinatorDoesNotQuote) {
   const std::string call_id = "call:ice";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:B"; // coordinator is relay:A
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B"; // coordinator is account:A
 
   auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover);
   ASSERT_TRUE(ok);
@@ -452,8 +473,8 @@ TEST_F(CallTopologyControllerTest, IceRecoverNonCoordinatorDoesNotQuote) {
 
 TEST_F(CallTopologyControllerTest, HopHintKeepsPreferLocalAndRefusesGuest) {
   const std::string call_id = "call:keep-local";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = true;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -473,7 +494,7 @@ TEST_F(CallTopologyControllerTest, HopHintKeepsPreferLocalAndRefusesGuest) {
 
   CallSfuAttachFailedDetail fail;
   fail.call_id = call_id;
-  fail.identity = "relay:C";
+  fail.identity = "account:C";
   fail.failed_hop_peer_id = relay_->local_peer_id;
   fail.error = "quote timed out";
   fail.preferred_hop_peer_ids = {"12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
@@ -484,7 +505,7 @@ TEST_F(CallTopologyControllerTest, HopHintKeepsPreferLocalAndRefusesGuest) {
   EXPECT_TRUE(relay_->IsLocalHopAttached());
   bool refused = false;
   for (const auto& d : host_->directs) {
-    if (d.type == CallControlType::CallHopRefuse && d.peer_identity == "relay:C") {
+    if (d.type == CallControlType::CallHopRefuse && d.peer_identity == "account:C") {
       refused = true;
     }
   }
@@ -495,8 +516,8 @@ TEST_F(CallTopologyControllerTest, PreferLocalNodePicksEvenWhenNotInitiator) {
   // Dogfood: sticky initiator wrongly = phone; durable Node must still PreferLocal SoftMigrate.
   const std::string call_id = "call:prefer-local-override";
   // B earliest (wrong initiator); A is PreferLocal Node.
-  SeedJoinedCall(call_id, {"relay:B", "relay:A", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:B", "account:A", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = true;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -516,8 +537,8 @@ TEST_F(CallTopologyControllerTest, PreferLocalNodePicksEvenWhenNotInitiator) {
 
 TEST_F(CallTopologyControllerTest, PhoneDefersPickHopWhenDurableMediaRelayListed) {
   const std::string call_id = "call:phone-defer";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A"; // earliest = initiator, but phone
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A"; // earliest = initiator, but phone
   relay_->started = false;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -542,8 +563,8 @@ TEST_F(CallTopologyControllerTest, PhoneDefersPickHopWhenDurableMediaRelayListed
 
 TEST_F(CallTopologyControllerTest, SoftMigrateRepickDoesNotDetachPreferLocal) {
   const std::string call_id = "call:repick-keep";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:A";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
   relay_->started = true;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -574,10 +595,10 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   AppRuntime::PauseWorkers();
 
   const std::string call_id = "call:defer-inbound";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:B"; // non-initiator → WaitForAttach
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B"; // non-initiator → WaitForAttach
 
-  ASSERT_TRUE(topo_->OnRemoteAcceptJoined(call_id, 3, "relay:C"));
+  ASSERT_TRUE(topo_->OnRemoteAcceptJoined(call_id, 3, "account:C"));
   EXPECT_TRUE(topo_->IsSoftMigrateInFlight());
 
   CallSfuAttachDetail attach;
@@ -614,8 +635,8 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
   // Samsung dogfood: SyncSfuSubscriptions peers=1 (roster missing Moto) while Moto TX'd.
   // Peer CallSfuAttach publisher_stream_id must still Subscribe.
   const std::string call_id = "call:announce-sub";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B"}, 1000); // only 2 Joined locally
-  host_->local_identity = "relay:B";
+  SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000); // only 2 Joined locally
+  host_->local_identity = "account:B";
   relay_->started = true;
 
   CallTopologyController::MediaRelayDeps deps;
@@ -629,11 +650,11 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
   self.call_id = call_id;
   self.hop_peer_id = relay_->local_peer_id;
   self.hop_multiaddr = "/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
-  self.publisher_stream_id = PublisherStreamIdForIdentity("relay:A");
+  self.publisher_stream_id = PublisherStreamIdForIdentity("account:A");
   ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, self)) << "self hop attach";
   ASSERT_TRUE(topo_->IsSfuAttached());
 
-  const uint32_t moto_stream = PublisherStreamIdForIdentity("relay:xaug44GAhFLCTTHR");
+  const uint32_t moto_stream = PublisherStreamIdForIdentity("account:xaug44GAhFLCTTHR");
   CallSfuAttachDetail announce;
   announce.call_id = call_id;
   announce.hop_peer_id = relay_->local_peer_id;
@@ -657,8 +678,8 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:guest-reattach";
-  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
-  host_->local_identity = "relay:B";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
   relay_->started = true;
   relay_->local_peer_id = "12D3KooWLocalGuest";
 

@@ -59,6 +59,33 @@ TEST_F(AtRestCryptoTest, FileCipherRoundTripAndAadBind) {
   EXPECT_FALSE(static_cast<bool>(fail));
 }
 
+TEST_F(AtRestCryptoTest, CreateWithDekRoundTrip) {
+  const auto vault_path = (dir_ / "vault-link.bin").string();
+  ByteVector dek(kDataEncryptionKeySize, 0x7e);
+  DataKeyVault vault(vault_path, "profile-link");
+  ASSERT_TRUE(vault.CreateWithDek("link-pin", dek));
+  EXPECT_EQ(*vault.Dek(), dek);
+
+  DataKeyVault reopened(vault_path, "profile-link");
+  ASSERT_TRUE(reopened.Unlock("link-pin"));
+  EXPECT_EQ(*reopened.Dek(), dek);
+}
+
+TEST_F(AtRestCryptoTest, ReplaceWithDekOverwritesExistingVault) {
+  const auto vault_path = (dir_ / "vault-replace.bin").string();
+  ByteVector local_dek(kDataEncryptionKeySize, 0x11);
+  ByteVector shared_dek(kDataEncryptionKeySize, 0x22);
+  DataKeyVault vault(vault_path, "profile-replace");
+  ASSERT_TRUE(vault.CreateWithDek("device-pin", local_dek));
+  ASSERT_TRUE(vault.ReplaceWithDek("device-pin", shared_dek));
+  EXPECT_EQ(*vault.Dek(), shared_dek);
+
+  DataKeyVault reopened(vault_path, "profile-replace");
+  EXPECT_FALSE(static_cast<bool>(reopened.Unlock("wrong-pin")));
+  ASSERT_TRUE(reopened.Unlock("device-pin"));
+  EXPECT_EQ(*reopened.Dek(), shared_dek);
+}
+
 TEST_F(AtRestCryptoTest, PinChangeKeepsDekUsable) {
   const auto vault_path = (dir_ / "vault.bin").string();
   DataKeyVault vault(vault_path, "profile-b");

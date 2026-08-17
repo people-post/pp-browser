@@ -1,6 +1,6 @@
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/MlDsa.h"
 #include "base/net/ServiceClientsImpl.h"
-#include "base/people/Ed25519Signer.h"
 
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -47,12 +47,20 @@ TEST(RelayLiveIntegrationTest, FetchChatHistoryAgainstLiveRelayWhenConfigured) {
 
   auto sign_key = LoadSignKeyFromEnv();
   if (!sign_key) {
-    GTEST_SKIP() << "Set PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX (32-byte Ed25519 seed, hex)";
+    GTEST_SKIP() << "Set PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX (ML-DSA-65 secret key, hex)";
+  }
+  if (sign_key->size() != kMlDsa65SecretKeyBytes) {
+    GTEST_SKIP() << "PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX must be ML-DSA-65 secret ("
+                 << kMlDsa65SecretKeyBytes << " bytes)";
   }
 
   HttpRelayClient relay(base_url);
   relay.SetAuthSigner([sign_key](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
-    return Ed25519Signer::Sign(std::string(sign_bytes.begin(), sign_bytes.end()), *sign_key);
+    auto signature = MlDsa::Sign(*sign_key, sign_bytes);
+    if (!signature) {
+      return signature.error();
+    }
+    return Base64Encode(*signature);
   });
 
   ChatHistoryRequest request;

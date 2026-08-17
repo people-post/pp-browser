@@ -1,18 +1,18 @@
-# Current state — as of 2026-07-06
+# Current state — as of 2026-08-15
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–7** landed (Bucket B / D092) — v2a–v6, e2e c1–c3, post-v4, post-v6b/c/d. Next: **c3+** (`e2e_public` auto-key) unless scope expands.
+**Planned but not implemented:** see [DESIGN.md](DESIGN.md) **`[later]`** / **`[future]`** items and D008–D068 in [DECISIONS.md](DECISIONS.md).
+**Agent batch:** Waves **1–7** landed (Bucket B / D092) — v2a–v6, e2e c1–c3, post-v4, post-v6b/c/d — plus public auto-key, group E2E, and public 1:1 device-lock (E027).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **c3+ / post-v1** | `e2e_public` auto-key (E013/E024) | c3 (done) |
+| **Later** | On-chain attestation; private `continue_anyway`; grouped sidebar | product |
 | **Release hygiene** | Version bump, packaged smoke, tag, CI | human |
 
-**Key paths (wave 7 — post-v1 polish):**
+**Key paths (wave 7 polish — landed):**
 
 - Rich ChatPayload: `ChatPayloadTypes.*`, `ChatPayloadCodec.*`, `SqliteThreadStore` extended columns
 - Transport badges: `MessagingJson::MessageTransportBadgeLabel`, `InboxController::BuildDisplayRows`, `chat.rml`
@@ -23,20 +23,20 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 **Interim behaviors (do not “fix” without reading DECISIONS):**
 
 - **`e2e`** relay body is **AEAD ciphertext** in `payload_b64` (c2 landed).
-- **`e2e_public`** threads exist and show tier badge; **compose/send disabled** until c3 auto-key; wire stays plaintext.
-- Inbound poll: **find-only** via `chat_targets` (no auto-create thread on unknown sender — D062).
+- **`e2e_public`** compose/send uses account ML-KEM-768 auto-key (E024 / M015); optional **Use only this device…** rekey (E027).
+- Inbound poll: **`e2e`** find-only via `chat_targets` (D062); **`e2e_public`** auto-creates after decrypt (D080).
 - libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/chat-history/1.0.0`.
 - Relay history: **`HttpRelayClient::FetchChatHistory`**; mock when `base_url` unset; live integration via env (D093).
 
-## Release scope (v1 batch)
+## Release scope
 
-**Bucket B** ([D092](DECISIONS.md#d092--release-scope-bucket-b)) — **feature-complete** pending release hygiene:
+Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus public auto-key, group E2E, and device-lock (E027) are **in tree**. Pending release hygiene.
 
-| In scope | Out of scope (unless expanded) |
-|----------|--------------------------------|
-| chat v2a–v6 + post-v4, post-v6b/c/d | `e2e_public` auto-key (c3+), group E2E |
-| e2e c1–c3 (private `e2e` tier) | c4 PQ |
-| AI storage + memory (v3) | |
+| In tree | Later |
+|---------|-------|
+| chat v2a–v6 + post-v4, post-v6b/c/d | c4 PQ |
+| e2e c1–c3 (private `e2e`) + c3+ public auto-key + group E2E | on-chain attestation; private `continue_anyway` |
+| AI storage + memory (v3) | grouped sidebar sections |
 | libp2p peer-direct history (D060) — **required** (D094) | |
 
 ## Persistence
@@ -104,11 +104,12 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | Feature | Status | Location |
 |---------|--------|----------|
 | Sidebar tier badges | **Implemented** | `sidebar.rml`, `ChatController` |
-| **`e2e_public` compose disabled** | **Implemented** | `compose_disabled` |
+| **`e2e_public` compose disabled** | **Implemented** | `compose_disabled` — sibling lock-out (E027), not a coming-soon gate |
 | Clear history / forget memory | **Implemented** | `chat.rml`, `InboxController` |
 | Composer maxlength | **Implemented** | `composer.rml` — `kMaxComposeTextBytes` |
 | Delivery / transport badges | **Implemented** | post-v6d — `chat.rml`, `components.rcss` |
 | Rich payload display | **Implemented** | annotations, contact cards, crypto tx rows |
+| Emoji reactions (D098) | **Implemented** | `reaction` / `reaction_clear`; grouped chips; OSK color emoji font; long-press React… |
 | PSK export/import/verify (c3) | **Implemented** | `chat.rml`, `PskSessionCoordinator` |
 
 ## Tests
@@ -127,9 +128,8 @@ Run: `ctest --test-dir build -R pp_browser_`
 
 ## Known gaps (summary)
 
-1. **c3+** — `e2e_public` auto-key send path.
-2. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
-3. Gap repair `display_order` placement (D065 partial).
-4. Release hygiene — version bump, packaged smoke, tag.
+1. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
+2. Gap repair `display_order` placement (D065 partial).
+3. Release hygiene — version bump, packaged smoke, tag.
 
 **Non-chat safety gaps:** [platform-safety-limits](../platform-safety-limits/).

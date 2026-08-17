@@ -9,7 +9,7 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 ## Overview
 
 - **PIN per profile** — collected in-app; `--pin` / `PP_BROWSER_PIN` optional for tests/CI.
-- **First secrets use:** three-way chooser — **Set a PIN**, **Just continue** (app default `123456`), or **Not now**.
+- **First secrets use:** identity fork — **I'm new on this device** (then the PIN chooser) or **I already have an account** (PIN for this device, then paste a link payload). `--pin` / CI still take the create path.
 - **`pin_is_default`** in `preferences.json` — when true, bootstrap and UI load silently unlock with the default PIN; cleared after **Change PIN** in Me → Security.
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
@@ -61,8 +61,8 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 
 ### Identity plaintext (inside `identity.enc`)
 
-JSON fields: `schema_version` (**1**), `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`.  
-Unversioned blobs migrate on unlock and are rewritten with `schema_version`. Unsupported **newer** versions fail load.  
+JSON fields: `schema_version` (**3**), device `public_key_b64` / `private_key_b64` (**ML-DSA-65** — PeerId / Noise), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`, optional `initiation_floor` (pp_credit minor units; missing → 0).
+Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
 (`peer_id` remains in-memory only.)  
 AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
 
@@ -71,10 +71,12 @@ AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_ver
 1. App starts without requiring a PIN (local AI/chat works).
 2. **If `vault.bin` exists and `pin_is_default` is true:** silent unlock at bootstrap and after UI load (no modal). If silent unlock fails, fall back to the blocking unlock modal.
 3. **If `vault.bin` exists and custom PIN:** blocking unlock modal after UI load (no cancel).
-4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `ProfileUnlockGate::EnsureUnlocked`. Show a **three-way chooser:**
-   - **Set a PIN** — create flow with confirm.
-   - **Just continue** — create vault with `kDefaultProfilePin` (`123456`), set `pin_is_default`, proceed; toast points to Me → Security.
-   - **Not now** — cancel; retry on next secrets action.
+4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `ProfileUnlockGate::EnsureUnlocked`. Show an **identity fork**, then:
+   - **I'm new on this device** — the **three-way PIN chooser:**
+     - **Set a PIN** — create flow with confirm.
+     - **Just continue** — create vault with `kDefaultProfilePin` (`123456`), set `pin_is_default`, proceed; toast points to Me → Security.
+     - **Not now** — cancel; retry on next secrets action.
+   - **I already have an account** — choose a PIN for *this* device (Set a PIN / Just continue / Not now), then paste a `pp-browser-link-device-v1` payload. Wrap the **shared DEK** (`CreateWithDek`); do not mint a new Brief person first. Me → Security only **copies** a payload (export). If this profile is already a person, **Reset this profile** in Storage, then the same fork.
 5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
 6. **Change PIN:** Me → Security when unlocked (`DataKeyVault::ChangePin`); clears `pin_is_default`.
 7. Lock on exit clears DEK (`sodium_memzero`) in the vault and all registered `IDekConsumer`s.
@@ -90,7 +92,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
 4. Document the on-disk path and AAD purpose here.
 
-**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/feature/ui/PinGateController.h) is presentation only (chooser / unlock overlay).
+**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/feature/ui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
 
 Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vault required).
 

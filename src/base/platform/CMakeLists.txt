@@ -8,7 +8,6 @@ set(_pp_platform_core_sources
   EnvCredentialStore.cpp
   ExecutablePath.cpp
   os/OsFile_Posix.cpp
-  os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp
 )
 
@@ -52,7 +51,6 @@ set(_pp_platform_gui_sources
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsFile_Win32.cpp
-    os/OsTime_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     desktop/PathProvider_Win32.cpp
@@ -109,7 +107,7 @@ pp_browser_add_base_library(pp_base_platform
   PUBLIC_LIBS
     pp_base_platform_core
     pp_base_runtime
-    pp_rmlui_backend
+    pp_base_render
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})

@@ -34,9 +34,11 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at, llm_api_key }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor? }` |
 
-Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), 32-byte raw Ed25519 public key, 1216-byte raw hybrid KEM public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
+Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
+
+Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device).
 
 ## HTTP relay API auth (per-request sign bytes)
 
@@ -54,7 +56,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
 
-Inbox is a **delivery queue**: poll advances a cursor; clients may `ack` through that cursor to delete consumed rows. `clear` deletes recipient rows older than a timestamp (recovery). Messenger also applies a 14-day TTL on `created_at`. Chat history remains local + stream/P2P sync — not the inbox.
+Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**). Chat history remains local + stream/P2P sync — not the inbox.
 
 Poll response extras (unix ms, relay clock):
 
@@ -67,11 +69,12 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, `relay_user_id`, `nickname`, optional `peer_id` in `ids[]`, optional `multiaddrs`) |
-| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at, optional `peer_id`, `multiaddrs`) |
+| `GET /v1/search?q=` | Search people. **`q=`** matches **nickname**, **`relay:`** id, and **Account ID** (including prefix on `account:…`). Hits: top-level **`account_id`** when bound; `ids[]` lists **`account` primary**, then `relay_user` / each `peer_id`; **`endpoints[]`** (`peer_id`, `multiaddrs[]`, `updated_at` Unix ms); `signing_public_key_b64`, `kem_public_key_b64`, `nickname`, optional `initiation_floor`. No top-level `peer_id` / `multiaddrs` ([M017](../../projects/multi-device-account/DECISIONS.md#m017--directory-endpoints-per-device-no-last-write-wins)) |
+| `GET /v1/users/by-account/:account_id` | **Person** lookup by Account ID (`signing_public_key_b64`, `kem_public_key_b64`, `account_id`, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `initiation_floor`) |
+| `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same key fields; **`account_id` required** when bound) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
-| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`) |
-| `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory) |
+| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, this-device `peer_id`, `multiaddrs`) |
+| `POST /v1/register/finish` | Finish/renew registration (same this-device reachability fields; **upserts** that Peer ID into `endpoints[]`; unsigned advisory; echoes **`account_id`**) |
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 
