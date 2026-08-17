@@ -685,7 +685,7 @@ void VideoToolboxVideoCodec::DecompressionOutputCallback(void* decompression_out
 
 } // namespace
 
-std::unique_ptr<IVideoCodec> CreateDarwinVideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   // Cheap capability probe mirroring the Win32 Create*-time failure
   // contract: if this device cannot stand up an H264 compression session at
   // all, fall back to the unavailable stub instead of returning a codec

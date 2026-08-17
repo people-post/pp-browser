@@ -1094,7 +1094,7 @@ void MediaFoundationVideoCodec::ResetDecoder() {
 
 } // namespace
 
-std::unique_ptr<IVideoCodec> CreateWin32VideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   auto codec = std::make_unique<MediaFoundationVideoCodec>();
   std::string reason;
   if (!codec->InitializePlatform(reason)) {

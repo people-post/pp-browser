@@ -116,6 +116,7 @@ size_t WorkerPool::TotalQueuedCount() const {
 }
 
 void WorkerPool::WorkerMain(const size_t worker_index) {
+  // CRT/pthread shim — see docs/architecture/PLATFORM_CODE.md (allowlisted in common/).
 #if defined(__ANDROID__) || defined(__linux__)
   const std::string name = "pp-worker-" + std::to_string(worker_index);
   pthread_setname_np(pthread_self(), name.c_str());

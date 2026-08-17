@@ -213,6 +213,17 @@ Do **not** pass `-DPP_BROWSER_HEADLESS=ON` for the GUI app — that option is fo
 
 Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 
+## Lint (include / ifdef policy)
+
+Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu: `sudo apt install ripgrep`.
+
+```bash
+./scripts/check_feature_includes.sh
+./scripts/check_platform_ifdefs.sh
+```
+
+OS `#ifdef`s belong in `src/base/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
+
 ## Tests
 
 ```bash

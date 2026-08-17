@@ -1,10 +1,11 @@
 #pragma once
 
-#include <ctime>
+#include "common/CivilTime.h"
 
 namespace pbr::os {
 
-time_t TimeGm(std::tm* tm);
-bool LocalTime(time_t time, std::tm* out);
+using pbr::civil_time::TimeGm;
+using pbr::civil_time::LocalTime;
+using pbr::civil_time::UtcTime;
 
 } // namespace pbr::os

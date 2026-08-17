@@ -1784,7 +1784,7 @@ void VaapiVideoCodec::ResetDecoder() {
 
 } // namespace
 
-std::unique_ptr<IVideoCodec> CreateLinuxVideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   VaDisplayState display;
   VaCaps caps;
   std::string reason;
@@ -1811,7 +1811,7 @@ std::unique_ptr<IVideoCodec> CreateLinuxVideoCodec() {
 
 namespace pbr {
 
-std::unique_ptr<IVideoCodec> CreateLinuxVideoCodec() {
+std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   return MakeUnavailableVideoCodec("Linux VA-API H264 not built (install libva-dev and reconfigure)");
 }
 

@@ -35,6 +35,7 @@
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
+#include "base/platform/os/OsTime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1604,11 +1605,9 @@ namespace {
 std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
   const std::time_t seconds = static_cast<std::time_t>(unix_ms / 1000);
   std::tm tm_utc{};
-#if defined(_WIN32)
-  gmtime_s(&tm_utc, &seconds);
-#else
-  gmtime_r(&seconds, &tm_utc);
-#endif
+  if (!os::UtcTime(seconds, &tm_utc)) {
+    return {};
+  }
   std::ostringstream oss;
   oss << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%S");
   oss << '.' << std::setw(3) << std::setfill('0') << (unix_ms % 1000) << 'Z';

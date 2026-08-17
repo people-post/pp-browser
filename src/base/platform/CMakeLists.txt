@@ -8,7 +8,6 @@ set(_pp_platform_core_sources
   EnvCredentialStore.cpp
   ExecutablePath.cpp
   os/OsFile_Posix.cpp
-  os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp
 )
 
@@ -52,7 +51,6 @@ set(_pp_platform_gui_sources
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsFile_Win32.cpp
-    os/OsTime_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     desktop/PathProvider_Win32.cpp

@@ -58,14 +58,14 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | Path | Contents |
 |------|----------|
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, lifecycle, branding/version |
-| `base/platform/` | OS adapters: SDL glue, paths, assets, credentials, notifications (no GL) |
-| `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing) |
-| `base/render/` | RmlUi SDL/GL backend (`pp_base_render`) |
+| `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
+| `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
+| `base/render/` | RmlUi SDL/GL backend (`pp_base_render`); GL/GLES in `render/platform/` |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
 | `base/messaging/` | Thread types, JSON store, parsers |
-| `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + platform HW H264 |
+| `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + colocated platform HW H264 |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 

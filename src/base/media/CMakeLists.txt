@@ -4,15 +4,8 @@ pp_browser_add_base_library(pp_base_media
     CallMediaHealth.cpp
     CallMediaEngine.cpp
     CallRingtone.cpp
-    CallAudioSession_Default.cpp
-    CameraCaptureOrientation_Default.cpp
-    CameraCaptureOrientation_Android.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
-    VideoCodec_Win32.cpp
-    VideoCodec_Darwin.cpp
-    VideoCodec_Linux.cpp
-    VideoCodec_Android.cpp
     VideoYuv.cpp
   PUBLIC_LIBS
     pp_base_error
@@ -20,10 +13,15 @@ pp_browser_add_base_library(pp_base_media
     ${PP_BROWSER_SDL3_TARGET}
     Opus::opus)
 
-# V017 platform HW H264 — link only on matching OS (TUs are #ifdef-guarded).
+# Domain OS backends — source-select; do not compile MediaCodec TUs on Linux, etc.
 if(WIN32)
+  target_sources(pp_base_media PRIVATE
+    VideoCodec_Win32.cpp
+    CallAudioSession_Default.cpp
+    CameraCaptureOrientation_Default.cpp)
   target_link_libraries(pp_base_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
+  target_sources(pp_base_media PRIVATE VideoCodec_Darwin.cpp)
   target_link_libraries(pp_base_media PRIVATE
     "-framework VideoToolbox"
     "-framework CoreMedia"
@@ -34,8 +32,22 @@ elseif(APPLE)
       CallAudioSession_Ios.mm
       CameraCaptureOrientation_Ios.mm)
     target_link_libraries(pp_base_media PRIVATE "-framework AVFoundation" "-framework UIKit")
+  else()
+    target_sources(pp_base_media PRIVATE
+      CallAudioSession_Default.cpp
+      CameraCaptureOrientation_Default.cpp)
   endif()
-elseif(UNIX AND NOT ANDROID)
+elseif(ANDROID)
+  target_sources(pp_base_media PRIVATE
+    VideoCodec_Android.cpp
+    CallAudioSession_Android.cpp
+    CameraCaptureOrientation_Android.cpp)
+  target_link_libraries(pp_base_media PRIVATE mediandk camera2ndk)
+else()
+  target_sources(pp_base_media PRIVATE
+    VideoCodec_Linux.cpp
+    CallAudioSession_Default.cpp
+    CameraCaptureOrientation_Default.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
@@ -53,8 +65,6 @@ elseif(UNIX AND NOT ANDROID)
       "  Debian/Ubuntu: sudo apt install libva-dev\n"
       "  Runtime also needs a VA driver (e.g. intel-media-va-driver / mesa-va-drivers).")
   endif()
-elseif(ANDROID)
-  target_link_libraries(pp_base_media PRIVATE mediandk camera2ndk)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

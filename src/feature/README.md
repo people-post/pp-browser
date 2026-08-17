@@ -174,7 +174,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 1. Find the module that **owns** the screen, session, or multi-module workflow.
 2. Follow the dependency principles above; respect CMake `PUBLIC_LIBS` order in the owning folder's `CMakeLists.txt`.
 3. Add tests in `src/feature/<module>/tests/` (`*_test.cpp` files). One executable per folder is created automatically (`pp_browser_feature_<module>_test`).
-4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) before pushing.
+4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) and [`scripts/check_platform_ifdefs.sh`](../../scripts/check_platform_ifdefs.sh) before pushing.
 5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) or [`docs/ui/`](../../docs/ui/) when wire formats or UI contracts change.
 
 ---
