@@ -39,6 +39,7 @@ class Peer {
   using RsaProvider = libp2p::crypto::rsa::RsaProvider;
   using EcdsaProvider = libp2p::crypto::ecdsa::EcdsaProvider;
   using Secp256k1Provider = libp2p::crypto::secp256k1::Secp256k1Provider;
+  using MlDsaProvider = libp2p::crypto::mldsa::MlDsaProvider;
   using CryptoProvider = libp2p::crypto::CryptoProvider;
 
   using Context = boost::asio::io_context;
@@ -97,6 +98,7 @@ class Peer {
   sptr<EcdsaProvider> ecdsa_provider_;          ///< ecdsa provider
   sptr<Secp256k1Provider> secp256k1_provider_;  ///< secp256k1 provider
   sptr<HmacProvider> hmac_provider_;            ///< hmac provider
+  sptr<MlDsaProvider> mldsa_provider_;          ///< ML-DSA provider
   sptr<CryptoProvider> crypto_provider_;        ///< crypto provider
   sptr<Scheduler> scheduler_;                   ///< scheduler
   const bool secure_;                           ///< use SECIO or not

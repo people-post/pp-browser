@@ -14,6 +14,7 @@
 #include <libp2p/crypto/hmac_provider/hmac_provider_impl.hpp>
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 #include <libp2p/crypto/key_validator/key_validator_impl.hpp>
+#include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/network/impl/dnsaddr_resolver_impl.hpp>
@@ -42,13 +43,15 @@ Peer::Peer(Peer::Duration timeout, bool secure)
           std::make_shared<crypto::secp256k1::Secp256k1ProviderImpl>(
               random_provider_)},
       hmac_provider_{std::make_shared<crypto::hmac::HmacProviderImpl>()},
+      mldsa_provider_{std::make_shared<crypto::mldsa::MlDsaProviderImpl>()},
       crypto_provider_{
           std::make_shared<crypto::CryptoProviderImpl>(random_provider_,
                                                        ed25519_provider_,
                                                        rsa_provider_,
                                                        ecdsa_provider_,
                                                        secp256k1_provider_,
-                                                       hmac_provider_)},
+                                                       hmac_provider_,
+                                                       mldsa_provider_)},
       scheduler_{std::make_shared<basic::SchedulerImpl>(
           std::make_shared<basic::AsioSchedulerBackend>(context_),
           basic::Scheduler::Config{})},
@@ -132,7 +135,8 @@ Peer::sptr<host::BasicHost> Peer::makeHost(const crypto::KeyPair &keyPair) {
                                                    rsa_provider_,
                                                    ecdsa_provider_,
                                                    secp256k1_provider_,
-                                                   hmac_provider_);
+                                                   hmac_provider_,
+                                                   mldsa_provider_);
 
   auto key_validator =
       std::make_shared<crypto::validator::KeyValidatorImpl>(crypto_provider);
