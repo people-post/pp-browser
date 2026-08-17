@@ -2,6 +2,7 @@
 
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
+#include "base/p2p/CallMediaDirectService.h"
 #include "base/p2p/tests/libp2p_ephemeral_listen.h"
 #include "base/p2p/Libp2pHost.h"
 #include "base/p2p/PeerSessionManager.h"
@@ -10,6 +11,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -104,6 +106,100 @@ TEST_F(Libp2pDirectChatServiceTest, SendEnvelopeRoundTrip) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got; }));
   }
   EXPECT_EQ(received.message_id, "msg-1");
+}
+
+/** B-MSG+CALL (Tier B): chat before, during, and after call-media on the same pair. */
+TEST_F(Libp2pDirectChatServiceTest, ChatDuringAndAfterCallMedia) {
+  auto a_call = std::make_unique<CallMediaDirectService>(a_host_, *a_sessions_);
+  auto b_call = std::make_unique<CallMediaDirectService>(b_host_, *b_sessions_);
+  a_call->Start();
+  b_call->Start();
+
+  std::mutex mu;
+  std::condition_variable cv;
+  int chat_got = 0;
+  bool call_connected = false;
+  bool got_audio = false;
+  std::string last_chat_id;
+
+  b_chat_->SetInboundHandler([&](RelayEnvelope envelope) {
+    std::lock_guard lock(mu);
+    last_chat_id = envelope.message_id;
+    ++chat_got;
+    cv.notify_all();
+  });
+
+  ASSERT_TRUE(a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-before", "before")))
+      << "chat before call";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return chat_got >= 1; }));
+  }
+
+  const ByteVector media_key(32, 0x42);
+  b_call->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = "call-msg";
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      call_connected = true;
+      cv.notify_all();
+    };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) {
+      std::lock_guard lock(mu);
+      got_audio = true;
+      cv.notify_all();
+    };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = "call-msg";
+  params.media_key = media_key;
+  params.media_epoch = 1;
+  params.offerer = true;
+  ASSERT_TRUE(a_call->Connect(params, {}, 5000));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return call_connected; }));
+  }
+  ASSERT_TRUE(a_call->SendAudio({0x11}, 1, 0));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }));
+  }
+  EXPECT_EQ(a_call->Phase(), CallMediaSessionPhase::MediaReady);
+
+  ASSERT_TRUE(a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-during", "during")))
+      << "chat during MediaReady must not starve";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return chat_got >= 2; }));
+  }
+  EXPECT_EQ(last_chat_id, "msg-during");
+  got_audio = false;
+  ASSERT_TRUE(a_call->SendAudio({0x22}, 2, 0)) << "audio after chat during call";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }));
+  }
+
+  a_call->Detach();
+  b_call->Detach();
+  EXPECT_EQ(a_call->Phase(), CallMediaSessionPhase::Idle);
+
+  ASSERT_TRUE(a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-after", "after")))
+      << "chat after leave";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return chat_got >= 3; }));
+  }
+  EXPECT_EQ(last_chat_id, "msg-after");
+
+  a_call->Stop();
+  b_call->Stop();
 }
 
 } // namespace

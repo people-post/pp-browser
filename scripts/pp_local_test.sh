@@ -5,7 +5,7 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | node | cap | soak | chaos | call-hop | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
 #
 # See docs/ops/TEST_STRATEGY.md and packaging/pp-node/IMAGE_SMOKE.md
@@ -21,7 +21,7 @@ BUILD_DIR="${PP_LOCAL_BUILD_DIR:-${ROOT}/build}"
 DOCKER_CONTEXT="${ROOT}/dist/pp-node/docker"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
 # gtest_discover_tests names are PascalCase fixture names (ctest -R is case-sensitive).
-CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle'
+CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|Libp2pDirectChat'
 
 SUITE="all"
 DOWN_AFTER=0
@@ -42,7 +42,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|conflict|msg-call|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -56,6 +56,9 @@ Environment:
 
 Examples:
   $(basename "$0") run --suite unit
+  $(basename "$0") run --suite call
+  $(basename "$0") run --suite conflict
+  $(basename "$0") run --suite msg-call
   $(basename "$0") run --suite node
   $(basename "$0") run --suite cap
   $(basename "$0") up && $(basename "$0") status
@@ -243,6 +246,18 @@ run_call() {
   bash "${ROOT}/scripts/pp_call_direct_smoke.sh"
 }
 
+run_conflict() {
+  cmake_build_probes
+  echo "=== suite conflict (B-CONFLICT) ==="
+  bash "${ROOT}/scripts/pp_call_conflict_smoke.sh"
+}
+
+run_msg_call() {
+  cmake_build_probes
+  echo "=== suite msg-call (B-MSG+CALL) ==="
+  bash "${ROOT}/scripts/pp_call_msg_smoke.sh"
+}
+
 run_node() {
   cmake_build_probes
   cmd_up
@@ -292,6 +307,8 @@ cmd_run() {
   case "${SUITE}" in
     unit) run_unit ;;
     call) run_call ;;
+    conflict) run_conflict ;;
+    msg-call) run_msg_call ;;
     node) run_node ;;
     cap) run_cap ;;
     soak) run_soak ;;
@@ -300,9 +317,11 @@ cmd_run() {
     all)
       run_unit
       run_call
+      run_conflict
+      run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|node|cap|soak|chaos|call-hop|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
     cmd_stop

@@ -83,7 +83,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|Libp2pDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
@@ -95,12 +95,14 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ```bash
 ./scripts/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)
 ./scripts/pp_local_test.sh run --suite call    # B-CALL-DIRECT thin client
+./scripts/pp_local_test.sh run --suite conflict  # B-CONFLICT 3-peer thin client
+./scripts/pp_local_test.sh run --suite msg-call  # B-MSG+CALL chat during/after call
 ./scripts/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP N=4 (starts hop)
 ./scripts/pp_local_test.sh run --suite cap     # N-CAP-MEDIA sweep + N-CAP-CIRCUIT
 ./scripts/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
 ./scripts/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
 ./scripts/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
-./scripts/pp_local_test.sh run                 # unit + call + node (not cap/soak/chaos)
+./scripts/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop)
 ./scripts/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/pp_local_test.sh clear               # down -v + ready-file
 ```
@@ -155,8 +157,8 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/pp_call_direct_smoke.sh`](../../scripts/pp_call_direct_smoke.sh); product `CallLibp2pMediaBridge` still untested as a unit |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/pp_call_hop_smoke.sh`](../../scripts/pp_call_hop_smoke.sh); driver `--suite call-hop` |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
-| B-CONFLICT | **Partial** | `call_lifecycle_test`, chrome conflict copy; no 3-peer multi-process |
-| B-MSG+CALL | **Gap** | Chat and call tested separately |
+| B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/pp_call_conflict_smoke.sh`](../../scripts/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
+| B-MSG+CALL | **Covered** (scaffold) | In-process: `Libp2pDirectChatServiceTest.ChatDuringAndAfterCallMedia` (product `/pp-browser/chat/1.0.0`); multi-process: `pp-call-probe --with-chat` + [`scripts/pp_call_msg_smoke.sh`](../../scripts/pp_call_msg_smoke.sh); driver `--suite msg-call`. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 
 **Product-glue hole:** `CallLibp2pMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
@@ -195,7 +197,8 @@ In-flight streams need not survive restart. In-process Partial coverage remains 
 | B-CALL-DIRECT multi-process | **Scaffold** — `pp-call-probe` + `pp_call_direct_smoke.sh` |
 | B-CALL-HOP | **Scaffold** — `pp-call-probe --via-hop` + `pp_call_hop_smoke.sh`; `--cycles` teardown on hop path |
 | B-TEARDOWN K-cycle multi-process | Partial via `--cycles` on offerer (direct and hop) |
-| B-CONFLICT / B-MSG+CALL | Deferred (**Gate E:** stop after hop-call green; do not add conflict/msg next) |
+| B-CONFLICT | **Scaffold** — 3-peer thin client `pp_call_conflict_smoke.sh`; in-process `SecondInboundRejectedThenEndAndAccept` |
+| B-MSG+CALL | **Scaffold** — chat during/after call (`pp_call_msg_smoke.sh` + `ChatDuringAndAfterCallMedia`) |
 | B-UI | Manual / unit chrome only |
 
 ---
@@ -210,7 +213,7 @@ Later work is intentionally underspecified until evidence exists:
 | **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
 | **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
 | **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
-| **E** | After first hop-call green | **Stop** — do not add B-CONFLICT / B-MSG+CALL next. Product `CallLibp2pMediaBridge` glue and GUI remain deferred. |
+| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallLibp2pMediaBridge` glue and GUI remain deferred. |
 
 ---
 
@@ -229,4 +232,4 @@ Later work is intentionally underspecified until evidence exists:
 2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Gate E: stop (conflict/msg deferred).
+5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call`).

@@ -1,9 +1,16 @@
 #include "base/p2p/CallMediaDirectService.h"
 #include "base/p2p/CircuitRelayService.h"
 #include "base/p2p/Libp2pHost.h"
+#include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/PeerSessionManager.h"
+#include "base/p2p/StreamFrameIo.h"
 
 #include "common/Logger.h"
+
+#include <libp2p/connection/stream.hpp>
+#include <libp2p/connection/stream_and_protocol.hpp>
+#include <libp2p/host/host.hpp>
+#include <libp2p/peer/protocol.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -11,6 +18,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -25,19 +34,16 @@ void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage:\n"
       << "  " << argv0 << " --role answerer --listen <multiaddr> [--advertise-host <ip>]\n"
-      << "                 [--call-id ID] [--ready-file PATH]\n"
+      << "                 [--call-id ID] [--ready-file PATH] [--no-auto-detach] [--with-chat]\n"
       << "  " << argv0 << " --role offerer --peer <multiaddr-with-p2p> [--call-id ID] [--cycles K]\n"
-      << "                 [--via-hop <multiaddr-with-p2p>]\n"
+      << "                 [--via-hop <multiaddr-with-p2p>] [--hold-ms N] [--timeout-ms N]\n"
+      << "                 [--expect ok|busy] [--with-chat]\n"
       << "\n"
-      << "Thin-client B-CALL-DIRECT / B-CALL-HOP (docs/ops/TEST_STRATEGY.md):\n"
-      << "two OS processes exchange encrypted call-media hello + one audio frame per cycle.\n"
-      << "With --via-hop, the offerer opens call-media through a packaged circuit hop (A↛B\n"
-      << "except via R). Answerer should listen on 0.0.0.0 and pass --advertise-host the IP\n"
-      << "the hop can dial (docker0 gateway).\n"
-      << "\n"
-      << "Example (direct):\n"
-      << "  " << argv0 << " --role answerer --listen /ip4/127.0.0.1/tcp/47100 --ready-file /tmp/pp-call.ready &\n"
-      << "  " << argv0 << " --role offerer --peer \"$(cat /tmp/pp-call.ready)\" --cycles 3\n";
+      << "Thin-client B-CALL-DIRECT / B-CALL-HOP / B-CONFLICT / B-MSG+CALL\n"
+      << "(docs/ops/TEST_STRATEGY.md).\n"
+      << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
+      << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
+      << "  --with-chat     Ping /pp-browser/chat/1.0.0 during and after the call.\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -85,8 +91,54 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
   return multiaddr;
 }
 
+using libp2p::peer::ProtocolName;
+
+constexpr const char* kProbeChatProtocol = "/pp-browser/chat/1.0.0";
+
+void ArmProbeChat(pbr::Libp2pHost& host, std::atomic<int>& received) {
+  host.GetHost().setProtocolHandler(
+      {ProtocolName{kProbeChatProtocol}}, [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        pbr::PostLibp2pWorker(host, pbr::WorkerLane::Normal, [&received, stream = std::move(stream)]() {
+          auto frame = pbr::BlockingReadLengthPrefixedFrame(stream);
+          if (!frame) {
+            return;
+          }
+          received.fetch_add(1, std::memory_order_acq_rel);
+          (void)pbr::BlockingWriteLengthPrefixedFrame(stream, {'a', 'c', 'k'});
+        });
+      });
+}
+
+bool SendProbeChat(pbr::Libp2pHost& host, pbr::PeerSessionManager& sessions, const std::string& peer_key) {
+  auto done = std::make_shared<std::promise<bool>>();
+  auto future = done->get_future();
+  sessions.OpenStream(peer_key, {ProtocolName{kProbeChatProtocol}},
+                      [&host, done](libp2p::StreamAndProtocolOrError stream_res) {
+                        if (!stream_res) {
+                          done->set_value(false);
+                          return;
+                        }
+                        auto stream = stream_res.value().stream;
+                        pbr::PostLibp2pWorker(host, pbr::WorkerLane::Normal, [stream, done]() {
+                          const std::vector<uint8_t> ping = {'p', 'i', 'n', 'g'};
+                          auto wrote = pbr::BlockingWriteLengthPrefixedFrame(stream, ping);
+                          if (!wrote) {
+                            done->set_value(false);
+                            return;
+                          }
+                          auto ack = pbr::BlockingReadLengthPrefixedFrame(stream);
+                          done->set_value(ack && *ack == std::vector<uint8_t>({'a', 'c', 'k'}));
+                        });
+                      });
+  if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+    return false;
+  }
+  return future.get();
+}
+
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
-                int hold_seconds, const std::string& advertise_host) {
+                int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat) {
   pbr::Libp2pHostConfig cfg;
   cfg.listen_multiaddr = listen_ma;
   pbr::Libp2pHost host;
@@ -115,6 +167,11 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   auto sessions = std::make_unique<pbr::PeerSessionManager>(host, sessions_cfg);
   auto media = std::make_unique<pbr::CallMediaDirectService>(host, *sessions);
   media->Start();
+
+  std::atomic<int> chat_received{0};
+  if (with_chat) {
+    ArmProbeChat(host, chat_received);
+  }
 
   const pbr::ByteVector media_key(32, 0x42);
   std::mutex mu;
@@ -153,7 +210,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   while (std::chrono::steady_clock::now() < deadline) {
-    if (detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
+    if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
       // Circuit-bridged close does not idle the answerer; Detach so the next cycle can inbound.
       media->Detach();
     }
@@ -164,12 +221,14 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   media.reset();
   sessions.reset();
   host.Stop();
-  std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done << "\n";
+  std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
+            << " chat_frames=" << chat_received.load() << "\n";
   return 0;
 }
 
 int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycles,
-               const std::string& hop_ma) {
+               const std::string& hop_ma, int hold_ms, int timeout_ms, bool expect_busy,
+               bool with_chat) {
   if (cycles < 1 || cycles > 100) {
     std::cerr << "error: --cycles must be 1..100\n";
     return 2;
@@ -189,10 +248,8 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     return 2;
   }
 
-  static std::atomic<int> port_base{47200};
-  const int port = port_base.fetch_add(1);
   pbr::Libp2pHostConfig cfg;
-  cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(port);
+  cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/0";
   pbr::Libp2pHost host;
   if (auto started = host.Start(cfg); !started) {
     std::cerr << "error: offerer host start: " << started.error().message << "\n";
@@ -266,16 +323,30 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       cv.notify_one();
     };
 
-    if (auto ok = media->Connect(params, cbs, 8000); !ok) {
+    if (auto ok = media->Connect(params, cbs, timeout_ms); !ok) {
+      if (expect_busy) {
+        std::cout << "ok  busy cycle " << cycle << " connect rejected: " << ok.error().message << "\n";
+        continue;
+      }
       std::cerr << "error: connect cycle " << cycle << ": " << ok.error().message << "\n";
       return 1;
     }
     {
       std::unique_lock lock(mu);
-      if (!cv.wait_for(lock, std::chrono::seconds(8), [&] { return connected; })) {
+      if (!cv.wait_for(lock, std::chrono::milliseconds(timeout_ms + 1000), [&] { return connected; })) {
+        if (expect_busy) {
+          std::cout << "ok  busy cycle " << cycle << " connect timeout\n";
+          media->Detach();
+          continue;
+        }
         std::cerr << "error: connect timeout cycle " << cycle << "\n";
         return 1;
       }
+    }
+    if (expect_busy) {
+      std::cerr << "error: expected busy (second inbound rejected) but connect succeeded\n";
+      media->Detach();
+      return 1;
     }
 
     const std::vector<uint8_t> opus = {static_cast<uint8_t>(0x10 + cycle)};
@@ -283,13 +354,33 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       std::cerr << "error: send audio cycle " << cycle << "\n";
       return 1;
     }
-    // Brief settle so answerer on_audio can fire before detach.
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    if (with_chat) {
+      if (!SendProbeChat(host, *sessions, peer_key)) {
+        std::cerr << "error: chat during call cycle " << cycle << "\n";
+        return 1;
+      }
+      std::cout << "ok  chat during call cycle " << cycle << "\n";
+      if (!media->SendAudio({static_cast<uint8_t>(0x20 + cycle)}, 2, 0)) {
+        std::cerr << "error: audio after chat cycle " << cycle << "\n";
+        return 1;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    if (hold_ms > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(hold_ms));
+    }
     media->Detach();
     if (via_hop) {
       sessions->ClearCircuitHop(*peer_id, pbr::kCallMediaDirectProtocolId);
-      // Answerer must leave MediaReady before the next bridged inbound stream.
       std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    }
+    if (with_chat) {
+      if (!SendProbeChat(host, *sessions, peer_key)) {
+        std::cerr << "error: chat after leave cycle " << cycle << "\n";
+        return 1;
+      }
+      std::cout << "ok  chat after leave cycle " << cycle << "\n";
     }
     std::cout << "ok  cycle " << cycle << " connect+audio+detach"
               << (via_hop ? " via-hop" : "") << "\n";
@@ -317,6 +408,11 @@ int main(int argc, char** argv) {
   std::string ready_file;
   int cycles = 1;
   int hold_seconds = 30;
+  int hold_ms = 0;
+  int timeout_ms = 8000;
+  bool expect_busy = false;
+  bool with_chat = false;
+  bool no_auto_detach = false;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -341,6 +437,24 @@ int main(int argc, char** argv) {
       cycles = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--hold-seconds") == 0 && i + 1 < argc) {
       hold_seconds = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--hold-ms") == 0 && i + 1 < argc) {
+      hold_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--timeout-ms") == 0 && i + 1 < argc) {
+      timeout_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--expect") == 0 && i + 1 < argc) {
+      ++i;
+      if (std::strcmp(argv[i], "busy") == 0) {
+        expect_busy = true;
+      } else if (std::strcmp(argv[i], "ok") == 0) {
+        expect_busy = false;
+      } else {
+        std::cerr << "error: --expect ok|busy\n";
+        return 2;
+      }
+    } else if (std::strcmp(argv[i], "--with-chat") == 0) {
+      with_chat = true;
+    } else if (std::strcmp(argv[i], "--no-auto-detach") == 0) {
+      no_auto_detach = true;
     } else {
       std::cerr << "Unknown argument: " << argv[i] << "\n";
       PrintUsage(argv[0]);
@@ -363,14 +477,15 @@ int main(int argc, char** argv) {
   }
 
   if (role == "answerer") {
-    return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host);
+    return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,
+                       with_chat);
   }
   if (role == "offerer") {
     if (peer_ma.empty()) {
       std::cerr << "error: --peer required for offerer\n";
       return 2;
     }
-    return RunOfferer(peer_ma, call_id, cycles, hop_ma);
+    return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat);
   }
   std::cerr << "error: --role answerer|offerer required\n";
   PrintUsage(argv[0]);
