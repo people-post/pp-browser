@@ -4,6 +4,8 @@
 # still exercising a separate process/network namespace for the hop.
 #
 # Usage (from repo root):
+#   ./scripts/pp_local_test.sh run --suite node
+#   # or manual:
 #   docker compose -f packaging/pp-node/docker-compose.relay-smoke.yml up -d --build
 #   cmake --build build --target pp-node-probe -j
 #   ./scripts/pp_node_fanout_smoke.sh

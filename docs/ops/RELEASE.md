@@ -160,9 +160,9 @@ cpack --config build/CPackConfig.cmake
 
 ```bash
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-docker build -t pp-node:local dist/pp-node/docker
-docker compose -f packaging/pp-node/docker-compose.yml up -d
-./scripts/pp_node_relay_smoke.sh
+./scripts/pp_local_test.sh run --suite node
+# or: docker compose -f packaging/pp-node/docker-compose.yml up -d
+#     ./scripts/pp_node_relay_smoke.sh
 ```
 
 ## Checklist before tagging

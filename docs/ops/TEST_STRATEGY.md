@@ -83,10 +83,25 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'call_media_direct|media_relay_service|circuit_call_media|circuit_media_relay|circuit_relay_service|call_lifecycle' --output-on-failure
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
+
+### Local driver (lifecycle + suites)
+
+[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) owns Docker hop **up / stop / clear** and calls the existing smoke scripts. Default hop file: [`docker-compose.relay-smoke.yml`](../../packaging/pp-node/docker-compose.relay-smoke.yml). `up` / `run --suite node` **stop** a conflicting dogfood hop (`pp-node-local` on 18517/18518) before starting relay-smoke.
+
+```bash
+./scripts/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)
+./scripts/pp_local_test.sh run --suite call    # B-CALL-DIRECT thin client
+./scripts/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP (starts hop)
+./scripts/pp_local_test.sh run                 # all of the above
+./scripts/pp_local_test.sh stop                # compose stop, volume kept
+./scripts/pp_local_test.sh clear               # down -v + ready-file
+```
+
+`run` leaves the hop up unless `--down`. Package `dist/pp-node/docker` before `up` / `node` (`scripts/pp_node_package_linux.sh all`).
 
 ---
 

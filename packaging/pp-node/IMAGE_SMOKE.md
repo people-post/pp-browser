@@ -18,12 +18,26 @@ Node images ship on the **`pp-node/v*`** train ([`release-pp-node.yml`](../../.g
 
 Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against compose as below. Gate **L2** in nightly/release only once stable (not every PR).
 
-## Prerequisites
+## Local driver (preferred)
+
+[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) starts/stops the **relay-smoke** hop and runs L0–L2 / N-CAP (and optional unit/call suites). Individual `pp_*_smoke.sh` scripts remain for CI when the hop is already up.
+
+```bash
+# After packaging dist/pp-node/docker (see BUILD.md):
+./scripts/pp_local_test.sh run --suite node    # up hop + L0/L1/fanout/cap; hop stays up
+./scripts/pp_local_test.sh status
+./scripts/pp_local_test.sh stop                # keep volume
+./scripts/pp_local_test.sh clear               # down -v
+```
+
+Do **not** run [`docker-compose.yml`](docker-compose.yml) and [`docker-compose.relay-smoke.yml`](docker-compose.relay-smoke.yml) at once — both publish host **18517/18518**.
+
+## Prerequisites (manual compose)
 
 ```bash
 # Local dogfood container (status published on host :18518)
 docker compose -f packaging/pp-node/docker-compose.yml up -d --build
-# or L2-oriented hop:
+# or L2-oriented hop (what pp_local_test.sh uses):
 docker compose -f packaging/pp-node/docker-compose.relay-smoke.yml up -d --build
 
 # Probe binary (desktop build tree)
