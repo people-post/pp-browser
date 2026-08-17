@@ -1,7 +1,7 @@
 # Product RmlUi SDL/GL backend (base layer). Fork lives in src/lib/rmlui.
 
-include(PpBrowserLib)
-include(PpBrowserRender)
+include(pp_lib_paths)
+include(pp_lib_rmlui)
 include(PpBrowserWarnings)
 
 set(PP_BASE_RENDER_SOURCES

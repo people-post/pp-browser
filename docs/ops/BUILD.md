@@ -77,6 +77,19 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
+### Owned forks (RmlUi / libp2p)
+
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+
+| Option | Default (desktop) | Effect |
+|--------|-------------------|--------|
+| `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
+| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
+| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
+| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
+
+Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
+
 ### libp2p tests and coverage
 
 By default, desktop builds enable in-tree libp2p unit tests (`PP_BROWSER_LIBP2P_TESTING=ON`). Examples are opt-in.

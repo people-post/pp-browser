@@ -31,7 +31,7 @@ app → feature → base → lib → common
 | `lib/libp2p/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
 | `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
 
-Path constants: [`cmake/PpBrowserLib.cmake`](../../cmake/PpBrowserLib.cmake) (`PP_LIB_RMLUI_*`, `PP_LIB_LIBP2P_*`).
+Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake), [`src/lib/pp_lib_rmlui.cmake`](../../src/lib/pp_lib_rmlui.cmake), [`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake) (`PP_LIB_RMLUI_*`, `PP_LIB_LIBP2P_*`).
 
 ## Base glue for forks
 
@@ -104,7 +104,7 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 
 Base module tests compile to one executable per folder (e.g. `pp_browser_p2p_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
 
-Fork configure helpers: `cmake/PpBrowserLib.cmake`, `cmake/PpBrowserRender.cmake`, `cmake/PpBrowserLibp2p.cmake`.
+Fork product profiles (embedding policy + path constants): `src/lib/pp_lib_paths.cmake`, `src/lib/pp_lib_rmlui.cmake`, `src/lib/pp_lib_libp2p.cmake`. Shared `third_party` wiring stays in `cmake/dependencies.cmake` and `cmake/libp2p_dependencies.cmake`.
 
 ## Test placement
 

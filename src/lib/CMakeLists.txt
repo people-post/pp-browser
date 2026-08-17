@@ -1,9 +1,9 @@
 # Owned hard forks (lib layer). Product glue lives under src/base/{p2p,render}.
 
-include(PpBrowserLibp2p)
-include(PpBrowserRender)
+include(pp_lib_libp2p)
+include(pp_lib_rmlui)
 
-pp_browser_configure_libp2p_fork()
+pp_lib_apply_libp2p_product_profile()
 if(TESTING OR COVERAGE)
   enable_testing()
 endif()
@@ -15,7 +15,7 @@ endif()
 pp_configure_status("libp2p fork configured")
 
 if(NOT PP_BROWSER_HEADLESS)
-  pp_browser_configure_rmlui_fork()
+  pp_lib_apply_rmlui_product_profile()
   if(RMLUI_TESTS)
     enable_testing()
   endif()

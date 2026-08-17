@@ -27,6 +27,16 @@ base/render/host → base/render/platform + base/render/renderer → lib/rmlui/I
 
 See `src/lib/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
 
+## Build flags / product profile
+
+Supported knobs are `PP_BROWSER_*` only. Raw `RMLUI_*` / `BUILD_SHARED_LIBS` cache vars are set by the product profile in [`src/lib/pp_lib_rmlui.cmake`](../../src/lib/pp_lib_rmlui.cmake) — do not treat them as the public cmake interface.
+
+| Option | Effect on RmlUi |
+|--------|-----------------|
+| `PP_BROWSER_BUILD_TESTS` | When ON, builds in-tree `rmlui_unit_tests` (no separate `PP_BROWSER_RMLUI_TESTS`) |
+
+Fixed profile policy (not options): static libs; SVG plugin on; HarfBuzz font engine on; samples / Lua / Lottie off. Headless builds skip the RmlUi subtree entirely.
+
 ## Tests
 
 When `PP_BROWSER_BUILD_TESTS` is on, pp-browser builds upstream `rmlui_unit_tests` (doctest) from `src/lib/rmlui/Tests/`. Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. Visual tests and benchmarks are gated off by default (`RMLUI_VISUAL_TESTS`, `RMLUI_BENCHMARKS`).

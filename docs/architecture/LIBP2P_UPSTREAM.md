@@ -29,13 +29,15 @@ Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-0
 
 ## Build flags (pp-browser root CMake)
 
+Supported knobs are `PP_BROWSER_*` only. Raw fork cache vars (`TESTING`, `EXAMPLES`, `COVERAGE`, `PACKAGE_MANAGER`) are set by the product profile in [`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake) — do not pass them on the cmake command line.
+
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
 | `PP_BROWSER_LIBP2P_TESTING` | ON | Build `fork/test/` and link `GTest::gmock_main` |
 | `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | Build `fork/example/` |
 | `PP_BROWSER_LIBP2P_COVERAGE` | OFF | Enable gcovr coverage targets (`ctest_coverage`, `ctest_coverage_html`) |
 
-Mobile builds force all three OFF.
+Mobile builds force all three OFF. Fixed profile policy: `PACKAGE_MANAGER=vendored`, clang-tidy/format off.
 
 ## Dependency management
 

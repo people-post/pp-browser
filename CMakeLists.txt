@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/lib")
 include(CompilerCache)
 pp_browser_configure_compiler_cache()
 
@@ -81,8 +83,8 @@ endif()
 
 include(Platform)
 include(PpBrowserWarnings)
-include(PpBrowserLib)
-include(PpBrowserLibp2p)
+include(pp_lib_paths)
+include(pp_lib_libp2p)
 pp_browser_define_libp2p_options()
 
 if(PP_BROWSER_IS_MOBILE)
