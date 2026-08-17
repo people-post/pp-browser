@@ -5,9 +5,9 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | mix | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
-# --suite mix is nightly interference (not in all): browser parallel + shrunk hop parallel.
+# --suite mix is nightly: browser parallel + shrunk hop parallel + same-session hop chat.
 #
 # See docs/ops/TEST_STRATEGY.md and packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail
@@ -43,7 +43,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|conflict|msg-call|mix|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -64,6 +64,7 @@ Examples:
   $(basename "$0") run --suite node
   $(basename "$0") run --suite cap
   $(basename "$0") run --suite mix
+  $(basename "$0") run --suite msg-call-hop
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -306,6 +307,14 @@ run_call_hop() {
   bash "${ROOT}/scripts/pp_call_hop_smoke.sh" --status-url "${STATUS_URL}"
 }
 
+run_msg_call_hop() {
+  cmake_build_probes
+  cmd_up
+  echo "=== suite msg-call-hop (B-MSG+CALL via hop) ==="
+  export PP_NODE_STATUS_URL="${STATUS_URL}"
+  bash "${ROOT}/scripts/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
+}
+
 run_mix() {
   cmake_build_probes
   echo "=== suite mix (B-MIX browser interference) ==="
@@ -314,6 +323,8 @@ run_mix() {
   echo "=== suite mix (N-MIX hop interference) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
   bash "${ROOT}/scripts/pp_mix_hop_smoke.sh" --status-url "${STATUS_URL}"
+  echo "=== suite mix (same-session hop chat) ==="
+  bash "${ROOT}/scripts/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 cmd_run() {
@@ -327,6 +338,7 @@ cmd_run() {
     soak) run_soak ;;
     chaos) run_chaos ;;
     call-hop) run_call_hop ;;
+    msg-call-hop) run_msg_call_hop ;;
     mix) run_mix ;;
     all)
       run_unit
@@ -335,11 +347,11 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|mix|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
     cmd_stop
-  elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|mix|all)$ ]]; then
+  elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)$ ]]; then
     echo "hop left running; $(basename "$0") stop | clear when done"
   fi
   echo "pp-local-test run PASSED suite=${SUITE}"

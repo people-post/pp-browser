@@ -43,7 +43,8 @@ void PrintUsage(const char* argv0) {
       << "(docs/ops/TEST_STRATEGY.md).\n"
       << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
       << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
-      << "  --with-chat     Ping /pp-browser/chat/1.0.0 during and after the call.\n";
+      << "  --with-chat     Ping /pp-browser/chat/1.0.0 during and after the call.\n"
+      << "                  With --via-hop, chat uses a separate circuit hop (same pair).\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -131,10 +132,46 @@ bool SendProbeChat(pbr::Libp2pHost& host, pbr::PeerSessionManager& sessions, con
                           done->set_value(ack && *ack == std::vector<uint8_t>({'a', 'c', 'k'}));
                         });
                       });
-  if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+  if (future.wait_for(std::chrono::seconds(8)) != std::future_status::ready) {
     return false;
   }
   return future.get();
+}
+
+bool EnsureProbeChatHop(pbr::CircuitRelayService& circuit, pbr::PeerSessionManager& sessions,
+                        const std::string& hop_key, const std::string& peer_id,
+                        const std::string& peer_ma) {
+  pbr::CircuitBridgeTarget target;
+  target.target_peer_id = peer_id;
+  target.target_multiaddr = peer_ma;
+  target.target_protocol = kProbeChatProtocol;
+  auto bridged = circuit.RequestBridge(hop_key, target, 10000);
+  if (!bridged || !bridged->ok || !bridged->stream) {
+    std::cerr << "error: chat circuit bridge: "
+              << (bridged ? bridged->error : bridged.error().message) << "\n";
+    return false;
+  }
+  if (auto hop = sessions.InstallCircuitHop(peer_id, hop_key, kProbeChatProtocol, bridged->stream); !hop) {
+    std::cerr << "error: install chat circuit hop: " << hop.error().message << "\n";
+    return false;
+  }
+  return true;
+}
+
+bool SendProbeChatMaybeViaHop(pbr::Libp2pHost& host, pbr::PeerSessionManager& sessions,
+                              pbr::CircuitRelayService* circuit, bool via_hop, const std::string& hop_key,
+                              const std::string& peer_id, const std::string& peer_ma,
+                              const std::string& peer_key) {
+  if (via_hop) {
+    if (!circuit || !EnsureProbeChatHop(*circuit, sessions, hop_key, peer_id, peer_ma)) {
+      return false;
+    }
+  }
+  const bool ok = SendProbeChat(host, sessions, peer_key);
+  if (via_hop) {
+    sessions.ClearCircuitHop(peer_id, kProbeChatProtocol);
+  }
+  return ok;
 }
 
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
@@ -177,6 +214,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   std::mutex mu;
   std::condition_variable cv;
   int cycles_done = 0;
+  int audio_in_session = 0;
   std::atomic<bool> detach_after_audio{false};
 
   media->SetInboundHandler([&](pbr::CallMediaDirectConnectParams& params, pbr::CallMediaDirectCallbacks& cbs) {
@@ -185,13 +223,19 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] {
+      audio_in_session = 0;
       std::lock_guard lock(mu);
       cv.notify_all();
     };
     cbs.on_audio = [&](const std::vector<uint8_t>&) {
       std::lock_guard lock(mu);
       ++cycles_done;
-      detach_after_audio.store(true, std::memory_order_release);
+      ++audio_in_session;
+      // Hop path auto-detaches so the next cycle can inbound. With-chat waits for the
+      // post-chat audio frame so MediaReady overlaps the in-call chat hop.
+      if (audio_in_session >= (with_chat ? 2 : 1)) {
+        detach_after_audio.store(true, std::memory_order_release);
+      }
       cv.notify_all();
     };
   });
@@ -356,11 +400,12 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     if (with_chat) {
-      if (!SendProbeChat(host, *sessions, peer_key)) {
+      if (!SendProbeChatMaybeViaHop(host, *sessions, circuit.get(), via_hop, "hop", *peer_id, peer_ma,
+                                    peer_key)) {
         std::cerr << "error: chat during call cycle " << cycle << "\n";
         return 1;
       }
-      std::cout << "ok  chat during call cycle " << cycle << "\n";
+      std::cout << "ok  chat during call cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
       if (!media->SendAudio({static_cast<uint8_t>(0x20 + cycle)}, 2, 0)) {
         std::cerr << "error: audio after chat cycle " << cycle << "\n";
         return 1;
@@ -376,11 +421,12 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       std::this_thread::sleep_for(std::chrono::milliseconds(800));
     }
     if (with_chat) {
-      if (!SendProbeChat(host, *sessions, peer_key)) {
+      if (!SendProbeChatMaybeViaHop(host, *sessions, circuit.get(), via_hop, "hop", *peer_id, peer_ma,
+                                    peer_key)) {
         std::cerr << "error: chat after leave cycle " << cycle << "\n";
         return 1;
       }
-      std::cout << "ok  chat after leave cycle " << cycle << "\n";
+      std::cout << "ok  chat after leave cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
     }
     std::cout << "ok  cycle " << cycle << " connect+audio+detach"
               << (via_hop ? " via-hop" : "") << "\n";
@@ -392,7 +438,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   sessions.reset();
   host.Stop();
   std::cout << "pp-call-probe offerer PASSED cycles=" << cycles
-            << (via_hop ? " via-hop" : "") << "\n";
+            << (via_hop ? " via-hop" : "") << (with_chat ? " with-chat" : "") << "\n";
   return 0;
 }
 

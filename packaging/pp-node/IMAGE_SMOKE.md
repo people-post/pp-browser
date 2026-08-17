@@ -32,7 +32,8 @@ Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against co
 ./scripts/pp_local_test.sh run --suite soak     # 120s churn (PP_NODE_SOAK_SEC=3600 weekly)
 ./scripts/pp_local_test.sh run --suite chaos    # kill-client / restart / pause
 ./scripts/pp_local_test.sh run --suite call-hop # B-CALL-HOP thin client
-./scripts/pp_local_test.sh run --suite mix      # B-MIX + N-MIX interference (nightly)
+./scripts/pp_local_test.sh run --suite msg-call-hop # chat during hop call (same pair)
+./scripts/pp_local_test.sh run --suite mix      # B-MIX + N-MIX + same-session hop chat (nightly)
 ./scripts/pp_local_test.sh status
 ./scripts/pp_local_test.sh stop                 # keep volume
 ./scripts/pp_local_test.sh clear                # down -v

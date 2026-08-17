@@ -102,7 +102,8 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
 ./scripts/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
 ./scripts/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
-./scripts/pp_local_test.sh run --suite mix     # B-MIX + N-MIX interference (not in all)
+./scripts/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
+./scripts/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
 ./scripts/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/pp_local_test.sh clear               # down -v + ready-file
@@ -162,9 +163,9 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/pp_call_hop_smoke.sh`](../../scripts/pp_call_hop_smoke.sh); driver `--suite call-hop` |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/pp_call_conflict_smoke.sh`](../../scripts/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
-| B-MSG+CALL | **Covered** (scaffold) | In-process: `Libp2pDirectChatServiceTest.ChatDuringAndAfterCallMedia` (product `/pp-browser/chat/1.0.0`); multi-process: `pp-call-probe --with-chat` + [`scripts/pp_call_msg_smoke.sh`](../../scripts/pp_call_msg_smoke.sh); driver `--suite msg-call`. |
+| B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/pp_call_hop_msg_smoke.sh`](../../scripts/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
-| B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix`. Same-session mix remains B-MSG+CALL; hop-path chat still deferred. |
+| B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
 
 **Product-glue hole:** `CallLibp2pMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
 
@@ -201,8 +202,9 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 |--------|----------|--------|
 | **B-MIX** | `pp_call_direct_smoke.sh` ∥ `pp_call_conflict_smoke.sh` ∥ `pp_call_msg_smoke.sh` | No Docker. Listen ports already distinct. |
 | **N-MIX** | `pp_call_hop_smoke.sh` (2 cycles) ∥ `pp_node_fanout_smoke.sh` ∥ `pp_node_circuit_cap_smoke.sh` (M=2) | One hop. Combined load under N₀=8. |
+| **Same-session** (sequential after N-MIX) | `pp_call_hop_msg_smoke.sh` | Chat + call-media on **one pair** via hop; not parallel with N-MIX. |
 
-**Do not mix** with N-CHAOS, N-CAP sweep, or N-SOAK (shared hop restart / participant limit). This is contention, not same-session protocol mix (hop-path `--with-chat` still later).
+**Do not mix** with N-CHAOS, N-CAP sweep, or N-SOAK (shared hop restart / participant limit). Parallel recipes are contention; same-session hop chat is `--via-hop --with-chat` (own circuit hop per protocol).
 
 ---
 
@@ -216,7 +218,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 | B-CALL-HOP | **Scaffold** — `pp-call-probe --via-hop` + `pp_call_hop_smoke.sh`; `--cycles` teardown on hop path |
 | B-TEARDOWN K-cycle multi-process | Partial via `--cycles` on offerer (direct and hop) |
 | B-CONFLICT | **Scaffold** — 3-peer thin client `pp_call_conflict_smoke.sh`; in-process `SecondInboundRejectedThenEndAndAccept` |
-| B-MSG+CALL | **Scaffold** — chat during/after call (`pp_call_msg_smoke.sh` + `ChatDuringAndAfterCallMedia`) |
+| B-MSG+CALL | **Scaffold** — chat during/after call (`pp_call_msg_smoke.sh` + `ChatDuringAndAfterCallMedia`); hop same-session `pp_call_hop_msg_smoke.sh` |
 | B-UI | Manual / unit chrome only |
 
 ---
@@ -250,4 +252,4 @@ Later work is intentionally underspecified until evidence exists:
 2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call`). Then interference mix (`--suite mix`).
+5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
