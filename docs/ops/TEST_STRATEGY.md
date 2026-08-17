@@ -95,8 +95,12 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ```bash
 ./scripts/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)
 ./scripts/pp_local_test.sh run --suite call    # B-CALL-DIRECT thin client
-./scripts/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP (starts hop)
-./scripts/pp_local_test.sh run                 # all of the above
+./scripts/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP N=4 (starts hop)
+./scripts/pp_local_test.sh run --suite cap     # N-CAP-MEDIA sweep + N-CAP-CIRCUIT
+./scripts/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
+./scripts/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
+./scripts/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
+./scripts/pp_local_test.sh run                 # unit + call + node (not cap/soak/chaos)
 ./scripts/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/pp_local_test.sh clear               # down -v + ready-file
 ```
@@ -126,10 +130,10 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/probe/main.cpp); [`scripts/pp_node_relay_smoke.sh`](../../scripts/pp_node_relay_smoke.sh) |
 | N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/pp_node_fanout_smoke.sh`](../../scripts/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
 | N-ADMIT | **Partial** | gtests (contacts-only / call-scoped); no deploy-profile stranger probe |
-| N-CAP-MEDIA | **Partial** (soft) | `pp-node-probe --mode media-cap` + [`scripts/pp_node_cap_smoke.sh`](../../scripts/pp_node_cap_smoke.sh); soft SLO 100% attach for N≤8 |
-| N-CAP-CIRCUIT | **Gap** (functional Partial) | `ConcurrentBridges` in gtest — not SLO/metrics |
-| N-SOAK | **Gap** (design) | Soft criteria below; harness deferred |
-| N-CHAOS | **Gap** (design) | Soft checklist below; process chaos deferred |
+| N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/pp_node_cap_smoke.sh`](../../scripts/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |
+| N-CAP-CIRCUIT | **Covered** (soft scaffold) | `pp-node-probe --mode circuit-cap` + [`scripts/pp_node_circuit_cap_smoke.sh`](../../scripts/pp_node_circuit_cap_smoke.sh). Soft SLO: 100% for M≤**M₀=4**; larger M informational. In-process: `ConcurrentBridges`. |
+| N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/pp_node_soak_smoke.sh`](../../scripts/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
+| N-CHAOS | **Covered** (scaffold) | [`scripts/pp_node_chaos_smoke.sh`](../../scripts/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
 
 ---
 
@@ -149,8 +153,8 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | ID | Status | Primary evidence |
 |----|--------|------------------|
 | B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/pp_call_direct_smoke.sh`](../../scripts/pp_call_direct_smoke.sh); product `CallLibp2pMediaBridge` still untested as a unit |
-| B-CALL-HOP | **Partial** | `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; no 2-client + packaged hop call path |
-| B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); Detach/timeout/Stop no-hang in services; no multi-process K-cycle |
+| B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/pp_call_hop_smoke.sh`](../../scripts/pp_call_hop_smoke.sh); driver `--suite call-hop` |
+| B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
 | B-CONFLICT | **Partial** | `call_lifecycle_test`, chrome conflict copy; no 3-peer multi-process |
 | B-MSG+CALL | **Gap** | Chat and call tested separately |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
@@ -159,25 +163,26 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 ---
 
-## Soft designs — N-SOAK / N-CHAOS (Gate B follow-on)
+## Soft designs — N-SOAK / N-CHAOS
 
-Not implemented as automated harnesses yet. Qualify manually / later nightly:
+Automated harnesses (not PR-blocking):
 
-### N-SOAK (soft)
+### N-SOAK
 
-- Topology: packaged hop + churning `media-cap` or fan-out clients for **T ≥ 1h**
-- Pass: 0 process fatals; hop still accepts new attach after T; RSS/FD sawtooth-bounded (no unbounded growth)
-- Tighten later: attach success rate, p95 quote latency
+- Topology: packaged hop + churning attach/detach (`--mode media-soak --churn 4`)
+- Local default: **T = 120s**. Weekly / pre-release: `PP_NODE_SOAK_SEC=3600`
+- Pass: 0 process fatals; hop still accepts attach; fail on hop death or 3 consecutive attach failures
+- Tighten later: attach success rate, p95 quote latency, RSS/FD sawtooth bound
 
-### N-CHAOS (soft checklist)
+### N-CHAOS
 
 | Fault | Expected |
 |-------|----------|
 | Kill client mid-attach | Hop accepts a new client afterward |
-| `docker restart` hop | L0 recovers; L1/L2 re-run green |
-| Pause hop (~10s) then unpause | Clients fail cleanly or recover; no permanent deadlock |
+| `docker restart` hop | L0 recovers; L1 re-run green |
+| Pause hop (~10s) then unpause | Clients fail cleanly or recover; hop accepts new work |
 
-In-process Partial coverage remains in Stop/Abort/Detach/corrupt-frame gtests.
+In-flight streams need not survive restart. In-process Partial coverage remains in Stop/Abort/Detach/corrupt-frame gtests. **N-ADMIT** stays later (gtest policy; no deploy-profile stranger probe).
 
 ---
 
@@ -188,9 +193,9 @@ In-process Partial coverage remains in Stop/Abort/Detach/corrupt-frame gtests.
 | Step | Status |
 |------|--------|
 | B-CALL-DIRECT multi-process | **Scaffold** — `pp-call-probe` + `pp_call_direct_smoke.sh` |
-| B-CALL-HOP | Next — reuse hop compose + extend thin client for circuit/media_relay path |
-| B-TEARDOWN K-cycle multi-process | Partial via `--cycles` on offerer |
-| B-CONFLICT / B-MSG+CALL | Deferred |
+| B-CALL-HOP | **Scaffold** — `pp-call-probe --via-hop` + `pp_call_hop_smoke.sh`; `--cycles` teardown on hop path |
+| B-TEARDOWN K-cycle multi-process | Partial via `--cycles` on offerer (direct and hop) |
+| B-CONFLICT / B-MSG+CALL | Deferred (**Gate E:** stop after hop-call green; do not add conflict/msg next) |
 | B-UI | Manual / unit chrome only |
 
 ---
@@ -201,9 +206,11 @@ Later work is intentionally underspecified until evidence exists:
 
 | Gate | When | Decide |
 |------|------|--------|
-| **A** | After this inventory signed off | Phase 1 (Tier B glue) vs Phase 2 (`N-FANOUT`) order |
-| **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` |
-| **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI automation |
+| **A** | After this inventory signed off | Phase 1 (Tier B glue) vs Phase 2 (`N-FANOUT`) order — **done:** Phase 1 then N-FANOUT |
+| **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
+| **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
+| **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
+| **E** | After first hop-call green | **Stop** — do not add B-CONFLICT / B-MSG+CALL next. Product `CallLibp2pMediaBridge` glue and GUI remain deferred. |
 
 ---
 
@@ -221,5 +228,5 @@ Later work is intentionally underspecified until evidence exists:
 1. **Phase 0** — this doc + IMAGE_SMOKE cross-link.
 2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
-4. **Phase 3** — **`N-CAP-MEDIA` soft** (`--mode media-cap`); N-SOAK/N-CHAOS soft designs above.
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** (`pp-call-probe`); next: B-CALL-HOP, then conflict/msg coexistence.
+4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
+5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Gate E: stop (conflict/msg deferred).

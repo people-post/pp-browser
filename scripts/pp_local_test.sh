@@ -5,6 +5,9 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
+# Suites: unit | call | node | cap | soak | chaos | call-hop | all
+# --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
+#
 # See docs/ops/TEST_STRATEGY.md and packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail
 
@@ -39,7 +42,8 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|all   run only (default: all)
+  --suite unit|call|node|cap|soak|chaos|call-hop|all
+                               run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
   --status-url URL             default \$PP_NODE_STATUS_URL or ${STATUS_URL}
@@ -47,10 +51,13 @@ Options (run / up):
 Environment:
   PP_LOCAL_COMPOSE_FILE / PP_LOCAL_COMPOSE_PROJECT / PP_LOCAL_BUILD_DIR
   PP_NODE_STATUS_URL / PP_NODE_PROBE_ATTACHERS / PP_CALL_PROBE_CYCLES
+  PP_NODE_CAP_SWEEP (default 4,8,12,16 for --suite cap)
+  PP_NODE_PROBE_BRIDGES / PP_NODE_SOAK_SEC (default 120; weekly 3600)
 
 Examples:
   $(basename "$0") run --suite unit
   $(basename "$0") run --suite node
+  $(basename "$0") run --suite cap
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -239,11 +246,46 @@ run_call() {
 run_node() {
   cmake_build_probes
   cmd_up
-  echo "=== suite node (L0/L1/N-FANOUT/N-CAP) ==="
+  echo "=== suite node (L0/L1/N-FANOUT/N-CAP N=4) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
   bash "${ROOT}/scripts/pp_node_relay_smoke.sh" --status-url "${STATUS_URL}"
   bash "${ROOT}/scripts/pp_node_fanout_smoke.sh" --status-url "${STATUS_URL}"
   bash "${ROOT}/scripts/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}"
+}
+
+run_cap() {
+  cmake_build_probes
+  cmd_up
+  echo "=== suite cap (N-CAP-MEDIA sweep + N-CAP-CIRCUIT) ==="
+  export PP_NODE_STATUS_URL="${STATUS_URL}"
+  export PP_NODE_CAP_SWEEP="${PP_NODE_CAP_SWEEP:-4,8,12,16}"
+  export PP_NODE_PROBE_BRIDGES="${PP_NODE_PROBE_BRIDGES:-4,8}"
+  bash "${ROOT}/scripts/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}" --sweep "${PP_NODE_CAP_SWEEP}"
+  bash "${ROOT}/scripts/pp_node_circuit_cap_smoke.sh" --status-url "${STATUS_URL}" --bridges "${PP_NODE_PROBE_BRIDGES}"
+}
+
+run_soak() {
+  cmake_build_probes
+  cmd_up
+  echo "=== suite soak (N-SOAK ${PP_NODE_SOAK_SEC:-120}s) ==="
+  export PP_NODE_STATUS_URL="${STATUS_URL}"
+  bash "${ROOT}/scripts/pp_node_soak_smoke.sh" --status-url "${STATUS_URL}"
+}
+
+run_chaos() {
+  cmake_build_probes
+  cmd_up
+  echo "=== suite chaos (N-CHAOS) ==="
+  export PP_NODE_STATUS_URL="${STATUS_URL}"
+  bash "${ROOT}/scripts/pp_node_chaos_smoke.sh" --status-url "${STATUS_URL}"
+}
+
+run_call_hop() {
+  cmake_build_probes
+  cmd_up
+  echo "=== suite call-hop (B-CALL-HOP) ==="
+  export PP_NODE_STATUS_URL="${STATUS_URL}"
+  bash "${ROOT}/scripts/pp_call_hop_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 cmd_run() {
@@ -251,16 +293,20 @@ cmd_run() {
     unit) run_unit ;;
     call) run_call ;;
     node) run_node ;;
+    cap) run_cap ;;
+    soak) run_soak ;;
+    chaos) run_chaos ;;
+    call-hop) run_call_hop ;;
     all)
       run_unit
       run_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|node|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|node|cap|soak|chaos|call-hop|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
     cmd_stop
-  elif [[ "${SUITE}" == "node" || "${SUITE}" == "all" ]]; then
+  elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|all)$ ]]; then
     echo "hop left running; $(basename "$0") stop | clear when done"
   fi
   echo "pp-local-test run PASSED suite=${SUITE}"

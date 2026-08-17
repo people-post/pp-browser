@@ -451,10 +451,27 @@ Roe<void> PeerSessionManager::UpsertBookEntry(const std::string& peer_id_base58,
   return address_book_.Upsert(peer_id_base58, multiaddr, source);
 }
 
+Roe<void> PeerSessionManager::InstallCircuitHop(const std::string& target_peer_id,
+                                                const std::string& relay_peer_id,
+                                                const std::string& target_protocol,
+                                                std::shared_ptr<libp2p::connection::Stream> stream) {
+  if (target_peer_id.empty() || relay_peer_id.empty() || target_protocol.empty() || !stream) {
+    return Error("circuit hop install incomplete");
+  }
+  CircuitHopLink link;
+  link.stream = std::move(stream);
+  link.relay_peer_id = relay_peer_id;
+  link.target_protocol = target_protocol;
+  std::lock_guard lock(mutex_);
+  StoreCircuitHopLocked(target_peer_id, link);
+  return {};
+}
+
 Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_peer_id,
                                                    CircuitRelayService& circuit,
                                                    const std::vector<std::string>& relay_peer_ids,
-                                                   const std::string& target_protocol, int timeout_ms) {
+                                                   const std::string& target_protocol, int timeout_ms,
+                                                   const std::string& target_multiaddr) {
   if (target_peer_id.empty()) {
     return Error("missing circuit target peer");
   }
@@ -466,7 +483,7 @@ Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_p
     if (FindCircuitHopLocked(target_peer_id, target_protocol)) {
       return {};
     }
-    if (HasDirectDialPathLocked(target_peer_id)) {
+    if (target_multiaddr.empty() && HasDirectDialPathLocked(target_peer_id)) {
       return {};
     }
   }
@@ -474,6 +491,7 @@ Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_p
   CircuitBridgeTarget bridge_target;
   bridge_target.target_peer_id = target_peer_id;
   bridge_target.target_protocol = target_protocol;
+  bridge_target.target_multiaddr = target_multiaddr;
 
   for (const std::string& relay_key : relay_peer_ids) {
     if (relay_key == target_peer_id || !IsDialable(relay_key)) {
@@ -483,18 +501,14 @@ Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_p
     if (!bridged || !bridged->ok || !bridged->stream) {
       continue;
     }
-    if (!bridged->resolved_multiaddr.empty()) {
+    if (!bridged->resolved_multiaddr.empty() && target_multiaddr.empty()) {
       (void)UpsertBookEntry(target_peer_id, bridged->resolved_multiaddr, PeerAddrSource::AddressRepository);
       (void)RegisterEndpoint(target_peer_id, bridged->resolved_multiaddr);
       ClearDialBackoff(target_peer_id);
     }
-    CircuitHopLink link;
-    link.stream = bridged->stream;
-    link.relay_peer_id = relay_key;
-    link.target_protocol = target_protocol;
-    {
-      std::lock_guard lock(mutex_);
-      StoreCircuitHopLocked(target_peer_id, link);
+    auto installed = InstallCircuitHop(target_peer_id, relay_key, target_protocol, bridged->stream);
+    if (!installed) {
+      return installed;
     }
     return {};
   }

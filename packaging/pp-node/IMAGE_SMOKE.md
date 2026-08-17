@@ -10,7 +10,9 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **L0** | Process up; `/healthz` + `/status`; caps **started** (`circuit_relay` / `media_relay` flags) | `scripts/pp_node_image_smoke.sh` | **Done** |
 | **L1** | From outside the hop: dial peer; **media** `RequestQuote`; **circuit** bridge + payload to a local target | `pp-node-probe` + `scripts/pp_node_relay_smoke.sh` | **Done** (scaffold) |
 | **L2** | **N-FANOUT:** hop in container + two client hosts in probe; attach×2 + frame fan-out | `docker-compose.relay-smoke.yml` + `pp-node-probe --mode media-fanout` + `scripts/pp_node_fanout_smoke.sh` | **Done** (scaffold) |
-| **N-CAP** | Soft media attach capacity curve | `pp-node-probe --mode media-cap` + `scripts/pp_node_cap_smoke.sh` | **Done** (soft SLO N≤8) |
+| **N-CAP** | Soft media attach capacity curve (N=4 cheap; sweep via `--suite cap`) | `pp-node-probe --mode media-cap` + `scripts/pp_node_cap_smoke.sh` | **Done** (soft SLO N≤8; 12/16 informational) |
+| **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
+| **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |
 
 ## CI / release
 
@@ -20,14 +22,18 @@ Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against co
 
 ## Local driver (preferred)
 
-[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) starts/stops the **relay-smoke** hop and runs L0–L2 / N-CAP (and optional unit/call suites). Individual `pp_*_smoke.sh` scripts remain for CI when the hop is already up.
+[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) starts/stops the **relay-smoke** hop and runs L0–L2 / N-CAP (and optional unit/call/cap/soak/chaos/call-hop suites). Individual `pp_*_smoke.sh` scripts remain for CI when the hop is already up.
 
 ```bash
 # After packaging dist/pp-node/docker (see BUILD.md):
-./scripts/pp_local_test.sh run --suite node    # up hop + L0/L1/fanout/cap; hop stays up
+./scripts/pp_local_test.sh run --suite node     # up hop + L0/L1/fanout/cap N=4; hop stays up
+./scripts/pp_local_test.sh run --suite cap      # media sweep 4,8,12,16 + circuit-cap
+./scripts/pp_local_test.sh run --suite soak     # 120s churn (PP_NODE_SOAK_SEC=3600 weekly)
+./scripts/pp_local_test.sh run --suite chaos    # kill-client / restart / pause
+./scripts/pp_local_test.sh run --suite call-hop # B-CALL-HOP thin client
 ./scripts/pp_local_test.sh status
-./scripts/pp_local_test.sh stop                # keep volume
-./scripts/pp_local_test.sh clear               # down -v
+./scripts/pp_local_test.sh stop                 # keep volume
+./scripts/pp_local_test.sh clear                # down -v
 ```
 
 Do **not** run [`docker-compose.yml`](docker-compose.yml) and [`docker-compose.relay-smoke.yml`](docker-compose.relay-smoke.yml) at once — both publish host **18517/18518**.
@@ -127,7 +133,11 @@ Do **not** reimplement full gtest matrices in shell; L2 orchestrates the same `M
 | `PP_NODE_STATUS_TOKEN` | Optional Bearer |
 | `PP_NODE_EXPECT_CIRCUIT` / `PP_NODE_EXPECT_MEDIA` | L0 expected flags (`1`/`0`) |
 | `PP_NODE_PROBE_HOP` | Hop multiaddr override |
-| `PP_NODE_PROBE_MODE` | `l1` (default), `media-fanout`, or `media-cap` |
-| `PP_NODE_PROBE_ATTACHERS` | N for `media-cap` (default 4) |
-| `PP_NODE_PROBE_ADVERTISE_HOST` | Host IP the Docker hop can dial for L1 circuit target (often `docker0` gateway) |
+| `PP_NODE_PROBE_MODE` | `l1` (default), `media-fanout`, `media-cap`, `circuit-cap`, `media-soak` |
+| `PP_NODE_PROBE_ATTACHERS` | N or comma/sweep list for `media-cap` (default 4) |
+| `PP_NODE_CAP_SWEEP` | `--suite cap` default `4,8,12,16` |
+| `PP_NODE_PROBE_BRIDGES` | M or list for `circuit-cap` (default 4) |
+| `PP_NODE_SOAK_SEC` | Soak duration seconds (default 120; weekly 3600) |
+| `PP_NODE_PROBE_CHURN` | Attachers per soak round (default 4) |
+| `PP_NODE_PROBE_ADVERTISE_HOST` | Host IP the Docker hop can dial for circuit target (often `docker0` gateway) |
 | `PP_NODE_PROBE_BIN` | Path to `pp-node-probe` |
