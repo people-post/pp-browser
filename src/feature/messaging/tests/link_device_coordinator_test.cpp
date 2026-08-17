@@ -6,8 +6,11 @@
 #include "feature/messaging/LinkDeviceCoordinator.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
+#include "common/Utilities.h"
+
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 
 namespace pbr {
 namespace {
@@ -23,10 +26,9 @@ ByteVector MakeDek() {
 class LinkDeviceCoordinatorTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    old_dir_ = std::filesystem::temp_directory_path() /
-               ("pp_link_coord_old_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
-    new_dir_ = std::filesystem::temp_directory_path() /
-               ("pp_link_coord_new_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    const auto suffix = util::GenerateUuid();
+    old_dir_ = std::filesystem::temp_directory_path() / ("pp_link_coord_old_" + suffix);
+    new_dir_ = std::filesystem::temp_directory_path() / ("pp_link_coord_new_" + suffix);
     std::filesystem::remove_all(old_dir_);
     std::filesystem::remove_all(new_dir_);
     std::filesystem::create_directories(old_dir_);
@@ -34,20 +36,28 @@ protected:
   }
 
   void TearDown() override {
+    new_psks_.reset();
+    new_threads_.reset();
+    old_psks_.reset();
+    old_threads_.reset();
     std::filesystem::remove_all(old_dir_);
     std::filesystem::remove_all(new_dir_);
   }
 
   std::filesystem::path old_dir_;
   std::filesystem::path new_dir_;
+  std::unique_ptr<SqliteThreadStore> old_threads_;
+  std::unique_ptr<SqlitePskSessionStore> old_psks_;
+  std::unique_ptr<SqliteThreadStore> new_threads_;
+  std::unique_ptr<SqlitePskSessionStore> new_psks_;
 };
 
 TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) {
   const ByteVector shared = MakeDek();
-  SqliteThreadStore old_threads(old_dir_.string());
-  ASSERT_TRUE(old_threads.ListThreads());
-  SqlitePskSessionStore old_psks(old_threads.ProfileDbPath(), "old");
-  ASSERT_TRUE(old_psks.SetDek(shared));
+  old_threads_ = std::make_unique<SqliteThreadStore>(old_dir_.string());
+  ASSERT_TRUE(old_threads_->ListThreads());
+  old_psks_ = std::make_unique<SqlitePskSessionStore>(old_threads_->ProfileDbPath(), "old");
+  ASSERT_TRUE(old_psks_->SetDek(shared));
 
   IdentityStore old_identity(old_dir_.string(), "old");
   ASSERT_TRUE(old_identity.SetDek(shared));
@@ -66,10 +76,10 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   public_target.channel = ThreadChannel::E2ePublic;
   DirectChatTarget private_target = public_target;
   private_target.channel = ThreadChannel::E2e;
-  ASSERT_TRUE(old_threads.FindOrCreateDirectThread(public_target, "contact-bob", "Bob"));
-  ASSERT_TRUE(old_threads.FindOrCreateDirectThread(private_target, "contact-bob", "Bob"));
+  ASSERT_TRUE(old_threads_->FindOrCreateDirectThread(public_target, "contact-bob", "Bob"));
+  ASSERT_TRUE(old_threads_->FindOrCreateDirectThread(private_target, "contact-bob", "Bob"));
 
-  auto public_psk = old_psks.GenerateMasterPsk();
+  auto public_psk = old_psks_->GenerateMasterPsk();
   ASSERT_TRUE(public_psk);
   PskSessionRecord public_row;
   public_row.key.peer_identity_kind = "account";
@@ -78,9 +88,9 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   public_row.session_epoch = 3;
   public_row.master_psk_b64 = Base64Encode(*public_psk);
   public_row.psk_verified_at = 99;
-  ASSERT_TRUE(old_psks.Save(public_row));
+  ASSERT_TRUE(old_psks_->Save(public_row));
 
-  auto private_psk = old_psks.GenerateMasterPsk();
+  auto private_psk = old_psks_->GenerateMasterPsk();
   ASSERT_TRUE(private_psk);
   PskSessionRecord private_row;
   private_row.key.peer_identity_kind = "account";
@@ -88,15 +98,15 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   private_row.key.channel = CryptoChannel::E2e;
   private_row.session_epoch = 1;
   private_row.master_psk_b64 = Base64Encode(*private_psk);
-  ASSERT_TRUE(old_psks.Save(private_row));
+  ASSERT_TRUE(old_psks_->Save(private_row));
 
   DataKeyVault old_vault(DataKeyVault::VaultPathForProfile(old_dir_.string()), "old");
   ASSERT_TRUE(old_vault.CreateWithDek("old-pin", shared));
   constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceCoordinator::ExportJson(old_identity, old_vault, old_psks, kNow);
+  auto json = LinkDeviceCoordinator::ExportJson(old_identity, old_vault, *old_psks_, kNow);
   ASSERT_TRUE(json) << json.error().message;
 
-  auto collected = LinkDeviceCoordinator::CollectPublicPsks(old_psks);
+  auto collected = LinkDeviceCoordinator::CollectPublicPsks(*old_psks_);
   ASSERT_TRUE(collected);
   ASSERT_EQ(collected->size(), 1u);
   EXPECT_EQ(collected->front().key.channel, CryptoChannel::E2ePublic);
@@ -111,13 +121,13 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   DataKeyVault new_vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
   ASSERT_TRUE(new_vault.CreateWithDek("device-pin", local_dek));
 
-  SqliteThreadStore new_threads(new_dir_.string());
-  ASSERT_TRUE(new_threads.ListThreads());
-  SqlitePskSessionStore new_psks(new_threads.ProfileDbPath(), "new");
-  ASSERT_TRUE(new_psks.SetDek(shared));
+  new_threads_ = std::make_unique<SqliteThreadStore>(new_dir_.string());
+  ASSERT_TRUE(new_threads_->ListThreads());
+  new_psks_ = std::make_unique<SqlitePskSessionStore>(new_threads_->ProfileDbPath(), "new");
+  ASSERT_TRUE(new_psks_->SetDek(shared));
 
   auto imported =
-      LinkDeviceCoordinator::Import(new_identity, new_vault, new_psks, nullptr, *json, "device-pin", kNow + 1000);
+      LinkDeviceCoordinator::Import(new_identity, new_vault, *new_psks_, nullptr, *json, "device-pin", kNow + 1000);
   ASSERT_TRUE(imported) << imported.error().message;
   EXPECT_EQ(imported->identity.account_id, saved->account_id);
   EXPECT_EQ(imported->identity.peer_id, new_peer);
@@ -130,7 +140,7 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
   public_key.peer_identity_kind = "account";
   public_key.peer_identity_value = "account:bob";
   public_key.channel = CryptoChannel::E2ePublic;
-  auto loaded_public = new_psks.Load(public_key);
+  auto loaded_public = new_psks_->Load(public_key);
   ASSERT_TRUE(loaded_public);
   ASSERT_TRUE(loaded_public->has_value());
   EXPECT_EQ(*loaded_public->value().master_psk_b64, Base64Encode(*public_psk));
@@ -138,7 +148,7 @@ TEST_F(LinkDeviceCoordinatorTest, ExportOmitsPrivatePsksAndImportAppliesPublic) 
 
   ChatTargetKey private_key = public_key;
   private_key.channel = CryptoChannel::E2e;
-  auto loaded_private = new_psks.Load(private_key);
+  auto loaded_private = new_psks_->Load(private_key);
   ASSERT_TRUE(loaded_private);
   EXPECT_FALSE(loaded_private->has_value());
 }

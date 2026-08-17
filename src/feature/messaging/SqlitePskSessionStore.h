@@ -17,6 +17,7 @@ namespace pbr {
 class SqlitePskSessionStore : public Module, public IPskSessionStore, public IDekConsumer {
 public:
   explicit SqlitePskSessionStore(std::string profile_db_path, std::string profile_id = {});
+  ~SqlitePskSessionStore();
 
   Roe<void> SetDek(ByteVector dek) override;
   void ClearDek() override;
