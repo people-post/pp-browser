@@ -61,8 +61,8 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 
 ### Identity plaintext (inside `identity.enc`)
 
-JSON fields: `schema_version` (**2**), device `public_key_b64` / `private_key_b64` (Ed25519), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`, optional `initiation_floor` (pp_credit minor units; missing → 0).  
-Unversioned blobs migrate on unlock and are rewritten with `schema_version`. Unsupported **newer** versions fail load.  
+JSON fields: `schema_version` (**3**), device `public_key_b64` / `private_key_b64` (**ML-DSA-65** — PeerId / Noise), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`, optional `initiation_floor` (pp_credit minor units; missing → 0).
+Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
 (`peer_id` remains in-memory only.)  
 AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
 

@@ -21,7 +21,15 @@ namespace libp2p::security::noise {
     outcome::result<Bytes> dh(const Bytes &private_key,
                               const Bytes &public_key) override;
 
+    outcome::result<KemEncapsulateResult> encapsulate(
+        const Bytes &public_key) override;
+
+    outcome::result<Bytes> decapsulate(const Bytes &private_key,
+                                       const Bytes &ciphertext) override;
+
     int dhSize() const override;
+
+    int ciphertextSize() const override;
 
     std::string dhName() const override;
 

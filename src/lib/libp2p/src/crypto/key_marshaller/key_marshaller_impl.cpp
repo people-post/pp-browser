@@ -22,6 +22,8 @@ namespace libp2p::crypto::marshaller {
           return wire::KeyTypeWire::kSecp256k1;
         case Key::Type::ECDSA:
           return wire::KeyTypeWire::kEcdsa;
+        case Key::Type::MlDsa65:
+          return wire::KeyTypeWire::kMlDsa65;
         case Key::Type::UNSPECIFIED:
           return CryptoProviderError::INVALID_KEY_TYPE;
       }
@@ -39,6 +41,8 @@ namespace libp2p::crypto::marshaller {
           return Key::Type::Secp256k1;
         case wire::KeyTypeWire::kEcdsa:
           return Key::Type::ECDSA;
+        case wire::KeyTypeWire::kMlDsa65:
+          return Key::Type::MlDsa65;
       }
       return CryptoProviderError::UNKNOWN_KEY_TYPE;
     }

@@ -14,6 +14,7 @@
 #include <libp2p/crypto/hmac_provider/hmac_provider_impl.hpp>
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 #include <libp2p/crypto/key_validator/key_validator_impl.hpp>
+#include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
@@ -66,14 +67,15 @@ namespace libp2p {
     auto secp256k1 =
         std::make_shared<crypto::secp256k1::Secp256k1ProviderImpl>(csprng);
     auto hmac = std::make_shared<crypto::hmac::HmacProviderImpl>();
+    auto mldsa = std::make_shared<crypto::mldsa::MlDsaProviderImpl>();
 
     std::shared_ptr<crypto::CryptoProvider> crypto_provider =
         std::make_shared<crypto::CryptoProviderImpl>(
-            csprng, ed25519, rsa, ecdsa, secp256k1, hmac);
+            csprng, ed25519, rsa, ecdsa, secp256k1, hmac, mldsa);
 
     if (!key_pair) {
       key_pair =
-          crypto_provider->generateKeys(crypto::Key::Type::Ed25519).value();
+          crypto_provider->generateKeys(crypto::Key::Type::MlDsa65).value();
     }
 
     auto key_validator =

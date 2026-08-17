@@ -100,13 +100,22 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 libp2p is built in-tree via `add_subdirectory(src/lib)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/base/p2p/`:
 
-- `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
+- `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise `/noise-mlkem768/1.0.0` over TCP); owned by `MessagingHub`; binds app device ML-DSA-65 identity when available
 - `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.
 - `PeerAddressBook.*` — integration-layer peer address book (media-hop **L1**): TTL’d multiaddrs per PeerId (base58); fed by bootstrap/register, inbound connections, dial success, and libp2p `AddressRepository`; exposed via `PeerSessionManager::PreferredPeerMultiaddr` for hop/circuit dial.
 - `IdentifyIntegrationService.*` — wires fork **Identify** + **Identify-Push** on `BasicHost`; remote Identify refreshes L1 book; self ads via `PublishSelfAdvertisedAddrs` (media-hop **L2**).
 - `BuildAdvertisedListenSet` / `AdvertisedAddrPublisher.*` — unify bound listen, UPnP external, global IPv6, and dial-back-confirmed addrs; `MessagingHub` publishes when **Node + media_relay** after reachability probe.
 - `CircuitBridgeTarget.*` / `CircuitRelayService` — media-hop **L3** PeerId-friendly circuit bridge (`target_peer_id` + relay-side resolve); `PeerSessionManager::TryEnsureHopViaCircuit` for circuit-backed media-relay streams; SoftMigrate fallback via `ICircuitHopReach`.
-- `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
+- `PeerIdUtil.*` — derive base58 Peer ID from the app device ML-DSA-65 signing public key (network identity / Me settings)
+
+### Full-PQ hard cut (libp2p-pq-transport)
+
+| Item | Value |
+|------|-------|
+| Noise protocol id | `/noise-mlkem768/1.0.0` |
+| Suite | `Noise_XXkem_MLKEM768_ChaChaPoly_SHA256` |
+| Device identity `KeyType` | `MlDsa65 = 4` (provisional) |
+| Planning | [projects/libp2p-pq-transport/](../../projects/libp2p-pq-transport/) |
 
 Feature protocols on the shared host:
 

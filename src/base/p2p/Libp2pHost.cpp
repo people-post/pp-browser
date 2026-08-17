@@ -50,17 +50,18 @@ groups:
 }
 
 std::optional<libp2p::crypto::KeyPair> BuildKeyPair(const Libp2pHostConfig& config) {
-  if (!config.ed25519_private_key || !config.ed25519_public_key) {
+  if (!config.device_ml_dsa_private_key || !config.device_ml_dsa_public_key) {
     return std::nullopt;
   }
-  if (config.ed25519_private_key->size() != 32 || config.ed25519_public_key->size() != 32) {
+  if (config.device_ml_dsa_private_key->size() != 4032
+      || config.device_ml_dsa_public_key->size() != 1952) {
     return std::nullopt;
   }
   libp2p::crypto::KeyPair pair;
-  pair.privateKey.type = libp2p::crypto::Key::Type::Ed25519;
-  pair.privateKey.data = *config.ed25519_private_key;
-  pair.publicKey.type = libp2p::crypto::Key::Type::Ed25519;
-  pair.publicKey.data = *config.ed25519_public_key;
+  pair.privateKey.type = libp2p::crypto::Key::Type::MlDsa65;
+  pair.privateKey.data = *config.device_ml_dsa_private_key;
+  pair.publicKey.type = libp2p::crypto::Key::Type::MlDsa65;
+  pair.publicKey.data = *config.device_ml_dsa_public_key;
   return pair;
 }
 

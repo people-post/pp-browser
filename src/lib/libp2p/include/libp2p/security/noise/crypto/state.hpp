@@ -170,13 +170,13 @@ namespace libp2p::security::noise {
 
     outcome::result<void> writeMessageS(Bytes &out);
 
-    outcome::result<void> writeMessageDHEE();
+    outcome::result<void> writeMessageDHEE(Bytes &out);
 
-    outcome::result<void> writeMessageDHES();
+    outcome::result<void> writeMessageDHES(Bytes &out);
 
-    outcome::result<void> writeMessageDHSE();
+    outcome::result<void> writeMessageDHSE(Bytes &out);
 
-    outcome::result<void> writeMessageDHSS();
+    outcome::result<void> writeMessageDHSS(Bytes &out);
 
     outcome::result<void> writeMessagePSK();
 
@@ -184,15 +184,21 @@ namespace libp2p::security::noise {
 
     outcome::result<void> readMessageS(Bytes &message);
 
-    outcome::result<void> readMessageDHEE();
+    outcome::result<void> readMessageDHEE(Bytes &message);
 
-    outcome::result<void> readMessageDHES();
+    outcome::result<void> readMessageDHES(Bytes &message);
 
-    outcome::result<void> readMessageDHSE();
+    outcome::result<void> readMessageDHSE(Bytes &message);
 
-    outcome::result<void> readMessageDHSS();
+    outcome::result<void> readMessageDHSS(Bytes &message);
 
     outcome::result<void> readMessagePSK();
+
+    /// Writer encapsulates to remote_pk and appends ciphertext; MixKey(ss).
+    outcome::result<void> writeKem(Bytes &out, const Bytes &remote_pk);
+
+    /// Reader consumes ciphertext and decapsulates with local_sk; MixKey(ss).
+    outcome::result<void> readKem(Bytes &message, const Bytes &local_sk);
 
     bool is_initialized_ = false;
     std::unique_ptr<SymmetricState> symmetric_state_;  // ss

@@ -489,8 +489,8 @@ Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.
 | E2E body | PSK + XChaCha20-Poly1305 | Unchanged |
 | Manual PSK | OOB 256-bit | Unchanged (PQ-safe) |
 | Optional automated setup | None / draft hybrid | **ML-KEM-768 only** (`mlkem-native`) → HKDF input |
-| Relay / account signatures | Ed25519 | **ML-DSA-65 only** (`mldsa-native`); device Ed25519 = Peer ID |
-| libp2p transport | BoringSSL TLS | Follow libp2p / industry PQ TLS when available |
+| Relay / account signatures | Ed25519 | **ML-DSA-65 only** (`mldsa-native`); device ML-DSA-65 = Peer ID / Noise auth |
+| libp2p transport | BoringSSL TLS / classical Noise | **`/noise-mlkem768/1.0.0`** (ML-KEM-768 XXkem) + device ML-DSA-65 identity |
 
 Do **not** use X25519 or ECDH alone for automated key agreement (E026).
 

@@ -9,6 +9,7 @@
 #include <openssl/x509.h>
 #include <libp2p/common/final_action.hpp>
 #include <libp2p/crypto/error.hpp>
+#include <libp2p/crypto/mldsa_provider.hpp>
 
 using libp2p::common::FinalAction;
 
@@ -49,6 +50,8 @@ namespace libp2p::crypto::validator {
         return validateSecp256k1(key);
       case Key::Type::ECDSA:
         return validateEcdsa(key);
+      case Key::Type::MlDsa65:
+        return validateMlDsa65(key);
       default:
         return KeyValidatorError::UNKNOWN_CRYPTO_ALGORYTHM;
     }
@@ -66,6 +69,8 @@ namespace libp2p::crypto::validator {
         return validateSecp256k1(key);
       case Key::Type::ECDSA:
         return validateEcdsa(key);
+      case Key::Type::MlDsa65:
+        return validateMlDsa65(key);
       default:
         return KeyValidatorError::UNKNOWN_CRYPTO_ALGORYTHM;
     }
@@ -87,6 +92,22 @@ namespace libp2p::crypto::validator {
     auto public_validate_res = validate(keys.publicKey);
     if (not public_validate_res) {
       return std::move(public_validate_res).as_failure();
+    }
+
+    // ML-DSA secret keys are not publicly derivable; prove the pair with a
+    // sign/verify round-trip instead of derivePublicKey.
+    if (keys.privateKey.type == Key::Type::MlDsa65) {
+      static constexpr uint8_t kProbe[] = {'p', 'p', '-', 'm', 'l', 'd', 's', 'a'};
+      auto sig_res = crypto_provider_->sign(kProbe, keys.privateKey);
+      if (not sig_res) {
+        return KeyValidatorError::KEYS_DONT_MATCH;
+      }
+      auto ok_res =
+          crypto_provider_->verify(kProbe, sig_res.value(), keys.publicKey);
+      if (not ok_res || not ok_res.value()) {
+        return KeyValidatorError::KEYS_DONT_MATCH;
+      }
+      return outcome::success();
     }
 
     auto public_key_res = crypto_provider_->derivePublicKey(keys.privateKey);
@@ -189,6 +210,22 @@ namespace libp2p::crypto::validator {
       const PublicKey &key) const {
     // TODO(xDimon): Check if it possible to validate ECDSA key by some way.
     //  issue: https://github.com/libp2p/cpp-libp2p/issues/103
+    return outcome::success();
+  }
+
+  outcome::result<void> KeyValidatorImpl::validateMlDsa65(
+      const PrivateKey &key) const {
+    if (key.data.size() != mldsa::kPrivateKeyBytes) {
+      return KeyValidatorError::WRONG_PRIVATE_KEY_SIZE;
+    }
+    return outcome::success();
+  }
+
+  outcome::result<void> KeyValidatorImpl::validateMlDsa65(
+      const PublicKey &key) const {
+    if (key.data.size() != mldsa::kPublicKeyBytes) {
+      return KeyValidatorError::WRONG_PUBLIC_KEY_SIZE;
+    }
     return outcome::success();
   }
 

@@ -406,7 +406,7 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 
 **Decision:**
 
-1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device Ed25519 is for Peer ID / libp2p only.
+1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device ML-DSA-65 is for Peer ID / libp2p Noise identity only ([libp2p-pq-transport P004](../libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)).
 2. Friends verify using the **ML-DSA-65** account public key bound to Account ID (hash-binding M002; directory/cache — resolver seam as E016, key kind shifts with D099/m2).
 3. **Private (`e2e`) PSKs are not auto-synced** to linked devices. New device needs OOB/import or explicit opt-in; default link-device does **not** copy private `chat_targets` PSK material.
 4. **Public (`e2e_public`) / group** conversation PSKs **may** sync with account/DEK when those tiers + link-device ship. Directory auto-key encapsulate-to is the **account KEM** (copied on link — **M015** / E024).

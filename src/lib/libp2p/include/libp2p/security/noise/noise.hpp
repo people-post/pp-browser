@@ -18,7 +18,7 @@ namespace libp2p::security {
   class Noise : public SecurityAdaptor,
                 public std::enable_shared_from_this<Noise> {
    public:
-    static constexpr auto kProtocolId = "/noise";
+    static constexpr auto kProtocolId = "/noise-mlkem768/1.0.0";
 
     Noise(std::shared_ptr<peer::IdentityManager> idmgr,
           std::shared_ptr<crypto::CryptoProvider> crypto_provider,

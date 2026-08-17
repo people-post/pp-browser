@@ -14,8 +14,8 @@ namespace pbr {
 
 class IdentityStore : public Module, public IDekConsumer {
 public:
-  /** Current identity plaintext JSON schema inside identity.enc. Unversioned files migrate on load. */
-  static constexpr int kSchemaVersion = 2;
+  /** Current identity plaintext JSON schema inside identity.enc. Unversioned / v1–v2 Ed25519 device keys fail closed (PQ hard cut). */
+  static constexpr int kSchemaVersion = 3;
 
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
@@ -33,9 +33,9 @@ public:
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
-  /** Raw 32-byte Ed25519 private key for libp2p Host identity binding. */
-  Roe<ByteVector> GetEd25519PrivateKey() const;
-  Roe<ByteVector> GetEd25519PublicKey() const;
+  /** Raw device ML-DSA-65 private key for libp2p Host identity binding. */
+  Roe<ByteVector> GetDeviceMlDsaPrivateKey() const;
+  Roe<ByteVector> GetDeviceMlDsaPublicKey() const;
   /** Account ML-KEM-768 secret (M015). Mints only if identity has no valid KEM yet. */
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;

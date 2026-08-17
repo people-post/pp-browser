@@ -26,8 +26,22 @@ namespace libp2p::security::noise {
     return dh_->dh(private_key, public_key);
   }
 
+  outcome::result<KemEncapsulateResult> CipherSuiteImpl::encapsulate(
+      const Bytes &public_key) {
+    return dh_->encapsulate(public_key);
+  }
+
+  outcome::result<Bytes> CipherSuiteImpl::decapsulate(
+      const Bytes &private_key, const Bytes &ciphertext) {
+    return dh_->decapsulate(private_key, ciphertext);
+  }
+
   int CipherSuiteImpl::dhSize() const {
     return dh_->dhSize();
+  }
+
+  int CipherSuiteImpl::ciphertextSize() const {
+    return dh_->ciphertextSize();
   }
 
   std::string CipherSuiteImpl::dhName() const {

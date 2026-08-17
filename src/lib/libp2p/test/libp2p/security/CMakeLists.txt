@@ -41,3 +41,12 @@ addtest(secio_propose_message_marshaller_test
 target_link_libraries(secio_propose_message_marshaller_test
     p2p_secio_propose_message_marshaller
     )
+
+addtest(noise_xxkem_test
+    noise_xxkem_test.cpp
+    )
+target_link_libraries(noise_xxkem_test
+    p2p_noise
+    p2p_sha
+    p2p_logger
+    )

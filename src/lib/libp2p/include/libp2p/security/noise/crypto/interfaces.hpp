@@ -46,19 +46,35 @@ namespace libp2p::security::noise {
     Bytes pub;
   };
 
+  struct KemEncapsulateResult {
+    Bytes ciphertext;
+    Bytes shared_secret;
+  };
+
   class DiffieHellman {
    public:
     virtual ~DiffieHellman() = default;
 
-    /// generates a key pair
+    /// generates a key pair (public key size == dhSize())
     virtual outcome::result<DHKey> generate() = 0;
 
-    /// does a Diffie-Hellman calculation between the given keys
+    /// Classical DH (X25519). ML-KEM providers return unsupported.
     virtual outcome::result<Bytes> dh(const Bytes &private_key,
                                       const Bytes &public_key) = 0;
 
-    /// returns the size in bytes of the result of dh computation
+    /// KEM encapsulate to peer public key (ML-KEM). Classical DH returns error.
+    virtual outcome::result<KemEncapsulateResult> encapsulate(
+        const Bytes &public_key) = 0;
+
+    /// KEM decapsulate with local private key.
+    virtual outcome::result<Bytes> decapsulate(const Bytes &private_key,
+                                               const Bytes &ciphertext) = 0;
+
+    /// size in bytes of the public key (and static/ephemeral wire field)
     virtual int dhSize() const = 0;
+
+    /// size in bytes of encaps ciphertext (0 for classical DH)
+    virtual int ciphertextSize() const = 0;
 
     /// algorithm identifier used in Noise handshake
     virtual std::string dhName() const = 0;

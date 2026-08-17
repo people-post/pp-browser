@@ -96,7 +96,7 @@ Transport this pass: **paste** (QR primary still later) (**M012**). JSON format 
 | `relay_user_id` | Existing Brief binding |
 | `created_at` / `expires_at` | Default TTL 15 minutes |
 
-**New device after import:** keep local device Ed25519 / Peer ID; replace account ML-DSA + **account KEM** + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). Public PSKs in the snapshot are applied. First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Show Account ID before import. Push re-attach follows after messaging is ready. Sibling public-PSK *refresh* is later (**M015**).
+**New device after import:** keep local device ML-DSA-65 / Peer ID; replace account ML-DSA + **account KEM** + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). Public PSKs in the snapshot are applied. First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Show Account ID before import. Push re-attach follows after messaging is ready. Sibling public-PSK *refresh* is later (**M015**).
 
 **Private Secure (M014):** one session per pair; transfer copies PSK+seq, not a device-keyed thread.
 

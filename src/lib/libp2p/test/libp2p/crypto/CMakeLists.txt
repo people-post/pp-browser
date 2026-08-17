@@ -98,3 +98,13 @@ target_link_libraries(x25519_test
     p2p_x25519_provider
     p2p_literals
     )
+
+addtest(mldsa_provider_test
+    mldsa_provider_test.cpp
+    )
+target_link_libraries(mldsa_provider_test
+    p2p_crypto_provider
+    p2p_key_marshaller
+    p2p_key_validator
+    p2p_peer_id
+    )

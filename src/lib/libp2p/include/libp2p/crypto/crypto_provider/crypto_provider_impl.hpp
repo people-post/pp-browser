@@ -27,6 +27,9 @@ namespace libp2p::crypto {
   namespace secp256k1 {
     class Secp256k1Provider;
   }
+  namespace mldsa {
+    class MlDsaProvider;
+  }
 
   class CryptoProviderImpl : public CryptoProvider {
    public:
@@ -43,7 +46,8 @@ namespace libp2p::crypto {
         std::shared_ptr<rsa::RsaProvider> rsa_provider,
         std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider,
         std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider,
-        std::shared_ptr<hmac::HmacProvider> hmac_provider);
+        std::shared_ptr<hmac::HmacProvider> hmac_provider,
+        std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider = nullptr);
 
     outcome::result<KeyPair> generateKeys(
         Key::Type key_type, common::RSAKeyType rsa_bitness) const override;
@@ -107,12 +111,21 @@ namespace libp2p::crypto {
                                       BytesIn signature,
                                       const PublicKey &public_key) const;
 
+    // ML-DSA-65
+    outcome::result<KeyPair> generateMlDsa65() const;
+    outcome::result<Buffer> signMlDsa65(BytesIn message,
+                                        const PrivateKey &private_key) const;
+    outcome::result<bool> verifyMlDsa65(BytesIn message,
+                                        BytesIn signature,
+                                        const PublicKey &public_key) const;
+
     std::shared_ptr<random::CSPRNG> random_provider_;
     std::shared_ptr<ed25519::Ed25519Provider> ed25519_provider_;
     std::shared_ptr<rsa::RsaProvider> rsa_provider_;
     std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider_;
     std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider_;
     std::shared_ptr<hmac::HmacProvider> hmac_provider_;
+    std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider_;
   };
 }  // namespace libp2p::crypto
 

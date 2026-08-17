@@ -6,11 +6,11 @@ How pp-browser exchanges bytes on libp2p streams: stack layers, on-wire shapes, 
 
 ## Production host stack
 
-`Libp2pHost` builds an ExplicitHost with **TCP + Noise + Yamux** only (QUIC exists in the fork but is not wired on the live path).
+`Libp2pHost` builds an ExplicitHost with **TCP + Noise (`/noise-mlkem768/1.0.0`) + Yamux** only (QUIC exists in the fork but is not wired on the live path).
 
 ```
 TCP
- └─ Noise frames:  u16-BE length + ciphertext (+16 B tag), max 65535
+ └─ Noise XXkem frames:  u16-BE length + ciphertext (+16 B tag), max 65535
       └─ Yamux frames: 12-byte header + payload (length u32-BE)
            └─ App stream: u64-BE length + body
                 └─ (chat/history) UTF-8 JSON RelayEnvelope / history messages

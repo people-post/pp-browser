@@ -1,8 +1,8 @@
-#include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
+#include "base/crypto/MlDsa.h"
 #include "base/p2p/PeerIdUtil.h"
 
 #include <filesystem>
@@ -51,9 +51,10 @@ TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
   EXPECT_FALSE(identity->account_signing_public_key_b64.empty());
   EXPECT_TRUE(std::filesystem::exists(data_dir_ / "identity.enc"));
 
-  auto public_key = Ed25519Signer::FromBase64(identity->public_key_b64);
+  auto public_key = Base64Decode(identity->public_key_b64);
   ASSERT_TRUE(static_cast<bool>(public_key));
-  auto derived = PeerIdFromEd25519PublicKey(*public_key);
+  EXPECT_EQ(public_key->size(), kMlDsa65PublicKeyBytes);
+  auto derived = PeerIdFromMlDsaPublicKey(*public_key);
   ASSERT_TRUE(static_cast<bool>(derived));
   EXPECT_EQ(identity->peer_id, *derived);
 }
@@ -84,18 +85,11 @@ TEST_F(IdentityStoreTest, DerivesSamePeerIdAcrossReload) {
 }
 
 TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
-  auto keys = Ed25519Signer::GenerateKeyPair();
-  ASSERT_TRUE(static_cast<bool>(keys));
-  const std::string public_key_b64 = Ed25519Signer::ToBase64(keys->public_key);
-  const std::string private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
-
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(MakeTestDek()));
   auto created = store.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(created));
   LocalIdentity identity = *created;
-  identity.public_key_b64 = public_key_b64;
-  identity.private_key_b64 = private_key_b64;
   identity.nickname = "alice";
   identity.relay_user_id = "relay:alice123";
   identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
@@ -121,14 +115,15 @@ TEST_F(IdentityStoreTest, RequiresDek) {
   ASSERT_FALSE(static_cast<bool>(identity));
 }
 
-TEST_F(IdentityStoreTest, WritesSchemaVersionAndMigratesLegacy) {
+TEST_F(IdentityStoreTest, RejectsLegacyEd25519DeviceKeys) {
   const ByteVector dek = MakeTestDek();
-  auto keys = Ed25519Signer::GenerateKeyPair();
-  ASSERT_TRUE(static_cast<bool>(keys));
+  ByteVector fake_pk(32, 0x11);
+  ByteVector fake_sk(32, 0x22);
 
   std::filesystem::create_directories(data_dir_);
-  const nlohmann::json legacy = {{"public_key_b64", Ed25519Signer::ToBase64(keys->public_key)},
-                                 {"private_key_b64", Ed25519Signer::ToBase64(keys->private_key)},
+  const nlohmann::json legacy = {{"schema_version", 2},
+                                 {"public_key_b64", Base64Encode(fake_pk)},
+                                 {"private_key_b64", Base64Encode(fake_sk)},
                                  {"nickname", "legacy"},
                                  {"relay_user_id", ""},
                                  {"brief_llm_api_key", ""},
@@ -149,16 +144,17 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionAndMigratesLegacy) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(dek));
   auto identity = store.LoadOrCreate();
-  ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
-  EXPECT_EQ(identity->nickname, "legacy");
+  ASSERT_FALSE(static_cast<bool>(identity));
+  EXPECT_NE(identity.error().message.find("wipe"), std::string::npos);
+}
 
-  // Reload should decrypt the rewritten schema_version payload.
-  IdentityStore reloaded(data_dir_.string(), "test-profile");
-  ASSERT_TRUE(reloaded.SetDek(dek));
-  auto again = reloaded.Get();
-  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
-  EXPECT_EQ(again->nickname, "legacy");
+TEST_F(IdentityStoreTest, WritesSchemaVersionOnCreate) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  ASSERT_TRUE(store.LoadOrCreate());
 
+  const ByteVector dek = MakeTestDek();
+  const std::string aad = FileCipher::BuildAad("identity", "test-profile");
   std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
   ASSERT_TRUE(static_cast<bool>(in));
   ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -172,13 +168,13 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionAndMigratesLegacy) {
 
 TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   const ByteVector dek = MakeTestDek();
-  auto keys = Ed25519Signer::GenerateKeyPair();
+  auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(keys));
 
   std::filesystem::create_directories(data_dir_);
   const nlohmann::json newer = {{"schema_version", IdentityStore::kSchemaVersion + 1},
-                                {"public_key_b64", Ed25519Signer::ToBase64(keys->public_key)},
-                                {"private_key_b64", Ed25519Signer::ToBase64(keys->private_key)},
+                                {"public_key_b64", Base64Encode(keys->public_key)},
+                                {"private_key_b64", Base64Encode(keys->secret_key)},
                                 {"nickname", "future"},
                                 {"registered", false}};
   const std::string json = newer.dump(2);

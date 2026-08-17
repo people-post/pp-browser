@@ -239,11 +239,11 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   NodeRuntimeConfig runtime;
   runtime.host.listen_enabled = (role == Libp2pRole::Node);
   runtime.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
-  if (auto priv = identity_->GetEd25519PrivateKey()) {
-    runtime.host.ed25519_private_key = *priv;
+  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
+    runtime.host.device_ml_dsa_private_key = *priv;
   }
-  if (auto pub = identity_->GetEd25519PublicKey()) {
-    runtime.host.ed25519_public_key = *pub;
+  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
+    runtime.host.device_ml_dsa_public_key = *pub;
   }
   runtime.sessions = SessionConfigFromApp(config_);
   runtime.bootstrap_peers = libp2p_cfg.bootstrap_peers;

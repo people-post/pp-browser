@@ -79,11 +79,11 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   NodeRuntimeConfig runtime_cfg;
   runtime_cfg.host.listen_enabled = true;
   runtime_cfg.host.listen_multiaddr = config->libp2p.listen_multiaddr;
-  if (auto priv = identity->GetEd25519PrivateKey()) {
-    runtime_cfg.host.ed25519_private_key = *priv;
+  if (auto priv = identity->GetDeviceMlDsaPrivateKey()) {
+    runtime_cfg.host.device_ml_dsa_private_key = *priv;
   }
-  if (auto pub = identity->GetEd25519PublicKey()) {
-    runtime_cfg.host.ed25519_public_key = *pub;
+  if (auto pub = identity->GetDeviceMlDsaPublicKey()) {
+    runtime_cfg.host.device_ml_dsa_public_key = *pub;
   }
   runtime_cfg.sessions = MakePeerSessionConfig(
       config->libp2p.max_connections, config->libp2p.max_concurrent_dials, config->libp2p.dial_timeout_ms,

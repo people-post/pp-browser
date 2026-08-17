@@ -21,6 +21,8 @@ enum class KeyTypeWire : int32_t {
   kEd25519 = 1,
   kSecp256k1 = 2,
   kEcdsa = 3,
+  /// Provisional pp-browser wire code (libp2p-pq-transport P003).
+  kMlDsa65 = 4,
 };
 
 struct PublicKeyWire {

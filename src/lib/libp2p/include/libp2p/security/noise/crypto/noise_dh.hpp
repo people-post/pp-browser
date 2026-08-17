@@ -6,12 +6,11 @@
 
 #pragma once
 
-#include <libp2p/crypto/x25519_provider/x25519_provider_impl.hpp>
 #include <libp2p/security/noise/crypto/interfaces.hpp>
 
 namespace libp2p::security::noise {
 
-  /// X25519 DH
+  /// ML-KEM-768 Noise DH/KEM (libp2p-pq-transport P002).
   class NoiseDiffieHellmanImpl : public DiffieHellman {
    public:
     outcome::result<DHKey> generate() override;
@@ -19,12 +18,17 @@ namespace libp2p::security::noise {
     outcome::result<Bytes> dh(const Bytes &private_key,
                               const Bytes &public_key) override;
 
+    outcome::result<KemEncapsulateResult> encapsulate(
+        const Bytes &public_key) override;
+
+    outcome::result<Bytes> decapsulate(const Bytes &private_key,
+                                       const Bytes &ciphertext) override;
+
     int dhSize() const override;
 
-    std::string dhName() const override;
+    int ciphertextSize() const override;
 
-   private:
-    crypto::x25519::X25519ProviderImpl x25519;
+    std::string dhName() const override;
   };
 
 }  // namespace libp2p::security::noise

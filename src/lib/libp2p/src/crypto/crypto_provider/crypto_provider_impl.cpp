@@ -20,6 +20,7 @@
 #include <libp2p/crypto/ed25519_provider.hpp>
 #include <libp2p/crypto/error.hpp>
 #include <libp2p/crypto/hmac_provider.hpp>
+#include <libp2p/crypto/mldsa_provider.hpp>
 #include <libp2p/crypto/random_generator.hpp>
 #include <libp2p/crypto/rsa_provider.hpp>
 #include <libp2p/crypto/secp256k1_provider.hpp>
@@ -45,13 +46,15 @@ namespace libp2p::crypto {
       std::shared_ptr<rsa::RsaProvider> rsa_provider,
       std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider,
       std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider,
-      std::shared_ptr<hmac::HmacProvider> hmac_provider)
+      std::shared_ptr<hmac::HmacProvider> hmac_provider,
+      std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider)
       : random_provider_{std::move(random_provider)},
         ed25519_provider_{std::move(ed25519_provider)},
         rsa_provider_{std::move(rsa_provider)},
         ecdsa_provider_{std::move(ecdsa_provider)},
         secp256k1_provider_{std::move(secp256k1_provider)},
-        hmac_provider_{std::move(hmac_provider)} {
+        hmac_provider_{std::move(hmac_provider)},
+        mldsa_provider_{std::move(mldsa_provider)} {
     initialize();
   }
 
@@ -80,6 +83,8 @@ namespace libp2p::crypto {
         return generateSecp256k1();
       case Key::Type::ECDSA:
         return generateEcdsa();
+      case Key::Type::MlDsa65:
+        return generateMlDsa65();
       default:
         return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
     }
@@ -146,6 +151,21 @@ namespace libp2p::crypto {
                                    .data = {priv.begin(), priv.end()}}}};
   }
 
+  outcome::result<KeyPair> CryptoProviderImpl::generateMlDsa65() const {
+    if (!mldsa_provider_) {
+      return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
+    }
+    auto mldsa_res = mldsa_provider_->generate();
+    if (!mldsa_res) {
+      return mldsa_res.as_failure();
+    }
+    auto mldsa = std::move(mldsa_res).value();
+    return KeyPair{.publicKey = {{.type = Key::Type::MlDsa65,
+                                  .data = std::move(mldsa.public_key)}},
+                   .privateKey = {{.type = Key::Type::MlDsa65,
+                                   .data = std::move(mldsa.private_key)}}};
+  }
+
   /* ###################################################################
    *
    * Public Key Derivation
@@ -163,6 +183,9 @@ namespace libp2p::crypto {
         return deriveSecp256k1(private_key);
       case Key::Type::ECDSA:
         return deriveEcdsa(private_key);
+      case Key::Type::MlDsa65:
+        // FIPS 204 secret key does not embed a recoverable public key blob.
+        return KeyGeneratorError::KEY_DERIVATION_FAILED;
       case Key::Type::UNSPECIFIED:
         return KeyGeneratorError::WRONG_KEY_TYPE;
     }
@@ -237,6 +260,8 @@ namespace libp2p::crypto {
         return signSecp256k1(message, private_key);
       case Key::Type::ECDSA:
         return signEcdsa(message, private_key);
+      case Key::Type::MlDsa65:
+        return signMlDsa65(message, private_key);
       case Key::Type::UNSPECIFIED:
         return KeyGeneratorError::WRONG_KEY_TYPE;
       default:
@@ -311,6 +336,8 @@ namespace libp2p::crypto {
         return verifySecp256k1(message, signature, public_key);
       case Key::Type::ECDSA:
         return verifyEcdsa(message, signature, public_key);
+      case Key::Type::MlDsa65:
+        return verifyMlDsa65(message, signature, public_key);
       case Key::Type::UNSPECIFIED:
         return KeyGeneratorError::WRONG_KEY_TYPE;
       default:
@@ -361,6 +388,28 @@ namespace libp2p::crypto {
     ecdsa_sig.insert(ecdsa_sig.end(), signature.begin(), signature.end());
 
     return ecdsa_provider_->verify(message, ecdsa_sig, ecdsa_pub);
+  }
+
+  outcome::result<Buffer> CryptoProviderImpl::signMlDsa65(
+      BytesIn message, const PrivateKey &private_key) const {
+    if (!mldsa_provider_) {
+      return CryptoProviderError::SIGNATURE_GENERATION_FAILED;
+    }
+    auto signature_res =
+        mldsa_provider_->sign(message, private_key.data);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    return std::move(signature_res).value();
+  }
+
+  outcome::result<bool> CryptoProviderImpl::verifyMlDsa65(
+      BytesIn message, BytesIn signature, const PublicKey &public_key) const {
+    if (!mldsa_provider_) {
+      return CryptoProviderError::SIGNATURE_VERIFICATION_FAILED;
+    }
+    mldsa::Signature mldsa_sig(signature.begin(), signature.end());
+    return mldsa_provider_->verify(message, mldsa_sig, public_key.data);
   }
 
   /* ###################################################################

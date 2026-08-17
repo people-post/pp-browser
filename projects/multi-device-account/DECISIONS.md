@@ -31,14 +31,15 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 
 ---
 
-## M003 — Account ML-DSA-65 signs envelopes; device Ed25519 is endpoint-only
+## M003 — Account ML-DSA-65 signs envelopes; device ML-DSA-65 is endpoint-only
 
 **Date:** 2026-08-11  
 **Updated:** 2026-08-11 — aggressive PQ: account signing is **ML-DSA-65 only** (not Ed25519 hybrid).  
 **Updated:** 2026-08-13 — dogfood is **one active sender** across linked devices (**M016**); `sender_instance_id` (D074) still later.  
-**Decision:** **Account** key = **ML-DSA-65** (vendored `mldsa-native`) signs all relay envelopes. **Device** Ed25519 keypair derives Peer ID / libp2p only — not envelope `signature`. Installs distinguished by `sender_instance_id` when multi-writer ships (D074).  
-**Rationale:** Maximize PQ for person-level auth; classical remains only where mesh forces it.  
-**Alternatives:** Ed25519+ML-DSA hybrid (S1 classic); device signs + account attests (S2).
+**Updated:** 2026-08-17 — [libp2p-pq-transport P004](../libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025): device endpoint key is **ML-DSA-65** (not Ed25519).  
+**Decision:** **Account** key = **ML-DSA-65** (vendored `mldsa-native`) signs all relay envelopes. **Device** ML-DSA-65 keypair derives Peer ID / libp2p Noise identity only — not envelope `signature`. Installs distinguished by `sender_instance_id` when multi-writer ships (D074).  
+**Rationale:** Maximize PQ for person-level auth and mesh endpoint identity.  
+**Alternatives:** Ed25519+ML-DSA hybrid (S1 classic); device signs + account attests (S2); classical Ed25519 Peer ID (rejected — P004).
 
 ---
 
@@ -83,9 +84,10 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 ## M008 — PQ libraries and KEM: mlkem-native + mldsa-native; ML-KEM-768 only
 
 **Date:** 2026-08-11  
-**Decision:** Vendor **mlkem-native v2.0.0** (ML-KEM-768, C backend) and **mldsa-native v2.0.0** (ML-DSA-65, C backend) under `third_party/`. Public auto-key uses **ML-KEM-768 only** (no X25519 hybrid). App wrappers: `HybridKem` (ML-KEM-768; name retained) and `MlDsa`. Symmetric stack remains libsodium; libp2p remains BoringSSL/Ed25519 for device Peer ID.  
-**Rationale:** High-assurance PQCP implementations; matches aggressive PQ account model; Brief updates KEM blob size to 1184 in parallel.  
-**Alternatives:** liboqs umbrella; keep X25519+Kyber-draft BoringSSL experimental path.
+**Updated:** 2026-08-17 — libp2p Noise/PeerId also use mlkem-native / mldsa-native ([libp2p-pq-transport](../libp2p-pq-transport/)).  
+**Decision:** Vendor **mlkem-native v2.0.0** (ML-KEM-768, C backend) and **mldsa-native v2.0.0** (ML-DSA-65, C backend) under `third_party/`. Public auto-key uses **ML-KEM-768 only** (no X25519 hybrid). App wrappers: `HybridKem` (ML-KEM-768; name retained) and `MlDsa`. Symmetric stack remains libsodium. Libp2p product path: device PeerId/Noise auth = ML-DSA-65; Noise secrecy = ML-KEM-768 (`/noise-mlkem768/1.0.0`). BoringSSL remains for HTTPS/curl and classical crypto still present in the fork for non-product paths.  
+**Rationale:** High-assurance PQCP implementations; matches aggressive PQ account + mesh model; Brief updates KEM blob size to 1184 in parallel.  
+**Alternatives:** liboqs umbrella; keep X25519+Kyber-draft BoringSSL experimental path; classical Noise (rejected — P002).
 
 ---
 
@@ -151,7 +153,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Decision:**
 
 1. Transport this pass: **paste payload** (QR primary still later; short code fallback later).
-2. Seal to new device: Account ID + account ML-DSA secret + **account ML-KEM-768** + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005 / M015). Keep per-device Ed25519 / Peer ID. **m4c ([M018](#m018--link-paste-includes-contacts--public-thread-index)):** also contacts + public thread *index* (not transcripts).
+2. Seal to new device: Account ID + account ML-DSA secret + **account ML-KEM-768** + DEK + public(/group) PSKs only — **never** private `e2e` PSKs (M005 / M015). Keep per-device ML-DSA-65 / Peer ID. **m4c ([M018](#m018--link-paste-includes-contacts--public-thread-index)):** also contacts + public thread *index* (not transcripts).
 3. Old device: unlocked + explicit confirm; **Copy link payload…** on Me → Security (registered). New device: first secrets use shows **I'm new on this device** vs **I already have an account**. Link path: PIN for *this* device, then paste into an **empty vault** (`CreateWithDek`). Do not mint a Brief person on the new install first. If the profile is already a person, **Reset this profile** then the same fork — no in-place Security join, no account switcher.
 4. **Per-device inbox cursor** from day one (shared watermark would starve siblings).
 5. Unlink/revoke: **[M019](#m019--unlink-local-forget-kem-rotation-is-revoke)** — spec now; local-forget after m3; KEM rotation later. Do not claim a stolen device loses public/group keys until rotation ships.

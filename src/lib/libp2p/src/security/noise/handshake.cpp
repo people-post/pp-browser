@@ -209,12 +209,6 @@ namespace libp2p::security::noise {
       return payload_res.as_failure();
     }
     auto payload = std::move(payload_res).value();
-    const size_t dh25519_len = 32;
-    const size_t poly1305_tag_size = 16;
-    const size_t length_prefix_size = 2;
-    size_t max_msg_size =
-        2 * dh25519_len + payload.size() + 2 * poly1305_tag_size;
-    std::vector<uint8_t> buffer(max_msg_size + length_prefix_size);
     if (initiator_) {
       //
       // Outgoing connection. Stage 0

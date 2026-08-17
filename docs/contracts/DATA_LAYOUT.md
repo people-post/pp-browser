@@ -33,7 +33,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 2; account ML-DSA + account KEM; unversioned migrates on unlock; optional initiation_floor)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
   contacts.json             # address book (schema_version 1: local + remote + overrides{}); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)

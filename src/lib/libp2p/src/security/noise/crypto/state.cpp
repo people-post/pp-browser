@@ -477,16 +477,16 @@ namespace libp2p::security::noise {
           err = writeMessageS(out);
           break;
         case MessagePattern::DHEE:
-          err = writeMessageDHEE();
+          err = writeMessageDHEE(out);
           break;
         case MessagePattern::DHES:
-          err = writeMessageDHES();
+          err = writeMessageDHES(out);
           break;
         case MessagePattern::DHSE:
-          err = writeMessageDHSE();
+          err = writeMessageDHSE(out);
           break;
         case MessagePattern::DHSS:
-          err = writeMessageDHSS();
+          err = writeMessageDHSS(out);
           break;
         case MessagePattern::PSK:
           err = writeMessagePSK();
@@ -553,71 +553,53 @@ namespace libp2p::security::noise {
     return outcome::success();
   }
 
-  outcome::result<void> HandshakeState::writeMessageDHEE() {
-    auto key_res =
-        symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                            remote_ephemeral_pubkey_);
-    if (!key_res) {
-      return key_res.error();
+  outcome::result<void> HandshakeState::writeKem(Bytes &out,
+                                                 const Bytes &remote_pk) {
+    auto enc_res = symmetric_state_->cipherSuite()->encapsulate(remote_pk);
+    if (!enc_res) {
+      return enc_res.error();
     }
-    auto key = std::move(key_res).value();
-    return symmetric_state_->mixKey(key);
+    auto enc = std::move(enc_res).value();
+    out.insert(out.end(), enc.ciphertext.begin(), enc.ciphertext.end());
+    return symmetric_state_->mixKey(enc.shared_secret);
   }
 
-  outcome::result<void> HandshakeState::writeMessageDHES() {
-    Bytes key_bytes;
+  outcome::result<void> HandshakeState::readKem(Bytes &message,
+                                                const Bytes &local_sk) {
+    const auto ct_len = symmetric_state_->cipherSuite()->ciphertextSize();
+    if (static_cast<int64_t>(message.size()) < ct_len) {
+      return Error::MESSAGE_TOO_SHORT;
+    }
+    Bytes ciphertext{message.begin(), message.begin() + ct_len};
+    auto ss_res =
+        symmetric_state_->cipherSuite()->decapsulate(local_sk, ciphertext);
+    if (!ss_res) {
+      return ss_res.error();
+    }
+    Bytes(message.begin() + ct_len, message.end()).swap(message);
+    return symmetric_state_->mixKey(ss_res.value());
+  }
+
+  outcome::result<void> HandshakeState::writeMessageDHEE(Bytes &out) {
+    return writeKem(out, remote_ephemeral_pubkey_);
+  }
+
+  outcome::result<void> HandshakeState::writeMessageDHES(Bytes &out) {
     if (is_initiator_) {
-      auto key_res =
-          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                              remote_static_pubkey_);
-      if (!key_res) {
-        return key_res.error();
-      }
-      auto key = std::move(key_res).value();
-      key_bytes = std::move(key);
-    } else {
-      auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                         remote_ephemeral_pubkey_);
-      if (!key_res) {
-        return key_res.error();
-      }
-      auto key = std::move(key_res).value();
-      key_bytes = std::move(key);
+      return writeKem(out, remote_static_pubkey_);
     }
-    return symmetric_state_->mixKey(key_bytes);
+    return writeKem(out, remote_ephemeral_pubkey_);
   }
 
-  outcome::result<void> HandshakeState::writeMessageDHSE() {
-    Bytes key_bytes;
+  outcome::result<void> HandshakeState::writeMessageDHSE(Bytes &out) {
     if (is_initiator_) {
-      auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                         remote_ephemeral_pubkey_);
-      if (!key_res) {
-        return key_res.error();
-      }
-      auto key = std::move(key_res).value();
-      key_bytes = std::move(key);
-    } else {
-      auto key_res =
-          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                              remote_static_pubkey_);
-      if (!key_res) {
-        return key_res.error();
-      }
-      auto key = std::move(key_res).value();
-      key_bytes = std::move(key);
+      return writeKem(out, remote_ephemeral_pubkey_);
     }
-    return symmetric_state_->mixKey(key_bytes);
+    return writeKem(out, remote_static_pubkey_);
   }
 
-  outcome::result<void> HandshakeState::writeMessageDHSS() {
-    auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                       remote_static_pubkey_);
-    if (!key_res) {
-      return key_res.error();
-    }
-    auto key = std::move(key_res).value();
-    return symmetric_state_->mixKey(key);
+  outcome::result<void> HandshakeState::writeMessageDHSS(Bytes &out) {
+    return writeKem(out, remote_static_pubkey_);
   }
 
   outcome::result<void> HandshakeState::writeMessagePSK() {
@@ -648,16 +630,16 @@ namespace libp2p::security::noise {
           err = readMessageS(msg);
           break;
         case MessagePattern::DHEE:
-          err = readMessageDHEE();
+          err = readMessageDHEE(msg);
           break;
         case MessagePattern::DHES:
-          err = readMessageDHES();
+          err = readMessageDHES(msg);
           break;
         case MessagePattern::DHSE:
-          err = readMessageDHSE();
+          err = readMessageDHSE(msg);
           break;
         case MessagePattern::DHSS:
-          err = readMessageDHSS();
+          err = readMessageDHSS(msg);
           break;
         case MessagePattern::PSK:
           err = readMessagePSK();
@@ -731,70 +713,26 @@ namespace libp2p::security::noise {
     return outcome::success();
   }
 
-  outcome::result<void> HandshakeState::readMessageDHEE() {
-    auto dh_res = symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                      remote_ephemeral_pubkey_);
-    if (!dh_res) {
-      return dh_res.error();
-    }
-    auto dh = std::move(dh_res).value();
-    return symmetric_state_->mixKey(dh);
+  outcome::result<void> HandshakeState::readMessageDHEE(Bytes &message) {
+    return readKem(message, local_ephemeral_kp_.priv);
   }
 
-  outcome::result<void> HandshakeState::readMessageDHES() {
-    Bytes data;
+  outcome::result<void> HandshakeState::readMessageDHES(Bytes &message) {
     if (is_initiator_) {
-      auto dh_res =
-          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                              remote_static_pubkey_);
-      if (!dh_res) {
-        return dh_res.error();
-      }
-      auto dh = std::move(dh_res).value();
-      data.swap(dh);
-    } else {
-      auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                        remote_ephemeral_pubkey_);
-      if (!dh_res) {
-        return dh_res.error();
-      }
-      auto dh = std::move(dh_res).value();
-      data.swap(dh);
+      return readKem(message, local_ephemeral_kp_.priv);
     }
-    return symmetric_state_->mixKey(data);
+    return readKem(message, local_static_kp_.priv);
   }
 
-  outcome::result<void> HandshakeState::readMessageDHSE() {
-    Bytes data;
+  outcome::result<void> HandshakeState::readMessageDHSE(Bytes &message) {
     if (is_initiator_) {
-      auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                        remote_ephemeral_pubkey_);
-      if (!dh_res) {
-        return dh_res.error();
-      }
-      auto dh = std::move(dh_res).value();
-      data.swap(dh);
-    } else {
-      auto dh_res =
-          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                              remote_static_pubkey_);
-      if (!dh_res) {
-        return dh_res.error();
-      }
-      auto dh = std::move(dh_res).value();
-      data.swap(dh);
+      return readKem(message, local_static_kp_.priv);
     }
-    return symmetric_state_->mixKey(data);
+    return readKem(message, local_ephemeral_kp_.priv);
   }
 
-  outcome::result<void> HandshakeState::readMessageDHSS() {
-    auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                      remote_static_pubkey_);
-    if (!dh_res) {
-      return dh_res.error();
-    }
-    auto dh = std::move(dh_res).value();
-    return symmetric_state_->mixKey(dh);
+  outcome::result<void> HandshakeState::readMessageDHSS(Bytes &message) {
+    return readKem(message, local_static_kp_.priv);
   }
 
   outcome::result<void> HandshakeState::readMessagePSK() {

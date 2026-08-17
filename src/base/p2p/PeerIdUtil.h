@@ -7,7 +7,7 @@
 
 namespace pbr {
 
-/** Derive libp2p PeerId (base58) from a raw Ed25519 public key (32 bytes). */
-Roe<std::string> PeerIdFromEd25519PublicKey(const std::vector<uint8_t>& public_key);
+/** Derive libp2p PeerId (base58) from a raw ML-DSA-65 public key (1952 bytes). */
+Roe<std::string> PeerIdFromMlDsaPublicKey(const std::vector<uint8_t>& public_key);
 
 } // namespace pbr
