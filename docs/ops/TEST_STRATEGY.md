@@ -90,7 +90,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 ### Local driver (lifecycle + suites)
 
-[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) owns Docker hop **up / stop / clear** and calls the existing smoke scripts. Default hop file: [`docker-compose.relay-smoke.yml`](../../packaging/pp-node/docker-compose.relay-smoke.yml). `up` / `run --suite node` **stop** a conflicting dogfood hop (`pp-node-local` on 18517/18518) before starting relay-smoke.
+[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) owns Docker hop **up / stop / clear** and calls the existing smoke scripts. Default hop file: [`docker-compose.relay-smoke.yml`](../../packaging/pp-node/docker-compose.relay-smoke.yml). `run --suite node` restages a **newer desktop `pp-node`** into the hop image when `dist/pp-node/docker/pp-node` is older than `build/src/app/node/pp-node` (avoids muxer failures against a stale packaged hop).
 
 ```bash
 ./scripts/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)

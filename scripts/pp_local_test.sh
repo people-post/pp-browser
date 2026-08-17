@@ -117,8 +117,36 @@ cmake_build_probes() {
   if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
     die "no CMake cache at ${BUILD_DIR}; configure a desktop tree first (docs/ops/BUILD.md)"
   fi
-  echo "building probes in ${BUILD_DIR}"
-  cmake --build "${BUILD_DIR}" --target pp-node-probe pp-call-probe -j
+  echo "building probes + pp-node in ${BUILD_DIR}"
+  cmake --build "${BUILD_DIR}" --target pp-node-probe pp-call-probe pp-node -j
+}
+
+# Hop image was packaged Aug 7; desktop probe is current. Staging a newer desktop
+# pp-node avoids "ProtocolMuxer: protocol negotiation failed" on media-relay.
+HOP_NEEDS_REBUILD=0
+DESKTOP_NODE="${BUILD_DIR}/src/app/node/pp-node"
+STAGED_NODE="${DOCKER_CONTEXT}/pp-node"
+
+stage_hop_binary_if_newer() {
+  if [[ ! -x "${DESKTOP_NODE}" ]]; then
+    echo "warn: ${DESKTOP_NODE} missing; using staged hop binary as-is"
+    return 0
+  fi
+  if [[ -f "${STAGED_NODE}" ]] && [[ ! "${DESKTOP_NODE}" -nt "${STAGED_NODE}" ]]; then
+    return 0
+  fi
+  echo "staging newer desktop pp-node into ${STAGED_NODE} (hop image was stale vs probe)"
+  mkdir -p "${DOCKER_CONTEXT}"
+  if command -v strip >/dev/null 2>&1; then
+    strip --strip-unneeded -o "${STAGED_NODE}" "${DESKTOP_NODE}"
+  else
+    cp -f "${DESKTOP_NODE}" "${STAGED_NODE}"
+  fi
+  chmod +x "${STAGED_NODE}"
+  if [[ ! -f "${DOCKER_CONTEXT}/config.json.example" ]]; then
+    cp -f "${ROOT}/packaging/pp-node/config.json.example" "${DOCKER_CONTEXT}/config.json.example"
+  fi
+  HOP_NEEDS_REBUILD=1
 }
 
 wait_healthz() {
@@ -127,17 +155,18 @@ wait_healthz() {
 }
 
 cmd_up() {
-  if hop_healthy && hop_ports_published; then
+  ensure_docker_context
+  stage_hop_binary_if_newer
+  if hop_healthy && hop_ports_published && [[ "${HOP_NEEDS_REBUILD}" -eq 0 ]]; then
     echo "reusing healthy hop ${HOP_CONTAINER} at ${STATUS_URL}"
     wait_healthz
     return 0
   fi
-  ensure_docker_context
   free_hop_ports
   # A previous bind failure can leave the hop running with Networks={} (no published
   # ports). Recreate so compose attaches the default network and host port maps.
   local args=(up -d --force-recreate)
-  if [[ "${COMPOSE_BUILD}" -eq 1 ]]; then
+  if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
     args+=(--build)
   fi
   echo "compose up --force-recreate project=${COMPOSE_PROJECT} file=${COMPOSE_FILE}"
