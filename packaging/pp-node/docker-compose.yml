@@ -6,7 +6,7 @@
 # Status HTTP (published on host; image has no curl):
 #   ./scripts/pp_node_relay_smoke.sh
 #   curl -sS http://127.0.0.1:18518/healthz
-# See IMAGE_SMOKE.md (L0/L1; L2 multi-container deferred).
+# See IMAGE_SMOKE.md. Prefer ./scripts/pp_local_test.sh for hop lifecycle.
 
 services:
   pp-node:

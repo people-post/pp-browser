@@ -208,9 +208,9 @@ namespace libp2p::security::noise {
     Bytes remote_ephemeral_pubkey_;                    // re
     Bytes preshared_key_;                              // psk
     MessagePatterns message_patterns_;
-    bool should_write_;
-    bool is_initiator_;
-    int message_idx_;
+    bool should_write_ = false;
+    bool is_initiator_ = false;
+    int message_idx_ = 0;
   };
 
 }  // namespace libp2p::security::noise

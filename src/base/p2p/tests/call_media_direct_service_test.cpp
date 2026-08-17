@@ -398,5 +398,177 @@ TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
   EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+/** B-TEARDOWN (Tier B): K connect→audio→detach cycles must leave both sides Idle and reusable. */
+TEST_F(CallMediaDirectServiceTest, ConnectDetachKCycleNoHang) {
+  constexpr int kCycles = 5;
+  const ByteVector media_key(32, 0x42);
+
+  for (int cycle = 0; cycle < kCycles; ++cycle) {
+    const std::string call_id = "call-kcycle-" + std::to_string(cycle);
+    std::mutex mu;
+    std::condition_variable cv;
+    bool connected = false;
+    bool got_audio = false;
+
+    b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+      params.media_key = media_key;
+      params.call_id = call_id;
+      params.media_epoch = 1;
+      params.offerer = false;
+      cbs.on_connected = [&] {
+        std::lock_guard lock(mu);
+        connected = true;
+        cv.notify_one();
+      };
+      cbs.on_audio = [&](const std::vector<uint8_t>&) {
+        std::lock_guard lock(mu);
+        got_audio = true;
+        cv.notify_one();
+      };
+    });
+
+    CallMediaDirectConnectParams params;
+    params.peer_key = "b";
+    params.call_id = call_id;
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = true;
+
+    CallMediaDirectCallbacks cbs;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      connected = true;
+      cv.notify_one();
+    };
+
+    ASSERT_TRUE(a_call_media_->Connect(params, cbs, 5000)) << "cycle " << cycle;
+    {
+      std::unique_lock lock(mu);
+      ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return connected; }))
+          << "cycle " << cycle << " connect";
+    }
+
+    const std::vector<uint8_t> opus = {static_cast<uint8_t>(0x10 + cycle)};
+    ASSERT_TRUE(a_call_media_->SendAudio(opus, 1, 0)) << "cycle " << cycle;
+    {
+      std::unique_lock lock(mu);
+      ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }))
+          << "cycle " << cycle << " audio";
+    }
+
+    a_call_media_->Detach();
+    b_call_media_->Detach();
+    EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
+    EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
+  }
+}
+
+/**
+ * B-CONFLICT (Tier B): while A–B is MediaReady, C's inbound is rejected; after A leaves,
+ * C can connect (end-and-accept). 3 hosts, same process.
+ */
+TEST_F(CallMediaDirectServiceTest, SecondInboundRejectedThenEndAndAccept) {
+  const ByteVector media_key(32, 0x42);
+
+  int c_port = 0;
+  Libp2pHost c_host;
+  auto c_started = test::StartEphemeralLoopbackHost(c_host, c_port);
+  ASSERT_TRUE(c_started) << c_started.error().message;
+  PeerSessionConfig config;
+  config.dial_timeout = std::chrono::milliseconds(3000);
+  config.dial_failure_backoff = std::chrono::milliseconds(100);
+  auto c_sessions = std::make_unique<PeerSessionManager>(c_host, config);
+  auto c_call_media = std::make_unique<CallMediaDirectService>(c_host, *c_sessions);
+  c_call_media->Start();
+  ASSERT_TRUE(c_sessions->RegisterEndpoint("b", b_ma_));
+
+  std::mutex mu;
+  std::condition_variable cv;
+  int b_connected = 0;
+  int b_audio = 0;
+
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      ++b_connected;
+      cv.notify_all();
+    };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) {
+      std::lock_guard lock(mu);
+      ++b_audio;
+      cv.notify_all();
+    };
+  });
+
+  CallMediaDirectConnectParams ab;
+  ab.peer_key = "b";
+  ab.call_id = "call-conflict-ab";
+  ab.media_key = media_key;
+  ab.media_epoch = 1;
+  ab.offerer = true;
+  std::atomic<bool> a_connected{false};
+  CallMediaDirectCallbacks a_cbs;
+  a_cbs.on_connected = [&] {
+    a_connected.store(true, std::memory_order_release);
+    cv.notify_all();
+  };
+  ASSERT_TRUE(a_call_media_->Connect(ab, a_cbs, 5000));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                            [&] { return b_connected >= 1 && a_connected.load(); }));
+  }
+  ASSERT_TRUE(a_call_media_->SendAudio({0xab}, 1, 0));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return b_audio >= 1; }));
+  }
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  CallMediaDirectConnectParams cb;
+  cb.peer_key = "b";
+  cb.call_id = "call-conflict-cb";
+  cb.media_key = media_key;
+  cb.media_epoch = 1;
+  cb.offerer = true;
+  auto busy = c_call_media->Connect(cb, {}, 2500);
+  ASSERT_FALSE(busy) << "second inbound must not take the active session";
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  a_call_media_->Detach();
+  WaitUntil([&] { return b_call_media_->Phase() == CallMediaSessionPhase::Idle; },
+            std::chrono::seconds(5));
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle);
+
+  std::atomic<bool> c_connected{false};
+  CallMediaDirectCallbacks c_cbs;
+  c_cbs.on_connected = [&] {
+    c_connected.store(true, std::memory_order_release);
+    cv.notify_all();
+  };
+  ASSERT_TRUE(c_call_media->Connect(cb, c_cbs, 5000)) << "end-and-accept after A left";
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                            [&] { return b_connected >= 2 && c_connected.load(); }));
+  }
+  ASSERT_TRUE(c_call_media->SendAudio({0xcb}, 1, 0));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return b_audio >= 2; }));
+  }
+
+  c_call_media->Detach();
+  b_call_media_->Detach();
+  c_call_media->Stop();
+  c_call_media.reset();
+  c_sessions.reset();
+  c_host.Stop();
+}
+
 } // namespace
 } // namespace pbr

@@ -74,8 +74,12 @@ namespace libp2p {
             csprng, ed25519, rsa, ecdsa, secp256k1, hmac, mldsa);
 
     if (!key_pair) {
-      key_pair =
-          crypto_provider->generateKeys(crypto::Key::Type::MlDsa65).value();
+      // Product Noise path uses ML-DSA-65. TLS adaptor still hard-codes
+      // Ed25519 libp2p identity extensions (marshalled pk size 36).
+      const auto default_type = security_kind == HostSecurityKind::Noise
+                                    ? crypto::Key::Type::MlDsa65
+                                    : crypto::Key::Type::Ed25519;
+      key_pair = crypto_provider->generateKeys(default_type).value();
     }
 
     auto key_validator =

@@ -57,7 +57,8 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 
 - `Multihash` — inline value storage instead of `shared_ptr` (avoids null moved-from state that broke MSVC Release peer identity paths)
 - `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI moved the same KeyPair into IdentityManager and Noise)
-- `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store
+- `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store; bind `CryptoProvider` and `MlDsaProvider` as instances (same pattern as Ed25519/RSA) so Boost.DI never constructs abstract `MlDsaProvider` when wiring `CryptoProviderImpl`
+- `crypto_provider/crypto_provider_impl.hpp` — include complete `mldsa_provider.hpp` (not a forward declaration) so Boost.DI constructor inspection sees a complete type
 - `host/explicit_host.*` — preferred Host factory (no Boost.DI); used by `Libp2pChatHistoryService` and `muxers_and_streams_test`. Boost.DI injectors remain for upstream-shaped examples/injector unit tests only
 - `host/basic_host/basic_host.hpp` — `getIdentityManager()` for pp-browser Identify integration (L2)
 - `network/impl/listener_manager_impl.cpp` — if the host is already `start()`ed, `listen()` binds the transport immediately (needed for mobile N025 ephemeral `/tcp/0` after Client non-listen start; upstream only binds inside `start()`)

@@ -152,7 +152,7 @@ void Libp2pDirectChatService::SetInboundHandler(InboundHandler handler) {
 }
 
 bool Libp2pDirectChatService::IsPeerReachable(const std::string& peer_identity_value) const {
-  return sessions_.IsDialable(peer_identity_value);
+  return sessions_.IsReachableForProtocol(peer_identity_value, kDirectChatProtocolId);
 }
 
 Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_user_id,
@@ -160,7 +160,7 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
   if (!started_ || !host_.IsRunning()) {
     return Error("libp2p direct chat service not started");
   }
-  if (!sessions_.IsDialable(peer_relay_user_id)) {
+  if (!sessions_.IsReachableForProtocol(peer_relay_user_id, kDirectChatProtocolId)) {
     return Error("Peer-direct endpoint not registered")
         .WithUser("No usable peer address — add a dialable multiaddr on the contact.");
   }

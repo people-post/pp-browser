@@ -104,7 +104,16 @@ public:
    */
   Roe<void> TryEnsureHopViaCircuit(const std::string& target_peer_id, CircuitRelayService& circuit,
                                    const std::vector<std::string>& relay_peer_ids,
-                                   const std::string& target_protocol, int timeout_ms = 8000);
+                                   const std::string& target_protocol, int timeout_ms = 8000,
+                                   const std::string& target_multiaddr = {});
+
+  /**
+   * Record a successful circuit bridge so OpenStream reuses the bridged stream.
+   * Does not register a direct dial path to the target (A↛B except via relay).
+   */
+  Roe<void> InstallCircuitHop(const std::string& target_peer_id, const std::string& relay_peer_id,
+                              const std::string& target_protocol,
+                              std::shared_ptr<libp2p::connection::Stream> stream);
 
   bool IsCircuitBacked(const std::string& peer_relay_user_id) const;
   bool IsCircuitBacked(const std::string& peer_relay_user_id, const std::string& target_protocol) const;

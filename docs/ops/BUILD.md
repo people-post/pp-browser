@@ -169,7 +169,7 @@ cmake --build build -j --target pp-node
   - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh).
-- **Image smoke (L0/L1):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md) — `scripts/pp_node_image_smoke.sh`, `scripts/pp_node_relay_smoke.sh`, `pp-node-probe` (L2 multi-container deferred).
+- **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
 - **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; cut tags from **`main`**. Tip development is on **`develop`**. See [RELEASE.md](RELEASE.md).
 - **Node release CI** builds on Ubuntu 24.04 (same family as `ubuntu:24.04` image), attaches a Linux tarball to the **pp-node** GitHub Release, pushes GHCR, and runs L0 smoke.
 - Local tarball + image smoke (on Ubuntu 24.04):
@@ -177,9 +177,8 @@ cmake --build build -j --target pp-node
 ```bash
 sudo apt-get install -y cmake ninja-build ccache pkg-config
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-docker build -t pp-node:local dist/pp-node/docker
-docker compose -f packaging/pp-node/docker-compose.yml up -d
-./scripts/pp_node_relay_smoke.sh   # L0 HTTP; L1 if pp-node-probe built
+./scripts/pp_local_test.sh run --suite node   # hop + L0/L1/N-FANOUT/N-CAP N=4
+# or manual compose + ./scripts/pp_node_relay_smoke.sh
 ```
 
   Keep build host and image on the same Ubuntu 24.04 family so glibc matches.

@@ -160,9 +160,9 @@ cpack --config build/CPackConfig.cmake
 
 ```bash
 PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-docker build -t pp-node:local dist/pp-node/docker
-docker compose -f packaging/pp-node/docker-compose.yml up -d
-./scripts/pp_node_relay_smoke.sh
+./scripts/pp_local_test.sh run --suite node
+# or: docker compose -f packaging/pp-node/docker-compose.yml up -d
+#     ./scripts/pp_node_relay_smoke.sh
 ```
 
 ## Checklist before tagging
@@ -178,7 +178,7 @@ docker compose -f packaging/pp-node/docker-compose.yml up -d
 ### Node (`pp-node/v*`)
 
 - [ ] Changes merged to **`main`**
-- [ ] Local L0 (and L1 if probe built) green — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md)
+- [ ] Local L0 (and L1/L2 N-FANOUT if probe built) green — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md)
 - [ ] GHCR package visibility set if public pulls are required
 - [ ] Protocol/compat note if this release breaks older apps
 
@@ -193,6 +193,6 @@ docker compose -f packaging/pp-node/docker-compose.yml up -d
 | Intel macOS / universal binary | GHA `macos-14` is arm64 only |
 | Linux `.deb` / AppImage (GUI) | Not targeted |
 | `pp-node` multi-arch (`linux/arm64`) | amd64 only for now |
-| L1 in release CI / L2 multi-container | [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md) |
+| L1 / L2 N-FANOUT / N-CAP in release CI | Local scripts done; CI optional — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md) |
 | Auto-update channel | Separate effort |
 | iOS distribution | [PLATFORMS.md](../architecture/PLATFORMS.md) |

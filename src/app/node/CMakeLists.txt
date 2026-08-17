@@ -52,6 +52,22 @@ if(TARGET OpenSSL::Crypto)
 endif()
 pp_browser_apply_warnings(pp-node-probe)
 
+add_executable(pp-call-probe
+  call_probe/main.cpp
+)
+target_include_directories(pp-call-probe PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(pp-call-probe PRIVATE
+  pp_base_p2p
+  pp_common
+  Threads::Threads
+)
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(pp-call-probe PRIVATE OpenSSL::Crypto)
+endif()
+pp_browser_apply_warnings(pp-call-probe)
+
 if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
