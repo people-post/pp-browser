@@ -25,6 +25,67 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 ---
 
+## Unit test conventions
+
+**Agents:** follow this when adding GoogleTest suites that touch SQLite or on-disk profile data.
+
+### Temp data dirs + Windows file locks
+
+On **Windows**, SQLite keeps `profile.db` (and WAL sidecars) locked until every open connection is closed. Calling `std::filesystem::remove_all(temp_dir)` while a store is still in scope throws:
+
+```text
+remove_all: The process cannot access the file because it is being used by another process.
+```
+
+Linux often masks the bug; **CI on Windows will fail**.
+
+**Do:**
+
+1. Create a unique temp dir: `temp_directory_path() / ("pp_<feature>_" + util::GenerateUuid())`.
+2. Use a **`::testing::Test` fixture** with `SetUp()` / `TearDown()`.
+3. Hold `SqliteThreadStore` and dependents in **`std::unique_ptr`**.
+4. In **`TearDown()`**, destroy dependents first, then the store, **then** `remove_all`.
+
+**Don't:** stack-allocate `SqliteThreadStore` and call `remove_all` at the end of a plain `TEST(...)` body.
+
+**Canonical examples:**
+
+| Pattern | File |
+|---------|------|
+| Store + schema helper | [`src/base/messaging/tests/call_session_store_test.cpp`](../../src/base/messaging/tests/call_session_store_test.cpp) |
+| Store + feature store on same `profile.db` | [`src/feature/messaging/tests/call_media_key_wrap_test.cpp`](../../src/feature/messaging/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
+
+Minimal fixture skeleton:
+
+```cpp
+class MyStoreTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_my_feature_" + util::GenerateUuid());
+    std::filesystem::remove_all(data_dir_);
+    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    ASSERT_TRUE(store_->ListThreads());
+    // subject_ = std::make_unique<...>(store_->ProfileDbPath());
+  }
+
+  void TearDown() override {
+    // subject_.reset();
+    store_.reset();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+  // std::unique_ptr<...> subject_;
+};
+
+TEST_F(MyStoreTest, Example) { /* ... */ }
+```
+
+Per-operation SQLite helpers (e.g. `CallMediaKeyStore::OpenDb()`) close after each call; the usual failure is **`SqliteThreadStore` left alive** through cleanup.
+
+---
+
 ## Tiers
 
 ```text

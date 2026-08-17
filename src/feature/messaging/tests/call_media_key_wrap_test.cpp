@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 
 namespace {
 
@@ -86,40 +87,54 @@ TEST(CallMediaKeyStoreWrapTest, WrapRejectsMissingArguments) {
   EXPECT_FALSE(CallMediaKeyStore::WrapKeyB64(session_key, key_bytes, "call:test-4", 1, ""));
 }
 
+class CallMediaKeyStoreEpochTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_media_key_" + util::GenerateUuid());
+    std::filesystem::remove_all(data_dir_);
+    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    ASSERT_TRUE(store_->ListThreads());
+    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+  }
+
+  void TearDown() override {
+    if (keys_) {
+      keys_->ClearDek();
+    }
+    keys_.reset();
+    store_.reset();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<CallMediaKeyStore> keys_;
+};
+
 /**
  * Product media-key defer path (B-CALL-DIRECT Tier B): answerer LoadEpochKey must see the
  * offerer's PutEpochKey after vault unlock — without this, CallLibp2pMediaBridge stays MediaPending.
  */
-TEST(CallMediaKeyStoreEpochTest, PutLoadEpochKeyRoundTrip) {
-  const auto data_dir =
-      std::filesystem::temp_directory_path() / ("pp_call_media_key_" + util::GenerateUuid());
-  std::filesystem::remove_all(data_dir);
-  SqliteThreadStore threads(data_dir.string());
-  ASSERT_TRUE(threads.ListThreads());
+TEST_F(CallMediaKeyStoreEpochTest, PutLoadEpochKeyRoundTrip) {
+  ASSERT_TRUE(keys_->SetDek(TestDek()));
 
-  CallMediaKeyStore keys(threads.ProfileDbPath());
-  ASSERT_TRUE(keys.SetDek(TestDek()));
-
-  auto generated = keys.GenerateEpochKey();
+  auto generated = keys_->GenerateEpochKey();
   ASSERT_TRUE(generated);
   ASSERT_EQ(generated->size(), 32u);
 
   const std::string call_id = "call:epoch-defer";
-  auto media_key_id = keys.PutEpochKey(call_id, /*media_epoch=*/1, *generated);
+  auto media_key_id = keys_->PutEpochKey(call_id, /*media_epoch=*/1, *generated);
   ASSERT_TRUE(media_key_id) << media_key_id.error().message;
   EXPECT_FALSE(media_key_id->empty());
 
-  auto loaded = keys.LoadEpochKey(call_id, 1);
+  auto loaded = keys_->LoadEpochKey(call_id, 1);
   ASSERT_TRUE(loaded) << loaded.error().message;
   ASSERT_TRUE(loaded->has_value());
   EXPECT_EQ(**loaded, *generated);
 
-  auto missing = keys.LoadEpochKey(call_id, /*media_epoch=*/2);
+  auto missing = keys_->LoadEpochKey(call_id, /*media_epoch=*/2);
   ASSERT_TRUE(missing);
   EXPECT_FALSE(missing->has_value());
-
-  keys.ClearDek();
-  std::filesystem::remove_all(data_dir);
 }
 
 } // namespace

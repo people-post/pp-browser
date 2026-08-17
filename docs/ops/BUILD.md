@@ -247,7 +247,9 @@ pp-browser tests use a hybrid layout:
 - RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
 - GoogleTest module suites under `src/.../tests/`.
 
-All suites are discovered through CTest. To run RmlUi fork tests:
+All suites are discovered through CTest. **Writing new tests:** temp SQLite dirs must use a gtest fixture and close stores before `remove_all` — Windows CI fails otherwise; see [TEST_STRATEGY.md § Unit test conventions](TEST_STRATEGY.md#unit-test-conventions).
+
+To run RmlUi fork tests:
 
 ```bash
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure
