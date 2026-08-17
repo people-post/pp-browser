@@ -59,7 +59,7 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched |
-| **Nightly** | Heavier local soak; L1; L2 `N-FANOUT` when stable; modest capacity (small N) |
+| **Nightly** | Heavier local soak; L1; L2 `N-FANOUT` when stable; modest capacity (small N); `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 
@@ -102,7 +102,8 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
 ./scripts/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
 ./scripts/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
-./scripts/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop)
+./scripts/pp_local_test.sh run --suite mix     # B-MIX + N-MIX interference (not in all)
+./scripts/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/pp_local_test.sh clear               # down -v + ready-file
 ```
@@ -123,6 +124,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | **N-CAP-CIRCUIT** | Circuit bridge capacity | 1 hop + M bridges | Setup ≥ Y%; teardown reclaims capacity | Nightly / manual |
 | **N-SOAK** | Long-run stability | hop + churning clients | T hours: 0 fatal; FD/RSS bounded; dials still accepted | Weekly / pre-release |
 | **N-CHAOS** | Process/network faults | kill/pause/restart | Survivors recover or fail cleanly; hop accepts new work | Manual / weekly |
+| **N-MIX** | Hop interference (existing smokes in parallel) | 1 hop + allowlisted children | Each child keeps its own criteria; hop `/healthz` after | Nightly |
 
 ### Inventory (thin)
 
@@ -136,6 +138,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | N-CAP-CIRCUIT | **Covered** (soft scaffold) | `pp-node-probe --mode circuit-cap` + [`scripts/pp_node_circuit_cap_smoke.sh`](../../scripts/pp_node_circuit_cap_smoke.sh). Soft SLO: 100% for M≤**M₀=4**; larger M informational. In-process: `ConcurrentBridges`. |
 | N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/pp_node_soak_smoke.sh`](../../scripts/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
 | N-CHAOS | **Covered** (scaffold) | [`scripts/pp_node_chaos_smoke.sh`](../../scripts/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
+| N-MIX | **Covered** (scaffold) | [`scripts/pp_mix_hop_smoke.sh`](../../scripts/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
 
 ---
 
@@ -149,6 +152,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | **B-CONFLICT** | Second invite / end-and-accept | 3 peers | Lifecycle rules hold across processes | Nightly |
 | **B-MSG+CALL** | Messaging + call coexistence | 2 peers | Chat during/after call; no stream starvation | Nightly |
 | **B-UI** | Chrome/actions only | 1–2 GUI instances | Accept visible; leave clears chrome — not media SLOs | Manual / sparse |
+| **B-MIX** | Browser interference (existing smokes in parallel) | independent pairs | Each child keeps its own criteria | Nightly |
 
 ### Inventory (thin)
 
@@ -160,6 +164,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/pp_call_conflict_smoke.sh`](../../scripts/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
 | B-MSG+CALL | **Covered** (scaffold) | In-process: `Libp2pDirectChatServiceTest.ChatDuringAndAfterCallMedia` (product `/pp-browser/chat/1.0.0`); multi-process: `pp-call-probe --with-chat` + [`scripts/pp_call_msg_smoke.sh`](../../scripts/pp_call_msg_smoke.sh); driver `--suite msg-call`. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
+| B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix`. Same-session mix remains B-MSG+CALL; hop-path chat still deferred. |
 
 **Product-glue hole:** `CallLibp2pMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
 
@@ -185,6 +190,19 @@ Automated harnesses (not PR-blocking):
 | Pause hop (~10s) then unpause | Clients fail cleanly or recover; hop accepts new work |
 
 In-flight streams need not survive restart. In-process Partial coverage remains in Stop/Abort/Detach/corrupt-frame gtests. **N-ADMIT** stays later (gtest policy; no deploy-profile stranger probe).
+
+---
+
+## Soft designs — interference mix (`--suite mix`)
+
+Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing smokes; each child keeps its own pass/fail. Mix pass = all children pass (hop phase also requires `/healthz`). Logs name the failing child.
+
+| Recipe | Children | Notes |
+|--------|----------|--------|
+| **B-MIX** | `pp_call_direct_smoke.sh` ∥ `pp_call_conflict_smoke.sh` ∥ `pp_call_msg_smoke.sh` | No Docker. Listen ports already distinct. |
+| **N-MIX** | `pp_call_hop_smoke.sh` (2 cycles) ∥ `pp_node_fanout_smoke.sh` ∥ `pp_node_circuit_cap_smoke.sh` (M=2) | One hop. Combined load under N₀=8. |
+
+**Do not mix** with N-CHAOS, N-CAP sweep, or N-SOAK (shared hop restart / participant limit). This is contention, not same-session protocol mix (hop-path `--with-chat` still later).
 
 ---
 
@@ -232,4 +250,4 @@ Later work is intentionally underspecified until evidence exists:
 2. **Phase 1** — cheapest Tier B gaps (core compose listed above; media-key Put/Load; K-cycle teardown).
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
-5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call`).
+5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call`). Then interference mix (`--suite mix`).

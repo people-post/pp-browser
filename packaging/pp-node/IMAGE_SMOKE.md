@@ -13,6 +13,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **N-CAP** | Soft media attach capacity curve (N=4 cheap; sweep via `--suite cap`) | `pp-node-probe --mode media-cap` + `scripts/pp_node_cap_smoke.sh` | **Done** (soft SLO N≤8; 12/16 informational) |
 | **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
 | **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |
+| **N-MIX / B-MIX** | Parallel allowlisted smokes (interference) | `--suite mix` | **Done** (nightly; not in `all`) |
 
 ## CI / release
 
@@ -22,7 +23,7 @@ Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against co
 
 ## Local driver (preferred)
 
-[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) starts/stops the **relay-smoke** hop and runs L0–L2 / N-CAP (and optional unit/call/cap/soak/chaos/call-hop suites). Individual `pp_*_smoke.sh` scripts remain for CI when the hop is already up.
+[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) starts/stops the **relay-smoke** hop and runs L0–L2 / N-CAP (and optional unit/call/cap/soak/chaos/call-hop/mix suites). Individual `pp_*_smoke.sh` scripts remain for CI when the hop is already up.
 
 ```bash
 # After packaging dist/pp-node/docker (see BUILD.md):
@@ -31,6 +32,7 @@ Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against co
 ./scripts/pp_local_test.sh run --suite soak     # 120s churn (PP_NODE_SOAK_SEC=3600 weekly)
 ./scripts/pp_local_test.sh run --suite chaos    # kill-client / restart / pause
 ./scripts/pp_local_test.sh run --suite call-hop # B-CALL-HOP thin client
+./scripts/pp_local_test.sh run --suite mix      # B-MIX + N-MIX interference (nightly)
 ./scripts/pp_local_test.sh status
 ./scripts/pp_local_test.sh stop                 # keep volume
 ./scripts/pp_local_test.sh clear                # down -v
