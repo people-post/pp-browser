@@ -16,11 +16,12 @@
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
+#include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/net/ServiceClients.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/PeerSessionManager.h"
 
 #include <atomic>
 #include <functional>
@@ -111,6 +112,10 @@ public:
   Roe<uint32_t> StartNewSecureChat(const std::string& thread_id);
   /** E020 — rotate PSK, bump epoch, return OOB bundle JSON. */
   Roe<std::string> RotatePskAndExportBundle(const std::string& thread_id);
+  /** E027 — public 1:1 in-band device-lock (not private OOB rotate). */
+  Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
+  Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id) const;
+  Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id) const;
   /** D038 — pause ingest/outbound without rotating keys. */
   Roe<void> PauseIntegrityOnly(const std::string& thread_id);
 
@@ -160,6 +165,9 @@ private:
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
   bool IsPskReadyToSend(const std::string& thread_id) const;
+  bool HasActiveLocalCall() const;
+  Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
+  Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope);
   void LoadPersistedRelayCursor(const std::string& relay_user_id);
@@ -189,6 +197,8 @@ private:
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
+  PublicPskLockCoordinator public_lock_;
+  CallSessionManager* call_sessions_ = nullptr;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const std::string&)> on_delivery_notice_;

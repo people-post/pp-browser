@@ -23,7 +23,7 @@ Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects
 
 ## Libp2p investment
 
-The **vendored** fork under [`src/libp2p/fork/`](../../src/libp2p/fork/) is a product surface, not a thin dependency. Mesh work continues to deepen:
+The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is a product surface, not a thin dependency. Mesh work continues to deepen:
 
 - Peer discovery and dialability (peerstore / Identify, contacts, bootstrap, later directory/DHT)
 - Reachability (listen, UPnP, dial-back, circuit → PeerId-friendly paths)
@@ -34,7 +34,7 @@ The **vendored** fork under [`src/libp2p/fork/`](../../src/libp2p/fork/) is a pr
 
 **Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (shared) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
 
-`MeshHost` ([`src/libp2p/integration/host/`](../../src/libp2p/integration/host/)) is the **shared mesh composition root** — `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths. Mesh UX reads through `MeshHost` (via `MessagingHub::Mesh()`), not ad-hoc hub forwards.
+`MeshHost` ([`src/base/p2p/`](../../src/base/p2p/)) is the **shared mesh composition root** — `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths. Mesh UX reads through `MeshHost` (via `MessagingHub::Mesh()`), not ad-hoc hub forwards.
 
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+).
 

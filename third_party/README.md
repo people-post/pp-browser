@@ -2,9 +2,9 @@
 
 Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake).
 
-RmlUi remains a hard fork under [`src/render/fork/`](../src/render/fork/), not in this directory.
+RmlUi remains a hard fork under [`src/lib/rmlui/`](../src/lib/rmlui/), not in this directory.
 
-libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), not here. This directory holds **libp2p's external dependencies**.
+libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies**.
 
 ## Libraries
 
@@ -40,7 +40,7 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | `boost_di/` | qdrvm/boost-di | |
 | `zlib/` | qdrvm/zlib 1.3.0-p1 | For lsquic |
 
-libp2p wire codecs are handwritten (`src/libp2p/fork/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.
+libp2p wire codecs are handwritten (`src/lib/libp2p/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|

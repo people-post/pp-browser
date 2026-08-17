@@ -1,6 +1,7 @@
 set(PP_BROWSER_COMMON_SOURCES
   Module.cpp
   Logger.cpp
+  CivilTime.cpp
   Utilities.cpp
   SequencedTaskRunner.cpp
   WorkerPool.cpp

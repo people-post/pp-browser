@@ -43,7 +43,7 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 |---------|-------|--------------|-------|
 | Inbound stream | Reject if session already active; reject inbound while outbound offerer hello in flight **and** local PeerId > remote (dual-dial shares one stream) | One duplex | — |
 | Hello | Local session + media key (wait ≤8s) | Reject → close | — |
-| Client attach (phone→hop) | After quote/accept/attach handshake | `DuplexFrameSession` on host **io_context** (`write_preferred`, max **4** queued). Subscribe/SendFrame enqueue — no BlockingRead worker + BlockingWrite capture on the same stream. Corrupt frames skipped (do not tear down). | — |
+| Client attach (phone→hop) | After quote/accept/attach handshake | `DuplexFrameSession` + `MediaRelayClientIoPolicy` on host **io_context** (full duplex, max **4** queued). Subscribe/SendFrame enqueue — no BlockingRead worker + BlockingWrite capture on the same stream. Corrupt frames skipped (do not tear down). | — |
 
 ---
 
@@ -55,7 +55,7 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 | `accept` | Known quote; same admission | — | — |
 | `attach` | Auth stub `auth == call_id`; max **8** participants/session; call-scoped strangers OK after session exists | — | Bind per-peer A↑/A↓ |
 | subscribe / unsub / detach | Attached participant | Subscribe from Joined roster **and** from inbound `CallSfuAttach.publisher_stream_id` (roster may lag). After attach, each peer fan-outs its own publisher stream so others can subscribe without waiting for CallRoster | — |
-| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound: peer `DuplexFrameSession` on host **io_context** (`write_preferred` = **full duplex** read∥write, max **1** queued = latest-wins). A stuck **or failed** peer write must not stall/remove that peer’s uplink (failed write → drop outbound queue, keep reading; only read EOF / explicit `detach` / cancel → `CleanupParticipant`). Corrupt media/control frames → skip, do not tear down. **Never** BlockingWrite on the worker pool for fanout. **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total`; per-peer in `media_health hop_peers=`; `CleanupParticipant` logged |
+| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound: peer `DuplexFrameSession` + `MediaRelayHopIoPolicy` on host **io_context** (full duplex, max **1** queued = latest-wins). A stuck **or failed** peer write must not stall/remove that peer’s uplink (failed write → drop outbound queue, keep reading; only read EOF / explicit `detach` / cancel → `CleanupParticipant`). Corrupt media/control frames → skip, do not tear down. **Never** BlockingWrite on the worker pool for fanout. **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total`; per-peer in `media_health hop_peers=`; `CleanupParticipant` logged |
 | Data frame (video = `LatestLossy`) | Same | Stale `seq` (mark=0) → drop; same bps/ceiling rules | Same |
 
 Hop stays **blind** (no decode, no call keys).
@@ -101,4 +101,4 @@ Hop stays **blind** (no decode, no call keys).
 - Paid pricing / C↑ node capacity auction  
 - Congestion-control feedback protocol (RTCP-like) — later  
 - Video publish on libp2p (deferred)  
-Fork `src/libp2p/fork` internals except via integration services
+Fork `src/lib/libp2p` internals except via integration services

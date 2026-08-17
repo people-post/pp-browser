@@ -22,7 +22,7 @@ namespace pbr {
 
 namespace {
 
-constexpr int kProfileUserVersion = 2;
+constexpr int kProfileUserVersion = 3;
 constexpr int kThreadUserVersion = 1;
 
 /** sqlite3_column_text NULL → empty; never construct std::string from nullptr. */
@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS chat_targets (
   psk_fingerprint TEXT,
   psk_verified_at INTEGER,
   retired_psks_json TEXT,
+  key_scope TEXT NOT NULL DEFAULT 'account',
+  thread_kem_pk_b64 TEXT,
+  thread_kem_sk_b64 TEXT,
+  peer_thread_kem_pk_b64 TEXT,
+  last_psk_rotate_at INTEGER,
+  psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0,
+  last_rotation_id TEXT,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
@@ -172,6 +179,25 @@ Roe<void> MigrateProfileDb(sqlite3* db, int from_version) {
       const std::string& msg = result.error().message;
       if (msg.find("duplicate column") == std::string::npos) {
         return result.error();
+      }
+    }
+  }
+  if (from_version < 3) {
+    const char* kAdds[] = {
+        "ALTER TABLE chat_targets ADD COLUMN key_scope TEXT NOT NULL DEFAULT 'account';",
+        "ALTER TABLE chat_targets ADD COLUMN thread_kem_pk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN thread_kem_sk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN peer_thread_kem_pk_b64 TEXT;",
+        "ALTER TABLE chat_targets ADD COLUMN last_psk_rotate_at INTEGER;",
+        "ALTER TABLE chat_targets ADD COLUMN psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE chat_targets ADD COLUMN last_rotation_id TEXT;",
+    };
+    for (const char* sql : kAdds) {
+      if (auto result = ExecSql(db, sql); !result) {
+        const std::string& msg = result.error().message;
+        if (msg.find("duplicate column") == std::string::npos) {
+          return result.error();
+        }
       }
     }
   }

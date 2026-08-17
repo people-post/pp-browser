@@ -8,10 +8,11 @@ add_subdirectory(i18n)
 add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
+add_subdirectory(p2p)
 add_subdirectory(people)
 
 if(PP_BROWSER_HEADLESS)
-  # Node-only: no messaging/media/net/ai/ui aggregate.
+  # Node-only: no messaging/media/net/ai/ui/render aggregate.
   return()
 endif()
 
@@ -20,6 +21,7 @@ add_subdirectory(media)
 add_subdirectory(net)
 add_subdirectory(ai)
 add_subdirectory(ui)
+add_subdirectory(render)
 
 set(PP_BASE_MODULE_LIBS
   pp_base_error
@@ -30,6 +32,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_data
   pp_base_i18n
   pp_base_crypto
+  pp_base_p2p
   pp_base_people
   pp_base_messaging
   pp_base_media
@@ -38,6 +41,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_ai_conversation
   pp_base_ai_mcp
   pp_base_ui
+  pp_base_render
 )
 
 add_library(pp_base INTERFACE)

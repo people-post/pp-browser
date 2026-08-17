@@ -1,9 +1,12 @@
 #include "base/people/ContactTypes.h"
+#include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/PublicPskLockCoordinator.h"
 
 #include "base/crypto/AutoKeyEstablishment.h"
+#include "base/crypto/CryptoTypes.h"
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -20,6 +23,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ReactionTypes.h"
+#include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/MessagingLimits.h"
 #include "common/EmojiKey.h"
@@ -31,6 +35,7 @@
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
+#include "base/platform/os/OsTime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -107,7 +112,8 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), libp2p_host_(libp2p_host),
-      peer_sessions_(peer_sessions), epoch_coordinator_(store), psk_coordinator_(store, psk_store) {
+      peer_sessions_(peer_sessions), epoch_coordinator_(store), psk_coordinator_(store, psk_store),
+      public_lock_(store, psk_store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
@@ -180,6 +186,7 @@ void P2pMessagingService::SetInitiationBillingStore(InitiationBillingStore* stor
 }
 
 void P2pMessagingService::SetCallSessionManager(CallSessionManager* calls) {
+  call_sessions_ = calls;
   if (receive_pipeline_) {
     receive_pipeline_->SetCallSessionManager(calls);
   }
@@ -575,6 +582,102 @@ bool P2pMessagingService::IsPskReadyToSend(const std::string& thread_id) const {
   return status && status->has_psk && status->verified;
 }
 
+bool P2pMessagingService::HasActiveLocalCall() const {
+  if (!call_sessions_) {
+    return false;
+  }
+  auto active = call_sessions_->ActiveLocalCall();
+  return active && active->has_value();
+}
+
+Roe<void> P2pMessagingService::MaybeSendPublicAutoRekey(const std::string& thread_id) {
+  if (HasActiveLocalCall()) {
+    return {};
+  }
+  auto should = public_lock_.ShouldAutoRekey(thread_id, util::NowUnixMs());
+  if (!should) {
+    return should.error();
+  }
+  if (!*should) {
+    return {};
+  }
+  auto sent = SendPublicPskRotate(thread_id, PublicPskRotateKind::Auto);
+  if (!sent) {
+    log().warning << "Public auto-rekey skipped: " << sent.error().message;
+  }
+  return {};
+}
+
+Roe<ThreadMessage> P2pMessagingService::SendPublicPskRotate(const std::string& thread_id,
+                                                           const PublicPskRotateKind kind) {
+  if (HasActiveLocalCall()) {
+    return Error("Finish the call first");
+  }
+  ByteVector peer_account_kem_pk;
+  if (kind == PublicPskRotateKind::Lock) {
+    auto thread = store_.GetThread(thread_id);
+    if (!thread) {
+      return thread.error();
+    }
+    if (!*thread) {
+      return Error("Thread not found");
+    }
+    const ChatTargetKey key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
+    auto peer_kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
+    if (!peer_kem) {
+      return peer_kem.error();
+    }
+    auto decoded = Base64Decode(peer_kem->kem_public_key_b64);
+    if (!decoded) {
+      return decoded.error();
+    }
+    peer_account_kem_pk = std::move(*decoded);
+  }
+  auto plan = kind == PublicPskRotateKind::Lock
+                  ? public_lock_.PrepareLock(thread_id, peer_account_kem_pk, util::NowUnixMs())
+                  : public_lock_.PrepareAutoRekey(thread_id, util::NowUnixMs());
+  if (!plan) {
+    return plan.error();
+  }
+  auto payload = PskRotateCodec::EncodePayloadJson(plan->detail);
+  if (!payload) {
+    (void)public_lock_.AbortPrepare(*plan);
+    return payload.error();
+  }
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::System;
+  opts.payload_json = *payload;
+  opts.key_init_b64 = plan->key_init_b64;
+  const char* text =
+      kind == PublicPskRotateKind::Lock ? "New messages stay on this device." : "Chat key updated.";
+  auto sent = SendUserMessage(thread_id, text, opts);
+  if (!sent) {
+    (void)public_lock_.AbortPrepare(*plan);
+    return sent.error();
+  }
+  if (auto committed = public_lock_.Commit(*plan, util::NowUnixMs()); !committed) {
+    return committed.error();
+  }
+  PurgeRetryQueueForThread(thread_id);
+  return sent;
+}
+
+Roe<void> P2pMessagingService::LockPublicThreadToThisDevice(const std::string& thread_id) {
+  auto sent = SendPublicPskRotate(thread_id, PublicPskRotateKind::Lock);
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+Roe<PublicKeyScope> P2pMessagingService::GetPublicKeyScope(const std::string& thread_id) const {
+  return public_lock_.GetKeyScope(thread_id);
+}
+
+Roe<bool> P2pMessagingService::CanLockPublicToThisDevice(const std::string& thread_id) const {
+  return public_lock_.CanLockToThisDevice(thread_id);
+}
+
 void P2pMessagingService::PurgeRetryQueueForThread(const std::string& thread_id) {
   std::lock_guard lock(retry_mutex_);
   retry_queue_.erase(std::remove_if(retry_queue_.begin(), retry_queue_.end(),
@@ -873,6 +976,15 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   if ((*thread)->channel == ThreadChannel::E2e && !IsPskReadyToSend(thread_id)) {
     return Error("Verify the encryption key with your contact before sending");
   }
+  if ((*thread)->channel == ThreadChannel::E2ePublic) {
+    auto scope = public_lock_.GetKeyScope(thread_id);
+    if (!scope) {
+      return scope.error();
+    }
+    if (*scope == PublicKeyScope::LockedOut) {
+      return Error("This chat continues on another device");
+    }
+  }
   if ((*thread)->peer_identity_value.empty()) {
     return Error("Direct thread missing peer identity");
   }
@@ -880,6 +992,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   // System/control traffic (call invite, charge_required, …) must not hit this gate.
   const bool system_control =
       options.content_type && *options.content_type == ChatContentType::System;
+  if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
+    if (auto rotated = MaybeSendPublicAutoRekey(thread_id); !rotated) {
+      return rotated.error();
+    }
+  }
   if (!system_control && initiation_billing_ &&
       !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
     const InitiationPeerBilling billing = initiation_billing_->Get((*thread)->peer_identity_value);
@@ -961,6 +1078,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
       return master_psk_b64.error();
     }
     if (!master_psk_b64->has_value()) {
+      if (options.key_init_b64 && !options.key_init_b64->empty()) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return Error("psk_rotate requires the current encryption key");
+      }
       if ((*thread)->channel != ThreadChannel::E2ePublic) {
         appended->delivery = MessageDelivery::Failed;
         (void)store_.UpdateMessage(*appended);
@@ -1004,6 +1126,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
         return decoded.error();
       }
       master_psk = std::move(*decoded);
+      if (options.key_init_b64 && !options.key_init_b64->empty()) {
+        key_init_b64 = options.key_init_b64;
+      }
     }
     E2eEncryptParams params;
     params.text = text;
@@ -1120,6 +1245,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   // Always hop to UI — SendUserMessage runs on IO during membership fan-out (PublishMemberJoined).
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
+  }
+  if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
+    (void)public_lock_.NoteTraffic(thread_id);
   }
   return *appended;
 }
@@ -1477,11 +1605,9 @@ namespace {
 std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
   const std::time_t seconds = static_cast<std::time_t>(unix_ms / 1000);
   std::tm tm_utc{};
-#if defined(_WIN32)
-  gmtime_s(&tm_utc, &seconds);
-#else
-  gmtime_r(&seconds, &tm_utc);
-#endif
+  if (!os::UtcTime(seconds, &tm_utc)) {
+    return {};
+  }
   std::ostringstream oss;
   oss << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%S");
   oss << '.' << std::setw(3) << std::setfill('0') << (unix_ms % 1000) << 'Z';

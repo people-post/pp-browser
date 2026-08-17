@@ -1,6 +1,7 @@
 #include "feature/chat/ChatThreadChrome.h"
 
 #include "feature/chat/ChatDataModel.h"
+#include "base/crypto/CryptoTypes.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
@@ -88,6 +89,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.show_gap_banner = false;
   view_.show_older_history_hint = false;
   view_.show_compromised_banner = false;
+  view_.show_locked_out_banner = false;
   view_.show_psk_setup_banner = false;
   view_.show_psk_import = false;
   view_.psk_has_key = false;
@@ -157,6 +159,7 @@ void ChatThreadChrome::Update() {
     view_.show_gap_banner = false;
     view_.show_older_history_hint = false;
     view_.show_compromised_banner = false;
+    view_.show_locked_out_banner = false;
     view_.show_psk_setup_banner = false;
     view_.show_psk_import = false;
     view_.psk_has_key = false;
@@ -220,6 +223,14 @@ void ChatThreadChrome::Update() {
       }
     } else if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic) {
       view_.compose_disabled = !PortsMessagingReady(facade_);
+      if (facade_) {
+        if (auto scope = facade_->GetPublicKeyScope(thread->id)) {
+          if (*scope == PublicKeyScope::LockedOut) {
+            view_.show_locked_out_banner = true;
+            view_.compose_disabled = true;
+          }
+        }
+      }
     } else if (thread->kind == ThreadKind::Group) {
       view_.compose_disabled = !PortsMessagingReady(facade_);
     }
@@ -237,7 +248,16 @@ void ChatThreadChrome::Update() {
       view_.draft_placeholder = "Ask anything…";
     } else if (thread->kind == ThreadKind::Direct) {
       if (thread->channel == ThreadChannel::E2ePublic) {
-        view_.thread_subtitle = "Encrypted · easy start";
+        view_.thread_subtitle = Tr("chat.device_lock.subtitle_all").c_str();
+        if (facade_) {
+          if (auto scope = facade_->GetPublicKeyScope(thread->id)) {
+            if (*scope == PublicKeyScope::DeviceSelf || *scope == PublicKeyScope::DevicePair) {
+              view_.thread_subtitle = Tr("chat.device_lock.subtitle_this").c_str();
+            } else if (*scope == PublicKeyScope::LockedOut) {
+              view_.thread_subtitle = Tr("chat.device_lock.subtitle_locked_out").c_str();
+            }
+          }
+        }
         view_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       } else if (thread->channel == ThreadChannel::E2e) {
         view_.thread_subtitle = "Verified private · E2E";
@@ -294,6 +314,7 @@ void ChatThreadChrome::Update() {
     view_.show_gap_banner = false;
     view_.show_older_history_hint = false;
     view_.show_compromised_banner = false;
+    view_.show_locked_out_banner = false;
     view_.show_psk_setup_banner = false;
     view_.show_psk_import = false;
     view_.psk_has_key = false;

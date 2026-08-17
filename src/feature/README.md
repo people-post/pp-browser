@@ -102,7 +102,7 @@ chat
 2. **Shared structs go low** — if feature and base both need a DTO, move it to the owning base module (or a dedicated `*Types.h` there).
 3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `base/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 4. **Cross-controller wiring stays in app** — tool registration, tab ticks, and `ActionRouter` model-dirty callbacks belong in `src/app/`, not feature headers.
-5. **Fork glue stays at the edge** — RmlUi via `pp_rmlui_backend` in `ui/`, `chat/`, and `ai/bindings/`; libp2p public API via `src/libp2p/fork/include/` in `messaging/`.
+5. **Fork glue stays at the edge** — RmlUi via `pp_base_render` in `ui/`, `chat/`, and `ai/bindings/`; libp2p via `pp_base_p2p` in `messaging/` (forks under `src/lib/`).
 
 ---
 
@@ -152,7 +152,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |-------------|-------|-------|
 | `pp_browser_*_test` (base) | `pp_common` + module under test | Base macro in [`cmake/PpBrowserBase.cmake`](../../cmake/PpBrowserBase.cmake) |
 | `pp_browser_feature_*_test` | `pp_feature` + `pp_base` + `pp_common` | By design — feature tests may pull the full stack |
-| `rmlui_unit_tests` | doctest + RmlUi fork | [`src/render/fork/Tests/`](../render/fork/Tests/); includes fork `ClickRouting` cases |
+| `rmlui_unit_tests` | doctest + RmlUi fork | [`src/lib/rmlui/Tests/`](../lib/rmlui/Tests/); includes fork `ClickRouting` cases |
 
 Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base tests must not depend on `pp_feature`.
 
@@ -174,7 +174,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 1. Find the module that **owns** the screen, session, or multi-module workflow.
 2. Follow the dependency principles above; respect CMake `PUBLIC_LIBS` order in the owning folder's `CMakeLists.txt`.
 3. Add tests in `src/feature/<module>/tests/` (`*_test.cpp` files). One executable per folder is created automatically (`pp_browser_feature_<module>_test`).
-4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) before pushing.
+4. Run [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) and [`scripts/check_platform_ifdefs.sh`](../../scripts/check_platform_ifdefs.sh) before pushing.
 5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) or [`docs/ui/`](../../docs/ui/) when wire formats or UI contracts change.
 
 ---
@@ -183,7 +183,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 
 | Doc | Why |
 |-----|-----|
-| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Full four-layer layout, fork sidecars, test placement |
+| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Five-layer layout (common/lib/base/feature/app), test placement |
 | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state, config, actions, events; app-owned presenters |
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |

@@ -1,4 +1,5 @@
 #include "common/Logger.h"
+#include "common/CivilTime.h"
 
 #include <chrono>
 #include <ctime>
@@ -27,16 +28,10 @@ std::string getCurrentTimestamp() {
             1000;
 
   std::tm local{};
-#if defined(_WIN32)
-  if (localtime_s(&local, &time) != 0) {
+  if (!civil_time::LocalTime(time, &local)) {
     // Avoid "??-" trigraph sequences under -Werror=trigraphs.
     return std::string("??") + "??" + "-" + "??" + "-" + "??" + " ??:??:??." + "???";
   }
-#else
-  if (localtime_r(&time, &local) == nullptr) {
-    return std::string("??") + "??" + "-" + "??" + "-" + "??" + " ??:??:??." + "???";
-  }
-#endif
 
   std::stringstream ss;
   ss << std::put_time(&local, "%Y-%m-%d %H:%M:%S");

@@ -78,6 +78,21 @@ void SetSpeakerphoneOn(bool on) {
   (void)error;
 }
 
+int CaptureOpenAttemptCount() {
+  return 1;
+}
+
+int CaptureOpenRetryDelayMs(int /*attempt_index*/) {
+  return 0;
+}
+
+int CaptureReopenSettleDelayMs() {
+  return 0;
+}
+
+void ApplyCaptureAudioHints() {}
+void ClearCaptureAudioHints() {}
+
 } // namespace CallAudioSession
 } // namespace pbr
 

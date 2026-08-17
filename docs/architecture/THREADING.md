@@ -148,7 +148,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 ### Libp2p integration executors
 
-Integration services under `src/libp2p/integration/host/` use three executor classes via `Libp2pScheduler`:
+Integration services under `src/base/p2p/` use three executor classes via `Libp2pScheduler`:
 
 | Class | Dispatch | Examples |
 |-------|----------|------------|
@@ -177,7 +177,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Item | Location | Notes |
 |------|----------|-------|
-| c-ares DNS TXT | `src/libp2p/fork/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
+| c-ares DNS TXT | `src/lib/libp2p/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
 | Call ringtone playback | `src/base/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |

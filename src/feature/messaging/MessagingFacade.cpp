@@ -235,6 +235,18 @@ Roe<std::string> MessagingFacade::RotatePskAndExportBundle(const std::string& th
   return hub_.P2p().RotatePskAndExportBundle(thread_id);
 }
 
+Roe<void> MessagingFacade::LockPublicThreadToThisDevice(const std::string& thread_id) {
+  return hub_.P2p().LockPublicThreadToThisDevice(thread_id);
+}
+
+Roe<PublicKeyScope> MessagingFacade::GetPublicKeyScope(const std::string& thread_id) {
+  return hub_.P2p().GetPublicKeyScope(thread_id);
+}
+
+Roe<bool> MessagingFacade::CanLockPublicToThisDevice(const std::string& thread_id) {
+  return hub_.P2p().CanLockPublicToThisDevice(thread_id);
+}
+
 void MessagingFacade::RegisterContactDirectEndpoints(const Contact& contact) {
   hub_.P2p().RegisterContactDirectEndpoints(contact);
 }

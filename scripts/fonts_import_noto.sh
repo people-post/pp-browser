@@ -39,7 +39,7 @@ fi
 # Keep monochrome face as secondary fallback for environments without color glyphs.
 echo "==> Noto Emoji monochrome (secondary fallback)"
 if [[ ! -f "${FONTS}/NotoEmoji-Regular.ttf" ]]; then
-  cp "${ROOT}/src/render/fork/Samples/assets/NotoEmoji-Regular.ttf" "${FONTS}/NotoEmoji-Regular.ttf"
+  cp "${ROOT}/src/lib/rmlui/Samples/assets/NotoEmoji-Regular.ttf" "${FONTS}/NotoEmoji-Regular.ttf"
 fi
 
 if [[ ! -f "${FONTS}/NotoCJK-LICENSE.txt" ]]; then

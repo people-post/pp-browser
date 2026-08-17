@@ -1,6 +1,6 @@
 # Group chat
 
-**Status:** In progress — Bucket C (post-v1)  
+**Status:** In progress — Bucket C  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md), [chat-storage D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [e2e E022](../e2e-message-crypto/DECISIONS.md)
 

@@ -1,6 +1,6 @@
 # Group chat — design specification
 
-Maturity tags: **`[v1]`** ships in first group slice; **`[v1.1]`** next; **`[future]`** deferred.
+Maturity tags: unmarked items ship in the first group slice; **`[later]`** next; **`[future]`** deferred.
 
 Cross-project: [chat-storage D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [e2e E022/E024](../e2e-message-crypto/DECISIONS.md), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md).
 
@@ -8,7 +8,7 @@ Cross-project: [chat-storage D076/D089/D095](../chat-storage-and-memory/DECISION
 
 ## Resolved product decisions
 
-| # | Topic | v1 behavior | Extensibility |
+| # | Topic | First-slice behavior | Extensibility |
 |---|--------|-------------|---------------|
 | 1 | Invite authority | Owner-only invite/remove/rename | `MemberRole`, `PermissionFlags`, `group_policy.invite_policy` |
 | 2 | Fork history | Fresh start (empty transcript) | `history_mode`, `source_group_id`, `fork_message_id`, `ExportMessagesUpTo` |
@@ -60,11 +60,11 @@ flowchart TB
 
 ---
 
-## Roles and permissions `[v1]`
+## Roles and permissions
 
 ### MemberRole
 
-| Value | v1 used | Notes |
+| Value | First slice | Notes |
 |-------|---------|-------|
 | `owner` | yes | One per group |
 | `admin` | schema only | v1.1 |
@@ -130,7 +130,7 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
 }
 ```
 
-**Delivery `[v1]`:** encrypted direct message to invitee (`route.kind=direct`, `channel=e2e_public`) containing the system payload. Invitee UI renders Accept / Decline / Block.
+**Delivery :** encrypted direct message to invitee (`route.kind=direct`, `channel=e2e_public`) containing the system payload. Invitee UI renders Accept / Decline / Block.
 
 **Lifecycle:** `pending` → `accepted` | `declined` | `expired` | `blocked`
 
@@ -153,7 +153,7 @@ v1: `history_mode` is always `"fresh"`. v1.1: `"copy_to_fork_point"` with non-nu
 
 ---
 
-## Invite spam controls `[v1]`
+## Invite spam controls
 
 ### Profile setting: `group_invite_policy`
 
@@ -175,7 +175,7 @@ Separate from 1:1 DM blocking: a contact may DM but not spam group invites.
 
 ---
 
-## Group wire envelope (D095) `[v1]`
+## Group wire envelope (D095)
 
 ### Route
 
@@ -239,7 +239,7 @@ Opaque: `v1:group:{group_id}:{session_epoch}`
 | `owner_identity` | current owner communicating identity |
 | `title` | Shared group name (owner rename / create). Clients may also keep a local override on `threads.local_title` (not synced). |
 
-### Dual title display `[v1]`
+### Dual title display
 
 | Priority | Source | Synced? |
 |----------|--------|---------|
@@ -268,7 +268,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ---
 
-## Inbound ingest `[v1]`
+## Inbound ingest
 
 1. Verify signature (sender identity)
 2. If `route.kind=group`: lookup roster — hard-reject if recipient not a member (except invite path on direct thread)
@@ -276,15 +276,15 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 4. Classify seq (relaxed ingest default — D046)
 5. Append to group thread; update sync_state
 
-**Invite handshake `[v1]`:** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires the pending row, upserts the member, bumps `roster_epoch`, then publishes owner-signed `member_joined` to all active members (G006 commit). Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
+**Invite handshake :** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires the pending row, upserts the member, bumps `roster_epoch`, then publishes owner-signed `member_joined` to all active members (G006 commit). Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
-**Leave / transfer / prune `[v1]` (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). Solo owner close is local dismiss only. Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
+**Leave / transfer / prune (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). Solo owner close is local dismiss only. Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
 
 **Auto-create:** on accepted invite / first valid `member_joined` for local identity.
 
 ---
 
-## UI surfaces `[v1]`
+## UI surfaces
 
 | Surface | Location |
 |---------|----------|

@@ -3,10 +3,10 @@
 #include "base/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/MeshHost.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/Libp2pHost.h"
+#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/MeshHost.h"
 
 namespace pbr {
 namespace {

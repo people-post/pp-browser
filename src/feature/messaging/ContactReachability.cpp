@@ -1,19 +1,10 @@
 #include "feature/messaging/ContactReachability.h"
 
-#include "base/messaging/DirectChatTarget.h"
-#include "base/people/ContactJson.h"
+#include "base/people/ContactIdentity.h"
 #include "base/people/MeshHopPolicy.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/p2p/PeerSessionManager.h"
 
 namespace pbr {
-
-bool ContactHasDialIdentity(const Contact& contact) {
-  if (contact.trust == TrustLevel::Blocked) {
-    return false;
-  }
-  const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-  return !target.peer_identity_value.empty();
-}
 
 bool IsContactStackDialable(const Contact& contact, const PeerSessionManager* sessions) {
   if (sessions == nullptr) {
@@ -28,7 +19,12 @@ bool IsContactStackDialable(const Contact& contact, const PeerSessionManager* se
 
 bool IsContactReachableForMessaging(const Contact& contact, const PeerSessionManager* sessions,
                                     bool relay_configured) {
-  if (!ContactHasDialIdentity(contact)) {
+  if (contact.trust == TrustLevel::Blocked) {
+    return false;
+  }
+  if (PrimaryIdOfKind(contact, ContactIdKind::Account).empty() &&
+      PrimaryIdOfKind(contact, ContactIdKind::RelayUser).empty() &&
+      PrimaryIdOfKind(contact, ContactIdKind::PeerId).empty()) {
     return false;
   }
   for (const ContactId& id : contact.ids) {
@@ -39,11 +35,7 @@ bool IsContactReachableForMessaging(const Contact& contact, const PeerSessionMan
   if (!contact.multiaddrs.empty()) {
     return true;
   }
-  const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-  if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId)) {
-    return IsContactStackDialable(contact, sessions);
-  }
-  return false;
+  return IsContactStackDialable(contact, sessions);
 }
 
 } // namespace pbr

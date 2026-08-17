@@ -2,32 +2,34 @@
 
 **Tier:** architecture
 
-pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/libp2p/fork/` as a **hard fork** (committed source, no git submodule).
+pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/lib/libp2p/` as a **hard fork** (committed source, no git submodule).
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `src/libp2p/fork/` | Upstream-shaped cpp-libp2p (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
-| `src/libp2p/fork/example/` | Sample programs (built when `PP_BROWSER_LIBP2P_EXAMPLES=ON`) |
-| `src/libp2p/fork/test/` | Unit tests (built when `PP_BROWSER_LIBP2P_TESTING=ON` or coverage enabled) |
-| `src/libp2p/fork/housekeeping/` | Coverage and local dev scripts |
-| `src/libp2p/integration/host/` | `Libp2pHost` app glue (compiled into `pp_base`) |
+| `src/lib/libp2p/` | Upstream-shaped cpp-libp2p (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
+| `src/lib/libp2p/example/` | Sample programs (built when `PP_BROWSER_LIBP2P_EXAMPLES=ON`) |
+| `src/lib/libp2p/test/` | Unit tests (built when `PP_BROWSER_LIBP2P_TESTING=ON` or coverage enabled) |
+| `src/lib/libp2p/housekeeping/` | Coverage and local dev scripts |
+| `src/base/p2p/` | `Libp2pHost` app glue (compiled into `pp_base`) |
 
-Dependency rule inside the libp2p subtree:
+Dependency rule:
 
 ```
-integration/host → fork/include (public API only)
-fork/src → fork/include
+base/p2p → lib/libp2p/include (public API only)
+lib/libp2p/src → lib/libp2p/include
 ```
 
 ## Provenance
 
-See [`src/libp2p/fork/UPSTREAM.json`](../../src/libp2p/fork/UPSTREAM.json) for the upstream commit SHA.
+See [`src/lib/libp2p/UPSTREAM.json`](../../src/lib/libp2p/UPSTREAM.json) for the upstream commit SHA.
 
 Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-06-13).
 
 ## Build flags (pp-browser root CMake)
+
+Supported knobs are `PP_BROWSER_*` only. Raw fork cache vars (`TESTING`, `EXAMPLES`, `COVERAGE`, `PACKAGE_MANAGER`) are set by the product profile in [`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake) — do not pass them on the cmake command line.
 
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
@@ -35,7 +37,7 @@ Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-0
 | `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | Build `fork/example/` |
 | `PP_BROWSER_LIBP2P_COVERAGE` | OFF | Enable gcovr coverage targets (`ctest_coverage`, `ctest_coverage_html`) |
 
-Mobile builds force all three OFF.
+Mobile builds force all three OFF. Fixed profile policy: `PACKAGE_MANAGER=vendored`, clang-tidy/format off.
 
 ## Dependency management
 
@@ -49,7 +51,7 @@ When `PP_BROWSER_LIBP2P_TESTING` or `PP_BROWSER_LIBP2P_COVERAGE` is ON, googlete
 
 ## Patching policy
 
-Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/libp2p/integration/`, which is pp-browser-owned glue).
+Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/base/p2p/`, which is pp-browser-owned glue).
 
 **pp-browser fork changes (initial import):**
 
@@ -68,7 +70,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `protocol/identify/identify_delta.cpp` — create `IdentifyDeltaWire` once when sending multiple added/removed protocols (was resetting delta each loop iteration)
-- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
+- **Handwritten protobuf wire** — `src/lib/libp2p/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
 - `connection/stream_and_protocol.hpp` — forward-declare `struct Stream` (matches `stream.hpp`) so first-party `-Werror` builds do not trip `-Wmismatched-tags`
 - `host/host.hpp` / `network/dialer.hpp` — `PeerInfo{.id=…, .addresses={}}` so first-party `-Werror` builds that include these headers do not trip `-Wmissing-field-initializers`
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
@@ -96,15 +98,24 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 ## Integration status
 
-libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/libp2p/integration/host/`:
+libp2p is built in-tree via `add_subdirectory(src/lib)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/base/p2p/`:
 
-- `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
+- `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise `/noise-mlkem768/1.0.0` over TCP); owned by `MessagingHub`; binds app device ML-DSA-65 identity when available
 - `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.
 - `PeerAddressBook.*` — integration-layer peer address book (media-hop **L1**): TTL’d multiaddrs per PeerId (base58); fed by bootstrap/register, inbound connections, dial success, and libp2p `AddressRepository`; exposed via `PeerSessionManager::PreferredPeerMultiaddr` for hop/circuit dial.
 - `IdentifyIntegrationService.*` — wires fork **Identify** + **Identify-Push** on `BasicHost`; remote Identify refreshes L1 book; self ads via `PublishSelfAdvertisedAddrs` (media-hop **L2**).
 - `BuildAdvertisedListenSet` / `AdvertisedAddrPublisher.*` — unify bound listen, UPnP external, global IPv6, and dial-back-confirmed addrs; `MessagingHub` publishes when **Node + media_relay** after reachability probe.
 - `CircuitBridgeTarget.*` / `CircuitRelayService` — media-hop **L3** PeerId-friendly circuit bridge (`target_peer_id` + relay-side resolve); `PeerSessionManager::TryEnsureHopViaCircuit` for circuit-backed media-relay streams; SoftMigrate fallback via `ICircuitHopReach`.
-- `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
+- `PeerIdUtil.*` — derive base58 Peer ID from the app device ML-DSA-65 signing public key (network identity / Me settings)
+
+### Full-PQ hard cut (libp2p-pq-transport)
+
+| Item | Value |
+|------|-------|
+| Noise protocol id | `/noise-mlkem768/1.0.0` |
+| Suite | `Noise_XXkem_MLKEM768_ChaChaPoly_SHA256` |
+| Device identity `KeyType` | `MlDsa65 = 4` (provisional) |
+| Planning | [projects/libp2p-pq-transport/](../../projects/libp2p-pq-transport/) |
 
 Feature protocols on the shared host:
 

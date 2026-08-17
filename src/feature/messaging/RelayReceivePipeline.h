@@ -3,6 +3,7 @@
 #include "base/crypto/ReplayWindow.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/E2eIngestClassifier.h"
+#include "feature/messaging/PublicPskLockCoordinator.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/IThreadStore.h"
@@ -91,6 +92,9 @@ private:
                                     std::optional<int64_t> relay_created_at_ms = std::nullopt,
                                     std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
   Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
+  Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
+  Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
+                                 const ThreadMessage& message);
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
@@ -100,6 +104,7 @@ private:
   GroupInviteGate* invite_gate_ = nullptr;
   CallSessionManager* call_sessions_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  PublicPskLockCoordinator public_lock_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 

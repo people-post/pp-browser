@@ -10,7 +10,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 
 #include <vector>
 

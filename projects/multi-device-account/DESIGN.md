@@ -1,6 +1,6 @@
 # Multi-device account — design
 
-**Status:** Design freeze (m0) + **M009–M019**. Implementation: **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts/index (**M018**). Unlink after m3 (**M019**).  
+**Status:** Design freeze (m0) + **M009–M020**. Implementation: **m1–m2b** + **m4a–m4b** + **m3** `endpoints[]` done; next **m4c** paste contacts/index (**M018**). Unlink after m3 (**M019**). Device-scoped public PSK filter **M020**.  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
 
 ## Problem
@@ -12,7 +12,7 @@ Today the product collapses **person**, **device**, and **Brief route** into one
 1. One **Account ID** for the person across devices and relays.
 2. Many **device identities** (Peer ID / Ed25519) under that account.
 3. **`relay:`** as a **route** (inbox / API auth), not the person key for chat state.
-4. Shared **DEK**, **account KEM**, and public/group conversation PSKs across linked devices; private `e2e` PSKs stay device-local (**M005** / **M015**).
+4. Shared **DEK**, **account KEM**, and **account-scope** public/group conversation PSKs across linked devices; private `e2e` PSKs and device-scoped public PSKs stay install-local (**M005** / **M015** / **M020**).
 5. Pre-release **hard-cut** to Account ID on wire and catalog (**M007**) — no dual-id soft migration.
 
 ## Non-goals (this project)
@@ -96,7 +96,7 @@ Transport this pass: **paste** (QR primary still later) (**M012**). JSON format 
 | `relay_user_id` | Existing Brief binding |
 | `created_at` / `expires_at` | Default TTL 15 minutes |
 
-**New device after import:** keep local device Ed25519 / Peer ID; replace account ML-DSA + **account KEM** + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). Public PSKs in the snapshot are applied. First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Show Account ID before import. Push re-attach follows after messaging is ready. Sibling public-PSK *refresh* is later (**M015**).
+**New device after import:** keep local device ML-DSA-65 / Peer ID; replace account ML-DSA + **account KEM** + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). Public PSKs in the snapshot are applied. First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Show Account ID before import. Push re-attach follows after messaging is ready. Sibling public-PSK *refresh* is later (**M015**).
 
 **Private Secure (M014):** one session per pair; transfer copies PSK+seq, not a device-keyed thread.
 

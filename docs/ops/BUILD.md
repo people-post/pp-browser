@@ -46,7 +46,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
+RmlUi is **hard-forked** under `src/lib/rmlui/`. libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
@@ -76,6 +76,19 @@ rm -rf build/third_party/sdl3
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
+
+### Owned forks (RmlUi / libp2p)
+
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+
+| Option | Default (desktop) | Effect |
+|--------|-------------------|--------|
+| `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
+| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
+| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
+| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
+
+Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
 ### libp2p tests and coverage
 
@@ -213,6 +226,17 @@ Do **not** pass `-DPP_BROWSER_HEADLESS=ON` for the GUI app — that option is fo
 
 Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 
+## Lint (include / ifdef policy)
+
+Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu: `sudo apt install ripgrep`.
+
+```bash
+./scripts/check_feature_includes.sh
+./scripts/check_platform_ifdefs.sh
+```
+
+OS `#ifdef`s belong in `src/base/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
+
 ## Tests
 
 ```bash
@@ -221,7 +245,7 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) under [`src/render/fork/Tests/`](../src/render/fork/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
 - GoogleTest module suites under `src/.../tests/`.
 
 All suites are discovered through CTest. To run RmlUi fork tests:

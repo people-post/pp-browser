@@ -9,7 +9,7 @@
     <div class="prompt-composer-leading">
       <button class="prompt-emoji-btn" type="button" data-event-click="open_emoji_insert()"
               data-attrif-disabled="compose_disabled" title="Insert emoji">
-        <span class="prompt-emoji-btn-glyph">☺</span>
+        <svg src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
     </div>
     <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="compose_disabled">

@@ -1,0 +1,70 @@
+#include "base/p2p/Reachability.h"
+
+#include <algorithm>
+#include <gtest/gtest.h>
+
+TEST(ReachabilityTest, PrivateIpv4Classification) {
+  EXPECT_TRUE(pbr::IsPrivateIpv4("10.0.0.1"));
+  EXPECT_TRUE(pbr::IsPrivateIpv4("192.168.1.4"));
+  EXPECT_TRUE(pbr::IsPrivateIpv4("172.16.0.1"));
+  EXPECT_FALSE(pbr::IsPublicIpv4("10.0.0.1"));
+  EXPECT_TRUE(pbr::IsPublicIpv4("8.8.8.8"));
+}
+
+TEST(ReachabilityTest, ClassifyReachabilitySignals) {
+  pbr::ReachabilitySignals blocked;
+  blocked.seed_dial_ok = false;
+  EXPECT_EQ(pbr::ClassifyReachability(blocked), pbr::ReachabilityStatus::Blocked);
+
+  pbr::ReachabilitySignals reachable;
+  reachable.seed_dial_ok = true;
+  reachable.dial_back_ok = true;
+  EXPECT_EQ(pbr::ClassifyReachability(reachable), pbr::ReachabilityStatus::Reachable);
+
+  pbr::ReachabilitySignals outbound;
+  outbound.seed_dial_ok = true;
+  outbound.dial_back_ok = false;
+  EXPECT_EQ(pbr::ClassifyReachability(outbound), pbr::ReachabilityStatus::OutboundOnly);
+}
+
+TEST(ReachabilityTest, BuildProbeTargetsIncludesPeerId) {
+  const auto targets = pbr::BuildReachabilityProbeTargets("/ip4/0.0.0.0/tcp/18517", "12D3KooWTest", {}, "");
+  ASSERT_FALSE(targets.empty());
+  EXPECT_NE(targets.back().find("/p2p/12D3KooWTest"), std::string::npos);
+}
+
+TEST(ReachabilityTest, SkipUpnpForPublicListen) {
+  EXPECT_TRUE(pbr::ShouldSkipUpnpForListen("/ip4/203.0.113.10/tcp/443"));
+  EXPECT_FALSE(pbr::ShouldSkipUpnpForListen("/ip4/0.0.0.0/tcp/18517"));
+}
+
+TEST(ReachabilityTest, UndialableLanAndVirtualIfaceHelpers) {
+  EXPECT_TRUE(pbr::IsLikelyUndialableLanIpv4("192.168.122.1"));
+  EXPECT_TRUE(pbr::IsLikelyUndialableLanIpv4("192.168.122.50"));
+  EXPECT_FALSE(pbr::IsLikelyUndialableLanIpv4("192.168.1.152"));
+  EXPECT_FALSE(pbr::IsLikelyUndialableLanIpv4("192.168.1.122"));
+  EXPECT_TRUE(pbr::IsVirtualLanIfaceName("virbr0"));
+  EXPECT_TRUE(pbr::IsVirtualLanIfaceName("docker0"));
+  EXPECT_TRUE(pbr::IsVirtualLanIfaceName("vethabc123"));
+  EXPECT_FALSE(pbr::IsVirtualLanIfaceName("enp9s0"));
+  EXPECT_FALSE(pbr::IsVirtualLanIfaceName("wlan0"));
+}
+
+TEST(ReachabilityTest, BuildAdvertisedListenSetFiltersWildcardAndPrioritizesDialBack) {
+  pbr::ReachabilitySignals signals;
+  signals.dial_back_ok = true;
+  signals.dial_back_dialed = "/ip4/203.0.113.44/tcp/18517/p2p/12D3KooWTest";
+  signals.upnp_mapped = true;
+  signals.upnp_external_ip = "203.0.113.44";
+  signals.listen_is_wildcard = true;
+
+  const auto advertised = pbr::BuildAdvertisedListenSet(signals, "/ip4/0.0.0.0/tcp/18517", "12D3KooWTest", {});
+  ASSERT_FALSE(advertised.empty());
+  EXPECT_EQ(advertised.front(), signals.dial_back_dialed);
+  for (const std::string& ma : advertised) {
+    EXPECT_EQ(ma.find("/ip4/0.0.0.0/"), std::string::npos);
+  }
+  EXPECT_NE(std::find(advertised.begin(), advertised.end(),
+                      "/ip4/203.0.113.44/tcp/18517/p2p/12D3KooWTest"),
+            advertised.end());
+}

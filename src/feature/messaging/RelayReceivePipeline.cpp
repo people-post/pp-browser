@@ -1,6 +1,7 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
+#include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ChatPayloadValidator.h"
@@ -16,12 +17,14 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupRosterStore.h"
+#include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupInviteGate.h"
+#include "feature/messaging/PublicPskLockCoordinator.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
@@ -94,7 +97,7 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
                                            IPskSessionStore& psk_store, IdentityStore& identity,
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
     : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
-      group_roster_(group_roster), invite_gate_(invite_gate) {
+      group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
   redirectLogger("RelayReceivePipeline");
 }
 
@@ -450,6 +453,49 @@ Roe<void> RelayReceivePipeline::PersistDerivedAutoKeyPsk(const RelayEnvelope& en
   return {};
 }
 
+Roe<void> RelayReceivePipeline::ValidateInboundPskRotate(const RelayEnvelope& envelope,
+                                                        const ThreadMessage& message) const {
+  if (!PskRotateCodec::IsPskRotateMessage(message)) {
+    return {};
+  }
+  auto detail = PskRotateCodec::Decode(message);
+  if (!detail) {
+    return detail.error();
+  }
+  if (!envelope.body.e2e.key_init_b64 || envelope.body.e2e.key_init_b64->empty()) {
+    return Error("psk_rotate missing key_init_b64");
+  }
+  auto hash = AutoKeyEstablishment::HashKeyInitB64(*envelope.body.e2e.key_init_b64);
+  if (!hash) {
+    return hash.error();
+  }
+  if (*hash != detail->key_init_hash) {
+    return Error("psk_rotate key_init_hash mismatch");
+  }
+  return {};
+}
+
+Roe<void> RelayReceivePipeline::ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
+                                                     const ThreadMessage& message) {
+  if (!PskRotateCodec::IsPskRotateMessage(message)) {
+    return {};
+  }
+  auto kem = identity_.GetOrCreateHybridKemPrivateKey();
+  if (!kem) {
+    return kem.error();
+  }
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  auto applied = public_lock_.ApplyInbound(thread_id, envelope, message, *kem, identity->account_id,
+                                          util::NowUnixMs());
+  if (!applied) {
+    return applied.error();
+  }
+  return {};
+}
+
 std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::string& thread_id,
                                                                     const uint32_t session_epoch,
                                                                     const std::string& seq_owner_contact_id,
@@ -625,7 +671,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     message = std::move(*decrypted);
 
-    if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
+    if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value() &&
+        !PskRotateCodec::IsPskRotateMessage(message)) {
       auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_,
                                                                        *local_kem_private_key);
       if (master_psk) {
@@ -689,6 +736,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     return envelope.sender_contact_id;
   }();
+
+  if (auto rotate = ValidateInboundPskRotate(envelope, message); !rotate) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply key update", rotate.error().message,
+                       resolved_thread_id);
+    return outcome;
+  }
 
   PeerSyncState sync_state;
   uint32_t chat_target_epoch = envelope.session_epoch;
@@ -868,6 +922,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.persisted = true;
     outcome.thread_changed = true;
     outcome.thread_id = resolved_thread_id;
+    if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
+      log().warning << "psk_rotate apply failed after persist: " << rotate.error().message;
+    }
     return outcome;
   }
 
@@ -880,6 +937,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   outcome.persisted = true;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
+  if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
+    log().warning << "psk_rotate apply failed after persist: " << rotate.error().message;
+  }
   return outcome;
 }
 

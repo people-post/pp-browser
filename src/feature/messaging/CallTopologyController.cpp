@@ -13,7 +13,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "base/runtime/ProductBranding.h"
 #include "common/Utilities.h"
-#include "libp2p/integration/host/CallMediaFrameCrypto.h"
+#include "base/p2p/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>

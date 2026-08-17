@@ -49,7 +49,7 @@
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -276,6 +276,7 @@ ChatController::ChatController()
                  .show_thread_menu = chat_.show_thread_menu,
                  .show_gap_banner = chat_.show_gap_banner,
                  .show_compromised_banner = chat_.show_compromised_banner,
+                 .show_locked_out_banner = chat_.show_locked_out_banner,
                  .show_psk_setup_banner = chat_.show_psk_setup_banner,
                  .show_psk_import = chat_.show_psk_import,
                  .psk_has_key = chat_.psk_has_key,
@@ -1208,6 +1209,29 @@ void ChatController::OnRotatePskExport() {
   chrome_.OnRotatePskExport();
 }
 
+void ChatController::OnLockPublicToThisDevice() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  ShowConfirm(Tr("chat.device_lock.confirm_title"), Tr("chat.device_lock.confirm_body"),
+              [this, thread_id](bool ok) {
+                if (!ok) {
+                  return;
+                }
+                WithSecrets([this, thread_id]() {
+                  auto locked = facade_->LockPublicThreadToThisDevice(thread_id);
+                  if (!locked) {
+                    ShowToast(locked.error().message);
+                  }
+                  RefreshFromMessaging();
+                });
+              });
+}
+
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
 }
@@ -1557,6 +1581,19 @@ void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
   const Rml::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
+  if (chat_.thread_is_public && messaging_ready_ && facade_) {
+    const std::string thread_id = ActiveThreadId();
+    auto can_lock = facade_->CanLockPublicToThisDevice(thread_id);
+    if (can_lock && *can_lock) {
+      actions.push_back({
+          "lock_public_device",
+          Tr("chat.device_lock.menu"),
+          nullptr,
+          [this]() { OnLockPublicToThisDevice(); },
+          "../icons/lock.svg",
+      });
+    }
+  }
   if (chat_.show_sync_with_peer && !chat_.sync_in_progress) {
     actions.push_back({
         "sync_with_peer",
@@ -2522,6 +2559,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_thread_menu", &controller.chat_.show_thread_menu);
         ctor.Bind("show_gap_banner", &controller.chat_.show_gap_banner);
         ctor.Bind("show_compromised_banner", &controller.chat_.show_compromised_banner);
+        ctor.Bind("show_locked_out_banner", &controller.chat_.show_locked_out_banner);
         ctor.Bind("show_psk_setup_banner", &controller.chat_.show_psk_setup_banner);
         ctor.Bind("show_psk_import", &controller.chat_.show_psk_import);
         ctor.Bind("psk_has_key", &controller.chat_.psk_has_key);

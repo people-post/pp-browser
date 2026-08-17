@@ -12,6 +12,7 @@
 #if defined(_WIN32)
 // windows.h / wingdi.h define ERROR/DEBUG and collide with enum members (same as
 // soralog/level.hpp). c-ares/Boost often include windows.h before this header.
+// CRT/Windows.h shim — see docs/architecture/PLATFORM_CODE.md.
 #ifdef ERROR
 #undef ERROR
 #endif

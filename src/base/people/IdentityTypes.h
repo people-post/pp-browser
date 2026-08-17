@@ -7,11 +7,11 @@ namespace pbr {
 
 struct LocalIdentity {
   /**
-   * Device Ed25519 public key (base64). Derives Peer ID / libp2p Noise only (M003).
-   * Not the person/account signing key after multi-device PQ cut.
+   * Device ML-DSA-65 public key (base64). Derives Peer ID / libp2p Noise identity (P004).
+   * Not the person/account signing key (account_signing_*).
    */
   std::string public_key_b64;
-  /** Device Ed25519 private key (base64). Plaintext only in memory; on disk inside identity.enc. */
+  /** Device ML-DSA-65 private key (base64). Plaintext only in memory; on disk inside identity.enc. */
   std::string private_key_b64;
   /** Account ML-DSA-65 public key (base64). Empty until minted (m1). */
   std::string account_signing_public_key_b64;
@@ -24,10 +24,10 @@ struct LocalIdentity {
   std::string account_id;
   /** Account ML-KEM-768 public key (base64). Directory encapsulate-to for public/group auto-key (M015). */
   std::string kem_public_key_b64;
-  /** Account ML-KEM-768 private key (base64). Copied on link-device; not the device Ed25519. */
+  /** Account ML-KEM-768 private key (base64). Copied on link-device; not the device key. */
   std::string kem_private_key_b64;
   std::string nickname;
-  /** Device endpoint: libp2p PeerId base58; derived in memory from device Ed25519 pubkey (M001). */
+  /** Device endpoint: libp2p PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;
   /** Transport handle (route): relay-assigned; empty until registered (D082 / M006). */
   std::string relay_user_id;

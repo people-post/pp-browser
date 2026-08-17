@@ -3,9 +3,9 @@
 Inventory of what exists in the codebase today for message encryption. Update when landing phase work.
 
 **Planned:** full E2E stack in [DESIGN.md](DESIGN.md) — see [PHASES.md](PHASES.md).  
-**Agent batch:** Waves **1** (**c1**), **5** (**c2**), and **6** (**c3**) are **done**. Next: **c3+** (`e2e_public` auto-key) or post-v1 unless expanded.
+**Agent batch:** Waves **1** (**c1**), **5** (**c2**), and **6** (**c3**) are **done**. Public auto-key (c3+) and group pairwise E2E are in tree. Next: **c3++** device-lock rekey (E027) polish / c4 PQ.
 
-## Release scope (v1 batch)
+## Release scope
 
 | In scope | Out of scope (unless expanded) |
 |----------|--------------------------------|
@@ -50,7 +50,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Verify gate (`psk_verified_at`) | **Implemented** | `ChatController::OnVerifyPsk`, send blocked until verified |
 | `rotate_psk` + bundle export | **Implemented** | `PskSessionCoordinator::RotatePskAndExportBundle`, compromised banner |
 | Signing key fingerprint on add-contact | **Implemented** (display-only) | `contact_detail.rml`, `ContactsController` |
-| `e2e_public` send | **Still disabled** | c3+ auto-key |
+| `e2e_public` send | **Implemented** (auto-key) | `P2pMessagingService::SendUserMessage` |
+| Public device-lock rekey (E027) | **Next** | `PublicPskLockCoordinator` |
 
 ## Related messaging (today)
 
@@ -75,7 +76,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 ## Known gaps (summary)
 
-1. **c3+** — `e2e_public` hybrid KEM auto-key and send enablement.
+1. **c3++** — public 1:1 device-lock rekey (E027).
 2. QR encode/decode for PSK (optional stretch).
 3. Manual two-profile live-relay walkthrough (dev QA).
 4. **c1 rule still applies:** no messaging includes inside `base/crypto`.

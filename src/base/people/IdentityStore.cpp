@@ -8,8 +8,7 @@
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
-#include "base/people/Ed25519Signer.h"
-#include "libp2p/integration/host/PeerIdUtil.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include <filesystem>
 #include <fstream>
@@ -76,11 +75,11 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
 }
 
 Roe<void> DerivePeerId(LocalIdentity& identity) {
-  auto public_key = Ed25519Signer::FromBase64(identity.public_key_b64);
+  auto public_key = Base64Decode(identity.public_key_b64);
   if (!public_key) {
     return public_key.error();
   }
-  auto derived = PeerIdFromEd25519PublicKey(*public_key);
+  auto derived = PeerIdFromMlDsaPublicKey(*public_key);
   if (!derived) {
     return derived.error();
   }
@@ -224,13 +223,13 @@ Roe<void> IdentityStore::EnsureLoaded() const {
 
   std::ifstream in(StorePath(), std::ios::binary);
   if (!in) {
-    auto keys = Ed25519Signer::GenerateKeyPair();
+    auto keys = MlDsa::GenerateKeyPair();
     if (!keys) {
       return keys.error();
     }
-    private_key_ = keys->private_key;
-    identity_.public_key_b64 = Ed25519Signer::ToBase64(keys->public_key);
-    identity_.private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
+    private_key_ = keys->secret_key;
+    identity_.public_key_b64 = Base64Encode(keys->public_key);
+    identity_.private_key_b64 = Base64Encode(keys->secret_key);
     identity_.nickname = "user";
     identity_.relay_user_id.clear();
     identity_.brief_llm_api_key.clear();
@@ -272,11 +271,21 @@ Roe<void> IdentityStore::EnsureLoaded() const {
       return checked.error();
     }
   }
+  if (version < kSchemaVersion) {
+    return Error(
+        "identity.enc schema is pre-PQ device key (Ed25519); wipe profile data and recreate "
+        "(libp2p-pq-transport hard cut)");
+  }
 
   identity_ = IdentityFromJson(root);
-  auto private_key = Ed25519Signer::FromBase64(identity_.private_key_b64);
+  auto private_key = Base64Decode(identity_.private_key_b64);
   if (!private_key) {
     return private_key.error();
+  }
+  if (private_key->size() != kMlDsa65SecretKeyBytes) {
+    return Error(
+        "identity.enc device key is not ML-DSA-65; wipe profile data and recreate "
+        "(libp2p-pq-transport hard cut)");
   }
   private_key_ = std::move(*private_key);
 
@@ -290,9 +299,6 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return account.error();
   }
   loaded_ = true;
-  if (version < kSchemaVersion) {
-    dirty_ = true;
-  }
   return {};
 }
 
@@ -397,30 +403,30 @@ Roe<std::string> IdentityStore::SignBytes(const std::vector<uint8_t>& sign_bytes
   return Base64Encode(*signature);
 }
 
-Roe<ByteVector> IdentityStore::GetEd25519PrivateKey() const {
+Roe<ByteVector> IdentityStore::GetDeviceMlDsaPrivateKey() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
     return load.error();
   }
-  if (private_key_.size() != 32) {
-    return Error("Invalid Ed25519 private key size");
+  if (private_key_.size() != kMlDsa65SecretKeyBytes) {
+    return Error("Invalid device ML-DSA-65 private key size");
   }
   return private_key_;
 }
 
-Roe<ByteVector> IdentityStore::GetEd25519PublicKey() const {
+Roe<ByteVector> IdentityStore::GetDeviceMlDsaPublicKey() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
     return load.error();
   }
-  auto public_key = Ed25519Signer::FromBase64(identity_.public_key_b64);
+  auto public_key = Base64Decode(identity_.public_key_b64);
   if (!public_key) {
     return public_key.error();
   }
-  if (public_key->size() != 32) {
-    return Error("Invalid Ed25519 public key size");
+  if (public_key->size() != kMlDsa65PublicKeyBytes) {
+    return Error("Invalid device ML-DSA-65 public key size");
   }
   return *public_key;
 }

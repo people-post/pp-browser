@@ -69,6 +69,14 @@ selection {
   image-color: #ffffff;
 }
 
+.prompt-emoji-btn svg {
+  image-color: #9ca3af;
+}
+
+.prompt-emoji-btn:hover svg {
+  image-color: #e5e7eb;
+}
+
 .btn-secondary,
 .chat-suggestion {
   background-color: #374151;
@@ -711,7 +719,7 @@ select selectbox option:hover {
 
 .shell-close-btn {
   background-color: #374151;
-  color: #f9fafb;
+  color: #ffffff;
 }
 
 .shell-close-btn:hover,
@@ -720,7 +728,7 @@ select selectbox option:hover {
 }
 
 .shell-close-btn svg {
-  image-color: #f9fafb;
+  image-color: #ffffff;
 }
 
 .shell-dialog {

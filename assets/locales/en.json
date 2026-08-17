@@ -286,6 +286,13 @@
     "chat.status.online": "Online",
     "chat.status.offline": "Offline",
     "chat.composer_placeholder": "Message",
+    "chat.device_lock.menu": "Use only this device…",
+    "chat.device_lock.confirm_title": "Use only this device?",
+    "chat.device_lock.confirm_body": "New messages will stay on this install. Older history remains on your other devices. This is not Private or Secure.",
+    "chat.device_lock.subtitle_all": "Encrypted · On all your devices",
+    "chat.device_lock.subtitle_this": "Encrypted · Only on this device",
+    "chat.device_lock.subtitle_locked_out": "Encrypted · Continues on another device",
+    "chat.device_lock.locked_out_body": "This chat continues on another device. You can still read older messages here.",
 
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.calling": "Calling…",

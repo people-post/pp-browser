@@ -87,7 +87,7 @@ Defaults (v1 policy):
 | **Session** | Multi-step in this chat |
 | **Background** | Outlives the turn (watchers, agents) |
 
-v1: almost everything is **Turn**. Session/Background are specified so Monitor/Decide-plan are not forgotten; Autonomous Monitor is post-v1.
+v1: almost everything is **Turn**. Session/Background are specified so Monitor/Decide-plan are not forgotten; Autonomous Monitor is **`[later]`**.
 
 ## Planning contract
 

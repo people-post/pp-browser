@@ -31,6 +31,7 @@ pp_browser_add_base_library(pp_base_messaging
     InitiationPricing.cpp
     JsonThreadStore.cpp
     MessagingJson.cpp
+    PskRotateCodec.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
     PeopleDiscoveryBlocks.cpp
@@ -46,8 +47,6 @@ pp_browser_add_base_library(pp_base_messaging
     nlohmann_json::nlohmann_json
     sodium
     SQLite::SQLite3)
-
-pp_browser_add_base_p2p_includes(pp_base_messaging)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

@@ -28,17 +28,17 @@
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
-#include "libp2p/integration/host/AdvertisedAddrPublisher.h"
-#include "libp2p/integration/host/CircuitBridgeTarget.h"
-#include "libp2p/integration/host/DialBackService.h"
-#include "libp2p/integration/host/CircuitRelayService.h"
-#include "libp2p/integration/host/CallMediaDirectService.h"
-#include "libp2p/integration/host/IdentifyIntegrationService.h"
-#include "libp2p/integration/host/LanMdnsDiscovery.h"
-#include "libp2p/integration/host/MediaRelayService.h"
+#include "base/p2p/AdvertisedAddrPublisher.h"
+#include "base/p2p/CircuitBridgeTarget.h"
+#include "base/p2p/DialBackService.h"
+#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/IdentifyIntegrationService.h"
+#include "base/p2p/LanMdnsDiscovery.h"
+#include "base/p2p/MediaRelayService.h"
 #include "base/people/MeshHopPolicy.h"
-#include "libp2p/integration/host/NatTraversal.h"
-#include "libp2p/integration/host/Reachability.h"
+#include "base/p2p/NatTraversal.h"
+#include "base/p2p/Reachability.h"
 #include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
@@ -239,11 +239,11 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   NodeRuntimeConfig runtime;
   runtime.host.listen_enabled = (role == Libp2pRole::Node);
   runtime.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
-  if (auto priv = identity_->GetEd25519PrivateKey()) {
-    runtime.host.ed25519_private_key = *priv;
+  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
+    runtime.host.device_ml_dsa_private_key = *priv;
   }
-  if (auto pub = identity_->GetEd25519PublicKey()) {
-    runtime.host.ed25519_public_key = *pub;
+  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
+    runtime.host.device_ml_dsa_public_key = *pub;
   }
   runtime.sessions = SessionConfigFromApp(config_);
   runtime.bootstrap_peers = libp2p_cfg.bootstrap_peers;
