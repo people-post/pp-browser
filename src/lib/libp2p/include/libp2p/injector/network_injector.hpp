@@ -47,6 +47,13 @@
 #include <libp2p/transport/quic/transport.hpp>
 #include <libp2p/transport/tcp.hpp>
 
+// Apple Clang instantiates Boost.DI ctor_impl on constructor argument types.
+// MlDsaProvider is abstract; skip constructor probing so the Impl bind is used.
+template <>
+struct boost::di::ctor_traits<libp2p::crypto::mldsa::MlDsaProvider> {
+  BOOST_DI_INJECT_TRAITS();
+};
+
 // clang-format off
 /**
  * @file network_injector.hpp
@@ -332,7 +339,7 @@ namespace libp2p::injector {
         di::bind<crypto::secp256k1::Secp256k1Provider>().to(std::move(secp256k1_provider)),
         di::bind<crypto::aes::AesCtr>().to<crypto::aes::AesCtrImpl>(),
         di::bind<crypto::hmac::HmacProvider>().to<crypto::hmac::HmacProviderImpl>(),
-        di::bind<crypto::mldsa::MlDsaProvider>().to(std::move(mldsa_provider)),
+        di::bind<crypto::mldsa::MlDsaProvider>().to<crypto::mldsa::MlDsaProviderImpl>(),
         di::bind<crypto::CryptoProvider>().to<crypto::CryptoProviderImpl>(),
         di::bind<crypto::marshaller::KeyMarshaller>().to<crypto::marshaller::KeyMarshallerImpl>(),
         di::bind<peer::IdentityManager>().to<peer::IdentityManagerImpl>(),

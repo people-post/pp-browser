@@ -7,6 +7,7 @@
 #pragma once
 
 #include <libp2p/crypto/crypto_provider.hpp>
+#include <libp2p/crypto/mldsa_provider.hpp>
 
 namespace libp2p::crypto {
   namespace random {
@@ -27,9 +28,6 @@ namespace libp2p::crypto {
   namespace secp256k1 {
     class Secp256k1Provider;
   }
-  namespace mldsa {
-    class MlDsaProvider;
-  }
 
   class CryptoProviderImpl : public CryptoProvider {
    public:
@@ -47,7 +45,7 @@ namespace libp2p::crypto {
         std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider,
         std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider,
         std::shared_ptr<hmac::HmacProvider> hmac_provider,
-        std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider = nullptr);
+        std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider);
 
     outcome::result<KeyPair> generateKeys(
         Key::Type key_type, common::RSAKeyType rsa_bitness) const override;
