@@ -1,19 +1,19 @@
 # P2P A/V calls
 
-**Status:** **a4 thin landed**; **V026 / m1** = libp2p-only voice (Android↔Android LAN dogfood OK 2026-08-02); **m2** teardown done; **V033** session SM design (docs before code)  
+**Status:** **a4 thin landed**; **V026 / m1** = libp2p voice (Android↔Android LAN dogfood OK 2026-08-02); **V034** libp2p **video_lo** (1:1 + group SFU); **m2** teardown done; **V033** session SM design  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [p2p-mesh](../p2p-mesh/) (N022), [media-hop-reachability](../media-hop-reachability/), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md)
 
 ## One-line goal
 
-1:1 and group **voice** (video deferred) over **libp2p** — HTTP for backends when available; mesh signaling + blind `media_relay`; app E2E call media key.
+1:1 and group **voice + video_lo** over **libp2p** — HTTP for backends when available; mesh signaling + blind `media_relay`; app E2E **one shared call media key** (not per-recipient).
 
 ## Release scope (v1)
 
 | In | Out |
 |----|-----|
-| 1:1 + group **voice** (mobile + desktop) on **libp2p** | Call recording; **video deferred** (V026) |
+| 1:1 + group **voice + video_lo** (H264; camera off on join) on **libp2p** | Call recording; **video_hi** / simulcast / screen share |
 | Separate `call_id` session (≠ chat thread) | Screen share |
 | Invite to join (guests + late join); any group member may start | Ambient “Join” for all group members without invite |
 | Hostless (ends when last participant leaves) | End-for-all host control |
@@ -45,7 +45,7 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 | HTTP Brief backend | Preferred org APIs / settle UX | Chain settle backup (N022) |
 | Direct E2E messaging | Signaling + key wrap | Guests pairwise |
 | Push Wave 1 + **`call_wake`** | Background ring | |
-| Opus + SDL audio | Voice-first (V026) | Video deferred; H264 stack legacy until teardown |
+| Opus + SDL audio | Voice-first (V026) | **V034** H264 video_lo on the same streams |
 
 ## Progress snapshot
 
@@ -53,6 +53,7 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 |-------|------|--------|
 | v0–a4 | Docs → signaling → WebRTC LAN → group SFU thin | **Done** (historical); WebRTC not ongoing path |
 | **V026 / m1** | Libp2p-only **voice** | **Mobile LAN done**; desktop matrix open |
+| **V034 / lv** | Libp2p **video_lo** | **Code landed**; device dogfood open |
 | m2 | Teardown WebRTC product path | **Done** |
 | **V033 / sm** | Transport session machines | **s0 docs**; code after s1 freeze |
 | a5–a6 | Cap / polish / promote contracts | Pending |

@@ -505,7 +505,7 @@ void DuplexFrameSession::FailPendingWrites(const Error& error) {
   }
 }
 
-bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done) {
+bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done, bool sheddable) {
   if (closed_ || (running_.load(std::memory_order_acquire) && !stream_)) {
     return false;
   }
@@ -513,8 +513,22 @@ bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body, WriteCallbac
     if (drop_ != StreamIoPolicy::Drop::Oldest) {
       return false;
     }
-    PendingWrite dropped = std::move(outbound_.front());
-    outbound_.erase(outbound_.begin());
+    auto drop_it = outbound_.end();
+    for (auto it = outbound_.begin(); it != outbound_.end(); ++it) {
+      if (it->sheddable) {
+        drop_it = it;
+        break;
+      }
+    }
+    if (drop_it == outbound_.end()) {
+      if (sheddable) {
+        // Queue is all ReliableOrdered — do not shed audio to enqueue video.
+        return false;
+      }
+      drop_it = outbound_.begin();
+    }
+    PendingWrite dropped = std::move(*drop_it);
+    outbound_.erase(drop_it);
     if (dropped.on_done) {
       dropped.on_done(Error("outbound frame dropped"));
     }
@@ -525,6 +539,7 @@ bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body, WriteCallbac
   PendingWrite pending;
   pending.frame = std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body));
   pending.on_done = std::move(on_done);
+  pending.sheddable = sheddable;
   outbound_.push_back(std::move(pending));
   PublishBacklog();
   if (running_.load(std::memory_order_acquire) &&

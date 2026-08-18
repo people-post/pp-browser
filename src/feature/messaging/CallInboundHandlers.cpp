@@ -469,6 +469,21 @@ Roe<void> CallSessionManager::HandleInboundHopRefuse(const std::string& detail_j
   return {};
 }
 
+Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detail_json) {
+  auto refresh = CallControlCodec::DecodeVideoRefresh(detail_json);
+  if (!refresh) {
+    return refresh.error();
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (refresh->identity.empty() || refresh->identity == *local) {
+    media_.RequestVideoKeyframe();
+  }
+  return {};
+}
+
 Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
   auto ended = CallControlCodec::DecodeEnded(detail_json);

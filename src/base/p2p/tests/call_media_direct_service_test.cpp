@@ -221,6 +221,74 @@ TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
   EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+TEST_F(CallMediaDirectServiceTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
+  const std::string call_id = "call-duplex-video";
+  ByteVector media_key(32, 0x42);
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool connected = false;
+  bool got_video = false;
+  std::vector<uint8_t> received;
+  uint8_t received_ch = 255;
+
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      connected = true;
+      cv.notify_one();
+    };
+    cbs.on_media = [&](uint8_t channel, const std::vector<uint8_t>& payload) {
+      std::lock_guard lock(mu);
+      received_ch = channel;
+      received = payload;
+      got_video = true;
+      cv.notify_one();
+    };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  CallMediaDirectCallbacks cbs;
+  std::atomic<bool> offerer_connected{false};
+  cbs.on_connected = [&] {
+    offerer_connected.store(true, std::memory_order_release);
+    cv.notify_one();
+  };
+
+  auto connect = a_call_media_->Connect(params, std::move(cbs), 5000);
+  ASSERT_TRUE(connect) << connect.error().message;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return connected; }));
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                            [&] { return offerer_connected.load(std::memory_order_acquire); }));
+  }
+
+  const std::vector<uint8_t> au(20 * 1024, 0x5a);
+  auto sent = a_call_media_->SendMedia(1, au, 1, 1);
+  ASSERT_TRUE(sent) << sent.error().message;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_video; }));
+  }
+  EXPECT_EQ(received_ch, 1);
+  EXPECT_EQ(received, au);
+
+  a_call_media_->Detach();
+}
+
 TEST_F(CallMediaDirectServiceTest, FailAfterDetachDoesNotCallOnFailed) {
   const std::string call_id = "call-fail-after-detach";
   ByteVector media_key(32, 0x33);

@@ -192,8 +192,9 @@ public:
              ClosedCallback on_closed = {});
   void Stop();
 
-  /** Queue a frame body (length prefix added on write). Io-thread affine after Start. */
-  bool EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done = {});
+  /** Queue a frame body (length prefix added on write). Io-thread affine after Start.
+   *  `sheddable` frames (video / LatestLossy) are dropped first; never shed audio to enqueue video. */
+  bool EnqueueOutbound(std::vector<uint8_t> body, WriteCallback on_done = {}, bool sheddable = false);
 
   /** Queued frames + in-flight write (0 if idle). Safe from any thread. */
   size_t OutboundBacklog() const {
@@ -204,6 +205,8 @@ private:
   struct PendingWrite {
     std::shared_ptr<std::vector<uint8_t>> frame;
     WriteCallback on_done;
+    /** LatestLossy / video — may be shed to keep ReliableOrdered (audio). */
+    bool sheddable = false;
   };
 
   void PublishBacklog();

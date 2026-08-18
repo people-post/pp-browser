@@ -467,6 +467,21 @@ Roe<CallHopRefuseDetail> CallControlCodec::DecodeHopRefuse(const std::string& de
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeVideoRefresh(const CallVideoRefreshDetail& detail) {
+  return nlohmann::json({{"call_id", detail.call_id}, {"identity", detail.identity}}).dump();
+}
+
+Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::string& detail_json) {
+  const nlohmann::json json = ParseObject(detail_json);
+  if (!json.is_object() || !json.contains("call_id") || !json["call_id"].is_string()) {
+    return Error("Invalid call_video_refresh detail");
+  }
+  CallVideoRefreshDetail detail;
+  detail.call_id = json["call_id"].get<std::string>();
+  detail.identity = OptString(json, "identity").value_or("");
+  return detail;
+}
+
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,

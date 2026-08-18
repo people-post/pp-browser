@@ -119,5 +119,75 @@ TEST_F(CircuitCallMediaComposeTest, CircuitBackedHelloAndEncryptedAudioRoundTrip
   EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+TEST_F(CircuitCallMediaComposeTest, CircuitBackedEncryptedVideoRoundTripOver16KiB) {
+  const std::string call_id = "call-circuit-video";
+  ByteVector media_key(32, 0x42);
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool answerer_connected = false;
+  bool got_video = false;
+  std::vector<uint8_t> received;
+  uint8_t received_ch = 255;
+
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      std::lock_guard lock(mu);
+      answerer_connected = true;
+      cv.notify_one();
+    };
+    cbs.on_media = [&](uint8_t channel, const std::vector<uint8_t>& payload) {
+      std::lock_guard lock(mu);
+      received_ch = channel;
+      received = payload;
+      got_video = true;
+      cv.notify_one();
+    };
+  });
+
+  auto via = EnsureCircuitFromA(kCallMediaDirectProtocolId);
+  ASSERT_TRUE(via) << via.error().message;
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = b_peer_id_;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  std::atomic<bool> offerer_connected{false};
+  CallMediaDirectCallbacks cbs;
+  cbs.on_connected = [&] {
+    offerer_connected.store(true, std::memory_order_release);
+    cv.notify_one();
+  };
+
+  auto connect = a_call_media_->Connect(params, std::move(cbs), 8000);
+  ASSERT_TRUE(connect) << connect.error().message;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(8), [&] { return answerer_connected; }));
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(8),
+                            [&] { return offerer_connected.load(std::memory_order_acquire); }));
+  }
+
+  const std::vector<uint8_t> au(20 * 1024, 0x33);
+  ASSERT_TRUE(a_call_media_->SendMedia(1, au, 1, 1));
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(8), [&] { return got_video; }));
+  }
+  EXPECT_EQ(received_ch, 1);
+  EXPECT_EQ(received, au);
+
+  a_call_media_->Detach();
+  a_sessions_->ClearCircuitHop(b_peer_id_, kCallMediaDirectProtocolId);
+}
+
 } // namespace
 } // namespace pbr

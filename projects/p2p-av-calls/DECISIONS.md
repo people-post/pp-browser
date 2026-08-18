@@ -725,3 +725,29 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
 
 ---
+
+## V034 — Video on libp2p (video_lo; E2E; same streams)
+
+**Date:** 2026-08-18  
+**Status:** Accepted (**implementing**)  
+**Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
+
+| Topic | Rule |
+|-------|------|
+| **Codec** | H264 Constrained Baseline Annex-B via `IVideoCodec` (~640×360 desktop / ~360×640 mobile after orientation @ ~20 fps). |
+| **Layer** | **video_lo only.** `allow_video_hi` stays false; simulcast / `video_hi` is a later horizon. |
+| **1:1** | Same `/pp-browser/call-media/1.0.0` duplex as audio. Frame **v2**: `ver=2 \| seq \| mark \| channel \| nonce \| ct`. Channel `0` = Opus, `1` = H264 AU. Decrypt **v1** bodies as channel 0 (voice interop). Cap **128 KiB** (no NAL fragmentation in this slice). |
+| **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. App AEAD on **all** channels under the **one shared call media key** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)): publisher encrypts each AU **once**; hop fans out that ciphertext. Not per-recipient media encrypt. AAD includes `stream_id` + channel (replay binding, not a per-peer key). |
+| **Hop queues** | Never shed `ReliableOrdered` (audio) to enqueue `LatestLossy` (video). Drop stale video first. |
+| **Camera** | Off on join ([V009](#v009--any-group-member-may-start-camera-off-by-default-on-join)). Adaptation `camera_user_wants` follows `IsCameraEnabled()`. Missing encoder/decoder must not tear down voice ([V019](#v019--unified-call-media-shape-voicevideo-entry-only)). |
+| **IDR** | Encoder `force_keyframe` on start / SoftMigrate send-swap / inbound `call_video_refresh`. Periodic IDR remains a backstop. |
+| **Group UI** | Expanded: one remote stage + local PiP. Immersive: per-peer tiles (cap concurrent HW decoders, e.g. 4). |
+| **Non-goals** | `video_hi`, screen share, recording, CallKit, libdatachannel, Linux soft-codec, N021 header change. |
+
+**Updates:** [V026](#v026--libp2p-only-call-media-http--libp2p-networking) “video deferred” — video_lo is now in scope after voice-on-libp2p. [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) single-layer mapping unchanged.
+
+**Rationale:** Voice path, hop framing, and camera stack already exist. The gap is encrypted send/receive + hop audio-priority queues + per-stream decode — not a second media stack.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); [PHASES.md](PHASES.md) **lv** (libp2p video).
+
+---

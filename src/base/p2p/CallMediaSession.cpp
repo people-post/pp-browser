@@ -258,16 +258,18 @@ bool CallMediaSession::HandleMediaFrame(Roe<std::vector<uint8_t>> frame_res) {
     params = active_params;
     cbs = callbacks;
   }
-  auto opus = DecryptCallMediaAudioFrame(params.media_key, params.call_id, params.media_epoch, *frame_res);
-  if (!opus) {
+  auto decoded = DecryptCallMediaFrame(params.media_key, params.call_id, params.media_epoch, *frame_res);
+  if (!decoded) {
     if ((decrypt_fail_log_.fetch_add(1) % 25) == 0) {
       log().warning << "Call-media decrypt failed call_id=" << params.call_id
-                    << " epoch=" << params.media_epoch << " err=" << opus.error().message;
+                    << " epoch=" << params.media_epoch << " err=" << decoded.error().message;
     }
     return true;
   }
-  if (cbs.on_audio) {
-    cbs.on_audio(*opus);
+  if (cbs.on_media) {
+    cbs.on_media(decoded->channel, decoded->payload);
+  } else if (decoded->channel == kCallMediaChannelAudio && cbs.on_audio) {
+    cbs.on_audio(decoded->payload);
   }
   return true;
 }
@@ -1091,6 +1093,11 @@ Roe<void> CallMediaSession::Connect(PeerSessionManager& sessions,
 
 Roe<void> CallMediaSession::SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq,
                                       uint8_t mark) {
+  return SendMedia(kCallMediaChannelAudio, opus_payload, seq, mark);
+}
+
+Roe<void> CallMediaSession::SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
+                                      uint8_t mark) {
   CallMediaDirectConnectParams params;
   {
     std::lock_guard lock(mu);
@@ -1099,8 +1106,8 @@ Roe<void> CallMediaSession::SendAudio(const std::vector<uint8_t>& opus_payload, 
     }
     params = active_params;
   }
-  auto body = EncryptCallMediaAudioFrame(params.media_key, params.call_id, params.media_epoch, seq,
-                                         mark, opus_payload);
+  auto body = EncryptCallMediaFrame(params.media_key, params.call_id, params.media_epoch, seq, mark, channel,
+                                    payload);
   if (!body) {
     return body.error();
   }

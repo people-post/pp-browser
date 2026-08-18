@@ -100,6 +100,14 @@ public:
    */
   void RefreshRemoteVideoHealth();
   bool VideoEncoderAvailable() const;
+  /** Probe V024 with camera wanted using last hop A↑ (1:1 unbounded). */
+  bool CameraPathAllowsVideo() const;
+  /** Last hop quote A↑ (0 = unknown / 1:1 unbounded). */
+  void NoteUplinkBudget(int64_t per_user_up_bps);
+  /** Force next encoded AU to be an IDR (SoftMigrate / call_video_refresh). */
+  void RequestVideoKeyframe();
+  /** Drain stream ids that need an IDR (decode fail / first gap). */
+  std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
 
   bool IsActive() const;
   bool IsConnected() const;
@@ -119,6 +127,9 @@ public:
   /** Copy latest local preview / remote decoded frames (empty if none). */
   bool CopyLocalVideoFrame(VideoTileFrame& out) const;
   bool CopyRemoteVideoFrame(VideoTileFrame& out) const;
+  /** Group: copy decoded frame for a publisher stream_id (0 = primary remote). */
+  bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const;
+  bool HasRemoteVideoForStream(uint32_t stream_id) const;
 
 private:
   struct Impl;

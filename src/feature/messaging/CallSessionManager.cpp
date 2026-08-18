@@ -127,7 +127,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   if (call_id.empty()) {
     return Error("No active call media");
   }
-  topology_.RefreshAdaptation(call_id);
+  topology_.RefreshAdaptation(call_id, enabled);
   if (enabled) {
     if (auto cam = media_.SetCameraEnabled(true); !cam) {
       return cam.error();
@@ -149,6 +149,29 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   }
   NotifyRingChanged();
   return {};
+}
+
+Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
+                                                 const std::string& publisher_identity) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (call_id.empty()) {
+    return Error("No active call");
+  }
+  if (publisher_identity.empty() || publisher_identity == *local) {
+    media_.RequestVideoKeyframe();
+    return {};
+  }
+  CallVideoRefreshDetail detail;
+  detail.call_id = call_id;
+  detail.identity = publisher_identity;
+  auto encoded = CallControlCodec::EncodeVideoRefresh(detail);
+  if (!encoded) {
+    return encoded.error();
+  }
+  return SendCallDirectMessage(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
 }
 
 std::optional<std::string> CallSessionManager::TakeLastMediaError() {
@@ -1340,6 +1363,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundSfuAttachFailed(detail_json, sender_identity);
   case CallControlType::CallHopRefuse:
     return HandleInboundHopRefuse(detail_json);
+  case CallControlType::CallVideoRefresh:
+    return HandleInboundVideoRefresh(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:

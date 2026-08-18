@@ -143,6 +143,10 @@ struct CallMediaEngine::Impl {
   std::atomic<int64_t> connected_at_ms{0};
   std::atomic<int64_t> started_at_ms{0};
   std::atomic<int64_t> last_remote_video_ms{0};
+  std::atomic<int64_t> last_uplink_bps{0};
+  std::mutex video_refresh_mu;
+  std::unordered_set<uint32_t> pending_video_refresh_streams;
+  std::unordered_map<uint32_t, int64_t> last_video_refresh_note_ms;
   std::string connection_state = "idle";
 
   StateChangedFn on_state_changed;
@@ -158,6 +162,7 @@ struct CallMediaEngine::Impl {
   std::mutex sfu_send_call_mu;
   std::atomic<uint32_t> sfu_audio_seq{0};
   std::atomic<uint32_t> sfu_video_seq{0};
+  std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
   int64_t adaptation_target_video_bps = 0;
   std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
@@ -166,10 +171,13 @@ struct CallMediaEngine::Impl {
   std::atomic<uint64_t> playout_ticks{0};
   std::atomic<uint64_t> rx_audio_frames{0};
   std::atomic<uint64_t> tx_audio_frames{0};
-  std::atomic<uint64_t> playout_underruns_total{0};
-  std::atomic<uint64_t> plc_frames_total{0};
   std::atomic<int64_t> last_rx_audio_ms{0};
   std::atomic<int64_t> last_tx_audio_ms{0};
+  std::atomic<uint64_t> rx_video_frames{0};
+  std::atomic<uint64_t> tx_video_frames{0};
+  std::atomic<int64_t> last_rx_video_ms{0};
+  std::atomic<uint64_t> playout_underruns_total{0};
+  std::atomic<uint64_t> plc_frames_total{0};
 
   bool capture_available = false;
 
@@ -199,6 +207,8 @@ struct CallMediaEngine::Impl {
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
 
   std::unique_ptr<IVideoCodec> video_codec;
+  std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  static constexpr size_t kMaxRemoteVideoDecoders = 4;
   SDL_Camera* camera = nullptr;
   SDL_CameraID camera_id = 0;
   /** Clockwise degrees to apply to sensor buffers before encode. */
@@ -221,6 +231,8 @@ struct CallMediaEngine::Impl {
   mutable std::mutex video_frame_mutex;
   VideoTileFrame local_video_frame;
   VideoTileFrame remote_video_frame;
+  std::unordered_map<uint32_t, VideoTileFrame> remote_video_by_stream;
+  std::unordered_map<uint32_t, int64_t> last_video_ms_by_stream;
   uint64_t local_video_seq = 0;
   uint64_t remote_video_seq = 0;
 
@@ -290,21 +302,44 @@ struct CallMediaEngine::Impl {
     local_video_frame.seq = ++local_video_seq;
   }
 
-  void PublishRemoteFrame(VideoFrameRgba&& frame) {
+  void NoteVideoRefreshNeeded(uint32_t stream_id) {
+    const int64_t now = util::NowUnixMs();
+    std::lock_guard lock(video_refresh_mu);
+    auto it = last_video_refresh_note_ms.find(stream_id);
+    if (it != last_video_refresh_note_ms.end() && now - it->second < 2000) {
+      return;
+    }
+    last_video_refresh_note_ms[stream_id] = now;
+    pending_video_refresh_streams.insert(stream_id);
+  }
+
+  void PublishRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
     PremultiplyRgbaInPlace(frame.rgba);
+    const int64_t now = util::NowUnixMs();
     std::lock_guard lock(video_frame_mutex);
     remote_video_frame.width = frame.width;
     remote_video_frame.height = frame.height;
-    remote_video_frame.rgba = std::move(frame.rgba);
+    remote_video_frame.rgba = frame.rgba;
     remote_video_frame.seq = ++remote_video_seq;
+    VideoTileFrame tile;
+    tile.width = frame.width;
+    tile.height = frame.height;
+    tile.rgba = std::move(frame.rgba);
+    tile.seq = remote_video_frame.seq;
+    remote_video_by_stream[stream_id] = std::move(tile);
+    last_video_ms_by_stream[stream_id] = now;
     has_remote_video.store(true, std::memory_order_relaxed);
     ever_had_remote_video.store(true, std::memory_order_relaxed);
-    last_remote_video_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    last_remote_video_ms.store(now, std::memory_order_relaxed);
+    last_rx_video_ms.store(now, std::memory_order_relaxed);
+    rx_video_frames.fetch_add(1, std::memory_order_relaxed);
   }
 
   void ClearRemoteVideoFrames() {
     std::lock_guard lock(video_frame_mutex);
     remote_video_frame = {};
+    remote_video_by_stream.clear();
+    last_video_ms_by_stream.clear();
     remote_video_seq = 0;
     has_remote_video.store(false, std::memory_order_relaxed);
     last_remote_video_ms.store(0, std::memory_order_relaxed);
@@ -314,6 +349,8 @@ struct CallMediaEngine::Impl {
     std::lock_guard lock(video_frame_mutex);
     local_video_frame = {};
     remote_video_frame = {};
+    remote_video_by_stream.clear();
+    last_video_ms_by_stream.clear();
     local_video_seq = 0;
     remote_video_seq = 0;
     has_remote_video.store(false, std::memory_order_relaxed);
@@ -774,6 +811,9 @@ struct CallMediaEngine::Impl {
       bool need_keyframe = true;
       bool logged_convert_fail = false;
       while (video_running.load()) {
+        if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
+          need_keyframe = true;
+        }
         const auto t0 = std::chrono::steady_clock::now();
         if (!camera || !camera_enabled.load(std::memory_order_relaxed)) {
           std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -841,6 +881,7 @@ struct CallMediaEngine::Impl {
                   try {
                     std::lock_guard send_lock(sfu_send_call_mu);
                     (*send_fn)(pkt);
+                    tx_video_frames.fetch_add(1, std::memory_order_relaxed);
                   } catch (...) {
                   }
                 }
@@ -893,12 +934,31 @@ struct CallMediaEngine::Impl {
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
 
-  void OnRemoteH264Frame(const std::byte* data, size_t size) {
-    if (!video_codec || size == 0) {
+  void OnRemoteH264Frame(uint32_t stream_id, const std::byte* data, size_t size) {
+    if (size == 0) {
       return;
     }
-    if (!video_codec->HasDecoder()) {
-      if (auto configured = video_codec->ConfigureDecoder(); !configured) {
+    IVideoCodec* decoder = nullptr;
+    {
+      std::lock_guard lock(mutex);
+      auto it = remote_decoders.find(stream_id);
+      if (it == remote_decoders.end()) {
+        if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
+          return;
+        }
+        auto created = CreatePlatformVideoCodec();
+        if (!created) {
+          return;
+        }
+        it = remote_decoders.emplace(stream_id, std::move(created)).first;
+      }
+      decoder = it->second.get();
+    }
+    if (!decoder) {
+      return;
+    }
+    if (!decoder->HasDecoder()) {
+      if (auto configured = decoder->ConfigureDecoder(); !configured) {
         static bool logged_cfg = false;
         if (!logged_cfg) {
           logged_cfg = true;
@@ -907,7 +967,7 @@ struct CallMediaEngine::Impl {
         return;
       }
     }
-    auto decoded = video_codec->Decode(reinterpret_cast<const uint8_t*>(data), size);
+    auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
       static int logged_decode = 0;
       if (logged_decode < 5) {
@@ -915,9 +975,10 @@ struct CallMediaEngine::Impl {
         SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
                 decoded.error().message.c_str(), size);
       }
+      NoteVideoRefreshNeeded(stream_id);
       return;
     }
-    PublishRemoteFrame(std::move(*decoded));
+    PublishRemoteFrame(stream_id, std::move(*decoded));
   }
 
   Roe<void> EnableCameraLocked() {
@@ -1066,6 +1127,7 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     // Android speaker / communication-mode route changes around SoftMigrate can leave the open
     // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
     RequestAudioDeviceReopen();
+    RequestVideoKeyframe();
     return {};
   }
   abandoned_send = nullptr;
@@ -1150,7 +1212,8 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
                              reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
   } else if (packet.channel_id == 1) {
-    impl_->OnRemoteH264Frame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
+    impl_->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
+                             packet.payload.size());
   }
 }
 
@@ -1176,6 +1239,9 @@ void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
     }
     if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
       impl_->CloseCameraLocked();
+    }
+    if (impl_->video_codec && decision.target_video_lo_bps > 0) {
+      impl_->video_codec->SetTargetBitrate(decision.target_video_lo_bps);
     }
   }
 }
@@ -1203,6 +1269,10 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
   h.last_tx_audio_ms = impl_->last_tx_audio_ms.load(std::memory_order_relaxed);
+  h.rx_video_frames = impl_->rx_video_frames.load(std::memory_order_relaxed);
+  h.tx_video_frames = impl_->tx_video_frames.load(std::memory_order_relaxed);
+  h.last_rx_video_ms = impl_->last_rx_video_ms.load(std::memory_order_relaxed);
+  h.video_target_bps = impl_->adaptation_target_video_bps;
   h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
@@ -1349,14 +1419,60 @@ void CallMediaEngine::RefreshRemoteVideoHealth() {
   if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
     return;
   }
-  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
-  if (last > 0 && (now - last) >= kRemoteVideoStallHardMs) {
-    impl_->ClearRemoteVideoFrames();
+  std::lock_guard lock(impl_->video_frame_mutex);
+  int64_t newest_ms = 0;
+  uint32_t newest_stream = 0;
+  for (auto it = impl_->last_video_ms_by_stream.begin(); it != impl_->last_video_ms_by_stream.end();) {
+    if (it->second > 0 && (now - it->second) >= kRemoteVideoStallHardMs) {
+      impl_->remote_video_by_stream.erase(it->first);
+      it = impl_->last_video_ms_by_stream.erase(it);
+      continue;
+    }
+    if (it->second >= newest_ms) {
+      newest_ms = it->second;
+      newest_stream = it->first;
+    }
+    ++it;
+  }
+  if (impl_->last_video_ms_by_stream.empty()) {
+    impl_->remote_video_frame = {};
+    impl_->has_remote_video.store(false, std::memory_order_relaxed);
+    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+    return;
+  }
+  impl_->last_remote_video_ms.store(newest_ms, std::memory_order_relaxed);
+  auto live = impl_->remote_video_by_stream.find(newest_stream);
+  if (live != impl_->remote_video_by_stream.end()) {
+    impl_->remote_video_frame = live->second;
   }
 }
 
 bool CallMediaEngine::VideoEncoderAvailable() const {
-  return impl_->video_codec && impl_->video_codec->HasEncoder();
+  return impl_->video_codec && impl_->video_codec->EncoderSupported();
+}
+
+bool CallMediaEngine::CameraPathAllowsVideo() const {
+  CallAdaptationInput in;
+  in.camera_user_wants = true;
+  in.path_pressure = PathPressure();
+  in.per_user_up_bps = impl_->last_uplink_bps.load(std::memory_order_relaxed);
+  return CallMediaAdaptation::Evaluate(in).camera_allowed;
+}
+
+void CallMediaEngine::NoteUplinkBudget(int64_t per_user_up_bps) {
+  impl_->last_uplink_bps.store(per_user_up_bps, std::memory_order_relaxed);
+}
+
+void CallMediaEngine::RequestVideoKeyframe() {
+  impl_->video_need_keyframe.store(true, std::memory_order_release);
+}
+
+std::vector<uint32_t> CallMediaEngine::TakePendingVideoRefreshStreamIds() {
+  std::lock_guard lock(impl_->video_refresh_mu);
+  std::vector<uint32_t> out(impl_->pending_video_refresh_streams.begin(),
+                            impl_->pending_video_refresh_streams.end());
+  impl_->pending_video_refresh_streams.clear();
+  return out;
 }
 
 bool CallMediaEngine::IsActive() const {
@@ -1418,6 +1534,22 @@ bool CallMediaEngine::CopyRemoteVideoFrame(VideoTileFrame& out) const {
   }
   out = impl_->remote_video_frame;
   return true;
+}
+
+bool CallMediaEngine::CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const {
+  std::lock_guard lock(impl_->video_frame_mutex);
+  auto it = impl_->remote_video_by_stream.find(stream_id);
+  if (it == impl_->remote_video_by_stream.end() || it->second.rgba.empty()) {
+    return false;
+  }
+  out = it->second;
+  return true;
+}
+
+bool CallMediaEngine::HasRemoteVideoForStream(uint32_t stream_id) const {
+  std::lock_guard lock(impl_->video_frame_mutex);
+  auto it = impl_->remote_video_by_stream.find(stream_id);
+  return it != impl_->remote_video_by_stream.end() && !it->second.rgba.empty();
 }
 
 } // namespace pbr

@@ -31,6 +31,7 @@ Admission, queue, drop, and meter rules for every inbound request a libp2p / mes
 | `call_roster` | Session | May SoftMigrate | — |
 | `call_media_key` | Session + unwrap OK | — | — |
 | `call_sfu_attach` / `_failed` / `call_hop_refuse` | Topology rules (V028–V030) | Attach-wait | — |
+| `call_video_refresh` | Session; publisher identity empty or local → IDR | Plumbing (no history) | Rate-limited by sender |
 | `call_sdp` / `call_ice` | **Ignore** | — | — |
 
 No call-control-specific rate limit beyond general messaging / HTTP relay limits.
@@ -43,7 +44,8 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 |---------|-------|--------------|-------|
 | Inbound stream | Reject if session already active; reject inbound while outbound offerer hello in flight **and** local PeerId > remote (dual-dial shares one stream) | One duplex | — |
 | Hello | Local session + media key (wait ≤8s) | Reject → close | — |
-| Client attach (phone→hop) | After quote/accept/attach handshake | `DuplexFrameSession` + `MediaRelayClientIoPolicy` on host **io_context** (full duplex, max **4** queued). Subscribe/SendFrame enqueue — no BlockingRead worker + BlockingWrite capture on the same stream. Corrupt frames skipped (do not tear down). | — |
+| Media frame (v1 audio / v2 `channel` 0=Opus, 1=H264 AU) | Session MediaReady; body ≤ **128 KiB** | Decrypt fail → drop (do not tear down). v1 decrypts as channel 0. | — |
+| Media frame (v1 audio / v2 `channel` 0=Opus, 1=H264 AU) | Session MediaReady; body ≤ **128 KiB** | Decrypt fail → drop (do not tear down). v1 decrypts as channel 0. | — |
 
 ---
 
@@ -55,8 +57,8 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 | `accept` | Known quote; same admission | — | — |
 | `attach` | Auth stub `auth == call_id`; max **8** participants/session; call-scoped strangers OK after session exists | — | Bind per-peer A↑/A↓ |
 | subscribe / unsub / detach | Attached participant | Subscribe from Joined roster **and** from inbound `CallSfuAttach.publisher_stream_id` (roster may lag). After attach, each peer fan-outs its own publisher stream so others can subscribe without waiting for CallRoster | — |
-| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound: peer `DuplexFrameSession` + `MediaRelayHopIoPolicy` on host **io_context** (full duplex, max **1** queued = latest-wins). A stuck **or failed** peer write must not stall/remove that peer’s uplink (failed write → drop outbound queue, keep reading; only read EOF / explicit `detach` / cancel → `CleanupParticipant`). Corrupt media/control frames → skip, do not tear down. **Never** BlockingWrite on the worker pool for fanout. **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total`; per-peer in `media_health hop_peers=`; `CleanupParticipant` logged |
-| Data frame (video = `LatestLossy`) | Same | Stale `seq` (mark=0) → drop; same bps/ceiling rules | Same |
+| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound: peer `DuplexFrameSession` + `MediaRelayHopIoPolicy` on host **io_context** (full duplex, max **2** queued). **Never shed `ReliableOrdered` to enqueue `LatestLossy`**; drop stale video first. A stuck **or failed** peer write must not stall/remove that peer’s uplink (failed write → drop outbound queue, keep reading; only read EOF / explicit `detach` / cancel → `CleanupParticipant`). Corrupt media/control frames → skip, do not tear down. **Never** BlockingWrite on the worker pool for fanout. **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total`; per-peer in `media_health hop_peers=`; `CleanupParticipant` logged |
+| Data frame (video = `LatestLossy`, `channel_id=1`) | Same | Stale `seq` (mark=0) → drop; same bps/ceiling rules; hop never inspects H264. Payload is already app AEAD under the **one shared call media key** (V004) — one ciphertext per AU, hop fans out | Same |
 
 Hop stays **blind** (no decode, no call keys).
 
@@ -66,10 +68,11 @@ Hop stays **blind** (no decode, no call keys).
 
 | Stage | Policy |
 |-------|--------|
-| SFU payload | AEAD under call media key (stream-scoped AAD); decrypt fail → drop |
+| SFU payload | AEAD under **one shared call media key** (V004; stream-scoped AAD + channel); decrypt fail → drop. Not per-recipient encrypt. |
 | Opus decode | **Per `stream_id` decoder** (group) |
+| H264 decode | **Per `stream_id` decoder** (cap 4); missing decoder skips that publisher — voice continues |
 | Playout | Per-stream jitter target **60 ms**, max **200 ms**; PLC on gap; mix → one SDL device |
-| Adaptation | `path_pressure` from playout underrun / hop drops → Opus bitrate within V024 ladder |
+| Adaptation | `path_pressure` from playout underrun / hop drops → Opus bitrate within V024 ladder; video target bps to `IVideoCodec` |
 
 ---
 

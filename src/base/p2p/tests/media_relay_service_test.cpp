@@ -165,6 +165,144 @@ TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
   b_relay_->Detach();
 }
 
+TEST_F(MediaRelayServiceTest, Channel1LatestLossyFanout) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-video-ch1";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa && qa->ok) << (qa ? qa->error : qa.error().message);
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb && qb->ok);
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  MediaDataFrame received;
+  auto attach_a = a_relay_->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a && attach_a->ok);
+  auto attach_b = b_relay_->AcceptAndAttach(
+      "hop", qb->quote_id, call_id, call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard lock(mu);
+        received = std::move(frame);
+        got = true;
+        cv.notify_one();
+      },
+      5000);
+  ASSERT_TRUE(attach_b && attach_b->ok);
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+  ASSERT_TRUE(b_relay_->Subscribe(1, 1));
+
+  MediaDataFrame sent;
+  sent.stream_id = 1;
+  sent.channel_id = 1;
+  sent.channel_type = MediaChannelType::LatestLossy;
+  sent.seq = 1;
+  sent.mark = 1;
+  sent.payload.assign(20 * 1024, 0xab);
+  SendUntilReceived(*a_relay_, sent, mu, cv, got);
+  EXPECT_EQ(received.channel_id, 1);
+  EXPECT_EQ(received.payload.size(), sent.payload.size());
+  EXPECT_EQ(received.payload, sent.payload);
+
+  a_relay_->Detach();
+  b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, VideoBurstDoesNotDropAudio) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-av-priority";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa && qa->ok);
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb && qb->ok);
+
+  std::mutex mu;
+  std::condition_variable cv;
+  int audio_got = 0;
+  int video_got = 0;
+  auto attach_a = a_relay_->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a && attach_a->ok);
+  auto attach_b = b_relay_->AcceptAndAttach(
+      "hop", qb->quote_id, call_id, call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard lock(mu);
+        if (frame.channel_id == 0) {
+          ++audio_got;
+        } else {
+          ++video_got;
+        }
+        cv.notify_all();
+      },
+      5000);
+  ASSERT_TRUE(attach_b && attach_b->ok);
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+  ASSERT_TRUE(b_relay_->Subscribe(1, 0));
+  ASSERT_TRUE(b_relay_->Subscribe(1, 1));
+
+  MediaDataFrame audio;
+  audio.stream_id = 1;
+  audio.channel_id = 0;
+  audio.channel_type = MediaChannelType::ReliableOrdered;
+  audio.seq = 1;
+  audio.payload = {'a', 'u'};
+  {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    uint32_t seq = 1;
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard lock(mu);
+        if (audio_got >= 1) {
+          break;
+        }
+      }
+      audio.seq = seq++;
+      ASSERT_TRUE(a_relay_->SendFrame(audio));
+      std::unique_lock lock(mu);
+      if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return audio_got >= 1; })) {
+        break;
+      }
+    }
+  }
+  // Burst video after audio is in flight / queued.
+  MediaDataFrame video;
+  video.stream_id = 1;
+  video.channel_id = 1;
+  video.channel_type = MediaChannelType::LatestLossy;
+  video.payload.assign(8 * 1024, 0x11);
+  for (uint32_t seq = 1; seq <= 12; ++seq) {
+    video.seq = seq;
+    video.mark = seq == 1 ? 1 : 0;
+    (void)a_relay_->SendFrame(video);
+  }
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return audio_got >= 1; }));
+  }
+  EXPECT_GE(audio_got, 1);
+  (void)video_got;
+
+  a_relay_->Detach();
+  b_relay_->Detach();
+}
+
 TEST_F(MediaRelayServiceTest, CallScopedAdmissionAllowsStrangerAfterSponsor) {
   auto hop_id = hop_host_.LocalPeerIdBase58();
   ASSERT_TRUE(hop_id);

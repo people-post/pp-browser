@@ -703,6 +703,55 @@ TEST_F(StreamFrameIoTest, DuplexDropOldestPolicy) {
   EXPECT_LE(last_backlog, 2u);
 }
 
+TEST_F(StreamFrameIoTest, DuplexDoesNotShedAudioToEnqueueVideo) {
+  std::mutex mu;
+  std::condition_variable cv;
+  int drops = 0;
+  bool enqueued_video = true;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          auto duplex = std::make_shared<DuplexFrameSession>();
+          auto policy = CallMediaIoPolicy();
+          policy.max_outbound_frames = 1;
+          policy.on_outbound_drop = [&]() {
+            std::lock_guard lock(mu);
+            ++drops;
+            cv.notify_one();
+          };
+          duplex->Start(
+              stream,
+              [](Roe<std::vector<uint8_t>>) { return true; },
+              [] { return false; }, std::move(policy));
+          ASSERT_TRUE(duplex->EnqueueOutbound(std::vector<uint8_t>{1}, {}, false));
+          const bool video_ok = duplex->EnqueueOutbound(std::vector<uint8_t>{2}, {}, true);
+          {
+            std::lock_guard lock(mu);
+            enqueued_video = video_ok;
+            cv.notify_one();
+          }
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  ASSERT_TRUE(open_future.get());
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return !enqueued_video || drops > 0; }));
+  }
+  EXPECT_EQ(drops, 0);
+  EXPECT_FALSE(enqueued_video);
+}
+
 TEST(Libp2pSchedulerTest, PostsControlToWorkerPool) {
   Libp2pHost host;
   Libp2pHostConfig cfg;

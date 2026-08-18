@@ -149,5 +149,77 @@ TEST_F(CircuitMediaRelayComposeTest, CircuitBackedQuoteAttachFanout) {
   EXPECT_FALSE(a_sessions_->IsCircuitBacked(b_peer_id_, kMediaRelayProtocolId));
 }
 
+TEST_F(CircuitMediaRelayComposeTest, CircuitChannel1Fanout) {
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = "call-circuit-ch1";
+  qreq.participants = 2;
+
+  ASSERT_FALSE(a_sessions_->IsReachableForProtocol(b_peer_id_, kMediaRelayProtocolId));
+  auto via = EnsureCircuitFromA(kMediaRelayProtocolId);
+  ASSERT_TRUE(via) << via.error().message;
+
+  auto qa = a_relay_->RequestQuote(b_peer_id_, qreq, 8000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+  auto qg = g_relay_->RequestQuote(b_peer_id_, qreq, 8000);
+  ASSERT_TRUE(qg) << qg.error().message;
+  ASSERT_TRUE(qg->ok) << qg->error;
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  MediaDataFrame received;
+  auto attach_a = a_relay_->AcceptAndAttach(b_peer_id_, qa->quote_id, qreq.call_id, qreq.call_id,
+                                            [](MediaDataFrame) {}, 8000);
+  ASSERT_TRUE(attach_a && attach_a->ok);
+  auto attach_g = g_relay_->AcceptAndAttach(
+      b_peer_id_, qg->quote_id, qreq.call_id, qreq.call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard lock(mu);
+        received = std::move(frame);
+        got = true;
+        cv.notify_one();
+      },
+      8000);
+  ASSERT_TRUE(attach_g && attach_g->ok);
+  a_relay_->StartClientFrameReader();
+  g_relay_->StartClientFrameReader();
+  ASSERT_TRUE(g_relay_->Subscribe(1, 1));
+
+  MediaDataFrame sent;
+  sent.stream_id = 1;
+  sent.channel_id = 1;
+  sent.channel_type = MediaChannelType::LatestLossy;
+  sent.seq = 1;
+  sent.mark = 1;
+  sent.payload.assign(20 * 1024, 0xcd);
+  {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    uint32_t seq = 1;
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard lock(mu);
+        if (got) {
+          break;
+        }
+      }
+      sent.seq = seq++;
+      ASSERT_TRUE(a_relay_->SendFrame(sent));
+      std::unique_lock lock(mu);
+      if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return got; })) {
+        break;
+      }
+    }
+    std::lock_guard lock(mu);
+    ASSERT_TRUE(got);
+  }
+  EXPECT_EQ(received.channel_id, 1);
+  EXPECT_EQ(received.payload, sent.payload);
+
+  a_relay_->Detach();
+  g_relay_->Detach();
+  a_sessions_->ClearCircuitHop(b_peer_id_, kMediaRelayProtocolId);
+}
+
 } // namespace
 } // namespace pbr

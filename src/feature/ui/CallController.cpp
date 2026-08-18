@@ -6,6 +6,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
+#include "base/messaging/SfuAttachFanout.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/ILocalNotifier.h"
@@ -30,9 +31,11 @@
 #include <RmlUi/Core/SystemInterface.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -80,6 +83,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_invite = in_call.show_invite,
       .in_call_show_retry = in_call.show_retry,
       .in_call_show_speaker = in_call.show_speaker,
+      .in_call_show_camera = in_call.show_camera,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
       .in_call_mode = in_call.mode,
@@ -601,6 +605,8 @@ void CallController::RefreshPendingRing() {
           name = row.identity;
         }
         entry.name = name.c_str();
+        entry.identity = row.identity.c_str();
+        entry.stream_id = std::to_string(PublisherStreamIdForIdentity(row.identity)).c_str();
         entry.audio_muted = row.media.audio_muted;
         entry.video_enabled = row.media.video_enabled;
         in_call.roster.push_back(std::move(entry));
@@ -1023,6 +1029,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.camera_on = media.IsCameraEnabled();
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
+  in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
@@ -1074,6 +1081,63 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       frame.seq = remote_tile.seq;
       frame.rgba = std::move(remote_tile.rgba);
       CallVideoTileRenderer::Instance().SubmitRemoteFrame(std::move(frame));
+    }
+  }
+
+  std::vector<uint32_t> live_peer_streams;
+  const int64_t now_ms = util::NowUnixMs();
+  for (CallRosterParticipantState& row : in_call.roster) {
+    if (row.is_local) {
+      row.has_remote_video = false;
+      continue;
+    }
+    const uint32_t stream = static_cast<uint32_t>(std::strtoul(row.stream_id.c_str(), nullptr, 10));
+    row.has_remote_video = stream != 0 && media.HasRemoteVideoForStream(stream);
+    if (!row.has_remote_video) {
+      continue;
+    }
+    live_peer_streams.push_back(stream);
+    CallMediaEngine::VideoTileFrame peer_tile;
+    if (!media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
+      continue;
+    }
+    CallVideoTileRenderer::Frame frame;
+    frame.width = peer_tile.width;
+    frame.height = peer_tile.height;
+    frame.seq = peer_tile.seq;
+    frame.rgba = std::move(peer_tile.rgba);
+    CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, std::move(frame));
+  }
+  CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
+
+  if (backend && backend->Available() && !active_call_id_.empty()) {
+    for (uint32_t stream : media.TakePendingVideoRefreshStreamIds()) {
+      for (const CallRosterParticipantState& row : in_call.roster) {
+        if (row.is_local) {
+          continue;
+        }
+        const uint32_t row_stream =
+            static_cast<uint32_t>(std::strtoul(row.stream_id.c_str(), nullptr, 10));
+        if (row_stream != stream) {
+          continue;
+        }
+        (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+        break;
+      }
+    }
+    const bool hard_stall = missing_after_video && !media.HasRemoteVideo();
+    if ((hard_stall || stalling) && now_ms - last_video_refresh_ms_ >= 2000) {
+      last_video_refresh_ms_ = now_ms;
+      if (in_call.show_roster) {
+        for (const CallRosterParticipantState& row : in_call.roster) {
+          if (row.is_local || !row.video_enabled || row.has_remote_video) {
+            continue;
+          }
+          (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+        }
+      } else if (auto peer = backend->PeerIdentityForCall(active_call_id_); peer && peer->has_value()) {
+        (void)backend->RequestVideoRefresh(active_call_id_, **peer);
+      }
     }
   }
 

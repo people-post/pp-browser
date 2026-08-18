@@ -93,6 +93,8 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach_failed"), CallControlType::CallSfuAttachFailed);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallHopRefuse), "call_hop_refuse");
   EXPECT_EQ(CallControlTypeFromWire("call_hop_refuse"), CallControlType::CallHopRefuse);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallVideoRefresh), "call_video_refresh");
+  EXPECT_EQ(CallControlTypeFromWire("call_video_refresh"), CallControlType::CallVideoRefresh);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
@@ -188,6 +190,19 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   ASSERT_TRUE(decoded_accept);
   EXPECT_EQ(decoded_accept->charge_decision, "take_all");
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
+}
+
+TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
+  CallVideoRefreshDetail detail;
+  detail.call_id = "call:vid";
+  detail.identity = "account:pub";
+  auto encoded = CallControlCodec::EncodeVideoRefresh(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeVideoRefresh(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->identity, detail.identity);
+  EXPECT_FALSE(CallControlCodec::DecodeVideoRefresh(R"({"identity":"account:pub"})"));
 }
 
 } // namespace

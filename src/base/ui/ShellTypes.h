@@ -186,9 +186,14 @@ struct CallRingState {
 /** One row in the in-call participant roster strip. */
 struct CallRosterParticipantState {
   Rml::String name;
+  /** Decimal publisher stream_id for Immersive peer tiles. */
+  Rml::String stream_id;
+  /** Communicating identity (not bound in RML). */
+  Rml::String identity;
   bool audio_muted = false;
   bool video_enabled = false;
   bool is_local = false;
+  bool has_remote_video = false;
 };
 
 /** In-call chrome presentation mode (V031). */
@@ -228,6 +233,8 @@ struct CallInProgressState {
   bool show_retry = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
+  /** Hide Camera when encoder missing or hop A↑ too small for video_lo. */
+  bool show_camera = true;
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
   CallChromeMode mode = CallChromeMode::Expanded;
   /**

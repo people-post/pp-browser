@@ -58,6 +58,8 @@ struct CallMediaDirectConnectParams {
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
   std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
+  /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
+  std::function<void(uint8_t channel, const std::vector<uint8_t>& payload)> on_media;
   std::function<void(const std::string& error)> on_failed;
 };
 
@@ -99,6 +101,8 @@ public:
 
   /** Encrypt and enqueue Opus frame; IO thread owns stream write (non-blocking). */
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
+  /** Encrypt and enqueue a media frame (`channel` 0=Opus, 1=H264 video_lo). */
+  Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0);
 
 private:
   std::shared_ptr<CallMediaSession> session_;

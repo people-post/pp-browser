@@ -48,6 +48,7 @@ public:
   Roe<void> Connect(PeerSessionManager& sessions, const CallMediaDirectConnectParams& params,
                     CallMediaDirectCallbacks callbacks, int timeout_ms);
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark);
+  Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark);
 
 private:
   enum class InboundAdmit { Accept, RejectNoHandler, RejectActive, RejectGlare };
