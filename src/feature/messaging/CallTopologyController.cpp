@@ -916,6 +916,7 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
         frame.seq = pkt.seq;
         frame.mark = pkt.mark;
         if (!media_key.empty()) {
+          // V004: one AEAD seal per AU; hop fans out this ciphertext to all subscribers.
           auto sealed = EncryptCallMediaSfuFrame(media_key, captured_call, media_epoch, pub, pkt.seq, pkt.mark,
                                                  static_cast<uint8_t>(pkt.channel_id), pkt.payload);
           if (!sealed) {

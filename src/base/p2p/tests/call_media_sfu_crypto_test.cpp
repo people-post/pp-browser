@@ -61,6 +61,22 @@ TEST(CallMediaSfuCryptoTest, DirectV2AudioAndVideoRoundTrip) {
   EXPECT_FALSE(as_audio);
 }
 
+TEST(CallMediaSfuCryptoTest, OneSealDecryptsForEveryParticipantWithSharedKey) {
+  const std::string call_id = "call:group-one-key";
+  std::vector<uint8_t> au(4096, 0x7e);
+  auto sealed = EncryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, 1, 1, kCallMediaChannelVideoLo, au);
+  ASSERT_TRUE(sealed);
+  // Two subscribers, same epoch key — not per-target ciphertext.
+  auto peer_a = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelVideoLo, *sealed);
+  auto peer_b = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelVideoLo, *sealed);
+  ASSERT_TRUE(peer_a);
+  ASSERT_TRUE(peer_b);
+  EXPECT_EQ(peer_a->payload, au);
+  EXPECT_EQ(peer_b->payload, au);
+  ByteVector other_key(32, 0x24);
+  EXPECT_FALSE(DecryptCallMediaSfuFrame(other_key, call_id, 1, 10, kCallMediaChannelVideoLo, *sealed));
+}
+
 TEST(CallMediaSfuCryptoTest, ChannelBoundInAad) {
   const std::string call_id = "call:ch-aad";
   const std::vector<uint8_t> payload = {1, 2, 3};

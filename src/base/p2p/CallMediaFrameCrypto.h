@@ -60,7 +60,10 @@ Roe<std::vector<uint8_t>> EncryptCallMediaAudioFrameV1(const ByteVector& media_k
                                                         uint32_t media_epoch, uint32_t seq, uint8_t mark,
                                                         const std::vector<uint8_t>& opus_payload);
 
-/** Encrypt opaque SFU payload (V032/V034). Distinct AAD; v2 includes channel. */
+/**
+ * Encrypt opaque SFU payload (V032/V034). Distinct AAD; v2 includes channel.
+ * One seal per AU under the shared call media key (V004) — not per subscriber.
+ */
 Roe<std::vector<uint8_t>> EncryptCallMediaSfuFrame(const ByteVector& media_key, const std::string& call_id,
                                                    uint32_t media_epoch, uint32_t stream_id, uint32_t seq,
                                                    uint8_t mark, uint8_t channel,

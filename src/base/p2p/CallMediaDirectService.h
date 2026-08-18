@@ -67,7 +67,7 @@ class CallMediaSession;
 
 /**
  * 1:1 libp2p call-media transport (m1 / V026).
- * Opus payloads are AEAD-encrypted under the shared call media key before send.
+ * Audio/video payloads are AEAD-encrypted under the shared call media key before send.
  * Session legality is an explicit phase machine (V033 / SESSION_MACHINES.md).
  */
 class CallMediaDirectService {

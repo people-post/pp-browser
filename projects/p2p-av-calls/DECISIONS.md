@@ -35,9 +35,10 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V004 — Shared call media key (not group N-ciphertext)
 
 **Date:** 2026-07-28  
-**Decision:** All joined call participants share **one** media key per epoch. Key **wrap** to each peer uses existing **pairwise** E2E channels. Do **not** use group-chat N ciphertexts (G008/D095) for RTP/media frames.  
-**Rationale:** Realtime fan-out cost; SFU sees one ciphertext class; chat pairwise remains for confidentiality of key distribution.  
-**Alternatives:** Per-recipient media encrypt (rejected — efficiency); MLS sender keys for v1 (deferred).
+**Updated:** 2026-08-18 — **V034** video_lo uses this same rule (one seal per AU; hop copies ciphertext).  
+**Decision:** All joined call participants share **one** media key per epoch — **not** one key per subscriber. Key **wrap** to each peer uses existing **pairwise** E2E channels. Do **not** use group-chat N ciphertexts (G008/D095) for media frames. Publisher AEAD-seals each audio or video AU **once**; the hop fans out that ciphertext.  
+**Rationale:** Realtime uplink cost — per-target encrypt would multiply video bytes by N−1. SFU stays blind (one ciphertext class). Chat pairwise remains for confidentiality of key distribution.  
+**Alternatives:** Per-recipient media encrypt (rejected — N× uplink); MLS sender keys for v1 (deferred).
 
 ---
 
@@ -737,7 +738,8 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 | **Codec** | H264 Constrained Baseline Annex-B via `IVideoCodec` (~640×360 desktop / ~360×640 mobile after orientation @ ~20 fps). |
 | **Layer** | **video_lo only.** `allow_video_hi` stays false; simulcast / `video_hi` is a later horizon. |
 | **1:1** | Same `/pp-browser/call-media/1.0.0` duplex as audio. Frame **v2**: `ver=2 \| seq \| mark \| channel \| nonce \| ct`. Channel `0` = Opus, `1` = H264 AU. Decrypt **v1** bodies as channel 0 (voice interop). Cap **128 KiB** (no NAL fragmentation in this slice). |
-| **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. App AEAD on **all** channels under the **one shared call media key** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)): publisher encrypts each AU **once**; hop fans out that ciphertext. Not per-recipient media encrypt. AAD includes `stream_id` + channel (replay binding, not a per-peer key). |
+| **E2E / uplink** | **One key per call epoch** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)), not per subscriber. Publisher AEAD-seals each AU **once**; hop copies that ciphertext to subscribers. Per-target encrypt is rejected — it would multiply video uplink by N−1. AAD `stream_id` + channel is replay binding, not a per-peer key. |
+| **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. Same shared-key AEAD on **all** channels as audio. |
 | **Hop queues** | Never shed `ReliableOrdered` (audio) to enqueue `LatestLossy` (video). Drop stale video first. |
 | **Camera** | Off on join ([V009](#v009--any-group-member-may-start-camera-off-by-default-on-join)). Adaptation `camera_user_wants` follows `IsCameraEnabled()`. Missing encoder/decoder must not tear down voice ([V019](#v019--unified-call-media-shape-voicevideo-entry-only)). |
 | **IDR** | Encoder `force_keyframe` on start / SoftMigrate send-swap / inbound `call_video_refresh`. Periodic IDR remains a backstop. |
@@ -746,7 +748,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 **Updates:** [V026](#v026--libp2p-only-call-media-http--libp2p-networking) “video deferred” — video_lo is now in scope after voice-on-libp2p. [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) single-layer mapping unchanged.
 
-**Rationale:** Voice path, hop framing, and camera stack already exist. The gap is encrypted send/receive + hop audio-priority queues + per-stream decode — not a second media stack.
+**Rationale:** Voice path, hop framing, and camera stack already exist. The gap is encrypted send/receive + hop audio-priority queues + per-stream decode — not a second media stack. Group video stays **one seal per AU** so camera uplink stays a single stream regardless of roster size.
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); [PHASES.md](PHASES.md) **lv** (libp2p video).
 

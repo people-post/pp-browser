@@ -707,7 +707,9 @@ TEST_F(StreamFrameIoTest, DuplexDoesNotShedAudioToEnqueueVideo) {
   std::mutex mu;
   std::condition_variable cv;
   int drops = 0;
+  int drops_before_video = -1;
   bool enqueued_video = true;
+  bool done = false;
 
   b_host_.GetHost().setProtocolHandler(
       {ProtocolName{kStreamFrameIoTestProtocol}},
@@ -720,17 +722,25 @@ TEST_F(StreamFrameIoTest, DuplexDoesNotShedAudioToEnqueueVideo) {
           policy.on_outbound_drop = [&]() {
             std::lock_guard lock(mu);
             ++drops;
-            cv.notify_one();
           };
           duplex->Start(
               stream,
               [](Roe<std::vector<uint8_t>>) { return true; },
               [] { return false; }, std::move(policy));
-          ASSERT_TRUE(duplex->EnqueueOutbound(std::vector<uint8_t>{1}, {}, false));
-          const bool video_ok = duplex->EnqueueOutbound(std::vector<uint8_t>{2}, {}, true);
+          // inflight does not count toward max_outbound_frames — queue one audio, then refuse video.
+          (void)duplex->EnqueueOutbound(std::vector<uint8_t>{1}, {}, false);
+          (void)duplex->EnqueueOutbound(std::vector<uint8_t>{2}, {}, false);
+          int drops_after_audio = 0;
           {
             std::lock_guard lock(mu);
+            drops_after_audio = drops;
+          }
+          const bool video_ok = duplex->EnqueueOutbound(std::vector<uint8_t>{3}, {}, true);
+          {
+            std::lock_guard lock(mu);
+            drops_before_video = drops_after_audio;
             enqueued_video = video_ok;
+            done = true;
             cv.notify_one();
           }
         });
@@ -746,10 +756,10 @@ TEST_F(StreamFrameIoTest, DuplexDoesNotShedAudioToEnqueueVideo) {
 
   {
     std::unique_lock lock(mu);
-    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return !enqueued_video || drops > 0; }));
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return done; }));
   }
-  EXPECT_EQ(drops, 0);
   EXPECT_FALSE(enqueued_video);
+  EXPECT_EQ(drops, drops_before_video);
 }
 
 TEST(Libp2pSchedulerTest, PostsControlToWorkerPool) {
