@@ -96,6 +96,7 @@ private:
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
   int last_warned_quality_ = -1;
+  int64_t last_video_refresh_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;

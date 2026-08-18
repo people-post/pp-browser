@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-18
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -11,7 +11,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
-| ADRs | V001–**V027** |
+| ADRs | V001–**V034** |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
@@ -20,7 +20,8 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
 | **Call media health UI** | Quality bars + Fair/Poor/NoAudio labels on call chrome; Call details sheet; debug subtitle + rich diagnostics behind `call_diagnostics` pref / `--debug`; periodic `media_health` INFO logs |
-| **Circuit compose (loopback)** | A↛B partition via R: `CircuitCallMediaComposeTest` (1:1 call-media) + `CircuitMediaRelayComposeTest` (quote/attach/fan-out); shared `loopback_partition_fixture.h`; `IsReachableForProtocol` gates |
+| **V034 libp2p video_lo** | H264 on same 1:1 duplex + SFU ch1; v2 frames; shared call media key (one encrypt / hop fan-out); hop never sheds audio for video; Immersive per-peer tiles |
+| Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
 
 ## a4 thin in code (still relevant under V026)
 
@@ -62,7 +63,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose loopbacks; call-media hello async+deadline+reset (peer-honesty); **remaining:** async `Connect(cb)`, other protocols still on Blocking* — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty); optional s4 circuit SM if abort/leave hangs |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
-| Video on libp2p | Deferred |
+| **lv video dogfood** | Android↔Android LAN Camera; one desktop pair; N=3 hop with two cameras. Linux receive-only remains accepted |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 

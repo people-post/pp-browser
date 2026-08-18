@@ -156,6 +156,7 @@ std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, 
     out << "pressure_engine=" << v.engine.path_pressure << " hop=" << v.hop.path_pressure << "\n";
     out << "opus_bps=" << v.engine.opus_target_bps << " streams=" << v.engine.stream_count << "\n";
     out << "rx_frames=" << v.engine.rx_audio_frames << " tx_frames=" << v.engine.tx_audio_frames
+        << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
         << "\n";
     out << "underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames
         << " tx_drops=" << v.engine.outbound_drops << "\n";
@@ -175,7 +176,9 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
   out << "media_health call=" << call_id << " path=" << v.path_kind
       << " quality=" << static_cast<int>(v.quality) << " asymmetry=" << static_cast<int>(v.asymmetry)
       << " streams=" << v.engine.stream_count << " rx_frames=" << v.engine.rx_audio_frames
-      << " tx_frames=" << v.engine.tx_audio_frames << " underrun=" << v.engine.playout_underruns
+      << " tx_frames=" << v.engine.tx_audio_frames << " rx_video=" << v.engine.rx_video_frames
+      << " tx_video=" << v.engine.tx_video_frames << " video_bps=" << v.engine.video_target_bps
+      << " underrun=" << v.engine.playout_underruns
       << " plc=" << v.engine.plc_frames << " pressure=" << v.engine.path_pressure
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate

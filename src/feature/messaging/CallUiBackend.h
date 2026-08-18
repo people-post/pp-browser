@@ -62,6 +62,7 @@ public:
 
   Roe<void> SetLocalAudioMuted(bool muted);
   Roe<void> SetLocalVideoEnabled(bool enabled);
+  Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
 
   /** Requires Available(); CallController still needs tiles/levels via CallMediaEngine. */
   CallMediaEngine& Media();

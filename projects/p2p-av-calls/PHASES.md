@@ -121,9 +121,22 @@ Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.
 - [x] Circuit compose loopbacks — `CircuitCallMediaComposeTest` + `CircuitMediaRelayComposeTest`
 - [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 
+## lv — Video on libp2p (V034)
+
+Voice-on-libp2p is green ([m1](#m1--libp2p-only-voice-v026)). Video reuses a3 capture/tiles and N021 channel 1; it does **not** revive WebRTC.
+
+- [x] V034 ADR freeze — H264 video_lo; v2 call-media frames; SFU E2E; hop audio-priority drop
+- [x] Frame crypto v2 (`channel` byte) + 128 KiB 1:1 cap; decrypt v1 as audio
+- [x] 1:1 `SendMedia` / `on_media`; bridge no longer drops `channel_id==1`
+- [x] Producer bitrate + `call_video_refresh` IDR
+- [x] SFU encrypt all channels; hop/client queues never shed audio for video; SoftMigrate IDR
+- [x] Per-stream H264 decode (cap 4) + Immersive per-peer tiles
+- [x] Camera gating / health copy / HOST_RECEIVE_POLICY
+- [ ] Device dogfood: Android↔Android LAN video; one desktop pair; N=3 hop with two cameras
+
 ## Later horizons
 
-- [ ] Video on libp2p (after voice green)
+- [ ] `video_hi` / simulcast
 - [ ] Free device rotation on mobile
 - [ ] CallKit / ConnectionService-class OS call UI
 - [ ] Screen share

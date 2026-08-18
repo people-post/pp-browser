@@ -307,7 +307,8 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   if (!stream) {
     return Error("not attached");
   }
-  if (!runtime_->EnqueueClientBody(EncodeMediaDataFrame(frame))) {
+  if (!runtime_->EnqueueClientBody(EncodeMediaDataFrame(frame),
+                                   frame.channel_type == MediaChannelType::LatestLossy)) {
     return Error("not attached");
   }
   return {};

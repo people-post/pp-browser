@@ -200,6 +200,14 @@ Roe<void> CallUiBackend::SetLocalVideoEnabled(bool enabled) {
   return UnavailableError();
 }
 
+Roe<void> CallUiBackend::RequestVideoRefresh(const std::string& call_id,
+                                            const std::string& publisher_identity) {
+  if (auto* calls = stack_.Calls()) {
+    return calls->RequestVideoRefresh(call_id, publisher_identity);
+  }
+  return UnavailableError();
+}
+
 CallMediaEngine& CallUiBackend::Media() {
   auto* calls = stack_.Calls();
   if (!calls) {

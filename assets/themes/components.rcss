@@ -2157,6 +2157,18 @@ call-video-tile {
   margin: 0 auto 10dp auto;
 }
 
+.shell-call-peer-tile {
+  width: 100%;
+  height: 120dp;
+  border-radius: 10dp;
+  margin: 0 auto 10dp auto;
+}
+
+.shell-call-peer-stall {
+  margin: 0 0 6dp 0;
+  text-align: center;
+}
+
 .shell-call-peer-name {
   margin: 0;
   text-align: center;
