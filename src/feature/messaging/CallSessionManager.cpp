@@ -1364,7 +1364,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallHopRefuse:
     return HandleInboundHopRefuse(detail_json);
   case CallControlType::CallVideoRefresh:
-    return HandleInboundVideoRefresh(detail_json);
+    return HandleInboundVideoRefresh(detail_json, sender_identity);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:

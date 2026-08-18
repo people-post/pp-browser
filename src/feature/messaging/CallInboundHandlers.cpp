@@ -469,7 +469,8 @@ Roe<void> CallSessionManager::HandleInboundHopRefuse(const std::string& detail_j
   return {};
 }
 
-Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detail_json) {
+Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detail_json,
+                                                        const std::string& sender_identity) {
   auto refresh = CallControlCodec::DecodeVideoRefresh(detail_json);
   if (!refresh) {
     return refresh.error();
@@ -478,9 +479,20 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   if (!local) {
     return local.error();
   }
-  if (refresh->identity.empty() || refresh->identity == *local) {
-    media_.RequestVideoKeyframe();
+  bool sender_joined = false;
+  if (auto participants = sessions_.ListParticipants(refresh->call_id); participants) {
+    for (const CallParticipant& p : *participants) {
+      if (p.identity == sender_identity && p.state == CallParticipantState::Joined) {
+        sender_joined = true;
+        break;
+      }
+    }
   }
+  if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity,
+                                                        *local, media_.ActiveCallId(), sender_joined)) {
+    return {};
+  }
+  media_.RequestVideoKeyframe();
   return {};
 }
 

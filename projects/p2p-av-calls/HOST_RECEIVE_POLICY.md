@@ -31,7 +31,7 @@ Admission, queue, drop, and meter rules for every inbound request a libp2p / mes
 | `call_roster` | Session | May SoftMigrate | — |
 | `call_media_key` | Session + unwrap OK | — | — |
 | `call_sfu_attach` / `_failed` / `call_hop_refuse` | Topology rules (V028–V030) | Attach-wait | — |
-| `call_video_refresh` | Session; publisher identity empty or local → IDR | Plumbing (no history) | Rate-limited by sender |
+| `call_video_refresh` | Active call + sender **Joined**; publisher identity empty or local → IDR | Plumbing (no history) | Requester ~2s; encoder coalesces to ≤1 IDR/frame |
 | `call_sdp` / `call_ice` | **Ignore** | — | — |
 
 No call-control-specific rate limit beyond general messaging / HTTP relay limits.

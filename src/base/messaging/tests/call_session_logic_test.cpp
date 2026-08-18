@@ -75,6 +75,18 @@ TEST(CallSessionLogicTest, CanAcceptJoinRespectsCap) {
   EXPECT_FALSE(CallSessionLogic::CanAcceptJoin(16, 16));
 }
 
+TEST(CallSessionLogicTest, HonorInboundVideoRefreshOnlyJoinedOnActiveCall) {
+  const std::string call = "call:1";
+  const std::string local = "account:me";
+  const std::string peer = "account:peer";
+  EXPECT_TRUE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, call, true));
+  EXPECT_TRUE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, "", peer, local, call, true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, call, false));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, "call:other", true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, "account:other", peer, local, call, true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, "", local, call, true));
+}
+
 TEST(CallControlTypeTest, WireRoundTrip) {
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallInvite), "call_invite");
   EXPECT_EQ(CallControlTypeFromWire("call_join"), CallControlType::CallAccept);

@@ -205,7 +205,7 @@ private:
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
-  Roe<void> HandleInboundVideoRefresh(const std::string& detail_json);
+  Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
   IThreadStore& store_;
