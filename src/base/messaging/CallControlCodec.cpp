@@ -130,6 +130,7 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     json["floor_minor"] = detail.floor_minor;
     json["currency"] = detail.currency.empty() ? "pp_credit" : detail.currency;
   }
+  json["video_allowed"] = detail.video_allowed;
   return json.dump();
 }
 
@@ -170,6 +171,11 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.offer_amount_minor = json.value("offer_amount_minor", static_cast<int64_t>(0));
   detail.floor_minor = json.value("floor_minor", static_cast<int64_t>(0));
   detail.currency = OptString(json, "currency").value_or("pp_credit");
+  if (json.contains("video_allowed")) {
+    detail.video_allowed = json.value("video_allowed", false);
+  } else {
+    detail.video_allowed = detail.media_mode == CallMediaMode::Video;
+  }
   return detail;
 }
 
@@ -322,7 +328,9 @@ Roe<CallEndedDetail> CallControlCodec::DecodeEnded(const std::string& detail_jso
 }
 
 Roe<std::string> CallControlCodec::EncodeStarted(const CallStartedDetail& detail) {
-  return nlohmann::json({{"call_id", detail.call_id}, {"media_mode", CallMediaModeToString(detail.media_mode)}})
+  return nlohmann::json({{"call_id", detail.call_id},
+                         {"media_mode", CallMediaModeToString(detail.media_mode)},
+                         {"video_allowed", detail.video_allowed}})
       .dump();
 }
 
@@ -334,6 +342,11 @@ Roe<CallStartedDetail> CallControlCodec::DecodeStarted(const std::string& detail
   CallStartedDetail detail;
   detail.call_id = json["call_id"].get<std::string>();
   detail.media_mode = CallMediaModeFromString(OptString(json, "media_mode").value_or("voice"));
+  if (json.contains("video_allowed")) {
+    detail.video_allowed = json.value("video_allowed", false);
+  } else {
+    detail.video_allowed = detail.media_mode == CallMediaMode::Video;
+  }
   return detail;
 }
 
@@ -464,6 +477,21 @@ Roe<CallHopRefuseDetail> CallControlCodec::DecodeHopRefuse(const std::string& de
   detail.identity = OptString(json, "identity").value_or("");
   detail.reason = OptString(json, "reason").value_or("no_shared_hop");
   detail.message = OptString(json, "message").value_or("");
+  return detail;
+}
+
+Roe<std::string> CallControlCodec::EncodeVideoRefresh(const CallVideoRefreshDetail& detail) {
+  return nlohmann::json({{"call_id", detail.call_id}, {"identity", detail.identity}}).dump();
+}
+
+Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::string& detail_json) {
+  const nlohmann::json json = ParseObject(detail_json);
+  if (!json.is_object() || !json.contains("call_id") || !json["call_id"].is_string()) {
+    return Error("Invalid call_video_refresh detail");
+  }
+  CallVideoRefreshDetail detail;
+  detail.call_id = json["call_id"].get<std::string>();
+  detail.identity = OptString(json, "identity").value_or("");
   return detail;
 }
 

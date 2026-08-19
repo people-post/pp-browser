@@ -4,9 +4,20 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <sqlite3.h>
 
 namespace pbr {
 namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
+void AssertStoreUnlocked(SqliteThreadStore& store) { ASSERT_TRUE(store.SetDek(TestDek())); }
 
 TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
   const std::filesystem::path data_dir =
@@ -21,6 +32,7 @@ TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
 
   {
     SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
     ASSERT_TRUE(store.UpsertThread(thread));
     ThreadMessage message;
     message.id = "msg-1";
@@ -35,6 +47,7 @@ TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
   }
 
   SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
   auto page = store.GetMessagesPage(thread.id, std::nullopt, 100);
   ASSERT_TRUE(page);
   ASSERT_EQ(page->size(), 1u);
@@ -63,6 +76,7 @@ TEST(SqliteThreadStoreTest, ThreadMemoryRoundTripAndForgetOnClear) {
   thread.title = "Memory";
 
   SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
   ASSERT_TRUE(store.UpsertThread(thread));
 
   ConversationSummary summary;
@@ -109,6 +123,67 @@ TEST(SqliteThreadStoreTest, ThreadMemoryRoundTripAndForgetOnClear) {
   loaded = store.GetThreadMemory(thread.id);
   ASSERT_TRUE(loaded);
   EXPECT_FALSE(loaded->has_value());
+}
+
+TEST(SqliteThreadStoreTest, MessageBodyIsEncryptedOnDisk) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_enc_test";
+  std::filesystem::remove_all(data_dir);
+
+  Thread thread;
+  thread.id = "thread-enc";
+  thread.kind = ThreadKind::Ai;
+  thread.title = "Enc";
+
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  ASSERT_TRUE(store.UpsertThread(thread));
+
+  ThreadMessage message;
+  message.id = "msg-secret";
+  message.thread_id = thread.id;
+  message.sender_contact_id = kLocalSelfContactId;
+  message.text = "super secret plaintext";
+  message.timestamp = 1;
+  ASSERT_TRUE(store.AppendMessage(message));
+  store.Flush();
+
+  const std::filesystem::path thread_db = data_dir / "threads" / thread.id / "thread.db";
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open_v2(thread_db.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr), SQLITE_OK);
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT content_enc FROM messages WHERE id = ?;", -1, &stmt, nullptr),
+            SQLITE_OK);
+  sqlite3_bind_text(stmt, 1, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  const void* blob = sqlite3_column_blob(stmt, 0);
+  const int blob_size = sqlite3_column_bytes(stmt, 0);
+  ASSERT_GT(blob_size, 0);
+  const std::string_view on_disk(static_cast<const char*>(blob), static_cast<size_t>(blob_size));
+  EXPECT_EQ(on_disk.find(message.text), std::string_view::npos);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+}
+
+TEST(SqliteThreadStoreTest, ListThreadsPreviewRoundTripEncrypted) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_preview_enc_test";
+  std::filesystem::remove_all(data_dir);
+
+  Thread thread;
+  thread.id = "thread-preview";
+  thread.kind = ThreadKind::Ai;
+  thread.title = "Preview";
+  thread.preview = "sidebar snippet";
+
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  ASSERT_TRUE(store.UpsertThread(thread));
+
+  auto threads = store.ListThreads();
+  ASSERT_TRUE(threads);
+  ASSERT_EQ(threads->size(), 1u);
+  EXPECT_EQ(threads->front().preview, "sidebar snippet");
 }
 
 TEST(ConversationSummaryCodecTest, RoundTripMatchesSchema) {

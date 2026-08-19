@@ -10,6 +10,7 @@ public:
   std::string BackendName() const override { return "unavailable"; }
   bool HasEncoder() const override { return false; }
   bool HasDecoder() const override { return false; }
+  bool EncoderSupported() const override { return false; }
 
   Roe<void> ConfigureEncoder(int, int, int) override {
     return Error("H264 encoder unavailable: " + reason_);

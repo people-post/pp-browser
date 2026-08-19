@@ -1782,17 +1782,19 @@ select selectbox option {
   border-radius: 2dp;
 }
 
-.shell-layer-call-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+/* Expanded bar: shrink-wrap chrome; pass through outside the visible bar/stage. */
+.shell-call-chrome-mount .shell-layer-call-bar {
+  bottom: auto;
   z-index: 45;
-  /* Capture hits over the messaging title / chat chrome underneath; children that
-     should pass through (none today) can opt out with pointer-events: none. */
-  pointer-events: auto;
+  pointer-events: none;
   display: flex;
   flex-direction: column;
+}
+
+.shell-layer-call-bar .shell-call-stage,
+.shell-layer-call-bar .shell-call-bar {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .shell-call-bar {
@@ -1998,8 +2000,6 @@ call-video-tile {
   min-width: 44dp;
 }
 
-.shell-call-minimize,
-.shell-call-immersive-btn,
 .shell-call-expand {
   display: flex;
   flex-direction: row;
@@ -2015,8 +2015,6 @@ call-video-tile {
   cursor: pointer;
 }
 
-.shell-call-minimize svg,
-.shell-call-immersive-btn svg,
 .shell-call-expand svg {
   flex-shrink: 0;
   width: 18dp;
@@ -2155,6 +2153,18 @@ call-video-tile {
   height: 56dp;
   border-radius: 28dp;
   margin: 0 auto 10dp auto;
+}
+
+.shell-call-peer-tile {
+  width: 100%;
+  height: 120dp;
+  border-radius: 10dp;
+  margin: 0 auto 10dp auto;
+}
+
+.shell-call-peer-stall {
+  margin: 0 0 6dp 0;
+  text-align: center;
 }
 
 .shell-call-peer-name {

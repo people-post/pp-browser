@@ -9,6 +9,18 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+namespace {
+using namespace pbr;
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+} // namespace
+
 TEST(ChatPayloadValidatorTest, RejectsUnknownContentType) {
   using namespace pbr;
 
@@ -93,6 +105,7 @@ TEST(ChatPayloadValidatorTest, TransportColumnRoundTrip) {
       std::filesystem::temp_directory_path() / "pp_browser_transport_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   Thread thread;
   thread.id = "thread-transport";

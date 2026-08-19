@@ -127,4 +127,9 @@ Roe<void> CallMediaDirectService::SendAudio(const std::vector<uint8_t>& opus_pay
   return session_->SendAudio(opus_payload, seq, mark);
 }
 
+Roe<void> CallMediaDirectService::SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
+                                            uint8_t mark) {
+  return session_->SendMedia(channel, payload, seq, mark);
+}
+
 } // namespace pbr

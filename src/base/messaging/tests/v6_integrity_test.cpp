@@ -36,6 +36,14 @@ ThreadMessage MakeOutbound(SqliteThreadStore& store, const std::string& thread_i
   return message;
 }
 
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
 } // namespace
 
 TEST(V6IntegrityTest, BumpLocalEpochCancelsOldPendingAndResetsSeq) {
@@ -43,6 +51,7 @@ TEST(V6IntegrityTest, BumpLocalEpochCancelsOldPendingAndResetsSeq) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_integrity_bump_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-a"), "contact-a", "A");
   ASSERT_TRUE(static_cast<bool>(thread));
@@ -75,6 +84,7 @@ TEST(V6IntegrityTest, PassiveEpochAdoptUpdatesChatTargetAndSyncState) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_integrity_passive_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-b"), "contact-b", "B");
   ASSERT_TRUE(static_cast<bool>(thread));
@@ -118,6 +128,7 @@ TEST(V6IntegrityTest, CompromisedHelperReflectsSyncState) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_integrity_compromised_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-c"), "contact-c", "C");
   ASSERT_TRUE(static_cast<bool>(thread));

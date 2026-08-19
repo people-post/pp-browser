@@ -6,6 +6,18 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+namespace {
+using namespace pbr;
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+} // namespace
+
 TEST(P2pRelayWireTest, RejectsLegacyThreadIdEnvelope) {
   using namespace pbr;
 
@@ -91,6 +103,7 @@ TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
       std::filesystem::temp_directory_path() / "pp_browser_p2p_routing_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";

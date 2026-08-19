@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# Sign Frame.app for iOS device distribution (development / ad-hoc / TestFlight prep).
+# Sign PP.app for iOS device distribution (development / ad-hoc / TestFlight prep).
 #
 # Skips gracefully when signing credentials are not configured.
 # See packaging/ios/signing.env.example and docs/ops/IOS_BUILD.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_ENTITLEMENTS="${ROOT}/packaging/ios/Frame.entitlements"
+# Sync with pbr::kProductBundleName / kProductSlug in src/base/runtime/ProductBranding.h
+PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
+PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"
+DEFAULT_ENTITLEMENTS="${ROOT}/packaging/ios/${PRODUCT_SLUG}.entitlements"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") <command> [path]
 
 Commands:
-  sign-app <Frame.app>     Code-sign an iOS .app for device install
-  export-ipa <Frame.app>   Produce a signed .ipa (requires archive or app + ExportOptions)
-  verify <Frame.app>       Verify codesign on an iOS app bundle
+  sign-app <PP.app>     Code-sign an iOS .app for device install
+  export-ipa <PP.app>   Produce a signed .ipa (requires archive or app + ExportOptions)
+  verify <PP.app>       Verify codesign on an iOS app bundle
 
 Environment (local — source packaging/ios/signing.env):
   IOS_BUNDLE_IDENTIFIER          dev.pp-browser.ios
@@ -29,7 +32,7 @@ Environment (CI — optional):
   IOS_PROVISIONING_PROFILE_BASE64
 
 Optional:
-  IOS_ENTITLEMENTS               Default: packaging/ios/Frame.entitlements
+  IOS_ENTITLEMENTS               Default: packaging/ios/pp-browser.entitlements
   IOS_EXPORT_METHOD              development | ad-hoc | app-store | enterprise
   IOS_EXPORT_OPTIONS_PLIST       Default: packaging/ios/ExportOptions.plist
   IOS_SKIP_SIGNING=1             Force skip
@@ -37,7 +40,7 @@ Optional:
 Local example:
   source packaging/ios/signing.env
   ./scripts/ios_build.sh device install
-  ./scripts/ios_sign.sh sign-app install-ios/Frame.app
+  ./scripts/ios_sign.sh sign-app install-ios/PP.app
 EOF
 }
 
@@ -269,16 +272,16 @@ cmd_export_ipa() {
 
   cmd_sign_app "$app_path"
 
-  local payload_dir="$(mktemp -d "${TMPDIR:-/tmp}/frame-ipa.XXXXXX")"
+  local payload_dir="$(mktemp -d "${TMPDIR:-/tmp}/${PRODUCT_SLUG}-ipa.XXXXXX")"
   local ipa_dir="${payload_dir}/export"
   mkdir -p "${payload_dir}/Payload"
   ditto "$app_path" "${payload_dir}/Payload/$(basename "$app_path")"
 
   log "Creating IPA from ${app_path}"
-  (cd "$payload_dir" && zip -qr Frame.ipa Payload)
+  (cd "$payload_dir" && zip -qr "${PRODUCT_SLUG}.ipa" Payload)
   mkdir -p "${ROOT}/dist-ios"
-  mv "${payload_dir}/Frame.ipa" "${ROOT}/dist-ios/Frame.ipa"
-  log "Wrote ${ROOT}/dist-ios/Frame.ipa"
+  mv "${payload_dir}/${PRODUCT_SLUG}.ipa" "${ROOT}/dist-ios/${PRODUCT_SLUG}.ipa"
+  log "Wrote ${ROOT}/dist-ios/${PRODUCT_SLUG}.ipa"
   rm -rf "$payload_dir"
 }
 

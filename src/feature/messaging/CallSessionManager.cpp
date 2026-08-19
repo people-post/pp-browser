@@ -127,7 +127,13 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   if (call_id.empty()) {
     return Error("No active call media");
   }
-  topology_.RefreshAdaptation(call_id);
+  if (enabled) {
+    auto session = sessions_.LoadSession(call_id);
+    if (!session || !session->has_value() || !(*session)->video_allowed) {
+      return Error("Video is not allowed for this call");
+    }
+  }
+  topology_.RefreshAdaptation(call_id, enabled);
   if (enabled) {
     if (auto cam = media_.SetCameraEnabled(true); !cam) {
       return cam.error();
@@ -149,6 +155,29 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   }
   NotifyRingChanged();
   return {};
+}
+
+Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
+                                                 const std::string& publisher_identity) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (call_id.empty()) {
+    return Error("No active call");
+  }
+  if (publisher_identity.empty() || publisher_identity == *local) {
+    media_.RequestVideoKeyframe();
+    return {};
+  }
+  CallVideoRefreshDetail detail;
+  detail.call_id = call_id;
+  detail.identity = publisher_identity;
+  auto encoded = CallControlCodec::EncodeVideoRefresh(detail);
+  if (!encoded) {
+    return encoded.error();
+  }
+  return SendCallDirectMessage(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
 }
 
 std::optional<std::string> CallSessionManager::TakeLastMediaError() {
@@ -494,7 +523,7 @@ Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_ca
   return {};
 }
 
-Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const CallMediaMode mode,
+Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
   if (invitee_identities.empty()) {
     return Error("At least one invitee required");
@@ -548,7 +577,8 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
     session.origin_group_id = *(*thread)->group_id;
   }
-  session.media_mode = mode;
+  session.media_mode = video_allowed ? CallMediaMode::Video : CallMediaMode::Voice;
+  session.video_allowed = video_allowed;
   session.state = CallSessionState::Ringing;
   session.created_at = now;
   session.media_epoch = 1;
@@ -569,12 +599,14 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
 
   CallStartedDetail started;
   started.call_id = call_id;
-  started.media_mode = mode;
+  started.media_mode = session.media_mode;
+  started.video_allowed = video_allowed;
   auto started_detail = CallControlCodec::EncodeStarted(started);
   if (!started_detail) {
     return started_detail.error();
   }
-  const std::string started_text = mode == CallMediaMode::Video ? "Video call started" : "Voice call started";
+  const std::string started_text =
+      video_allowed ? "Video call started" : "Voice call started";
   if (auto hist = AppendOriginHistory(origin_thread_id, CallControlType::CallStarted, started_text, *started_detail);
       !hist) {
     return hist.error();
@@ -637,6 +669,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   pending.inviter_identity = *local;
   pending.invitee_identity = invitee_identity;
   pending.media_mode = (*session)->media_mode;
+  pending.video_allowed = (*session)->video_allowed;
   pending.origin_thread_id = (*session)->origin_thread_id;
   pending.origin_group_id = (*session)->origin_group_id;
   pending.sfu_hint = (*session)->sfu_hint;
@@ -652,6 +685,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   invite.inviter_identity = *local;
   invite.invitee_identity = invitee_identity;
   invite.media_mode = (*session)->media_mode;
+  invite.video_allowed = (*session)->video_allowed;
   invite.origin_thread_id = (*session)->origin_thread_id;
   invite.origin_group_id = (*session)->origin_group_id;
   invite.sfu_hint = (*session)->sfu_hint;
@@ -784,6 +818,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     row.origin_thread_id = (*pending)->origin_thread_id;
     row.origin_group_id = (*pending)->origin_group_id;
     row.media_mode = (*pending)->media_mode;
+    row.video_allowed = (*pending)->video_allowed;
     row.state = CallSessionState::Ringing;
     row.created_at = (*pending)->created_at;
     row.media_epoch = 1;
@@ -1149,6 +1184,17 @@ Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::
   return std::optional<bool>{};
 }
 
+Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::string& call_id) const {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session) {
+    return session.error();
+  }
+  if (!session->has_value()) {
+    return std::optional<bool>{};
+  }
+  return std::optional<bool>{(*session)->video_allowed};
+}
+
 Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
   auto participants = sessions_.ListParticipants(call_id);
   if (!participants) {
@@ -1340,6 +1386,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundSfuAttachFailed(detail_json, sender_identity);
   case CallControlType::CallHopRefuse:
     return HandleInboundHopRefuse(detail_json);
+  case CallControlType::CallVideoRefresh:
+    return HandleInboundVideoRefresh(detail_json, sender_identity);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:

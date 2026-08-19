@@ -62,5 +62,11 @@ TEST(CallMediaTopologyTest, GroupUsesRelay) {
   EXPECT_EQ(CallMediaTopology::DecidePath(3, true), CallMediaPathAction::UseSfu);
 }
 
+TEST(CallMediaAdaptationTest, QuoteWantUpBps) {
+  EXPECT_EQ(CallMediaAdaptation::QuoteWantUpBps(false), CallMediaAdaptation::kDefaultAudioBps);
+  EXPECT_EQ(CallMediaAdaptation::QuoteWantUpBps(true),
+            CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps);
+}
+
 } // namespace
 } // namespace pbr

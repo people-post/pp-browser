@@ -45,6 +45,19 @@ public:
   static CallSessionState TransitionOnLeave(CallSessionState current, size_t remaining_joined);
 
   static bool CanAcceptJoin(size_t current_joined_count, size_t max_joined = kCallEngineeringMaxJoined);
+
+  /** Wire compat: explicit video_allowed, else infer from legacy media_mode. */
+  static bool VideoAllowedFromInvite(const CallInviteDetail& invite);
+
+  /**
+   * Honor inbound `call_video_refresh` only for the active call, from a Joined
+   * sender, when this device is the named publisher (empty identity = local).
+   */
+  static bool ShouldHonorInboundVideoRefresh(const std::string& refresh_call_id,
+                                             const std::string& refresh_publisher_identity,
+                                             const std::string& sender_identity,
+                                             const std::string& local_identity,
+                                             const std::string& active_call_id, bool sender_joined);
 };
 
 } // namespace pbr

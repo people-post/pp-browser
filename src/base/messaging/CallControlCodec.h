@@ -52,6 +52,9 @@ public:
   static Roe<std::string> EncodeHopRefuse(const CallHopRefuseDetail& detail);
   static Roe<CallHopRefuseDetail> DecodeHopRefuse(const std::string& detail_json);
 
+  static Roe<std::string> EncodeVideoRefresh(const CallVideoRefreshDetail& detail);
+  static Roe<CallVideoRefreshDetail> DecodeVideoRefresh(const std::string& detail_json);
+
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, CallControlType type,
                                                const std::string& display_text, const std::string& detail_json,
                                                const std::string& sender_contact_id);

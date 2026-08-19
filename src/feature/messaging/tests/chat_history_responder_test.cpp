@@ -30,7 +30,7 @@ public:
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix)),
         store(data_dir.string()), identity(data_dir.string(), "test"), psk_store(store.ProfileDbPath(), "test") {
     std::filesystem::remove_all(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
     }
     if (!identity.LoadOrCreate()) {

@@ -29,12 +29,18 @@
       <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
 
-    <div class="people-picker-footer row">
+    <div class="people-picker-footer stack">
+      <label class="people-picker-video-option row" data-if="show_call_video_option">
+        <input type="checkbox" data-value="call_video_allowed"/>
+        <span>{{i18n:people_picker.allow_video}}</span>
+      </label>
+      <div class="row people-picker-footer-actions">
       <button class="btn btn-secondary" type="button" data-event-click="cancel_picker()">{{i18n:common.cancel}}</button>
       <button class="btn btn-primary" type="button" data-event-click="confirm_picker()"
               data-attrif-disabled="!cta_enabled">
         <span data-rml="cta_label"></span>
       </button>
+      </div>
     </div>
   </div>
 

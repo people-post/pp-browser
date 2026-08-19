@@ -542,13 +542,33 @@ No hard max file size in v1.
 
 ---
 
-## D048 — No encryption at rest for thread DBs (v1)
+## D048 — No encryption at rest for thread DBs (v1) — **superseded by D102**
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-11 — identity + PSK at-rest shipped in [at-rest-crypto](../at-rest-crypto/); this decision still applies to **`thread.db` transcripts only**.  
-**Decision:** `thread.db` remains **plaintext SQLite**. E2E confidentiality is wire-only for message bodies; local transcripts are trusted. SQLCipher for transcripts deferred. Profile secrets (`identity.enc`, PSK columns) use the PIN/DEK vault — see [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).  
+**Updated:** 2026-08-19 — **superseded by [D102](#d102--transcript-body-aead-under-profile-dek-no-migration)**.  
+**Decision:** *(Historical.)* `thread.db` was plaintext SQLite.  
 **Rationale:** Explicit assumption for transcripts; PSK/identity at-rest tracked separately (e2e E008 / at-rest A002).  
 **Alternatives:** Encrypt all thread DBs in v2a.
+
+---
+
+## D102 — Transcript body AEAD under profile DEK (no migration)
+
+**Date:** 2026-08-19  
+**Supersedes:** [D048](#d048--no-encryption-at-rest-for-thread-dbs-v1--superseded-by-d102).  
+**Decision:** Message bodies, sidebar previews, and thread memory summaries are **AEAD-encrypted under the profile DEK** (same PIN vault as `identity.enc` / PSK columns). One blob per row:
+
+| Row | Column | AAD purpose |
+|-----|--------|-------------|
+| Message content pack | `messages.content_enc` | `transcript-body\|{profile_id}\|{thread_id}\|{message_id}\|1` |
+| Sidebar preview | `threads.preview_enc` | `transcript-preview\|{profile_id}\|{thread_id}\|1` |
+| Thread memory | `memory.value_enc` | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
+
+Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat payload + denormalized presentation fields). **Metadata stays plaintext** (timestamps, delivery, `content_type`, `target_message_id`, thread titles, participant ids, `sync_state`). **No SQLCipher.** **No incremental migration** — bump `user_version` (`thread.db` **2**, `profile.db` **4**); incompatible DBs fail with wipe-profile guidance.  
+**Implementation:** `SqliteThreadStore` implements `IDekConsumer`; registered from `MessagingHub`. Chat history requires profile unlock when a vault exists.  
+**Deferred:** FTS/search sidecar; encrypting thread titles / participant lists.  
+**Rationale:** Protect offline disk reads of message text without full-DB encryption; reuse existing DEK/`FileCipher` stack.  
+**Alternatives:** SQLCipher whole DB; per-column AEAD with online migration (rejected — hard cut).
 
 ---
 

@@ -311,9 +311,17 @@ uint32_t CallTopologyController::PublisherStreamIdForLocal() const {
   return PublisherStreamIdForIdentity(*local);
 }
 
-void CallTopologyController::RefreshAdaptation(const std::string& /*call_id*/) {
+void CallTopologyController::RefreshAdaptation(const std::string& call_id) {
+  RefreshAdaptation(call_id, media_.IsCameraEnabled());
+}
+
+void CallTopologyController::RefreshAdaptation(const std::string& call_id, bool camera_user_wants) {
+  bool video_allowed = false;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    video_allowed = (*session)->video_allowed;
+  }
   CallAdaptationInput in;
-  in.camera_user_wants = true;
+  in.camera_user_wants = camera_user_wants && video_allowed;
   in.muted = media_.IsMuted();
   in.per_user_up_bps = last_quote_a_up_bps_;
   in.allow_video_hi = false;
@@ -322,6 +330,7 @@ void CallTopologyController::RefreshAdaptation(const std::string& /*call_id*/) {
     pressure = std::max(pressure, relay_deps_.relay->PathPressure());
   }
   in.path_pressure = pressure;
+  media_.NoteUplinkBudget(last_quote_a_up_bps_);
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 }
 
@@ -345,6 +354,38 @@ void CallTopologyController::SubscribePublisherStream(uint32_t stream_id) {
   }
   (void)relay_deps_.relay->Subscribe(stream_id, 0);
   (void)relay_deps_.relay->Subscribe(stream_id, 1);
+  MaybeRequestPublisherKeyframe(stream_id);
+}
+
+void CallTopologyController::MaybeRequestPublisherKeyframe(uint32_t stream_id) {
+  if (stream_id == 0 || !video_refresh_sent_streams_.insert(stream_id).second) {
+    return;
+  }
+  const std::string call_id = media_.ActiveCallId();
+  if (call_id.empty()) {
+    return;
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return;
+  }
+  for (const CallParticipant& p : *participants) {
+    if (p.state != CallParticipantState::Joined) {
+      continue;
+    }
+    if (PublisherStreamIdForIdentity(p.identity) != stream_id) {
+      continue;
+    }
+    CallVideoRefreshDetail detail;
+    detail.call_id = call_id;
+    detail.identity = p.identity;
+    auto encoded = CallControlCodec::EncodeVideoRefresh(detail);
+    if (!encoded) {
+      return;
+    }
+    (void)host_.TopologySendDirect(p.identity, CallControlType::CallVideoRefresh, *encoded, "");
+    return;
+  }
 }
 
 void CallTopologyController::NoteRemotePublisherFromAttach(const CallSfuAttachDetail& attach) {
@@ -756,20 +797,20 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
-    if (frame.channel_id == 0 && !media_key.empty()) {
-      auto plain = DecryptCallMediaSfuAudioFrame(media_key, captured_call, media_epoch, frame.stream_id,
-                                                 frame.payload);
+    if (!media_key.empty()) {
+      auto plain = DecryptCallMediaSfuFrame(media_key, captured_call, media_epoch, frame.stream_id,
+                                            static_cast<uint8_t>(frame.channel_id), frame.payload);
       if (!plain) {
         static std::atomic<int> decrypt_fail_log{0};
         const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
         if (n < 8 || (n % 100) == 0) {
-          log().warning << "SFU audio decrypt failed stream=" << frame.stream_id
+          log().warning << "SFU decrypt failed stream=" << frame.stream_id << " ch=" << frame.channel_id
                         << " bytes=" << frame.payload.size() << " n=" << n
                         << " err=" << plain.error().message << " call_id=" << captured_call;
         }
         return;
       }
-      pkt.payload = std::move(*plain);
+      pkt.payload = std::move(plain->payload);
     } else {
       pkt.payload = std::move(frame.payload);
     }
@@ -783,7 +824,13 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     return false;
   }();
 
-  int64_t a_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  int64_t a_up_bps = CallMediaAdaptation::QuoteWantUpBps(
+      [&]() {
+        if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+          return (*session)->video_allowed;
+        }
+        return false;
+      }());
   if (self_hop) {
     // Durable Node PreferLocal only (V029/V030) — never host as ephemeral listen-only.
     if (!relay_deps_.prefer_local_as_hop || !relay_deps_.relay->IsStarted()) {
@@ -816,7 +863,13 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     qreq.call_id = call_id;
     auto joined = sessions_.CountJoined(call_id);
     qreq.participants = joined ? static_cast<int>(*joined) : 2;
-    qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+    const bool video_allowed = [&]() {
+      if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+        return (*session)->video_allowed;
+      }
+      return false;
+    }();
+    qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
     qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
     // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed.
@@ -845,7 +898,7 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   last_quote_a_up_bps_ = a_up_bps;
   CallAdaptationInput in;
   in.per_user_up_bps = a_up_bps;
-  in.camera_user_wants = false;
+  in.camera_user_wants = media_.IsCameraEnabled();
   in.path_pressure = media_.PathPressure();
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 
@@ -878,9 +931,10 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
             pkt.channel_id == 0 ? MediaChannelType::ReliableOrdered : MediaChannelType::LatestLossy;
         frame.seq = pkt.seq;
         frame.mark = pkt.mark;
-        if (pkt.channel_id == 0 && !media_key.empty()) {
-          auto sealed = EncryptCallMediaSfuAudioFrame(media_key, captured_call, media_epoch, pub, pkt.seq,
-                                                      pkt.mark, pkt.payload);
+        if (!media_key.empty()) {
+          // V004: one AEAD seal per AU; hop fans out this ciphertext to all subscribers.
+          auto sealed = EncryptCallMediaSfuFrame(media_key, captured_call, media_epoch, pub, pkt.seq, pkt.mark,
+                                                 static_cast<uint8_t>(pkt.channel_id), pkt.payload);
           if (!sealed) {
             media_.NoteOutboundDrop();
             return;
@@ -1060,13 +1114,13 @@ Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& c
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
-    if (frame.channel_id == 0 && !media_key.empty()) {
-      auto plain = DecryptCallMediaSfuAudioFrame(media_key, captured_call, media_epoch, frame.stream_id,
-                                                 frame.payload);
+    if (!media_key.empty()) {
+      auto plain = DecryptCallMediaSfuFrame(media_key, captured_call, media_epoch, frame.stream_id,
+                                            static_cast<uint8_t>(frame.channel_id), frame.payload);
       if (!plain) {
         return;
       }
-      pkt.payload = std::move(*plain);
+      pkt.payload = std::move(plain->payload);
     } else {
       pkt.payload = std::move(frame.payload);
     }
@@ -1091,7 +1145,13 @@ Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& c
   qreq.call_id = call_id;
   auto joined = sessions_.CountJoined(call_id);
   qreq.participants = joined ? static_cast<int>(*joined) : 2;
-  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  const bool video_allowed = [&]() {
+    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+      return (*session)->video_allowed;
+    }
+    return false;
+  }();
+  qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
   qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
   auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);

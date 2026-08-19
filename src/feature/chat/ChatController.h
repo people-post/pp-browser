@@ -211,8 +211,7 @@ private:
   static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartVoiceCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartVideoCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void StartCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenPeerSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

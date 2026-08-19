@@ -8,7 +8,7 @@ namespace pbr {
  * Shell call video tile — paints persistent GL textures from CallVideoTileRenderer
  * during Element::OnRender so stacking matches in-call chrome (V018 path B).
  *
- * RML: <call-video-tile tile="remote|local" ...>
+ * RML: <call-video-tile tile="remote|local|peer" stream="123" ...>
  */
 class ElementCallVideoTile : public Rml::Element {
 public:

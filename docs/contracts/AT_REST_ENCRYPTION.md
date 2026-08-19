@@ -36,8 +36,8 @@ profiles/{id}/
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)
   threads/
-    profile.db    # PSK columns ciphertext; other columns plaintext
-    {thread_id}/thread.db   # plaintext transcripts (D048)
+    profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 4)
+    {thread_id}/thread.db   # content_enc + value_enc ciphertext; metadata plaintext (user_version 2 — D102)
 ```
 
 ### `vault.bin` (v1)
@@ -85,7 +85,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsService`](../../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
+[`ProfileSecretsService`](../../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
@@ -103,8 +103,18 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 | Offline read of identity / PSK without PIN | AEAD + Argon2id |
 | Offline read when `pin_is_default` | **Weak** — known default PIN in source |
 | Crash mid JSON write | Atomic rename |
-| Transcript theft from `thread.db` | **Not** protected (D048) |
+| Transcript theft from `thread.db` | AEAD under DEK when vault exists (D102); metadata plaintext |
+
+### Transcript AEAD (D102)
+
+| Purpose | AAD |
+|---------|-----|
+| Message body pack | `transcript-body\|{profile_id}\|{thread_id}\|{message_id}\|1` |
+| Sidebar preview | `transcript-preview\|{profile_id}\|{thread_id}\|1` |
+| Thread memory value | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
+
+Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
 
 ## Test fixtures
 
-Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
+Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.

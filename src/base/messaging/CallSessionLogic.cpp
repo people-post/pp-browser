@@ -96,4 +96,26 @@ bool CallSessionLogic::CanAcceptJoin(const size_t current_joined_count, const si
   return current_joined_count < max_joined;
 }
 
+bool CallSessionLogic::VideoAllowedFromInvite(const CallInviteDetail& invite) {
+  return invite.video_allowed;
+}
+
+bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh_call_id,
+                                                      const std::string& refresh_publisher_identity,
+                                                      const std::string& sender_identity,
+                                                      const std::string& local_identity,
+                                                      const std::string& active_call_id,
+                                                      const bool sender_joined) {
+  if (refresh_call_id.empty() || active_call_id.empty() || refresh_call_id != active_call_id) {
+    return false;
+  }
+  if (sender_identity.empty() || !sender_joined) {
+    return false;
+  }
+  if (!refresh_publisher_identity.empty() && refresh_publisher_identity != local_identity) {
+    return false;
+  }
+  return true;
+}
+
 } // namespace pbr

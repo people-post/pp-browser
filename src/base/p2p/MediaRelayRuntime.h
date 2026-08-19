@@ -343,7 +343,7 @@ public:
   }
 
   /** Post a client→hop frame on the duplex (io_context). */
-  bool EnqueueClientBody(std::vector<uint8_t> body) {
+  bool EnqueueClientBody(std::vector<uint8_t> body, bool sheddable = false) {
     if (!host) {
       return false;
     }
@@ -355,8 +355,8 @@ public:
     if (!duplex) {
       return false;
     }
-    host->Post([duplex = std::move(duplex), body = std::move(body)]() mutable {
-      (void)duplex->EnqueueOutbound(std::move(body));
+    host->Post([duplex = std::move(duplex), body = std::move(body), sheddable]() mutable {
+      (void)duplex->EnqueueOutbound(std::move(body), {}, sheddable);
     });
     return true;
   }
@@ -476,7 +476,8 @@ public:
   }
 
   /** Enqueue a fanout body on the peer's duplex (host io_context). */
-  void EnqueueFanoutBody(const std::shared_ptr<HostParticipant>& part, std::vector<uint8_t> body) {
+  void EnqueueFanoutBody(const std::shared_ptr<HostParticipant>& part, std::vector<uint8_t> body,
+                         bool sheddable) {
     if (!host || !part) {
       return;
     }
@@ -484,8 +485,8 @@ public:
     if (!duplex) {
       return;
     }
-    host->Post([duplex = std::move(duplex), body = std::move(body)]() mutable {
-      (void)duplex->EnqueueOutbound(std::move(body));
+    host->Post([duplex = std::move(duplex), body = std::move(body), sheddable]() mutable {
+      (void)duplex->EnqueueOutbound(std::move(body), {}, sheddable);
     });
   }
 
@@ -562,7 +563,7 @@ public:
         continue;
       }
       if (duplex) {
-        EnqueueFanoutBody(part, body);
+        EnqueueFanoutBody(part, body, frame.channel_type == MediaChannelType::LatestLossy);
       }
     }
   }

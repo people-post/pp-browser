@@ -864,6 +864,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
     secrets_->RegisterDekConsumer(psk_store_.get());
+    secrets_->RegisterDekConsumer(static_cast<SqliteThreadStore*>(store_.get()));
     secrets_->RegisterDekConsumer(call_stack_->MediaKeys());
   }
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);

@@ -645,19 +645,17 @@ bool Application::Initialize(const char* window_title) {
   chat_->BindInputCoordinator(*input_);
   {
     CallActionsPorts call_actions;
-    call_actions.start_voice = [this](const std::string& thread_id) {
-      return call_->StartVoiceCall(thread_id);
-    };
-    call_actions.start_video = [this](const std::string& thread_id) {
-      return call_->StartVideoCall(thread_id);
+    call_actions.start_call = [this](const std::string& thread_id, const bool video_allowed) {
+      return call_->StartCall(thread_id, video_allowed);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
     call_actions.start_with_invitees =
-        [this](const std::string& thread_id, bool video, const std::vector<std::string>& identities) {
-          return call_->StartCallWithInvitees(thread_id, video, identities);
+        [this](const std::string& thread_id, const bool video_allowed,
+               const std::vector<std::string>& identities) {
+          return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
         };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
     call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
@@ -854,8 +852,8 @@ bool Application::Initialize(const char* window_title) {
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
-  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video) {
-    people_picker_->OpenForGroupCall(thread_id, video);
+  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id) {
+    people_picker_->OpenForGroupCall(thread_id);
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);

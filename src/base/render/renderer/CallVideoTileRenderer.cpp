@@ -33,38 +33,67 @@ void CallVideoTileRenderer::SubmitLocalFrame(Frame frame) {
   local_.pending = std::move(frame);
 }
 
+void CallVideoTileRenderer::SubmitPeerFrame(uint32_t stream_id, Frame frame) {
+  if (stream_id == 0) {
+    return;
+  }
+  peers_[stream_id].pending = std::move(frame);
+}
+
 void CallVideoTileRenderer::Clear() {
   ReleaseGpuResources();
   remote_.pending = {};
   local_.pending = {};
+  peers_.clear();
+}
+
+void CallVideoTileRenderer::ReleaseTile(GpuTile& tile) {
+  if (tile.gl_tex) {
+    glDeleteTextures(1, &tile.gl_tex);
+  }
+  tile.gl_tex = 0;
+  tile.tex_width = 0;
+  tile.tex_height = 0;
+  tile.uploaded_seq = 0;
+  tile.pending = {};
 }
 
 void CallVideoTileRenderer::ClearRemote() {
-  if (remote_.gl_tex) {
-    glDeleteTextures(1, &remote_.gl_tex);
+  ReleaseTile(remote_);
+}
+
+void CallVideoTileRenderer::ClearPeer(uint32_t stream_id) {
+  auto it = peers_.find(stream_id);
+  if (it == peers_.end()) {
+    return;
   }
-  remote_.gl_tex = 0;
-  remote_.tex_width = 0;
-  remote_.tex_height = 0;
-  remote_.uploaded_seq = 0;
-  remote_.pending = {};
+  ReleaseTile(it->second);
+  peers_.erase(it);
+}
+
+void CallVideoTileRenderer::RetainPeers(const std::vector<uint32_t>& keep) {
+  std::unordered_map<uint32_t, char> want;
+  want.reserve(keep.size());
+  for (uint32_t id : keep) {
+    want[id] = 1;
+  }
+  for (auto it = peers_.begin(); it != peers_.end();) {
+    if (want.find(it->first) == want.end()) {
+      ReleaseTile(it->second);
+      it = peers_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void CallVideoTileRenderer::ReleaseGpuResources() {
-  if (remote_.gl_tex) {
-    glDeleteTextures(1, &remote_.gl_tex);
+  ReleaseTile(remote_);
+  ReleaseTile(local_);
+  for (auto& [_, tile] : peers_) {
+    ReleaseTile(tile);
   }
-  if (local_.gl_tex) {
-    glDeleteTextures(1, &local_.gl_tex);
-  }
-  remote_.gl_tex = 0;
-  local_.gl_tex = 0;
-  remote_.tex_width = 0;
-  remote_.tex_height = 0;
-  local_.tex_width = 0;
-  local_.tex_height = 0;
-  remote_.uploaded_seq = 0;
-  local_.uploaded_seq = 0;
+  peers_.clear();
 }
 
 void CallVideoTileRenderer::UploadIfNeeded(GpuTile& tile) {
@@ -143,10 +172,21 @@ void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile) {
   renderer->ReleaseGeometry(handle);
 }
 
-void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, Rml::Element* element) {
-  GpuTile& tile = (kind == CallVideoTileKind::Local) ? local_ : remote_;
-  UploadIfNeeded(tile);
-  DrawTile(element, tile);
+void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, Rml::Element* element, uint32_t stream_id) {
+  GpuTile* tile = nullptr;
+  if (kind == CallVideoTileKind::Local) {
+    tile = &local_;
+  } else if (kind == CallVideoTileKind::Peer) {
+    auto it = peers_.find(stream_id);
+    if (it == peers_.end()) {
+      return;
+    }
+    tile = &it->second;
+  } else {
+    tile = &remote_;
+  }
+  UploadIfNeeded(*tile);
+  DrawTile(element, *tile);
 }
 
 } // namespace pbr
