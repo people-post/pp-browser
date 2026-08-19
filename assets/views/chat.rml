@@ -33,12 +33,8 @@
     </div>
     <div class="chat-header-actions row">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
-              data-event-click="start_voice_call()">
+              data-event-click="start_call()">
         <svg src="../icons/phone.svg"></svg>
-      </button>
-      <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
-              data-event-click="start_video_call()">
-        <svg src="../icons/video.svg"></svg>
       </button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">

@@ -110,6 +110,7 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
   // Always key pending rows to local identity so ListPendingInvitesForInvitee matches.
   pending.invitee_identity = local_identity;
   pending.media_mode = invite->media_mode;
+  pending.video_allowed = CallSessionLogic::VideoAllowedFromInvite(*invite);
   pending.origin_thread_id = invite->origin_thread_id;
   pending.origin_group_id = invite->origin_group_id;
   pending.sfu_hint = invite->sfu_hint;
@@ -125,6 +126,7 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
   session.origin_thread_id = invite->origin_thread_id;
   session.origin_group_id = invite->origin_group_id;
   session.media_mode = invite->media_mode;
+  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(*invite);
   session.state = CallSessionState::Ringing;
   session.created_at = pending.created_at;
   session.media_epoch = invite->media_epoch > 0 ? invite->media_epoch : 1;

@@ -37,12 +37,11 @@ public:
   /** Join ringtone before Backend::Shutdown / SDL_Quit (accept-dialog quit hang). */
   void PrepareForShutdown();
 
-  bool StartVoiceCall(const std::string& thread_id);
-  bool StartVideoCall(const std::string& thread_id);
+  bool StartCall(const std::string& thread_id, bool video_allowed);
   /** Start with explicit invitee relay identities (group / picker flow). */
-  bool StartCallWithInvitees(const std::string& thread_id, bool video,
+  bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
-  void OpenGroupCallPicker(const std::string& thread_id, bool video);
+  void OpenGroupCallPicker(const std::string& thread_id);
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   void AcceptIncoming();
@@ -67,7 +66,7 @@ public:
   void ShowCallDetails();
 
 private:
-  bool StartCall(const std::string& thread_id, bool video);
+  bool StartCallDirect(const std::string& thread_id, bool video_allowed);
   void SyncShellState();
   void ClearRing();
   void ClearInCall();

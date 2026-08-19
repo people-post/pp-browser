@@ -96,6 +96,10 @@ bool CallSessionLogic::CanAcceptJoin(const size_t current_joined_count, const si
   return current_joined_count < max_joined;
 }
 
+bool CallSessionLogic::VideoAllowedFromInvite(const CallInviteDetail& invite) {
+  return invite.video_allowed;
+}
+
 bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh_call_id,
                                                       const std::string& refresh_publisher_identity,
                                                       const std::string& sender_identity,

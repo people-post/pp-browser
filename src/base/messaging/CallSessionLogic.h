@@ -46,6 +46,9 @@ public:
 
   static bool CanAcceptJoin(size_t current_joined_count, size_t max_joined = kCallEngineeringMaxJoined);
 
+  /** Wire compat: explicit video_allowed, else infer from legacy media_mode. */
+  static bool VideoAllowedFromInvite(const CallInviteDetail& invite);
+
   /**
    * Honor inbound `call_video_refresh` only for the active call, from a Joined
    * sender, when this device is the named publisher (empty identity = local).

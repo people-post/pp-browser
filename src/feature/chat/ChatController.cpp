@@ -664,22 +664,24 @@ void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*
   Instance().OnOpenThreadActionsMenu(ev);
 }
 
-void ChatController::StartVoiceCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ChatController::StartCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                       const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_actions_.start_voice) {
-    self.call_actions_.start_voice(thread_id);
+  if (thread_id.empty()) {
+    return;
   }
-}
-
-void ChatController::StartVideoCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
-  ChatController& self = Instance();
-  const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_actions_.start_video) {
-    self.call_actions_.start_video(thread_id);
-  }
+  self.ShowConfirmWithCheckbox(
+      Tr("call.start.title"), Tr("call.start.message"), Tr("call.start.allow_video"), false,
+      [thread_id](const bool ok, const bool allow_video) {
+        if (!ok) {
+          return;
+        }
+        ChatController& inner = Instance();
+        if (inner.call_actions_.start_call) {
+          (void)inner.call_actions_.start_call(thread_id, allow_video);
+        }
+      });
 }
 
 void ChatController::OpenPeerSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
@@ -2584,8 +2586,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
         ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
-        ctor.BindEventCallback("start_voice_call", &ChatController::StartVoiceCallCallback);
-        ctor.BindEventCallback("start_video_call", &ChatController::StartVideoCallCallback);
+        ctor.BindEventCallback("start_call", &ChatController::StartCallCallback);
         ctor.BindEventCallback("open_peer_sheet", &ChatController::OpenPeerSheetCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);

@@ -77,7 +77,7 @@ public:
   /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
   CallMediaHost& AsMediaHost() { return *this; }
 
-  Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
+  Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
 
   Roe<void> AcceptInvite(const std::string& call_id,
@@ -95,6 +95,7 @@ public:
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+  Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   bool IsAwaitingSfuRecovery() const;
