@@ -6,7 +6,7 @@
 | JSON writers atomic | **Yes** | Config, prefs, registry, manifest, contacts, JsonThreadStore |
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/base/crypto/` |
 | `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
-| `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK |
+| `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK + transcript store |
 | `EnsureMessagingReady` | **Yes** | `MessagingHub` after profile unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
 | Three-way chooser (A007) | **Yes** | After identity fork **I'm new**: Set PIN / default / Not now |
@@ -19,7 +19,7 @@
 | `--pin` / `PP_BROWSER_PIN` | **Optional** | Tests/CI only |
 | `identity.enc` | **Yes** | Under DEK after unlock |
 | PSK columns encrypted | **Yes** | After DEK set |
-| `thread.db` encrypted | **No** | D048 plaintext transcripts |
+| `thread.db` encrypted | **Yes** | D102 — `content_enc`, `value_enc`, `preview_enc` under profile DEK |
 | OS keychain | **No** | Deferred |
 
-**Wipe note:** Existing plaintext profiles are incompatible — delete the profile data directory and recreate with a PIN.
+**Wipe note:** Pre-D102 plaintext `thread.db` / `profile.db` (preview column) are incompatible — delete `{profile}/threads/` or the whole profile directory and recreate with a PIN.

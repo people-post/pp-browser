@@ -50,7 +50,7 @@ public:
         key_resolver(key_store),
         pipeline(store, key_resolver, psk_store, identity, roster_store) {
     std::filesystem::remove_all(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 
@@ -255,6 +255,7 @@ TEST(MessagingCrossCuttingTest, ChatTargetRoutingFindsDirectThread) {
       std::filesystem::temp_directory_path() / "pp_browser_cross_cutting_routing";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "account";
@@ -282,6 +283,7 @@ TEST(MessagingCrossCuttingTest, RichPayloadMetadataSurvivesSqliteRestart) {
 
   {
     SqliteThreadStore store(data_dir.string());
+    ASSERT_TRUE(store.SetDek(TestDek()));
     ASSERT_TRUE(store.UpsertThread(thread));
 
     ThreadMessage message;
@@ -297,6 +299,7 @@ TEST(MessagingCrossCuttingTest, RichPayloadMetadataSurvivesSqliteRestart) {
   }
 
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
   auto page = store.GetMessagesPage(thread.id, std::nullopt, 10);
   ASSERT_TRUE(static_cast<bool>(page));
   ASSERT_EQ(page->size(), 1u);

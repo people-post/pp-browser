@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/crypto/CryptoTypes.h"
+#include "base/crypto/IDekConsumer.h"
 #include "common/Module.h"
 #include "base/messaging/IThreadStore.h"
 
@@ -15,10 +17,13 @@ struct sqlite3_stmt;
 
 namespace pbr {
 
-class SqliteThreadStore : public Module, public IThreadStore {
+class SqliteThreadStore : public Module, public IThreadStore, public IDekConsumer {
 public:
   explicit SqliteThreadStore(std::string data_dir);
   ~SqliteThreadStore() override;
+
+  Roe<void> SetDek(ByteVector dek) override;
+  void ClearDek() override;
 
   Roe<std::vector<Thread>> ListThreads() const override;
   Roe<std::optional<Thread>> GetThread(const std::string& thread_id) const override;
@@ -84,9 +89,18 @@ private:
 
   Roe<void> WipeLegacyJsonIfPresent() const;
   Roe<void> RepairOrphanThreadDirs() const;
-  Roe<ThreadMessage> ReadMessageRow(sqlite3_stmt* stmt) const;
+  Roe<void> RequireDek() const;
+  Roe<ThreadMessage> ReadMessageRow(const std::string& thread_id, sqlite3_stmt* stmt) const;
+  Roe<ByteVector> EncryptMessageContent(const std::string& thread_id, const ThreadMessage& message) const;
+  Roe<std::optional<ByteVector>> EncryptPreviewBlob(const std::string& thread_id,
+                                                   const std::string& preview) const;
+  Roe<std::string> DecryptPreviewBlob(const std::string& thread_id, const void* blob, int blob_size) const;
   Roe<int64_t> NextDisplayOrder(sqlite3* thread_db) const;
   Roe<void> UpdateThreadCatalogFromMessage(const ThreadMessage& message, bool increment_unread) const;
+  Roe<void> BindMessageInsert(sqlite3_stmt* stmt, const std::string& thread_id, const ThreadMessage& message,
+                              const ByteVector& content_enc) const;
+  Roe<void> BindMessageUpdate(sqlite3_stmt* stmt, const std::string& thread_id, const ThreadMessage& message,
+                              const ByteVector& content_enc) const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
   Roe<std::vector<ThreadMessage>> QueryMessages(const std::string& thread_id, const char* sql,
                                                 std::optional<int64_t> before_display_order, size_t limit) const;
@@ -96,7 +110,7 @@ private:
   void ClearChatTargetThreadLinkUnlocked(const std::string& thread_id) const;
   Roe<void> UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const;
   Roe<void> RemoveOutboxRow(const std::string& message_id) const;
-  Thread ReadThreadRow(sqlite3_stmt* stmt) const;
+  Roe<Thread> ReadThreadRow(sqlite3_stmt* stmt) const;
   Roe<DirectChatTarget> DirectTargetForThread(const Thread& thread) const;
   Roe<void> EnsurePeerSyncState(const std::string& thread_id, const DirectChatTarget& target,
                                 uint32_t session_epoch) const;
@@ -107,6 +121,9 @@ private:
                                         const PeerSyncState& state) const;
 
   std::string data_dir_;
+  std::string profile_id_;
+  ByteVector dek_;
+  mutable std::mutex dek_mutex_;
   mutable std::mutex profile_mutex_;
   mutable sqlite3* profile_db_ = nullptr;
   mutable std::mutex thread_cache_mutex_;
