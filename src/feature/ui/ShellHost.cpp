@@ -2105,12 +2105,6 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "</div>";
   append_quality_chip(out, "");
   out << "<div class=\"shell-call-bar-actions row\">";
-  out << "<button class=\"shell-call-minimize\" type=\"button\" data-event-click=\"call_minimize()\">";
-  out << "<svg src=\"../icons/chevron-up.svg\" width=\"18\" height=\"18\"></svg>";
-  out << "</button>";
-  out << "<button class=\"shell-call-immersive-btn\" type=\"button\" data-event-click=\"call_immersive()\">";
-  out << "<svg src=\"../icons/group.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
   append_core_actions(out);
   out << "</div></div>";
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";

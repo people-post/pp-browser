@@ -661,16 +661,18 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 | Mode | Gesture | Result |
 |------|---------|--------|
-| **Expanded** | Swipe **down** on call chrome (not on a button) | → Immersive |
-| **Expanded** | Swipe **up** on call chrome (not on a button) | → Minimized |
+| **Expanded** | **Tap** non-button call chrome (bar / stage) | → Immersive |
+| **Expanded** | **Tap** outside call chrome (not on modal overlays) | → Minimized |
 | **Immersive** | Swipe / pull **down** on non-button chrome, **or** pull **down** starting in the people list when `scrollTop == 0` | → Expanded |
 | **Minimized** | **Tap** chip | Restore last Expanded/Immersive |
 | **Minimized** | **Drag** chip | Reposition; snap to corner |
 | **Minimized** | Swipe | **None** (avoids fighting drag) |
 
+**Hit-test model (Expanded):** the mount layer is `pointer-events: none` except the visible bar/stage; taps outside chrome reach the shell and dismiss to Minimized (click is consumed — chat controls underneath do not activate). Tap on chrome (not buttons) enters Immersive.
+
 **Hit-test model (Immersive):** button → control; scroll region (when not at top / not pulling down) → scroll; everything else → mode swipe. Same idea as `ShellBottomSheetGesture` (ignore buttons; scroll-at-top handoff).
 
-**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Visible controls always mirror gestures (collapse / people / minimize). Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
+**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Immersive keeps visible expand control mirroring pull-down dismiss. Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
 
 **Rationale:** Multitasking needs a true minimize; group voice needs everyone visible — Expanded cannot honestly show 8–16 peers. Three jobs beat three decorative sizes. Pull-down to leave Immersive matches list overscroll-at-top and reuses sheet gesture patterns.
 

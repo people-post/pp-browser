@@ -837,15 +837,11 @@ select selectbox option:hover {
   image-color: #fecaca;
 }
 
-.shell-call-minimize,
-.shell-call-immersive-btn,
 .shell-call-expand {
   background-color: #374151;
   color: #f9fafb;
 }
 
-.shell-call-minimize svg,
-.shell-call-immersive-btn svg,
 .shell-call-expand svg {
   image-color: #f9fafb;
 }
