@@ -13,7 +13,7 @@
     "common.remove": "移除",
     "common.share": "分享",
 
-    "app.name": "Frame",
+    "app.name": "PP",
     "app.tagline": "为你渲染的互联网",
 
     "startup.still_preparing": "正在准备…请稍后再试。",
@@ -77,9 +77,9 @@
     "settings.about.subtitle": "应用名称与版本",
     "settings.about.version": "版本",
     "compat.update_required.title": "需要更新",
-    "compat.update_required.message": "当前 Frame 版本过旧，请更新到最新版本后继续使用。",
+    "compat.update_required.message": "当前 PP 版本过旧，请更新到最新版本后继续使用。",
     "compat.update_required.action": "更新",
-    "compat.update_available.message": "有新版本的 Frame 可用。",
+    "compat.update_available.message": "有新版本的 PP 可用。",
 
     "settings.theme.label": "主题",
     "settings.theme.system": "跟随系统",
@@ -149,7 +149,7 @@
     "settings.network.reachability.summary_outbound_only": "你可以连接网络，但入站连接可能需要中继。",
     "settings.network.reachability.summary_blocked": "无法连接网络种子 — 请检查防火墙或网络。",
     "settings.network.help.outbound_only": "可能位于家庭路由器后：将“监听地址”中的 WAN 端口转发到此电脑，然后重新测试。CGNAT 或运营商限制仍可能阻止入站。",
-    "settings.network.help.blocked": "请在系统防火墙中允许 pp-browser，或尝试其他网络。VPN 可能阻止对等连接。",
+    "settings.network.help.blocked": "请在系统防火墙中允许 PP（pp-browser），或尝试其他网络。VPN 可能阻止对等连接。",
     "settings.network.help.reachable": "可直接连接到你。感谢帮助网络。",
     "settings.network.help.skip_relay": "可以跳过端口转发 — 消息仍可通过中继工作。",
     "settings.network.help.ack_relay": "知道了 — 先用中继",

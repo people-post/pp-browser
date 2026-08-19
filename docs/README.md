@@ -57,7 +57,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ui/UI_DESIGN_SYSTEM.md](ui/UI_DESIGN_SYSTEM.md) | Tokens, components, theme |
-| [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (Frame), icon rationale, asset paths |
+| [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (PP), icon asset paths, naming rule |
 | [ui/WINDOW_SHELL.md](ui/WINDOW_SHELL.md) | Shell layout |
 | [ui/shell_layout_review.html](ui/shell_layout_review.html) | Static HTML mock — expanded vs compact pages (team UI review) |
 | [ui/WORKING_SET_PANEL.md](ui/WORKING_SET_PANEL.md) | Auxiliary pane |
@@ -73,7 +73,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
 | [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Tiered testing; `N-*` / `B-*` purposes; inventory; CI ladder |
 | [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
-| [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize Frame.app |
+| [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize PP.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |
 | [ops/CONFIGURATION.md](ops/CONFIGURATION.md) | Config resolution, Me tab, presets, env vars |
 

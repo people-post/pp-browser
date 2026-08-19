@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Cloud Agent install step for pp-browser (Frame).
+# Cloud Agent install step for pp-browser (PP).
 #
 # Idempotent: installs the Linux system packages the desktop shell needs
 # (X11/GL windowing, PulseAudio + ALSA voice, VA-API video, D-Bus

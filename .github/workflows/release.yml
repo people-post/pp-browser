@@ -97,7 +97,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: ./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/Frame.app"
+        run: ./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/PP.app"
 
       - name: Package
         shell: bash

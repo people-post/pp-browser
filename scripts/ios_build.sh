@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Sync with pbr::kProductBundleName in src/base/runtime/ProductBranding.h
+PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
 # Remember whether the caller set IOS_PLATFORM before our default (used by resolve_ios_platform).
 if [[ -n "${IOS_PLATFORM+x}" ]]; then
@@ -23,7 +25,7 @@ Commands:
   install           cmake --install into INSTALL_PREFIX (default: install-ios/)
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
-  run-sim           Boot a simulator if needed, install Frame.app, and launch
+  run-sim           Boot a simulator if needed, install PP.app, and launch
   run-device         Sign (if configured) and install+launch on a connected iPhone
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
@@ -151,7 +153,7 @@ cmd_install() {
   resolve_ios_platform
   echo "==> Installing iOS (${IOS_PLATFORM}) from $(build_dir)"
   cmake --install "$(build_dir)" --config "${BUILD_TYPE}"
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ -d "$app" ]]; then
     echo "==> Installed ${app}"
   else
@@ -200,7 +202,7 @@ else:
 
 cmd_run_sim() {
   require_macos
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
     echo "error: ${app} not found — run './scripts/ios_build.sh sim' first" >&2
     exit 1
@@ -246,9 +248,9 @@ for devices in data.get('devices', {}).values():
 
   echo "==> Installing on simulator ${udid}"
   xcrun simctl install "$udid" "$app"
-  echo "==> Terminating any running Frame instance"
+  echo "==> Terminating any running ${PRODUCT_BUNDLE_NAME} instance"
   xcrun simctl terminate "$udid" dev.pp-browser.ios 2>/dev/null || true
-  echo "==> Launching Frame (--debug)"
+  echo "==> Launching ${PRODUCT_BUNDLE_NAME} (--debug)"
   xcrun simctl launch "$udid" dev.pp-browser.ios --debug
   echo "==> Debug log path:"
   echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name pp-browser-debug.log -exec cat {} \\;"
@@ -278,7 +280,7 @@ raise SystemExit(1)
 
 cmd_run_device() {
   require_macos
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
     echo "error: ${app} not found — run './scripts/ios_build.sh device' first" >&2
     exit 1

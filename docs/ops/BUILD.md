@@ -304,7 +304,7 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for mobile lifecycle, navigatio
 
 ## iOS (local, macOS required)
 
-Build **Frame.app** for the iOS Simulator or device with CMake + Xcode. Signing placeholders mirror macOS ([`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)).
+Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing placeholders mirror macOS ([`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)).
 
 ### Prerequisites
 
@@ -321,4 +321,4 @@ Build **Frame.app** for the iOS Simulator or device with CMake + Xcode. Signing 
 
 Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md).
 
-The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `Frame.app/assets/` automatically.
+The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.
