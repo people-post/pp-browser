@@ -69,6 +69,8 @@ struct CallSession {
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  /** Initiator policy: participants may publish video when true (V035). */
+  bool video_allowed = false;
   CallSessionState state = CallSessionState::Ringing;
   int64_t created_at = 0;
   std::optional<int64_t> ended_at;
@@ -91,6 +93,7 @@ struct PendingCallInvite {
   std::string inviter_identity;
   std::string invitee_identity;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
@@ -129,6 +132,7 @@ struct CallInviteDetail {
   std::string inviter_identity;
   std::string invitee_identity;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
@@ -213,6 +217,7 @@ struct CallEndedDetail {
 struct CallStartedDetail {
   std::string call_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
 };
 
 struct CallSdpDetail {

@@ -108,6 +108,13 @@ Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::strin
   return UnavailableError();
 }
 
+Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& call_id) const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->VideoAllowedForCall(call_id);
+  }
+  return UnavailableError();
+}
+
 Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const std::string& call_id) const {
   if (auto* calls = stack_.Calls()) {
     return calls->ListJoinedParticipants(call_id);
@@ -164,10 +171,10 @@ Roe<void> CallUiBackend::LeaveCall(const std::string& call_id) {
   return UnavailableError();
 }
 
-Roe<CallSession> CallUiBackend::StartCall(const std::string& origin_thread_id, CallMediaMode mode,
+Roe<CallSession> CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                           const std::vector<std::string>& invitee_identities) {
   if (auto* calls = stack_.Calls()) {
-    return calls->StartCall(origin_thread_id, mode, invitee_identities);
+    return calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
   }
   return UnavailableError();
 }

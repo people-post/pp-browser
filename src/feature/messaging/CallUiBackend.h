@@ -45,6 +45,7 @@ public:
   Roe<std::optional<CallSession>> ActiveLocalCall();
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+  Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   bool IsAwaitingSfuRecovery() const;
@@ -55,7 +56,7 @@ public:
   bool MediaAttemptedThisProcess(const std::string& call_id) const;
 
   Roe<void> LeaveCall(const std::string& call_id);
-  Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
+  Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
   void StopCallMedia(const std::string& call_id);

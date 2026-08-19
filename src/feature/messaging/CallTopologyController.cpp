@@ -315,9 +315,13 @@ void CallTopologyController::RefreshAdaptation(const std::string& call_id) {
   RefreshAdaptation(call_id, media_.IsCameraEnabled());
 }
 
-void CallTopologyController::RefreshAdaptation(const std::string& /*call_id*/, bool camera_user_wants) {
+void CallTopologyController::RefreshAdaptation(const std::string& call_id, bool camera_user_wants) {
+  bool video_allowed = false;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    video_allowed = (*session)->video_allowed;
+  }
   CallAdaptationInput in;
-  in.camera_user_wants = camera_user_wants;
+  in.camera_user_wants = camera_user_wants && video_allowed;
   in.muted = media_.IsMuted();
   in.per_user_up_bps = last_quote_a_up_bps_;
   in.allow_video_hi = false;
@@ -820,7 +824,13 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     return false;
   }();
 
-  int64_t a_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  int64_t a_up_bps = CallMediaAdaptation::QuoteWantUpBps(
+      [&]() {
+        if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+          return (*session)->video_allowed;
+        }
+        return false;
+      }());
   if (self_hop) {
     // Durable Node PreferLocal only (V029/V030) — never host as ephemeral listen-only.
     if (!relay_deps_.prefer_local_as_hop || !relay_deps_.relay->IsStarted()) {
@@ -853,7 +863,13 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     qreq.call_id = call_id;
     auto joined = sessions_.CountJoined(call_id);
     qreq.participants = joined ? static_cast<int>(*joined) : 2;
-    qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+    const bool video_allowed = [&]() {
+      if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+        return (*session)->video_allowed;
+      }
+      return false;
+    }();
+    qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
     qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
     // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed.
@@ -1129,7 +1145,13 @@ Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& c
   qreq.call_id = call_id;
   auto joined = sessions_.CountJoined(call_id);
   qreq.participants = joined ? static_cast<int>(*joined) : 2;
-  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  const bool video_allowed = [&]() {
+    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+      return (*session)->video_allowed;
+    }
+    return false;
+  }();
+  qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
   qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
   auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);

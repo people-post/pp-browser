@@ -427,8 +427,8 @@ void CallController::RefreshPendingRing() {
         in_call_.active = true;
         in_call_.call_id = (*top)->call_id;
         in_call_.subtitle = Tr("call.status.connecting").c_str();
-        in_call_.title = (*top)->media_mode == CallMediaMode::Video ? Tr("call.title.video").c_str()
-                                                                   : Tr("call.title.voice").c_str();
+        in_call_.title = (*top)->video_allowed ? Tr("call.title.video").c_str()
+                                               : Tr("call.title.voice").c_str();
         const std::string caller = DisplayNameForIdentity((*top)->inviter_identity);
         in_call_.peer_label = caller.empty() ? (*top)->inviter_identity.c_str() : caller.c_str();
       }
@@ -486,9 +486,9 @@ void CallController::RefreshPendingRing() {
       ring_.conflict = has_conflict;
       ring_.call_id = (*top)->call_id;
       ring_.caller_label = caller_label;
-      ring_.media_label = (*top)->media_mode == CallMediaMode::Video
-                             ? Tr("call.ring.incoming_video").c_str()
-                             : Tr("call.ring.incoming_voice").c_str();
+      ring_.video_allowed = (*top)->video_allowed;
+      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video_allowed").c_str()
+                                                : Tr("call.ring.incoming_voice").c_str();
       if (!was_active) {
         log().warning
             << "RefreshPendingRing activate call_id=" << ringing_call_id_;
@@ -584,7 +584,7 @@ void CallController::RefreshPendingRing() {
     in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
     in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
 
-    const bool is_video = (*active)->media_mode == CallMediaMode::Video;
+    const bool is_video = (*active)->video_allowed;
     int joined_count = 0;
     std::string local_identity;
     if (call_ports_.local_relay_identity) {
@@ -733,7 +733,11 @@ void CallController::RefreshPendingRing() {
   SyncShellState();
 }
 
-bool CallController::StartCall(const std::string& thread_id, const bool video) {
+bool CallController::StartCall(const std::string& thread_id, const bool video_allowed) {
+  return StartCallDirect(thread_id, video_allowed);
+}
+
+bool CallController::StartCallDirect(const std::string& thread_id, const bool video_allowed) {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -747,7 +751,7 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
     return false;
   }
   if ((*thread)->kind == ThreadKind::Group) {
-    OpenGroupCallPicker(thread_id, video);
+    OpenGroupCallPicker(thread_id);
     return true;
   }
   if ((*thread)->kind != ThreadKind::Direct) {
@@ -758,10 +762,10 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
     UserFeedback::Fail(Tr("call.error.missing_peer"));
     return false;
   }
-  return StartCallWithInvitees(thread_id, video, {(*thread)->peer_identity_value});
+  return StartCallWithInvitees(thread_id, video_allowed, {(*thread)->peer_identity_value});
 }
 
-bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video,
+bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video_allowed,
                                            const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
   auto* backend = Backend();
@@ -773,8 +777,7 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     UserFeedback::Fail(Tr("call.error.select_person"));
     return false;
   }
-  auto started =
-      backend->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, invitee_identities);
+  auto started = backend->StartCall(thread_id, video_allowed, invitee_identities);
   if (!started) {
     UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
     return false;
@@ -785,9 +788,9 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
   return true;
 }
 
-void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video) {
+void CallController::OpenGroupCallPicker(const std::string& thread_id) {
   if (people_picker_notify_.open_for_group_call) {
-    people_picker_notify_.open_for_group_call(thread_id, video);
+    people_picker_notify_.open_for_group_call(thread_id);
   }
 }
 
@@ -835,14 +838,6 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
   if (invited > 0) {
     RefreshPendingRing();
   }
-}
-
-bool CallController::StartVoiceCall(const std::string& thread_id) {
-  return StartCall(thread_id, false);
-}
-
-bool CallController::StartVideoCall(const std::string& thread_id) {
-  return StartCall(thread_id, true);
 }
 
 void CallController::AcceptIncoming() {
@@ -996,7 +991,19 @@ void CallController::ToggleCamera() {
   if (!backend || !backend->Available() || !backend->Media().IsActive()) {
     return;
   }
+  if (backend->Available() && active_call_id_.empty()) {
+    if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
+      active_call_id_ = (*active)->call_id;
+    }
+  }
   const bool next = !backend->Media().IsCameraEnabled();
+  if (next && !active_call_id_.empty()) {
+    if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
+        !allowed || !allowed->has_value() || !**allowed) {
+      UserFeedback::Fail(Tr("call.error.video_not_allowed"));
+      return;
+    }
+  }
   if (auto cam = backend->SetLocalVideoEnabled(next); !cam) {
     UserFeedback::Fail(cam.error().message);
   }
@@ -1029,11 +1036,19 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.camera_on = media.IsCameraEnabled();
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
-  in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
+  auto* backend = Backend();
+  in_call.video_allowed = false;
+  in_call.show_camera = false;
+  if (backend && backend->Available() && !active_call_id_.empty()) {
+    if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
+        allowed && allowed->has_value() && **allowed) {
+      in_call.video_allowed = true;
+      in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
+    }
+  }
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* backend = Backend();
   if (backend && backend->Available() && !active_call_id_.empty()) {
     if (auto peer_video = backend->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {

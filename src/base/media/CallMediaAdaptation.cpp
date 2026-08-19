@@ -96,4 +96,8 @@ CallMediaPathAction CallMediaTopology::DecidePath(size_t joined_count, bool has_
   return CallMediaPathAction::StayP2p;
 }
 
+int64_t CallMediaAdaptation::QuoteWantUpBps(const bool video_allowed) {
+  return kDefaultAudioBps + (video_allowed ? kDefaultVideoLoBps : 0);
+}
+
 } // namespace pbr

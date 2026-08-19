@@ -13,13 +13,12 @@ namespace pbr {
  */
 struct CallActionsPorts {
   // Chat
-  std::function<bool(const std::string& thread_id)> start_voice;
-  std::function<bool(const std::string& thread_id)> start_video;
+  std::function<bool(const std::string& thread_id, bool video_allowed)> start_call;
   std::function<void()> refresh_pending_ring;
 
   // PeoplePicker
   std::function<void(const std::vector<std::string>& identities)> invite_identities;
-  std::function<bool(const std::string& thread_id, bool video,
+  std::function<bool(const std::string& thread_id, bool video_allowed,
                      const std::vector<std::string>& identities)>
       start_with_invitees;
 

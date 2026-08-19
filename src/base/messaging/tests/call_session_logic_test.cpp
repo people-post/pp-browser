@@ -173,6 +173,23 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   EXPECT_FALSE(old_invite->caps.present);
   EXPECT_FALSE(old_invite->caps.media_relay);
   EXPECT_EQ(old_invite->offer_amount_minor, 0);
+  EXPECT_FALSE(old_invite->video_allowed);
+
+  auto legacy_video = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:y","inviter_identity":"a","invitee_identity":"b","media_mode":"video"})");
+  ASSERT_TRUE(legacy_video);
+  EXPECT_TRUE(legacy_video->video_allowed);
+
+  CallInviteDetail invite_video;
+  invite_video.call_id = "call:z";
+  invite_video.inviter_identity = "a";
+  invite_video.invitee_identity = "b";
+  invite_video.video_allowed = true;
+  auto encoded_video = CallControlCodec::EncodeInvite(invite_video);
+  ASSERT_TRUE(encoded_video);
+  auto decoded_video = CallControlCodec::DecodeInvite(*encoded_video);
+  ASSERT_TRUE(decoded_video);
+  EXPECT_TRUE(decoded_video->video_allowed);
 }
 
 TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
@@ -216,6 +233,19 @@ TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   EXPECT_EQ(decoded->identity, detail.identity);
   EXPECT_FALSE(CallControlCodec::DecodeVideoRefresh(R"({"identity":"account:pub"})"));
 }
+
+TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
+  CallInviteDetail voice;
+  voice.media_mode = CallMediaMode::Voice;
+  voice.video_allowed = false;
+  EXPECT_FALSE(CallSessionLogic::VideoAllowedFromInvite(voice));
+
+  CallInviteDetail allowed;
+  allowed.media_mode = CallMediaMode::Voice;
+  allowed.video_allowed = true;
+  EXPECT_TRUE(CallSessionLogic::VideoAllowedFromInvite(allowed));
+}
+
 
 } // namespace
 } // namespace pbr

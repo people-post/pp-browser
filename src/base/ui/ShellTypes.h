@@ -174,6 +174,8 @@ struct CallRingState {
   Rml::String call_id;
   Rml::String caller_label;
   Rml::String media_label;
+  /** True when initiator allowed video for this session (V035). */
+  bool video_allowed = false;
   Rml::String eyebrow;
   Rml::String conflict_hint;
   Rml::String accept_label;
@@ -233,8 +235,10 @@ struct CallInProgressState {
   bool show_retry = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
-  /** Hide Camera when encoder missing or hop A↑ too small for video_lo. */
+  /** Hide Camera when video disallowed, encoder missing, or hop A↑ too small for video_lo. */
   bool show_camera = true;
+  /** Session policy from initiator (V035). */
+  bool video_allowed = false;
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
   CallChromeMode mode = CallChromeMode::Expanded;
   /**
