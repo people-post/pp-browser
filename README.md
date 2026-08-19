@@ -4,7 +4,7 @@
 
 Product tagline: *The internet, rendered for you.*
 
-Branding rationale, icon mockups, and the PP vs pp-browser naming rule: [docs/ui/PRODUCT_BRANDING.md](docs/ui/PRODUCT_BRANDING.md).
+Branding and the PP vs pp-browser naming rule: [docs/ui/PRODUCT_BRANDING.md](docs/ui/PRODUCT_BRANDING.md).
 
 ## Features
 

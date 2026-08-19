@@ -1,10 +1,9 @@
 # Product branding — PP
 
 **Tier:** product / UI  
-**Status:** adopted (2026-07-17); product name **PP** (2026-08-19)  
-**PR:** [#28](https://github.com/people-post/pp-browser/pull/28)
+**Status:** adopted
 
-User-facing product identity for the AI-centric browsing shell.
+User-visible product identity for the AI-centric browsing shell.
 
 ## Naming rule (normative)
 
@@ -26,8 +25,6 @@ User-facing product identity for the AI-centric browsing shell.
 | Windows AUMID | `dev.pp-browser.app` | Toast notifications |
 | Android | `dev.pp_browser.app` | **Underscore required** — Android `applicationId` cannot contain hyphens |
 
-Pre-release: installs signed or registered as `dev.frame.*` are not migrated — re-register App IDs and reinstall.
-
 ### Constants (single source of truth)
 
 C++ — [`src/base/runtime/ProductBranding.h`](../../src/base/runtime/ProductBranding.h):
@@ -39,6 +36,7 @@ kProductSlug       = "pp-browser"   // internal repo / artifact slug
 kProductLogTag     = "pp-browser"   // logcat / os_log / stderr dev prefix
 kProductTagline    = "The internet, rendered for you."
 kProductAumid      = "dev.pp-browser.app"
+kAppIconAsset      = "branding/app-icon.png"
 ```
 
 CMake — [`cmake/ProductBranding.cmake`](../../cmake/ProductBranding.cmake) (keep in sync):
@@ -52,38 +50,13 @@ Locales: `assets/locales/*/app.name` should match `kProductName`. Most UI binds 
 
 ---
 
-## Product context
+## Icon
 
-PP is an **AI-centric browsing tool**: users access the internet through intent and actions, not by rendering legacy websites or executing page JavaScript. The assistant talks to APIs and services; the app renders structured UI locally, shaped by the user's taste and settings.
+**Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png) (1024² master; Windows uses [`app-icon.ico`](../../assets/branding/app-icon.ico)).
 
-Messaging, contacts, and related tools are **essential but secondary** — they satisfy social needs inside the same shell.
+Monogram: two **PP** letterforms with the lower tips joined by a smile curve.
 
----
-
-## Icon — decision
-
-**Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png)  
-**Source mockup:** [`icon-mockup-11-balanced-sky.png`](../../assets/branding/mockups/icon-mockup-11-balanced-sky.png)
-
-A soft portal/window frame containing clean geometric content blocks and a small action accent, with a thin line to an external node suggesting API/intent input. Mockup history: [`assets/branding/mockups/`](../../assets/branding/mockups/).
-
-### Visual system (icon)
-
-- **Shape:** rounded squircle with **hard transparent margin + corners** (RGBA); ~10% transparent padding per side on the 1024² master.
-- **Palette:** cool slate plate (`#BECCDE`), white portal frame, `#4a6cf7` accent — matches UI `accent-primary`.
-- **Style:** flat / soft; depth only inside the squircle.
-
----
-
-## Name — decision
-
-### Chosen: **PP**
-
-**Tagline:** *The internet, rendered for you.*
-
-Short, pronounceable, aligned with People Post / pp-browser lineage. Not “browser” — avoids the Chrome / Safari category.
-
-**Previous user-visible name:** Frame (2026-07-17 → 2026-08-19). Internal slug unchanged.
+**Runtime:** [`WindowIcon`](../../src/base/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop). macOS/iOS bundles embed the same PNG.
 
 ---
 
@@ -103,8 +76,6 @@ Short, pronounceable, aligned with People Post / pp-browser lineage. Not “brow
 | Android launcher | PP (`strings.xml`); id `dev.pp_browser.app` |
 | Dev logs | `kProductLogTag` (`pp-browser`) — `adb logcat -s pp-browser:W` |
 | README | PP as product name; pp-browser as repo / internal slug |
-
-**Runtime icon:** [`WindowIcon`](../../src/base/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop only).
 
 ### Advanced / technical copy (keep pp-browser)
 
@@ -128,27 +99,3 @@ Short, pronounceable, aligned with People Post / pp-browser lineage. Not “brow
 | GitHub repo name | Org/process; not a product rename |
 | Release artifact filenames | `pp-browser-<version>-…` |
 | Entitlements files | `packaging/*/pp-browser.entitlements` |
-
-Renaming the executable binary or GitHub repo is out of scope for branding alone.
-
----
-
-## Asset inventory
-
-```
-assets/branding/
-  app-icon.png          # Primary portal viewport (balanced soft sky)
-  app-icon.ico          # Windows executable icon
-  app-icon.rc           # Windows resource script
-  mockups/              # Icon exploration history
-```
-
----
-
-## Review checklist
-
-- [ ] Icon reads clearly at 16×16 and 32×32 (taskbar / dock)
-- [ ] “PP” distinct from existing apps/trademarks in target markets
-- [ ] Tagline localized beyond EN / zh-Hans if needed
-- [ ] Apple App IDs `dev.pp-browser.app` / `dev.pp-browser.ios` registered before signed builds
-- [ ] iOS provisioning profile renamed to “pp-browser iOS Development” in Apple Developer account
