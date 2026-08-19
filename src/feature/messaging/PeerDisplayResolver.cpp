@@ -1,6 +1,7 @@
 #include "feature/messaging/PeerDisplayResolver.h"
 
 #include "base/people/ContactJson.h"
+#include "base/runtime/ProductBranding.h"
 
 namespace pbr {
 
@@ -80,7 +81,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
 
   if (thread.kind == ThreadKind::Ai) {
     PeerDisplayLabel label;
-    label.title = thread.title.empty() ? "pp-browser" : thread.title;
+    label.title = thread.title.empty() ? kProductName : thread.title;
     label.trust = PeerLabelTrust::Contact;
     return label;
   }

@@ -81,6 +81,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+include(ProductBranding)
 include(Platform)
 include(PpBrowserWarnings)
 include(pp_lib_paths)

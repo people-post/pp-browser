@@ -1,6 +1,7 @@
 #include "MobileGlLifecycle.h"
 
 #include "GlBackend.h"
+#include "base/runtime/ProductBranding.h"
 
 #include <cstdio>
 #include <string>
@@ -60,7 +61,7 @@ void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, un
       std::fclose(f);
     }
   }
-  std::fprintf(stderr, "[Frame] iOS drawable FBO=%u RBO=%u\n", framebuffer, renderbuffer);
+  std::fprintf(stderr, "[%s] iOS drawable FBO=%u RBO=%u\n", kProductLogTag, framebuffer, renderbuffer);
 #else
   (void)window;
   (void)framebuffer;

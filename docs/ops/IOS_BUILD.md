@@ -2,7 +2,7 @@
 
 **Tier:** ops
 
-How to build **Frame** for iOS (simulator and device) and connect an **Apple Developer Program** account for on-device testing. User-visible product is **Frame** (`Frame.app`); signing / reverse-DNS ID is **`dev.pp-browser.ios`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
+How to build **PP** for iOS (simulator and device) and connect an **Apple Developer Program** account for on-device testing. User-visible product is **PP** (`PP.app`); signing / reverse-DNS ID is **`dev.pp-browser.ios`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
 
 **Related:** [BUILD.md](BUILD.md), [PLATFORMS.md](../architecture/PLATFORMS.md), [MACOS_SIGNING.md](MACOS_SIGNING.md) (macOS Developer ID — separate from iOS provisioning), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md).
 
@@ -12,11 +12,11 @@ How to build **Frame** for iOS (simulator and device) and connect an **Apple Dev
 
 | What | Value in this repo |
 |------|-------------------|
-| iOS app bundle | `Frame.app` |
+| iOS app bundle | `PP.app` |
 | Bundle ID | `dev.pp-browser.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
 | Build script | [`scripts/ios_build.sh`](../../scripts/ios_build.sh) |
 | Signing script | [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh) |
-| Entitlements | [`packaging/ios/Frame.entitlements`](../../packaging/ios/Frame.entitlements) |
+| Entitlements | [`packaging/ios/pp-browser.entitlements`](../../packaging/ios/pp-browser.entitlements) |
 | Local env template | [`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example) |
 | Export template | [`packaging/ios/ExportOptions.plist.example`](../../packaging/ios/ExportOptions.plist.example) |
 
@@ -79,7 +79,7 @@ If typing with the Mac keyboard works but nothing appears on screen, the app pat
 ./scripts/ios_build.sh configure-sim     # CMake → build-ios-simulator/
 ./scripts/ios_build.sh configure-device  # CMake → build-ios-device/
 ./scripts/ios_build.sh build             # Build current tree
-./scripts/ios_build.sh install           # Install to install-ios/Frame.app
+./scripts/ios_build.sh install           # Install to install-ios/PP.app
 ./scripts/ios_build.sh sim               # configure + build + install (simulator)
 ./scripts/ios_build.sh device            # configure + build + install (device)
 ./scripts/ios_build.sh run-sim           # install + launch on Simulator
@@ -140,7 +140,7 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 1. **Profiles → + → iOS App Development** (or Ad Hoc / App Store)
 2. Select App ID **`dev.pp-browser.ios`**
 3. Select your development certificate and test devices
-4. Download **`Frame_iOS_Development.mobileprovision`**
+4. Download **`pp-browser_iOS_Development.mobileprovision`**
 
 ### 4. Note your Team ID
 
@@ -179,8 +179,8 @@ source packaging/ios/signing.env
 ./scripts/ios_build.sh run-device      # embeds profile, codesigns, devicectl install + launch
 ```
 
-Or manually: `./scripts/ios_sign.sh sign-app install-ios/Frame.app` then  
-`xcrun devicectl device install app --device <UDID> install-ios/Frame.app`.
+Or manually: `./scripts/ios_sign.sh sign-app install-ios/PP.app` then  
+`xcrun devicectl device install app --device <UDID> install-ios/PP.app`.
 
 Archive/export when ready for TestFlight.
 
@@ -188,7 +188,7 @@ For IPA export, copy and edit the export template:
 
 ```bash
 cp packaging/ios/ExportOptions.plist.example packaging/ios/ExportOptions.plist
-./scripts/ios_sign.sh export-ipa install-ios/Frame.app
+./scripts/ios_sign.sh export-ipa install-ios/PP.app
 ```
 
 ---
@@ -215,7 +215,7 @@ No iOS release workflow is wired yet — macOS release CI remains in [`.github/w
 | Component | iOS behavior |
 |-----------|--------------|
 | Renderer | OpenGL ES 3 via SDL (same pattern as Android) |
-| Assets | `Frame.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
+| Assets | `PP.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
 | Paths | [`IosPathProvider`](../../src/base/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
 | MCP | HTTP URL only — no subprocess on mobile |
 | libp2p | Built and linked; host `protoc` bootstrapped on first cross-compile |
@@ -231,10 +231,10 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 |---------|------------|
 | `iOS builds require macOS` | Run on a Mac; simulator/device tooling is not available on Linux agents |
 | Codesign / profile mismatch | Ensure App ID, profile, and `IOS_BUNDLE_IDENTIFIER` all match |
-| Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build Frame.app/Frame` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
+| Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build PP.app/PP` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
 | `0xe800003a` / could not be verified | App was signed without `application-identifier`. `ios_sign.sh` must extract entitlements from the `.mobileprovision` (fixed via `plutil -extract`); re-run `sign-app` / `run-device`. |
 | Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
-| Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `Frame.app/assets/` |
+| Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `PP.app/assets/` |
 | `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |
 
 ---
@@ -247,4 +247,4 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 - [ ] App ID `dev.pp-browser.ios` registered (or plist/CMake updated)
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
-- [ ] `./scripts/ios_sign.sh sign-app install-ios/Frame.app` verifies on device
+- [ ] `./scripts/ios_sign.sh sign-app install-ios/PP.app` verifies on device
