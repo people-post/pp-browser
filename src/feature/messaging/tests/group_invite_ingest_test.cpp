@@ -60,7 +60,7 @@ struct PartyHarness {
         local_relay(RelayForAccount(local_account)), peer_relay(RelayForAccount(peer_account)), channel(channel) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
     auto loaded = identity.LoadOrCreate();

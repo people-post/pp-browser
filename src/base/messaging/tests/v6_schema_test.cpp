@@ -6,6 +6,20 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+namespace pbr {
+namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
+} // namespace
+} // namespace pbr
+
 TEST(V6SchemaTest, OutboundMessagePersistsSenderSeqAndEpoch) {
   using namespace pbr;
 
@@ -13,6 +27,7 @@ TEST(V6SchemaTest, OutboundMessagePersistsSenderSeqAndEpoch) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_outbound_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";
@@ -57,6 +72,7 @@ TEST(V6SchemaTest, GetMessagesBySeqRangeFiltersPeerStream) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_seq_range_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";
@@ -106,6 +122,7 @@ TEST(V6SchemaTest, SyncStateInitializedForE2eDirectThread) {
       std::filesystem::temp_directory_path() / "pp_browser_v6_sync_state_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";

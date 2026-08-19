@@ -1,5 +1,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 
+#include "base/crypto/CryptoUtil.h"
+#include "base/error/AppError.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ConversationSummaryCodec.h"
@@ -8,10 +10,13 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
+#include "base/messaging/TranscriptBodyCodec.h"
+#include "base/messaging/TranscriptCipher.h"
 
 #include "common/Utilities.h"
 
 #include <sqlite3.h>
+#include <sodium.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -22,8 +27,19 @@ namespace pbr {
 
 namespace {
 
-constexpr int kProfileUserVersion = 3;
-constexpr int kThreadUserVersion = 1;
+constexpr int kProfileUserVersion = 4;
+constexpr int kThreadUserVersion = 2;
+
+std::optional<std::string> ControlTypeForDb(const ThreadMessage& message) {
+  if (message.content_type != ChatContentType::System) {
+    return std::nullopt;
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (payload.is_object() && payload.contains("control_type") && payload["control_type"].is_string()) {
+    return payload["control_type"].get<std::string>();
+  }
+  return std::string("system");
+}
 
 /** sqlite3_column_text NULL → empty; never construct std::string from nullptr. */
 std::string SqlText(sqlite3_stmt* stmt, const int index) {
@@ -49,7 +65,7 @@ CREATE TABLE IF NOT EXISTS threads (
   title TEXT NOT NULL,
   local_title TEXT NOT NULL DEFAULT '',
   participant_contact_ids TEXT NOT NULL,
-  preview TEXT,
+  preview_enc BLOB,
   updated_at INTEGER NOT NULL,
   unread_count INTEGER NOT NULL DEFAULT 0,
   session_epoch INTEGER
@@ -91,22 +107,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(
 )sql";
 
 constexpr const char* kMessageSelectColumns =
-    "id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-    "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
-    "sender_seq, session_epoch, target_message_id, generation, seq_owner_contact_id, ai_invoke_mode";
+    "id, display_order, sender_contact_id, content_enc, content_type, control_type, timestamp, relay_visible, "
+    "delivery, transport, sender_seq, session_epoch, target_message_id, generation, seq_owner_contact_id, "
+    "ai_invoke_mode";
 
-constexpr const char* kThreadSchemaV1 = R"sql(
+constexpr const char* kThreadSchemaV2 = R"sql(
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   display_order INTEGER NOT NULL,
   sender_contact_id TEXT NOT NULL,
-  chat_payload BLOB NOT NULL,
+  content_enc BLOB NOT NULL,
   content_type TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  text TEXT,
-  content_rml TEXT,
-  user_payload TEXT,
-  chat_actions TEXT NOT NULL DEFAULT '[]',
+  control_type TEXT,
   timestamp INTEGER NOT NULL,
   relay_visible INTEGER NOT NULL,
   delivery TEXT NOT NULL,
@@ -116,8 +128,7 @@ CREATE TABLE IF NOT EXISTS messages (
   target_message_id TEXT,
   generation TEXT,
   seq_owner_contact_id TEXT,
-  ai_invoke_mode TEXT,
-  control_type TEXT
+  ai_invoke_mode TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_display ON messages(display_order DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(session_epoch, sender_contact_id, sender_seq)
@@ -126,7 +137,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery) WHERE rel
 
 CREATE TABLE IF NOT EXISTS memory (
   key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
+  value_enc BLOB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -171,42 +182,6 @@ Roe<void> ApplyUserVersion(sqlite3* db, int version) {
   return {};
 }
 
-Roe<void> MigrateProfileDb(sqlite3* db, int from_version) {
-  if (from_version < 2) {
-    // Additive column for dual group titles (local override).
-    if (auto result = ExecSql(db, "ALTER TABLE threads ADD COLUMN local_title TEXT NOT NULL DEFAULT '';"); !result) {
-      // Ignore duplicate-column errors from partially migrated DBs.
-      const std::string& msg = result.error().message;
-      if (msg.find("duplicate column") == std::string::npos) {
-        return result.error();
-      }
-    }
-  }
-  if (from_version < 3) {
-    const char* kAdds[] = {
-        "ALTER TABLE chat_targets ADD COLUMN key_scope TEXT NOT NULL DEFAULT 'account';",
-        "ALTER TABLE chat_targets ADD COLUMN thread_kem_pk_b64 TEXT;",
-        "ALTER TABLE chat_targets ADD COLUMN thread_kem_sk_b64 TEXT;",
-        "ALTER TABLE chat_targets ADD COLUMN peer_thread_kem_pk_b64 TEXT;",
-        "ALTER TABLE chat_targets ADD COLUMN last_psk_rotate_at INTEGER;",
-        "ALTER TABLE chat_targets ADD COLUMN psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0;",
-        "ALTER TABLE chat_targets ADD COLUMN last_rotation_id TEXT;",
-    };
-    for (const char* sql : kAdds) {
-      if (auto result = ExecSql(db, sql); !result) {
-        const std::string& msg = result.error().message;
-        if (msg.find("duplicate column") == std::string::npos) {
-          return result.error();
-        }
-      }
-    }
-  }
-  if (auto version = ApplyUserVersion(db, kProfileUserVersion); !version) {
-    return version.error();
-  }
-  return {};
-}
-
 Roe<void> ConfigureDb(sqlite3* db) {
   if (auto result = ExecSql(db, "PRAGMA journal_mode=WAL;"); !result) {
     return result.error();
@@ -221,47 +196,18 @@ std::string ContentTypeToDb(ChatContentType type) { return ChatContentTypeToDb(t
 
 ChatContentType ContentTypeFromDb(const std::string& value) { return ChatContentTypeFromDb(value); }
 
-nlohmann::json ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
-  nlohmann::json out = nlohmann::json::array();
-  for (const TranscriptChatAction& action : actions) {
-    nlohmann::json item = {{"label", action.label}, {"message", action.message}};
-    if (action.payload) {
-      item["payload"] = *action.payload;
-    }
-    out.push_back(std::move(item));
-  }
-  return out;
-}
-
-std::vector<TranscriptChatAction> ChatActionsFromJsonString(const std::string& json_text) {
-  const nlohmann::json parsed = nlohmann::json::parse(json_text, nullptr, false);
-  if (parsed.is_discarded() || !parsed.is_array()) {
-    return {};
-  }
-  std::vector<TranscriptChatAction> out;
-  for (const auto& item : parsed) {
-    TranscriptChatAction action;
-    if (item.contains("label") && item["label"].is_string()) {
-      action.label = item["label"].get<std::string>();
-    }
-    if (item.contains("message") && item["message"].is_string()) {
-      action.message = item["message"].get<std::string>();
-    }
-    if (item.contains("payload") && item["payload"].is_string()) {
-      action.payload = item["payload"].get<std::string>();
-    }
-    out.push_back(std::move(action));
-  }
-  return out;
-}
-
 } // namespace
 
 SqliteThreadStore::SqliteThreadStore(std::string data_dir) : data_dir_(std::move(data_dir)) {
   redirectLogger("SqliteThreadStore");
+  profile_id_ = std::filesystem::path(data_dir_).filename().string();
+  if (profile_id_.empty()) {
+    profile_id_ = "default";
+  }
 }
 
 SqliteThreadStore::~SqliteThreadStore() {
+  ClearDek();
   std::lock_guard profile_lock(profile_mutex_);
   for (auto& [thread_id, handle] : thread_dbs_) {
     (void)thread_id;
@@ -278,6 +224,34 @@ SqliteThreadStore::~SqliteThreadStore() {
 
 std::string SqliteThreadStore::ProfileDbPath() const {
   return ProfileDbFile(data_dir_);
+}
+
+Roe<void> SqliteThreadStore::SetDek(ByteVector dek) {
+  if (dek.size() != 32u) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(dek_mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+  }
+  dek_ = std::move(dek);
+  return {};
+}
+
+void SqliteThreadStore::ClearDek() {
+  std::lock_guard lock(dek_mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+    dek_.clear();
+  }
+}
+
+Roe<void> SqliteThreadStore::RequireDek() const {
+  std::lock_guard lock(dek_mutex_);
+  if (dek_.size() != 32u) {
+    return AppError::Pin(Err::Pin::Required, "Transcript store DEK not set (unlock profile vault first)");
+  }
+  return {};
 }
 
 Roe<void> SqliteThreadStore::EnsureInitialized() const {
@@ -342,10 +316,8 @@ Roe<void> SqliteThreadStore::OpenProfileDb() const {
     if (auto version = ApplyUserVersion(profile_db_, kProfileUserVersion); !version) {
       return version.error();
     }
-  } else if (user_version < kProfileUserVersion) {
-    if (auto migrated = MigrateProfileDb(profile_db_, user_version); !migrated) {
-      return migrated.error();
-    }
+  } else if (user_version != kProfileUserVersion) {
+    return Error("Incompatible profile.db — wipe profile data directory");
   }
   GroupRosterStore roster_store(ProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
@@ -392,7 +364,7 @@ Roe<sqlite3*> SqliteThreadStore::OpenThreadDb(const std::string& thread_id) cons
       sqlite3_finalize(stmt);
     }
     if (user_version == 0) {
-      if (auto schema = ExecSql(handle.db, kThreadSchemaV1); !schema) {
+      if (auto schema = ExecSql(handle.db, kThreadSchemaV2); !schema) {
         sqlite3_close(handle.db);
         return schema.error();
       }
@@ -400,6 +372,9 @@ Roe<sqlite3*> SqliteThreadStore::OpenThreadDb(const std::string& thread_id) cons
         sqlite3_close(handle.db);
         return version.error();
       }
+    } else if (user_version != kThreadUserVersion) {
+      sqlite3_close(handle.db);
+      return Error("Incompatible thread.db — wipe profile data directory");
     }
     thread_dbs_[thread_id] = handle;
     it = thread_dbs_.find(thread_id);
@@ -428,47 +403,218 @@ void SqliteThreadStore::EvictThreadDbsIfNeeded() const {
   }
 }
 
-Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
+Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_id, sqlite3_stmt* stmt) const {
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
   ThreadMessage message;
   message.id = SqlText(stmt, 0);
   message.display_order = sqlite3_column_int64(stmt, 1);
   message.sender_contact_id = SqlText(stmt, 2);
   const void* blob = sqlite3_column_blob(stmt, 3);
   const int blob_size = sqlite3_column_bytes(stmt, 3);
-  std::vector<uint8_t> chat_payload;
-  if (blob && blob_size > 0) {
-    const auto* bytes = static_cast<const uint8_t*>(blob);
-    chat_payload.assign(bytes, bytes + blob_size);
+  if (!blob || blob_size <= 0) {
+    return Error("Missing encrypted message body");
+  }
+  ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
+  ByteVector dek_copy;
+  {
+    std::lock_guard lock(dek_mutex_);
+    dek_copy = dek_;
+  }
+  auto plaintext = TranscriptCipher::DecryptMessageBody(dek_copy, profile_id_, thread_id, message.id, ciphertext);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  auto body = TranscriptBodyCodec::Decode(*plaintext);
+  if (!body) {
+    return body.error();
   }
   message.content_type = ContentTypeFromDb(SqlText(stmt, 4));
-  if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
-    message.payload_json = SqlText(stmt, 5);
-  }
-  if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
-    message.text = SqlText(stmt, 6);
-  }
-  message.content_rml = SqlTextOpt(stmt, 7);
+  message.timestamp = sqlite3_column_int64(stmt, 6);
+  message.relay_visible = sqlite3_column_int(stmt, 7) != 0;
+  message.delivery = MessageDeliveryFromString(SqlText(stmt, 8));
   if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
-    message.chat_actions = ChatActionsFromJsonString(SqlText(stmt, 9));
+    message.transport = MessageTransportFromString(SqlText(stmt, 9));
   }
-  message.timestamp = sqlite3_column_int64(stmt, 10);
-  message.relay_visible = sqlite3_column_int(stmt, 11) != 0;
-  message.delivery = MessageDeliveryFromString(SqlText(stmt, 12));
-  if (sqlite3_column_type(stmt, 13) != SQLITE_NULL) {
-    message.transport = MessageTransportFromString(SqlText(stmt, 13));
+  if (sqlite3_column_type(stmt, 10) != SQLITE_NULL) {
+    message.sender_seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 10));
   }
-  if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
-    message.sender_seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 14));
+  if (sqlite3_column_type(stmt, 11) != SQLITE_NULL) {
+    message.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 11));
   }
-  if (sqlite3_column_type(stmt, 15) != SQLITE_NULL) {
-    message.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 15));
+  message.target_message_id = SqlTextOpt(stmt, 12);
+  message.generation = SqlTextOpt(stmt, 13);
+  message.seq_owner_contact_id = SqlTextOpt(stmt, 14);
+  message.ai_invoke_mode = SqlTextOpt(stmt, 15);
+  if (auto applied = TranscriptBodyCodec::ApplyToMessage(*body, message); !applied) {
+    return applied.error();
   }
-  message.target_message_id = SqlTextOpt(stmt, 16);
-  message.generation = SqlTextOpt(stmt, 17);
-  message.seq_owner_contact_id = SqlTextOpt(stmt, 18);
-  message.ai_invoke_mode = SqlTextOpt(stmt, 19);
-  (void)ChatPayloadCodec::ApplyRowToMessage(chat_payload, message);
   return message;
+}
+
+Roe<ByteVector> SqliteThreadStore::EncryptMessageContent(const std::string& thread_id,
+                                                         const ThreadMessage& message) const {
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  auto body = TranscriptBodyCodec::FromMessage(message);
+  if (!body) {
+    return body.error();
+  }
+  auto encoded = TranscriptBodyCodec::Encode(*body);
+  if (!encoded) {
+    return encoded.error();
+  }
+  ByteVector dek_copy;
+  {
+    std::lock_guard lock(dek_mutex_);
+    dek_copy = dek_;
+  }
+  return TranscriptCipher::EncryptMessageBody(dek_copy, profile_id_, thread_id, message.id, *encoded);
+}
+
+Roe<std::optional<ByteVector>> SqliteThreadStore::EncryptPreviewBlob(const std::string& thread_id,
+                                                                    const std::string& preview) const {
+  if (preview.empty()) {
+    return std::optional<ByteVector>{};
+  }
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  ByteVector dek_copy;
+  {
+    std::lock_guard lock(dek_mutex_);
+    dek_copy = dek_;
+  }
+  auto encrypted = TranscriptCipher::EncryptPreview(dek_copy, profile_id_, thread_id, preview);
+  if (!encrypted) {
+    return encrypted.error();
+  }
+  return std::optional<ByteVector>{std::move(*encrypted)};
+}
+
+Roe<std::string> SqliteThreadStore::DecryptPreviewBlob(const std::string& thread_id, const void* blob,
+                                                       const int blob_size) const {
+  if (!blob || blob_size <= 0) {
+    return std::string{};
+  }
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
+  ByteVector dek_copy;
+  {
+    std::lock_guard lock(dek_mutex_);
+    dek_copy = dek_;
+  }
+  return TranscriptCipher::DecryptPreview(dek_copy, profile_id_, thread_id, ciphertext);
+}
+
+Roe<void> SqliteThreadStore::BindMessageInsert(sqlite3_stmt* stmt, const std::string& thread_id,
+                                               const ThreadMessage& message, const ByteVector& content_enc) const {
+  sqlite3_bind_text(stmt, 1, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 2, message.display_order);
+  sqlite3_bind_text(stmt, 3, message.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt, 4, content_enc.data(), static_cast<int>(content_enc.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 5, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
+  if (auto control_type = ControlTypeForDb(message)) {
+    sqlite3_bind_text(stmt, 6, control_type->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 6);
+  }
+  sqlite3_bind_int64(stmt, 7, message.timestamp);
+  sqlite3_bind_int(stmt, 8, message.relay_visible ? 1 : 0);
+  sqlite3_bind_text(stmt, 9, MessageDeliveryToString(message.delivery).c_str(), -1, SQLITE_TRANSIENT);
+  if (message.transport) {
+    sqlite3_bind_text(stmt, 10, MessageTransportToString(*message.transport).c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 10);
+  }
+  if (message.sender_seq) {
+    sqlite3_bind_int64(stmt, 11, static_cast<sqlite3_int64>(*message.sender_seq));
+  } else {
+    sqlite3_bind_null(stmt, 11);
+  }
+  if (message.session_epoch) {
+    sqlite3_bind_int(stmt, 12, static_cast<int>(*message.session_epoch));
+  } else {
+    sqlite3_bind_null(stmt, 12);
+  }
+  if (message.target_message_id) {
+    sqlite3_bind_text(stmt, 13, message.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 13);
+  }
+  if (message.generation) {
+    sqlite3_bind_text(stmt, 14, message.generation->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 14);
+  }
+  if (message.seq_owner_contact_id) {
+    sqlite3_bind_text(stmt, 15, message.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 15);
+  }
+  if (message.ai_invoke_mode) {
+    sqlite3_bind_text(stmt, 16, message.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 16);
+  }
+  return {};
+}
+
+Roe<void> SqliteThreadStore::BindMessageUpdate(sqlite3_stmt* stmt, const std::string& thread_id,
+                                               const ThreadMessage& message, const ByteVector& content_enc) const {
+  sqlite3_bind_text(stmt, 1, message.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt, 2, content_enc.data(), static_cast<int>(content_enc.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 3, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
+  if (auto control_type = ControlTypeForDb(message)) {
+    sqlite3_bind_text(stmt, 4, control_type->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 4);
+  }
+  sqlite3_bind_int64(stmt, 5, message.timestamp);
+  sqlite3_bind_int(stmt, 6, message.relay_visible ? 1 : 0);
+  sqlite3_bind_text(stmt, 7, MessageDeliveryToString(message.delivery).c_str(), -1, SQLITE_TRANSIENT);
+  if (message.transport) {
+    sqlite3_bind_text(stmt, 8, MessageTransportToString(*message.transport).c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 8);
+  }
+  if (message.sender_seq) {
+    sqlite3_bind_int64(stmt, 9, static_cast<sqlite3_int64>(*message.sender_seq));
+  } else {
+    sqlite3_bind_null(stmt, 9);
+  }
+  if (message.session_epoch) {
+    sqlite3_bind_int(stmt, 10, static_cast<int>(*message.session_epoch));
+  } else {
+    sqlite3_bind_null(stmt, 10);
+  }
+  if (message.target_message_id) {
+    sqlite3_bind_text(stmt, 11, message.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 11);
+  }
+  if (message.generation) {
+    sqlite3_bind_text(stmt, 12, message.generation->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 12);
+  }
+  if (message.seq_owner_contact_id) {
+    sqlite3_bind_text(stmt, 13, message.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 13);
+  }
+  if (message.ai_invoke_mode) {
+    sqlite3_bind_text(stmt, 14, message.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 14);
+  }
+  sqlite3_bind_text(stmt, 15, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  (void)thread_id;
+  return {};
 }
 
 Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
@@ -488,14 +634,23 @@ Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
 Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage& message,
                                                             const bool increment_unread) const {
   std::lock_guard lock(profile_mutex_);
+  auto preview_enc = EncryptPreviewBlob(message.thread_id, message.text);
+  if (!preview_enc) {
+    return preview_enc.error();
+  }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "UPDATE threads SET updated_at = ?, preview = ?, unread_count = unread_count + ? WHERE id = ?;";
+      "UPDATE threads SET updated_at = ?, preview_enc = ?, unread_count = unread_count + ? WHERE id = ?;";
   if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error(std::string("Failed to prepare catalog update: ") + sqlite3_errmsg(profile_db_));
   }
   sqlite3_bind_int64(stmt, 1, message.timestamp);
-  sqlite3_bind_text(stmt, 2, message.text.c_str(), -1, SQLITE_TRANSIENT);
+  if (preview_enc->has_value()) {
+    sqlite3_bind_blob(stmt, 2, preview_enc->value().data(), static_cast<int>(preview_enc->value().size()),
+                      SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 2);
+  }
   sqlite3_bind_int(stmt, 3, increment_unread ? 1 : 0);
   sqlite3_bind_text(stmt, 4, message.thread_id.c_str(), -1, SQLITE_TRANSIENT);
   const int rc = sqlite3_step(stmt);
@@ -534,8 +689,8 @@ Roe<void> SqliteThreadStore::RepairOrphanThreadDirs() const {
     }
     const int64_t now = util::NowUnixMs();
     if (sqlite3_prepare_v2(profile_db_,
-                           "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, preview, "
-                           "updated_at, unread_count) VALUES (?, 'ai', '', ?, '[]', '', ?, 0);",
+                           "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, preview_enc, "
+                           "updated_at, unread_count) VALUES (?, 'ai', '', ?, '[]', NULL, ?, 0);",
                            -1, &stmt, nullptr) != SQLITE_OK) {
       continue;
     }
@@ -570,20 +725,25 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_,
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
-                         "preview, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
+                         "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
                          "ORDER BY updated_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to list threads");
   }
   std::vector<Thread> threads;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    threads.push_back(ReadThreadRow(stmt));
+    auto thread = ReadThreadRow(stmt);
+    if (!thread) {
+      sqlite3_finalize(stmt);
+      return thread.error();
+    }
+    threads.push_back(std::move(*thread));
   }
   sqlite3_finalize(stmt);
   return threads;
 }
 
-Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
+Roe<Thread> SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   Thread thread;
   thread.id = SqlText(stmt, 0);
   thread.kind = ThreadKindFromString(SqlText(stmt, 1));
@@ -601,7 +761,13 @@ Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   }
   thread.updated_at = sqlite3_column_int64(stmt, 5);
   thread.unread_count = sqlite3_column_int(stmt, 6);
-  thread.preview = SqlText(stmt, 7);
+  const void* preview_blob = sqlite3_column_blob(stmt, 7);
+  const int preview_size = sqlite3_column_bytes(stmt, 7);
+  if (auto preview = DecryptPreviewBlob(thread.id, preview_blob, preview_size); preview) {
+    thread.preview = std::move(*preview);
+  } else {
+    return preview.error();
+  }
   thread.peer_identity_kind = SqlText(stmt, 8);
   thread.peer_identity_value = SqlText(stmt, 9);
   if (auto group_id = SqlTextOpt(stmt, 10)) {
@@ -643,17 +809,21 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   sqlite3_stmt* stmt = nullptr;
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =
-      "INSERT INTO threads (id, kind, channel, title, local_title, participant_contact_ids, preview, updated_at, "
+      "INSERT INTO threads (id, kind, channel, title, local_title, participant_contact_ids, preview_enc, updated_at, "
       "unread_count, peer_identity_kind, peer_identity_value, group_id) "
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, channel=excluded.channel, title=excluded.title, "
       "local_title=excluded.local_title, "
-      "participant_contact_ids=excluded.participant_contact_ids, preview=excluded.preview, "
+      "participant_contact_ids=excluded.participant_contact_ids, preview_enc=excluded.preview_enc, "
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
       "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
       "group_id=excluded.group_id;";
   if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to upsert thread");
+  }
+  auto preview_enc = EncryptPreviewBlob(thread.id, thread.preview);
+  if (!preview_enc) {
+    return preview_enc.error();
   }
   sqlite3_bind_text(stmt, 1, thread.id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 2, ThreadKindToString(thread.kind).c_str(), -1, SQLITE_TRANSIENT);
@@ -661,7 +831,12 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   sqlite3_bind_text(stmt, 4, thread.title.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 5, thread.local_title.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 6, participants_json.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 7, thread.preview.c_str(), -1, SQLITE_TRANSIENT);
+  if (preview_enc->has_value()) {
+    sqlite3_bind_blob(stmt, 7, preview_enc->value().data(), static_cast<int>(preview_enc->value().size()),
+                      SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 7);
+  }
   sqlite3_bind_int64(stmt, 8, thread.updated_at);
   sqlite3_bind_int(stmt, 9, thread.unread_count);
   sqlite3_bind_text(stmt, 10, thread.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
@@ -698,7 +873,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::QueryMessages(const std::stri
 
   std::vector<ThreadMessage> messages;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    auto message = ReadMessageRow(stmt);
+    auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
       sqlite3_finalize(stmt);
       return message.error();
@@ -759,7 +934,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
 
   std::vector<ThreadMessage> fetched;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    auto message = ReadMessageRow(stmt);
+    auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
       sqlite3_finalize(stmt);
       return message.error();
@@ -795,16 +970,33 @@ Roe<std::optional<ConversationSummary>> SqliteThreadStore::GetThreadMemory(const
     return thread_db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*thread_db, "SELECT value FROM memory WHERE key = ? LIMIT 1;", -1, &stmt, nullptr) !=
+  if (sqlite3_prepare_v2(*thread_db, "SELECT value_enc FROM memory WHERE key = ? LIMIT 1;", -1, &stmt, nullptr) !=
       SQLITE_OK) {
     return Error("Failed to prepare memory read");
   }
   sqlite3_bind_text(stmt, 1, ConversationSummaryCodec::kSummaryKey, -1, SQLITE_STATIC);
   std::optional<ConversationSummary> summary;
   if (sqlite3_step(stmt) == SQLITE_ROW) {
-    const char* value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    if (value) {
-      auto decoded = ConversationSummaryCodec::Decode(value);
+    const void* blob = sqlite3_column_blob(stmt, 0);
+    const int blob_size = sqlite3_column_bytes(stmt, 0);
+    if (blob && blob_size > 0) {
+      if (auto dek = RequireDek(); !dek) {
+        sqlite3_finalize(stmt);
+        return dek.error();
+      }
+      ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
+      ByteVector dek_copy;
+      {
+        std::lock_guard lock(dek_mutex_);
+        dek_copy = dek_;
+      }
+      auto value_text = TranscriptCipher::DecryptMemoryValue(dek_copy, profile_id_, thread_id,
+                                                             ConversationSummaryCodec::kSummaryKey, ciphertext);
+      if (!value_text) {
+        sqlite3_finalize(stmt);
+        return value_text.error();
+      }
+      auto decoded = ConversationSummaryCodec::Decode(*value_text);
       if (!decoded) {
         sqlite3_finalize(stmt);
         return decoded.error();
@@ -828,14 +1020,27 @@ Roe<void> SqliteThreadStore::SetThreadMemory(const std::string& thread_id, const
   if (!thread_db) {
     return thread_db.error();
   }
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  ByteVector dek_copy;
+  {
+    std::lock_guard lock(dek_mutex_);
+    dek_copy = dek_;
+  }
+  auto value_enc = TranscriptCipher::EncryptMemoryValue(dek_copy, profile_id_, thread_id,
+                                                        ConversationSummaryCodec::kSummaryKey, *encoded);
+  if (!value_enc) {
+    return value_enc.error();
+  }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO memory (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+      "INSERT INTO memory (key, value_enc) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_enc = excluded.value_enc;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare memory write");
   }
   sqlite3_bind_text(stmt, 1, ConversationSummaryCodec::kSummaryKey, -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 2, encoded->c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt, 2, value_enc->data(), static_cast<int>(value_enc->size()), SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to write memory");
@@ -900,7 +1105,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
 
   std::vector<ThreadMessage> messages;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    auto message = ReadMessageRow(stmt);
+    auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
       sqlite3_finalize(stmt);
       return message.error();
@@ -933,73 +1138,23 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
     stored.display_order = *next;
   }
 
-  auto chat_payload = ChatPayloadCodec::EncodeToRow(stored);
-  if (!chat_payload) {
-    return chat_payload.error();
+  auto content_enc = EncryptMessageContent(message.thread_id, stored);
+  if (!content_enc) {
+    return content_enc.error();
   }
-  const std::string payload_text =
-      stored.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(stored) : stored.payload_json;
-  const std::string chat_actions_json = ChatActionsToJson(stored.chat_actions).dump();
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
-      "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+      "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
+      "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
+      "seq_owner_contact_id, ai_invoke_mode) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
-  sqlite3_bind_text(stmt, 1, stored.id.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt, 2, stored.display_order);
-  sqlite3_bind_text(stmt, 3, stored.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_blob(stmt, 4, chat_payload->data(), static_cast<int>(chat_payload->size()), SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 5, ContentTypeToDb(stored.content_type).c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 6, payload_text.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 7, stored.text.c_str(), -1, SQLITE_TRANSIENT);
-  if (stored.content_rml) {
-    sqlite3_bind_text(stmt, 8, stored.content_rml->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 8);
-  }
-  sqlite3_bind_text(stmt, 9, chat_actions_json.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt, 10, stored.timestamp);
-  sqlite3_bind_int(stmt, 11, stored.relay_visible ? 1 : 0);
-  sqlite3_bind_text(stmt, 12, MessageDeliveryToString(stored.delivery).c_str(), -1, SQLITE_TRANSIENT);
-  if (stored.transport) {
-    sqlite3_bind_text(stmt, 13, MessageTransportToString(*stored.transport).c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 13);
-  }
-  if (stored.sender_seq) {
-    sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(*stored.sender_seq));
-  } else {
-    sqlite3_bind_null(stmt, 14);
-  }
-  if (stored.session_epoch) {
-    sqlite3_bind_int(stmt, 15, static_cast<int>(*stored.session_epoch));
-  } else {
-    sqlite3_bind_null(stmt, 15);
-  }
-  if (stored.target_message_id) {
-    sqlite3_bind_text(stmt, 16, stored.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 16);
-  }
-  if (stored.generation) {
-    sqlite3_bind_text(stmt, 17, stored.generation->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 17);
-  }
-  if (stored.seq_owner_contact_id) {
-    sqlite3_bind_text(stmt, 18, stored.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 18);
-  }
-  if (stored.ai_invoke_mode) {
-    sqlite3_bind_text(stmt, 19, stored.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 19);
+  if (auto bound = BindMessageInsert(stmt, message.thread_id, stored, *content_enc); !bound) {
+    sqlite3_finalize(stmt);
+    return bound.error();
   }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
@@ -1025,73 +1180,23 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   if (!thread_db) {
     return thread_db.error();
   }
-  auto chat_payload = ChatPayloadCodec::EncodeToRow(message);
-  if (!chat_payload) {
-    return chat_payload.error();
+  auto content_enc = EncryptMessageContent(message.thread_id, message);
+  if (!content_enc) {
+    return content_enc.error();
   }
-  const std::string payload_text =
-      message.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(message) : message.payload_json;
-  const std::string chat_actions_json = ChatActionsToJson(message.chat_actions).dump();
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "UPDATE messages SET sender_contact_id = ?, chat_payload = ?, content_type = ?, payload = ?, text = ?, "
-      "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ?, transport = ?, "
-      "sender_seq = ?, session_epoch = ?, target_message_id = ?, generation = ?, seq_owner_contact_id = ?, "
-      "ai_invoke_mode = ? WHERE id = ?;";
+      "UPDATE messages SET sender_contact_id = ?, content_enc = ?, content_type = ?, control_type = ?, timestamp = ?, "
+      "relay_visible = ?, delivery = ?, transport = ?, sender_seq = ?, session_epoch = ?, target_message_id = ?, "
+      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ?;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
-  sqlite3_bind_text(stmt, 1, message.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_blob(stmt, 2, chat_payload->data(), static_cast<int>(chat_payload->size()), SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 3, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 4, payload_text.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 5, message.text.c_str(), -1, SQLITE_TRANSIENT);
-  if (message.content_rml) {
-    sqlite3_bind_text(stmt, 6, message.content_rml->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 6);
+  if (auto bound = BindMessageUpdate(stmt, message.thread_id, message, *content_enc); !bound) {
+    sqlite3_finalize(stmt);
+    return bound.error();
   }
-  sqlite3_bind_text(stmt, 7, chat_actions_json.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt, 8, message.timestamp);
-  sqlite3_bind_int(stmt, 9, message.relay_visible ? 1 : 0);
-  sqlite3_bind_text(stmt, 10, MessageDeliveryToString(message.delivery).c_str(), -1, SQLITE_TRANSIENT);
-  if (message.transport) {
-    sqlite3_bind_text(stmt, 11, MessageTransportToString(*message.transport).c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 11);
-  }
-  if (message.sender_seq) {
-    sqlite3_bind_int64(stmt, 12, static_cast<sqlite3_int64>(*message.sender_seq));
-  } else {
-    sqlite3_bind_null(stmt, 12);
-  }
-  if (message.session_epoch) {
-    sqlite3_bind_int(stmt, 13, static_cast<int>(*message.session_epoch));
-  } else {
-    sqlite3_bind_null(stmt, 13);
-  }
-  if (message.target_message_id) {
-    sqlite3_bind_text(stmt, 14, message.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 14);
-  }
-  if (message.generation) {
-    sqlite3_bind_text(stmt, 15, message.generation->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 15);
-  }
-  if (message.seq_owner_contact_id) {
-    sqlite3_bind_text(stmt, 16, message.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 16);
-  }
-  if (message.ai_invoke_mode) {
-    sqlite3_bind_text(stmt, 17, message.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 17);
-  }
-  sqlite3_bind_text(stmt, 18, message.id.c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
@@ -1215,8 +1320,8 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
       sqlite3_step(stmt);
       sqlite3_finalize(stmt);
     }
-    if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET preview = '', unread_count = 0 WHERE id = ?;", -1, &stmt,
-                           nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET preview_enc = NULL, unread_count = 0 WHERE id = ?;", -1,
+                           &stmt, nullptr) == SQLITE_OK) {
       sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(stmt);
       sqlite3_finalize(stmt);
@@ -1874,73 +1979,23 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
       stored.display_order = *next;
     }
 
-    auto chat_payload = ChatPayloadCodec::EncodeToRow(stored);
-    if (!chat_payload) {
-      return chat_payload.error();
+    auto content_enc = EncryptMessageContent(message.thread_id, stored);
+    if (!content_enc) {
+      return content_enc.error();
     }
-    const std::string payload_text =
-        stored.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(stored) : stored.payload_json;
-    const std::string chat_actions_json = ChatActionsToJson(stored.chat_actions).dump();
 
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
-        "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-        "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
-        "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+        "INSERT INTO messages (id, display_order, sender_contact_id, content_enc, content_type, control_type, "
+        "timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, target_message_id, generation, "
+        "seq_owner_contact_id, ai_invoke_mode) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
       return Error("Failed to prepare passive-adopt append");
     }
-    sqlite3_bind_text(stmt, 1, stored.id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 2, stored.display_order);
-    sqlite3_bind_text(stmt, 3, stored.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_blob(stmt, 4, chat_payload->data(), static_cast<int>(chat_payload->size()), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 5, ContentTypeToDb(stored.content_type).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, payload_text.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 7, stored.text.c_str(), -1, SQLITE_TRANSIENT);
-    if (stored.content_rml) {
-      sqlite3_bind_text(stmt, 8, stored.content_rml->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 8);
-    }
-    sqlite3_bind_text(stmt, 9, chat_actions_json.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 10, stored.timestamp);
-    sqlite3_bind_int(stmt, 11, stored.relay_visible ? 1 : 0);
-    sqlite3_bind_text(stmt, 12, MessageDeliveryToString(stored.delivery).c_str(), -1, SQLITE_TRANSIENT);
-    if (stored.transport) {
-      sqlite3_bind_text(stmt, 13, MessageTransportToString(*stored.transport).c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 13);
-    }
-    if (stored.sender_seq) {
-      sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(*stored.sender_seq));
-    } else {
-      sqlite3_bind_null(stmt, 14);
-    }
-    if (stored.session_epoch) {
-      sqlite3_bind_int(stmt, 15, static_cast<int>(*stored.session_epoch));
-    } else {
-      sqlite3_bind_null(stmt, 15);
-    }
-    if (stored.target_message_id) {
-      sqlite3_bind_text(stmt, 16, stored.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 16);
-    }
-    if (stored.generation) {
-      sqlite3_bind_text(stmt, 17, stored.generation->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 17);
-    }
-    if (stored.seq_owner_contact_id) {
-      sqlite3_bind_text(stmt, 18, stored.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 18);
-    }
-    if (stored.ai_invoke_mode) {
-      sqlite3_bind_text(stmt, 19, stored.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, 19);
+    if (auto bound = BindMessageInsert(stmt, message.thread_id, stored, *content_enc); !bound) {
+      sqlite3_finalize(stmt);
+      return bound.error();
     }
     if (sqlite3_step(stmt) != SQLITE_DONE) {
       sqlite3_finalize(stmt);
@@ -2033,7 +2088,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
 
   std::vector<ThreadMessage> messages;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    auto message = ReadMessageRow(stmt);
+    auto message = ReadMessageRow(thread_id, stmt);
     if (!message) {
       sqlite3_finalize(stmt);
       return message.error();

@@ -37,6 +37,8 @@ pp_browser_add_base_library(pp_base_messaging
     PeopleDiscoveryBlocks.cpp
     RelayStreamKey.cpp
     RelayWirePayload.cpp
+    TranscriptBodyCodec.cpp
+    TranscriptCipher.cpp
     SqliteThreadStore.cpp
     SyncStateCodec.cpp
   PUBLIC_LIBS
