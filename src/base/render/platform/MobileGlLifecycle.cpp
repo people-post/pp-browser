@@ -61,7 +61,7 @@ void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, un
       std::fclose(f);
     }
   }
-  std::fprintf(stderr, "[%s] iOS drawable FBO=%u RBO=%u\n", kProductLogTag, framebuffer, renderbuffer);
+  std::fprintf(stderr, "[%s] iOS drawable FBO=%u RBO=%u\n", pbr::kProductLogTag, framebuffer, renderbuffer);
 #else
   (void)window;
   (void)framebuffer;
