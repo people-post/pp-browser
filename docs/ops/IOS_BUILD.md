@@ -210,7 +210,8 @@ security find-identity -v -p codesigning
 
 ```bash
 cp packaging/ios/ExportOptions.plist.example packaging/ios/ExportOptions.plist
-# Edit ExportOptions.plist: teamID + provisioningProfiles name (portal profile Name)
+# Edit ExportOptions.plist: teamID + provisioningProfiles name
+# (portal Name, e.g. pp-browser-ios-dist — not the filename)
 ```
 
 In `packaging/ios/signing.env`:

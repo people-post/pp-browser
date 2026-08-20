@@ -26,7 +26,7 @@
   <key>provisioningProfiles</key>
   <dict>
     <key>dev.pp-browser.ios</key>
-    <string>pp-browser iOS App Store</string>
+    <string>pp-browser-ios-dist</string>
   </dict>
   <key>compileBitcode</key>
   <false/>
