@@ -182,16 +182,68 @@ source packaging/ios/signing.env
 Or manually: `./scripts/ios_sign.sh sign-app install-ios/PP.app` then  
 `xcrun devicectl device install app --device <UDID> install-ios/PP.app`.
 
-Archive/export when ready for TestFlight.
+---
 
-**Encryption / export compliance** (App Store Connect questionnaire, crypto inventory, Info.plist keys): see [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md).
+## TestFlight / App Store Connect
 
-For IPA export, copy and edit the export template:
+Development USB install and TestFlight use **different** certificates and profiles.
+
+| Path | Certificate | Profile |
+|------|-------------|---------|
+| `run-device` | Apple **Development** | iOS App **Development** (device UDIDs) |
+| TestFlight IPA | Apple **Distribution** | **App Store** (same App ID `dev.pp-browser.ios`) |
+
+### Portal one-time (while setting up ASC)
+
+1. **Certificates → Apple Distribution** — CSR → install `.cer` in Keychain.
+2. **Profiles → App Store** for App ID `dev.pp-browser.ios` — download `.mobileprovision` into `packaging/ios/` (gitignored).
+3. [App Store Connect](https://appstoreconnect.apple.com) → create iOS app with bundle ID `dev.pp-browser.ios`.
+4. Optional upload API: **Users and Access → Integrations → App Store Connect API** → create a key; save `AuthKey_*.p8`, Key ID, Issuer ID.
+
+Confirm identities:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+### Local `signing.env` (distribution block)
 
 ```bash
 cp packaging/ios/ExportOptions.plist.example packaging/ios/ExportOptions.plist
-./scripts/ios_sign.sh export-ipa install-ios/PP.app
+# Edit ExportOptions.plist: teamID + provisioningProfiles name (portal profile Name)
 ```
+
+In `packaging/ios/signing.env`:
+
+```bash
+IOS_EXPORT_METHOD=app-store
+IOS_DISTRIBUTION_SIGNING_IDENTITY="Apple Distribution: YOUR_ORG (TEAMID)"
+IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH=packaging/ios/pp-browser_iOS_App_Store.mobileprovision
+PP_BROWSER_VERSION=0.1.0
+PP_BROWSER_BUILD_NUMBER=1   # bump every upload
+# Optional Transporter alternative:
+# IOS_ASC_KEY_ID=...
+# IOS_ASC_ISSUER_ID=...
+# IOS_ASC_P8_PATH=/path/to/AuthKey_....p8
+```
+
+### Build, export, upload
+
+```bash
+./scripts/ios_build.sh ipa              # Release device build + dist-ios/*.ipa
+./scripts/ios_build.sh upload-ipa       # or open dist-ios/ in Transporter.app
+```
+
+`ipa` forces `IOS_EXPORT_METHOD=app-store` if unset, signs with Distribution + App Store profile, uses a secure codesign timestamp, strips `get-task-allow`, and stamps `CFBundleShortVersionString` / `CFBundleVersion` from the env vars above. Each App Store Connect upload needs a **new** `PP_BROWSER_BUILD_NUMBER`.
+
+### After upload
+
+1. Wait for build processing in App Store Connect.
+2. Answer **export compliance** — cheat sheet: [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md). Info.plist already sets `ITSAppUsesNonExemptEncryption=true`.
+3. **TestFlight → Internal Testing** → add group / testers → enable the build.
+4. External testing needs Beta App Review + more listing metadata.
+
+**Encryption / export compliance** (questionnaire, crypto inventory, French declaration if France is available): see [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md).
 
 ---
 
@@ -201,12 +253,13 @@ When you add an iOS release job later, typical secrets mirror the local env:
 
 | Secret | Purpose |
 |--------|---------|
-| `IOS_CERTIFICATE_BASE64` | Base64 of signing `.p12` |
+| `IOS_CERTIFICATE_BASE64` | Base64 of signing `.p12` (Distribution for TestFlight) |
 | `IOS_CERTIFICATE_PASSWORD` | `.p12` export password |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of `.mobileprovision` |
-| `IOS_SIGNING_IDENTITY` | Exact codesign identity string |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of App Store `.mobileprovision` |
+| `IOS_SIGNING_IDENTITY` / `IOS_DISTRIBUTION_SIGNING_IDENTITY` | Exact codesign identity string |
 | `IOS_DEVELOPMENT_TEAM` | Team ID |
 | `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` |
+| `IOS_ASC_KEY_ID` / `IOS_ASC_ISSUER_ID` / `IOS_ASC_P8_BASE64` | App Store Connect API upload |
 
 No iOS release workflow is wired yet — macOS release CI remains in [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
 
@@ -235,6 +288,9 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 | Codesign / profile mismatch | Ensure App ID, profile, and `IOS_BUNDLE_IDENTIFIER` all match |
 | Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build PP.app/PP` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
 | `0xe800003a` / could not be verified | App was signed without `application-identifier`. `ios_sign.sh` must extract entitlements from the `.mobileprovision` (fixed via `plutil -extract`); re-run `sign-app` / `run-device`. |
+| ASC rejects IPA / Invalid Signature | Use `IOS_EXPORT_METHOD=app-store`, **Distribution** identity, **App Store** profile (not Development). Confirm `codesign -d --entitlements :-` has no `get-task-allow`. |
+| ASC rejects reused version | Bump `PP_BROWSER_BUILD_NUMBER` (CFBundleVersion) every upload |
+| `altool` cannot find API key | Place `AuthKey_<KEY_ID>.p8` via `IOS_ASC_P8_PATH`, or upload with Transporter |
 | Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
 | Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `PP.app/assets/` |
 | `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |
@@ -250,4 +306,9 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
 - [ ] `./scripts/ios_sign.sh sign-app install-ios/PP.app` verifies on device
-- [ ] Before TestFlight / App Store: encryption answers + docs per [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md)
+- [ ] Apple Distribution cert + App Store provisioning profile
+- [ ] App Store Connect iOS app for `dev.pp-browser.ios`
+- [ ] `IOS_DISTRIBUTION_*` + `IOS_EXPORT_METHOD=app-store` in `signing.env`
+- [ ] `./scripts/ios_build.sh ipa` → `dist-ios/*.ipa`
+- [ ] Upload (script or Transporter) + export compliance + Internal TestFlight
+- [ ] Encryption answers / docs per [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md)

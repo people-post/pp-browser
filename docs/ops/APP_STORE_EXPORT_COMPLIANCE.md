@@ -94,6 +94,8 @@ If crypto functionality changes (new AEAD, new KEM, closed-source-only binary), 
 <string>PASTE_CODE_FROM_APP_STORE_CONNECT</string>
 ```
 
+`packaging/ios/Info.plist` already sets `ITSAppUsesNonExemptEncryption` to `true`. Add `ITSEncryptionExportComplianceCode` only after Apple issues the code.
+
 Official overview: [Complying with Encryption Export Regulations](https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations).  
 Upload howto: [Determine and upload app encryption documentation](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation).
 

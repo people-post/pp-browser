@@ -27,6 +27,8 @@ Commands:
   device            configure-device + build + install (device .app)
   run-sim           Boot a simulator if needed, install PP.app, and launch
   run-device         Sign (if configured) and install+launch on a connected iPhone
+  ipa               Release device build + install + export TestFlight IPA
+  upload-ipa        Upload dist-ios/pp-browser.ipa (or path) to App Store Connect
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
 
@@ -34,8 +36,9 @@ Environment:
   IOS_PLATFORM              simulator (default) or device
   CMAKE_BUILD_TYPE          Debug (default) or Release
   INSTALL_PREFIX            Output prefix for cmake --install
-  PP_BROWSER_VERSION        Passed to CMake (e.g. 0.1.0)
-  PP_BROWSER_RELEASE_VERSION  Full version string (e.g. 0.1.0-rc1)
+  PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
+  PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
+  PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -357,6 +360,76 @@ cmd_clean() {
   rm -rf "${ROOT}/build-ios-simulator" "${ROOT}/build-ios-device" "${ROOT}/build-ios-xcode"
 }
 
+load_signing_env() {
+  local signing_env="${ROOT}/packaging/ios/signing.env"
+  if [[ -f "$signing_env" ]]; then
+    # shellcheck disable=SC1090
+    set -a
+    # shellcheck disable=SC1091
+    source "$signing_env"
+    set +a
+  fi
+}
+
+# Release device .app → distribution-signed IPA under dist-ios/ (TestFlight prep).
+cmd_ipa() {
+  require_macos
+  load_signing_env
+
+  if [[ -z "${IOS_EXPORT_METHOD:-}" ]]; then
+    IOS_EXPORT_METHOD=app-store
+  fi
+  if [[ "${IOS_EXPORT_METHOD}" != "app-store" && "${IOS_EXPORT_METHOD}" != "ad-hoc" ]]; then
+    echo "error: ipa expects IOS_EXPORT_METHOD=app-store (or ad-hoc), got ${IOS_EXPORT_METHOD}" >&2
+    echo "hint: set distribution vars in packaging/ios/signing.env — see signing.env.example" >&2
+    exit 1
+  fi
+  if [[ -z "${IOS_DISTRIBUTION_SIGNING_IDENTITY:-}" ]]; then
+    echo "error: IOS_DISTRIBUTION_SIGNING_IDENTITY required for IPA export" >&2
+    exit 1
+  fi
+  if [[ -z "${IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH:-}" ]]; then
+    echo "error: IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH required for IPA export" >&2
+    exit 1
+  fi
+
+  BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
+  CMAKE_BUILD_TYPE="${BUILD_TYPE}"
+  export IOS_EXPORT_METHOD
+  export PP_BROWSER_VERSION="${PP_BROWSER_VERSION:-0.1.0}"
+  if [[ -z "${PP_BROWSER_BUILD_NUMBER:-}" ]]; then
+    # Unique-enough default so a first upload is not stuck on literal 0.1.0 forever.
+    PP_BROWSER_BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+    export PP_BROWSER_BUILD_NUMBER
+    echo "==> PP_BROWSER_BUILD_NUMBER unset — using ${PP_BROWSER_BUILD_NUMBER}"
+  fi
+
+  IOS_PLATFORM=device
+  IOS_PLATFORM_EXPLICIT=1
+  configure_ios
+  cmd_build
+  cmd_install
+
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
+  echo "==> Exporting IPA (${IOS_EXPORT_METHOD})"
+  "${ROOT}/scripts/ios_sign.sh" export-ipa "$app"
+  echo "==> Next: ./scripts/ios_build.sh upload-ipa"
+  echo "    or open dist-ios/ in Transporter"
+  echo "    then App Store Connect → build → export compliance → Internal Testing"
+}
+
+cmd_upload_ipa() {
+  require_macos
+  load_signing_env
+  local ipa="${1:-${ROOT}/dist-ios/pp-browser.ipa}"
+  if [[ ! -f "$ipa" ]]; then
+    echo "error: IPA not found: ${ipa}" >&2
+    echo "hint: run ./scripts/ios_build.sh ipa first" >&2
+    exit 1
+  fi
+  "${ROOT}/scripts/ios_sign.sh" upload-ipa "$ipa"
+}
+
 main() {
   local cmd="${1:-}"
   case "${cmd}" in
@@ -395,6 +468,13 @@ main() {
       ;;
     run-device)
       cmd_run_device
+      ;;
+    ipa)
+      cmd_ipa
+      ;;
+    upload-ipa)
+      shift
+      cmd_upload_ipa "${1:-}"
       ;;
     xcode)
       IOS_PLATFORM=simulator
