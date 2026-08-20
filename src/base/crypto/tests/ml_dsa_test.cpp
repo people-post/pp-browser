@@ -36,5 +36,15 @@ TEST(MlDsaTest, KeygenSignVerifyAndAccountId) {
   EXPECT_EQ(account_id->find('='), std::string::npos);
 }
 
+// Shared with Brief www `app/src/relay/AccountIdGolden.ts` (M002).
+// Fixed 1952-byte input of 0x42; expected account: is frozen (not derived here).
+TEST(MlDsaTest, AccountIdGoldenVector) {
+  ByteVector pk(kMlDsa65PublicKeyBytes, 0x42);
+  auto account_id = AccountIdFromMlDsaPublicKey(pk);
+  ASSERT_TRUE(static_cast<bool>(account_id));
+  EXPECT_EQ(*account_id, "account:GfmolD8fsSJ4FcK1d_6wOhTbZaVr0_ELv9iiZG0_Idk");
+}
+
+
 } // namespace
 } // namespace pbr
