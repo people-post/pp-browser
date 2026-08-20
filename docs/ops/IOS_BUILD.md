@@ -184,6 +184,8 @@ Or manually: `./scripts/ios_sign.sh sign-app install-ios/PP.app` then
 
 Archive/export when ready for TestFlight.
 
+**Encryption / export compliance** (App Store Connect questionnaire, crypto inventory, Info.plist keys): see [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md).
+
 For IPA export, copy and edit the export template:
 
 ```bash
@@ -248,3 +250,4 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
 - [ ] `./scripts/ios_sign.sh sign-app install-ios/PP.app` verifies on device
+- [ ] Before TestFlight / App Store: encryption answers + docs per [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md)

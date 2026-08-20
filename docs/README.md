@@ -75,6 +75,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
 | [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize PP.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |
+| [ops/APP_STORE_EXPORT_COMPLIANCE.md](ops/APP_STORE_EXPORT_COMPLIANCE.md) | App Store Connect encryption questionnaire + crypto inventory |
 | [ops/CONFIGURATION.md](ops/CONFIGURATION.md) | Config resolution, Me tab, presets, env vars |
 
 ---
