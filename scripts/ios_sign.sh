@@ -85,9 +85,18 @@ KEYCHAIN_PATH=""
 KEYCHAIN_PASSWORD=""
 
 cleanup() {
-  [[ -n "$KEYCHAIN_PATH" && -f "$KEYCHAIN_PATH" ]] && security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-  [[ -n "$TEMP_P12" && -f "$TEMP_P12" ]] && rm -f "$TEMP_P12"
-  [[ -n "$TEMP_PROFILE" && -f "$TEMP_PROFILE" ]] && rm -f "$TEMP_PROFILE"
+  # Use if/fi (not `[[ … ]] && cmd`) so an empty path does not make the EXIT
+  # trap return non-zero under `set -e` and abort callers like ios_build.sh.
+  if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
+    security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${TEMP_P12:-}" && -f "$TEMP_P12" ]]; then
+    rm -f "$TEMP_P12"
+  fi
+  if [[ -n "${TEMP_PROFILE:-}" && -f "$TEMP_PROFILE" ]]; then
+    rm -f "$TEMP_PROFILE"
+  fi
+  return 0
 }
 trap cleanup EXIT
 

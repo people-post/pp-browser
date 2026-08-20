@@ -278,6 +278,17 @@ raise SystemExit(1)
 "
 }
 
+physical_device_connected() {
+  local want="$1"
+  xcrun xctrace list devices 2>/dev/null | grep -F "$want" >/dev/null
+}
+
+coredevice_sees_udid() {
+  local want="$1"
+  # CoreDevice lists UDID in Hostname (…coredevice.local) and/or Identifier column.
+  xcrun devicectl list devices 2>/dev/null | grep -F "$want" >/dev/null
+}
+
 cmd_run_device() {
   require_macos
   local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
@@ -301,7 +312,19 @@ cmd_run_device() {
   fi
 
   local udid="${IOS_DEVICE_UDID:-}"
-  if [[ -z "$udid" ]]; then
+  if [[ -n "$udid" ]] && ! physical_device_connected "$udid"; then
+    echo "warning: preferred IOS_DEVICE_UDID ${udid} is not connected" >&2
+    echo "hint: plug it in, or update packaging/ios/signing.env; connected:" >&2
+    xcrun xctrace list devices 2>/dev/null | grep -v Simulator | grep -E 'iPhone|iPad' >&2 || true
+    local fallback=""
+    if fallback="$(pick_physical_device_udid)"; then
+      echo "warning: falling back to connected device ${fallback}" >&2
+      udid="$fallback"
+    else
+      echo "error: no connected physical iPhone/iPad found" >&2
+      exit 1
+    fi
+  elif [[ -z "$udid" ]]; then
     if ! udid="$(pick_physical_device_udid)"; then
       echo "error: no connected physical iPhone/iPad found" >&2
       echo "hint: unlock the phone, trust this Mac, then: xcrun xctrace list devices" >&2
@@ -312,12 +335,17 @@ cmd_run_device() {
   local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
   echo "==> Installing on device ${udid}"
 
-  # Prefer ios-deploy for older devices (iOS ≤17); CoreDevice/devicectl often
-  # only sees newer phones. Fall back to devicectl when ios-deploy is absent.
-  if command -v ios-deploy >/dev/null 2>&1; then
-    ios-deploy --id "$udid" --bundle "$app" --justlaunch
-  elif xcrun devicectl device install app --device "$udid" "$app" 2>/dev/null; then
+  # Newer phones (iOS 17+) pair via CoreDevice — prefer devicectl there.
+  # ios-deploy is better for older USB devices that CoreDevice may not see.
+  if coredevice_sees_udid "$udid"; then
+    if ! xcrun devicectl device install app --device "$udid" "$app"; then
+      echo "error: devicectl install failed for ${udid}" >&2
+      echo "hint: if you saw 'developer disk image could not be mounted', this Mac's Xcode is older than the phone's iOS — update Xcode (and macOS if required), or plug in an older test phone and set IOS_DEVICE_UDID in packaging/ios/signing.env" >&2
+      exit 1
+    fi
     xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+  elif command -v ios-deploy >/dev/null 2>&1; then
+    ios-deploy --id "$udid" --bundle "$app" --justlaunch
   else
     echo "error: could not install — need ios-deploy (brew install ios-deploy) or a CoreDevice-paired phone" >&2
     exit 1
