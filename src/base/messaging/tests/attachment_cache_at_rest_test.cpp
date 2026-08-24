@@ -1,0 +1,113 @@
+#include "base/crypto/AttachmentContentHash.h"
+#include "base/crypto/CryptoConstants.h"
+#include "base/messaging/AttachmentCache.h"
+
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
+
+namespace pbr {
+namespace {
+
+class AttachmentCacheAtRestTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_att_at_rest_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
+            std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    profile_dir_ = dir_.string();
+  }
+
+  void TearDown() override { std::filesystem::remove_all(dir_); }
+
+  ByteVector MakeDek(uint8_t fill) const {
+    return ByteVector(kDataEncryptionKeySize, fill);
+  }
+
+  std::filesystem::path dir_;
+  std::string profile_dir_;
+  const std::string thread_id_ = "thread-a";
+  const std::string profile_id_ = "profile-a";
+  const ByteVector plain_{'h', 'e', 'l', 'l', 'o', '-', 'b', 'l', 'o', 'b'};
+};
+
+TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x42);
+
+  auto saved = SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", plain_, "note.txt", &dek,
+                                       profile_id_);
+  ASSERT_TRUE(saved) << saved.error().message;
+
+  std::ifstream in(*saved, std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(in));
+  char magic[4] = {};
+  in.read(magic, 4);
+  ASSERT_EQ(in.gcount(), 4);
+  EXPECT_EQ(std::string(magic, 4), "PPBA");
+
+  auto loaded = LoadAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", "note.txt", &dek, profile_id_);
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain_);
+}
+
+TEST_F(AttachmentCacheAtRestTest, WrongDekFailsDecrypt) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x11);
+  const auto wrong = MakeDek(0x22);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", plain_, "note.txt", &dek,
+                                      profile_id_));
+
+  auto loaded = LoadAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", "note.txt", &wrong, profile_id_);
+  EXPECT_FALSE(static_cast<bool>(loaded));
+}
+
+TEST_F(AttachmentCacheAtRestTest, EnsureAttachmentViewPathMaterializesBlobsView) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x33);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", plain_, "note.txt", &dek,
+                                      profile_id_));
+  // Wrapped blob is not a usable AttachmentLocalPath.
+  EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt").empty());
+
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt", &dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+  EXPECT_NE(view->find("blobs_view"), std::string::npos);
+  ASSERT_TRUE(std::filesystem::exists(*view));
+
+  std::ifstream in(*view, std::ios::binary);
+  const ByteVector roundtrip((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(roundtrip, plain_);
+
+  // After materialization, AttachmentLocalPath prefers blobs_view.
+  EXPECT_EQ(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt"), *view);
+}
+
+TEST_F(AttachmentCacheAtRestTest, LegacyPlaintextLoadsWithoutDek) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+
+  auto saved = SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", plain_, "note.txt");
+  ASSERT_TRUE(saved) << saved.error().message;
+
+  std::ifstream in(*saved, std::ios::binary);
+  char magic[4] = {};
+  in.read(magic, 4);
+  EXPECT_NE(std::string(magic, static_cast<size_t>(in.gcount())), "PPBA");
+
+  auto loaded = LoadAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", "note.txt", nullptr, {});
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain_);
+
+  EXPECT_FALSE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt").empty());
+}
+
+} // namespace
+} // namespace pbr

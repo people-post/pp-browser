@@ -102,7 +102,7 @@
 
 ## a5 — Hardening (post-MVP slice)
 
-- [ ] DEK-wrap local attachment cache (align at-rest policy)
+- [x] DEK-wrap local attachment cache (align at-rest policy)
 - [ ] Video poster frame extraction on receive
 - [x] Thread/local storage controls: delete local blobs by thread (UI for [R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
 - [ ] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts

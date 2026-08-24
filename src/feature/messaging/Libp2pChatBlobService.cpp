@@ -1,5 +1,6 @@
 #include "feature/messaging/Libp2pChatBlobService.h"
 
+#include "base/crypto/CryptoConstants.h"
 #include "base/messaging/ChatBlobResponder.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/p2p/Libp2pWorker.h"
@@ -10,6 +11,7 @@
 #include <libp2p/peer/protocol.hpp>
 
 #include <atomic>
+#include <sodium.h>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -97,8 +99,19 @@ struct Libp2pChatBlobService::Impl {
   IThreadStore& store;
   IdentityStore& identity;
   std::string profile_data_dir;
+  std::string profile_id;
+  ByteVector dek;
+  mutable std::mutex dek_mutex;
   Libp2pHost* host = nullptr;
   std::atomic<bool> stopped{false};
+
+  ByteVector CopyDek() const {
+    std::lock_guard lock(dek_mutex);
+    if (dek.size() != kDataEncryptionKeySize) {
+      return {};
+    }
+    return dek;
+  }
 
   void FailStream(const std::shared_ptr<DuplexFrameSession>& duplex, const std::shared_ptr<Stream>& stream) {
     host->Post([duplex, stream]() {
@@ -155,8 +168,10 @@ struct Libp2pChatBlobService::Impl {
                 fail();
                 return;
               }
+              const ByteVector dek_copy = CopyDek();
+              const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
               auto ciphertext = ChatBlobResponder::ServeFetch(store, request, local_identity->relay_user_id,
-                                                              profile_data_dir);
+                                                              profile_data_dir, dek_ptr, profile_id);
               host->Post([this, duplex, stream, ciphertext = std::move(ciphertext)]() mutable {
                 auto close = [duplex, stream]() {
                   duplex->Stop();
@@ -242,6 +257,30 @@ Libp2pChatBlobService::~Libp2pChatBlobService() {
 
 void Libp2pChatBlobService::SetProfileDataDir(std::string profile_data_dir) {
   impl_->profile_data_dir = std::move(profile_data_dir);
+}
+
+void Libp2pChatBlobService::SetProfileId(std::string profile_id) {
+  impl_->profile_id = std::move(profile_id);
+}
+
+Roe<void> Libp2pChatBlobService::SetDek(ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(impl_->dek_mutex);
+  if (!impl_->dek.empty()) {
+    sodium_memzero(impl_->dek.data(), impl_->dek.size());
+  }
+  impl_->dek = std::move(dek);
+  return {};
+}
+
+void Libp2pChatBlobService::ClearDek() {
+  std::lock_guard lock(impl_->dek_mutex);
+  if (!impl_->dek.empty()) {
+    sodium_memzero(impl_->dek.data(), impl_->dek.size());
+    impl_->dek.clear();
+  }
 }
 
 void Libp2pChatBlobService::Start() {

@@ -1438,10 +1438,13 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
   const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
+  const ByteVector attachment_dek = Attachments().CopyDek();
+  const ByteVector* attachment_dek_ptr = attachment_dek.empty() ? nullptr : &attachment_dek;
+
   if (active.kind == ThreadKind::Group) {
     auto sent = P2p().SendGroupMessage(thread_id, display, opts);
     if (sent) {
-      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path);
+      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
       if (attachment_downloads_) {
         attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
       }
@@ -1450,7 +1453,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   }
   auto sent = P2p().SendUserMessage(thread_id, display, opts);
   if (sent) {
-    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path);
+    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
     }
@@ -1462,6 +1465,7 @@ AttachmentDownloadService& MessagingHub::Attachments() {
   if (!attachment_downloads_) {
     attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
     attachment_downloads_->SetProfileDataDir(data_dir_);
+    attachment_downloads_->SetProfileId(profile_id_);
   }
   return *attachment_downloads_;
 }
@@ -1476,6 +1480,7 @@ void MessagingHub::WireAttachmentDownloads() {
     attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
+  attachment_downloads_->SetProfileId(profile_id_);
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
                                                   p2p_ ? p2p_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
@@ -1493,6 +1498,21 @@ void MessagingHub::WireAttachmentDownloads() {
   }
   if (p2p_) {
     p2p_->SetAttachmentDownloads(attachment_downloads_.get());
+    if (auto* peer_blob = p2p_->PeerBlobService()) {
+      peer_blob->SetProfileId(profile_id_);
+      if (secrets_ != nullptr) {
+        secrets_->RegisterDekConsumer(peer_blob);
+        if (secrets_->IsUnlocked()) {
+          (void)secrets_->RedistributeUnlockedDek();
+        }
+      }
+    }
+  }
+  if (secrets_ != nullptr) {
+    secrets_->RegisterDekConsumer(attachment_downloads_.get());
+    if (secrets_->IsUnlocked()) {
+      (void)secrets_->RedistributeUnlockedDek();
+    }
   }
 }
 
@@ -1854,6 +1874,16 @@ void MessagingHub::Shutdown() {
   StopLibp2p();
   // Drop the call session manager before P2P — CSM holds a P2pMessagingService& reference.
   call_stack_->ResetSessions();
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (p2p_) {
+      if (auto* peer_blob = p2p_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+  }
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   p2p_.reset();
   group_membership_.reset();
@@ -1867,6 +1897,9 @@ void MessagingHub::Shutdown() {
     }
     if (psk_store_) {
       secrets_->UnregisterDekConsumer(psk_store_.get());
+    }
+    if (store_) {
+      secrets_->UnregisterDekConsumer(static_cast<SqliteThreadStore*>(store_.get()));
     }
     if (call_stack_->MediaKeys()) {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());

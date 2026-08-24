@@ -2,15 +2,19 @@
 
 #include "base/crypto/AttachmentContentHash.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/FileCipher.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 
 namespace pbr {
 
 namespace {
+
+constexpr char kAttachmentBlobMagic[4] = {'P', 'P', 'B', 'A'};
 
 std::string ThreadsRoot(const std::string& profile_dir) {
   return (std::filesystem::path(profile_dir) / "threads").string();
@@ -50,14 +54,110 @@ uint64_t DirectoryTreeByteSize(const std::filesystem::path& root) {
   return total;
 }
 
+Roe<ByteVector> ReadFileBytes(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return Error("Failed to read attachment cache file");
+  }
+  return ByteVector((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+}
+
+bool FileStartsWithMagic(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return false;
+  }
+  char magic[4] = {};
+  input.read(magic, 4);
+  if (input.gcount() != 4) {
+    return false;
+  }
+  return std::memcmp(magic, kAttachmentBlobMagic, 4) == 0;
+}
+
+std::filesystem::path FindBlobFile(const std::filesystem::path& root, const std::vector<uint8_t>& content_hash,
+                                   const std::string& mime, const std::string& filename) {
+  if (!std::filesystem::exists(root)) {
+    return {};
+  }
+  const std::string hash_name = AttachmentHashHex(content_hash);
+  const std::string ext = AttachmentExtensionFromMime(mime, filename);
+
+  const auto with_ext = root / AttachmentFilename(content_hash, mime, filename);
+  if (std::filesystem::exists(with_ext) && std::filesystem::is_regular_file(with_ext)) {
+    return with_ext;
+  }
+  const auto bare = root / hash_name;
+  if (std::filesystem::exists(bare) && std::filesystem::is_regular_file(bare)) {
+    return bare;
+  }
+  if (!ext.empty()) {
+    const auto alt = root / (hash_name + "." + ext);
+    if (std::filesystem::exists(alt) && std::filesystem::is_regular_file(alt)) {
+      return alt;
+    }
+  }
+
+  // Any file whose stem starts with hash (extension may differ from mime).
+  std::error_code ec;
+  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+    if (ec || !entry.is_regular_file(ec)) {
+      ec.clear();
+      continue;
+    }
+    const std::string name = entry.path().filename().string();
+    if (name == hash_name || name.rfind(hash_name + ".", 0) == 0) {
+      return entry.path();
+    }
+  }
+  return {};
+}
+
+Roe<void> WriteBytesAtomic(const std::filesystem::path& path, const ByteVector& bytes) {
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  if (ec) {
+    return Error("Failed to create attachment cache directory");
+  }
+  const auto tmp = path.string() + ".tmp";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      return Error("Failed to write attachment cache file");
+    }
+    if (!bytes.empty()) {
+      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    if (!out) {
+      return Error("Failed to write attachment cache file");
+    }
+  }
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp);
+    return Error("Failed to finalize attachment cache file");
+  }
+  return {};
+}
+
 } // namespace
 
 std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id) {
   return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blobs").string();
 }
 
+std::string AttachmentViewRoot(const std::string& profile_dir, const std::string& thread_id) {
+  return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blobs_view").string();
+}
+
 std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash) {
   return BytesToHex(ByteVector(content_hash.begin(), content_hash.end()));
+}
+
+std::string BuildAttachmentBlobAad(std::string_view profile_id, std::string_view thread_id,
+                                   std::string_view hash_hex) {
+  return std::string("attachment-blob|") + std::string(profile_id) + "|" + std::string(thread_id) + "|" +
+         std::string(hash_hex) + "|1";
 }
 
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
@@ -116,36 +216,44 @@ std::string FormatAttachmentByteSize(const uint64_t byte_length) {
   return std::to_string(byte_length / (1024 * 1024)) + " MiB";
 }
 
+bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thread_id,
+                          const std::vector<uint8_t>& content_hash) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return false;
+  }
+  const auto path = FindBlobFile(std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id)), content_hash, "",
+                                 {});
+  return !path.empty();
+}
+
 std::string AttachmentLocalPath(const std::string& profile_dir, const std::string& thread_id,
                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
                                 const std::string& filename) {
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return {};
   }
-  const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
-  const std::string hash_name = AttachmentHashHex(content_hash);
-  const std::string ext = AttachmentExtensionFromMime(mime, filename);
 
-  const auto with_ext = root / AttachmentFilename(content_hash, mime, filename);
-  if (std::filesystem::exists(with_ext)) {
-    return with_ext.string();
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  if (const auto view = FindBlobFile(view_root, content_hash, mime, filename); !view.empty()) {
+    return view.string();
   }
-  const auto bare = root / hash_name;
-  if (std::filesystem::exists(bare)) {
-    return bare.string();
+
+  const auto blob_root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
+  const auto blob = FindBlobFile(blob_root, content_hash, mime, filename);
+  if (blob.empty()) {
+    return {};
   }
-  if (!ext.empty()) {
-    const auto alt = root / (hash_name + "." + ext);
-    if (std::filesystem::exists(alt)) {
-      return alt.string();
-    }
+  // Never hand ciphertext / PPBA-wrapped files to UI or OS open.
+  if (FileStartsWithMagic(blob)) {
+    return {};
   }
-  return {};
+  return blob.string();
 }
 
 Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                         const ByteVector& plaintext, const std::string& filename) {
+                                         const ByteVector& plaintext, const std::string& filename,
+                                         const ByteVector* dek, std::string_view profile_id) {
   if (profile_dir.empty() || thread_id.empty()) {
     return Error("Attachment cache profile directory is required");
   }
@@ -171,19 +279,110 @@ Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const s
   }
 
   const auto path = root / AttachmentFilename(content_hash, mime, filename);
-  std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  if (!out) {
-    return Error("Failed to write attachment cache file");
-  }
-  out.write(reinterpret_cast<const char*>(plaintext.data()), static_cast<std::streamsize>(plaintext.size()));
-  if (!out) {
-    return Error("Failed to write attachment cache file");
+  if (dek != nullptr) {
+    if (profile_id.empty()) {
+      return Error("Attachment DEK-wrap requires profile_id");
+    }
+    const std::string aad = BuildAttachmentBlobAad(profile_id, thread_id, AttachmentHashHex(content_hash));
+    auto cipher = FileCipher::Encrypt(*dek, plaintext, aad);
+    if (!cipher) {
+      return cipher.error();
+    }
+    ByteVector on_disk;
+    on_disk.reserve(4 + cipher->size());
+    on_disk.insert(on_disk.end(), kAttachmentBlobMagic, kAttachmentBlobMagic + 4);
+    on_disk.insert(on_disk.end(), cipher->begin(), cipher->end());
+    if (auto written = WriteBytesAtomic(path, on_disk); !written) {
+      return written.error();
+    }
+  } else {
+    if (auto written = WriteBytesAtomic(path, plaintext); !written) {
+      return written.error();
+    }
   }
   return path.string();
 }
 
+Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
+                                        const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                        const std::string& filename, const ByteVector* dek,
+                                        std::string_view profile_id) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment load lookup");
+  }
+  const auto path =
+      FindBlobFile(std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id)), content_hash, mime, filename);
+  if (path.empty()) {
+    return Error("Attachment blob not cached locally");
+  }
+  auto raw = ReadFileBytes(path);
+  if (!raw) {
+    return raw.error();
+  }
+  if (raw->size() >= 4 && std::memcmp(raw->data(), kAttachmentBlobMagic, 4) == 0) {
+    if (dek == nullptr) {
+      return Error("Attachment blob is DEK-wrapped; unlock required");
+    }
+    if (profile_id.empty()) {
+      return Error("Attachment DEK unwrap requires profile_id");
+    }
+    const ByteVector blob(raw->begin() + 4, raw->end());
+    const std::string aad = BuildAttachmentBlobAad(profile_id, thread_id, AttachmentHashHex(content_hash));
+    auto plain = FileCipher::Decrypt(*dek, blob, aad);
+    if (!plain) {
+      return plain.error();
+    }
+    auto hash = AttachmentContentHash(*plain);
+    if (!hash) {
+      return hash.error();
+    }
+    if (*hash != content_hash) {
+      return Error("Attachment plaintext hash mismatch after decrypt");
+    }
+    return plain;
+  }
+  return raw;
+}
+
+Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                          const std::string& filename, const ByteVector* dek,
+                                          std::string_view profile_id) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment view lookup");
+  }
+
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  if (const auto existing_view = FindBlobFile(view_root, content_hash, mime, filename); !existing_view.empty()) {
+    return existing_view.string();
+  }
+
+  const auto blob_root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
+  const auto blob_path = FindBlobFile(blob_root, content_hash, mime, filename);
+  if (blob_path.empty()) {
+    return Error("Attachment blob not cached locally");
+  }
+
+  if (!FileStartsWithMagic(blob_path)) {
+    // Legacy plaintext under blobs/ is already usable.
+    return blob_path.string();
+  }
+
+  auto plain = LoadAttachmentPlaintext(profile_dir, thread_id, content_hash, mime, filename, dek, profile_id);
+  if (!plain) {
+    return plain.error();
+  }
+
+  const auto view_path = view_root / AttachmentFilename(content_hash, mime, filename);
+  if (auto written = WriteBytesAtomic(view_path, *plain); !written) {
+    return written.error();
+  }
+  return view_path.string();
+}
+
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
-                                      const ChatAttachmentFields& fields, const std::string& source_path) {
+                                      const ChatAttachmentFields& fields, const std::string& source_path,
+                                      const ByteVector* dek, std::string_view profile_id) {
   std::ifstream input(source_path, std::ios::binary);
   if (!input) {
     return Error("Could not read sent attachment file");
@@ -193,9 +392,14 @@ Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std:
     return Error("Sent attachment file is empty");
   }
   if (auto saved = SaveAttachmentPlaintext(profile_dir, thread_id, fields.content_hash, fields.mime, plaintext,
-                                           fields.filename);
+                                           fields.filename, dek, profile_id);
       !saved) {
     return saved.error();
+  }
+  // Materialize view for immediate display when wrapped.
+  if (dek != nullptr) {
+    (void)EnsureAttachmentViewPath(profile_dir, thread_id, fields.content_hash, fields.mime, fields.filename, dek,
+                                   profile_id);
   }
   return Roe<void>{};
 }
@@ -212,11 +416,46 @@ Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::s
       return Error("Failed to wipe thread attachment blobs");
     }
   }
+  const auto view = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  if (std::filesystem::exists(view, ec)) {
+    std::filesystem::remove_all(view, ec);
+    if (ec) {
+      return Error("Failed to wipe thread attachment view cache");
+    }
+  }
   const auto pending = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id));
   if (std::filesystem::exists(pending, ec)) {
     std::filesystem::remove_all(pending, ec);
     if (ec) {
       return Error("Failed to wipe pending attachment ciphertext");
+    }
+  }
+  return Roe<void>{};
+}
+
+Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir) {
+  if (profile_dir.empty()) {
+    return Error("Attachment cache profile directory is required");
+  }
+  const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
+  std::error_code ec;
+  if (!std::filesystem::exists(threads_root, ec)) {
+    return Roe<void>{};
+  }
+  for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
+    if (ec) {
+      return Error("Failed to enumerate thread attachment view caches");
+    }
+    if (!entry.is_directory(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    const auto view = entry.path() / "blobs_view";
+    if (std::filesystem::exists(view, ec)) {
+      std::filesystem::remove_all(view, ec);
+      if (ec) {
+        return Error("Failed to wipe attachment view cache");
+      }
     }
   }
   return Roe<void>{};
@@ -252,7 +491,6 @@ Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const 
   }
   return Roe<void>{};
 }
-
 
 bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash) {
@@ -313,6 +551,7 @@ uint64_t AttachmentCacheByteSize(const std::string& profile_dir) {
       continue;
     }
     total += DirectoryTreeByteSize(entry.path() / "blobs");
+    total += DirectoryTreeByteSize(entry.path() / "blobs_view");
     total += DirectoryTreeByteSize(entry.path() / "blob_cipher");
   }
   return total;

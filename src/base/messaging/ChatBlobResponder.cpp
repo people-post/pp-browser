@@ -7,20 +7,9 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/net/AttachmentClientUtil.h"
 
-#include <fstream>
-#include <iterator>
-
 namespace pbr {
 
 namespace {
-
-Roe<ByteVector> ReadPlaintextFile(const std::string& path) {
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    return Error("Could not read attachment file");
-  }
-  return ByteVector((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-}
 
 Roe<DirectChatTarget> AuthorizeRequest(IThreadStore& store, const ChatBlobRequest& request,
                                        const std::string& local_relay_user_id) {
@@ -73,25 +62,12 @@ Roe<ChatAttachmentFields> FindAttachmentFields(IThreadStore& store, const std::s
   return Error("Attachment not found in thread history");
 }
 
-Roe<std::vector<uint8_t>> ReadPlaintextBytes(const std::string& profile_data_dir, const std::string& thread_id,
-                                             const ChatAttachmentFields& fields) {
-  const std::string path =
-      AttachmentLocalPath(profile_data_dir, thread_id, fields.content_hash, fields.mime, fields.filename);
-  if (path.empty()) {
-    return Error("Attachment blob not cached locally");
-  }
-  auto bytes = ReadPlaintextFile(path);
-  if (!bytes) {
-    return bytes.error();
-  }
-  return std::vector<uint8_t>(bytes->begin(), bytes->end());
-}
-
 } // namespace
 
 Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, const ChatBlobRequest& request,
                                                         const std::string& local_relay_user_id,
-                                                        const std::string& profile_data_dir) {
+                                                        const std::string& profile_data_dir, const ByteVector* dek,
+                                                        std::string_view profile_id) {
   if (request.op != ChatBlobOp::Fetch) {
     return Error("Expected fetch chat-blob request");
   }
@@ -115,13 +91,13 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     return std::vector<uint8_t>(pending->begin(), pending->end());
   }
 
-  auto plaintext = ReadPlaintextBytes(profile_data_dir, request.thread_id, *fields);
+  auto plaintext = LoadAttachmentPlaintext(profile_data_dir, request.thread_id, fields->content_hash, fields->mime,
+                                           fields->filename, dek, profile_id);
   if (!plaintext) {
     return plaintext.error();
   }
 
-  const ByteVector plain_bytes(plaintext->begin(), plaintext->end());
-  auto encrypted = AttachmentContentCipher::EncryptWithNonce(fields->content_key, plain_bytes, fields->blob_nonce);
+  auto encrypted = AttachmentContentCipher::EncryptWithNonce(fields->content_key, *plaintext, fields->blob_nonce);
   if (!encrypted) {
     return encrypted.error();
   }

@@ -211,6 +211,10 @@ IChatBlobPeerClient* P2pMessagingService::PeerBlobClient() const {
   return peer_blob_.get();
 }
 
+Libp2pChatBlobService* P2pMessagingService::PeerBlobService() const {
+  return peer_blob_.get();
+}
+
 void P2pMessagingService::LoadPersistedRelayCursor(const std::string& relay_user_id) {
   if (profile_data_dir_.empty()) {
     return;

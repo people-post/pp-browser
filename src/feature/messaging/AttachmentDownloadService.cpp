@@ -1,15 +1,22 @@
 #include "feature/messaging/AttachmentDownloadService.h"
 
 #include "base/crypto/AttachmentContentHash.h"
+#include "base/crypto/CryptoConstants.h"
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/net/AttachmentFetchUtil.h"
 #include "base/runtime/AppRuntime.h"
 
+#include <sodium.h>
+
 namespace pbr {
 
 void AttachmentDownloadService::SetProfileDataDir(std::string profile_dir) {
   profile_dir_ = std::move(profile_dir);
+}
+
+void AttachmentDownloadService::SetProfileId(std::string profile_id) {
+  profile_id_ = std::move(profile_id);
 }
 
 void AttachmentDownloadService::SetFetchDependencies(IThreadStore* store, ContactsStore* contacts,
@@ -34,6 +41,48 @@ void AttachmentDownloadService::SetBacklogDrainActive(const bool active) {
 
 void AttachmentDownloadService::SetOnChanged(ChangedCallback callback) {
   on_changed_ = std::move(callback);
+}
+
+Roe<void> AttachmentDownloadService::SetDek(ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+  }
+  dek_ = std::move(dek);
+  return {};
+}
+
+void AttachmentDownloadService::ClearDek() {
+  {
+    std::lock_guard lock(mutex_);
+    if (!dek_.empty()) {
+      sodium_memzero(dek_.data(), dek_.size());
+      dek_.clear();
+    }
+  }
+  if (!profile_dir_.empty()) {
+    (void)WipeAllAttachmentViewCaches(profile_dir_);
+  }
+}
+
+bool AttachmentDownloadService::HasDek() const {
+  std::lock_guard lock(mutex_);
+  return dek_.size() == kDataEncryptionKeySize;
+}
+
+ByteVector AttachmentDownloadService::CopyDekUnlocked() const {
+  if (dek_.size() != kDataEncryptionKeySize) {
+    return {};
+  }
+  return dek_;
+}
+
+ByteVector AttachmentDownloadService::CopyDek() const {
+  std::lock_guard lock(mutex_);
+  return CopyDekUnlocked();
 }
 
 std::string AttachmentDownloadService::JobKey(const Job& job) const {
@@ -76,9 +125,7 @@ void AttachmentDownloadService::EnqueueJob(Job job, const bool force) {
   if (!CanFetchAttachment(job.fields, fetch_context)) {
     return;
   }
-  if (!AttachmentLocalPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                           job.fields.filename)
-           .empty()) {
+  if (AttachmentBlobExists(profile_dir_, job.thread_id, job.fields.content_hash)) {
     return;
   }
 
@@ -147,11 +194,17 @@ void AttachmentDownloadService::RunJob(const Job& job) {
     return;
   }
   const ByteVector bytes(plaintext->begin(), plaintext->end());
+  const ByteVector dek_copy = CopyDek();
+  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
   if (auto saved = SaveAttachmentPlaintext(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                           bytes, job.fields.filename);
+                                           bytes, job.fields.filename, dek_ptr, profile_id_);
       !saved) {
     MarkFailed(key);
     return;
+  }
+  if (dek_ptr != nullptr) {
+    (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                   job.fields.filename, dek_ptr, profile_id_);
   }
   MarkReady(key);
 }
@@ -213,7 +266,7 @@ AttachmentDownloadService::DownloadState AttachmentDownloadService::StateFor(
   if (profile_dir_.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return DownloadState::Failed;
   }
-  if (!AttachmentLocalPath(profile_dir_, thread_id, content_hash, "", {}).empty()) {
+  if (AttachmentBlobExists(profile_dir_, thread_id, content_hash)) {
     return DownloadState::Ready;
   }
   const std::string key = JobKey(thread_id, content_hash);
@@ -239,6 +292,15 @@ AttachmentDownloadService::DownloadState AttachmentDownloadService::StateFor(
     return DownloadState::Pending;
   }
   return DownloadState::Downloading;
+}
+
+Roe<std::string> AttachmentDownloadService::EnsureLocalViewPath(const std::string& thread_id,
+                                                                const std::vector<uint8_t>& content_hash,
+                                                                const std::string& mime,
+                                                                const std::string& filename) {
+  const ByteVector dek_copy = CopyDek();
+  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
+  return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_ptr, profile_id_);
 }
 
 void AttachmentDownloadService::RetryDownload(const std::string& thread_id, const std::string& message_id,

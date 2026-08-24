@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/crypto/CryptoTypes.h"
+#include "base/crypto/IDekConsumer.h"
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "base/messaging/AttachmentSuppressionStore.h"
 #include "base/messaging/ChatPayloadTypes.h"
@@ -7,6 +9,8 @@
 #include "base/net/ServiceClients.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
+
+#include "common/Error.h"
 
 #include <functional>
 #include <mutex>
@@ -17,19 +21,26 @@
 namespace pbr {
 
 /** Background CDN fetch + decrypt for chat attachments (R008 / R021). */
-class AttachmentDownloadService {
+class AttachmentDownloadService : public IDekConsumer {
 public:
   enum class DownloadState { Ready, Pending, Downloading, Failed };
 
   using ChangedCallback = std::function<void()>;
 
   void SetProfileDataDir(std::string profile_dir);
+  void SetProfileId(std::string profile_id);
   void SetFetchDependencies(IThreadStore* store, ContactsStore* contacts, IdentityStore* identity,
                               IChatBlobPeerClient* peer_client);
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   void SetBacklogDrainActive(bool active);
   void SetOnChanged(ChangedCallback callback);
+
+  Roe<void> SetDek(ByteVector dek) override;
+  void ClearDek() override;
+  bool HasDek() const;
+  /** Copy of in-memory DEK under lock; empty when locked / unset. */
+  ByteVector CopyDek() const;
 
   void EnqueueFromMessage(const std::string& thread_id, const ThreadMessage& message, bool force = false);
   void RequestDownload(const std::string& thread_id, const std::string& message_id, IThreadStore& store);
@@ -44,6 +55,10 @@ public:
 
   /** Me → Storage: tombstone + wipe all thread attachment caches; messages stay (R020). */
   Roe<void> ClearAllDownloadedMedia(IThreadStore& store);
+
+  /** Materialize plaintext view path for RmlUi / OS open while unlocked. */
+  Roe<std::string> EnsureLocalViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                       const std::string& mime, const std::string& filename);
 
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
@@ -65,8 +80,11 @@ private:
   void MarkReady(const std::string& key);
   void MarkPending(const std::string& key);
   void NotifyChanged();
+  ByteVector CopyDekUnlocked() const;
 
   std::string profile_dir_;
+  std::string profile_id_;
+  ByteVector dek_;
   IThreadStore* store_ = nullptr;
   ContactsStore* contacts_ = nullptr;
   IdentityStore* identity_ = nullptr;

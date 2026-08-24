@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**a1–a4** done; **a6** done — Smart policy, suppression, peer blob protocol, fetch ladder, outbound peer upload)
+**As of:** 2026-08-24 (**a1–a4** done; **a6** done; **a5** DEK-wrap landed — video poster still open)
 
 ---
 
@@ -13,7 +13,7 @@
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
 | **pp-browser a1–a4** | **Done** — wire/codec, composer send, CDN receive/display, quota UX |
 | **pp-browser a6** | **Done** — Smart download, suppression, libp2p chat-blob, fetch ladder, outbound peer upload |
-| **pp-browser a5** | **Partial** — clear downloaded attachments UX; DEK-wrap + video poster still open |
+| **pp-browser a5** | **Partial** — clear downloaded attachments UX + DEK-wrap landed; video poster still open |
 
 ---
 
@@ -46,10 +46,13 @@
 
 ---
 
+## a5 DEK-wrap (landed)
+
+Local attachment cache under `blobs/` is FileCipher-wrapped with magic `PPBA` when the profile DEK is present. Plaintext for UI/OS open is materialized under `blobs_view/` while unlocked and wiped on vault lock. See [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).
+
 ## Next
 
 | Area | Phase |
 |------|-------|
-| DEK-wrap local attachment cache | a5 |
 | Video poster on receive | a5 |
 | LIBP2P_STREAMS / WIRE_SCHEMAS polish | done (chat-blob in LIBP2P_STREAMS) |

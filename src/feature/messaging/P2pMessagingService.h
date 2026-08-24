@@ -99,6 +99,7 @@ public:
   void SetAttachmentDownloads(AttachmentDownloadService* downloads);
   /** R019 peer-direct attachment blobs (null when libp2p unavailable). */
   IChatBlobPeerClient* PeerBlobClient() const;
+  Libp2pChatBlobService* PeerBlobService() const;
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);

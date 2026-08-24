@@ -751,11 +751,18 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
     return out;
   };
 
-  const std::string local_path =
-      fields && !profile_data_dir_.empty()
-          ? AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
-                                fields->filename)
-          : std::string{};
+  std::string local_path;
+  if (fields) {
+    if (attachment_downloads_) {
+      if (auto view = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
+                                                                fields->filename)) {
+        local_path = *view;
+      }
+    } else if (!profile_data_dir_.empty()) {
+      local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
+                                       fields->filename);
+    }
+  }
   AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Pending;
   if (fields && attachment_downloads_) {
     state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);

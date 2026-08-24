@@ -441,6 +441,12 @@ std::optional<std::string> MessagingFacade::AttachmentLocalPathForMessage(const 
     if (!fields) {
       return std::nullopt;
     }
+    if (auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, fields->content_hash, fields->mime,
+                                                            fields->filename)) {
+      if (!view->empty()) {
+        return *view;
+      }
+    }
     const std::string path =
         AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
     if (path.empty()) {
