@@ -175,4 +175,20 @@ Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std:
   return Roe<void>{};
 }
 
+Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id) {
+  if (profile_dir.empty() || thread_id.empty()) {
+    return Error("Attachment cache profile directory and thread_id are required");
+  }
+  const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
+  std::error_code ec;
+  if (!std::filesystem::exists(root, ec)) {
+    return Roe<void>{};
+  }
+  std::filesystem::remove_all(root, ec);
+  if (ec) {
+    return Error("Failed to wipe thread attachment blobs");
+  }
+  return Roe<void>{};
+}
+
 } // namespace pbr

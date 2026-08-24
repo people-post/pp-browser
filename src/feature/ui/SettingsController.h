@@ -141,6 +141,8 @@ private:
     Rml::String data_dir;
     Rml::String profile_dir;
     Rml::String profile_size_label;
+    Rml::String attachment_download_policy = "smart";
+    Rml::String attachment_download_policy_label;
     Rml::String pin_protection_status;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
@@ -163,6 +165,10 @@ private:
   static void OnChooseThemeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                       const Rml::VariantList& args);
+  static void DrainPendingAttachmentMediaCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                  const Rml::VariantList& args);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -243,6 +249,9 @@ private:
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(Rml::Event& ev);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
+  void OnChooseAttachmentDownloadPolicy(Rml::Event& ev);
+  void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
+  void OnDrainPendingAttachmentMedia();
 
   ShellChromeSnapshot ChromeSnapshot() const;
 

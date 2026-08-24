@@ -79,6 +79,9 @@ struct SettingsUiState {
   std::string data_dir;
   std::string profile_dir;
   std::string profile_size_label;
+  /** R021 — smart | always_auto | on_demand */
+  std::string attachment_download_policy = "smart";
+  std::string attachment_download_policy_label;
   std::string pin_protection_status;
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */

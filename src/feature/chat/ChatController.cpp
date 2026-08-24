@@ -647,6 +647,14 @@ void ChatController::RetryAttachmentCallback(Rml::DataModelHandle /*model*/, Rml
   Instance().RetryAttachmentDownload(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
+void ChatController::DownloadAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().DownloadAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
@@ -1364,6 +1372,13 @@ void ChatController::RetryAttachmentDownload(const std::string& message_id) {
     return;
   }
   facade_->RetryAttachmentDownload(ActiveThreadId(), message_id);
+}
+
+void ChatController::DownloadAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  facade_->RequestAttachmentDownload(ActiveThreadId(), message_id);
 }
 
 void ChatController::UpdatePeerLinkChrome() {
@@ -2718,6 +2733,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
+        ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);

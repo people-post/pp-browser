@@ -68,7 +68,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s3 landed**; s4 polish next — [DESIGN](projects/network-status-chrome/DESIGN.md) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
-| Profile icons / chat attachments | [projects/relay-blob-upload/](projects/relay-blob-upload/) — **a1–a4 done**; next **a6** peer-first + Smart download (R019–R021 doc-only until a6) |
+| Profile icons / chat attachments | [projects/relay-blob-upload/](projects/relay-blob-upload/) — **a1–a4 done**; **a6 partial** (Smart policy + suppression); peer blob protocol next |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |

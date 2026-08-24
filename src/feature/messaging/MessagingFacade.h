@@ -172,6 +172,8 @@ public:
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
   Roe<void> FreeOldestRelayBlobSlot();
+  void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  void DrainPendingAttachmentMedia();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);

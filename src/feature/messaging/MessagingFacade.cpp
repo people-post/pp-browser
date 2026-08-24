@@ -407,6 +407,12 @@ Roe<BlobQuotaRecoveryPlan> MessagingFacade::PlanRelayQuotaRecovery() { return hu
 
 Roe<void> MessagingFacade::FreeOldestRelayBlobSlot() { return hub_.FreeOldestRelayBlobSlot(); }
 
+void MessagingFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
+
+void MessagingFacade::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  hub_.RequestAttachmentDownload(thread_id, message_id);
+}
+
 Roe<ThreadMessage> MessagingFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
   return hub_.SendAttachmentFromPath(thread_id, path);
 }

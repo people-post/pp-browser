@@ -21,7 +21,8 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallStack.h"
-#include "feature/messaging/AttachmentDownloadService.h"
+#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "base/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/BlobClient.h"
@@ -92,12 +93,14 @@ public:
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
 
-  /** Inbound group-invite policy projected from ProfilePreferences. */
+  /** Inbound group-invite + attachment download policy projected from ProfilePreferences. */
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
+    AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy;
+      return group_invite_policy == other.group_invite_policy &&
+             attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
   };
@@ -184,6 +187,8 @@ public:
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
   Roe<void> FreeOldestRelayBlobSlot();
+  void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  void DrainPendingAttachmentMedia();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   AttachmentDownloadService& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
@@ -301,6 +306,7 @@ private:
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
+  std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;

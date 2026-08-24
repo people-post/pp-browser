@@ -1,6 +1,18 @@
       <div class="settings-section stack">
         <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
         <p class="text" data-rml="profile_size_label"></p>
+        <div class="settings-choice-row">
+          <button class="settings-choice-row-button" type="button"
+                  data-event-click="on_choose_attachment_download_policy()">
+            <span class="settings-choice-label">{{i18n:settings.storage.attachment_policy.label}}</span>
+            <span class="settings-choice-value-text" data-rml="attachment_download_policy_label"></span>
+          </button>
+        </div>
+        <p class="text muted">{{i18n:settings.storage.attachment_policy.help}}</p>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="drain_pending_attachment_media()">{{i18n:settings.storage.pending_media}}</button>
+        </div>
         <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
         <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
         <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
@@ -14,4 +26,3 @@
           </div>
         </div>
       </div>
-

@@ -11,6 +11,7 @@
 #include "base/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
+#include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ProfileSettingsSection.h"
@@ -264,6 +265,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
+  ui_state_.attachment_download_policy = bindings_.attachment_download_policy.c_str();
+  ui_state_.attachment_download_policy_label = bindings_.attachment_download_policy_label.c_str();
   ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
   ui_state_.tool_permissions_has_saved = bindings_.tool_permissions_has_saved;
 
@@ -332,6 +335,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
+  bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
+  bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
@@ -482,6 +487,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
+    ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
+    ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
@@ -503,6 +510,9 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
+    ctor.BindEventCallback("on_choose_attachment_download_policy",
+                           &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
+    ctor.BindEventCallback("drain_pending_attachment_media", &SettingsController::DrainPendingAttachmentMediaCallback);
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
@@ -601,6 +611,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
   host.Dirty("settings", "profile_size_label");
+  host.Dirty("settings", "attachment_download_policy");
+  host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
@@ -1348,6 +1360,62 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   MarkSectionDirty("security");
   FlushPending();
   DirtyAll();
+}
+
+void SettingsController::OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                                  const Rml::VariantList& /*args*/) {
+  Instance().OnChooseAttachmentDownloadPolicy(ev);
+}
+
+void SettingsController::OnChooseAttachmentDownloadPolicy(Rml::Event& ev) {
+  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+  const std::string current = bindings_.attachment_download_policy.empty()
+                                  ? "smart"
+                                  : std::string(bindings_.attachment_download_policy.c_str());
+
+  static const char* kPolicyIds[] = {"smart", "always_auto", "on_demand"};
+  std::vector<ContextMenuAction> actions;
+  actions.reserve(3);
+  for (const char* id : kPolicyIds) {
+    const std::string policy_id = id;
+    actions.push_back({.id = policy_id,
+                       .label = AttachmentDownloadPolicyDisplayLabel(policy_id),
+                       .enabled = {},
+                       .run =
+                           [this, policy_id]() {
+                             ApplyAttachmentDownloadPolicyChoice(policy_id);
+                           },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == policy_id});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& policy) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.attachment_download_policy = policy.c_str();
+  bindings_.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("storage");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::DrainPendingAttachmentMediaCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                             const Rml::VariantList& /*args*/) {
+  Instance().OnDrainPendingAttachmentMedia();
+}
+
+void SettingsController::OnDrainPendingAttachmentMedia() {
+  if (!commands_.drain_pending_attachment_media) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment downloads are not available"));
+    return;
+  }
+  commands_.drain_pending_attachment_media();
+  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "base/messaging/AttachmentSuppressionStore.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/IThreadStore.h"
 
@@ -11,23 +13,32 @@
 
 namespace pbr {
 
-/** Background CDN fetch + decrypt for chat attachments (R008). */
+/** Background CDN fetch + decrypt for chat attachments (R008 / R021). */
 class AttachmentDownloadService {
 public:
-  enum class DownloadState { Ready, Downloading, Failed };
+  enum class DownloadState { Ready, Pending, Downloading, Failed };
 
   using ChangedCallback = std::function<void()>;
 
   void SetProfileDataDir(std::string profile_dir);
+  void SetSuppressionStore(AttachmentSuppressionStore* suppression);
+  void SetDownloadPolicy(AttachmentDownloadPolicy policy);
+  void SetBacklogDrainActive(bool active);
   void SetOnChanged(ChangedCallback callback);
 
-  void EnqueueFromMessage(const std::string& thread_id, const ThreadMessage& message);
+  void EnqueueFromMessage(const std::string& thread_id, const ThreadMessage& message, bool force = false);
+  void RequestDownload(const std::string& thread_id, const std::string& message_id, IThreadStore& store);
   void RetryDownload(const std::string& thread_id, const std::string& message_id, IThreadStore& store);
 
-  /** Queue any attachment messages in the thread that are not cached yet. */
+  /** Queue attachment messages not cached yet (respects policy unless backlog drain). */
   void EnsureThreadQueued(const std::string& thread_id, IThreadStore& store);
+  void DrainPendingMediaBacklog(IThreadStore& store);
 
-  DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+  /** Before clear-history: tombstone hashes and drop pending queue entries for the thread. */
+  Roe<void> PrepareThreadHistoryClear(const std::string& thread_id, IThreadStore& store);
+
+  DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                         uint64_t byte_length) const;
 
 private:
   struct Job {
@@ -37,19 +48,26 @@ private:
   };
 
   std::string JobKey(const Job& job) const;
-  void EnqueueJob(Job job);
+  std::string JobKey(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+  bool ShouldAutoDownload(const Job& job) const;
+  void EnqueueJob(Job job, bool force);
   void DrainQueue();
   void RunJob(const Job& job);
   void MarkFailed(const std::string& key);
   void MarkReady(const std::string& key);
+  void MarkPending(const std::string& key);
   void NotifyChanged();
 
   std::string profile_dir_;
+  AttachmentSuppressionStore* suppression_ = nullptr;
+  AttachmentDownloadPolicy policy_ = AttachmentDownloadPolicy::Smart;
+  bool backlog_drain_ = false;
   ChangedCallback on_changed_;
   mutable std::mutex mutex_;
   std::vector<Job> queue_;
   std::unordered_set<std::string> active_;
   std::unordered_set<std::string> failed_;
+  std::unordered_set<std::string> pending_;
   bool draining_ = false;
 };
 

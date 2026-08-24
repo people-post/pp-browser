@@ -215,6 +215,12 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
     return Error("Thread not found");
   }
 
+  if (attachment_downloads_) {
+    if (auto prepared = attachment_downloads_->PrepareThreadHistoryClear(thread_id, store_); !prepared) {
+      return prepared.error();
+    }
+  }
+
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
   }
@@ -750,9 +756,9 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
           ? AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
                                 fields->filename)
           : std::string{};
-  AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Downloading;
+  AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Pending;
   if (fields && attachment_downloads_) {
-    state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash);
+    state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
   } else if (!local_path.empty()) {
     state = AttachmentDownloadService::DownloadState::Ready;
   }
@@ -785,6 +791,9 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
     }
     if (state == AttachmentDownloadService::DownloadState::Downloading) {
       html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+    } else if (state == AttachmentDownloadService::DownloadState::Pending) {
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";
     } else {
       html += "<p class=\"text muted\">" + Tr("chat.attachment.download_failed") + "</p>";
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"retry_attachment('" +

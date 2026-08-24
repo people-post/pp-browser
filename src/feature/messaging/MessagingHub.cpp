@@ -17,8 +17,8 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
-#include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/AttachmentCache.h"
+#include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -1462,10 +1462,19 @@ AttachmentDownloadService& MessagingHub::Attachments() {
 }
 
 void MessagingHub::WireAttachmentDownloads() {
+  if (!attachment_suppressions_) {
+    attachment_suppressions_ = std::make_unique<AttachmentSuppressionStore>(data_dir_);
+  } else {
+    attachment_suppressions_->SetProfileDir(data_dir_);
+  }
   if (!attachment_downloads_) {
     attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
+  attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
+  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
+    attachment_downloads_->SetDownloadPolicy(AttachmentDownloadPolicyFromString(prefs->attachment_download_policy));
+  }
   attachment_downloads_->SetOnChanged([this]() {
     if (p2p_) {
       p2p_->NotifyMessagesChanged();
@@ -1478,6 +1487,20 @@ void MessagingHub::WireAttachmentDownloads() {
   if (p2p_) {
     p2p_->SetAttachmentDownloads(attachment_downloads_.get());
   }
+}
+
+void MessagingHub::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized() || thread_id.empty() || message_id.empty()) {
+    return;
+  }
+  Attachments().RequestDownload(thread_id, message_id, Store());
+}
+
+void MessagingHub::DrainPendingAttachmentMedia() {
+  if (!IsInitialized()) {
+    return;
+  }
+  Attachments().DrainPendingMediaBacklog(Store());
 }
 
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
@@ -1667,6 +1690,9 @@ void MessagingHub::Apply(const PolicyPrefs& prefs) {
   if (group_membership_) {
     group_membership_->SetInboundPolicy(prefs.group_invite_policy);
   }
+  if (attachment_downloads_) {
+    attachment_downloads_->SetDownloadPolicy(prefs.attachment_download_policy);
+  }
 }
 
 void MessagingHub::Apply(const NotificationPrefs& prefs) {
@@ -1689,7 +1715,8 @@ MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config
 }
 
 MessagingHub::PolicyPrefs MessagingHub::ProjectPolicy(const ProfilePreferences& prefs) {
-  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy)};
+  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
+          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy)};
 }
 
 MessagingHub::NotificationPrefs MessagingHub::ProjectNotifications(const ProfilePreferences& prefs) {

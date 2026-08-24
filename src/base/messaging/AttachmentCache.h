@@ -37,4 +37,7 @@ Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const s
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
                                       const ChatAttachmentFields& fields, const std::string& source_path);
 
+/** Remove cached plaintext blobs for a thread (R020 clear-history). */
+Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);
+
 } // namespace pbr
