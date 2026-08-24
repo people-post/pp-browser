@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**a1** landed)
+**As of:** 2026-08-24 (**a2** landed)
 
 ---
 
@@ -12,7 +12,20 @@
 | **www server** | Shipped — [relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md) |
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
 | **pp-browser a1** | **Done** — attachment wire + codec + content-key AEAD + soft-skip |
-| **pp-browser a2+** | **Next** — composer attach + upload-before-send |
+| **pp-browser a2** | **Done** — composer attach + encrypt + upload-before-send |
+| **pp-browser a3+** | **Next** — receive/download + bubble preview |
+
+---
+
+## What landed (a2)
+
+| Component | Path |
+|-----------|------|
+| Any-file native picker | `NativeFileDialog::ShowOpenFileDialog` |
+| Encrypt + upload helper | `AttachmentClientUtil.*` |
+| Send orchestration | `MessagingHub::SendAttachmentFromPath`, `MessagingFacade` |
+| Composer attach UX | `composer.rml`, `ChatController`, upload chip |
+| i18n | `chat.attach_file`, `chat.attachment.uploading` |
 
 ---
 
@@ -42,8 +55,8 @@
 
 ## Next agent — start here
 
-1. **a2** — Composer attach button, encrypt + upload-before-send ([PHASES.md](PHASES.md#a2--composer--upload-before-send))
-2. Manual smoke: round-trip attachment payload in dev harness (after a2)
+1. **a3** — Receive/download, local cache, image/video preview bubbles ([PHASES.md](PHASES.md#a3--receive--display))
+2. Manual smoke: send attachment in 1:1 E2E thread; confirm upload chip → sent bubble
 
 ---
 
@@ -51,6 +64,6 @@
 
 | Area | Phase |
 |------|-------|
-| Composer attach + send | a2 |
 | Receive/download + bubble preview | a3 |
 | Quota UX | a4 |
+| DEK-wrap local cache, video poster | a5 |

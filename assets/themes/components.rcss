@@ -426,6 +426,7 @@ select selectbox option {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 4dp;
 }
 
 .prompt-emoji-btn {
@@ -448,6 +449,53 @@ select selectbox option {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+.prompt-attach-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-attach-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+.prompt-attachment-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  padding: 4dp 10dp;
+  border-radius: 12dp;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.prompt-attachment-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12dp;
+}
+
+.prompt-attachment-chip-status {
+  flex-shrink: 0;
+  font-size: 11dp;
+  opacity: 0.72;
 }
 
 .prompt-send-btn {

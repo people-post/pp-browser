@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <filesystem>
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingFacade.h"
 #include "feature/ui/ShellSetupPorts.h"
@@ -13,6 +14,7 @@
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPushDeviceRegistrar.h"
+#include "base/platform/NativeFileDialog.h"
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/WorkingSetPolicy.h"
@@ -26,6 +28,7 @@
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "common/Utilities.h"
 #include "common/StartupTiming.h"
+#include "RmlUi_Backend.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/people/ContactJson.h"
@@ -268,6 +271,7 @@ ChatController::ChatController()
                  .thread_is_public = chat_.thread_is_public,
                  .thread_is_group = chat_.thread_is_group,
                  .compose_disabled = chat_.compose_disabled,
+                 .show_attach_button = chat_.show_attach_button,
                  .show_thread_actions = chat_.show_thread_actions,
                  .show_peer_sheet = chat_.show_peer_sheet,
                  .show_call_actions = chat_.show_call_actions,
@@ -618,6 +622,11 @@ void ChatController::ToggleReactionCallback(Rml::DataModelHandle /*model*/, Rml:
 void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                              const Rml::VariantList& /*args*/) {
   Instance().OpenEmojiInsertMenu(&ev);
+}
+
+void ChatController::AttachFileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  Instance().OnAttachFile();
 }
 
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1089,6 +1098,7 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
+  SyncComposerInputState();
   if (badge_notify_.refresh) {
     badge_notify_.refresh();
   }
@@ -1236,6 +1246,69 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  SyncComposerInputState();
+}
+
+void ChatController::SyncComposerInputState() {
+  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading;
+}
+
+void ChatController::OnAttachFile() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShowOpenFileDialog(Backend::GetWindow(), [this, thread_id](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        return;
+      }
+      StartAttachmentUpload(std::move(paths.front()));
+    });
+  });
+}
+
+void ChatController::StartAttachmentUpload(const std::string& path) {
+  if (!facade_ || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  chat_.attachment_uploading = true;
+  chat_.attachment_draft_name = std::filesystem::path(path).filename().string().c_str();
+  chat_.status = Tr("chat.attachment.uploading").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+
+  AppRuntime::PostWorkerNormal([this, thread_id, path]() {
+    auto sent = facade_->SendAttachmentFromPath(thread_id, path);
+    AppRuntime::PostUI([this, sent = std::move(sent)]() mutable {
+      chat_.attachment_uploading = false;
+      chat_.attachment_draft_name = "";
+      chat_.status = "";
+      SyncComposerInputState();
+      DirtyChatChrome();
+      DirtyChatHeader();
+      if (!sent) {
+        UserFeedback::Fail(sent.error().message);
+        return;
+      }
+      SyncDisplayFromThread();
+      scroller_.RequestScrollToLatest();
+      UpdateSidebarPreview(sent->text);
+    });
+  });
 }
 
 void ChatController::UpdatePeerLinkChrome() {
@@ -1243,7 +1316,10 @@ void ChatController::UpdatePeerLinkChrome() {
 }
 
 void ChatController::ResetChatPanelState() {
+  chat_.attachment_uploading = false;
+  chat_.attachment_draft_name = "";
   chrome_.ResetPanelState();
+  SyncComposerInputState();
 }
 
 void ChatController::SyncDisplayFromThread() {
@@ -2553,6 +2629,10 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("thread_is_public", &controller.chat_.thread_is_public);
         ctor.Bind("thread_is_group", &controller.chat_.thread_is_group);
         ctor.Bind("compose_disabled", &controller.chat_.compose_disabled);
+        ctor.Bind("composer_input_disabled", &controller.chat_.composer_input_disabled);
+        ctor.Bind("show_attach_button", &controller.chat_.show_attach_button);
+        ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
+        ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
         ctor.Bind("show_peer_sheet", &controller.chat_.show_peer_sheet);
         ctor.Bind("show_call_actions", &controller.chat_.show_call_actions);
@@ -2578,6 +2658,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
         ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
+        ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);

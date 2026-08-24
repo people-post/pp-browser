@@ -12,5 +12,6 @@ using NativeFileDialogCallback = std::function<void(std::vector<std::string> pat
 
 /** Async native open dialog for a single image file. Empty paths = cancel. */
 void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
 
 } // namespace pbr

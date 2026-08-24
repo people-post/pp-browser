@@ -401,6 +401,10 @@ Roe<void> MessagingFacade::UploadProfileIconFromPath(const std::string& path) {
 
 Roe<void> MessagingFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
 
+Roe<ThreadMessage> MessagingFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  return hub_.SendAttachmentFromPath(thread_id, path);
+}
+
 Roe<void> MessagingFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
 
 ReachabilitySnapshot MessagingFacade::Reachability() { return hub_.Reachability(); }

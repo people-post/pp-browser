@@ -67,11 +67,11 @@
 
 ## a2 — Composer + upload-before-send
 
-- [ ] Attach button in `composer.rml` + native file picker (any type)
-- [ ] Encrypt file → presign(`octet-stream`) → PUT → retain
-- [ ] Build attachment `ChatPayload` → normal E2E send path
-- [ ] Bubble/draft states: uploading → sent / failed ([R015](DECISIONS.md#r015--upload-before-send-for-attachments))
-- [ ] Group: one blob PUT; pairwise envelopes for payload only ([R005](DECISIONS.md#r005--group-attachments-one-blob-ciphertext-pairwise-key-envelopes))
+- [x] Attach button in `composer.rml` + native file picker (any type)
+- [x] Encrypt file → presign(`octet-stream`) → PUT → retain
+- [x] Build attachment `ChatPayload` → normal E2E send path
+- [x] Bubble/draft states: uploading → sent / failed ([R015](DECISIONS.md#r015--upload-before-send-for-attachments))
+- [x] Group: one blob PUT; pairwise envelopes for payload only ([R005](DECISIONS.md#r005--group-attachments-one-blob-ciphertext-pairwise-key-envelopes))
 
 **Exit:** User can send an attachment in 1:1 thread; message not sent until upload succeeds.
 

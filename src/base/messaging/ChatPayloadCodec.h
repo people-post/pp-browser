@@ -26,6 +26,7 @@ public:
   static Roe<ChatContactCardFields> DecodeContactCardJson(const std::string& payload_json);
   static Roe<ChatCryptoTxFields> DecodeCryptoTxJson(const std::string& payload_json);
   static Roe<ChatAttachmentFields> DecodeAttachmentJson(const std::string& payload_json);
+  static std::string AttachmentFieldsToJson(const ChatAttachmentFields& fields);
   static std::string BuildPayloadJson(const ThreadMessage& message);
 };
 

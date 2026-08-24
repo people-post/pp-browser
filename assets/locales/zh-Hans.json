@@ -291,6 +291,8 @@
     "chat.status.online": "在线",
     "chat.status.offline": "离线",
     "chat.composer_placeholder": "输入消息",
+    "chat.attach_file": "附加文件…",
+    "chat.attachment.uploading": "正在上传…",
     "chat.device_lock.menu": "仅在此设备使用…",
     "chat.device_lock.confirm_title": "仅在此设备使用？",
     "chat.device_lock.confirm_body": "之后的新消息只会出现在此安装上。其他设备仍保留旧记录。这不是「私密」或「安全」聊天。",

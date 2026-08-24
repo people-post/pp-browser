@@ -11,6 +11,28 @@
 
 namespace pbr {
 
+namespace attachment_codec {
+
+nlohmann::json BytesToJsonArray(const std::vector<uint8_t>& bytes) {
+  nlohmann::json out = nlohmann::json::array();
+  for (const uint8_t byte : bytes) {
+    out.push_back(byte);
+  }
+  return out;
+}
+
+nlohmann::json AttachmentFieldsJsonObject(const ChatAttachmentFields& fields) {
+  return {{"url", fields.url},
+          {"mime", fields.mime},
+          {"filename", fields.filename},
+          {"byte_length", fields.byte_length},
+          {"content_hash", BytesToJsonArray(fields.content_hash)},
+          {"content_key", BytesToJsonArray(fields.content_key)},
+          {"blob_nonce", BytesToJsonArray(fields.blob_nonce)}};
+}
+
+} // namespace attachment_codec
+
 namespace {
 
 constexpr uint8_t kPayloadVersion = 1;
@@ -37,24 +59,6 @@ std::vector<uint8_t> ReadLenBytes(InputArchive& ar) {
   WireLenBytes field;
   ar & field;
   return field.value;
-}
-
-nlohmann::json BytesToJsonArray(const std::vector<uint8_t>& bytes) {
-  nlohmann::json out = nlohmann::json::array();
-  for (const uint8_t byte : bytes) {
-    out.push_back(byte);
-  }
-  return out;
-}
-
-nlohmann::json AttachmentFieldsToJson(const ChatAttachmentFields& fields) {
-  return {{"url", fields.url},
-          {"mime", fields.mime},
-          {"filename", fields.filename},
-          {"byte_length", fields.byte_length},
-          {"content_hash", BytesToJsonArray(fields.content_hash)},
-          {"content_key", BytesToJsonArray(fields.content_key)},
-          {"blob_nonce", BytesToJsonArray(fields.blob_nonce)}};
 }
 
 Roe<std::vector<uint8_t>> FinalizePayload(std::ostringstream& oss) {
@@ -118,7 +122,7 @@ std::string PayloadJsonForMessage(const ThreadMessage& message) {
     }
   } else if (message.content_type == ChatContentType::Attachment) {
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      payload = AttachmentFieldsToJson(*fields);
+      payload = attachment_codec::AttachmentFieldsJsonObject(*fields);
     }
   } else if (message.content_type == ChatContentType::Unsupported) {
     const nlohmann::json parsed = nlohmann::json::parse(message.payload_json, nullptr, false);
@@ -365,7 +369,7 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
     if (ar.failed()) {
       return Error("Malformed attachment ChatPayload");
     }
-    message.payload_json = AttachmentFieldsToJson(fields).dump();
+    message.payload_json = attachment_codec::AttachmentFieldsJsonObject(fields).dump();
     return ReadExactEnd(ar);
   }
 
@@ -467,6 +471,10 @@ Roe<ChatAttachmentFields> ChatPayloadCodec::DecodeAttachmentJson(const std::stri
   } catch (const std::exception&) {
     return Error("Invalid attachment JSON");
   }
+}
+
+std::string ChatPayloadCodec::AttachmentFieldsToJson(const ChatAttachmentFields& fields) {
+  return attachment_codec::AttachmentFieldsJsonObject(fields).dump();
 }
 
 std::string ChatPayloadCodec::BuildPayloadJson(const ThreadMessage& message) {

@@ -17,7 +17,10 @@
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
+#include "base/messaging/SendRelayOptions.h"
+#include "base/net/AttachmentClientUtil.h"
 #include "base/net/HttpClient.h"
 #include "base/net/ProfileIconClientUtil.h"
 #include "base/net/ProfileIconFetchUtil.h"
@@ -1347,6 +1350,51 @@ Roe<void> MessagingHub::ClearProfileIcon() {
     return Error("Blob client not configured");
   }
   return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
+}
+
+Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  if (thread_id.empty()) {
+    return Error("No active thread");
+  }
+
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  const Thread& active = **thread;
+  if (active.kind == ThreadKind::Ai) {
+    return Error("Attachments are not supported in assistant threads");
+  }
+  if (active.kind != ThreadKind::Direct && active.kind != ThreadKind::Group) {
+    return Error("Attachments are not supported in this thread");
+  }
+
+  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path);
+  if (!fields) {
+    return fields.error();
+  }
+
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::Attachment;
+  opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+  const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
+
+  if (active.kind == ThreadKind::Group) {
+    return P2p().SendGroupMessage(thread_id, display, opts);
+  }
+  return P2p().SendUserMessage(thread_id, display, opts);
 }
 
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,

@@ -42,4 +42,12 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, false);
 }
 
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+  if (!callback) {
+    return;
+  }
+  auto* state = new DialogState{.callback = std::move(callback)};
+  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, nullptr, 0, nullptr, false);
+}
+
 } // namespace pbr

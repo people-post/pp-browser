@@ -1,5 +1,6 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
+    AttachmentClientUtil.cpp
     BlobClient.cpp
     ClientCompat.cpp
     CurlSsl.cpp

@@ -291,6 +291,8 @@
     "chat.status.online": "Online",
     "chat.status.offline": "Offline",
     "chat.composer_placeholder": "Message",
+    "chat.attach_file": "Attach file…",
+    "chat.attachment.uploading": "Uploading…",
     "chat.device_lock.menu": "Use only this device…",
     "chat.device_lock.confirm_title": "Use only this device?",
     "chat.device_lock.confirm_body": "New messages will stay on this install. Older history remains on your other devices. This is not Private or Secure.",

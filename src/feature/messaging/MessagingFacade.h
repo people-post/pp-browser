@@ -169,6 +169,7 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
+  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   Roe<void> RotateBriefLlmKey();
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);

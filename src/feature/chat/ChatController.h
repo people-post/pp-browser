@@ -155,6 +155,10 @@ private:
     bool thread_is_public = false;
     bool thread_is_group = false;
     bool compose_disabled = false;
+    bool composer_input_disabled = false;
+    bool show_attach_button = false;
+    bool attachment_uploading = false;
+    Rml::String attachment_draft_name;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -203,6 +207,7 @@ private:
   static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReactionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenEmojiInsertCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void AttachFileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -257,6 +262,9 @@ private:
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
   void OpenEmojiInsertMenu(Rml::Event* ev);
+  void OnAttachFile();
+  void StartAttachmentUpload(const std::string& path);
+  void SyncComposerInputState();
   void OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position);
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
