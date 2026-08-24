@@ -3,6 +3,7 @@ pp_browser_add_base_library(pp_base_net
     AttachmentFetchUtil.cpp
     AttachmentClientUtil.cpp
     BlobClient.cpp
+    BlobQuotaUtil.cpp
     ClientCompat.cpp
     CurlSsl.cpp
     HttpBlobClient.cpp

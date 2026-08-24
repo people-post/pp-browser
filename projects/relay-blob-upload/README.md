@@ -1,6 +1,6 @@
 # Relay blob upload (profile icons + chat attachments)
 
-**Status:** **a1–a3 landed** — **a4** quota UX next; **a6** peer-first + download policy planned  
+**Status:** **a1–a4 landed** — **a6** peer-first + download policy planned  
 **Owner:** Hongwei + agents  
 
 **Server contract (www):** [`web2/www/Plans/2026-08-24-relay-blob-upload-design.md`](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)  

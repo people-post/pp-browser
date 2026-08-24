@@ -91,10 +91,10 @@
 
 ## a4 — Quota UX
 
-- [ ] Detect presign 429 / quota errors
-- [ ] Confirm dialog: free relay upload space ([R009](DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm))
-- [ ] `blobs/list` → delete oldest remote via `blobs/delete`
-- [ ] Copy clarifies: local chat data unchanged
+- [x] Detect presign 429 / quota errors
+- [x] Confirm dialog: free relay upload space ([R009](DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm))
+- [x] `blobs/list` → delete oldest remote via `blobs/delete`
+- [x] Copy clarifies: local chat data unchanged
 
 **Exit:** User can recover from quota block without losing local history.
 

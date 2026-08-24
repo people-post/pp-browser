@@ -23,6 +23,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/net/AttachmentClientUtil.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpClient.h"
 #include "base/net/ProfileIconClientUtil.h"
 #include "base/net/ProfileIconFetchUtil.h"
@@ -1354,6 +1355,43 @@ Roe<void> MessagingHub::ClearProfileIcon() {
     return Error("Blob client not configured");
   }
   return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
+}
+
+namespace {
+
+std::string ProtectedRelayBlobId(const std::string& profile_dir) {
+  if (auto meta = LoadProfileIconCacheMeta(profile_dir); meta) {
+    return meta->blob_id;
+  }
+  return {};
+}
+
+} // namespace
+
+Roe<BlobQuotaRecoveryPlan> MessagingHub::PlanRelayQuotaRecovery() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return PlanOldestRelayBlobDeletion(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+}
+
+Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return pbr::FreeOldestRelayBlobSlot(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {

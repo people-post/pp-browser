@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,13 +28,23 @@ public:
   Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
                       const std::string& body) override;
 
+  void SetPresignError(Error error) { presign_error_ = std::move(error); }
+  void ClearPresignError() { presign_error_ = std::nullopt; }
+  void SetListResult(BlobListResult result) { list_result_ = std::move(result); }
+
   const std::vector<std::string>& UploadedBodies() const { return uploaded_bodies_; }
   const std::vector<std::string>& RetainedBlobIds() const { return retained_blob_ids_; }
+  const std::vector<std::string>& DeletedBlobIds() const { return deleted_blob_ids_; }
+  uint32_t PresignCallCount() const { return presign_call_count_; }
 
 private:
   std::vector<std::string> uploaded_bodies_;
   std::vector<std::string> retained_blob_ids_;
+  std::vector<std::string> deleted_blob_ids_;
+  std::optional<Error> presign_error_;
+  std::optional<BlobListResult> list_result_;
   uint64_t next_blob_id_ = 1;
+  uint32_t presign_call_count_ = 0;
 };
 
 class MockDirectoryClient : public IDirectoryClient {

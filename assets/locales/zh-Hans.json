@@ -301,6 +301,15 @@
     "chat.attachment.open_failed": "无法打开附件",
     "chat.attachment.open_confirm_title": "打开此文件？",
     "chat.attachment.open_confirm_body": "此文件将在您设备上的其他应用中打开。",
+
+    "blob.quota.title": "中继上传空间已满",
+    "blob.quota.message": "云端中继存储已满。删除最早上传的文件以释放空间？\n\n{{detail}}\n\n此设备上的聊天记录不会受影响。",
+    "blob.quota.detail": "最早：{{purpose}} · {{size}} · {{date}}",
+    "blob.quota.confirm": "释放空间…",
+    "blob.quota.cancelled": "已取消上传",
+    "blob.quota.purpose_icon": "头像",
+    "blob.quota.purpose_file": "附件",
+    "blob.quota.date_unknown": "日期未知",
     "chat.device_lock.menu": "仅在此设备使用…",
     "chat.device_lock.confirm_title": "仅在此设备使用？",
     "chat.device_lock.confirm_body": "之后的新消息只会出现在此安装上。其他设备仍保留旧记录。这不是「私密」或「安全」聊天。",
@@ -434,6 +443,9 @@
     "errors.config.invalid": "请检查“我”中的设置后重试。",
     "errors.storage.unavailable": "个人资料数据不可用",
     "errors.storage.failed": "无法更新本地数据 — 请重试。",
+    "errors.blob.quota_exceeded": "中继上传空间已满",
+    "errors.blob.quota_nothing_to_delete": "中继存储已满，没有可安全远程删除的内容",
+    "errors.blob.failed": "中继上传失败 — 请重试。",
     "errors.internal": "出现问题 — 请重试。"
   }
 }

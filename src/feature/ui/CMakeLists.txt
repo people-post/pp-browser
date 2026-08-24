@@ -30,6 +30,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ShellBottomSheetGesture.cpp
     ShellCallChromeGesture.cpp
     ShellFeedback.cpp
+    BlobQuotaRecoveryFlow.cpp
     ShellHost.cpp
     ShellInterruption.cpp
     ShellLayout.cpp

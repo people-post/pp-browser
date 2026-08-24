@@ -45,6 +45,10 @@ std::optional<std::string> MockPeerKemPublicKeyB64() {
 Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*relay_user_id*/,
                                                  const std::string& /*content_type*/, const uint64_t byte_length,
                                                  const BlobPurpose /*purpose*/) {
+  ++presign_call_count_;
+  if (presign_error_) {
+    return presign_error_.value();
+  }
   BlobPresignResult result;
   result.blob_id = "mock-blob-" + std::to_string(next_blob_id_++);
   result.upload_url = "https://mock.example/upload/" + result.blob_id;
@@ -59,11 +63,15 @@ Roe<void> MockBlobClient::Retain(const std::string& /*relay_user_id*/, const std
   return Roe<void>{};
 }
 
-Roe<void> MockBlobClient::Delete(const std::string& /*relay_user_id*/, const std::string& /*blob_id*/) {
+Roe<void> MockBlobClient::Delete(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+  deleted_blob_ids_.push_back(blob_id);
   return Roe<void>{};
 }
 
 Roe<BlobListResult> MockBlobClient::List(const std::string& /*relay_user_id*/, const std::string& /*status_filter*/) {
+  if (list_result_) {
+    return *list_result_;
+  }
   return BlobListResult{};
 }
 

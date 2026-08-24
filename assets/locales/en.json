@@ -301,6 +301,15 @@
     "chat.attachment.open_failed": "Couldn't open attachment",
     "chat.attachment.open_confirm_title": "Open this file?",
     "chat.attachment.open_confirm_body": "This file will open in another app on your device.",
+
+    "blob.quota.title": "Relay upload space full",
+    "blob.quota.message": "Cloud relay storage is full. Delete the oldest uploaded file to free space?\n\n{{detail}}\n\nChat history on this device stays unchanged.",
+    "blob.quota.detail": "Oldest: {{purpose}} · {{size}} · {{date}}",
+    "blob.quota.confirm": "Free space…",
+    "blob.quota.cancelled": "Upload cancelled",
+    "blob.quota.purpose_icon": "Profile photo",
+    "blob.quota.purpose_file": "Attachment",
+    "blob.quota.date_unknown": "Unknown date",
     "chat.device_lock.menu": "Use only this device…",
     "chat.device_lock.confirm_title": "Use only this device?",
     "chat.device_lock.confirm_body": "New messages will stay on this install. Older history remains on your other devices. This is not Private or Secure.",
@@ -434,6 +443,9 @@
     "errors.config.invalid": "Check settings in Me and try again.",
     "errors.storage.unavailable": "Profile data unavailable",
     "errors.storage.failed": "Couldn't update local data — try again.",
+    "errors.blob.quota_exceeded": "Relay upload space is full",
+    "errors.blob.quota_nothing_to_delete": "Relay storage is full and there is nothing safe to remove remotely",
+    "errors.blob.failed": "Relay upload failed — try again.",
     "errors.internal": "Something went wrong — try again."
   }
 }

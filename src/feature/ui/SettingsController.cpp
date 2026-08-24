@@ -19,6 +19,7 @@
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/ui/BlobQuotaRecoveryFlow.h"
 #include "base/error/AppError.h"
 
 #include <RmlUi/Core/Context.h>
@@ -1750,23 +1751,31 @@ void SettingsController::OnPickProfileIcon() {
         DirtyAll(/*include_profile_nickname=*/false);
         status_ = "Uploading profile photo…";
         const std::string path = std::move(paths.front());
-        AppRuntime::PostWorkerNormal([this, path]() {
-          Roe<void> result = commands_.upload_profile_icon_file(path);
-          AppRuntime::PostUI([this, result = std::move(result)]() mutable {
-            ui_state_.profile_icon_uploading = false;
-            if (!result) {
-              status_.clear();
+        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
+          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+          ui_state_.profile_icon_uploading = false;
+          PushUiStateToBindings();
+          DirtyAll(/*include_profile_nickname=*/false);
+          return;
+        }
+        BlobQuotaRecoveryFlow::RunVoidUpload(
+            [this, path]() { return commands_.upload_profile_icon_file(path); },
+            [this](Roe<void> result) {
+              ui_state_.profile_icon_uploading = false;
+              if (!result) {
+                status_.clear();
+                SyncBindingsFromSession();
+                DirtyAll(/*include_profile_nickname=*/false);
+                ReportFailure(result.error());
+                return;
+              }
+              status_ = "Profile photo updated";
               SyncBindingsFromSession();
               DirtyAll(/*include_profile_nickname=*/false);
-              ReportFailure(result.error());
-              return;
-            }
-            status_ = "Profile photo updated";
-            SyncBindingsFromSession();
-            DirtyAll(/*include_profile_nickname=*/false);
-            UserFeedback::Ok("Profile photo updated");
-          });
-        });
+              UserFeedback::Ok("Profile photo updated");
+            },
+            [this]() { return commands_.plan_relay_quota_recovery(); },
+            [this]() { return commands_.free_oldest_relay_blob_slot(); });
       });
     });
   });

@@ -8,6 +8,7 @@
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/IdentityTypes.h"
 #include "base/people/ProfileIdentityView.h"
@@ -169,6 +170,8 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
+  Roe<void> FreeOldestRelayBlobSlot();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);

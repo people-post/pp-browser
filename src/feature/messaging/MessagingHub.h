@@ -25,6 +25,7 @@
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/BlobClient.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
@@ -181,6 +182,8 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
+  Roe<void> FreeOldestRelayBlobSlot();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   AttachmentDownloadService& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);

@@ -1,5 +1,6 @@
 #include "base/net/HttpBlobClient.h"
 
+#include "base/error/AppError.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayBlobSignPayload.h"
 #include "common/Utilities.h"
@@ -21,6 +22,9 @@ std::string HttpFailureMessage(const HttpResponse& response) {
 Roe<void> ExpectSuccess(const HttpResponse& response) {
   if (response.status_code >= 200 && response.status_code < 300) {
     return Roe<void>{};
+  }
+  if (response.status_code == 429) {
+    return AppError::Blob(Err::Blob::QuotaExceeded, HttpFailureMessage(response));
   }
   return Error(HttpFailureMessage(response));
 }

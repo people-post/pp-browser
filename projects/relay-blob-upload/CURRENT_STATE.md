@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**a3** landed; **R008 amended**, **R019–R021** locked)
+**As of:** 2026-08-24 (**a4** landed; **R008 amended**, **R019–R021** locked)
 
 ---
 
@@ -11,9 +11,8 @@
 | **Planning** | Done — [DESIGN.md](DESIGN.md), [DECISIONS.md](DECISIONS.md) R001–R021 |
 | **www server** | Shipped — [relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md) |
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
-| **pp-browser a1–a3** | **Done** — wire/codec, composer send, CDN receive/display |
-| **pp-browser a4** | **Next** — quota UX |
-| **pp-browser a6** | Planned — peer-first blobs + Smart download policy + deletion suppress |
+| **pp-browser a1–a4** | **Done** — wire/codec, composer send, CDN receive/display, quota UX |
+| **pp-browser a6** | **Next** — peer-first blobs + Smart download policy + deletion suppress |
 
 ---
 
@@ -45,11 +44,22 @@
 
 ---
 
+## What landed (a4)
+
+| Component | Path |
+|-----------|------|
+| Presign 429 → `Err::Blob::QuotaExceeded` | `HttpBlobClient.cpp`, `AppError.*` |
+| Plan/delete oldest remote blob | `BlobQuotaUtil.*` |
+| Confirm + retry upload flow | `BlobQuotaRecoveryFlow.*` |
+| Attachment + profile icon wiring | `ChatController.cpp`, `SettingsController.cpp`, `MessagingHub/Facade` |
+| i18n copy (local history unchanged) | `assets/locales/en.json`, `zh-Hans.json` |
+
+---
+
 ## Next agent — start here
 
-1. **a4** — Quota UX on presign 429 ([PHASES.md](PHASES.md#a4--quota-ux))
-2. Then **a6** — peer-first + Smart policy ([PHASES.md](PHASES.md#a6--peer-first-blobs--download-policy)) unless product prioritizes a5 DEK wrap first
-3. Manual smoke: send image in 1:1 → peer sees inline preview after CDN download
+1. **a6** — peer-first + Smart policy ([PHASES.md](PHASES.md#a6--peer-first-blobs--download-policy)) unless product prioritizes a5 DEK wrap first
+2. Manual smoke: send image in 1:1 → peer sees inline preview after CDN download; fill relay quota → confirm pop frees oldest remote blob
 
 ---
 
@@ -57,6 +67,5 @@
 
 | Area | Phase |
 |------|-------|
-| Quota UX | a4 |
 | DEK-wrap local cache, video poster | a5 |
 | Peer blob protocol + Smart download + deletion suppress | a6 |

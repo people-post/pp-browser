@@ -403,6 +403,10 @@ Roe<void> MessagingFacade::UploadProfileIconFromPath(const std::string& path) {
 
 Roe<void> MessagingFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
 
+Roe<BlobQuotaRecoveryPlan> MessagingFacade::PlanRelayQuotaRecovery() { return hub_.PlanRelayQuotaRecovery(); }
+
+Roe<void> MessagingFacade::FreeOldestRelayBlobSlot() { return hub_.FreeOldestRelayBlobSlot(); }
+
 Roe<ThreadMessage> MessagingFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
   return hub_.SendAttachmentFromPath(thread_id, path);
 }

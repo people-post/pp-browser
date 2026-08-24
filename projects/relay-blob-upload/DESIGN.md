@@ -1,6 +1,6 @@
 # Relay blob upload — design
 
-**Status:** a1–a3 landed; a4 next; **a6** peer-first + download policy planned (R019–R021).  
+**Status:** a1–a4 landed; a6 peer-first + download policy planned (R019–R021).  
 **Server spec:** [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)
 
 ---

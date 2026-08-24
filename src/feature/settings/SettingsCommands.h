@@ -3,6 +3,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/people/ProfileIdentityView.h"
 #include "base/data/SessionStore.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 
@@ -28,6 +29,8 @@ struct SettingsCommands {
   std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
   std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
   std::function<Roe<void>()> clear_profile_icon;
+  std::function<Roe<BlobQuotaRecoveryPlan>()> plan_relay_quota_recovery;
+  std::function<Roe<void>()> free_oldest_relay_blob_slot;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;
