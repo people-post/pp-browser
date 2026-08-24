@@ -55,11 +55,11 @@
 
 ## a1 — Attachment wire + codec
 
-- [ ] `ChatContentType::Attachment` + tail fields (mime, filename, size, url, hash, key material)
-- [ ] `ChatPayloadCodec` encode/decode + validator
-- [ ] Content-key AEAD helper for file bytes (separate from envelope AEAD)
-- [ ] Soft-skip unknown `content_type` on ingest ([R018](DECISIONS.md#r018--soft-skip-unknown-content_type-ships-with-attachments))
-- [ ] Promote WIRE_SCHEMAS attachment table on merge
+- [x] `ChatContentType::Attachment` + tail fields (mime, filename, size, url, hash, key material)
+- [x] `ChatPayloadCodec` encode/decode + validator
+- [x] Content-key AEAD helper for file bytes (separate from envelope AEAD)
+- [x] Soft-skip unknown `content_type` on ingest ([R018](DECISIONS.md#r018--soft-skip-unknown-content_type-ships-with-attachments))
+- [x] Promote WIRE_SCHEMAS attachment table on merge
 
 **Exit:** Round-trip attachment payload in tests; ingest does not hard-crash on unknown types from peers.
 

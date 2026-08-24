@@ -21,14 +21,17 @@ ByteVector TestDek() {
 }
 } // namespace
 
-TEST(ChatPayloadValidatorTest, RejectsUnknownContentType) {
+TEST(ChatPayloadValidatorTest, AcceptsUnknownContentTypeAsUnsupported) {
   using namespace pbr;
 
-  auto bytes = ChatPayloadCodec::EncodeText("nope");
+  auto bytes = ChatPayloadCodec::EncodeText("future");
   ASSERT_TRUE(static_cast<bool>(bytes));
   ASSERT_GT(bytes->size(), 1u);
   (*bytes)[1] = 99;
-  EXPECT_FALSE(static_cast<bool>(ChatPayloadValidator::DecodeValidated(*bytes)));
+  auto message = ChatPayloadValidator::DecodeValidated(*bytes);
+  ASSERT_TRUE(static_cast<bool>(message));
+  EXPECT_EQ(message->content_type, ChatContentType::Unsupported);
+  EXPECT_EQ(message->text, "future");
 }
 
 TEST(ChatPayloadValidatorTest, RejectsOversizeOutboundText) {

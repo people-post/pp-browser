@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
-enum class ChatContentType { Text, System, Annotation, ContactCard, CryptoTx };
+enum class ChatContentType { Text, System, Annotation, ContactCard, CryptoTx, Attachment, Unsupported };
 
 struct ChatAnnotationFields {
   std::string text;
@@ -29,6 +31,17 @@ struct ChatCryptoTxFields {
   std::string tx_hash;
   std::string status;
   std::string to_address;
+};
+
+/** E2E attachment metadata — file ciphertext lives on CDN (R004/R007). */
+struct ChatAttachmentFields {
+  std::string url;
+  std::string mime;
+  std::string filename;
+  uint64_t byte_length = 0;
+  std::vector<uint8_t> content_hash;
+  std::vector<uint8_t> content_key;
+  std::vector<uint8_t> blob_nonce;
 };
 
 std::string ChatContentTypeToDb(ChatContentType type);

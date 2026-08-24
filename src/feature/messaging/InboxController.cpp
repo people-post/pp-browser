@@ -718,6 +718,25 @@ std::string InboxController::BuildCryptoTxRml(const ThreadMessage& message) cons
   return html;
 }
 
+std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) const {
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  const std::string label = fields && !fields->filename.empty()
+                                ? fields->filename
+                                : (message.text.empty() ? "Attachment" : message.text);
+  std::string html = "<div class=\"chat-card chat-attachment-card\"><h3 class=\"heading-3\">" +
+                     StructuredTextParser::EscapeText(label) + "</h3>";
+  if (fields && !fields->mime.empty()) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(fields->mime) + "</p>";
+  }
+  html += "<p class=\"text muted\">Attachment</p></div>";
+  return html;
+}
+
+std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*/) const {
+  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">Update to view this "
+         "message.</p></div>";
+}
+
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
     if (message.content_rml->find("__ENTRY__") != std::string::npos) {
@@ -733,6 +752,12 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   }
   if (message.content_type == ChatContentType::CryptoTx) {
     return BuildCryptoTxRml(message);
+  }
+  if (message.content_type == ChatContentType::Attachment) {
+    return BuildAttachmentRml(message);
+  }
+  if (message.content_type == ChatContentType::Unsupported) {
+    return BuildUnsupportedRml(message);
   }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
@@ -810,7 +835,9 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
-        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx) {
+        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx &&
+        message.content_type != ChatContentType::Attachment &&
+        message.content_type != ChatContentType::Unsupported) {
       continue;
     }
     if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {

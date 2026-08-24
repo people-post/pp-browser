@@ -2,6 +2,9 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/ReactionTypes.h"
+#include "base/crypto/AttachmentContentCipher.h"
+#include "base/crypto/AttachmentContentHash.h"
+#include "base/crypto/CryptoConstants.h"
 #include "common/EmojiKey.h"
 
 #include <gtest/gtest.h>
@@ -91,6 +94,52 @@ TEST(ChatPayloadRichTypesTest, CryptoTxRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(message));
   EXPECT_EQ(message->content_type, ChatContentType::CryptoTx);
   EXPECT_EQ(message->text, "Sent 0.5 ETH");
+}
+
+TEST(ChatPayloadRichTypesTest, AttachmentRoundTrip) {
+  using namespace pbr;
+
+  ChatAttachmentFields fields;
+  fields.url = "https://cdn.example/blobs/abc";
+  fields.mime = "image/png";
+  fields.filename = "diagram.png";
+  fields.byte_length = 4096;
+  fields.content_hash.assign(kAttachmentContentHashSize, 0x11);
+  fields.content_key.assign(kSessionKeySize, 0x22);
+  fields.blob_nonce.assign(kAeadNonceSize, 0x33);
+
+  auto bytes = ChatPayloadCodec::EncodeAttachment(fields, "diagram.png");
+  ASSERT_TRUE(static_cast<bool>(bytes));
+
+  auto message = ChatPayloadValidator::DecodeValidated(*bytes);
+  ASSERT_TRUE(static_cast<bool>(message));
+  EXPECT_EQ(message->content_type, ChatContentType::Attachment);
+  EXPECT_EQ(message->text, "diagram.png");
+  auto decoded = ChatPayloadCodec::DecodeAttachmentJson(message->payload_json);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(decoded->url, fields.url);
+  EXPECT_EQ(decoded->mime, fields.mime);
+  EXPECT_EQ(decoded->filename, fields.filename);
+  EXPECT_EQ(decoded->byte_length, fields.byte_length);
+  EXPECT_EQ(decoded->content_hash, fields.content_hash);
+  EXPECT_EQ(decoded->content_key, fields.content_key);
+  EXPECT_EQ(decoded->blob_nonce, fields.blob_nonce);
+}
+
+TEST(ChatPayloadRichTypesTest, AttachmentContentCipherRoundTrip) {
+  using namespace pbr;
+
+  auto key = AttachmentContentCipher::GenerateContentKey();
+  ASSERT_TRUE(static_cast<bool>(key));
+  const ByteVector plaintext = {'h', 'e', 'l', 'l', 'o'};
+  auto encrypted = AttachmentContentCipher::Encrypt(*key, plaintext);
+  ASSERT_TRUE(static_cast<bool>(encrypted));
+  auto hash = AttachmentContentHash(plaintext);
+  ASSERT_TRUE(static_cast<bool>(hash));
+  auto decrypted =
+      AttachmentContentCipher::Decrypt(*key, encrypted->nonce, encrypted->ciphertext, hash.value());
+  ASSERT_TRUE(static_cast<bool>(decrypted));
+  EXPECT_EQ(*decrypted, plaintext);
 }
 
 TEST(AtAiParserTest, DetectsSharedModes) {
