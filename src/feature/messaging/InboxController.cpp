@@ -776,8 +776,18 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
       html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
     } else if (IsAttachmentVideoMime(fields->mime)) {
       html += "<div class=\"chat-attachment-video\">";
-      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
-      html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      std::string poster_path;
+      if (!profile_data_dir_.empty() &&
+          AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+        poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+      }
+      if (!poster_path.empty()) {
+        html += "<img class=\"chat-attachment-video-poster\" src=\"" +
+                StructuredTextParser::EscapeText(poster_path) + "\"/>";
+      } else {
+        html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+        html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      }
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
               escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
       html += "</div>";

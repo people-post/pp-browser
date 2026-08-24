@@ -206,6 +206,7 @@ void AttachmentDownloadService::RunJob(const Job& job) {
     (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
                                    job.fields.filename, dek_ptr, profile_id_);
   }
+  MaybeBuildPoster(job.thread_id, job.fields);
   MarkReady(key);
 }
 
@@ -301,6 +302,17 @@ Roe<std::string> AttachmentDownloadService::EnsureLocalViewPath(const std::strin
   const ByteVector dek_copy = CopyDek();
   const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
   return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_ptr, profile_id_);
+}
+
+void AttachmentDownloadService::MaybeBuildPoster(const std::string& thread_id,
+                                                 const ChatAttachmentFields& fields) {
+  if (!IsAttachmentVideoMime(fields.mime) || profile_dir_.empty() || thread_id.empty()) {
+    return;
+  }
+  const ByteVector dek_copy = CopyDek();
+  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
+  (void)EnsureAttachmentPoster(profile_dir_, thread_id, fields.content_hash, fields.mime, fields.filename, dek_ptr,
+                               profile_id_);
 }
 
 void AttachmentDownloadService::RetryDownload(const std::string& thread_id, const std::string& message_id,

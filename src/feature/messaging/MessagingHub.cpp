@@ -1445,6 +1445,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
     auto sent = P2p().SendGroupMessage(thread_id, display, opts);
     if (sent) {
       (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+      Attachments().MaybeBuildPoster(thread_id, *fields);
       if (attachment_downloads_) {
         attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
       }
@@ -1454,6 +1455,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   auto sent = P2p().SendUserMessage(thread_id, display, opts);
   if (sent) {
     (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+    Attachments().MaybeBuildPoster(thread_id, *fields);
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
     }

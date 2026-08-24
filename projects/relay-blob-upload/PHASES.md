@@ -21,7 +21,7 @@
 - [x] `UploadRelayBlobBytes` helper (presign → PUT → retain)
 - [x] Wire into `ServiceClientFactory` + `MessagingHub::Blob()` with auth signer
 - [x] Unit tests: sign golden vectors; mock upload sequence
-- [ ] Draft SERVICE_ENDPOINTS section (promote when merged)
+- [x] Draft SERVICE_ENDPOINTS section (promote when merged)
 
 **Exit:** Can presign/PUT/retain a test blob from a unit test or dev harness.
 
@@ -103,9 +103,9 @@
 ## a5 — Hardening (post-MVP slice)
 
 - [x] DEK-wrap local attachment cache (align at-rest policy)
-- [ ] Video poster frame extraction on receive
+- [x] Video poster frame extraction on receive
 - [x] Thread/local storage controls: delete local blobs by thread (UI for [R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
-- [ ] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts
+- [x] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts
 
 ---
 

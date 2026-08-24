@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**a1–a4** done; **a6** done; **a5** DEK-wrap landed — video poster still open)
+**As of:** 2026-08-24 (**a1–a6** + **a5** done — DEK-wrap, video poster, storage UX, SERVICE_ENDPOINTS)
 
 ---
 
@@ -13,7 +13,7 @@
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
 | **pp-browser a1–a4** | **Done** — wire/codec, composer send, CDN receive/display, quota UX |
 | **pp-browser a6** | **Done** — Smart download, suppression, libp2p chat-blob, fetch ladder, outbound peer upload |
-| **pp-browser a5** | **Partial** — clear downloaded attachments UX + DEK-wrap landed; video poster still open |
+| **pp-browser a5** | **Done** — DEK-wrap, video poster, clear-attachments UX, SERVICE_ENDPOINTS blob section |
 
 ---
 
@@ -42,17 +42,22 @@
 | Peer protocol service | `Libp2pChatBlobService.*`, `ChatBlobResponder.*` |
 | Pending push ciphertext | `AttachmentCache` (`blob_cipher/`) |
 | Clear all downloaded attachments | Me → Storage → **Clear downloaded attachments…** |
-| Tests | `attachment_download_policy_test`, `chat_blob_responder_test` |
+| DEK-wrap local cache | `AttachmentCache` PPBA + `blobs_view/` |
+| Video poster | `VideoPosterExtractor.*`, `EnsureAttachmentPoster` |
+| Blob HTTP contract | [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) |
+| Tests | `attachment_download_policy_test`, `chat_blob_responder_test`, `attachment_cache_at_rest_test`, `video_poster_extractor_test` |
 
 ---
 
-## a5 DEK-wrap (landed)
+## a5 shipped
 
-Local attachment cache under `blobs/` is FileCipher-wrapped with magic `PPBA` when the profile DEK is present. Plaintext for UI/OS open is materialized under `blobs_view/` while unlocked and wiped on vault lock. See [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).
+| Item | Notes |
+|------|-------|
+| DEK-wrap | `PPBA` + FileCipher on `blobs/`; view materialization under `blobs_view/` |
+| Video poster | Platform extract (AVFoundation / MF / ffmpeg) + soft JPEG; inbox poster `<img>` |
+| Storage UX | Clear downloaded attachments (R020) |
+| Contracts | Blob routes + sign domains in SERVICE_ENDPOINTS |
 
 ## Next
 
-| Area | Phase |
-|------|-------|
-| Video poster on receive | a5 |
-| LIBP2P_STREAMS / WIRE_SCHEMAS polish | done (chat-blob in LIBP2P_STREAMS) |
+Project MVP complete for planned i*/a* tracks. Optional follow-ups (not blocking): Wi‑Fi-only large auto, in-app preview registry, SERVICE_ENDPOINTS polish as www evolves.

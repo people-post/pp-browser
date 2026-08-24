@@ -60,6 +60,9 @@ public:
   Roe<std::string> EnsureLocalViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                        const std::string& mime, const std::string& filename);
 
+  /** Best-effort video poster under blobs_view (R012); ignores errors. */
+  void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields);
+
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
 

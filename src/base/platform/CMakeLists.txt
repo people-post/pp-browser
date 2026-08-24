@@ -30,6 +30,7 @@ set(_pp_platform_gui_sources
   NetworkConnectivity.cpp
   PlatformEarlyInit.cpp
   ProfileIconImagePrep.cpp
+  VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
   PlatformNavigation.cpp
   PlatformOpenUrl.cpp
@@ -60,6 +61,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Win32.cpp
+    VideoPosterExtractor_Win32.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -70,6 +72,11 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
   )
+  if(NOT PP_BROWSER_IS_IOS)
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm)
+  else()
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp)
+  endif()
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
@@ -77,6 +84,7 @@ else()
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
+    VideoPosterExtractor_Default.cpp
   )
 endif()
 
@@ -142,7 +150,15 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
     "-framework QuartzCore"
     "-framework UserNotifications"
     "-framework CoreServices"
-    "-framework Foundation")
+    "-framework Foundation"
+    "-framework AVFoundation"
+    "-framework CoreMedia"
+    "-framework CoreVideo"
+    "-framework CoreGraphics")
+endif()
+
+if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
+  target_link_libraries(pp_base_platform PRIVATE mfplat mfreadwrite mfuuid)
 endif()
 
 # Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.

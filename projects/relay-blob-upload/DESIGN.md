@@ -1,7 +1,8 @@
 # Relay blob upload — design
 
-**Status:** a1–a4 landed; a6 peer-first + download policy planned (R019–R021).  
-**Server spec:** [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)
+**Status:** a1–a6 + a5 landed (icons, attachments, peer-first, DEK-wrap, video poster).  
+**Server spec:** [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)  
+**HTTP contract:** [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) (relay blobs section).
 
 ---
 
@@ -281,7 +282,7 @@ From `GET /v1/users/:relay_user_id` and search hits.
 
 - **a6:** Peer blob protocol + Smart download policy + deletion suppression (R019–R021)
 - DEK-wrap local attachment files (a5)
-- Thumbnail generation for video on receive
+- [x] Thumbnail generation for video on receive (a5 — `VideoPosterExtractor` + `EnsureAttachmentPoster`)
 - Thread storage settings: delete local blobs by thread/age (wires R020 UI)
 - Wi‑Fi-only auto for large (optional after a6)
 - Promote attachment wire tables to `docs/contracts/WIRE_SCHEMAS.md` on a1 ship (done with a1)

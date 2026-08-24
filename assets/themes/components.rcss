@@ -2871,6 +2871,14 @@ call-video-tile {
   margin-bottom: 8dp;
 }
 
+.chat-attachment-video-poster {
+  display: block;
+  max-width: 100%;
+  max-height: 240dp;
+  border-radius: 8dp;
+  margin-bottom: 8dp;
+}
+
 .chat-attachment-video {
   display: flex;
   flex-direction: column;

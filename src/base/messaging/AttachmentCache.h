@@ -69,6 +69,22 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
                                           const std::string& filename, const ByteVector* dek,
                                           std::string_view profile_id);
 
+/** `{blobs_view}/{hash}.poster.jpg` — session plaintext poster (wiped with view cache). */
+std::string AttachmentPosterPath(const std::string& profile_dir, const std::string& thread_id,
+                                 const std::vector<uint8_t>& content_hash);
+
+bool AttachmentPosterExists(const std::string& profile_dir, const std::string& thread_id,
+                            const std::vector<uint8_t>& content_hash);
+
+/**
+ * Ensure a JPEG poster under blobs_view for a video attachment (R012).
+ * Best-effort extract; soft placeholder on decode failure.
+ */
+Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
+                                        const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                        const std::string& filename, const ByteVector* dek,
+                                        std::string_view profile_id);
+
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
                                       const ChatAttachmentFields& fields, const std::string& source_path,
                                       const ByteVector* dek = nullptr, std::string_view profile_id = {});

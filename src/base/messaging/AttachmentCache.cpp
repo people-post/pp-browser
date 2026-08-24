@@ -1,6 +1,7 @@
 #include "base/messaging/AttachmentCache.h"
 
 #include "base/crypto/AttachmentContentHash.h"
+#include "base/platform/VideoPosterExtractor.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
 
@@ -106,6 +107,10 @@ std::filesystem::path FindBlobFile(const std::filesystem::path& root, const std:
       continue;
     }
     const std::string name = entry.path().filename().string();
+    // Skip session poster sidecars (`{hash}.poster.jpg`) — not attachment payloads.
+    if (name.size() > 11 && name.compare(name.size() - 11, 11, ".poster.jpg") == 0) {
+      continue;
+    }
     if (name == hash_name || name.rfind(hash_name + ".", 0) == 0) {
       return entry.path();
     }
@@ -378,6 +383,71 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
     return written.error();
   }
   return view_path.string();
+}
+
+std::string AttachmentPosterPath(const std::string& profile_dir, const std::string& thread_id,
+                                 const std::vector<uint8_t>& content_hash) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return {};
+  }
+  return (std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id)) /
+          (AttachmentHashHex(content_hash) + ".poster.jpg"))
+      .string();
+}
+
+bool AttachmentPosterExists(const std::string& profile_dir, const std::string& thread_id,
+                            const std::vector<uint8_t>& content_hash) {
+  const std::string path = AttachmentPosterPath(profile_dir, thread_id, content_hash);
+  if (path.empty()) {
+    return false;
+  }
+  std::error_code ec;
+  return std::filesystem::is_regular_file(path, ec) && !ec;
+}
+
+Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
+                                        const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                        const std::string& filename, const ByteVector* dek,
+                                        std::string_view profile_id) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment poster lookup");
+  }
+  const std::string poster_path = AttachmentPosterPath(profile_dir, thread_id, content_hash);
+  if (poster_path.empty()) {
+    return Error("Invalid attachment poster path");
+  }
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(poster_path, ec) && !ec) {
+    return poster_path;
+  }
+  if (!IsAttachmentVideoMime(mime)) {
+    return Error("Attachment is not video; no poster");
+  }
+
+  auto view = EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, dek, profile_id);
+  if (!view) {
+    return view.error();
+  }
+
+  auto jpeg = ExtractVideoPosterJpeg(*view);
+  if (!jpeg) {
+    return jpeg.error();
+  }
+  if (jpeg->empty()) {
+    return Error("Video poster JPEG empty");
+  }
+
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
+  std::filesystem::create_directories(view_root, ec);
+  if (ec) {
+    return Error("Failed to create attachment view directory for poster");
+  }
+
+  const ByteVector bytes(jpeg->begin(), jpeg->end());
+  if (auto written = WriteBytesAtomic(std::filesystem::path(poster_path), bytes); !written) {
+    return written.error();
+  }
+  return poster_path;
 }
 
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,

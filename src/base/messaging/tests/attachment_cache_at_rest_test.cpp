@@ -109,5 +109,14 @@ TEST_F(AttachmentCacheAtRestTest, LegacyPlaintextLoadsWithoutDek) {
   EXPECT_FALSE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt").empty());
 }
 
+TEST_F(AttachmentCacheAtRestTest, AttachmentPosterPathUsesBlobsViewHash) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const std::string path = AttachmentPosterPath(profile_dir_, thread_id_, *hash);
+  EXPECT_NE(path.find("blobs_view"), std::string::npos);
+  EXPECT_NE(path.find(AttachmentHashHex(*hash) + ".poster.jpg"), std::string::npos);
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+}
+
 } // namespace
 } // namespace pbr
