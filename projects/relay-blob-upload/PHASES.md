@@ -79,9 +79,9 @@
 
 ## a3 — Receive + display
 
-- [x] Background download queue on attachment ingest ([R008](DECISIONS.md#r008--eager-background-download-on-receive))
+- [x] Background download queue on attachment ingest ([R008](DECISIONS.md#r008--size-tiered-fetch-on-receive-amended) — a3 queues all sizes via CDN; Smart tier + peer path in a6)
 - [x] CDN fetch → decrypt → `{thread_id}/blobs/{hash}` ([R016](DECISIONS.md#r016--content-addressed-local-blob-paths-d075))
-- [x] Image inline bubble; video thumbnail + OS player open ([R012](DECISIONS.md#r012--local-display-only-os-video-player-for-video))
+- [x] Image inline bubble; video card + OS player open ([R012](DECISIONS.md#r012--local-display-only-os-video-player-for-video))
 - [x] Non-media: filename + size; no auto-execute ([R017](DECISIONS.md#r017--dangerous-file-types-never-auto-execute))
 - [x] Fallback UI when download fails (retry)
 
@@ -104,11 +104,24 @@
 
 - [ ] DEK-wrap local attachment cache (align at-rest policy)
 - [ ] Video poster frame extraction on receive
-- [ ] Thread/local storage controls: delete local blobs by thread
+- [ ] Thread/local storage controls: delete local blobs by thread (UI for [R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
 - [ ] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts
+
+---
+
+## a6 — Peer-first blobs + download policy
+
+- [ ] Amend receive queue for **Smart** default: auto ≤ 4 MiB; tap > 4 MiB ([R008](DECISIONS.md#r008--size-tiered-fetch-on-receive-amended), [R021](DECISIONS.md#r021--attachment-download-policy-smart-default))
+- [ ] Pref: Smart / Always auto / On demand; session “Download pending media…”
+- [ ] libp2p chat-blob protocol: peer-direct transfer by `content_hash` ([R019](DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary))
+- [ ] Fetch order: local → peer → CDN; outbound blob: peer when reachable else CDN ([R015](DECISIONS.md#r015--blob-ready-before-send-for-attachments))
+- [ ] Deletion suppression tombstones; clear-history / delete-file must not re-heal ([R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
+- [ ] Wire docs: protocol id + framing note in [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md) / WIRE_SCHEMAS when shipped
+
+**Exit:** Large attachments are tap-to-download by default; missing blobs heal from peer when CDN is gone; cleared history stays cleared on this device.
 
 ---
 
 ## Agent batch hint
 
-Implement **i1 → i2 → i3** before **a1**. Do not start composer attach until i1 blob client is merged — attachments reuse the same PUT/retain stack.
+Implement **i1 → i2 → i3** before **a1**. Do not start composer attach until i1 blob client is merged — attachments reuse the same PUT/retain stack. After **a4**, prefer **a6** before deep a5 polish if peer heal / Smart policy are blocking product gaps.

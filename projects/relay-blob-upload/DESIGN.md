@@ -1,6 +1,6 @@
 # Relay blob upload — design
 
-**Status:** Planning complete — implementation starts at **i1**.  
+**Status:** a1–a3 landed; a4 next; **a6** peer-first + download policy planned (R019–R021).  
 **Server spec:** [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)
 
 ---
@@ -16,8 +16,10 @@ Brief www exposes relay blob upload (presigned S3 PUT, retain, profile icon atta
 | Goal | Track |
 |------|-------|
 | Upload and display **profile icons** (plaintext) | Icons i1–i3 |
-| Send/receive **any file type** in chat (E2E) | Attachments a1–a5 |
+| Send/receive **any file type** in chat (E2E) | Attachments a1–a6 |
 | Image + video preview in chat v1 | a3 |
+| Peer-first blob heal (like history sync) | a6 / R019 |
+| Size-tiered download policy | a6 / R021 |
 | Relay blind to file semantics | R006 |
 | Local cache is authoritative after fetch | R002, R008 |
 
@@ -103,41 +105,61 @@ Sign domain field order matches www `SignatureVerifier.ts` (length-prefixed UTF-
 
 RmlUi: `<img src="file://…">` from local path only (R012).
 
-### 4.3 Chat attachments (a1–a5)
+### 4.3 Chat attachments (a1–a6)
 
-**Send flow:**
+**Two layers** (do not conflate):
+
+| Layer | What | Transport |
+|-------|------|-----------|
+| **Envelope** | Small `ChatPayload` (url, mime, hash, content key…) | Same as text: **direct first, relay fallback** (already) |
+| **File bytes** | Encrypted blob | **Peer-direct first, CDN second** ([R019](DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)) |
+
+**Send flow (target — a6 completes peer path; a2 = CDN-only today):**
 
 ```mermaid
 sequenceDiagram
   participant User
   participant Composer
   participant Crypto
+  participant Peer as libp2p chat-blob
   participant Blob as BlobClient
   participant S3
-  participant Relay as Chat send
+  participant Chat as Envelope send
 
   User->>Composer: Pick file
   Composer->>Crypto: content_key = random
   Crypto->>Crypto: ciphertext = AEAD(file, content_key)
-  Composer->>Blob: presign(octet-stream, len)
-  Blob->>S3: PUT ciphertext
-  Blob->>Blob: retain
+  alt peer reachable (1:1)
+    Composer->>Peer: transfer ciphertext / hash
+    Peer-->>Composer: ACK
+  else offline / group / peer fail
+    Composer->>Blob: presign(octet-stream, len)
+    Blob->>S3: PUT ciphertext
+    Blob->>Blob: retain
+  end
   Composer->>Crypto: ChatPayload attachment + key refs
-  Crypto->>Relay: E2E envelope (session key)
-  Relay-->>Composer: sent
+  Crypto->>Chat: E2E envelope (direct then relay)
+  Chat-->>Composer: sent
 ```
 
-**Receive flow:**
+Do not emit the envelope until the chosen blob path succeeds ([R015](DECISIONS.md#r015--blob-ready-before-send-for-attachments)). Sender keeps a local plaintext cache copy on success.
+
+**Receive / heal flow:**
 
 1. Decrypt envelope → `ChatPayload` attachment fields.
-2. Enqueue download job: GET `public_url` → decrypt with content key → write `{thread_id}/blobs/{plaintext_hash}`.
-3. Update message row with local path + ready state.
-4. Render by mime (image inline, video thumbnail + OS open, else filename row).
+2. If hash is **suppressed** ([R020](DECISIONS.md#r020--deletion-suppresses-re-fetch)) → skip auto fetch.
+3. Else apply download policy ([R021](DECISIONS.md#r021--attachment-download-policy-smart-default) / [R008](DECISIONS.md#r008--size-tiered-fetch-on-receive-amended)):
+   - Smart: auto if `byte_length ≤ 4 MiB`, else placeholder until tap
+   - Always auto / On demand / one-shot backlog as prefs
+4. Fetch order: local hit → **peer-direct by `content_hash`** → CDN GET `url` → failed UI.
+5. Decrypt / verify hash → write `{thread_id}/blobs/{plaintext_hash}` ([R016](DECISIONS.md#r016--content-addressed-local-blob-paths-d075)).
+6. Render by mime (image inline, video thumbnail + OS open, else filename row).
 
-**Group:** One PUT per attachment; N pairwise ciphertexts only for the small payload (R005).
+**Group:** One CDN object per attachment when CDN path is used; N pairwise envelopes only for the small payload ([R005](DECISIONS.md#r005--group-attachments-one-blob-ciphertext-pairwise-key-envelopes)). Opportunistic peer-direct to online members is optional, not a substitute for the shared CDN object when members are offline.
 
-**Private multi-device:** Same as text — sibling device without PSK sees envelope, cannot decrypt (R010).
+**Private multi-device:** Same as text — sibling device without PSK sees envelope, cannot decrypt ([R010](DECISIONS.md#r010--multi-device-same-rules-as-private-text)).
 
+**Deletion:** Clear history / delete files remove local blobs and suppress re-fetch ([R020](DECISIONS.md#r020--deletion-suppresses-re-fetch)).
 ### 4.4 Wire: `ChatContentType::Attachment`
 
 Add to `ChatPayloadTypes.h` / codec / validator / WIRE_SCHEMAS (promote on ship).
@@ -163,11 +185,11 @@ Bump `payload_version` only if breaking; prefer additive tail with new `content_
 Per [DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md) + D075:
 
 ```
-{thread_id}/blobs/{hash}     # decrypted plaintext
+{thread_id}/blobs/{hash}[.ext]   # decrypted plaintext (R016)
+# plus profile-level suppression tombstones for deleted hashes (R020) — exact store TBD in a6
 ```
 
 **Follow-up (a5):** encrypt cached attachment bytes under profile DEK where transcript at-rest policy requires (align with D102).
-
 ### 4.6 Directory integration
 
 Extend `DirectoryHit` / `HttpDirectoryClient` parsing:
@@ -193,13 +215,25 @@ From `GET /v1/users/:relay_user_id` and search hits.
 - Draft attachment chip with upload progress
 - Send disabled until upload completes (R015)
 
-### Bubbles (a3)
+### Bubbles (a3+)
 
 | Mime | Behavior |
 |------|----------|
-| `image/*` | Inline image from local cache |
+| `image/*` | Inline image from local cache (after auto/tap download) |
 | `video/*` | Poster/thumbnail + tap → OS player |
 | Other | Icon + filename + size; tap → confirm → OS open |
+
+| Download state | Behavior |
+|----------------|----------|
+| Auto pending (≤ 4 MiB Smart) | “Downloading…” |
+| Large / On-demand | Placeholder + **Download** |
+| Failed | Retry; if CDN gone try peer heal (a6) |
+| Ready | Mime-specific render above |
+
+### Download prefs (a6 / R021)
+
+- Me → Chat/Media: **Smart** (default) / **Always auto** / **On demand**
+- Session: **Download pending media…** (one-shot backlog)
 
 ### Quota (a4)
 
@@ -243,9 +277,11 @@ From `GET /v1/users/:relay_user_id` and search hits.
 
 ---
 
-## 9. Open follow-ups (not blocking i1)
+## 9. Open follow-ups (not blocking a4)
 
+- **a6:** Peer blob protocol + Smart download policy + deletion suppression (R019–R021)
 - DEK-wrap local attachment files (a5)
 - Thumbnail generation for video on receive
-- Thread storage settings: delete local blobs by thread/age
-- Promote attachment wire tables to `docs/contracts/WIRE_SCHEMAS.md` on a1 ship
+- Thread storage settings: delete local blobs by thread/age (wires R020 UI)
+- Wi‑Fi-only auto for large (optional after a6)
+- Promote attachment wire tables to `docs/contracts/WIRE_SCHEMAS.md` on a1 ship (done with a1)

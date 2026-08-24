@@ -1,6 +1,6 @@
 # Relay blob upload — decisions
 
-ADRs for profile icons and chat attachments. Product answers locked **2026-08-24** (planning session).  
+ADRs for profile icons and chat attachments. Product answers locked **2026-08-24** (planning session; R008 amended + R019–R021 same day).  
 Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md).
 
 ---
@@ -10,7 +10,7 @@ Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](
 **Date:** 2026-08-24  
 **Status:** Accepted  
 
-**Decision:** Ship **profile icons** (i1–i3) before **chat attachments** (a1–a5). Shared blob client in i1 serves both tracks.
+**Decision:** Ship **profile icons** (i1–i3) before **chat attachments** (a1–a6). Shared blob client in i1 serves both tracks.
 
 **Rationale:** Icons exercise sign/PUT/retain/directory/display without new `ChatContentType`, E2E payload design, or composer work.
 
@@ -89,14 +89,23 @@ Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](
 
 ---
 
-## R008 — Eager background download on receive
+## R008 — Size-tiered fetch on receive (amended)
 
 **Date:** 2026-08-24  
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-08-24 — was “eager for all”)  
 
-**Decision:** After decrypt/ingest of an attachment message, **queue background fetch** from CDN → decrypt to local `{thread_id}/blobs/{hash}` → mark ready. Bubbles read **local paths only**. Tap-to-download is fallback for failure/offline, not the happy path.
+**Decision:** After decrypt/ingest of an attachment message, apply the active **download policy** ([R021](#r021--attachment-download-policy-smart-default)):
 
-**Rationale:** Relay/GC window makes lazy fetch lose history silently.
+| Default (**Smart**) | Behavior |
+|---------------------|----------|
+| Plaintext size **≤ 4 MiB** (server small tier) | Auto background fetch → local `{thread_id}/blobs/{hash}` |
+| Plaintext size **> 4 MiB** | Placeholder bubble; **tap to download** |
+
+Transport order for any fetch (auto or tap): **peer-direct first, CDN second** ([R019](#r019--peer-first-blob-transfer-cdn-secondary)). Bubbles read **local paths only** once ready ([R012](#r012--local-display-only-os-video-player-for-video)). Suppressed hashes are never auto-fetched ([R020](#r020--deletion-suppresses-re-fetch)).
+
+**Rationale:** Always-eager large blobs punish bandwidth/disk/peer uplink; always-lazy loses small media when CDN GCs. Small-tier auto preserves R002’s “get a local copy soon” for the common case.
+
+**a3 note:** Current code still queues CDN eager for all sizes; Smart + peer-first land in **a6**.
 
 ---
 
@@ -162,14 +171,21 @@ Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](
 
 ---
 
-## R015 — Upload-before-send for attachments
+## R015 — Blob-ready-before-send for attachments
 
 **Date:** 2026-08-24  
-**Status:** Accepted  
+**Status:** Accepted (amended 2026-08-24 — CDN-only → path-ready)  
 
-**Decision:** Do not emit the chat envelope until **upload + retain** succeed. Bubble states: `uploading` → `sent` / `failed`. Failed upload leaves no “sent” message.
+**Decision:** Do not emit the chat envelope until the **chosen blob delivery path** succeeds:
 
-**Rationale:** Avoids orphan retains and confused delivery state.
+1. **1:1, peer reachable:** peer-direct blob transfer ACK *or* CDN PUT+retain (fallback) — see [R019](#r019--peer-first-blob-transfer-cdn-secondary).
+2. **Peer offline / unreachable / group:** CDN PUT+retain required (group still one shared CDN object per [R005](#r005--group-attachments-one-blob-ciphertext-pairwise-key-envelopes)).
+
+Bubble states: `uploading` → `sent` / `failed`. Failed delivery leaves no “sent” message. Sender always keeps a local plaintext cache copy when send succeeds.
+
+**Rationale:** Same “no orphan sent state” as before; allows direct-first without pretending CDN is the only path.
+
+**a2 note:** Implementation today is CDN PUT+retain only; peer-direct send path is **a6**.
 
 ---
 
@@ -201,5 +217,64 @@ Normative summary: [DESIGN.md](DESIGN.md). Server wire: [www relay blob design](
 **Status:** Accepted  
 
 **Decision:** Implement **soft-skip / placeholder bubble** for unknown `ChatContentType` in the same release window as attachment send (per [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md)). Prevents old clients from hard-rejecting attachment messages.
+
+---
+
+## R019 — Peer-first blob transfer; CDN secondary
+
+**Date:** 2026-08-24  
+**Status:** Accepted  
+
+**Decision:** Attachment **file bytes** use the same transport preference as chat envelopes / history sync ([P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) D058–D060):
+
+| Direction | Order |
+|-----------|--------|
+| **Outbound blob** | Peer-direct when reachable → else CDN PUT+retain |
+| **Inbound missing blob** | Local hash hit → peer-direct by `content_hash` → CDN GET if `url` still valid → failed UI |
+
+The small **attachment envelope** (`ChatPayload`) continues on the normal message send path (already direct-first, relay fallback). A new libp2p protocol (proposed `/pp-browser/chat-blob/1.0.0`) carries ciphertext or plaintext-hash-authenticated bytes — exact framing in a6 design notes; authz = same chat relationship as history sync.
+
+**CDN role:** Offline / unreachable peers, group fan-out durability window, and fallback when peer transfer fails — **not** long-term archive ([R002](#r002--relay-is-delivery-only-local-is-source-of-truth)).
+
+**Rationale:** Matches user mental model (“direct like messages”); peer heal closes the gap after CDN GC that history sync already closes for envelopes.
+
+---
+
+## R020 — Deletion suppresses re-fetch
+
+**Date:** 2026-08-24  
+**Status:** Accepted  
+
+**Decision:** After the user **clears thread history** or **deletes attachment file(s)** on this device:
+
+1. Remove local blob bytes for affected hashes (clear-history: wipe or suppress that thread’s `blobs/`; single delete: remove that hash).
+2. Persist a **suppression / tombstone** set (by `content_hash`, scoped per profile or per thread).
+3. Auto paths **must not** re-materialize suppressed hashes: CDN queue, peer blob heal, thread-open `EnsureThreadAttachments`, backlog “download once”.
+4. Explicit **“Download again”** on a still-visible bubble (if the envelope remains) may clear that hash’s suppression and fetch once — same idea as intentional restore, not silent sync.
+
+Analogous to `history_floor_seq` for messages: intentional local forget stays forgotten on this device.
+
+**Rationale:** Without suppression, peer-first heal and CDN retry would undo Clear history / storage cleanup.
+
+---
+
+## R021 — Attachment download policy (Smart default)
+
+**Date:** 2026-08-24  
+**Status:** Accepted  
+
+**Decision:** One profile preference (Me → Chat / Media), plus a session action:
+
+| Pref | Behavior |
+|------|----------|
+| **Smart** (default) | Auto-fetch ≤ 4 MiB; tap-to-download larger ([R008](#r008--size-tiered-fetch-on-receive-amended)) |
+| **Always auto** | Auto-fetch all sizes (subject to [R020](#r020--deletion-suppresses-re-fetch)) |
+| **On demand** | Tap-to-download all sizes |
+
+**Session override (not a permanent pref):** “Download pending media…” drains the current backlog under Always-auto rules, then returns to the saved pref.
+
+Threshold **4 MiB** = server small-tier cap (keep UX and quota vocabulary aligned). Later optional: Wi‑Fi-only auto for large (not required for a6).
+
+**Rationale:** Covers size-tier auto, power-user Always/On-demand, and offline catch-up without four overlapping toggles. Large auto over peer uplink remains opt-in (Always / one-shot).
 
 ---
