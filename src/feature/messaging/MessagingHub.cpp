@@ -2,6 +2,7 @@
 
 #include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/GroupInviteGate.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/MobileEphemeralListenGate.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
@@ -17,6 +18,7 @@
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -892,6 +894,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
@@ -953,6 +956,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 Sessions());
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
@@ -1392,9 +1396,50 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
   if (active.kind == ThreadKind::Group) {
-    return P2p().SendGroupMessage(thread_id, display, opts);
+    auto sent = P2p().SendGroupMessage(thread_id, display, opts);
+    if (sent) {
+      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path);
+      if (attachment_downloads_) {
+        attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+      }
+    }
+    return sent;
   }
-  return P2p().SendUserMessage(thread_id, display, opts);
+  auto sent = P2p().SendUserMessage(thread_id, display, opts);
+  if (sent) {
+    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path);
+    if (attachment_downloads_) {
+      attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+    }
+  }
+  return sent;
+}
+
+AttachmentDownloadService& MessagingHub::Attachments() {
+  if (!attachment_downloads_) {
+    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_->SetProfileDataDir(data_dir_);
+  }
+  return *attachment_downloads_;
+}
+
+void MessagingHub::WireAttachmentDownloads() {
+  if (!attachment_downloads_) {
+    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+  }
+  attachment_downloads_->SetProfileDataDir(data_dir_);
+  attachment_downloads_->SetOnChanged([this]() {
+    if (p2p_) {
+      p2p_->NotifyMessagesChanged();
+    }
+  });
+  if (inbox_) {
+    inbox_->SetProfileDataDir(data_dir_);
+    inbox_->SetAttachmentDownloads(attachment_downloads_.get());
+  }
+  if (p2p_) {
+    p2p_->SetAttachmentDownloads(attachment_downloads_.get());
+  }
 }
 
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,

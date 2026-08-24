@@ -21,6 +21,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallStack.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/BlobClient.h"
@@ -181,6 +182,7 @@ public:
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  AttachmentDownloadService& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
@@ -198,6 +200,7 @@ public:
   void TryUpnpPortMapping();
   void TickReachabilityUx();
   void RefreshMeshCapabilities();
+  void WireAttachmentDownloads();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
@@ -295,6 +298,7 @@ private:
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
+  std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;

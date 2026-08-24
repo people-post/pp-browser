@@ -208,6 +208,8 @@ private:
   static void ToggleReactionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenEmojiInsertCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void AttachFileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RetryAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -264,6 +266,8 @@ private:
   void OpenEmojiInsertMenu(Rml::Event* ev);
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
+  void OpenAttachment(const std::string& message_id);
+  void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
   void OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position);
   void ShowReactionMorePrompt(const std::string& message_id);

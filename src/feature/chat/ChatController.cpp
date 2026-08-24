@@ -15,6 +15,7 @@
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPushDeviceRegistrar.h"
 #include "base/platform/NativeFileDialog.h"
+#include "base/platform/PlatformOpenFile.h"
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/WorkingSetPolicy.h"
@@ -627,6 +628,22 @@ void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml
 void ChatController::AttachFileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
   Instance().OnAttachFile();
+}
+
+void ChatController::OpenAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().OpenAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatController::RetryAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().RetryAttachmentDownload(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1311,6 +1328,40 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
   });
 }
 
+void ChatController::OpenAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+  if (!path) {
+    UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+    return;
+  }
+  const auto open_file = [path = *path]() {
+    if (!PlatformOpenFile(path)) {
+      UserFeedback::Fail(Tr("chat.attachment.open_failed"));
+    }
+  };
+  if (facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id)) {
+    ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
+                [open_file](const bool ok) {
+                  if (ok) {
+                    open_file();
+                  }
+                });
+    return;
+  }
+  open_file();
+}
+
+void ChatController::RetryAttachmentDownload(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  facade_->RetryAttachmentDownload(ActiveThreadId(), message_id);
+}
+
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
 }
@@ -1331,6 +1382,9 @@ void ChatController::SyncDisplayFromThread() {
     return;
   }
   const std::string thread_id = ActiveThreadId();
+  if (facade_) {
+    facade_->EnsureThreadAttachments(thread_id);
+  }
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
 
   const std::string prev_tail_id =
@@ -2659,6 +2713,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
+        ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
+        ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);

@@ -33,6 +33,7 @@ set(_pp_platform_gui_sources
   PlatformLogSink.cpp
   PlatformNavigation.cpp
   PlatformOpenUrl.cpp
+  PlatformOpenFile.cpp
   PlatformServices.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp

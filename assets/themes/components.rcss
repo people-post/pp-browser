@@ -2859,6 +2859,32 @@ call-video-tile {
   margin-bottom: 8dp;
 }
 
+.chat-attachment-card {
+  max-width: 320dp;
+}
+
+.chat-attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 240dp;
+  border-radius: 8dp;
+  margin-bottom: 8dp;
+}
+
+.chat-attachment-video {
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+}
+
+.chat-attachment-video-badge {
+  display: inline-block;
+  padding: 2dp 8dp;
+  border-radius: 999dp;
+  font-size: 11dp;
+  opacity: 0.8;
+}
+
 .me-profile-avatar-actions {
   gap: 8dp;
   flex: 1;

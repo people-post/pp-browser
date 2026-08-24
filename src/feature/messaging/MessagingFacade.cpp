@@ -1,6 +1,8 @@
 #include "feature/messaging/MessagingFacade.h"
 
 #include "base/data/PricingTypes.h"
+#include "base/messaging/AttachmentCache.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/messaging/LinkDeviceCoordinator.h"
@@ -403,6 +405,56 @@ Roe<void> MessagingFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); 
 
 Roe<ThreadMessage> MessagingFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
   return hub_.SendAttachmentFromPath(thread_id, path);
+}
+
+void MessagingFacade::EnsureThreadAttachments(const std::string& thread_id) {
+  hub_.Attachments().EnsureThreadQueued(thread_id, hub_.Store());
+}
+
+void MessagingFacade::RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  hub_.Attachments().RetryDownload(thread_id, message_id, hub_.Store());
+}
+
+std::optional<std::string> MessagingFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
+                                                                          const std::string& message_id) {
+  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return std::nullopt;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
+      continue;
+    }
+    auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+    if (!fields) {
+      return std::nullopt;
+    }
+    const std::string path =
+        AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
+    if (path.empty()) {
+      return std::nullopt;
+    }
+    return path;
+  }
+  return std::nullopt;
+}
+
+bool MessagingFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
+                                                           const std::string& message_id) {
+  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return true;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
+      continue;
+    }
+    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
+      return AttachmentOpenNeedsConfirm(fields->mime);
+    }
+    return true;
+  }
+  return true;
 }
 
 Roe<void> MessagingFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }

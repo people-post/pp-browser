@@ -1,5 +1,6 @@
 pp_browser_add_base_library(pp_base_messaging
   SOURCES
+    AttachmentCache.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatHistoryResponder.cpp

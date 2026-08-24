@@ -79,11 +79,11 @@
 
 ## a3 — Receive + display
 
-- [ ] Background download queue on attachment ingest ([R008](DECISIONS.md#r008--eager-background-download-on-receive))
-- [ ] CDN fetch → decrypt → `{thread_id}/blobs/{hash}` ([R016](DECISIONS.md#r016--content-addressed-local-blob-paths-d075))
-- [ ] Image inline bubble; video thumbnail + OS player open ([R012](DECISIONS.md#r012--local-display-only-os-video-player-for-video))
-- [ ] Non-media: filename + size; no auto-execute ([R017](DECISIONS.md#r017--dangerous-file-types-never-auto-execute))
-- [ ] Fallback UI when download fails (retry)
+- [x] Background download queue on attachment ingest ([R008](DECISIONS.md#r008--eager-background-download-on-receive))
+- [x] CDN fetch → decrypt → `{thread_id}/blobs/{hash}` ([R016](DECISIONS.md#r016--content-addressed-local-blob-paths-d075))
+- [x] Image inline bubble; video thumbnail + OS player open ([R012](DECISIONS.md#r012--local-display-only-os-video-player-for-video))
+- [x] Non-media: filename + size; no auto-execute ([R017](DECISIONS.md#r017--dangerous-file-types-never-auto-execute))
+- [x] Fallback UI when download fails (retry)
 
 **Exit:** Sent image/video displays from local cache; other files show as saved attachments.
 

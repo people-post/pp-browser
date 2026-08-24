@@ -1,6 +1,7 @@
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupMembershipService.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
@@ -365,6 +366,7 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
       preview = decoded->text;
     }
     inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+    MaybeEnqueueAttachmentDownload(envelope, outcome.thread_id);
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -1724,6 +1726,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
             preview = decoded->text;
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+          MaybeEnqueueAttachmentDownload(envelope, resolved_thread_id);
           if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
             std::string notice_title = "New message";
             if (auto thread = store_.GetThread(resolved_thread_id)) {
@@ -1775,6 +1778,40 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       });
     }
   });
+}
+
+void P2pMessagingService::SetAttachmentDownloads(AttachmentDownloadService* downloads) {
+  attachment_downloads_ = downloads;
+  if (chat_sync_) {
+    chat_sync_->SetAttachmentDownloads(downloads);
+  }
+}
+
+void P2pMessagingService::MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope,
+                                                           const std::string& thread_id) {
+  if (!attachment_downloads_) {
+    return;
+  }
+  auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
+  if (!decoded || decoded->content_type != ChatContentType::Attachment) {
+    return;
+  }
+  ThreadMessage message;
+  message.id = envelope.message_id;
+  message.thread_id = thread_id;
+  message.content_type = ChatContentType::Attachment;
+  message.payload_json = decoded->payload_json;
+  attachment_downloads_->EnqueueFromMessage(thread_id, message);
+}
+
+void P2pMessagingService::NotifyMessagesChanged() {
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() {
+      if (on_messages_changed_) {
+        on_messages_changed_();
+      }
+    });
+  }
 }
 
 void P2pMessagingService::SetOnMessagesChanged(std::function<void()> callback) {

@@ -1,8 +1,10 @@
 #include "feature/messaging/InboxController.h"
 
 #include "feature/messaging/GroupMembershipService.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/messaging/AttachmentCache.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -427,6 +429,14 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
   return Error("Failed to update thread preview");
 }
 
+void InboxController::SetProfileDataDir(std::string profile_dir) {
+  profile_data_dir_ = std::move(profile_dir);
+}
+
+void InboxController::SetAttachmentDownloads(AttachmentDownloadService* downloads) {
+  attachment_downloads_ = downloads;
+}
+
 void InboxController::SetOnThreadChanged(ThreadChangedCallback callback) {
   on_thread_changed_ = std::move(callback);
 }
@@ -723,12 +733,65 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
   const std::string label = fields && !fields->filename.empty()
                                 ? fields->filename
                                 : (message.text.empty() ? "Attachment" : message.text);
-  std::string html = "<div class=\"chat-card chat-attachment-card\"><h3 class=\"heading-3\">" +
-                     StructuredTextParser::EscapeText(label) + "</h3>";
-  if (fields && !fields->mime.empty()) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(fields->mime) + "</p>";
+  auto escape_js_arg = [](const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char ch : value) {
+      if (ch == '\\' || ch == '\'') {
+        out.push_back('\\');
+      }
+      out.push_back(ch);
+    }
+    return out;
+  };
+
+  const std::string local_path =
+      fields && !profile_data_dir_.empty()
+          ? AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
+                                fields->filename)
+          : std::string{};
+  AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Downloading;
+  if (fields && attachment_downloads_) {
+    state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash);
+  } else if (!local_path.empty()) {
+    state = AttachmentDownloadService::DownloadState::Ready;
   }
-  html += "<p class=\"text muted\">Attachment</p></div>";
+
+  std::string html = "<div class=\"chat-card chat-attachment-card\">";
+  if (fields && state == AttachmentDownloadService::DownloadState::Ready && !local_path.empty()) {
+    if (IsAttachmentImageMime(fields->mime)) {
+      html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
+    } else if (IsAttachmentVideoMime(fields->mime)) {
+      html += "<div class=\"chat-attachment-video\">";
+      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+      html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+      html += "</div>";
+    } else {
+      html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
+      if (fields->byte_length > 0) {
+        html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+                "</p>";
+      }
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+    }
+  } else {
+    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
+    if (fields && fields->byte_length > 0) {
+      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+              "</p>";
+    }
+    if (state == AttachmentDownloadService::DownloadState::Downloading) {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+    } else {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.download_failed") + "</p>";
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"retry_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.retry") + "</button>";
+    }
+  }
+  html += "</div>";
   return html;
 }
 

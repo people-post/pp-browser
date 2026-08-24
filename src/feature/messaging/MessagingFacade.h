@@ -170,6 +170,11 @@ public:
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  void EnsureThreadAttachments(const std::string& thread_id);
+  void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
+                                                           const std::string& message_id);
+  bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   Roe<void> RotateBriefLlmKey();
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
