@@ -44,4 +44,5 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
 | [multi-device-account](multi-device-account/) | **m3 `endpoints[]` landed** — **m4c** paste contacts next (M018) | Account ID on wire; shared DEK + account KEM + first-run link-device — [DESIGN](multi-device-account/DESIGN.md) |
+| [relay-blob-upload](relay-blob-upload/) | **Planning complete** — **i1** blob client next | Profile icons (i1–i3) then E2E chat attachments (a1–a5); www API shipped — [DESIGN](relay-blob-upload/DESIGN.md) |
 | [libp2p-pq-transport](libp2p-pq-transport/) | **Phases 0–5 landed** | Full-PQ Noise (ML-KEM-768) + device PeerId (ML-DSA-65) hard cut — [CURRENT_STATE](libp2p-pq-transport/CURRENT_STATE.md) |

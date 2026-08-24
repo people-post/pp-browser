@@ -1,0 +1,113 @@
+# Relay blob upload — phases
+
+**[DESIGN.md](DESIGN.md)** is the authoritative spec.  
+**This file orders work only.**
+
+---
+
+## i0 — Project + decisions
+
+- [x] README / DESIGN / DECISIONS / PHASES / CURRENT_STATE
+- [x] Index in [projects/README.md](../README.md)
+- [ ] Cross-link from [AGENTS.md](../../AGENTS.md) common tasks (optional)
+
+---
+
+## i1 — Shared blob client (foundation)
+
+- [ ] `RelayBlobSignPayload` — domains: presign, retain, delete, list, profile-icon (match www bytes)
+- [ ] `HttpClient::Put(url, body, headers)` with Content-Type / length
+- [ ] `IBlobClient` + `HttpBlobClient`: presign, retain, delete, list, setProfileIcon
+- [ ] Wire into `ServiceClientFactory` / `ServiceClients`
+- [ ] Unit tests: sign vectors; mock presign→PUT→retain sequence
+- [ ] Draft SERVICE_ENDPOINTS section (promote when merged)
+
+**Exit:** Can presign/PUT/retain a test blob from a unit test or dev harness.
+
+---
+
+## i2 — Profile icon upload UX
+
+- [ ] Me → Profile: avatar affordance in `settings_section_profile.rml`
+- [ ] Native image pick (SDL file dialog)
+- [ ] Client resize/compress to ≤ icon cap (512 KiB default)
+- [ ] Flow: presign(`purpose: icon`) → PUT → `POST /profile/icon`
+- [ ] Clear icon path (empty url/blob_id)
+- [ ] Error handling + progress UI
+
+**Exit:** User can set/clear profile icon; directory shows new `icon` on lookup.
+
+---
+
+## i3 — Icon cache + render
+
+- [ ] Parse `icon` on directory hits / user lookup (`DirectoryHit`, `ContactRemote`)
+- [ ] Local icon cache: `{profile}/cache/icons/…` + meta (`url`, `blob_id`, `fetched_at`)
+- [ ] Refresh on directory/contacts reload when icon identity changes
+- [ ] Render: Me → Profile, contacts list/detail, call chrome placeholder
+- [ ] Contact card: render `avatar_url`; populate from profile icon when sharing
+- [ ] `<img>` from local file path only
+
+**Exit:** Icons visible across app from local cache; manual/directory refresh picks up changes.
+
+---
+
+## a1 — Attachment wire + codec
+
+- [ ] `ChatContentType::Attachment` + tail fields (mime, filename, size, url, hash, key material)
+- [ ] `ChatPayloadCodec` encode/decode + validator
+- [ ] Content-key AEAD helper for file bytes (separate from envelope AEAD)
+- [ ] Soft-skip unknown `content_type` on ingest ([R018](DECISIONS.md#r018--soft-skip-unknown-content_type-ships-with-attachments))
+- [ ] Promote WIRE_SCHEMAS attachment table on merge
+
+**Exit:** Round-trip attachment payload in tests; ingest does not hard-crash on unknown types from peers.
+
+---
+
+## a2 — Composer + upload-before-send
+
+- [ ] Attach button in `composer.rml` + native file picker (any type)
+- [ ] Encrypt file → presign(`octet-stream`) → PUT → retain
+- [ ] Build attachment `ChatPayload` → normal E2E send path
+- [ ] Bubble/draft states: uploading → sent / failed ([R015](DECISIONS.md#r015--upload-before-send-for-attachments))
+- [ ] Group: one blob PUT; pairwise envelopes for payload only ([R005](DECISIONS.md#r005--group-attachments-one-blob-ciphertext-pairwise-key-envelopes))
+
+**Exit:** User can send an attachment in 1:1 thread; message not sent until upload succeeds.
+
+---
+
+## a3 — Receive + display
+
+- [ ] Background download queue on attachment ingest ([R008](DECISIONS.md#r008--eager-background-download-on-receive))
+- [ ] CDN fetch → decrypt → `{thread_id}/blobs/{hash}` ([R016](DECISIONS.md#r016--content-addressed-local-blob-paths-d075))
+- [ ] Image inline bubble; video thumbnail + OS player open ([R012](DECISIONS.md#r012--local-display-only-os-video-player-for-video))
+- [ ] Non-media: filename + size; no auto-execute ([R017](DECISIONS.md#r017--dangerous-file-types-never-auto-execute))
+- [ ] Fallback UI when download fails (retry)
+
+**Exit:** Sent image/video displays from local cache; other files show as saved attachments.
+
+---
+
+## a4 — Quota UX
+
+- [ ] Detect presign 429 / quota errors
+- [ ] Confirm dialog: free relay upload space ([R009](DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm))
+- [ ] `blobs/list` → delete oldest remote via `blobs/delete`
+- [ ] Copy clarifies: local chat data unchanged
+
+**Exit:** User can recover from quota block without losing local history.
+
+---
+
+## a5 — Hardening (post-MVP slice)
+
+- [ ] DEK-wrap local attachment cache (align at-rest policy)
+- [ ] Video poster frame extraction on receive
+- [ ] Thread/local storage controls: delete local blobs by thread
+- [ ] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts
+
+---
+
+## Agent batch hint
+
+Implement **i1 → i2 → i3** before **a1**. Do not start composer attach until i1 blob client is merged — attachments reuse the same PUT/retain stack.
