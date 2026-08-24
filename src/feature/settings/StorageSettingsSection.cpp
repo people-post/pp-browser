@@ -3,6 +3,7 @@
 #include "base/data/AppPaths.h"
 #include "base/data/UserPreferences.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/messaging/AttachmentCache.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -95,6 +96,9 @@ void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.profile_dir = bootstrap.profile_data_dir;
   const uint64_t bytes = DirectoryByteSize(bootstrap.profile_data_dir);
   state.profile_size_label = "Profile uses ~" + FormatByteSize(bytes);
+  state.attachment_cache_size_label =
+      Tr("settings.storage.attachment_cache_size",
+         {{"size", FormatByteSize(AttachmentCacheByteSize(bootstrap.profile_data_dir))}});
   state.attachment_download_policy = bootstrap.profile_prefs.attachment_download_policy;
   state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
 }

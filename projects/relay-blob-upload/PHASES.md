@@ -104,7 +104,7 @@
 
 - [ ] DEK-wrap local attachment cache (align at-rest policy)
 - [ ] Video poster frame extraction on receive
-- [ ] Thread/local storage controls: delete local blobs by thread (UI for [R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
+- [x] Thread/local storage controls: delete local blobs by thread (UI for [R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
 - [ ] Promote SERVICE_ENDPOINTS + freeze ADRs superseded by contracts
 
 ---
@@ -116,7 +116,7 @@
 - [x] libp2p chat-blob protocol: peer-direct transfer by `content_hash` ([R019](DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary))
 - [x] Fetch order: local → peer → CDN; outbound blob: peer when reachable else CDN ([R015](DECISIONS.md#r015--blob-ready-before-send-for-attachments))
 - [x] Deletion suppression tombstones; clear-history / delete-file must not re-heal ([R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
-- [ ] Wire docs: protocol id + framing note in [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md) / WIRE_SCHEMAS when shipped
+- [x] Wire docs: protocol id + framing note in [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md) / WIRE_SCHEMAS when shipped
 
 **Exit:** Large attachments are tap-to-download by default; missing blobs heal from peer when CDN is gone; cleared history stays cleared on this device.
 

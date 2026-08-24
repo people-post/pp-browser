@@ -335,6 +335,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
+  bindings_.attachment_cache_size_label = ui_state_.attachment_cache_size_label.c_str();
   bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
   bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
@@ -487,6 +488,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
+    ctor.Bind("attachment_cache_size_label", &controller.bindings_.attachment_cache_size_label);
     ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
     ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
@@ -513,6 +515,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_choose_attachment_download_policy",
                            &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
     ctor.BindEventCallback("drain_pending_attachment_media", &SettingsController::DrainPendingAttachmentMediaCallback);
+    ctor.BindEventCallback("clear_downloaded_attachments", &SettingsController::ClearDownloadedAttachmentsCallback);
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
@@ -611,6 +614,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
   host.Dirty("settings", "profile_size_label");
+  host.Dirty("settings", "attachment_cache_size_label");
   host.Dirty("settings", "attachment_download_policy");
   host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "pin_protection_status");
@@ -1416,6 +1420,40 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
   }
   commands_.drain_pending_attachment_media();
   UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
+}
+
+void SettingsController::ClearDownloadedAttachmentsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                             const Rml::VariantList& /*args*/) {
+  Instance().OnClearDownloadedAttachments();
+}
+
+void SettingsController::OnClearDownloadedAttachments() {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(Tr("settings.storage.clear_attachments_confirm_title"),
+                               Tr("settings.storage.clear_attachments_confirm_message"),
+                               [this](const bool ok) {
+                                 if (!ok) {
+                                   return;
+                                 }
+                                 PerformClearDownloadedAttachments();
+                               },
+                               {});
+}
+
+void SettingsController::PerformClearDownloadedAttachments() {
+  if (!commands_.clear_downloaded_attachments) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment storage is not available"));
+    return;
+  }
+  if (auto cleared = commands_.clear_downloaded_attachments(); !cleared) {
+    ReportFailure(cleared.error());
+    return;
+  }
+  SyncBindingsFromSession();
+  DirtyAll();
+  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {

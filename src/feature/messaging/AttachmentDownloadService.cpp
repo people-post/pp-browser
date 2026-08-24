@@ -349,4 +349,18 @@ Roe<void> AttachmentDownloadService::PrepareThreadHistoryClear(const std::string
   return WipeThreadAttachmentBlobs(profile_dir_, thread_id);
 }
 
+Roe<void> AttachmentDownloadService::ClearAllDownloadedMedia(IThreadStore& store) {
+  auto threads = store.ListThreads();
+  if (!threads) {
+    return threads.error();
+  }
+  for (const Thread& thread : *threads) {
+    if (auto cleared = PrepareThreadHistoryClear(thread.id, store); !cleared) {
+      return cleared.error();
+    }
+  }
+  NotifyChanged();
+  return Roe<void>{};
+}
+
 } // namespace pbr

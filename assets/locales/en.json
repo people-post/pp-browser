@@ -213,6 +213,11 @@
     "settings.storage.attachment_policy.on_demand": "On demand",
     "settings.storage.pending_media": "Download pending media…",
     "settings.storage.pending_media_started": "Downloading pending media",
+    "settings.storage.attachment_cache_size": "Downloaded attachments: ~{size}",
+    "settings.storage.clear_attachments": "Clear downloaded attachments…",
+    "settings.storage.clear_attachments_confirm_title": "Clear downloaded attachments?",
+    "settings.storage.clear_attachments_confirm_message": "Removes saved attachment files on this device. Chat messages stay; auto-download will not bring them back unless you tap Download again.",
+    "settings.storage.clear_attachments_done": "Downloaded attachments cleared",
 
     "settings.reset_defaults_confirm_title": "Reset to defaults?",
     "settings.reset_defaults_confirm_message": "This restores this section's settings to their defaults.",

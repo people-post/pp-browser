@@ -141,6 +141,7 @@ private:
     Rml::String data_dir;
     Rml::String profile_dir;
     Rml::String profile_size_label;
+    Rml::String attachment_cache_size_label;
     Rml::String attachment_download_policy = "smart";
     Rml::String attachment_download_policy_label;
     Rml::String pin_protection_status;
@@ -169,6 +170,8 @@ private:
                                                        const Rml::VariantList& args);
   static void DrainPendingAttachmentMediaCallback(Rml::DataModelHandle model, Rml::Event& ev,
                                                   const Rml::VariantList& args);
+  static void ClearDownloadedAttachmentsCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                 const Rml::VariantList& args);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -252,6 +255,8 @@ private:
   void OnChooseAttachmentDownloadPolicy(Rml::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
   void OnDrainPendingAttachmentMedia();
+  void OnClearDownloadedAttachments();
+  void PerformClearDownloadedAttachments();
 
   ShellChromeSnapshot ChromeSnapshot() const;
 

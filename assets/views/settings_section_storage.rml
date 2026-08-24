@@ -1,6 +1,7 @@
       <div class="settings-section stack">
         <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
         <p class="text" data-rml="profile_size_label"></p>
+        <p class="text muted" data-rml="attachment_cache_size_label"></p>
         <div class="settings-choice-row">
           <button class="settings-choice-row-button" type="button"
                   data-event-click="on_choose_attachment_download_policy()">
@@ -12,6 +13,8 @@
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="drain_pending_attachment_media()">{{i18n:settings.storage.pending_media}}</button>
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="clear_downloaded_attachments()">{{i18n:settings.storage.clear_attachments}}</button>
         </div>
         <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
         <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>

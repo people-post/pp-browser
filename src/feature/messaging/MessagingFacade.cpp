@@ -409,6 +409,8 @@ Roe<void> MessagingFacade::FreeOldestRelayBlobSlot() { return hub_.FreeOldestRel
 
 void MessagingFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
 
+Roe<void> MessagingFacade::ClearDownloadedAttachments() { return hub_.ClearDownloadedAttachments(); }
+
 void MessagingFacade::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
   hub_.RequestAttachmentDownload(thread_id, message_id);
 }

@@ -213,6 +213,11 @@
     "settings.storage.attachment_policy.on_demand": "按需",
     "settings.storage.pending_media": "下载待处理媒体…",
     "settings.storage.pending_media_started": "正在下载待处理媒体",
+    "settings.storage.attachment_cache_size": "已下载附件：约 {size}",
+    "settings.storage.clear_attachments": "清除已下载附件…",
+    "settings.storage.clear_attachments_confirm_title": "清除已下载附件？",
+    "settings.storage.clear_attachments_confirm_message": "将删除本设备上已保存的附件文件。聊天记录保留；除非再次点击下载，否则不会自动重新下载。",
+    "settings.storage.clear_attachments_done": "已清除下载的附件",
 
     "settings.reset_defaults_confirm_title": "恢复默认？",
     "settings.reset_defaults_confirm_message": "这将把本节设置恢复为默认值。",

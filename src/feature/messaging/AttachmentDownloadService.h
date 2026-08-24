@@ -42,6 +42,9 @@ public:
   /** Before clear-history: tombstone hashes and drop pending queue entries for the thread. */
   Roe<void> PrepareThreadHistoryClear(const std::string& thread_id, IThreadStore& store);
 
+  /** Me → Storage: tombstone + wipe all thread attachment caches; messages stay (R020). */
+  Roe<void> ClearAllDownloadedMedia(IThreadStore& store);
+
   DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                          uint64_t byte_length) const;
 

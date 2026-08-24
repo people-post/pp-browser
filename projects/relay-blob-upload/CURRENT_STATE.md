@@ -13,7 +13,7 @@
 | **pp-browser i1–i3** | **Done** — blob client + profile icon UX + directory icon render |
 | **pp-browser a1–a4** | **Done** — wire/codec, composer send, CDN receive/display, quota UX |
 | **pp-browser a6** | **Done** — Smart download, suppression, libp2p chat-blob, fetch ladder, outbound peer upload |
-| **pp-browser a5** | Planned — DEK-wrap local cache, video poster |
+| **pp-browser a5** | **Partial** — clear downloaded attachments UX; DEK-wrap + video poster still open |
 
 ---
 
@@ -41,6 +41,7 @@
 | Clear-history blob wipe | `PrepareThreadHistoryClear`, `WipeThreadAttachmentBlobs` |
 | Peer protocol service | `Libp2pChatBlobService.*`, `ChatBlobResponder.*` |
 | Pending push ciphertext | `AttachmentCache` (`blob_cipher/`) |
+| Clear all downloaded attachments | Me → Storage → **Clear downloaded attachments…** |
 | Tests | `attachment_download_policy_test`, `chat_blob_responder_test` |
 
 ---
@@ -49,5 +50,6 @@
 
 | Area | Phase |
 |------|-------|
-| DEK-wrap local cache, video poster | a5 |
-| LIBP2P_STREAMS / WIRE_SCHEMAS polish | docs follow-up |
+| DEK-wrap local attachment cache | a5 |
+| Video poster on receive | a5 |
+| LIBP2P_STREAMS / WIRE_SCHEMAS polish | done (chat-blob in LIBP2P_STREAMS) |

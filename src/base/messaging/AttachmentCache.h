@@ -52,4 +52,10 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 
+/** Total bytes under all thread `blobs/` and `blob_cipher/` trees (a5 storage UX). */
+uint64_t AttachmentCacheByteSize(const std::string& profile_dir);
+
+/** Wipe downloaded attachment bytes for every thread under `{profile}/threads/`. */
+Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir);
+
 } // namespace pbr

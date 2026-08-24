@@ -25,6 +25,31 @@ std::string AttachmentFilename(const std::vector<uint8_t>& content_hash, const s
   return AttachmentHashHex(content_hash) + "." + ext;
 }
 
+uint64_t DirectoryTreeByteSize(const std::filesystem::path& root) {
+  std::error_code ec;
+  if (!std::filesystem::exists(root, ec) || ec) {
+    return 0;
+  }
+  uint64_t total = 0;
+  const auto options = std::filesystem::directory_options::skip_permission_denied;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(root, options, ec)) {
+    if (ec) {
+      break;
+    }
+    if (!entry.is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    const uint64_t size = entry.file_size(ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    total += size;
+  }
+  return total;
+}
+
 } // namespace
 
 std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id) {
@@ -266,6 +291,55 @@ void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std
                     AttachmentHashHex(content_hash);
   std::error_code ec;
   std::filesystem::remove(path, ec);
+}
+
+uint64_t AttachmentCacheByteSize(const std::string& profile_dir) {
+  if (profile_dir.empty()) {
+    return 0;
+  }
+  const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
+  std::error_code ec;
+  if (!std::filesystem::exists(threads_root, ec) || ec) {
+    return 0;
+  }
+
+  uint64_t total = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
+    if (ec) {
+      break;
+    }
+    if (!entry.is_directory(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    total += DirectoryTreeByteSize(entry.path() / "blobs");
+    total += DirectoryTreeByteSize(entry.path() / "blob_cipher");
+  }
+  return total;
+}
+
+Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir) {
+  if (profile_dir.empty()) {
+    return Error("Attachment cache profile directory is required");
+  }
+  const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
+  std::error_code ec;
+  if (!std::filesystem::exists(threads_root, ec)) {
+    return Roe<void>{};
+  }
+  for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
+    if (ec) {
+      return Error("Failed to enumerate thread attachment caches");
+    }
+    if (!entry.is_directory(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    if (auto wiped = WipeThreadAttachmentBlobs(profile_dir, entry.path().filename().string()); !wiped) {
+      return wiped.error();
+    }
+  }
+  return Roe<void>{};
 }
 
 } // namespace pbr

@@ -189,6 +189,7 @@ public:
   Roe<void> FreeOldestRelayBlobSlot();
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
+  Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   AttachmentDownloadService& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);

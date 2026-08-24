@@ -1510,6 +1510,17 @@ void MessagingHub::DrainPendingAttachmentMedia() {
   Attachments().DrainPendingMediaBacklog(Store());
 }
 
+Roe<void> MessagingHub::ClearDownloadedAttachments() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto cleared = Attachments().ClearAllDownloadedMedia(Store());
+  if (cleared && p2p_) {
+    p2p_->NotifyMessagesChanged();
+  }
+  return cleared;
+}
+
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
                                            const std::optional<int64_t> floor_minor) {
   if (!IsInitialized() || !IsMessagingReady() || !p2p_) {
