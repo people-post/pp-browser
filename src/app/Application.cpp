@@ -27,6 +27,7 @@
 #include "base/platform/PlatformServices.h"
 #include "base/platform/AppEventHooks.h"
 #include "base/platform/MobileWindowSizing.h"
+#include "base/platform/NativeFileDialog.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/AgentUiPorts.h"
@@ -436,6 +437,17 @@ bool Application::Initialize(const char* window_title) {
   settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
     return facade.SaveProfileNickname(nickname);
   };
+  settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
+    ShowOpenImageFileDialog(Backend::GetWindow(), [on_picked = std::move(on_picked)](std::vector<std::string> paths) {
+      AppRuntime::PostUI([on_picked = std::move(on_picked), paths = std::move(paths)]() mutable {
+        on_picked(std::move(paths));
+      });
+    });
+  };
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) {
+    return facade.UploadProfileIconFromPath(path);
+  };
+  settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
     if (result) {

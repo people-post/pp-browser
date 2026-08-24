@@ -123,6 +123,10 @@ private:
     Rml::String profile_register_label = "Register on network";
     bool profile_show_register = true;
     bool profile_show_rotate = false;
+    Rml::String profile_icon_src;
+    bool profile_has_icon = false;
+    bool profile_icon_uploading = false;
+    bool profile_show_clear_icon = false;
     Rml::String auto_renew_registration = "auto";
     Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;
@@ -177,6 +181,8 @@ private:
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnCopyProfileIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnPickProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnClearProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnShareProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -219,6 +225,8 @@ private:
   void OnRegisterProfile();
   void OnRotateBriefLlmKey();
   void OnCopyProfileId();
+  void OnPickProfileIcon();
+  void OnClearProfileIcon();
   void OnShareProfile();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);

@@ -25,6 +25,9 @@ struct RegisterIdentityArgs {
 struct SettingsCommands {
   std::function<ProfileIdentityView()> load_profile_identity;
   std::function<Roe<void>(const std::string& nickname)> save_profile_nickname;
+  std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
+  std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
+  std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;

@@ -102,6 +102,8 @@
     "settings.call_diagnostics.help": "通话中显示技术路径详情（使用 --debug 时也会启用）。",
 
     "settings.nickname": "昵称",
+    "settings.profile.change_photo": "更换头像…",
+    "settings.profile.remove_photo": "移除头像",
     "settings.peer_id": "对等 ID",
     "settings.relay_id": "中继 ID",
     "settings.public_key": "公钥",

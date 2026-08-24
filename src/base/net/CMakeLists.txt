@@ -5,6 +5,7 @@ pp_browser_add_base_library(pp_base_net
     CurlSsl.cpp
     HttpBlobClient.cpp
     HttpClient.cpp
+    ProfileIconClientUtil.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
     RelayInboxCursor.cpp

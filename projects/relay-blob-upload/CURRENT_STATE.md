@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**i1** landed)
+**As of:** 2026-08-24 (**i2** landed)
 
 ---
 
@@ -11,7 +11,22 @@
 | **Planning** | Done — [DESIGN.md](DESIGN.md), [DECISIONS.md](DECISIONS.md) R001–R018 |
 | **www server** | Shipped — [relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md) |
 | **pp-browser i1** | **Done** — blob sign helpers, `HttpClient::Put`, `IBlobClient`, factory + hub wiring |
-| **pp-browser i2+** | **Next** — profile icon UX |
+| **pp-browser i2** | **Done** — Me → Profile avatar pick/upload/clear |
+| **pp-browser i3+** | **Next** — directory icon parse + contacts/call render |
+
+---
+
+## What landed (i2)
+
+| Component | Path |
+|-----------|------|
+| Self icon cache | `src/base/people/ProfileIconCache.*` |
+| Image prep | `src/base/platform/ProfileIconImagePrep.*` |
+| File dialog | `src/base/platform/NativeFileDialog.*` |
+| Upload util | `src/base/net/ProfileIconClientUtil.*` |
+| Hub / facade | `MessagingHub::UploadProfileIconFromPath`, `ClearProfileIcon` |
+| Settings UI | `settings_section_profile.rml`, `SettingsController`, `ProfileSettingsSection` |
+| i18n | `settings.profile.change_photo`, `settings.profile.remove_photo` |
 
 ---
 
@@ -30,9 +45,9 @@
 
 ## Next agent — start here
 
-1. **i2** — Me → Profile avatar pick/upload ([PHASES.md](PHASES.md#i2--profile-icon-upload-ux))
-2. Use `MessagingHub::Blob()` + `UploadRelayBlobBytes` for icon flow
-3. Promote blob routes to [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) when i2 ships
+1. **i3** — Parse directory `icon`, fetch/cache remote icons, render in contacts/call chrome ([PHASES.md](PHASES.md#i3--icon-cache--render))
+2. Manual smoke: Me → Profile → pick image → upload → clear (requires registered relay user)
+3. Promote blob routes to [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
 
 ---
 
@@ -40,7 +55,7 @@
 
 | Area | Phase |
 |------|-------|
-| Profile icon UI | i2 |
-| Directory `icon` parse + cache | i3 |
+| Directory `icon` parse + remote cache | i3 |
+| Contacts / call chrome icon render | i3 |
 | Chat attachment wire | a1 |
 | Composer attach | a2 |

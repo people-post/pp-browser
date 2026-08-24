@@ -395,6 +395,12 @@ Roe<void> MessagingFacade::SaveProfileNickname(const std::string& nickname) {
 
 Roe<void> MessagingFacade::RegisterIdentity(const std::string& nickname) { return hub_.RegisterIdentity(nickname); }
 
+Roe<void> MessagingFacade::UploadProfileIconFromPath(const std::string& path) {
+  return hub_.UploadProfileIconFromPath(path);
+}
+
+Roe<void> MessagingFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
+
 Roe<void> MessagingFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
 
 ReachabilitySnapshot MessagingFacade::Reachability() { return hub_.Reachability(); }

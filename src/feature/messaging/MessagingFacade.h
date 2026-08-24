@@ -167,6 +167,8 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> ClearProfileIcon();
   Roe<void> RotateBriefLlmKey();
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);

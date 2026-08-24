@@ -54,6 +54,10 @@ struct SettingsUiState {
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
   bool profile_show_rotate = false;
+  std::string profile_icon_src;
+  bool profile_has_icon = false;
+  bool profile_icon_uploading = false;
+  bool profile_show_clear_icon = false;
   /** UI switch value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */

@@ -19,7 +19,10 @@
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/net/HttpClient.h"
+#include "base/net/ProfileIconClientUtil.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ProfileIconCache.h"
+#include "base/platform/ProfileIconImagePrep.h"
 #include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppLifecycle.h"
@@ -1142,6 +1145,8 @@ ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
   view.relay_id = identity->relay_user_id;
   view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
+  view.profile_icon_path = ProfileIconLocalPath(data_dir_);
+  view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
 }
 
@@ -1210,6 +1215,45 @@ Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
     return applied.error();
   }
   return {};
+}
+
+Roe<void> MessagingHub::UploadProfileIconFromPath(const std::string& path) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  auto encoded = PrepareProfileIconFromFile(path);
+  if (!encoded) {
+    return encoded.error();
+  }
+  PreparedProfileIcon prepared;
+  prepared.bytes = std::move(encoded.value().bytes);
+  prepared.content_type = encoded.value().content_type;
+  prepared.kind = encoded.value().kind;
+  prepared.file_extension = encoded.value().file_extension;
+  auto uploaded = UploadPreparedProfileIcon(*blob_, Identity(), data_dir_, prepared);
+  if (!uploaded) {
+    return uploaded.error();
+  }
+  return {};
+}
+
+Roe<void> MessagingHub::ClearProfileIcon() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
 }
 
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,

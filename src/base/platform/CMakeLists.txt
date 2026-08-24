@@ -26,8 +26,10 @@ set(_pp_platform_gui_sources
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
+  NativeFileDialog.cpp
   NetworkConnectivity.cpp
   PlatformEarlyInit.cpp
+  ProfileIconImagePrep.cpp
   PlatformLogSink.cpp
   PlatformNavigation.cpp
   PlatformOpenUrl.cpp

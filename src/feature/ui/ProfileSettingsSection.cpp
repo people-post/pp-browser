@@ -24,6 +24,9 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_show_register = view.show_register;
   state.profile_show_rotate = view.show_rotate;
   state.brief_llm_key_masked = view.brief_llm_key_masked;
+  state.profile_icon_src = view.profile_icon_path;
+  state.profile_has_icon = view.profile_has_icon;
+  state.profile_show_clear_icon = view.profile_has_icon && view.registered == "yes";
 }
 
 const char* ProfileSettingsSection::Id() const {

@@ -29,12 +29,12 @@
 
 ## i2 — Profile icon upload UX
 
-- [ ] Me → Profile: avatar affordance in `settings_section_profile.rml`
-- [ ] Native image pick (SDL file dialog)
-- [ ] Client resize/compress to ≤ icon cap (512 KiB default)
-- [ ] Flow: presign(`purpose: icon`) → PUT → `POST /profile/icon`
-- [ ] Clear icon path (empty url/blob_id)
-- [ ] Error handling + progress UI
+- [x] Me → Profile: avatar affordance in `settings_section_profile.rml`
+- [x] Native image pick (SDL file dialog)
+- [x] Client resize/compress to ≤ icon cap (512 KiB default)
+- [x] Flow: presign(`purpose: icon`) → PUT → `POST /profile/icon`
+- [x] Clear icon path (empty url/blob_id)
+- [x] Error handling + progress UI (uploading disables buttons; errors via settings toast)
 
 **Exit:** User can set/clear profile icon; directory shows new `icon` on lookup.
 

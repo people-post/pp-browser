@@ -2721,6 +2721,39 @@ call-video-tile {
   flex-wrap: wrap;
 }
 
+.me-profile-avatar-row {
+  align-items: center;
+  gap: 12dp;
+  margin-bottom: 8dp;
+}
+
+.me-profile-avatar-frame {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.me-profile-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  object-fit: cover;
+}
+
+.me-profile-avatar-placeholder {
+  width: 64dp;
+  height: 64dp;
+  background-color: var(--surface-3);
+}
+
+.me-profile-avatar-actions {
+  gap: 8dp;
+  flex: 1;
+  min-width: 0;
+}
+
 .me-preferences-label {
   flex-shrink: 0;
   margin-top: 4dp;

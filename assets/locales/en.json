@@ -102,6 +102,8 @@
     "settings.call_diagnostics.help": "Shows technical call-path details during calls (also enabled by --debug).",
 
     "settings.nickname": "Nickname",
+    "settings.profile.change_photo": "Change photo…",
+    "settings.profile.remove_photo": "Remove photo",
     "settings.peer_id": "Peer ID",
     "settings.relay_id": "Relay ID",
     "settings.public_key": "Public key",

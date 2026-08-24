@@ -245,6 +245,10 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_register_label = bindings_.profile_register_label.c_str();
   ui_state_.profile_show_register = bindings_.profile_show_register;
   ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
+  ui_state_.profile_icon_src = bindings_.profile_icon_src.c_str();
+  ui_state_.profile_has_icon = bindings_.profile_has_icon;
+  ui_state_.profile_icon_uploading = bindings_.profile_icon_uploading;
+  ui_state_.profile_show_clear_icon = bindings_.profile_show_clear_icon;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
@@ -309,6 +313,10 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
+  bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
+  bindings_.profile_has_icon = ui_state_.profile_has_icon;
+  bindings_.profile_icon_uploading = ui_state_.profile_icon_uploading;
+  bindings_.profile_show_clear_icon = ui_state_.profile_show_clear_icon;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
@@ -455,6 +463,10 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
+    ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
+    ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
+    ctor.Bind("profile_icon_uploading", &controller.bindings_.profile_icon_uploading);
+    ctor.Bind("profile_show_clear_icon", &controller.bindings_.profile_show_clear_icon);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -508,6 +520,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
     ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
+    ctor.BindEventCallback("pick_profile_icon", &SettingsController::OnPickProfileIconCallback);
+    ctor.BindEventCallback("clear_profile_icon", &SettingsController::OnClearProfileIconCallback);
     ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
@@ -568,6 +582,10 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_register_label");
   host.Dirty("settings", "profile_show_register");
   host.Dirty("settings", "profile_show_rotate");
+  host.Dirty("settings", "profile_icon_src");
+  host.Dirty("settings", "profile_has_icon");
+  host.Dirty("settings", "profile_icon_uploading");
+  host.Dirty("settings", "profile_show_clear_icon");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
@@ -1600,6 +1618,16 @@ void SettingsController::OnCopyProfileIdCallback(Rml::DataModelHandle /*model*/,
   Instance().OnCopyProfileId();
 }
 
+void SettingsController::OnPickProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                   const Rml::VariantList& /*args*/) {
+  Instance().OnPickProfileIcon();
+}
+
+void SettingsController::OnClearProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnClearProfileIcon();
+}
+
 void SettingsController::OnShareProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                 const Rml::VariantList& /*args*/) {
   Instance().OnShareProfile();
@@ -1693,6 +1721,95 @@ void SettingsController::OnCopyProfileId() {
     system->SetClipboardText(bindings_.profile_peer_id);
   }
   UserFeedback::Ok("Peer ID copied");
+}
+
+void SettingsController::OnPickProfileIcon() {
+  if (bindings_.profile_icon_uploading) {
+    return;
+  }
+  if (!commands_.pick_profile_icon_image || !commands_.upload_profile_icon_file) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+    return;
+  }
+  if (!unlock_ensure_.ensure_unlocked) {
+    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+    return;
+  }
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+      return;
+    }
+    commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+        if (paths.empty()) {
+          return;
+        }
+        ui_state_.profile_icon_uploading = true;
+        PushUiStateToBindings();
+        DirtyAll(/*include_profile_nickname=*/false);
+        status_ = "Uploading profile photo…";
+        const std::string path = std::move(paths.front());
+        AppRuntime::PostWorkerNormal([this, path]() {
+          Roe<void> result = commands_.upload_profile_icon_file(path);
+          AppRuntime::PostUI([this, result = std::move(result)]() mutable {
+            ui_state_.profile_icon_uploading = false;
+            if (!result) {
+              status_.clear();
+              SyncBindingsFromSession();
+              DirtyAll(/*include_profile_nickname=*/false);
+              ReportFailure(result.error());
+              return;
+            }
+            status_ = "Profile photo updated";
+            SyncBindingsFromSession();
+            DirtyAll(/*include_profile_nickname=*/false);
+            UserFeedback::Ok("Profile photo updated");
+          });
+        });
+      });
+    });
+  });
+}
+
+void SettingsController::OnClearProfileIcon() {
+  if (bindings_.profile_icon_uploading) {
+    return;
+  }
+  if (!commands_.clear_profile_icon) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+    return;
+  }
+  if (!unlock_ensure_.ensure_unlocked) {
+    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+    return;
+  }
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+      return;
+    }
+    ui_state_.profile_icon_uploading = true;
+    PushUiStateToBindings();
+    DirtyAll(/*include_profile_nickname=*/false);
+    AppRuntime::PostWorkerNormal([this]() {
+      Roe<void> result = commands_.clear_profile_icon();
+      AppRuntime::PostUI([this, result = std::move(result)]() mutable {
+        ui_state_.profile_icon_uploading = false;
+        if (!result) {
+          status_.clear();
+          SyncBindingsFromSession();
+          DirtyAll(/*include_profile_nickname=*/false);
+          ReportFailure(result.error());
+          return;
+        }
+        status_ = "Profile photo removed";
+        SyncBindingsFromSession();
+        DirtyAll(/*include_profile_nickname=*/false);
+        UserFeedback::Ok("Profile photo removed");
+      });
+    });
+  });
 }
 
 void SettingsController::OnShareProfile() {
