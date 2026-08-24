@@ -40,4 +40,16 @@ Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std:
 /** Remove cached plaintext blobs for a thread (R020 clear-history). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);
 
+/** Pending peer-push ciphertext before envelope key arrives (a6). */
+std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id);
+Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash,
+                                          const std::vector<uint8_t>& ciphertext);
+bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std::string& thread_id,
+                                       const std::vector<uint8_t>& content_hash);
+Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash);
+void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                       const std::vector<uint8_t>& content_hash);
+
 } // namespace pbr

@@ -3,6 +3,7 @@
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
+#include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 
@@ -123,6 +124,8 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     peer_history_ =
         std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
     peer_history_->Start();
+    peer_blob_ = std::make_unique<Libp2pChatBlobService>(*libp2p_host_, *peer_sessions_, store_, identity_);
+    peer_blob_->Start();
     direct_chat_ = std::make_unique<Libp2pDirectChatService>(*libp2p_host_, *peer_sessions_);
     direct_chat_->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     direct_chat_->Start();
@@ -199,6 +202,13 @@ void P2pMessagingService::SetGroupMembership(GroupMembershipService* groups) {
 
 void P2pMessagingService::SetProfileDataDir(std::string profile_data_dir) {
   profile_data_dir_ = std::move(profile_data_dir);
+  if (peer_blob_) {
+    peer_blob_->SetProfileDataDir(profile_data_dir_);
+  }
+}
+
+IChatBlobPeerClient* P2pMessagingService::PeerBlobClient() const {
+  return peer_blob_.get();
 }
 
 void P2pMessagingService::LoadPersistedRelayCursor(const std::string& relay_user_id) {

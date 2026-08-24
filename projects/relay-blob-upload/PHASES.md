@@ -113,8 +113,8 @@
 
 - [x] Amend receive queue for **Smart** default: auto ≤ 4 MiB; tap > 4 MiB ([R008](DECISIONS.md#r008--size-tiered-fetch-on-receive-amended), [R021](DECISIONS.md#r021--attachment-download-policy-smart-default))
 - [x] Pref: Smart / Always auto / On demand; session “Download pending media…”
-- [ ] libp2p chat-blob protocol: peer-direct transfer by `content_hash` ([R019](DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary))
-- [ ] Fetch order: local → peer → CDN; outbound blob: peer when reachable else CDN ([R015](DECISIONS.md#r015--blob-ready-before-send-for-attachments))
+- [x] libp2p chat-blob protocol: peer-direct transfer by `content_hash` ([R019](DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary))
+- [x] Fetch order: local → peer → CDN; outbound blob: peer when reachable else CDN ([R015](DECISIONS.md#r015--blob-ready-before-send-for-attachments))
 - [x] Deletion suppression tombstones; clear-history / delete-file must not re-heal ([R020](DECISIONS.md#r020--deletion-suppresses-re-fetch))
 - [ ] Wire docs: protocol id + framing note in [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md) / WIRE_SCHEMAS when shipped
 

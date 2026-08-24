@@ -44,6 +44,15 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
+/** R019 peer-direct attachment blobs — libp2p `/pp-browser/chat-blob/1.0.0`. */
+class IChatBlobPeerClient {
+public:
+  virtual ~IChatBlobPeerClient() = default;
+  virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
+  virtual Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) = 0;
+  virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
+};
+
 class IDirectoryClient {
 public:
   virtual ~IDirectoryClient() = default;

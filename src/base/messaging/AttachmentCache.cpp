@@ -181,14 +181,91 @@ Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::s
   }
   const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
   std::error_code ec;
-  if (!std::filesystem::exists(root, ec)) {
-    return Roe<void>{};
+  if (std::filesystem::exists(root, ec)) {
+    std::filesystem::remove_all(root, ec);
+    if (ec) {
+      return Error("Failed to wipe thread attachment blobs");
+    }
   }
-  std::filesystem::remove_all(root, ec);
-  if (ec) {
-    return Error("Failed to wipe thread attachment blobs");
+  const auto pending = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id));
+  if (std::filesystem::exists(pending, ec)) {
+    std::filesystem::remove_all(pending, ec);
+    if (ec) {
+      return Error("Failed to wipe pending attachment ciphertext");
+    }
   }
   return Roe<void>{};
+}
+
+std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id) {
+  return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blob_cipher").string();
+}
+
+Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                          const std::vector<uint8_t>& content_hash,
+                                          const std::vector<uint8_t>& ciphertext) {
+  if (profile_dir.empty() || thread_id.empty()) {
+    return Error("Attachment cache profile directory and thread_id are required");
+  }
+  if (content_hash.size() != kAttachmentContentHashSize || ciphertext.empty()) {
+    return Error("Invalid pending attachment ciphertext");
+  }
+  const auto root = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id));
+  std::error_code ec;
+  std::filesystem::create_directories(root, ec);
+  if (ec) {
+    return Error("Failed to create pending attachment directory");
+  }
+  const auto path = root / AttachmentHashHex(content_hash);
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  if (!output) {
+    return Error("Failed to write pending attachment ciphertext");
+  }
+  output.write(reinterpret_cast<const char*>(ciphertext.data()), static_cast<std::streamsize>(ciphertext.size()));
+  if (!output) {
+    return Error("Failed to write pending attachment ciphertext");
+  }
+  return Roe<void>{};
+}
+
+
+bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std::string& thread_id,
+                                       const std::vector<uint8_t>& content_hash) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return false;
+  }
+  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
+                    AttachmentHashHex(content_hash);
+  std::error_code ec;
+  return std::filesystem::is_regular_file(path, ec) && !ec;
+}
+
+Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid pending attachment lookup");
+  }
+  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
+                    AttachmentHashHex(content_hash);
+  if (!std::filesystem::exists(path)) {
+    return Error("Pending attachment ciphertext not found");
+  }
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return Error("Failed to read pending attachment ciphertext");
+  }
+  return ByteVector((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+}
+
+void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
+                                       const std::vector<uint8_t>& content_hash) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return;
+  }
+  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
+                    AttachmentHashHex(content_hash);
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
 }
 
 } // namespace pbr

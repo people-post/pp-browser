@@ -6,6 +6,8 @@ pp_browser_add_base_library(pp_base_messaging
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatHistoryResponder.cpp
+    ChatBlobRequestUtil.cpp
+    ChatBlobResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     ChatPayloadTypes.cpp

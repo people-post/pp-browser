@@ -52,4 +52,11 @@ nlohmann::json ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& r
 nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response);
 Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json);
 
+std::string ChatBlobOpToString(ChatBlobOp op);
+ChatBlobOp ChatBlobOpFromString(const std::string& value);
+nlohmann::json ChatBlobRequestToJson(const ChatBlobRequest& request);
+Roe<ChatBlobRequest> ChatBlobRequestFromJson(const nlohmann::json& json);
+/** Short ack / error for chat-blob control responses. */
+nlohmann::json ChatBlobAckToJson(bool ok, const std::string& error = {});
+
 } // namespace pbr

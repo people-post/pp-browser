@@ -2,6 +2,7 @@
 
 #include "base/crypto/AttachmentContentCipher.h"
 #include "base/crypto/AttachmentContentHash.h"
+#include "base/messaging/ChatBlobRequestUtil.h"
 
 #include <algorithm>
 #include <cctype>
@@ -78,15 +79,48 @@ std::string MimeFromFilename(const std::string& filename) {
   return "application/octet-stream";
 }
 
-} // namespace
+Roe<void> TryPeerPush(const PreparedChatAttachment& prepared, IdentityStore& identity,
+                      const ChatAttachmentUploadOptions& options) {
+  if (!options.peer_client || !options.contacts || !options.thread || options.thread_id.empty()) {
+    return Error("Peer blob client not configured");
+  }
+  if (options.thread->kind != ThreadKind::Direct || !ThreadChannelIsE2e(options.thread->channel)) {
+    return Error("Peer blob push requires E2E direct thread");
+  }
+  auto request = BuildChatBlobRequest(*options.thread, *options.contacts, identity, ChatBlobOp::Push,
+                                      options.thread_id, prepared.fields.content_hash);
+  if (!request) {
+    return request.error();
+  }
+  if (!options.peer_client->IsPeerReachable(request->peer_identity_value)) {
+    return Error("Peer-direct endpoint not registered");
+  }
+  return options.peer_client->PushChatBlob(*request, prepared.ciphertext);
+}
 
-Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
-                                                       const std::string& path) {
-  auto relay_user_id = RequireRegisteredRelayUserId(identity);
-  if (!relay_user_id) {
-    return relay_user_id.error();
+Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
+                                              const PreparedChatAttachment& prepared, const std::string& source_path) {
+  const std::string body(reinterpret_cast<const char*>(prepared.ciphertext.data()), prepared.ciphertext.size());
+  auto uploaded =
+      UploadRelayBlobBytes(blob, relay_user_id, "application/octet-stream", BlobPurpose::File, body);
+  if (!uploaded) {
+    return uploaded.error();
   }
 
+  ChatAttachmentFields fields = prepared.fields;
+  fields.url = uploaded.value().public_url;
+  if (fields.mime.empty()) {
+    fields.mime = MimeFromFilename(FilenameFromPath(source_path));
+  }
+  if (fields.filename.empty()) {
+    fields.filename = FilenameFromPath(source_path);
+  }
+  return fields;
+}
+
+} // namespace
+
+Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path) {
   auto plaintext = ReadFileBytes(path);
   if (!plaintext) {
     return plaintext.error();
@@ -105,23 +139,37 @@ Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, Identi
     return content_hash.error();
   }
 
-  const std::string body(reinterpret_cast<const char*>(encrypted->ciphertext.data()),
-                         encrypted->ciphertext.size());
-  auto uploaded =
-      UploadRelayBlobBytes(blob, *relay_user_id, "application/octet-stream", BlobPurpose::File, body);
-  if (!uploaded) {
-    return uploaded.error();
+  PreparedChatAttachment prepared;
+  prepared.fields.mime = MimeFromFilename(FilenameFromPath(path));
+  prepared.fields.filename = FilenameFromPath(path);
+  prepared.fields.byte_length = plaintext->size();
+  prepared.fields.content_hash = *content_hash;
+  prepared.fields.content_key = *content_key;
+  prepared.fields.blob_nonce = encrypted->nonce;
+  prepared.ciphertext.assign(encrypted->ciphertext.begin(), encrypted->ciphertext.end());
+  return prepared;
+}
+
+Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
+                                                       const std::string& path,
+                                                       const ChatAttachmentUploadOptions& options) {
+  auto relay_user_id = RequireRegisteredRelayUserId(identity);
+  if (!relay_user_id) {
+    return relay_user_id.error();
   }
 
-  ChatAttachmentFields fields;
-  fields.url = uploaded.value().public_url;
-  fields.mime = MimeFromFilename(FilenameFromPath(path));
-  fields.filename = FilenameFromPath(path);
-  fields.byte_length = plaintext->size();
-  fields.content_hash = *content_hash;
-  fields.content_key = *content_key;
-  fields.blob_nonce = encrypted->nonce;
-  return fields;
+  auto prepared = PrepareChatAttachmentFromFile(path);
+  if (!prepared) {
+    return prepared.error();
+  }
+
+  if (options.thread && options.thread->kind == ThreadKind::Direct && ThreadChannelIsE2e(options.thread->channel)) {
+    if (auto pushed = TryPeerPush(*prepared, identity, options); pushed) {
+      return prepared->fields;
+    }
+  }
+
+  return UploadPreparedToRelay(blob, *relay_user_id, *prepared, path);
 }
 
 } // namespace pbr

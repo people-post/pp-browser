@@ -1423,7 +1423,12 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
     return Error("Attachments are not supported in this thread");
   }
 
-  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path);
+  ChatAttachmentUploadOptions upload_opts;
+  upload_opts.peer_client = p2p_ ? p2p_->PeerBlobClient() : nullptr;
+  upload_opts.contacts = contacts_.get();
+  upload_opts.thread = &active;
+  upload_opts.thread_id = thread_id;
+  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path, upload_opts);
   if (!fields) {
     return fields.error();
   }
@@ -1471,6 +1476,8 @@ void MessagingHub::WireAttachmentDownloads() {
     attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
+  attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
+                                                  p2p_ ? p2p_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     attachment_downloads_->SetDownloadPolicy(AttachmentDownloadPolicyFromString(prefs->attachment_download_policy));

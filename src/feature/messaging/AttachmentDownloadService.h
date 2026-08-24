@@ -4,6 +4,9 @@
 #include "base/messaging/AttachmentSuppressionStore.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/net/ServiceClients.h"
+#include "base/people/ContactsStore.h"
+#include "base/people/IdentityStore.h"
 
 #include <functional>
 #include <mutex>
@@ -21,6 +24,8 @@ public:
   using ChangedCallback = std::function<void()>;
 
   void SetProfileDataDir(std::string profile_dir);
+  void SetFetchDependencies(IThreadStore* store, ContactsStore* contacts, IdentityStore* identity,
+                              IChatBlobPeerClient* peer_client);
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   void SetBacklogDrainActive(bool active);
@@ -59,6 +64,10 @@ private:
   void NotifyChanged();
 
   std::string profile_dir_;
+  IThreadStore* store_ = nullptr;
+  ContactsStore* contacts_ = nullptr;
+  IdentityStore* identity_ = nullptr;
+  IChatBlobPeerClient* peer_client_ = nullptr;
   AttachmentSuppressionStore* suppression_ = nullptr;
   AttachmentDownloadPolicy policy_ = AttachmentDownloadPolicy::Smart;
   bool backlog_drain_ = false;

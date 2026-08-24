@@ -714,4 +714,60 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json)
   return response;
 }
 
+std::string ChatBlobOpToString(const ChatBlobOp op) {
+  switch (op) {
+  case ChatBlobOp::Fetch:
+    return "fetch";
+  case ChatBlobOp::Push:
+    return "push";
+  }
+  return "fetch";
+}
+
+ChatBlobOp ChatBlobOpFromString(const std::string& value) {
+  if (value == "push") {
+    return ChatBlobOp::Push;
+  }
+  return ChatBlobOp::Fetch;
+}
+
+nlohmann::json ChatBlobRequestToJson(const ChatBlobRequest& request) {
+  return {{"op", ChatBlobOpToString(request.op)},
+          {"requester_identity_kind", request.requester_identity_kind},
+          {"requester_identity_value", request.requester_identity_value},
+          {"peer_identity_kind", request.peer_identity_kind},
+          {"peer_identity_value", request.peer_identity_value},
+          {"thread_id", request.thread_id},
+          {"content_hash_hex", request.content_hash_hex},
+          {"channel", ThreadChannelToString(request.channel)}};
+}
+
+Roe<ChatBlobRequest> ChatBlobRequestFromJson(const nlohmann::json& json) {
+  ChatBlobRequest request;
+  if (!json.contains("requester_identity_kind") || !json.contains("requester_identity_value") ||
+      !json.contains("peer_identity_kind") || !json.contains("peer_identity_value") ||
+      !json.contains("thread_id") || !json.contains("content_hash_hex") || !json.contains("channel")) {
+    return Error("Incomplete ChatBlobRequest");
+  }
+  if (json.contains("op") && json["op"].is_string()) {
+    request.op = ChatBlobOpFromString(json["op"].get<std::string>());
+  }
+  request.requester_identity_kind = json["requester_identity_kind"].get<std::string>();
+  request.requester_identity_value = json["requester_identity_value"].get<std::string>();
+  request.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+  request.peer_identity_value = json["peer_identity_value"].get<std::string>();
+  request.thread_id = json["thread_id"].get<std::string>();
+  request.content_hash_hex = json["content_hash_hex"].get<std::string>();
+  request.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+  return request;
+}
+
+nlohmann::json ChatBlobAckToJson(const bool ok, const std::string& error) {
+  nlohmann::json json = {{"ok", ok}};
+  if (!error.empty()) {
+    json["error"] = error;
+  }
+  return json;
+}
+
 } // namespace pbr

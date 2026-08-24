@@ -12,6 +12,14 @@ void AttachmentDownloadService::SetProfileDataDir(std::string profile_dir) {
   profile_dir_ = std::move(profile_dir);
 }
 
+void AttachmentDownloadService::SetFetchDependencies(IThreadStore* store, ContactsStore* contacts,
+                                                     IdentityStore* identity, IChatBlobPeerClient* peer_client) {
+  store_ = store;
+  contacts_ = contacts;
+  identity_ = identity;
+  peer_client_ = peer_client;
+}
+
 void AttachmentDownloadService::SetSuppressionStore(AttachmentSuppressionStore* suppression) {
   suppression_ = suppression;
 }
@@ -57,7 +65,15 @@ void AttachmentDownloadService::EnqueueFromMessage(const std::string& thread_id,
 }
 
 void AttachmentDownloadService::EnqueueJob(Job job, const bool force) {
-  if (profile_dir_.empty() || job.thread_id.empty() || job.fields.url.empty()) {
+  if (profile_dir_.empty() || job.thread_id.empty()) {
+    return;
+  }
+  AttachmentFetchContext fetch_context;
+  fetch_context.thread_id = job.thread_id;
+  fetch_context.store = store_;
+  fetch_context.peer_client = peer_client_;
+  fetch_context.profile_data_dir = profile_dir_;
+  if (!CanFetchAttachment(job.fields, fetch_context)) {
     return;
   }
   if (!AttachmentLocalPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
@@ -118,7 +134,14 @@ void AttachmentDownloadService::DrainQueue() {
 
 void AttachmentDownloadService::RunJob(const Job& job) {
   const std::string key = JobKey(job);
-  auto plaintext = FetchAndDecryptAttachment(job.fields);
+  AttachmentFetchContext context;
+  context.thread_id = job.thread_id;
+  context.store = store_;
+  context.contacts = contacts_;
+  context.identity = identity_;
+  context.peer_client = peer_client_;
+  context.profile_data_dir = profile_dir_;
+  auto plaintext = FetchAndDecryptAttachment(job.fields, context);
   if (!plaintext) {
     MarkFailed(key);
     return;

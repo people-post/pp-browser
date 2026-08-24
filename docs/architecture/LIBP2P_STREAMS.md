@@ -74,6 +74,7 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 |----------|---------|----------|
 | `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` | One short stream per message: write `RelayEnvelope` JSON → read `{"ok":true}` ack (`DuplexFrameSession` + `ControlJsonIoPolicy`) |
 | `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON (same pipe; SQLite `Serve` on worker) |
+| `/pp-browser/chat-blob/1.0.0` | `Libp2pChatBlobService` | Write `ChatBlobRequest` JSON → read ciphertext **or** JSON error ack (fetch); push: JSON request → ciphertext frame → JSON ack |
 | dial-back / circuit-relay | same JSON framing family | Control frames; blocking JSON still used for handshake / `StreamBridge` |
 | media-relay / call-media | `DuplexFrameSession` | Ongoing length-prefixed frames; **no** per-frame read timeout by default |
 
