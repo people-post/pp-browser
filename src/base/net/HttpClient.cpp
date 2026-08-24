@@ -40,7 +40,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   }
 
   if (!body.empty()) {
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
   }
 
   const CURLcode code = curl_easy_perform(curl);
@@ -69,6 +70,11 @@ Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::st
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,
                                    const std::map<std::string, std::string>& headers) {
   return Perform(url, "POST", body, headers);
+}
+
+Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& body,
+                                  const std::map<std::string, std::string>& headers) {
+  return Perform(url, "PUT", body, headers);
 }
 
 } // namespace pbr

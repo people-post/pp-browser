@@ -23,6 +23,8 @@
 #include "feature/messaging/CallStack.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "base/net/BlobClient.h"
+#include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
 #include "base/p2p/Libp2pHost.h"
@@ -158,6 +160,7 @@ public:
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
+  IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
@@ -287,11 +290,13 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpDirectoryClient> http_directory_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
+  std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
+  IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;

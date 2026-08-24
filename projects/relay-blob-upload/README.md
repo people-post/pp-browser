@@ -1,6 +1,6 @@
 # Relay blob upload (profile icons + chat attachments)
 
-**Status:** **Planning complete** — **i1** shared blob client next  
+**Status:** **i1 landed** — **i2** profile icon UX next  
 **Owner:** Hongwei + agents  
 
 **Server contract (www):** [`web2/www/Plans/2026-08-24-relay-blob-upload-design.md`](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)  

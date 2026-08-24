@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
+#include "base/net/BlobClient.h"
 #include "base/net/ClientCompat.h"
 #include "base/net/IPushDeviceClient.h"
 #include "base/net/RelayApiSignPayload.h"
@@ -14,7 +15,26 @@
 
 namespace pbr {
 
-using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
+class MockBlobClient : public IBlobClient {
+public:
+  Roe<BlobPresignResult> Presign(const std::string& relay_user_id, const std::string& content_type,
+                                 uint64_t byte_length, BlobPurpose purpose) override;
+  Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) override;
+  Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) override;
+  Roe<BlobListResult> List(const std::string& relay_user_id, const std::string& status_filter = "") override;
+  Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
+                           const std::string& kind) override;
+  Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
+                      const std::string& body) override;
+
+  const std::vector<std::string>& UploadedBodies() const { return uploaded_bodies_; }
+  const std::vector<std::string>& RetainedBlobIds() const { return retained_blob_ids_; }
+
+private:
+  std::vector<std::string> uploaded_bodies_;
+  std::vector<std::string> retained_blob_ids_;
+  uint64_t next_blob_id_ = 1;
+};
 
 class MockDirectoryClient : public IDirectoryClient {
 public:

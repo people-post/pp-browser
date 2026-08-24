@@ -5,11 +5,14 @@
 #include "base/messaging/ThreadTypes.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
+
+using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
 struct RelayPollResult {
   std::vector<RelayEnvelope> messages;

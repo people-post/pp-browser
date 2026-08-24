@@ -162,6 +162,9 @@ void MessagingHub::WireRelayAuthSigner() {
   if (http_push_devices_) {
     http_push_devices_->SetAuthSigner(signer);
   }
+  if (http_blob_) {
+    http_blob_->SetAuthSigner(signer);
+  }
 }
 
 void MessagingHub::UpdateServiceClients(const AppConfig& config) {
@@ -213,12 +216,17 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     if (!http_registration_ || http_registration_url_ != registration_url) {
       http_registration_url_ = registration_url;
       http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
+      http_blob_ = std::make_unique<HttpBlobClient>(http_registration_url_);
+      WireRelayAuthSigner();
     }
     registration_ = http_registration_.get();
+    blob_ = http_blob_.get();
   } else {
     http_registration_.reset();
+    http_blob_.reset();
     http_registration_url_.clear();
     registration_ = nullptr;
+    blob_ = nullptr;
     log().warning << "registration.base_url is empty; registration client disabled";
   }
 }
@@ -1641,6 +1649,10 @@ PeerDisplayResolver& MessagingHub::PeerLabels() {
 
 IRegistrationClient& MessagingHub::Registration() {
   return *registration_;
+}
+
+IBlobClient& MessagingHub::Blob() {
+  return *blob_;
 }
 
 IPushDeviceClient* MessagingHub::PushDevices() {

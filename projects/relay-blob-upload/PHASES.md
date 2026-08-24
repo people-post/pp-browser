@@ -15,11 +15,12 @@
 
 ## i1 — Shared blob client (foundation)
 
-- [ ] `RelayBlobSignPayload` — domains: presign, retain, delete, list, profile-icon (match www bytes)
-- [ ] `HttpClient::Put(url, body, headers)` with Content-Type / length
-- [ ] `IBlobClient` + `HttpBlobClient`: presign, retain, delete, list, setProfileIcon
-- [ ] Wire into `ServiceClientFactory` / `ServiceClients`
-- [ ] Unit tests: sign vectors; mock presign→PUT→retain sequence
+- [x] `RelayBlobSignPayload` — domains: presign, retain, delete, list, profile-icon (match www bytes)
+- [x] `HttpClient::Put(url, body, headers)` with Content-Type / length
+- [x] `IBlobClient` + `HttpBlobClient`: presign, retain, delete, list, setProfileIcon, PutUpload
+- [x] `UploadRelayBlobBytes` helper (presign → PUT → retain)
+- [x] Wire into `ServiceClientFactory` + `MessagingHub::Blob()` with auth signer
+- [x] Unit tests: sign golden vectors; mock upload sequence
 - [ ] Draft SERVICE_ENDPOINTS section (promote when merged)
 
 **Exit:** Can presign/PUT/retain a test blob from a unit test or dev harness.
