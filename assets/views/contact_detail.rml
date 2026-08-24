@@ -1,13 +1,21 @@
 <div class="contact-detail-panel stack" data-model="contacts">
   <div class="contacts-detail-header stack">
-    <div class="contacts-row-title-line row">
-      <p class="contacts-header-title" data-rml="selected.title"></p>
-      <span class="contacts-trust-badge contacts-trust-badge--friendly"
-            data-if="selected.trust_key == 'friendly'">Friendly</span>
-      <span class="contacts-trust-badge contacts-trust-badge--blocked"
-            data-if="selected.trust_key == 'blocked'">Blocked</span>
+    <div class="contact-detail-avatar-row row">
+      <div class="contact-detail-avatar-frame">
+        <img class="contact-detail-avatar-image" data-if="selected.has_icon" data-attr-src="selected.icon_src"/>
+        <div class="contact-detail-avatar-placeholder" data-if="!selected.has_icon"></div>
+      </div>
+      <div class="contact-detail-title-block stack">
+        <div class="contacts-row-title-line row">
+          <p class="contacts-header-title" data-rml="selected.title"></p>
+          <span class="contacts-trust-badge contacts-trust-badge--friendly"
+                data-if="selected.trust_key == 'friendly'">Friendly</span>
+          <span class="contacts-trust-badge contacts-trust-badge--blocked"
+                data-if="selected.trust_key == 'blocked'">Blocked</span>
+        </div>
+        <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''" data-rml="selected.subtitle"></p>
+      </div>
     </div>
-    <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''" data-rml="selected.subtitle"></p>
   </div>
 
   <div class="contacts-detail-body stack">

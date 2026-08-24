@@ -2155,6 +2155,15 @@ call-video-tile {
   margin: 0 auto 10dp auto;
 }
 
+.shell-call-peer-avatar-image {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+  object-fit: cover;
+  margin: 0 auto 10dp auto;
+  display: block;
+}
+
 .shell-call-peer-tile {
   width: 100%;
   height: 120dp;
@@ -2746,6 +2755,60 @@ call-video-tile {
   width: 64dp;
   height: 64dp;
   background-color: var(--surface-3);
+}
+
+.contacts-row-avatar-frame {
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.contacts-row-avatar-image {
+  width: 32dp;
+  height: 32dp;
+  object-fit: cover;
+}
+
+.contact-detail-avatar-row {
+  align-items: center;
+  gap: 12dp;
+}
+
+.contact-detail-avatar-frame {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.contact-detail-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  object-fit: cover;
+}
+
+.contact-detail-avatar-placeholder {
+  width: 64dp;
+  height: 64dp;
+  background-color: var(--surface-3);
+}
+
+.contact-detail-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-contact-card-avatar {
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
+  object-fit: cover;
+  margin-bottom: 8dp;
 }
 
 .me-profile-avatar-actions {

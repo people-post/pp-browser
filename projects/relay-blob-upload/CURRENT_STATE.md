@@ -1,6 +1,6 @@
 # Relay blob upload — current state
 
-**As of:** 2026-08-24 (**i2** landed)
+**As of:** 2026-08-24 (**i3** landed)
 
 ---
 
@@ -12,7 +12,22 @@
 | **www server** | Shipped — [relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md) |
 | **pp-browser i1** | **Done** — blob sign helpers, `HttpClient::Put`, `IBlobClient`, factory + hub wiring |
 | **pp-browser i2** | **Done** — Me → Profile avatar pick/upload/clear |
-| **pp-browser i3+** | **Next** — directory icon parse + contacts/call render |
+| **pp-browser i3** | **Done** — directory `icon` parse, peer cache, contacts/call render |
+| **pp-browser a1+** | **Next** — chat attachment wire |
+
+---
+
+## What landed (i3)
+
+| Component | Path |
+|-----------|------|
+| `ProfileIconRef` on hits/contacts | `ContactTypes.h`, `ContactJson.cpp`, `ContactsStore.cpp` |
+| Per-peer cache keys | `ProfileIconCache.*` (`cache/icons/{relay\|account}/`) |
+| CDN fetch | `ProfileIconFetchUtil.*` (`HttpClient::Get` + stale detection) |
+| Hub hooks | `MessagingHub::Ensure*IconCached`, `DirectoryShadowCache::SetOnHitCached` |
+| Contacts UI | `contacts.rml`, `contact_detail.rml`, `ContactsController` |
+| Call chrome | `CallRosterParticipantState.avatar_src`, immersive roster `<img>` |
+| Contact card | `InboxController::BuildContactCardRml` renders `avatar_url` |
 
 ---
 
@@ -45,9 +60,9 @@
 
 ## Next agent — start here
 
-1. **i3** — Parse directory `icon`, fetch/cache remote icons, render in contacts/call chrome ([PHASES.md](PHASES.md#i3--icon-cache--render))
-2. Manual smoke: Me → Profile → pick image → upload → clear (requires registered relay user)
-3. Promote blob routes to [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+1. **a1** — `ChatContentType::Attachment` wire + codec ([PHASES.md](PHASES.md#a1--attachment-wire--codec))
+2. Promote blob routes to [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)
+3. Manual smoke: sync contact from directory with icon → avatar in list/detail/call
 
 ---
 
@@ -55,7 +70,6 @@
 
 | Area | Phase |
 |------|-------|
-| Directory `icon` parse + remote cache | i3 |
-| Contacts / call chrome icon render | i3 |
 | Chat attachment wire | a1 |
 | Composer attach | a2 |
+| Attachment bubbles + quota UX | a3–a4 |

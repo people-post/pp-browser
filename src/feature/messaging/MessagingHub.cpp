@@ -20,6 +20,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/net/HttpClient.h"
 #include "base/net/ProfileIconClientUtil.h"
+#include "base/net/ProfileIconFetchUtil.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ProfileIconCache.h"
 #include "base/platform/ProfileIconImagePrep.h"
@@ -850,6 +851,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     }
   });
   directory_shadows_->SetOnHitCached([this](const DirectoryHit& hit) {
+    EnsureDirectoryHitIconCached(hit);
     if (!initiation_billing_) {
       return;
     }
@@ -1105,6 +1107,97 @@ bool MessagingHub::IsHelpNetworkEnabled() const {
 
 void MessagingHub::SetOnReachabilityUpdated(std::function<void()> callback) {
   on_reachability_updated_ = std::move(callback);
+}
+
+void MessagingHub::SetOnPeerIconsChanged(std::function<void()> callback) {
+  on_peer_icons_changed_ = std::move(callback);
+}
+
+void MessagingHub::NotifyPeerIconsChanged() {
+  if (on_peer_icons_changed_) {
+    on_peer_icons_changed_();
+  }
+}
+
+std::string MessagingHub::ContactIconLocalPath(const Contact& contact) {
+  const std::string key = ProfileIconCacheKeyForContact(contact);
+  if (key.empty()) {
+    return {};
+  }
+  return ProfileIconLocalPath(data_dir_, key);
+}
+
+std::string MessagingHub::IdentityIconLocalPath(const std::string& identity) {
+  if (identity.empty() || !contacts_) {
+    return {};
+  }
+  if (IsMessagingReady()) {
+    if (auto local = Identity().Get()) {
+      if (!local->account_id.empty() && local->account_id == identity) {
+        const std::string self_path = ProfileIconLocalPath(data_dir_, "self");
+        if (!self_path.empty()) {
+          return self_path;
+        }
+      }
+    }
+  }
+  if (auto found = contacts_->FindByIdentity(identity, ContactIdKind::Account)) {
+    if (found->has_value()) {
+      return ContactIconLocalPath(**found);
+    }
+  }
+  if (auto found = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+    if (found->has_value()) {
+      return ContactIconLocalPath(**found);
+    }
+  }
+  return ProfileIconLocalPath(data_dir_, SanitizeProfileIconCacheKey(identity));
+}
+
+void MessagingHub::EnsureDirectoryHitIconCached(const DirectoryHit& hit) {
+  ScheduleDirectoryHitIconFetch(hit);
+}
+
+void MessagingHub::EnsureContactIconCached(const Contact& contact) {
+  ScheduleContactIconFetch(contact);
+}
+
+void MessagingHub::ScheduleDirectoryHitIconFetch(const DirectoryHit& hit) {
+  if (!hit.icon || hit.icon->url.empty()) {
+    return;
+  }
+  const std::string key = ProfileIconCacheKeyForHit(hit);
+  if (key.empty()) {
+    return;
+  }
+  const ProfileIconRef icon = *hit.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      return;
+    }
+    if (FetchProfileIcon(data_dir_, key, icon)) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
+    }
+  });
+}
+
+void MessagingHub::ScheduleContactIconFetch(const Contact& contact) {
+  if (!contact.remote.icon || contact.remote.icon->url.empty()) {
+    return;
+  }
+  const std::string key = ProfileIconCacheKeyForContact(contact);
+  if (key.empty()) {
+    return;
+  }
+  const ProfileIconRef icon = *contact.remote.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      return;
+    }
+    if (FetchProfileIcon(data_dir_, key, icon)) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
+    }
+  });
 }
 
 void MessagingHub::RunReachabilityProbe(bool try_upnp) {

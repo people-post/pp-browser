@@ -176,6 +176,40 @@ void ParseEndpointsArray(const nlohmann::json& json, std::vector<DirectoryEndpoi
   }
 }
 
+std::optional<ProfileIconRef> ProfileIconRefFromJson(const nlohmann::json& json) {
+  if (!json.is_object()) {
+    return std::nullopt;
+  }
+  ProfileIconRef icon;
+  if (json.contains("url") && json["url"].is_string()) {
+    icon.url = json["url"].get<std::string>();
+  }
+  if (json.contains("blob_id") && json["blob_id"].is_string()) {
+    icon.blob_id = json["blob_id"].get<std::string>();
+  }
+  if (json.contains("kind") && json["kind"].is_string()) {
+    icon.kind = json["kind"].get<std::string>();
+  }
+  if (icon.empty()) {
+    return std::nullopt;
+  }
+  return icon;
+}
+
+nlohmann::json ProfileIconRefToJson(const ProfileIconRef& icon) {
+  nlohmann::json out = nlohmann::json::object();
+  if (!icon.url.empty()) {
+    out["url"] = icon.url;
+  }
+  if (!icon.blob_id.empty()) {
+    out["blob_id"] = icon.blob_id;
+  }
+  if (!icon.kind.empty()) {
+    out["kind"] = icon.kind;
+  }
+  return out;
+}
+
 } // namespace
 
 nlohmann::json ContactToJson(const Contact& contact) {
@@ -187,6 +221,9 @@ nlohmann::json ContactToJson(const Contact& contact) {
                            {"multiaddrs", MultiaddrsToJson(mirrored.remote.multiaddrs)}};
   if (mirrored.remote.fetched_at > 0) {
     remote["fetched_at"] = mirrored.remote.fetched_at;
+  }
+  if (mirrored.remote.icon && !mirrored.remote.icon->empty()) {
+    remote["icon"] = ProfileIconRefToJson(*mirrored.remote.icon);
   }
   return {{"id", mirrored.id},
           {"local",
@@ -223,6 +260,9 @@ Contact ContactFromJson(const nlohmann::json& json) {
       }
       if (remote.contains("fetched_at") && remote["fetched_at"].is_number_integer()) {
         contact.remote.fetched_at = remote["fetched_at"].get<int64_t>();
+      }
+      if (remote.contains("icon")) {
+        contact.remote.icon = ProfileIconRefFromJson(remote["icon"]);
       }
     }
     SyncContactMirrors(contact);
@@ -285,6 +325,9 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
     out["kem_public_key_b64"] = *hit.kem_public_key_b64;
   }
+  if (hit.icon && !hit.icon->empty()) {
+    out["icon"] = ProfileIconRefToJson(*hit.icon);
+  }
   return out;
 }
 
@@ -339,6 +382,9 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   FlattenDirectoryEndpoints(hit.ids, hit.multiaddrs, hit.endpoints);
   if (json.contains("initiation_floor") && json["initiation_floor"].is_number_integer()) {
     hit.initiation_floor = json["initiation_floor"].get<int64_t>();
+  }
+  if (json.contains("icon")) {
+    hit.icon = ProfileIconRefFromJson(json["icon"]);
   }
   return hit;
 }

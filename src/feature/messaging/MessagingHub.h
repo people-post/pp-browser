@@ -180,6 +180,11 @@ public:
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();
+  std::string ContactIconLocalPath(const Contact& contact);
+  std::string IdentityIconLocalPath(const std::string& identity);
+  void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
+  void EnsureContactIconCached(const Contact& contact);
+  void SetOnPeerIconsChanged(std::function<void()> callback);
   Roe<void> RotateBriefLlmKey();
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
@@ -254,6 +259,10 @@ private:
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
+  void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
+  void ScheduleContactIconFetch(const Contact& contact);
+  void NotifyPeerIconsChanged();
+
   void SyncMobileEphemeralListen();
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
@@ -315,6 +324,7 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::function<void()> on_peer_icons_changed_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;

@@ -209,6 +209,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
       roster_handle.RegisterMember("video_enabled", &CallRosterParticipantState::video_enabled);
       roster_handle.RegisterMember("is_local", &CallRosterParticipantState::is_local);
       roster_handle.RegisterMember("has_remote_video", &CallRosterParticipantState::has_remote_video);
+      roster_handle.RegisterMember("has_avatar", &CallRosterParticipantState::has_avatar);
+      roster_handle.RegisterMember("avatar_src", &CallRosterParticipantState::avatar_src);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
@@ -2055,7 +2057,10 @@ std::string ShellHost::SerializeCallInProgress() const {
            "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
     out << "<div class=\"shell-call-peer-avatar\" "
            "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
-           "(!p.is_local && !p.has_remote_video)\"></div>";
+           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\"></div>";
+    out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
+           "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
+           "data-attr-src=\"p.avatar_src\"/>";
     out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"p.name\"></p>";
     out << "<p class=\"text-xs shell-call-peer-stall\" "
            "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "

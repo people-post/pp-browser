@@ -163,6 +163,16 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     row.subtitle = contact.server_nickname.c_str();
   }
   row.trust = TrustLevelToString(contact.trust).c_str();
+  if (ports.contact_icon_local_path) {
+    const std::string path = ports.contact_icon_local_path(contact);
+    if (!path.empty()) {
+      row.has_icon = true;
+      row.icon_src = path.c_str();
+    }
+  }
+  if (ports.ensure_contact_icon_cached && contact.remote.icon && !contact.remote.icon->url.empty()) {
+    ports.ensure_contact_icon_cached(contact);
+  }
   if (ports.snapshot && ports.snapshot().initialized && ports.sum_unread_for_contact) {
     row.unread_count = ports.sum_unread_for_contact(contact.id);
     row.unread_display = FormatBadgeCount(row.unread_count).c_str();
@@ -187,6 +197,16 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
+  if (ports.contact_icon_local_path) {
+    const std::string path = ports.contact_icon_local_path(contact);
+    if (!path.empty()) {
+      detail.has_icon = true;
+      detail.icon_src = path.c_str();
+    }
+  }
+  if (ports.ensure_contact_icon_cached && contact.remote.icon && !contact.remote.icon->url.empty()) {
+    ports.ensure_contact_icon_cached(contact);
+  }
   if (contact.remote.fetched_at > 0) {
     detail.remote_updated = "From directory";
   } else {
@@ -399,6 +419,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       list_handle.RegisterMember("trust", &ContactListRow::trust);
       list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
       list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
+      list_handle.RegisterMember("has_icon", &ContactListRow::has_icon);
+      list_handle.RegisterMember("icon_src", &ContactListRow::icon_src);
     }
     if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
       identity_handle.RegisterMember("label", &ContactIdentityRow::label);
@@ -435,6 +457,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
       detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
       detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
+      detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
+      detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
     }

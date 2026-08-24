@@ -42,12 +42,12 @@
 
 ## i3 — Icon cache + render
 
-- [ ] Parse `icon` on directory hits / user lookup (`DirectoryHit`, `ContactRemote`)
-- [ ] Local icon cache: `{profile}/cache/icons/…` + meta (`url`, `blob_id`, `fetched_at`)
-- [ ] Refresh on directory/contacts reload when icon identity changes
-- [ ] Render: Me → Profile, contacts list/detail, call chrome placeholder
-- [ ] Contact card: render `avatar_url`; populate from profile icon when sharing
-- [ ] `<img>` from local file path only
+- [x] Parse `icon` on directory hits / user lookup (`DirectoryHit`, `ContactRemote`)
+- [x] Local icon cache: `{profile}/cache/icons/…` + meta (`url`, `blob_id`, `fetched_at`)
+- [x] Refresh on directory/contacts reload when icon identity changes (url/blob_id compare)
+- [x] Render: Me → Profile (i2), contacts list/detail, call chrome immersive roster
+- [x] Contact card: render `avatar_url` in `BuildContactCardRml`
+- [x] `<img>` from local file path (peer cache + self cache)
 
 **Exit:** Icons visible across app from local cache; manual/directory refresh picks up changes.
 

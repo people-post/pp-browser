@@ -688,8 +688,12 @@ std::string InboxController::BuildContactCardRml(const ThreadMessage& message) c
   const std::string name =
       fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
   const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
-  std::string html = "<div class=\"chat-card chat-contact-card\"><h3 class=\"heading-3\">" +
-                     StructuredTextParser::EscapeText(name) + "</h3>";
+  std::string html = "<div class=\"chat-card chat-contact-card\">";
+  if (fields && !fields->avatar_url.empty()) {
+    html += "<img class=\"chat-contact-card-avatar\" src=\"" +
+            StructuredTextParser::EscapeText(fields->avatar_url) + "\"/>";
+  }
+  html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
   if (!relay.empty()) {
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
   }

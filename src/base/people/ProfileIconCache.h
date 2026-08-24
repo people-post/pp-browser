@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/people/ContactTypes.h"
+
 #include "common/Error.h"
 
 #include <cstdint>
@@ -16,16 +18,24 @@ struct ProfileIconCacheMeta {
   std::string local_filename;
 };
 
-std::string ProfileIconCacheRoot(const std::string& profile_dir);
+/** Filesystem-safe cache directory segment (relay/account ids may contain `:`). */
+std::string SanitizeProfileIconCacheKey(const std::string& key);
 
-Roe<ProfileIconCacheMeta> LoadProfileIconCacheMeta(const std::string& profile_dir);
+std::string ProfileIconCacheKeyForHit(const DirectoryHit& hit);
+std::string ProfileIconCacheKeyForContact(const Contact& contact);
+
+std::string ProfileIconCacheRoot(const std::string& profile_dir, const std::string& cache_key = "self");
+
+Roe<ProfileIconCacheMeta> LoadProfileIconCacheMeta(const std::string& profile_dir,
+                                                   const std::string& cache_key = "self");
 
 /** Absolute path to cached icon file, or empty when none. */
-std::string ProfileIconLocalPath(const std::string& profile_dir);
+std::string ProfileIconLocalPath(const std::string& profile_dir, const std::string& cache_key = "self");
 
 Roe<void> SaveProfileIconCache(const std::string& profile_dir, const std::vector<uint8_t>& bytes,
-                               const std::string& file_extension, const ProfileIconCacheMeta& meta);
+                               const std::string& file_extension, const ProfileIconCacheMeta& meta,
+                               const std::string& cache_key = "self");
 
-Roe<void> ClearProfileIconCache(const std::string& profile_dir);
+Roe<void> ClearProfileIconCache(const std::string& profile_dir, const std::string& cache_key = "self");
 
 } // namespace pbr

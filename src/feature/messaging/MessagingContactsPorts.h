@@ -44,6 +44,10 @@ struct MessagingContactsPorts {
 
   std::function<Roe<DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;
 
+  std::function<std::string(const Contact& contact)> contact_icon_local_path;
+  std::function<void(const Contact& contact)> ensure_contact_icon_cached;
+  std::function<void(const DirectoryHit& hit)> ensure_directory_hit_icon_cached;
+
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;

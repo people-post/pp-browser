@@ -196,6 +196,8 @@ struct CallRosterParticipantState {
   bool video_enabled = false;
   bool is_local = false;
   bool has_remote_video = false;
+  bool has_avatar = false;
+  Rml::String avatar_src;
 };
 
 /** In-call chrome presentation mode (V031). */

@@ -131,4 +131,35 @@ TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
   EXPECT_EQ(hit.initiation_floor, 0);
 }
 
+TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
+  const nlohmann::json json = {{"relay_user_id", "relay:alice"},
+                               {"nickname", "alice"},
+                               {"icon",
+                                {{"url", "https://cdn.example/icon.jpg"},
+                                 {"blob_id", "blob-1"},
+                                 {"kind", "image/jpeg"}}}};
+
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  ASSERT_TRUE(hit.icon.has_value());
+  EXPECT_EQ(hit.icon->url, "https://cdn.example/icon.jpg");
+  EXPECT_EQ(hit.icon->blob_id, "blob-1");
+  EXPECT_EQ(hit.icon->kind, "image/jpeg");
+
+  Contact contact;
+  contact.id = "c-icon";
+  contact.remote.nickname = hit.nickname;
+  contact.remote.ids = hit.ids;
+  contact.remote.icon = hit.icon;
+  SyncContactMirrors(contact);
+
+  const Contact again = ContactFromJson(ContactToJson(contact));
+  ASSERT_TRUE(again.remote.icon.has_value());
+  EXPECT_EQ(again.remote.icon->url, hit.icon->url);
+  EXPECT_EQ(again.remote.icon->blob_id, hit.icon->blob_id);
+
+  const DirectoryHit hit_again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  ASSERT_TRUE(hit_again.icon.has_value());
+  EXPECT_EQ(hit_again.icon->url, hit.icon->url);
+}
+
 } // namespace

@@ -6,6 +6,7 @@ pp_browser_add_base_library(pp_base_net
     HttpBlobClient.cpp
     HttpClient.cpp
     ProfileIconClientUtil.cpp
+    ProfileIconFetchUtil.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
     RelayInboxCursor.cpp

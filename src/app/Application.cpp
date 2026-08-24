@@ -1021,6 +1021,16 @@ bool Application::Initialize(const char* window_title) {
       }
     });
   });
+  messaging.SetOnPeerIconsChanged([this]() {
+    AppRuntime::PostUI([this]() {
+      if (contacts_) {
+        contacts_->Refresh();
+      }
+      if (call_) {
+        call_->RefreshPendingRing();
+      }
+    });
+  });
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
@@ -1221,6 +1231,7 @@ void Application::Shutdown() {
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
+    messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 
