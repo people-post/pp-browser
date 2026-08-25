@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -25,6 +26,13 @@ int CompareSemverCore(std::string_view a, std::string_view b);
 inline constexpr int kClientCompatSchemaVersion = 1;
 inline constexpr int64_t kClientCompatCacheTtlSeconds = 6 * 60 * 60;
 
+/** Nested app Support discovery on client-compat (product help desk; omit / disabled = no entry). */
+struct ClientCompatSupport {
+  bool enabled = false;
+  std::string account_id;
+  std::string display_name;
+};
+
 struct ClientCompatDocument {
   int schema_version = 0;
   std::string min_client_version;
@@ -32,6 +40,7 @@ struct ClientCompatDocument {
   int min_protocol_gen = 1;
   std::string upgrade_url;
   std::string message;
+  std::optional<ClientCompatSupport> support;
 };
 
 enum class CompatUiAction {

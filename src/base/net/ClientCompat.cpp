@@ -129,6 +129,31 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   if (root.contains("message") && root["message"].is_string()) {
     doc.message = root["message"].get<std::string>();
   }
+  if (root.contains("support")) {
+    const auto& support = root["support"];
+    if (support.is_object()) {
+      ClientCompatSupport block;
+      if (support.contains("enabled") && support["enabled"].is_boolean()) {
+        block.enabled = support["enabled"].get<bool>();
+      }
+      if (support.contains("account_id") && support["account_id"].is_string()) {
+        block.account_id = support["account_id"].get<std::string>();
+      }
+      if (support.contains("display_name") && support["display_name"].is_string()) {
+        block.display_name = support["display_name"].get<std::string>();
+      }
+      // On only when enabled + non-empty account_id (matches www ClientCompat.ts).
+      if (block.enabled && !block.account_id.empty()) {
+        doc.support = std::move(block);
+      } else if (support.contains("enabled") && support["enabled"].is_boolean() && !block.enabled) {
+        block.enabled = false;
+        block.account_id.clear();
+        doc.support = std::move(block);
+      }
+      // Malformed / incomplete enabled block: omit (fail-open for Support only).
+    }
+    // Non-object support: omit (do not fail the whole document).
+  }
   return doc;
 }
 
@@ -192,6 +217,11 @@ Roe<void> SaveClientCompatCache(const std::string& profile_data_dir, const Clien
                              {"min_protocol_gen", entry.document.min_protocol_gen},
                              {"upgrade_url", entry.document.upgrade_url},
                              {"message", entry.document.message}};
+  if (entry.document.support) {
+    document["support"] = {{"enabled", entry.document.support->enabled},
+                           {"account_id", entry.document.support->account_id},
+                           {"display_name", entry.document.support->display_name}};
+  }
   const nlohmann::json root = {{"fetched_at_unix", entry.fetched_at_unix}, {"document", std::move(document)}};
   const auto path = CachePath(profile_data_dir);
   std::ofstream out(path, std::ios::trunc);

@@ -81,6 +81,10 @@
     "compat.update_required.action": "更新",
     "compat.update_available.message": "有新版本的 PP 可用。",
 
+    "support.entry.title": "PP 支持",
+    "support.entry.subtitle": "向 PP 团队求助",
+    "support.unavailable": "目前无法使用 PP 支持。",
+
     "settings.theme.label": "主题",
     "settings.theme.system": "跟随系统",
     "settings.theme.light": "浅色",

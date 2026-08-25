@@ -123,6 +123,9 @@ public:
   Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id) const;
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id) const;
+  /** PP Support Account id from client-compat; empty disables Support lock gate. */
+  void SetSupportAccountId(std::string account_id);
+  const std::string& SupportAccountId() const { return support_account_id_; }
   /** D038 — pause ingest/outbound without rotating keys. */
   Roe<void> PauseIntegrityOnly(const std::string& thread_id);
 
@@ -209,6 +212,7 @@ private:
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
   CallSessionManager* call_sessions_ = nullptr;
+  std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const std::string&)> on_delivery_notice_;

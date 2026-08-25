@@ -47,6 +47,16 @@
       <p class="text muted" data-if="status != ''" data-rml="status"></p>
     </div>
 
+    <div class="settings-list" data-if="support_visible">
+      <button class="settings-row" type="button" data-event-click="open_support_chat()">
+        <div class="settings-row-text stack">
+          <p class="settings-row-title" data-rml="support_display_name"></p>
+          <p class="settings-row-subtitle text muted" data-rml="support_subtitle"></p>
+        </div>
+        <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
+      </button>
+    </div>
+
     <p class="settings-section-title me-preferences-label">{{i18n:settings.preferences}}</p>
     <div class="settings-list">
       <button data-for="section : sections"

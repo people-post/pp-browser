@@ -691,7 +691,17 @@ Roe<PublicKeyScope> P2pMessagingService::GetPublicKeyScope(const std::string& th
 }
 
 Roe<bool> P2pMessagingService::CanLockPublicToThisDevice(const std::string& thread_id) const {
+  if (!support_account_id_.empty()) {
+    auto thread = store_.GetThread(thread_id);
+    if (thread && *thread && (*thread)->peer_identity_value == support_account_id_) {
+      return false;
+    }
+  }
   return public_lock_.CanLockToThisDevice(thread_id);
+}
+
+void P2pMessagingService::SetSupportAccountId(std::string account_id) {
+  support_account_id_ = std::move(account_id);
 }
 
 void P2pMessagingService::PurgeRetryQueueForThread(const std::string& thread_id) {

@@ -249,6 +249,10 @@ Roe<bool> MessagingFacade::CanLockPublicToThisDevice(const std::string& thread_i
   return hub_.P2p().CanLockPublicToThisDevice(thread_id);
 }
 
+void MessagingFacade::SetSupportAccountId(std::string account_id) {
+  hub_.P2p().SetSupportAccountId(std::move(account_id));
+}
+
 void MessagingFacade::RegisterContactDirectEndpoints(const Contact& contact) {
   hub_.P2p().RegisterContactDirectEndpoints(contact);
 }

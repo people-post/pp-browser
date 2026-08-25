@@ -4,10 +4,12 @@
 #include "base/people/ProfileIdentityView.h"
 #include "base/data/SessionStore.h"
 #include "base/net/BlobQuotaUtil.h"
+#include "base/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,11 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& current_pin, const std::string& new_pin)> change_pin;
   /** Copy a time-limited link-device payload (account keys + shared DEK + public PSKs). */
   std::function<Roe<std::string>()> export_link_device;
+
+  /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
+  std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
+  /** Ensure PP Support contact + open Direct e2e_public chat. */
+  std::function<Roe<void>()> open_support_chat;
 };
 
 } // namespace pbr

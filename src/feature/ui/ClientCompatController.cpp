@@ -82,6 +82,10 @@ void ClientCompatController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
 
+void ClientCompatController::BindSupportDiscovery(SupportDiscoveryPorts ports) {
+  support_discovery_ = std::move(ports);
+}
+
 void ClientCompatController::CheckAsync() {
   if (!compat_ports_.messaging_initialized || !compat_ports_.messaging_initialized()) {
     return;
@@ -106,6 +110,18 @@ void ClientCompatController::CheckAsync() {
 void ClientCompatController::ApplyDocument(const ClientCompatDocument& doc) {
   last_action_ = DecideCompatUiAction(AppVersionString(), doc);
   PresentAction(last_action_, doc);
+  PublishSupport(doc);
+}
+
+void ClientCompatController::PublishSupport(const ClientCompatDocument& doc) {
+  if (!support_discovery_.on_support_changed) {
+    return;
+  }
+  std::optional<ClientCompatSupport> published;
+  if (doc.support && doc.support->enabled && !doc.support->account_id.empty()) {
+    published = *doc.support;
+  }
+  support_discovery_.on_support_changed(published);
 }
 
 void ClientCompatController::PresentAction(CompatUiAction action, const ClientCompatDocument& doc) {

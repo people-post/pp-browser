@@ -118,6 +118,7 @@ public:
   Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id);
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
+  void SetSupportAccountId(std::string account_id);
   void RegisterContactDirectEndpoints(const Contact& contact);
   void RegisterPeerSigningKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                               const std::string& source);

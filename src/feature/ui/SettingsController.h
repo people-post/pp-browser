@@ -78,6 +78,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
+  void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
   void OpenNetworkSettings();
   /** Refresh reachability Connection card via SettingsCommands ports. */
@@ -156,6 +158,9 @@ private:
     bool tool_permissions_has_saved = false;
     Rml::String app_name;
     Rml::String app_version;
+    bool support_visible = false;
+    Rml::String support_display_name;
+    Rml::String support_subtitle;
   };
 
   static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -200,6 +205,7 @@ private:
   static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenSupportChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -209,6 +215,7 @@ private:
   void ReloadFromDisk();
   void SyncBindingsFromSession();
   void ApplyReachability();
+  void ApplySupportDiscovery();
   void ApplySectionAttention();
   bool ComputeNetworkAttention() const;
   SessionStore& Store();
@@ -237,6 +244,7 @@ private:
   void OnPickProfileIcon();
   void OnClearProfileIcon();
   void OnShareProfile();
+  void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChangePin();

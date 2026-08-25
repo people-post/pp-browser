@@ -81,6 +81,10 @@
     "compat.update_required.action": "Update",
     "compat.update_available.message": "A newer version of PP is available.",
 
+    "support.entry.title": "PP Support",
+    "support.entry.subtitle": "Get help from the PP team",
+    "support.unavailable": "PP Support is not available right now.",
+
     "settings.theme.label": "Theme",
     "settings.theme.system": "System",
     "settings.theme.light": "Light",

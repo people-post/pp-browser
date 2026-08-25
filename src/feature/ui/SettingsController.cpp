@@ -6,6 +6,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/net/ClientCompat.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/ViewCatalog.h"
@@ -370,6 +371,7 @@ void SettingsController::SyncBindingsFromSession() {
     ui_state_.libp2p_status_message.clear();
   }
   ApplyReachability();
+  ApplySupportDiscovery();
   // Baseline for blur commit.
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
@@ -500,6 +502,9 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
+    ctor.Bind("support_visible", &controller.bindings_.support_visible);
+    ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
+    ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
     ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
     ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
@@ -507,6 +512,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("select_section", &SettingsController::SelectSectionCallback);
     ctor.BindEventCallback("back_to_list", &SettingsController::BackToListCallback);
     ctor.BindEventCallback("reset_section", &SettingsController::ResetSectionCallback);
+    ctor.BindEventCallback("open_support_chat", &SettingsController::OpenSupportChatCallback);
     ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
@@ -626,6 +632,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
+  host.Dirty("settings", "support_visible");
+  host.Dirty("settings", "support_display_name");
+  host.Dirty("settings", "support_subtitle");
   host.Dirty("settings", "pin_change_old");
   host.Dirty("settings", "pin_change_new");
   host.Dirty("settings", "pin_change_confirm");
@@ -1459,12 +1468,51 @@ void SettingsController::PerformClearDownloadedAttachments() {
 void SettingsController::RefreshLocalizedChrome() {
   InitSections();
   SyncBindingsFromSession();
+  ApplySupportDiscovery();
   if (!selected_id_.empty()) {
     if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
       selected_title_ = handler->ListItem().title.c_str();
     }
   }
   DirtyAll();
+}
+
+void SettingsController::SyncSupportDiscovery() {
+  ApplySupportDiscovery();
+  DataModelHost::Instance().Dirty("settings", "support_visible");
+  DataModelHost::Instance().Dirty("settings", "support_display_name");
+  DataModelHost::Instance().Dirty("settings", "support_subtitle");
+}
+
+void SettingsController::ApplySupportDiscovery() {
+  bindings_.support_visible = false;
+  bindings_.support_display_name.clear();
+  bindings_.support_subtitle = Tr("support.entry.subtitle").c_str();
+  if (!commands_.load_support_discovery) {
+    return;
+  }
+  const std::optional<ClientCompatSupport> discovery = commands_.load_support_discovery();
+  if (!discovery || !discovery->enabled || discovery->account_id.empty()) {
+    return;
+  }
+  bindings_.support_visible = true;
+  bindings_.support_display_name =
+      discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
+}
+
+void SettingsController::OpenSupportChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                 const Rml::VariantList& /*args*/) {
+  Instance().OnOpenSupportChat();
+}
+
+void SettingsController::OnOpenSupportChat() {
+  if (!commands_.open_support_chat) {
+    ReportFailure("Support is not available");
+    return;
+  }
+  if (auto opened = commands_.open_support_chat(); !opened) {
+    ReportFailure(opened.error());
+  }
 }
 
 void SettingsController::OpenNetworkSettings() {
