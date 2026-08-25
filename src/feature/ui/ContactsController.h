@@ -51,6 +51,8 @@ public:
     Rml::String unread_display;
     bool has_icon = false;
     Rml::String icon_src;
+    Rml::String avatar_letter = "?";
+    int avatar_tone = 0;
   };
 
   struct ContactIdentityRow {
@@ -90,6 +92,8 @@ public:
     bool has_relay_id = false;
     bool has_icon = false;
     Rml::String icon_src;
+    Rml::String avatar_letter = "?";
+    int avatar_tone = 0;
   };
 
   bool RegisterModel(Rml::Context* context);

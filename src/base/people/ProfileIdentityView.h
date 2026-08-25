@@ -13,6 +13,8 @@ struct ProfileIdentityView {
   std::string nickname;
   std::string peer_id;
   std::string relay_id;
+  /** Portable person id when minted (M002); preferred avatar color seed. */
+  std::string account_id;
   std::string public_key_b64;
   std::string registered = "no";
   std::string registration_status = "not registered";

@@ -2201,6 +2201,13 @@ call-video-tile {
   height: 56dp;
   border-radius: 28dp;
   margin: 0 auto 10dp auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-call-peer-avatar .avatar-letter {
+  font-size: 22dp;
 }
 
 .shell-call-peer-avatar-image {
@@ -2780,6 +2787,7 @@ call-video-tile {
 
 .me-profile-avatar-row {
   align-items: center;
+  flex-wrap: wrap;
   gap: 12dp;
   margin-bottom: 8dp;
 }
@@ -2789,8 +2797,18 @@ call-video-tile {
   height: 64dp;
   border-radius: 32dp;
   overflow: hidden;
+  flex-grow: 0;
   flex-shrink: 0;
-  background-color: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.me-profile-avatar-frame--disabled {
+  cursor: auto;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .me-profile-avatar-image {
@@ -2799,10 +2817,15 @@ call-video-tile {
   object-fit: cover;
 }
 
-.me-profile-avatar-placeholder {
-  width: 64dp;
-  height: 64dp;
-  background-color: var(--surface-3);
+.me-profile-avatar-frame .avatar-letter {
+  font-size: 24dp;
+}
+
+.me-profile-avatar-btn {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: auto;
+  white-space: nowrap;
 }
 
 .contacts-row-avatar-frame {
@@ -2811,13 +2834,19 @@ call-video-tile {
   border-radius: 16dp;
   overflow: hidden;
   flex-shrink: 0;
-  background-color: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .contacts-row-avatar-image {
   width: 32dp;
   height: 32dp;
   object-fit: cover;
+}
+
+.contacts-row-avatar-frame .avatar-letter {
+  font-size: 13dp;
 }
 
 .contact-detail-avatar-row {
@@ -2831,7 +2860,9 @@ call-video-tile {
   border-radius: 32dp;
   overflow: hidden;
   flex-shrink: 0;
-  background-color: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .contact-detail-avatar-image {
@@ -2840,10 +2871,18 @@ call-video-tile {
   object-fit: cover;
 }
 
-.contact-detail-avatar-placeholder {
-  width: 64dp;
-  height: 64dp;
-  background-color: var(--surface-3);
+.contact-detail-avatar-frame .avatar-letter {
+  font-size: 24dp;
+}
+
+.avatar-letter {
+  margin: 0;
+  padding: 0;
+  font-family: LatoLatin;
+  font-weight: bold;
+  line-height: 1;
+  text-align: center;
+  color: #ffffff;
 }
 
 .contact-detail-title-block {
@@ -2891,12 +2930,6 @@ call-video-tile {
   border-radius: 999dp;
   font-size: 11dp;
   opacity: 0.8;
-}
-
-.me-profile-avatar-actions {
-  gap: 8dp;
-  flex: 1;
-  min-width: 0;
 }
 
 .me-preferences-label {

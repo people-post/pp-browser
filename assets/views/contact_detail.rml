@@ -1,9 +1,17 @@
 <div class="contact-detail-panel stack" data-model="contacts">
   <div class="contacts-detail-header stack">
     <div class="contact-detail-avatar-row row">
-      <div class="contact-detail-avatar-frame">
+      <div class="contact-detail-avatar-frame"
+           data-class-avatar-tone-0="!selected.has_icon && selected.avatar_tone == 0"
+           data-class-avatar-tone-1="!selected.has_icon && selected.avatar_tone == 1"
+           data-class-avatar-tone-2="!selected.has_icon && selected.avatar_tone == 2"
+           data-class-avatar-tone-3="!selected.has_icon && selected.avatar_tone == 3"
+           data-class-avatar-tone-4="!selected.has_icon && selected.avatar_tone == 4"
+           data-class-avatar-tone-5="!selected.has_icon && selected.avatar_tone == 5"
+           data-class-avatar-tone-6="!selected.has_icon && selected.avatar_tone == 6"
+           data-class-avatar-tone-7="!selected.has_icon && selected.avatar_tone == 7">
         <img class="contact-detail-avatar-image" data-if="selected.has_icon" data-attr-src="selected.icon_src"/>
-        <div class="contact-detail-avatar-placeholder" data-if="!selected.has_icon"></div>
+        <p class="avatar-letter" data-if="!selected.has_icon" data-rml="selected.avatar_letter"></p>
       </div>
       <div class="contact-detail-title-block stack">
         <div class="contacts-row-title-line row">

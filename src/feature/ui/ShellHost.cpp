@@ -211,6 +211,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
       roster_handle.RegisterMember("has_remote_video", &CallRosterParticipantState::has_remote_video);
       roster_handle.RegisterMember("has_avatar", &CallRosterParticipantState::has_avatar);
       roster_handle.RegisterMember("avatar_src", &CallRosterParticipantState::avatar_src);
+      roster_handle.RegisterMember("avatar_letter", &CallRosterParticipantState::avatar_letter);
+      roster_handle.RegisterMember("avatar_tone", &CallRosterParticipantState::avatar_tone);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
@@ -2057,7 +2059,16 @@ std::string ShellHost::SerializeCallInProgress() const {
            "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
     out << "<div class=\"shell-call-peer-avatar\" "
            "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
-           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\"></div>";
+           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
+           "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
+           "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
+           "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
+           "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
+           "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
+           "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
+           "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
+           "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
+           "<p class=\"avatar-letter\" data-rml=\"p.avatar_letter\"></p></div>";
     out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
            "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
            "data-attr-src=\"p.avatar_src\"/>";
