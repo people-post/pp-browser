@@ -54,7 +54,9 @@ Locales: `assets/locales/*/app.name` should match `kProductName`. Most UI binds 
 
 **Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png) (1024² master; Windows uses [`app-icon.ico`](../../assets/branding/app-icon.ico)).
 
-Monogram: two **PP** letterforms with the lower tips joined by a smile curve.
+Mark: two stacked speech-bubble frames (sessions silhouette) in dual materials — matte teal in front, glossy sky-blue behind — on a light squircle.
+
+Exploratory alternates live under [`design/branding/icon-candidates/`](../../design/branding/icon-candidates/) (outside `assets/`, not packaged).
 
 **Runtime:** [`WindowIcon`](../../src/base/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop). macOS/iOS bundles embed the same PNG.
 

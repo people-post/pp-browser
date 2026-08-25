@@ -1,9 +1,17 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
+    AttachmentFetchUtil.cpp
+    AttachmentClientUtil.cpp
+    BlobClient.cpp
+    BlobQuotaUtil.cpp
     ClientCompat.cpp
     CurlSsl.cpp
+    HttpBlobClient.cpp
     HttpClient.cpp
+    ProfileIconClientUtil.cpp
+    ProfileIconFetchUtil.cpp
     RelayApiSignPayload.cpp
+    RelayBlobSignPayload.cpp
     RelayInboxCursor.cpp
     RelaySignBytes.cpp
     RegistrationClientUtil.cpp

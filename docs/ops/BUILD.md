@@ -200,6 +200,17 @@ First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
 
+### Sandbox backend (dogfood)
+
+Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.peoplepost.org`) and keep profile data separate from production:
+
+```bash
+pp-browser --sandbox
+# or: PP_BROWSER_SANDBOX=1 pp-browser
+```
+
+Uses config/data under `pp-browser-sandbox` (e.g. `~/.config/pp-browser-sandbox`, `~/.local/share/pp-browser-sandbox` on Linux). Register a **new identity** on the sandbox — production relay IDs and Brief API keys do not carry over. Stale `www.brief.global` URLs in an existing sandbox config file are rewritten on load.
+
 ### Cloud LLM (optional)
 
 Open **Me → Assistant**, choose **Cloud (OpenAI-compatible)**, enter your API key, and save.

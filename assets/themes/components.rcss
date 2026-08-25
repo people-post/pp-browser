@@ -426,6 +426,7 @@ select selectbox option {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 4dp;
 }
 
 .prompt-emoji-btn {
@@ -448,6 +449,53 @@ select selectbox option {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+.prompt-attach-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-attach-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+.prompt-attachment-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  padding: 4dp 10dp;
+  border-radius: 12dp;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.prompt-attachment-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12dp;
+}
+
+.prompt-attachment-chip-status {
+  flex-shrink: 0;
+  font-size: 11dp;
+  opacity: 0.72;
 }
 
 .prompt-send-btn {
@@ -2155,6 +2203,15 @@ call-video-tile {
   margin: 0 auto 10dp auto;
 }
 
+.shell-call-peer-avatar-image {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+  object-fit: cover;
+  margin: 0 auto 10dp auto;
+  display: block;
+}
+
 .shell-call-peer-tile {
   width: 100%;
   height: 120dp;
@@ -2719,6 +2776,127 @@ call-video-tile {
   margin-top: 4dp;
   gap: 8dp;
   flex-wrap: wrap;
+}
+
+.me-profile-avatar-row {
+  align-items: center;
+  gap: 12dp;
+  margin-bottom: 8dp;
+}
+
+.me-profile-avatar-frame {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.me-profile-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  object-fit: cover;
+}
+
+.me-profile-avatar-placeholder {
+  width: 64dp;
+  height: 64dp;
+  background-color: var(--surface-3);
+}
+
+.contacts-row-avatar-frame {
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.contacts-row-avatar-image {
+  width: 32dp;
+  height: 32dp;
+  object-fit: cover;
+}
+
+.contact-detail-avatar-row {
+  align-items: center;
+  gap: 12dp;
+}
+
+.contact-detail-avatar-frame {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--surface-2);
+}
+
+.contact-detail-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  object-fit: cover;
+}
+
+.contact-detail-avatar-placeholder {
+  width: 64dp;
+  height: 64dp;
+  background-color: var(--surface-3);
+}
+
+.contact-detail-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-contact-card-avatar {
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
+  object-fit: cover;
+  margin-bottom: 8dp;
+}
+
+.chat-attachment-card {
+  max-width: 320dp;
+}
+
+.chat-attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 240dp;
+  border-radius: 8dp;
+  margin-bottom: 8dp;
+}
+
+.chat-attachment-video-poster {
+  display: block;
+  max-width: 100%;
+  max-height: 240dp;
+  border-radius: 8dp;
+  margin-bottom: 8dp;
+}
+
+.chat-attachment-video {
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+}
+
+.chat-attachment-video-badge {
+  display: inline-block;
+  padding: 2dp 8dp;
+  border-radius: 999dp;
+  font-size: 11dp;
+  opacity: 0.8;
+}
+
+.me-profile-avatar-actions {
+  gap: 8dp;
+  flex: 1;
+  min-width: 0;
 }
 
 .me-preferences-label {

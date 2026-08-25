@@ -21,6 +21,9 @@ struct ProfileIdentityView {
   bool show_register = true;
   bool show_rotate = false;
   std::string brief_llm_key_masked;
+  /** Absolute local path for cached profile icon, if any. */
+  std::string profile_icon_path;
+  bool profile_has_icon = false;
 };
 
 } // namespace pbr

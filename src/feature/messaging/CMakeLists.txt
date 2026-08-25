@@ -1,5 +1,6 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
+    AttachmentDownloadService.cpp
     CallMediaKeyStore.cpp
     CallLibp2pMediaBridge.cpp
     CallLifecycle.cpp
@@ -15,6 +16,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     GroupMembershipService.cpp
     InboxController.cpp
     Libp2pChatHistoryService.cpp
+    Libp2pChatBlobService.cpp
     Libp2pDirectChatService.cpp
     MessageRouter.cpp
     MessagingHub.cpp

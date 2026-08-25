@@ -5,6 +5,7 @@
 #include "base/crypto/ProfileUnlockGate.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/data/SchemaVersion.h"
 #include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
@@ -32,6 +33,13 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHu
   auto config = Config::Load(options.argc, options.argv);
   if (!config) {
     return config.error();
+  }
+  if (SandboxMode()) {
+    const std::string config_path = Config::DiscoverConfigPath(options.argc, options.argv);
+    logging::getLogger("Bootstrap").warning
+        << "Sandbox mode active — config "
+        << (config_path.empty() ? AppPaths::ConfigFilePath() : config_path) << ", data "
+        << AppPaths::DataDir(config->data_dir);
   }
 
   AppPaths::DataDir(config->data_dir);

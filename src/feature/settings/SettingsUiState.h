@@ -54,6 +54,10 @@ struct SettingsUiState {
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
   bool profile_show_rotate = false;
+  std::string profile_icon_src;
+  bool profile_has_icon = false;
+  bool profile_icon_uploading = false;
+  bool profile_show_clear_icon = false;
   /** UI switch value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */
@@ -75,6 +79,10 @@ struct SettingsUiState {
   std::string data_dir;
   std::string profile_dir;
   std::string profile_size_label;
+  std::string attachment_cache_size_label;
+  /** R021 — smart | always_auto | on_demand */
+  std::string attachment_download_policy = "smart";
+  std::string attachment_download_policy_label;
   std::string pin_protection_status;
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */

@@ -74,6 +74,7 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 |----------|---------|----------|
 | `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` | One short stream per message: write `RelayEnvelope` JSON → read `{"ok":true}` ack (`DuplexFrameSession` + `ControlJsonIoPolicy`) |
 | `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON (same pipe; SQLite `Serve` on worker) |
+| `/pp-browser/chat-blob/1.0.0` | `Libp2pChatBlobService` | Write `ChatBlobRequest` JSON → read ciphertext **or** JSON error ack (fetch); push: JSON request → ciphertext frame → JSON ack |
 | dial-back / circuit-relay | same JSON framing family | Control frames; blocking JSON still used for handshake / `StreamBridge` |
 | media-relay / call-media | `DuplexFrameSession` | Ongoing length-prefixed frames; **no** per-frame read timeout by default |
 
@@ -154,6 +155,7 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 | JSON frames | `src/base/p2p/StreamJsonFrame.*` |
 | Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
 | Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
+| Chat blob | `src/feature/messaging/Libp2pChatBlobService.*` |
 | Limits | `src/base/messaging/MessagingLimits.h` |
 | Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
 | Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |

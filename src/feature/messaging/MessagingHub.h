@@ -21,8 +21,13 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallStack.h"
+#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "base/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "base/net/BlobClient.h"
+#include "base/net/BlobQuotaUtil.h"
+#include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
 #include "base/p2p/Libp2pHost.h"
@@ -88,12 +93,14 @@ public:
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
 
-  /** Inbound group-invite policy projected from ProfilePreferences. */
+  /** Inbound group-invite + attachment download policy projected from ProfilePreferences. */
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
+    AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy;
+      return group_invite_policy == other.group_invite_policy &&
+             attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
   };
@@ -158,6 +165,7 @@ public:
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
+  IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
@@ -175,6 +183,20 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> ClearProfileIcon();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
+  Roe<void> FreeOldestRelayBlobSlot();
+  void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  void DrainPendingAttachmentMedia();
+  Roe<void> ClearDownloadedAttachments();
+  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  AttachmentDownloadService& Attachments();
+  std::string ContactIconLocalPath(const Contact& contact);
+  std::string IdentityIconLocalPath(const std::string& identity);
+  void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
+  void EnsureContactIconCached(const Contact& contact);
+  void SetOnPeerIconsChanged(std::function<void()> callback);
   Roe<void> RotateBriefLlmKey();
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
@@ -187,6 +209,7 @@ public:
   void TryUpnpPortMapping();
   void TickReachabilityUx();
   void RefreshMeshCapabilities();
+  void WireAttachmentDownloads();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
@@ -249,6 +272,10 @@ private:
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
+  void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
+  void ScheduleContactIconFetch(const Contact& contact);
+  void NotifyPeerIconsChanged();
+
   void SyncMobileEphemeralListen();
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
@@ -280,6 +307,8 @@ private:
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
+  std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
+  std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -287,11 +316,13 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpDirectoryClient> http_directory_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
+  std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
+  IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
@@ -308,6 +339,7 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::function<void()> on_peer_icons_changed_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;

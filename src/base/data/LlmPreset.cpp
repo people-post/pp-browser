@@ -1,13 +1,15 @@
 #include "base/data/LlmPreset.h"
 
 #include "base/data/PlatformDefaults.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/platform/Platform.h"
+
+#include <cstring>
 
 namespace pbr {
 
 namespace {
 
-constexpr const char* kBriefBaseUrl = "https://www.brief.global/api/llm/v1";
 constexpr const char* kCloudBaseUrl = "https://api.openai.com/v1";
 constexpr const char* kOllamaBaseUrl = "http://localhost:11434/v1";
 
@@ -20,10 +22,17 @@ struct LlmPresetSpec {
 };
 
 constexpr LlmPresetSpec kLlmPresets[] = {
-    {"brief", kBriefBaseUrl, "grok-4-1-fast-reasoning", true, true},
+    {"brief", "", "grok-4-1-fast-reasoning", true, true},
     {"cloud", kCloudBaseUrl, "gpt-4o-mini", true, false},
     {"ollama", kOllamaBaseUrl, "llama3.2", false, true},
 };
+
+std::string PresetBaseUrl(const LlmPresetSpec& spec) {
+  if (std::strcmp(spec.id, "brief") == 0) {
+    return BriefLlmBaseUrl();
+  }
+  return spec.base_url;
+}
 
 const LlmPresetSpec* FindPreset(const std::string& preset_id) {
   for (const LlmPresetSpec& spec : kLlmPresets) {
@@ -48,7 +57,7 @@ std::string InferLegacyPreset(const AppConfig& config) {
   if (config.llm.base_url == kCloudBaseUrl) {
     return "cloud";
   }
-  if (config.llm.base_url == kBriefBaseUrl ||
+  if (config.llm.base_url == BriefLlmBaseUrl() ||
       config.llm.base_url == PlatformDefaults::For(Platform::Detect()).llm.base_url) {
     return "brief";
   }
@@ -75,7 +84,7 @@ void ApplyPreset(AppConfig& config, const std::string& preset_id, const std::str
   config.llm.preset = preset_id;
 
   if (const LlmPresetSpec* spec = FindPreset(preset_id)) {
-    config.llm.base_url = spec->base_url;
+    config.llm.base_url = PresetBaseUrl(*spec);
     config.llm.require_api_key = spec->require_api_key;
     if (spec->clears_inline_key) {
       config.llm.api_key.clear();
@@ -92,7 +101,7 @@ void NormalizeLlmConfig(AppConfig& config) {
   config.llm.preset = preset;
 
   if (const LlmPresetSpec* spec = FindPreset(preset)) {
-    config.llm.base_url = spec->base_url;
+    config.llm.base_url = PresetBaseUrl(*spec);
     config.llm.require_api_key = spec->require_api_key;
     if (spec->clears_inline_key) {
       // Brief / Ollama: do not keep inline keys on disk (Brief key is in identity.enc).

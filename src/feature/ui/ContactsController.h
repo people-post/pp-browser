@@ -49,6 +49,8 @@ public:
     Rml::String trust;
     int unread_count = 0;
     Rml::String unread_display;
+    bool has_icon = false;
+    Rml::String icon_src;
   };
 
   struct ContactIdentityRow {
@@ -86,6 +88,8 @@ public:
     std::vector<ContactThreadRow> threads;
     bool can_message = false;
     bool has_relay_id = false;
+    bool has_icon = false;
+    Rml::String icon_src;
   };
 
   bool RegisterModel(Rml::Context* context);

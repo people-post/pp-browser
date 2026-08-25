@@ -99,6 +99,22 @@ inline StreamIoPolicy ControlJsonIoPolicy(
   return policy;
 }
 
+/** E2E chat attachment blob transfer (`/pp-browser/chat-blob/1.0.0`). */
+inline StreamIoPolicy ChatBlobIoPolicy(
+    boost::asio::any_io_executor timer_executor,
+    std::chrono::milliseconds read_timeout = kDefaultControlFrameReadTimeout,
+    bool read_once = false) {
+  StreamIoPolicy policy;
+  policy.cls = StreamIoClass::Bulk;
+  policy.drop = StreamIoPolicy::Drop::Never;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.read_once = read_once;
+  policy.frame.max_frame_bytes = Libp2pExecutorLimits::kMaxChatBlobFrameBytes;
+  policy.frame.read_timeout = read_timeout;
+  policy.frame.timer_executor = std::move(timer_executor);
+  return policy;
+}
+
 std::vector<uint8_t> EncodeLengthPrefixedFrame(const std::vector<uint8_t>& body);
 uint64_t DecodeLengthPrefixedHeader(const std::vector<uint8_t>& header8);
 

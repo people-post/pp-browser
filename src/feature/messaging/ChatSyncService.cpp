@@ -1,7 +1,10 @@
 #include "feature/messaging/ChatSyncService.h"
 
 #include "feature/messaging/InboxController.h"
+#include "feature/messaging/AttachmentDownloadService.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactsStore.h"
@@ -18,6 +21,10 @@ ChatSyncService::ChatSyncService(IThreadStore& store, IdentityStore& identity, C
 
 void ChatSyncService::SetOnMessagesChanged(std::function<void()> callback) {
   on_messages_changed_ = std::move(callback);
+}
+
+void ChatSyncService::SetAttachmentDownloads(AttachmentDownloadService* downloads) {
+  attachment_downloads_ = downloads;
 }
 
 Roe<ChatHistoryRequest> ChatSyncService::BuildRequest(const Thread& thread, const uint32_t session_epoch,
@@ -158,6 +165,18 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
       changed = true;
       if (!outcome.thread_id.empty()) {
         inbox_.OnInboundMessagePersisted(outcome.thread_id);
+        if (attachment_downloads_) {
+          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
+            if (decoded->content_type == ChatContentType::Attachment) {
+              ThreadMessage message;
+              message.id = envelope.message_id;
+              message.thread_id = outcome.thread_id;
+              message.content_type = ChatContentType::Attachment;
+              message.payload_json = decoded->payload_json;
+              attachment_downloads_->EnqueueFromMessage(outcome.thread_id, message);
+            }
+          }
+        }
       }
     }
   }

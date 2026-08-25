@@ -13,10 +13,6 @@ MessagingContactsPorts MakeMessagingContactsPorts(MessagingHub& hub) {
   ports.upsert_contact = [&hub](const Contact& contact) { return hub.Contacts().Upsert(contact); };
   ports.add_empty_contact = [&hub]() { return hub.Contacts().AddEmpty(); };
   ports.remove_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Remove(contact_id); };
-  ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const DirectoryHit& hit,
-                                        const int64_t fetched_at_ms) {
-    return hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
-  };
   ports.list_threads = [&hub]() { return hub.Inbox().ListThreads(); };
   ports.sum_unread_for_contact = [&hub](const std::string& contact_id) {
     return hub.Inbox().SumUnreadForContact(contact_id);
@@ -30,6 +26,17 @@ MessagingContactsPorts MakeMessagingContactsPorts(MessagingHub& hub) {
   };
   ports.lookup_relay_user = [&hub](const std::string& relay_user_id) {
     return hub.Directory().LookupRelayUser(relay_user_id);
+  };
+  ports.contact_icon_local_path = [&hub](const Contact& contact) { return hub.ContactIconLocalPath(contact); };
+  ports.ensure_contact_icon_cached = [&hub](const Contact& contact) { hub.EnsureContactIconCached(contact); };
+  ports.ensure_directory_hit_icon_cached = [&hub](const DirectoryHit& hit) { hub.EnsureDirectoryHitIconCached(hit); };
+  ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const DirectoryHit& hit,
+                                        const int64_t fetched_at_ms) {
+    auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
+    if (result) {
+      hub.EnsureContactIconCached(*result);
+    }
+    return result;
   };
   ports.register_contact_direct_endpoints = [&hub](const Contact& contact) {
     hub.P2p().RegisterContactDirectEndpoints(contact);

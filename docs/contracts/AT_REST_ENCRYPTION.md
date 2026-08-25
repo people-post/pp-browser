@@ -85,7 +85,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsService`](../../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
+[`ProfileSecretsService`](../../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentDownloadService`, `Libp2pChatBlobService` (registered from `MessagingHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
@@ -114,6 +114,14 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 | Thread memory value | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
 Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
+
+### Attachment blob AEAD (a5)
+
+| Purpose | AAD |
+|---------|-----|
+| Local attachment cache | `attachment-blob\|{profile_id}\|{thread_id}\|{hash_hex}\|1` |
+
+On-disk under `{profile}/threads/{thread_id}/blobs/`: magic `PPBA` (4 bytes) + `FileCipher` blob when a DEK is present; legacy plaintext when DEK is null (tests). Session plaintext for RmlUi `<img>` / OS open is materialized under `blobs_view/` while unlocked and wiped on `ClearDek` (`WipeAllAttachmentViewCaches`). Helpers: `BuildAttachmentBlobAad`, `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`.
 
 ## Test fixtures
 

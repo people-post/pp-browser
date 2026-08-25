@@ -2,6 +2,7 @@
 
 #include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/GroupInviteGate.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/MobileEphemeralListenGate.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
@@ -12,14 +13,24 @@
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/LlmPreset.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/error/AppError.h"
 #include "base/data/Libp2pRole.h"
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
+#include "base/messaging/AttachmentCache.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
+#include "base/messaging/SendRelayOptions.h"
+#include "base/net/AttachmentClientUtil.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpClient.h"
+#include "base/net/ProfileIconClientUtil.h"
+#include "base/net/ProfileIconFetchUtil.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ProfileIconCache.h"
+#include "base/platform/ProfileIconImagePrep.h"
 #include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppLifecycle.h"
@@ -162,6 +173,9 @@ void MessagingHub::WireRelayAuthSigner() {
   if (http_push_devices_) {
     http_push_devices_->SetAuthSigner(signer);
   }
+  if (http_blob_) {
+    http_blob_->SetAuthSigner(signer);
+  }
 }
 
 void MessagingHub::UpdateServiceClients(const AppConfig& config) {
@@ -213,12 +227,17 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     if (!http_registration_ || http_registration_url_ != registration_url) {
       http_registration_url_ = registration_url;
       http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
+      http_blob_ = std::make_unique<HttpBlobClient>(http_registration_url_);
+      WireRelayAuthSigner();
     }
     registration_ = http_registration_.get();
+    blob_ = http_blob_.get();
   } else {
     http_registration_.reset();
+    http_blob_.reset();
     http_registration_url_.clear();
     registration_ = nullptr;
+    blob_ = nullptr;
     log().warning << "registration.base_url is empty; registration client disabled";
   }
 }
@@ -839,6 +858,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     }
   });
   directory_shadows_->SetOnHitCached([this](const DirectoryHit& hit) {
+    EnsureDirectoryHitIconCached(hit);
     if (!initiation_billing_) {
       return;
     }
@@ -876,6 +896,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
@@ -937,6 +958,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 Sessions());
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   inbox_->SetGroupMembership(group_membership_.get());
@@ -1096,6 +1118,97 @@ void MessagingHub::SetOnReachabilityUpdated(std::function<void()> callback) {
   on_reachability_updated_ = std::move(callback);
 }
 
+void MessagingHub::SetOnPeerIconsChanged(std::function<void()> callback) {
+  on_peer_icons_changed_ = std::move(callback);
+}
+
+void MessagingHub::NotifyPeerIconsChanged() {
+  if (on_peer_icons_changed_) {
+    on_peer_icons_changed_();
+  }
+}
+
+std::string MessagingHub::ContactIconLocalPath(const Contact& contact) {
+  const std::string key = ProfileIconCacheKeyForContact(contact);
+  if (key.empty()) {
+    return {};
+  }
+  return ProfileIconLocalPath(data_dir_, key);
+}
+
+std::string MessagingHub::IdentityIconLocalPath(const std::string& identity) {
+  if (identity.empty() || !contacts_) {
+    return {};
+  }
+  if (IsMessagingReady()) {
+    if (auto local = Identity().Get()) {
+      if (!local->account_id.empty() && local->account_id == identity) {
+        const std::string self_path = ProfileIconLocalPath(data_dir_, "self");
+        if (!self_path.empty()) {
+          return self_path;
+        }
+      }
+    }
+  }
+  if (auto found = contacts_->FindByIdentity(identity, ContactIdKind::Account)) {
+    if (found->has_value()) {
+      return ContactIconLocalPath(**found);
+    }
+  }
+  if (auto found = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+    if (found->has_value()) {
+      return ContactIconLocalPath(**found);
+    }
+  }
+  return ProfileIconLocalPath(data_dir_, SanitizeProfileIconCacheKey(identity));
+}
+
+void MessagingHub::EnsureDirectoryHitIconCached(const DirectoryHit& hit) {
+  ScheduleDirectoryHitIconFetch(hit);
+}
+
+void MessagingHub::EnsureContactIconCached(const Contact& contact) {
+  ScheduleContactIconFetch(contact);
+}
+
+void MessagingHub::ScheduleDirectoryHitIconFetch(const DirectoryHit& hit) {
+  if (!hit.icon || hit.icon->url.empty()) {
+    return;
+  }
+  const std::string key = ProfileIconCacheKeyForHit(hit);
+  if (key.empty()) {
+    return;
+  }
+  const ProfileIconRef icon = *hit.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      return;
+    }
+    if (FetchProfileIcon(data_dir_, key, icon)) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
+    }
+  });
+}
+
+void MessagingHub::ScheduleContactIconFetch(const Contact& contact) {
+  if (!contact.remote.icon || contact.remote.icon->url.empty()) {
+    return;
+  }
+  const std::string key = ProfileIconCacheKeyForContact(contact);
+  if (key.empty()) {
+    return;
+  }
+  const ProfileIconRef icon = *contact.remote.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      return;
+    }
+    if (FetchProfileIcon(data_dir_, key, icon)) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
+    }
+  });
+}
+
 void MessagingHub::RunReachabilityProbe(bool try_upnp) {
   if (!mesh_ || !Runtime() || !DialBack()) {
     return;
@@ -1134,6 +1247,8 @@ ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
   view.relay_id = identity->relay_user_id;
   view.public_key_b64 = identity->account_signing_public_key_b64;
   FillRegistrationFields(view, *identity);
+  view.profile_icon_path = ProfileIconLocalPath(data_dir_);
+  view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
 }
 
@@ -1204,6 +1319,231 @@ Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
   return {};
 }
 
+Roe<void> MessagingHub::UploadProfileIconFromPath(const std::string& path) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  auto encoded = PrepareProfileIconFromFile(path);
+  if (!encoded) {
+    return encoded.error();
+  }
+  PreparedProfileIcon prepared;
+  prepared.bytes = std::move(encoded.value().bytes);
+  prepared.content_type = encoded.value().content_type;
+  prepared.kind = encoded.value().kind;
+  prepared.file_extension = encoded.value().file_extension;
+  auto uploaded = UploadPreparedProfileIcon(*blob_, Identity(), data_dir_, prepared);
+  if (!uploaded) {
+    return uploaded.error();
+  }
+  return {};
+}
+
+Roe<void> MessagingHub::ClearProfileIcon() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
+}
+
+namespace {
+
+std::string ProtectedRelayBlobId(const std::string& profile_dir) {
+  if (auto meta = LoadProfileIconCacheMeta(profile_dir); meta) {
+    return meta->blob_id;
+  }
+  return {};
+}
+
+} // namespace
+
+Roe<BlobQuotaRecoveryPlan> MessagingHub::PlanRelayQuotaRecovery() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return PlanOldestRelayBlobDeletion(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+}
+
+Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  return pbr::FreeOldestRelayBlobSlot(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+}
+
+Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
+  }
+  if (!blob_) {
+    return Error("Blob client not configured");
+  }
+  if (thread_id.empty()) {
+    return Error("No active thread");
+  }
+
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  const Thread& active = **thread;
+  if (active.kind == ThreadKind::Ai) {
+    return Error("Attachments are not supported in assistant threads");
+  }
+  if (active.kind != ThreadKind::Direct && active.kind != ThreadKind::Group) {
+    return Error("Attachments are not supported in this thread");
+  }
+
+  ChatAttachmentUploadOptions upload_opts;
+  upload_opts.peer_client = p2p_ ? p2p_->PeerBlobClient() : nullptr;
+  upload_opts.contacts = contacts_.get();
+  upload_opts.thread = &active;
+  upload_opts.thread_id = thread_id;
+  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path, upload_opts);
+  if (!fields) {
+    return fields.error();
+  }
+
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::Attachment;
+  opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+  const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
+
+  const ByteVector attachment_dek = Attachments().CopyDek();
+  const ByteVector* attachment_dek_ptr = attachment_dek.empty() ? nullptr : &attachment_dek;
+
+  if (active.kind == ThreadKind::Group) {
+    auto sent = P2p().SendGroupMessage(thread_id, display, opts);
+    if (sent) {
+      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+      Attachments().MaybeBuildPoster(thread_id, *fields);
+      if (attachment_downloads_) {
+        attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+      }
+    }
+    return sent;
+  }
+  auto sent = P2p().SendUserMessage(thread_id, display, opts);
+  if (sent) {
+    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+    Attachments().MaybeBuildPoster(thread_id, *fields);
+    if (attachment_downloads_) {
+      attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+    }
+  }
+  return sent;
+}
+
+AttachmentDownloadService& MessagingHub::Attachments() {
+  if (!attachment_downloads_) {
+    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_->SetProfileDataDir(data_dir_);
+    attachment_downloads_->SetProfileId(profile_id_);
+  }
+  return *attachment_downloads_;
+}
+
+void MessagingHub::WireAttachmentDownloads() {
+  if (!attachment_suppressions_) {
+    attachment_suppressions_ = std::make_unique<AttachmentSuppressionStore>(data_dir_);
+  } else {
+    attachment_suppressions_->SetProfileDir(data_dir_);
+  }
+  if (!attachment_downloads_) {
+    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+  }
+  attachment_downloads_->SetProfileDataDir(data_dir_);
+  attachment_downloads_->SetProfileId(profile_id_);
+  attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
+                                                  p2p_ ? p2p_->PeerBlobClient() : nullptr);
+  attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
+  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
+    attachment_downloads_->SetDownloadPolicy(AttachmentDownloadPolicyFromString(prefs->attachment_download_policy));
+  }
+  attachment_downloads_->SetOnChanged([this]() {
+    if (p2p_) {
+      p2p_->NotifyMessagesChanged();
+    }
+  });
+  if (inbox_) {
+    inbox_->SetProfileDataDir(data_dir_);
+    inbox_->SetAttachmentDownloads(attachment_downloads_.get());
+  }
+  if (p2p_) {
+    p2p_->SetAttachmentDownloads(attachment_downloads_.get());
+    if (auto* peer_blob = p2p_->PeerBlobService()) {
+      peer_blob->SetProfileId(profile_id_);
+      if (secrets_ != nullptr) {
+        secrets_->RegisterDekConsumer(peer_blob);
+        if (secrets_->IsUnlocked()) {
+          (void)secrets_->RedistributeUnlockedDek();
+        }
+      }
+    }
+  }
+  if (secrets_ != nullptr) {
+    secrets_->RegisterDekConsumer(attachment_downloads_.get());
+    if (secrets_->IsUnlocked()) {
+      (void)secrets_->RedistributeUnlockedDek();
+    }
+  }
+}
+
+void MessagingHub::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized() || thread_id.empty() || message_id.empty()) {
+    return;
+  }
+  Attachments().RequestDownload(thread_id, message_id, Store());
+}
+
+void MessagingHub::DrainPendingAttachmentMedia() {
+  if (!IsInitialized()) {
+    return;
+  }
+  Attachments().DrainPendingMediaBacklog(Store());
+}
+
+Roe<void> MessagingHub::ClearDownloadedAttachments() {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto cleared = Attachments().ClearAllDownloadedMedia(Store());
+  if (cleared && p2p_) {
+    p2p_->NotifyMessagesChanged();
+  }
+  return cleared;
+}
+
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
                                            const std::optional<int64_t> floor_minor) {
   if (!IsInitialized() || !IsMessagingReady() || !p2p_) {
@@ -1233,7 +1573,7 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
       (session_store_ && session_store_->IsInitialized()) ? session_store_->Snapshot().config : config_;
   std::string base_url = config.llm.base_url;
   if (ResolvePreset(config) != "brief" || base_url.empty()) {
-    base_url = "https://www.brief.global/api/llm/v1";
+    base_url = BriefLlmBaseUrl();
   }
   while (!base_url.empty() && base_url.back() == '/') {
     base_url.pop_back();
@@ -1391,6 +1731,9 @@ void MessagingHub::Apply(const PolicyPrefs& prefs) {
   if (group_membership_) {
     group_membership_->SetInboundPolicy(prefs.group_invite_policy);
   }
+  if (attachment_downloads_) {
+    attachment_downloads_->SetDownloadPolicy(prefs.attachment_download_policy);
+  }
 }
 
 void MessagingHub::Apply(const NotificationPrefs& prefs) {
@@ -1413,7 +1756,8 @@ MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config
 }
 
 MessagingHub::PolicyPrefs MessagingHub::ProjectPolicy(const ProfilePreferences& prefs) {
-  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy)};
+  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
+          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy)};
 }
 
 MessagingHub::NotificationPrefs MessagingHub::ProjectNotifications(const ProfilePreferences& prefs) {
@@ -1533,6 +1877,16 @@ void MessagingHub::Shutdown() {
   StopLibp2p();
   // Drop the call session manager before P2P — CSM holds a P2pMessagingService& reference.
   call_stack_->ResetSessions();
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (p2p_) {
+      if (auto* peer_blob = p2p_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+  }
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   p2p_.reset();
   group_membership_.reset();
@@ -1546,6 +1900,9 @@ void MessagingHub::Shutdown() {
     }
     if (psk_store_) {
       secrets_->UnregisterDekConsumer(psk_store_.get());
+    }
+    if (store_) {
+      secrets_->UnregisterDekConsumer(static_cast<SqliteThreadStore*>(store_.get()));
     }
     if (call_stack_->MediaKeys()) {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
@@ -1641,6 +1998,10 @@ PeerDisplayResolver& MessagingHub::PeerLabels() {
 
 IRegistrationClient& MessagingHub::Registration() {
   return *registration_;
+}
+
+IBlobClient& MessagingHub::Blob() {
+  return *blob_;
 }
 
 IPushDeviceClient* MessagingHub::PushDevices() {

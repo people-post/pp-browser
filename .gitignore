@@ -66,6 +66,7 @@ vcpkg_installed/
 *.dwo
 
 .cache/
+.DS_Store
 
 # Python venvs (e.g. e2e test-vector generators)
 .venv/

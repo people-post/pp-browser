@@ -1,18 +1,27 @@
 <div class="prompt-composer" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
-     data-class-prompt-composer--disabled="compose_disabled">
+     data-class-prompt-composer--disabled="composer_input_disabled">
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2"
             maxlength="65536"
             data-value="draft" data-attr-placeholder="draft_placeholder"
-            data-attrif-disabled="compose_disabled"></textarea>
+            data-attrif-disabled="composer_input_disabled"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading">
       <button class="prompt-emoji-btn" type="button" data-event-click="open_emoji_insert()"
-              data-attrif-disabled="compose_disabled" title="Insert emoji">
+              data-attrif-disabled="composer_input_disabled" title="Insert emoji">
         <svg src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
       </button>
+      <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
+              data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
+              title="{{i18n:chat.attach_file}}">
+        <svg src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+      <div class="prompt-attachment-chip" data-if="attachment_uploading">
+        <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
+        <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
+      </div>
     </div>
-    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="compose_disabled">
+    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
   </div>

@@ -14,6 +14,7 @@ namespace pbr {
 
 class ContactsStore;
 class InboxController;
+class AttachmentDownloadService;
 
 struct ChatSyncResult {
   size_t ingested = 0;
@@ -38,6 +39,7 @@ public:
   Roe<ChatSyncResult> ScrollBackfill(const std::string& thread_id);
 
   void SetOnMessagesChanged(std::function<void()> callback);
+  void SetAttachmentDownloads(AttachmentDownloadService* downloads);
 
 private:
   Roe<ChatSyncResult> RepairKnownGap(const std::string& thread_id);
@@ -62,6 +64,7 @@ private:
   IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;
   InboxController& inbox_;
+  AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::function<void()> on_messages_changed_;
 };
 

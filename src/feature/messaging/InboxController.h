@@ -7,6 +7,7 @@
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "feature/messaging/DirectoryShadowCache.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
 
 #include <functional>
@@ -70,6 +71,9 @@ public:
   void SetOnThreadChanged(ThreadChangedCallback callback);
   void NotifyThreadChanged();
 
+  void SetProfileDataDir(std::string profile_dir);
+  void SetAttachmentDownloads(AttachmentDownloadService* downloads);
+
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
@@ -78,6 +82,8 @@ private:
   std::string BuildCallHistoryRml(const ThreadMessage& message, CallControlType type) const;
   std::string BuildContactCardRml(const ThreadMessage& message) const;
   std::string BuildCryptoTxRml(const ThreadMessage& message) const;
+  std::string BuildAttachmentRml(const ThreadMessage& message) const;
+  std::string BuildUnsupportedRml(const ThreadMessage& message) const;
   std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
   std::string FormatCallPeerLabel(const std::string& identity) const;
 
@@ -86,6 +92,8 @@ private:
   PeerDisplayResolver& labels_;
   DirectoryShadowCache* shadows_ = nullptr;
   GroupMembershipService* groups_ = nullptr;
+  std::string profile_data_dir_;
+  AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string active_thread_id_;
   ThreadChangedCallback on_thread_changed_;
 };

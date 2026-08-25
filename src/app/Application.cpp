@@ -27,6 +27,7 @@
 #include "base/platform/PlatformServices.h"
 #include "base/platform/AppEventHooks.h"
 #include "base/platform/MobileWindowSizing.h"
+#include "base/platform/NativeFileDialog.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/AgentUiPorts.h"
@@ -52,6 +53,7 @@
 #include "feature/ui/CallController.h"
 #include "feature/ui/BadgeAggregator.h"
 #include "feature/ui/ClientCompatController.h"
+#include "feature/ui/SupportDiscoveryPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/FlowCoordinator.h"
@@ -69,6 +71,8 @@
 #include "feature/ui/ShellSetupPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
+#include "base/people/ContactTypes.h"
+#include "common/Utilities.h"
 #include "feature/messaging/MessagingCompatPorts.h"
 #include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/messaging/MessagingShellPorts.h"
@@ -436,6 +440,21 @@ bool Application::Initialize(const char* window_title) {
   settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
     return facade.SaveProfileNickname(nickname);
   };
+  settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
+    ShowOpenImageFileDialog(Backend::GetWindow(), [on_picked = std::move(on_picked)](std::vector<std::string> paths) {
+      AppRuntime::PostUI([on_picked = std::move(on_picked), paths = std::move(paths)]() mutable {
+        on_picked(std::move(paths));
+      });
+    });
+  };
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) {
+    return facade.UploadProfileIconFromPath(path);
+  };
+  settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
+  settings_commands.plan_relay_quota_recovery = [&facade]() { return facade.PlanRelayQuotaRecovery(); };
+  settings_commands.free_oldest_relay_blob_slot = [&facade]() { return facade.FreeOldestRelayBlobSlot(); };
+  settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
+  settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
     if (result) {
@@ -540,6 +559,76 @@ bool Application::Initialize(const char* window_title) {
     return vault->ChangePin(current_pin, new_pin);
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
+    return support_discovery_;
+  };
+  settings_commands.open_support_chat = [this, &facade]() -> Roe<void> {
+    if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
+      return Error(Tr("support.unavailable"));
+    }
+    if (!facade.IsInitialized()) {
+      return Error("Messaging is not ready");
+    }
+
+    const std::string account_id = support_discovery_->account_id;
+    std::string display_name = support_discovery_->display_name;
+    if (display_name.empty()) {
+      display_name = Tr("support.entry.title");
+    }
+
+    auto found = facade.FindContactByIdentity(account_id, ContactIdKind::Account);
+    if (!found) {
+      return found.error();
+    }
+
+    std::string contact_id;
+    if (found->has_value()) {
+      Contact contact = **found;
+      if (contact.local.display_name != display_name) {
+        contact.local.display_name = display_name;
+        SyncContactMirrors(contact);
+        auto saved = Messaging().Contacts().Upsert(contact);
+        if (!saved) {
+          return saved.error();
+        }
+        contact_id = saved->id;
+      } else {
+        contact_id = (*found)->id;
+      }
+    } else {
+      Contact contact;
+      contact.id = util::GenerateUuid();
+      contact.local.display_name = display_name;
+      contact.local.trust = TrustLevel::Unknown;
+      contact.remote.ids.push_back({ContactIdKind::Account, account_id, true});
+      SyncContactMirrors(contact);
+      auto saved = Messaging().Contacts().Upsert(contact);
+      if (!saved) {
+        return saved.error();
+      }
+      contact_id = saved->id;
+    }
+
+    auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+    if (!thread) {
+      return thread.error();
+    }
+
+    const ShellNavigationPorts nav = MakeShellNavigationPorts(*shell_);
+    if (nav.close_account_sheet) {
+      nav.close_account_sheet();
+    }
+    if (nav.select_nav_tab) {
+      nav.select_nav_tab(NavTab::Sessions);
+    }
+    if (nav.set_primary_pane) {
+      nav.set_primary_pane("chat");
+    }
+    if (chat_) {
+      chat_->FinalizeThreadDisplay();
+    }
+    return {};
+  };
   // Copy ports before BindCommands moves the command bag.
   const SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_->BindCommands(std::move(settings_commands));
@@ -601,6 +690,18 @@ bool Application::Initialize(const char* window_title) {
   emoji_picker_->BindSessionStore(store_);
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
+  client_compat_->BindSupportDiscovery(SupportDiscoveryPorts{
+      .on_support_changed =
+          [this, &facade](const std::optional<ClientCompatSupport>& support) {
+            support_discovery_ = support;
+            if (facade.IsInitialized()) {
+              facade.SetSupportAccountId(support && support->enabled ? support->account_id : std::string{});
+            }
+            if (settings_) {
+              settings_->SyncSupportDiscovery();
+            }
+          },
+  });
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindSource([this, &facade, &shell]() {
     BadgeUnreadInputs inputs;
@@ -908,6 +1009,7 @@ bool Application::Initialize(const char* window_title) {
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
+      client_compat_->BindSupportDiscovery({});
     }
     if (flow_) {
       flow_->BindShellNavigation({});
@@ -980,6 +1082,9 @@ bool Application::Initialize(const char* window_title) {
   messaging.SetOnMessagingReady([this]() {
     chat_->OnMessagingReady();
     contacts_->Refresh();
+    if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
+      messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
+    }
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell_->State());
     if (chrome.account_sheet_open) {
       settings_->OnAccountSheetOpened();
@@ -1006,6 +1111,16 @@ bool Application::Initialize(const char* window_title) {
       settings_->SyncReachability();
       if (badges_) {
         badges_->Refresh();
+      }
+    });
+  });
+  messaging.SetOnPeerIconsChanged([this]() {
+    AppRuntime::PostUI([this]() {
+      if (contacts_) {
+        contacts_->Refresh();
+      }
+      if (call_) {
+        call_->RefreshPendingRing();
       }
     });
   });
@@ -1156,6 +1271,7 @@ void Application::Shutdown() {
   if (client_compat_) {
     client_compat_->BindCompatPorts({});
     client_compat_->BindShellFeedback({});
+    client_compat_->BindSupportDiscovery({});
   }
   if (flow_) {
     flow_->BindShellNavigation({});
@@ -1209,6 +1325,7 @@ void Application::Shutdown() {
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
+    messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 

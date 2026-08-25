@@ -19,8 +19,11 @@
            class="contacts-row"
            data-class-contacts-row--active="contact.id == selected.id && selected.id != ''"
            data-event-click="select_contact(contact.id)">
-        <div class="contacts-row-icon">
-          <svg src="../icons/contacts.svg" width="14" height="14" crop-to-content="true"></svg>
+        <div class="contacts-row-avatar-frame">
+          <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
+          <div class="contacts-row-icon" data-if="!contact.has_icon">
+            <svg src="../icons/contacts.svg" width="14" height="14" crop-to-content="true"></svg>
+          </div>
         </div>
         <div class="contacts-row-body">
           <div class="contacts-row-title-line row">

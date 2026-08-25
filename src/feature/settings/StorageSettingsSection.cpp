@@ -1,7 +1,9 @@
 #include "feature/settings/StorageSettingsSection.h"
 
 #include "base/data/AppPaths.h"
+#include "base/data/UserPreferences.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/messaging/AttachmentCache.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -61,6 +63,16 @@ std::string FormatByteSize(uint64_t bytes) {
 
 } // namespace
 
+std::string AttachmentDownloadPolicyDisplayLabel(const std::string& policy) {
+  if (policy == "always_auto") {
+    return Tr("settings.storage.attachment_policy.always_auto");
+  }
+  if (policy == "on_demand") {
+    return Tr("settings.storage.attachment_policy.on_demand");
+  }
+  return Tr("settings.storage.attachment_policy.smart");
+}
+
 const char* StorageSettingsSection::Id() const {
   return "storage";
 }
@@ -74,7 +86,7 @@ SettingsFlushMode StorageSettingsSection::FlushMode() const {
 }
 
 bool StorageSettingsSection::IsWritable() const {
-  return false;
+  return true;
 }
 
 void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
@@ -84,16 +96,29 @@ void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.profile_dir = bootstrap.profile_data_dir;
   const uint64_t bytes = DirectoryByteSize(bootstrap.profile_data_dir);
   state.profile_size_label = "Profile uses ~" + FormatByteSize(bytes);
+  state.attachment_cache_size_label =
+      Tr("settings.storage.attachment_cache_size",
+         {{"size", FormatByteSize(AttachmentCacheByteSize(bootstrap.profile_data_dir))}});
+  state.attachment_download_policy = bootstrap.profile_prefs.attachment_download_policy;
+  state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
 }
 
-bool StorageSettingsSection::IsPersisted(const SettingsUiState& /*state*/, const BootstrapResult& /*bootstrap*/) const {
-  return true;
+bool StorageSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
+  return state.attachment_download_policy == bootstrap.profile_prefs.attachment_download_policy;
 }
 
-Roe<void> StorageSettingsSection::Flush(SettingsUiState& /*state*/, SessionStore& /*store*/) {
-  return {};
+Roe<void> StorageSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  if (state.attachment_download_policy == prefs.attachment_download_policy) {
+    return Roe<void>{};
+  }
+  prefs.attachment_download_policy = state.attachment_download_policy;
+  return store.SaveProfilePrefs(prefs);
 }
 
-void StorageSettingsSection::ResetToDefaults(SettingsUiState& /*state*/, const SessionStore& /*store*/) {}
+void StorageSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
+  state.attachment_download_policy = UserPreferences::DefaultProfile().attachment_download_policy;
+  state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
+}
 
 } // namespace pbr

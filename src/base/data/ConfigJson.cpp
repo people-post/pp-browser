@@ -520,6 +520,7 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"show_notifications", prefs.show_notifications},
                      {"call_diagnostics", prefs.call_diagnostics},
                      {"group_invite_policy", prefs.group_invite_policy},
+                     {"attachment_download_policy", prefs.attachment_download_policy},
                      {"reduce_transparency", prefs.reduce_transparency},
                      {"compact_chrome_frost", prefs.compact_chrome_frost},
                      {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status},
@@ -564,6 +565,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.group_invite_policy = j["group_invite_policy"].get<std::string>();
   } else {
     prefs.group_invite_policy = "contacts_only";
+  }
+  if (j.contains("attachment_download_policy") && j["attachment_download_policy"].is_string()) {
+    prefs.attachment_download_policy = j["attachment_download_policy"].get<std::string>();
+  } else {
+    prefs.attachment_download_policy = "smart";
   }
   if (j.contains("reduce_transparency") && j["reduce_transparency"].is_boolean()) {
     prefs.reduce_transparency = j["reduce_transparency"].get<bool>();

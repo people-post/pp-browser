@@ -77,6 +77,14 @@ selection {
   image-color: #e5e7eb;
 }
 
+.prompt-attach-btn svg {
+  image-color: #9ca3af;
+}
+
+.prompt-attach-btn:hover svg {
+  image-color: #e5e7eb;
+}
+
 .btn-secondary,
 .chat-suggestion {
   background-color: #374151;

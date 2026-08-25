@@ -1,8 +1,10 @@
 #include "feature/messaging/InboxController.h"
 
 #include "feature/messaging/GroupMembershipService.h"
+#include "feature/messaging/AttachmentDownloadService.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/messaging/AttachmentCache.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -211,6 +213,12 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
   }
   if (!*thread) {
     return Error("Thread not found");
+  }
+
+  if (attachment_downloads_) {
+    if (auto prepared = attachment_downloads_->PrepareThreadHistoryClear(thread_id, store_); !prepared) {
+      return prepared.error();
+    }
   }
 
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
@@ -425,6 +433,14 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
     return {};
   }
   return Error("Failed to update thread preview");
+}
+
+void InboxController::SetProfileDataDir(std::string profile_dir) {
+  profile_data_dir_ = std::move(profile_dir);
+}
+
+void InboxController::SetAttachmentDownloads(AttachmentDownloadService* downloads) {
+  attachment_downloads_ = downloads;
 }
 
 void InboxController::SetOnThreadChanged(ThreadChangedCallback callback) {
@@ -688,8 +704,12 @@ std::string InboxController::BuildContactCardRml(const ThreadMessage& message) c
   const std::string name =
       fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
   const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
-  std::string html = "<div class=\"chat-card chat-contact-card\"><h3 class=\"heading-3\">" +
-                     StructuredTextParser::EscapeText(name) + "</h3>";
+  std::string html = "<div class=\"chat-card chat-contact-card\">";
+  if (fields && !fields->avatar_url.empty()) {
+    html += "<img class=\"chat-contact-card-avatar\" src=\"" +
+            StructuredTextParser::EscapeText(fields->avatar_url) + "\"/>";
+  }
+  html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
   if (!relay.empty()) {
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
   }
@@ -714,6 +734,98 @@ std::string InboxController::BuildCryptoTxRml(const ThreadMessage& message) cons
   return html;
 }
 
+std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) const {
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  const std::string label = fields && !fields->filename.empty()
+                                ? fields->filename
+                                : (message.text.empty() ? "Attachment" : message.text);
+  auto escape_js_arg = [](const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char ch : value) {
+      if (ch == '\\' || ch == '\'') {
+        out.push_back('\\');
+      }
+      out.push_back(ch);
+    }
+    return out;
+  };
+
+  std::string local_path;
+  if (fields) {
+    if (attachment_downloads_) {
+      if (auto view = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
+                                                                fields->filename)) {
+        local_path = *view;
+      }
+    } else if (!profile_data_dir_.empty()) {
+      local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
+                                       fields->filename);
+    }
+  }
+  AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Pending;
+  if (fields && attachment_downloads_) {
+    state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+  } else if (!local_path.empty()) {
+    state = AttachmentDownloadService::DownloadState::Ready;
+  }
+
+  std::string html = "<div class=\"chat-card chat-attachment-card\">";
+  if (fields && state == AttachmentDownloadService::DownloadState::Ready && !local_path.empty()) {
+    if (IsAttachmentImageMime(fields->mime)) {
+      html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
+    } else if (IsAttachmentVideoMime(fields->mime)) {
+      html += "<div class=\"chat-attachment-video\">";
+      std::string poster_path;
+      if (!profile_data_dir_.empty() &&
+          AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+        poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+      }
+      if (!poster_path.empty()) {
+        html += "<img class=\"chat-attachment-video-poster\" src=\"" +
+                StructuredTextParser::EscapeText(poster_path) + "\"/>";
+      } else {
+        html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+        html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      }
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+      html += "</div>";
+    } else {
+      html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
+      if (fields->byte_length > 0) {
+        html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+                "</p>";
+      }
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+    }
+  } else {
+    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
+    if (fields && fields->byte_length > 0) {
+      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+              "</p>";
+    }
+    if (state == AttachmentDownloadService::DownloadState::Downloading) {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
+    } else if (state == AttachmentDownloadService::DownloadState::Pending) {
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";
+    } else {
+      html += "<p class=\"text muted\">" + Tr("chat.attachment.download_failed") + "</p>";
+      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"retry_attachment('" +
+              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.retry") + "</button>";
+    }
+  }
+  html += "</div>";
+  return html;
+}
+
+std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*/) const {
+  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">Update to view this "
+         "message.</p></div>";
+}
+
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
     if (message.content_rml->find("__ENTRY__") != std::string::npos) {
@@ -729,6 +841,12 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   }
   if (message.content_type == ChatContentType::CryptoTx) {
     return BuildCryptoTxRml(message);
+  }
+  if (message.content_type == ChatContentType::Attachment) {
+    return BuildAttachmentRml(message);
+  }
+  if (message.content_type == ChatContentType::Unsupported) {
+    return BuildUnsupportedRml(message);
   }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
@@ -806,7 +924,9 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
-        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx) {
+        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx &&
+        message.content_type != ChatContentType::Attachment &&
+        message.content_type != ChatContentType::Unsupported) {
       continue;
     }
     if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {

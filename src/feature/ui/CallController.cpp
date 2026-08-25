@@ -606,6 +606,13 @@ void CallController::RefreshPendingRing() {
         }
         entry.name = name.c_str();
         entry.identity = row.identity.c_str();
+        if (call_ports_.identity_icon_local_path) {
+          const std::string avatar_path = call_ports_.identity_icon_local_path(row.identity);
+          if (!avatar_path.empty()) {
+            entry.has_avatar = true;
+            entry.avatar_src = avatar_path.c_str();
+          }
+        }
         entry.stream_id = std::to_string(PublisherStreamIdForIdentity(row.identity)).c_str();
         entry.audio_muted = row.media.audio_muted;
         entry.video_enabled = row.media.video_enabled;

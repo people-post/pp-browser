@@ -1,5 +1,6 @@
 #include "base/data/Config.h"
 #include "base/data/UserPreferences.h"
+#include "base/messaging/AttachmentDownloadPolicy.h"
 #include "feature/messaging/MessagingHub.h"
 
 #include <gtest/gtest.h>
@@ -35,11 +36,13 @@ TEST(MessagingHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
 TEST(MessagingHubConfigTest, ProjectsPolicyAndNotificationPrefs) {
   pbr::ProfilePreferences prefs = pbr::UserPreferences::DefaultProfile();
   prefs.group_invite_policy = "everyone";
+  prefs.attachment_download_policy = "on_demand";
   prefs.show_notifications = false;
   prefs.appearance = "dark";
 
   const pbr::MessagingHub::PolicyPrefs policy = pbr::MessagingHub::ProjectPolicy(prefs);
   EXPECT_EQ(policy.group_invite_policy, pbr::GroupInvitePolicy::Everyone);
+  EXPECT_EQ(policy.attachment_download_policy, pbr::AttachmentDownloadPolicy::OnDemand);
 
   const pbr::MessagingHub::NotificationPrefs notifications =
       pbr::MessagingHub::ProjectNotifications(prefs);

@@ -111,11 +111,18 @@ TEMP_P12=""
 TEMP_P8=""
 
 cleanup() {
-  if [[ -n "$KEYCHAIN_PATH" && -f "$KEYCHAIN_PATH" ]]; then
+  # Use if/fi (not `[[ … ]] && cmd`) so an empty path does not make the EXIT
+  # trap return non-zero under `set -e`.
+  if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
     security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
   fi
-  [[ -n "$TEMP_P12" && -f "$TEMP_P12" ]] && rm -f "$TEMP_P12"
-  [[ -n "$TEMP_P8" && -f "$TEMP_P8" ]] && rm -f "$TEMP_P8"
+  if [[ -n "${TEMP_P12:-}" && -f "$TEMP_P12" ]]; then
+    rm -f "$TEMP_P12"
+  fi
+  if [[ -n "${TEMP_P8:-}" && -f "$TEMP_P8" ]]; then
+    rm -f "$TEMP_P8"
+  fi
+  return 0
 }
 trap cleanup EXIT
 

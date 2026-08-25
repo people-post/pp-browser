@@ -282,6 +282,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   }
   contact.remote.endpoints = hit.endpoints;
   contact.remote.multiaddrs = hit.multiaddrs;
+  contact.remote.icon = hit.icon;
   contact.remote.fetched_at = util::NowUnixMs();
   SyncContactMirrors(contact);
   return Upsert(contact);
@@ -301,6 +302,7 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, c
   contact.remote.ids = hit.ids;
   contact.remote.endpoints = hit.endpoints;
   contact.remote.multiaddrs = hit.multiaddrs;
+  contact.remote.icon = hit.icon;
   contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
   SyncContactMirrors(contact);
   return Upsert(contact);

@@ -1,5 +1,7 @@
 #include "base/platform/AndroidPathProvider.h"
 
+#include "base/platform/DeploymentProfile.h"
+
 #include <filesystem>
 #include <string>
 
@@ -20,10 +22,10 @@ std::string JoinPath(const std::filesystem::path& base, const std::string& leaf)
 std::string AndroidPathProvider::RootDir() const {
 #if defined(__ANDROID__)
   if (const char* internal = SDL_GetAndroidInternalStoragePath()) {
-    return JoinPath(std::filesystem::path(internal), "pp-browser");
+    return JoinPath(std::filesystem::path(internal), ProductDirBasename());
   }
 #endif
-  return "pp-browser";
+  return ProductDirBasename();
 }
 
 std::string AndroidPathProvider::ConfigDir() const {
@@ -40,7 +42,7 @@ std::string AndroidPathProvider::DataDir(const std::string& override_path) const
 std::string AndroidPathProvider::CacheDir(const std::string& data_dir) const {
 #if defined(__ANDROID__)
   if (const char* cache = SDL_GetAndroidCachePath()) {
-    return JoinPath(std::filesystem::path(cache), "pp-browser");
+    return JoinPath(std::filesystem::path(cache), ProductDirBasename());
   }
 #endif
   return JoinPath(std::filesystem::path(data_dir), "cache");

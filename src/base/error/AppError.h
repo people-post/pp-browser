@@ -16,6 +16,7 @@ enum class ErrorCategory : int32_t {
   Pin = 4,
   Config = 5,
   Storage = 6,
+  Blob = 7,
 };
 
 /** Fine-grained codes scoped by category (stored as int32_t on Error::code). */
@@ -60,6 +61,12 @@ enum class Internal : int32_t {
   Generic = 0,
 };
 
+enum class Blob : int32_t {
+  Generic = 0,
+  QuotaExceeded = 1,
+  NothingToDelete = 2,
+};
+
 } // namespace Err
 
 /** Typed constructors and UI/log helpers over low-level Error. */
@@ -69,6 +76,7 @@ struct AppError {
   static Error Pin(Err::Pin code, const std::string& detail);
   static Error Config(Err::Config code, const std::string& detail);
   static Error Storage(Err::Storage code, const std::string& detail);
+  static Error Blob(Err::Blob code, const std::string& detail);
   static Error Internal(const std::string& detail);
 
   static ErrorCategory CategoryOf(const Error& err);

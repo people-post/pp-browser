@@ -7,6 +7,7 @@
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/platform/PlatformLogSink.h"
 #include "base/platform/PlatformStartupHints.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/runtime/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
@@ -54,6 +55,8 @@ int main(int argc, char** argv) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
       startup_timing = true;
+    } else if (std::strcmp(argv[i], "--sandbox") == 0) {
+      // Handled by ResolveSandboxModeFromLaunch below.
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[i + 1];
       ++i;
@@ -62,6 +65,8 @@ int main(int argc, char** argv) {
       ++i;
     }
   }
+
+  pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
 
   auto root = pbr::logging::getRootLogger();
   const auto default_level = pbr::DefaultRootLogLevel(debug_mode);
@@ -78,6 +83,10 @@ int main(int argc, char** argv) {
   root.info << "Logging level set to " << LevelName(root.getLevel())
             << " emit_floor=" << LevelName(pbr::logging::getEmitFloor())
             << (startup_timing ? " (startup timing enabled)" : "");
+  if (pbr::SandboxMode()) {
+    root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()
+                 << ", product dir " << pbr::ProductDirBasename();
+  }
 
   if (!pbr::Platform::EarlyInit()) {
     root.error << "Platform early init failed";

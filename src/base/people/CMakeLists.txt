@@ -1,4 +1,5 @@
 set(PP_BASE_PEOPLE_SOURCES
+  ProfileIconCache.cpp
   ContactJson.cpp
   ContactIdentity.cpp
   ContactsStore.cpp

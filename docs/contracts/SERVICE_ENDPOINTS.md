@@ -78,6 +78,33 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 
+## HTTP relay blobs (icons + chat attachments)
+
+Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://www.brief.global/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). Server never inspects ciphertext for chat files (`application/octet-stream`).
+
+Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlobSignPayload` — domain + u8 version=`1`, then length-prefixed UTF-8 / BE integers matching www `SignatureVerifier`.
+
+| Domain | Signed fields |
+|--------|-----------------|
+| `pp-browser:relay-blob-presign-v1` | `relay_user_id`, `content_type`, `byte_length` (u64), `purpose`, `timestamp` (i64) |
+| `pp-browser:relay-blob-retain-v1` | `relay_user_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-delete-v1` | `relay_user_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-list-v1` | `relay_user_id`, `status_filter` (empty if none), `timestamp` |
+| `pp-browser:relay-profile-icon-v1` | `relay_user_id`, `url`, `blob_id`, `kind`, `timestamp` (empty strings when unused) |
+
+| HTTP | Purpose |
+|------|---------|
+| `POST /v1/blobs/presign` | Mint `blob_id`, `upload_url`, `public_url`, `tier`, `pending_expires_at` |
+| `PUT {upload_url}` | Client → S3 (binary body; `Content-Type` / length must match presign) |
+| `POST /v1/blobs/retain` | Mark retained after successful PUT |
+| `POST /v1/blobs/delete` | Free quota / remove object (local chat history untouched) |
+| `POST /v1/blobs/list` | Inventory + usage (quota UX) |
+| `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
+
+Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
+
+Chat attachment **file bytes** prefer peer-direct `/pp-browser/chat-blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
+
 ## Client compatibility discovery
 
 Unauthenticated public GET (directory-style; no identity unlock required):

@@ -14,6 +14,7 @@
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
+#include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
@@ -36,6 +37,7 @@ namespace pbr {
 
 class CallSessionManager;
 class GroupMembershipService;
+class AttachmentDownloadService;
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
@@ -94,7 +96,12 @@ public:
   void SetGroupMembership(GroupMembershipService* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
+  void SetAttachmentDownloads(AttachmentDownloadService* downloads);
+  /** R019 peer-direct attachment blobs (null when libp2p unavailable). */
+  IChatBlobPeerClient* PeerBlobClient() const;
+  Libp2pChatBlobService* PeerBlobService() const;
   void SetOnMessagesChanged(std::function<void()> callback);
+  void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
   void SetOnBackgroundUnread(
@@ -116,6 +123,9 @@ public:
   Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id) const;
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id) const;
+  /** PP Support Account id from client-compat; empty disables Support lock gate. */
+  void SetSupportAccountId(std::string account_id);
+  const std::string& SupportAccountId() const { return support_account_id_; }
   /** D038 — pause ingest/outbound without rotating keys. */
   Roe<void> PauseIntegrityOnly(const std::string& thread_id);
 
@@ -154,6 +164,7 @@ private:
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
+  void MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope, const std::string& thread_id);
   void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                        const std::string& error_message = {},
                        MessageTransport transport = MessageTransport::Relay,
@@ -188,17 +199,20 @@ private:
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<Libp2pChatHistoryService> peer_history_;
+  std::unique_ptr<Libp2pChatBlobService> peer_blob_;
   std::unique_ptr<Libp2pDirectChatService> direct_chat_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
   CallSessionManager* call_sessions_ = nullptr;
+  std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const std::string&)> on_delivery_notice_;

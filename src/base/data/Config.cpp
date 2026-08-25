@@ -6,6 +6,7 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/PlatformDefaults.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/platform/Platform.h"
 
 #include <cstdlib>
@@ -15,6 +16,21 @@
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+
+namespace {
+
+void ApplySandboxBriefUrlRewrites(AppConfig& config) {
+  if (!SandboxMode()) {
+    return;
+  }
+  config.llm.base_url = RewriteBriefOriginUrl(config.llm.base_url);
+  config.promoted_mcp.url = RewriteBriefOriginUrl(config.promoted_mcp.url);
+  config.relay.base_url = RewriteBriefOriginUrl(config.relay.base_url);
+  config.directory.base_url = RewriteBriefOriginUrl(config.directory.base_url);
+  config.registration.base_url = RewriteBriefOriginUrl(config.registration.base_url);
+}
+
+} // namespace
 
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
   if (config.promoted_mcp.IsConfigured()) {
@@ -95,6 +111,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(), root);
+  ApplySandboxBriefUrlRewrites(config);
   const AppConfig defaults = DefaultAppConfig();
   if (config.relay.base_url.empty()) {
     config.relay.base_url = defaults.relay.base_url;

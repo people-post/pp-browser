@@ -1,5 +1,7 @@
 pp_browser_add_base_library(pp_base_crypto
   SOURCES
+    AttachmentContentHash.cpp
+    AttachmentContentCipher.cpp
     AutoKeyEstablishment.cpp
     CanonicalAad.cpp
     CryptoUtil.cpp

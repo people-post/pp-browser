@@ -690,7 +690,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     if (decoded->content_type != ChatContentType::Text && decoded->content_type != ChatContentType::System &&
         decoded->content_type != ChatContentType::Annotation &&
         decoded->content_type != ChatContentType::ContactCard &&
-        decoded->content_type != ChatContentType::CryptoTx) {
+        decoded->content_type != ChatContentType::CryptoTx &&
+        decoded->content_type != ChatContentType::Attachment &&
+        decoded->content_type != ChatContentType::Unsupported) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, "unsupported content",
                          "Inbound payload content type not supported",
@@ -703,7 +705,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
       message.content_type != ChatContentType::Annotation && message.content_type != ChatContentType::ContactCard &&
-      message.content_type != ChatContentType::CryptoTx) {
+      message.content_type != ChatContentType::CryptoTx && message.content_type != ChatContentType::Attachment &&
+      message.content_type != ChatContentType::Unsupported) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "unsupported content",
                        "Decoded message content type not supported",

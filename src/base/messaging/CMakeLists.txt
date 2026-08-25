@@ -1,8 +1,13 @@
 pp_browser_add_base_library(pp_base_messaging
   SOURCES
+    AttachmentCache.cpp
+    AttachmentDownloadPolicy.cpp
+    AttachmentSuppressionStore.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatHistoryResponder.cpp
+    ChatBlobRequestUtil.cpp
+    ChatBlobResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     ChatPayloadTypes.cpp
@@ -46,6 +51,7 @@ pp_browser_add_base_library(pp_base_messaging
     pp_base_data
     pp_base_crypto
     pp_base_people
+    pp_base_platform
     nlohmann_json::nlohmann_json
     sodium
     SQLite::SQLite3)
