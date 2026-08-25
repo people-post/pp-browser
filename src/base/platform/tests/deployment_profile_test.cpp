@@ -26,16 +26,16 @@ TEST(DeploymentProfileTest, SandboxDefaults) {
   SandboxModeGuard guard(true);
   EXPECT_TRUE(pbr::SandboxMode());
   EXPECT_STREQ(pbr::BriefOrigin(), pbr::kSandboxBriefOrigin);
-  EXPECT_EQ(pbr::BriefLlmBaseUrl(), "https://www-en.peoplepost.org/api/llm/v1");
-  EXPECT_EQ(pbr::BriefRelayBaseUrl(), "https://www-en.peoplepost.org/api/relay");
-  EXPECT_EQ(pbr::BriefMcpUrl(), "https://www-en.peoplepost.org/mcp");
+  EXPECT_EQ(pbr::BriefLlmBaseUrl(), "https://www-en.qa.peoplepost.org/api/llm/v1");
+  EXPECT_EQ(pbr::BriefRelayBaseUrl(), "https://www-en.qa.peoplepost.org/api/relay");
+  EXPECT_EQ(pbr::BriefMcpUrl(), "https://www-en.qa.peoplepost.org/mcp");
   EXPECT_STREQ(pbr::ProductDirBasename(), pbr::kSandboxProductDirName);
 }
 
 TEST(DeploymentProfileTest, RewritesProductionBriefUrlsWhenSandbox) {
   SandboxModeGuard guard(true);
   EXPECT_EQ(pbr::RewriteBriefOriginUrl("https://www.brief.global/api/relay"),
-            "https://www-en.peoplepost.org/api/relay");
+            "https://www-en.qa.peoplepost.org/api/relay");
   EXPECT_EQ(pbr::RewriteBriefOriginUrl("https://api.openai.com/v1"), "https://api.openai.com/v1");
 }
 

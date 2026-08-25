@@ -38,9 +38,9 @@ TEST(ConfigSandboxTest, LoadRewritesProductionBriefUrls) {
 
   auto loaded = pbr::Config::LoadFromFile(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
-  EXPECT_EQ(loaded->llm.base_url, "https://www-en.peoplepost.org/api/llm/v1");
-  EXPECT_EQ(loaded->relay.base_url, "https://www-en.peoplepost.org/api/relay");
-  EXPECT_EQ(loaded->promoted_mcp.url, "https://www-en.peoplepost.org/mcp");
+  EXPECT_EQ(loaded->llm.base_url, "https://www-en.qa.peoplepost.org/api/llm/v1");
+  EXPECT_EQ(loaded->relay.base_url, "https://www-en.qa.peoplepost.org/api/relay");
+  EXPECT_EQ(loaded->promoted_mcp.url, "https://www-en.qa.peoplepost.org/mcp");
   EXPECT_EQ(pbr::ResolvePreset(*loaded), "brief");
 }
 
@@ -50,5 +50,5 @@ TEST(ConfigSandboxTest, NormalizeBriefPresetUsesSandboxLlmUrl) {
   config.llm.preset = "brief";
   config.llm.base_url = "https://www.brief.global/api/llm/v1";
   pbr::NormalizeLlmConfig(config);
-  EXPECT_EQ(config.llm.base_url, "https://www-en.peoplepost.org/api/llm/v1");
+  EXPECT_EQ(config.llm.base_url, "https://www-en.qa.peoplepost.org/api/llm/v1");
 }

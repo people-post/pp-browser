@@ -5,7 +5,7 @@
 namespace pbr {
 
 inline constexpr const char* kProductionBriefOrigin = "https://www.brief.global";
-inline constexpr const char* kSandboxBriefOrigin = "https://www-en.peoplepost.org";
+inline constexpr const char* kSandboxBriefOrigin = "https://www-en.qa.peoplepost.org";
 inline constexpr const char* kProductDirName = "pp-browser";
 inline constexpr const char* kSandboxProductDirName = "pp-browser-sandbox";
 
