@@ -5,6 +5,7 @@
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/platform/PlatformLogDefaults.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "base/p2p/Reachability.h"
@@ -50,6 +51,7 @@ void PrintUsage(const char* argv0) {
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
+      << "  --sandbox             Use sandbox backend (www-en.peoplepost.org)\n"
       << "  --debug               Verbose logging\n"
       << "  --help                Show this help\n"
       << "\n"
@@ -127,6 +129,8 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
+    } else if (std::strcmp(argv[i], "--sandbox") == 0) {
+      // Handled by ResolveSandboxModeFromLaunch below.
     } else if (std::strcmp(argv[i], "--listen-fallback") == 0) {
       listen_fallback = true;
     } else if (std::strcmp(argv[i], "--status") == 0) {
@@ -150,9 +154,15 @@ int main(int argc, char** argv) {
     }
   }
 
+  pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
+
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::DefaultRootLogLevel(debug_mode));
   pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
+  if (pbr::SandboxMode()) {
+    root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()
+                 << ", product dir " << pbr::ProductDirBasename();
+  }
 
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);

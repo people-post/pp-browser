@@ -13,6 +13,7 @@
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/LlmPreset.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/error/AppError.h"
 #include "base/data/Libp2pRole.h"
 #include "base/data/SessionStore.h"
@@ -1572,7 +1573,7 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
       (session_store_ && session_store_->IsInitialized()) ? session_store_->Snapshot().config : config_;
   std::string base_url = config.llm.base_url;
   if (ResolvePreset(config) != "brief" || base_url.empty()) {
-    base_url = "https://www.brief.global/api/llm/v1";
+    base_url = BriefLlmBaseUrl();
   }
   while (!base_url.empty() && base_url.back() == '/') {
     base_url.pop_back();

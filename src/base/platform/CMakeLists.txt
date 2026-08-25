@@ -1,4 +1,5 @@
 set(_pp_platform_core_sources
+  DeploymentProfile.cpp
   Platform.cpp
   PlatformLogDefaults.cpp
   IPathProvider.cpp

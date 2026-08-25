@@ -13,6 +13,8 @@ How to resolve, edit, and verify machine/profile settings. Normative disk layout
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
+**Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`) to point Brief services at `https://www-en.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
+
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
 
 ### `pp-node` deploy overlays
@@ -190,6 +192,7 @@ Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../archite
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
+| `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
