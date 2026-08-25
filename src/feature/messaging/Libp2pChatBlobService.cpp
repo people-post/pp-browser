@@ -172,7 +172,7 @@ struct Libp2pChatBlobService::Impl {
               const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
               auto ciphertext = ChatBlobResponder::ServeFetch(store, request, local_identity->relay_user_id,
                                                               profile_data_dir, dek_ptr, profile_id);
-              host->Post([this, duplex, stream, ciphertext = std::move(ciphertext)]() mutable {
+              host->Post([duplex, stream, ciphertext = std::move(ciphertext)]() mutable {
                 auto close = [duplex, stream]() {
                   duplex->Stop();
                   CloseQuiet(stream);
@@ -224,7 +224,7 @@ struct Libp2pChatBlobService::Impl {
                              }
                              auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->relay_user_id,
                                                                         profile_data_dir, ciphertext);
-                             host->Post([this, duplex, stream, pushed]() {
+                             host->Post([duplex, stream, pushed]() {
                                auto close = [duplex, stream]() {
                                  duplex->Stop();
                                  CloseQuiet(stream);
