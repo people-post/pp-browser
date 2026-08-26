@@ -1,13 +1,14 @@
 # Fetch people-post/pp-cpp-common (namespace pp) as target pp_common.
 #
-# Pin with PP_CPP_COMMON_GIT_TAG (tag or commit). No local path override.
+# Pin a release tag from that repo's main line (PP_CPP_COMMON_GIT_TAG).
+# Do not track develop/main branch tips.
 
 include(FetchContent)
 
 set(PP_CPP_COMMON_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-common.git"
   CACHE STRING "Git remote for pp-cpp-common")
 set(PP_CPP_COMMON_GIT_TAG "v0.1.0"
-  CACHE STRING "Git tag or commit for pp-cpp-common")
+  CACHE STRING "Release tag on pp-cpp-common main (not a branch name)")
 
 # Shared lib tests are owned by that repo; do not build them inside pp-browser.
 set(PP_COMMON_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-common tests" FORCE)
