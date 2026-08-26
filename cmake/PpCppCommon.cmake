@@ -4,7 +4,7 @@
 
 include(FetchContent)
 
-set(PP_CPP_COMMON_GIT_REPOSITORY "git@github.com:people-post/pp-cpp-common.git"
+set(PP_CPP_COMMON_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-common.git"
   CACHE STRING "Git remote for pp-cpp-common")
 set(PP_CPP_COMMON_GIT_TAG "v0.1.0"
   CACHE STRING "Git tag or commit for pp-cpp-common")
