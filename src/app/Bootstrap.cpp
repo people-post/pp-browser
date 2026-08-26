@@ -7,7 +7,7 @@
 #include "base/data/Config.h"
 #include "base/platform/DeploymentProfile.h"
 #include "base/data/SchemaVersion.h"
-#include "common/StartupTiming.h"
+#include "base/runtime/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/platform/PlatformLogSink.h"
 #include "base/platform/PlatformServices.h"
