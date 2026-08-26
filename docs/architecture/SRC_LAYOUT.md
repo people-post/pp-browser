@@ -8,7 +8,7 @@
 
 | Layer | Path | Role |
 |-------|------|------|
-| Common | [`src/common/`](../../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
+| Common | [`src/common/`](../../src/common/) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp` |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi, libp2p); may use `third_party` (+ optionally `common`); not product domain |
 | Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, p2p/render glue, data, people, messaging/ai/ui |
 | Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
@@ -57,14 +57,14 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 
 | Path | Contents |
 |------|----------|
-| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, lifecycle, branding/version |
+| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, `StartupTiming`, lifecycle, branding/version |
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
 | `base/render/` | RmlUi SDL/GL backend (`pp_base_render`); GL/GLES in `render/platform/` |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
-| `base/messaging/` | Thread types, JSON store, parsers |
+| `base/messaging/` | Thread types, JSON store, parsers, reaction helpers (`EmojiKey`) |
 | `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + colocated platform HW H264 |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |

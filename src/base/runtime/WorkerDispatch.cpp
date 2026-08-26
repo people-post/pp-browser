@@ -1,8 +1,8 @@
-#include "common/WorkerDispatch.h"
+#include "base/runtime/WorkerDispatch.h"
 
 #include <cassert>
 
-namespace pp {
+namespace pbr {
 
 namespace {
 
@@ -33,4 +33,4 @@ void WorkerDispatch::Post(WorkerLane lane, std::function<void()> task) {
   g_pool->Post(lane, std::move(task));
 }
 
-} // namespace pp
+} // namespace pbr

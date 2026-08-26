@@ -1,6 +1,6 @@
 #include "base/p2p/Libp2pHost.h"
 
-#include "common/WorkerDispatch.h"
+#include "base/runtime/WorkerDispatch.h"
 
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/host/explicit_host.hpp>

@@ -4,7 +4,7 @@
 
 #include <functional>
 
-namespace pp {
+namespace pbr {
 
 /** Process-wide worker pool dispatch; installed by AppRuntime at bootstrap. */
 class WorkerDispatch {
@@ -31,8 +31,4 @@ void WorkerDispatch::PostAndReply(WorkerLane lane, std::function<Result()> work,
   });
 }
 
-} // namespace pp
-
-namespace pbr {
-using ::pp::WorkerDispatch;
 } // namespace pbr

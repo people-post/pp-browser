@@ -82,7 +82,7 @@
 #include "feature/ui/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
-#include "common/StartupTiming.h"
+#include "base/runtime/StartupTiming.h"
 #include "base/p2p/Reachability.h"
 
 #include <RmlUi/Core/Context.h>

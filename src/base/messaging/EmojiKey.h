@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace pp {
+namespace pbr {
 
 /**
  * Normalize an emoji string for reaction equality (NFC-lite + strip trailing U+FE0F).
@@ -37,8 +37,4 @@ inline std::string NormalizeEmojiKey(std::string emoji) {
   return emoji;
 }
 
-} // namespace pp
-
-namespace pbr {
-using ::pp::NormalizeEmojiKey;
 } // namespace pbr

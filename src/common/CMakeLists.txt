@@ -5,7 +5,6 @@ set(PP_BROWSER_COMMON_SOURCES
   Utilities.cpp
   SequencedTaskRunner.cpp
   WorkerPool.cpp
-  WorkerDispatch.cpp
 )
 
 include(PpBrowserWarnings)

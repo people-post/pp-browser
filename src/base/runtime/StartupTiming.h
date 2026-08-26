@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace pp {
+namespace pbr {
 
 // Lightweight TTFS / cold-start phase timers. Grep logs for "[startup]".
 // Emitted at INFO — visible when root level is INFO/DEBUG (--debug or --startup-timing).
@@ -54,12 +54,4 @@ private:
   std::chrono::steady_clock::time_point start_;
 };
 
-} // namespace pp
-
-namespace pbr {
-using ::pp::StartupLog;
-using ::pp::StartupEpoch;
-using ::pp::EnableStartupTimingLogs;
-using ::pp::StartupMark;
-using ::pp::StartupPhase;
 } // namespace pbr

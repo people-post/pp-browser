@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/WorkerDispatch.h"
+#include "base/runtime/WorkerDispatch.h"
 #include "common/WorkerPool.h"
 #include "base/p2p/Libp2pHost.h"
 

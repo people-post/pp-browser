@@ -9,5 +9,8 @@
  * Prefer namespace aliases / using-declarations (qualified lookup) — do not use
  * `using namespace ::pp` inside `pbr` (that does not create `pbr::Name`).
  *
+ * Product helpers that left common (EmojiKey, StartupTiming, WorkerDispatch)
+ * live under `base/` in `pbr` and are not re-exported here.
+ *
  * This header is documentation-only; it is safe to include but defines nothing.
  */

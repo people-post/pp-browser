@@ -2,7 +2,7 @@
 
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ShellTypes.h"
-#include "common/EmojiKey.h"
+#include "base/messaging/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"
 
 #include <RmlUi/Core/Context.h>
