@@ -105,8 +105,11 @@ Roe<std::vector<uint8_t>> ExtractWithAvFoundation(const std::string& video_path,
     }
 
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    // Cast: OR of CGImageAlphaInfo and anonymous byte-order enum is deprecated on newer SDKs.
+    const CGBitmapInfo bitmap_info =
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedLast) | kCGBitmapByteOrder32Big;
     CGContextRef ctx = CGBitmapContextCreate(surface->pixels, width, height, 8, static_cast<size_t>(surface->pitch),
-                                             space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                                             space, bitmap_info);
     CGColorSpaceRelease(space);
     if (!ctx) {
       SDL_DestroySurface(surface);

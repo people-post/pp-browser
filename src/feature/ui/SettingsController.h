@@ -129,6 +129,8 @@ private:
     bool profile_has_icon = false;
     bool profile_icon_uploading = false;
     bool profile_show_clear_icon = false;
+    Rml::String profile_avatar_letter = "?";
+    int profile_avatar_tone = 0;
     Rml::String auto_renew_registration = "auto";
     Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;

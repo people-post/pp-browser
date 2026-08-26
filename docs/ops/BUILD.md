@@ -202,7 +202,7 @@ Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exist
 
 ### Sandbox backend (dogfood)
 
-Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.peoplepost.org`) and keep profile data separate from production:
+Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.qa.peoplepost.org`) and keep profile data separate from production:
 
 ```bash
 pp-browser --sandbox

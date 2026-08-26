@@ -5,6 +5,9 @@
 
 namespace pbr {
 
+/** Recompute letter + tone from nickname and stable ids already on `state`. */
+void RefreshProfileAvatarGlyph(SettingsUiState& state);
+
 /** Me → Profile section. Identity I/O via SettingsCommands ports — no MessagingHub. */
 class ProfileSettingsSection : public SettingsSectionHandler {
 public:

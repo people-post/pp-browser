@@ -47,6 +47,8 @@ struct SettingsUiState {
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;
+  /** Account id for avatar tone seed; not shown in RML. */
+  std::string profile_account_id;
   std::string profile_public_key;
   std::string profile_registered = "no";
   std::string profile_registration_status = "not registered";
@@ -58,6 +60,8 @@ struct SettingsUiState {
   bool profile_has_icon = false;
   bool profile_icon_uploading = false;
   bool profile_show_clear_icon = false;
+  std::string profile_avatar_letter = "?";
+  int profile_avatar_tone = 0;
   /** UI switch value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */

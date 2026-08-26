@@ -2,8 +2,17 @@
 
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/people/AvatarGlyph.h"
 
 namespace pbr {
+
+void RefreshProfileAvatarGlyph(SettingsUiState& state) {
+  const std::string stable =
+      AvatarStableId(state.profile_account_id, state.profile_relay_id, state.profile_peer_id);
+  const AvatarGlyph glyph = MakeAvatarGlyph(state.profile_nickname, stable);
+  state.profile_avatar_letter = glyph.letter;
+  state.profile_avatar_tone = glyph.tone;
+}
 
 void ProfileSettingsSection::BindPorts(SettingsCommands* commands) {
   commands_ = commands;
@@ -16,6 +25,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_nickname = view.nickname;
   state.profile_peer_id = view.peer_id;
   state.profile_relay_id = view.relay_id;
+  state.profile_account_id = view.account_id;
   state.profile_public_key = view.public_key_b64;
   state.profile_registered = view.registered;
   state.profile_registration_status = view.registration_status;
@@ -27,6 +37,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_icon_src = view.profile_icon_path;
   state.profile_has_icon = view.profile_has_icon;
   state.profile_show_clear_icon = view.profile_has_icon && view.registered == "yes";
+  RefreshProfileAvatarGlyph(state);
 }
 
 const char* ProfileSettingsSection::Id() const {

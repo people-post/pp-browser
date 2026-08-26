@@ -252,6 +252,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_has_icon = bindings_.profile_has_icon;
   ui_state_.profile_icon_uploading = bindings_.profile_icon_uploading;
   ui_state_.profile_show_clear_icon = bindings_.profile_show_clear_icon;
+  ui_state_.profile_avatar_letter = bindings_.profile_avatar_letter.c_str();
+  ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
@@ -322,6 +324,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_has_icon = ui_state_.profile_has_icon;
   bindings_.profile_icon_uploading = ui_state_.profile_icon_uploading;
   bindings_.profile_show_clear_icon = ui_state_.profile_show_clear_icon;
+  RefreshProfileAvatarGlyph(ui_state_);
+  bindings_.profile_avatar_letter = ui_state_.profile_avatar_letter.c_str();
+  bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
@@ -476,6 +481,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
     ctor.Bind("profile_icon_uploading", &controller.bindings_.profile_icon_uploading);
     ctor.Bind("profile_show_clear_icon", &controller.bindings_.profile_show_clear_icon);
+    ctor.Bind("profile_avatar_letter", &controller.bindings_.profile_avatar_letter);
+    ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -606,6 +613,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_has_icon");
   host.Dirty("settings", "profile_icon_uploading");
   host.Dirty("settings", "profile_show_clear_icon");
+  host.Dirty("settings", "profile_avatar_letter");
+  host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
@@ -1886,32 +1895,35 @@ void SettingsController::OnPickProfileIcon() {
     ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
     return;
   }
-  if (!unlock_ensure_.ensure_unlocked) {
-    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-    return;
-  }
-  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
-    if (!unlocked) {
-      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
-      return;
-    }
-    commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
-      AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-        if (paths.empty()) {
+  // Open the native picker immediately (same pattern as chat attach_file). PIN/unlock runs only
+  // after the user chooses a file, so the vault gate cannot block the dialog from appearing.
+  commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
+          ReportFailure(Error(err).WithUser("Could not open file picker"));
+          SDL_ClearError();
+        }
+        return;
+      }
+      const std::string path = std::move(paths.front());
+      if (!unlock_ensure_.ensure_unlocked) {
+        ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+        return;
+      }
+      unlock_ensure_.ensure_unlocked([this, path = std::move(path)](const bool unlocked) mutable {
+        if (!unlocked) {
+          ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+          return;
+        }
+        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
+          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
           return;
         }
         ui_state_.profile_icon_uploading = true;
         PushUiStateToBindings();
         DirtyAll(/*include_profile_nickname=*/false);
         status_ = "Uploading profile photo…";
-        const std::string path = std::move(paths.front());
-        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
-          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
-          ui_state_.profile_icon_uploading = false;
-          PushUiStateToBindings();
-          DirtyAll(/*include_profile_nickname=*/false);
-          return;
-        }
         BlobQuotaRecoveryFlow::RunVoidUpload(
             [this, path]() { return commands_.upload_profile_icon_file(path); },
             [this](Roe<void> result) {

@@ -51,7 +51,7 @@ void PrintUsage(const char* argv0) {
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
-      << "  --sandbox             Use sandbox backend (www-en.peoplepost.org)\n"
+      << "  --sandbox             Use sandbox backend (www-en.qa.peoplepost.org)\n"
       << "  --debug               Verbose logging\n"
       << "  --help                Show this help\n"
       << "\n"

@@ -884,6 +884,15 @@ select selectbox option:hover {
   background-color: #374151;
 }
 
+.avatar-tone-0 { background-color: #4f46e5; }
+.avatar-tone-1 { background-color: #0f766e; }
+.avatar-tone-2 { background-color: #be185d; }
+.avatar-tone-3 { background-color: #c2410c; }
+.avatar-tone-4 { background-color: #1d4ed8; }
+.avatar-tone-5 { background-color: #15803d; }
+.avatar-tone-6 { background-color: #7e22ce; }
+.avatar-tone-7 { background-color: #0e7490; }
+
 .shell-call-peer-name {
   color: #f9fafb;
 }

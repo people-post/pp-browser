@@ -7,6 +7,7 @@
 #include "base/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/SfuAttachFanout.h"
+#include "base/people/AvatarGlyph.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/ILocalNotifier.h"
@@ -612,6 +613,11 @@ void CallController::RefreshPendingRing() {
             entry.has_avatar = true;
             entry.avatar_src = avatar_path.c_str();
           }
+        }
+        {
+          const AvatarGlyph glyph = MakeAvatarGlyph(name, row.identity);
+          entry.avatar_letter = glyph.letter.c_str();
+          entry.avatar_tone = glyph.tone;
         }
         entry.stream_id = std::to_string(PublisherStreamIdForIdentity(row.identity)).c_str();
         entry.audio_muted = row.media.audio_muted;
