@@ -28,7 +28,7 @@
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/MessagingLimits.h"
-#include "common/EmojiKey.h"
+#include "base/messaging/EmojiKey.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateTypes.h"

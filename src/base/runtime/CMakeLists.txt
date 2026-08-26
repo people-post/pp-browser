@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_runtime_core
     AppRuntime.cpp
     CoordinatorThread.cpp
     ThreadRuntime.cpp
+    WorkerDispatch.cpp
 )
 
 target_compile_definitions(pp_base_runtime_core PUBLIC

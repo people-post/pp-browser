@@ -5,7 +5,7 @@
 #include "base/crypto/AttachmentContentCipher.h"
 #include "base/crypto/AttachmentContentHash.h"
 #include "base/crypto/CryptoConstants.h"
-#include "common/EmojiKey.h"
+#include "base/messaging/EmojiKey.h"
 
 #include <gtest/gtest.h>
 

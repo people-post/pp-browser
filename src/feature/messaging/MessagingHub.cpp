@@ -50,7 +50,7 @@
 #include "base/people/MeshHopPolicy.h"
 #include "base/p2p/NatTraversal.h"
 #include "base/p2p/Reachability.h"
-#include "common/StartupTiming.h"
+#include "base/runtime/StartupTiming.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL_timer.h>
