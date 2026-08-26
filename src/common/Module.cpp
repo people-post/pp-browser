@@ -1,6 +1,6 @@
 #include "common/Module.h"
 
-namespace pbr {
+namespace pp {
 
 Module::Module() : logger_(logging::getLogger("")) {}
 
@@ -10,4 +10,4 @@ void Module::redirectLogger(const std::string& targetLoggerName) {
 
 logging::Logger& Module::log() const { return logger_; }
 
-} // namespace pbr
+} // namespace pp

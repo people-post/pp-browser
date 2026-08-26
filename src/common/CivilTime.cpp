@@ -2,7 +2,7 @@
 
 #include <time.h>
 
-namespace pbr::civil_time {
+namespace pp::civil_time {
 
 time_t TimeGm(std::tm* tm) {
 #if defined(_WIN32)
@@ -34,4 +34,4 @@ bool UtcTime(time_t time, std::tm* out) {
 #endif
 }
 
-} // namespace pbr::civil_time
+} // namespace pp::civil_time

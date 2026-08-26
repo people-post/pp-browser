@@ -6,7 +6,7 @@
 #include <sstream>
 #include <string>
 
-namespace pbr {
+namespace pp {
 
 /**
  * Pack a struct/object to binary using OutputArchive (pp Binary Wire Profile).
@@ -35,4 +35,9 @@ template <typename T> Roe<T> binaryUnpack(const std::string &data) {
   return result;
 }
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::binaryPack;
+using ::pp::binaryUnpack;
 } // namespace pbr

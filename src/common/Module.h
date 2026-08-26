@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace pbr {
+namespace pp {
 
 class Module {
 public:
@@ -23,4 +23,8 @@ private:
   mutable logging::Logger logger_;
 };
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::Module;
 } // namespace pbr

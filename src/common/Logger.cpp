@@ -8,7 +8,7 @@
 #include <iostream>
 #include <unordered_map>
 
-namespace pbr {
+namespace pp {
 namespace logging {
 
 namespace {
@@ -369,4 +369,4 @@ void setEmitFloor(Level floor) {
 }
 
 } // namespace logging
-} // namespace pbr
+} // namespace pp

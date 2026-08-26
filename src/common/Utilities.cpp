@@ -7,7 +7,7 @@
 #include <random>
 #include <sstream>
 
-namespace pbr::util {
+namespace pp::util {
 
 std::string GenerateUuid() {
   static thread_local std::mt19937_64 rng{std::random_device{}()};
@@ -41,4 +41,4 @@ std::string ToLowerAscii(std::string text) {
   return text;
 }
 
-} // namespace pbr::util
+} // namespace pp::util

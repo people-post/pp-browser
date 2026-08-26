@@ -2,7 +2,7 @@
 
 #include <ctime>
 
-namespace pbr::civil_time {
+namespace pp::civil_time {
 
 /** UTC calendar time from a broken-down `tm` (`timegm` / `_mkgmtime`). */
 time_t TimeGm(std::tm* tm);
@@ -13,4 +13,8 @@ bool LocalTime(time_t time, std::tm* out);
 /** UTC broken-down time (`gmtime_r` / `gmtime_s`). */
 bool UtcTime(time_t time, std::tm* out);
 
-} // namespace pbr::civil_time
+} // namespace pp::civil_time
+
+namespace pbr {
+namespace civil_time = ::pp::civil_time;
+} // namespace pbr

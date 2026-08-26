@@ -2,7 +2,7 @@
 
 #include <exception>
 
-namespace pbr {
+namespace pp {
 
 SequencedTaskRunner::SequencedTaskRunner() {
   redirectLogger("SequencedTaskRunner");
@@ -103,4 +103,4 @@ bool SequencedTaskRunner::DequeueOne(std::function<void()>* out) {
   return true;
 }
 
-} // namespace pbr
+} // namespace pp

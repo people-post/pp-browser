@@ -7,9 +7,9 @@
 
 namespace {
 
-using pbr::logging::Handler;
-using pbr::logging::Level;
-using pbr::logging::Logger;
+using pp::logging::Handler;
+using pp::logging::Level;
+using pp::logging::Logger;
 
 struct CaptureHandler : Handler {
   void emit(Level level, const std::string& /*loggerName*/,
@@ -26,8 +26,8 @@ struct CaptureHandler : Handler {
 
 class EmitFloorGuard {
 public:
-  EmitFloorGuard() : previous_(pbr::logging::getEmitFloor()) {}
-  ~EmitFloorGuard() { pbr::logging::setEmitFloor(previous_); }
+  EmitFloorGuard() : previous_(pp::logging::getEmitFloor()) {}
+  ~EmitFloorGuard() { pp::logging::setEmitFloor(previous_); }
 
   EmitFloorGuard(const EmitFloorGuard&) = delete;
   EmitFloorGuard& operator=(const EmitFloorGuard&) = delete;
@@ -40,10 +40,10 @@ private:
 
 TEST(LoggerEmitFloorTest, PromotesAfterFilterKeepsOriginalThreshold) {
   EmitFloorGuard restore;
-  pbr::logging::setEmitFloor(Level::WARNING);
+  pp::logging::setEmitFloor(Level::WARNING);
 
   auto handler = std::make_shared<CaptureHandler>();
-  Logger log = pbr::logging::getLogger("test.emit_floor.promote");
+  Logger log = pp::logging::getLogger("test.emit_floor.promote");
   log.setLevel(Level::INFO);
   log.setPropagate(false);
   log.addHandler(handler);
@@ -61,10 +61,10 @@ TEST(LoggerEmitFloorTest, PromotesAfterFilterKeepsOriginalThreshold) {
 
 TEST(LoggerEmitFloorTest, DefaultFloorIsNoOp) {
   EmitFloorGuard restore;
-  pbr::logging::setEmitFloor(pbr::logging::kLevelDebug);
+  pp::logging::setEmitFloor(pp::logging::kLevelDebug);
 
   auto handler = std::make_shared<CaptureHandler>();
-  Logger log = pbr::logging::getLogger("test.emit_floor.noop");
+  Logger log = pp::logging::getLogger("test.emit_floor.noop");
   log.setLevel(Level::INFO);
   log.setPropagate(false);
   log.addHandler(handler);

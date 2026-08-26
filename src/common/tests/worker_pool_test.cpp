@@ -12,8 +12,8 @@
 
 namespace {
 
-using pbr::WorkerLane;
-using pbr::WorkerPool;
+using pp::WorkerLane;
+using pp::WorkerPool;
 
 void WaitUntil(const std::function<bool()>& predicate, const std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;

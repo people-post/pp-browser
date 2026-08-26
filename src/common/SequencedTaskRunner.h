@@ -7,7 +7,7 @@
 
 #include "common/Module.h"
 
-namespace pbr {
+namespace pp {
 
 /** FIFO task queue drained inline on the UI thread via RunPendingTasks(). */
 class SequencedTaskRunner : public Module {
@@ -43,4 +43,8 @@ private:
   std::thread::id thread_id_;
 };
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::SequencedTaskRunner;
 } // namespace pbr

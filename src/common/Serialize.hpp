@@ -14,7 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace pbr {
+namespace pp {
 
 /** u64 BE length + UTF-8 bytes — pp Binary Wire Profile (WIRE_SCHEMAS § Wire profile). */
 struct WireLenUtf8 {
@@ -890,4 +890,11 @@ private:
   bool failed_ = false;
 };
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::WireLenUtf8;
+using ::pp::WireLenBytes;
+using ::pp::OutputArchive;
+using ::pp::InputArchive;
 } // namespace pbr

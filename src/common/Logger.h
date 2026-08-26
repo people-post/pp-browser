@@ -21,7 +21,7 @@
 #endif
 #endif
 
-namespace pbr {
+namespace pp {
 namespace logging {
 
 enum class Level { DEBUG = 0, INFO = 1, WARNING = 2, ERROR = 3, CRITICAL = 4 };
@@ -206,6 +206,10 @@ Level getEmitFloor();
 void setEmitFloor(Level floor);
 
 } // namespace logging
+} // namespace pp
+
+namespace pbr {
+namespace logging = ::pp::logging;
 } // namespace pbr
 
 #endif // PP_BROWSER_LOGGER_H

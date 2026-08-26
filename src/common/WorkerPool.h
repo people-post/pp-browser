@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace pbr {
+namespace pp {
 
 enum class WorkerLane { Critical, Normal, Background };
 
@@ -71,4 +71,9 @@ void WorkerPool::PostAndReply(WorkerLane lane, std::function<Result()> work,
   });
 }
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::WorkerLane;
+using ::pp::WorkerPool;
 } // namespace pbr

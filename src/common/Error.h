@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-namespace pbr {
+namespace pp {
 
 /** Low-level error payload. category/code are opaque int32_t; interpret at higher layers. */
 struct Error : public RoeErrorBase {
@@ -37,4 +37,9 @@ struct Error : public RoeErrorBase {
 template <typename T>
 using Roe = ResultOrError<T, Error>;
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::Error;
+using ::pp::Roe;
 } // namespace pbr

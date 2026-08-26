@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-namespace pbr {
+namespace pp {
 
 namespace {
 
@@ -33,4 +33,4 @@ void WorkerDispatch::Post(WorkerLane lane, std::function<void()> task) {
   g_pool->Post(lane, std::move(task));
 }
 
-} // namespace pbr
+} // namespace pp

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace pbr::util {
+namespace pp::util {
 
 std::string GenerateUuid();
 int64_t NowUnixMs();
@@ -14,4 +14,8 @@ std::string Trim(const std::string& text);
 /** ASCII lowercase (A–Z only). */
 std::string ToLowerAscii(std::string text);
 
-} // namespace pbr::util
+} // namespace pp::util
+
+namespace pbr {
+namespace util = ::pp::util;
+} // namespace pbr

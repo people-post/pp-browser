@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace pbr {
+namespace pp {
 
 struct RoeErrorBase {
   int32_t code;
@@ -284,6 +284,11 @@ private:
   typename std::aligned_union<0, E>::type storage_;
 };
 
+} // namespace pp
+
+namespace pbr {
+using ::pp::RoeErrorBase;
+using ::pp::ResultOrError;
 } // namespace pbr
 
 #endif // PP_BROWSER_RESULT_OR_ERROR_H

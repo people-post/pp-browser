@@ -8,7 +8,7 @@
 #include <pthread.h>
 #endif
 
-namespace pbr {
+namespace pp {
 
 namespace {
 
@@ -181,4 +181,4 @@ void WorkerPool::RunTaskSafely(std::function<void()>& task) {
   }
 }
 
-} // namespace pbr
+} // namespace pp
