@@ -9,10 +9,8 @@ set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-# Until pp-cpp-ui tags v0.1.0 on main, pin the bootstrap commit.
-# After release: set this back to "v0.1.0".
-set(PP_CPP_UI_GIT_TAG "ef0273334c2d74ad6850f5dfaf1e4f147e17de11"
-  CACHE STRING "Release tag or commit on pp-cpp-ui (prefer release tag from main)")
+set(PP_CPP_UI_GIT_TAG "v0.1.0"
+  CACHE STRING "Release tag on pp-cpp-ui main (not a branch name)")
 
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
 
