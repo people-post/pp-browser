@@ -4,13 +4,13 @@ Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependenci
 
 RmlUi + FreeType / HarfBuzz / LunaSVG + **SDL3 / SDL3_image** live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui), not in this directory.
 
-libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies** plus a few app libs (json, curl, sqlite, opus).
+libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies** plus a few app libs (curl, sqlite, opus). Prefer nlohmann/json from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); keep a local tree only as fallback.
 
 ## Libraries
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|
-| `nlohmann_json/` | [nlohmann/json](https://github.com/nlohmann/json) | `v3.11.3` | MIT |
+| `nlohmann_json/` | [nlohmann/json](https://github.com/nlohmann/json) | `v3.11.3` | MIT (optional fallback; primary copy is in pp-cpp-common) |
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |

@@ -12,7 +12,7 @@ endfunction()
 
 # Always required for pp-node and the GUI app.
 # libsodium + ML-KEM/ML-DSA come from FetchContent / sibling pp-cpp-crypto.
-pp_require_vendored(nlohmann_json)
+# nlohmann/json comes from pp-cpp-common (v0.2.0+); optional vendored fallback below.
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
@@ -38,12 +38,21 @@ endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# nlohmann-json (header-only)
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-set(JSON_Install OFF CACHE BOOL "" FORCE)
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
-                 "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
+# nlohmann-json: prefer pp-cpp-common's lean vendor (PUBLIC via pp_common).
+# Fall back to third_party/ only if common did not define the target (pre-v0.2.0).
+if(NOT TARGET nlohmann_json)
+  if(EXISTS "${PP_THIRD_PARTY_DIR}/nlohmann_json/CMakeLists.txt")
+    message(STATUS "pp-browser: using vendored third_party/nlohmann_json (pp-cpp-common did not provide it)")
+    set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+    set(JSON_Install OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
+                     "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
+  else()
+    message(FATAL_ERROR
+      "nlohmann_json target missing. Use pp-cpp-common >= v0.2.0 (sibling or FetchContent) "
+      "or restore third_party/nlohmann_json.")
+  endif()
+endif()
 
 if(PP_BROWSER_HEADLESS)
   pp_configure_status("Headless deps ready (json, pp-cpp-crypto, libp2p); skipping GUI third_party")

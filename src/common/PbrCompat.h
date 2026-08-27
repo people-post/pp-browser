@@ -17,6 +17,8 @@
 #include "common/ResultOrError.hpp"
 #include "common/SequencedTaskRunner.h"
 #include "common/Serialize.hpp"
+#include "common/Service.h"
+#include "common/ThreadSafeQueue.h"
 #include "common/Utilities.h"
 #include "common/WorkerPool.h"
 
@@ -27,6 +29,8 @@ using ::pp::ResultOrError;
 using ::pp::Error;
 using ::pp::Roe;
 using ::pp::Module;
+using ::pp::Service;
+using ::pp::ThreadSafeQueue;
 using ::pp::WorkerLane;
 using ::pp::WorkerPool;
 using ::pp::SequencedTaskRunner;
