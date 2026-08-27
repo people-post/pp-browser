@@ -42,7 +42,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, lsquic, and related packages.
+**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), and (for libp2p) BoringSSL, Boost, lsquic, and related packages. libsodium + ML-KEM/ML-DSA come from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (sibling checkout or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 

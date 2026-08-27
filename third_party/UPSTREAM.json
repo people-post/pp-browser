@@ -80,23 +80,6 @@
     "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530300.zip",
     "amalgamation_version": "3530300"
   },
-  "libsodium": {
-    "repository": "https://github.com/jedisct1/libsodium.git",
-    "tag": "1.0.20-RELEASE",
-    "commit": "9511c982fb1d046470a8b42aa36556cdb7da15de"
-  },
-  "mlkem-native": {
-    "repository": "https://github.com/pq-code-package/mlkem-native.git",
-    "tag": "v2.0.0",
-    "commit": "d1b2fe782888bdb761a50336012923180be7f502",
-    "notes": "Vendored lean mlkem/ tree (C backend, ML-KEM-768); see README.pp-browser.md"
-  },
-  "mldsa-native": {
-    "repository": "https://github.com/pq-code-package/mldsa-native.git",
-    "tag": "v2.0.0",
-    "commit": "834a90d5e846ffa1e1611bd24e160bb2e9b86d35",
-    "notes": "Vendored lean mldsa/ tree (C backend, ML-DSA-65); see README.pp-browser.md"
-  },
   "opus": {
     "repository": "https://github.com/xiph/opus.git",
     "tag": "v1.5.2",
