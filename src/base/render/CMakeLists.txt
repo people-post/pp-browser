@@ -1,20 +1,19 @@
-# Product RmlUi SDL/GL backend (base layer). Fork comes from pp-cpp-ui.
+# Product RmlUi host / overlays (base layer).
+# Reusable Platform_SDL + Renderer_GL3 come from pp-cpp-ui (pp_ui_backend).
 
 include(pp_lib_paths)
 include(pp_lib_rmlui)
 
 pp_browser_add_base_library(pp_base_render
   SOURCES
-    platform/RmlUi_Platform_SDL.cpp
     platform/MobileGlLifecycle.cpp
-    renderer/RmlUi_Renderer_GL3.cpp
     renderer/TextLoupeRenderer.cpp
     renderer/CallVideoTileRenderer.cpp
     renderer/ElementCallVideoTile.cpp
     host/BrowserHost.cpp
     host/TouchSimOverlay.cpp
   PUBLIC_LIBS
-    RmlUi::Core
+    pp_ui
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})
 

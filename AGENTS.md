@@ -6,10 +6,10 @@ This document orients coding agents working in this repository.
 
 pp-browser is a native AI-oriented UI shell:
 
-- **SDL3 + OpenGL3** — windowing (`src/base/render/`)
+- **SDL3 + OpenGL3** — product window host in `src/base/render/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
 - **Hard-forked libp2p** — P2P networking in `src/lib/libp2p/`
-- **Third-party libs** — nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); FreeType / HarfBuzz / LunaSVG via pp-cpp-ui
+- **Third-party libs** — nlohmann/json, curl, and libp2p deps in [`third_party/`](third_party/); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
 - **Five-layer source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + libp2p; call media on libp2p — V026). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
@@ -20,7 +20,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 
 - Edit RmlUi in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific SDL/GL glue stays in [`src/base/render/`](src/base/render/), not in the fork.
+- App-specific host/overlays stay in [`src/base/render/`](src/base/render/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
 
 ### Fork features (pp-browser)
 

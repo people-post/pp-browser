@@ -15,11 +15,9 @@ endfunction()
 pp_require_vendored(nlohmann_json)
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
-# FreeType / HarfBuzz / LunaSVG come from FetchContent / sibling pp-cpp-ui.
+# FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
 if(NOT PP_BROWSER_HEADLESS)
   pp_require_vendored(curl)
-  pp_require_vendored(sdl3)
-  pp_require_vendored(sdl3_image)
   pp_require_vendored(sqlite)
   pp_require_vendored(opus)
 endif()
@@ -118,46 +116,10 @@ endif()
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
                  "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 
-if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(SDL_UNIX_CONSOLE_BUILD OFF CACHE BOOL "SDL console build without windowing" FORCE)
-  set(SDL_OPENGL OFF CACHE BOOL "Desktop OpenGL/GLX disabled on mobile" FORCE)
-  set(SDL_OPENGLES ON CACHE BOOL "OpenGL ES for mobile SDL video" FORCE)
-elseif(UNIX AND NOT APPLE)
-  if(NOT EXISTS "/usr/include/X11/Xlib.h")
-    message(FATAL_ERROR
-      "X11 development headers are required for the pp-browser GUI.\n"
-      "  Debian/Ubuntu: sudo apt install libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev\n"
-      "  Or configure with -DPP_BROWSER_HEADLESS=ON for pp-node / node-only builds.")
-  endif()
-  if(NOT EXISTS "/usr/include/GL/gl.h")
-    message(FATAL_ERROR
-      "OpenGL development headers are required (RmlUi uses OpenGL 3.3).\n"
-      "  Debian/Ubuntu: sudo apt install libgl-dev\n"
-      "  Or configure with -DPP_BROWSER_HEADLESS=ON for pp-node / node-only builds.")
-  endif()
-  set(SDL_UNIX_CONSOLE_BUILD OFF CACHE BOOL "SDL console build without windowing" FORCE)
-  set(SDL_OPENGL ON CACHE BOOL "Include OpenGL/GLX in SDL3" FORCE)
-  set(SDL_OPENGLES OFF CACHE BOOL "Disable OpenGL ES (desktop GL3 backend)" FORCE)
-endif()
+# SDL3 + SDL3_image come from pp-cpp-ui (included after this file for non-headless).
+# PP_BROWSER_SDL3_* aliases are set in cmake/PpCppUi.cmake.
 
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
-set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
-set(SDL_TESTS OFF CACHE BOOL "" FORCE)
-set(SDL_DBUS OFF CACHE BOOL "" FORCE)
-set(SDL_IBUS OFF CACHE BOOL "" FORCE)
-set(SDL_WAYLAND OFF CACHE BOOL "" FORCE)
-if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(SDL_X11 OFF CACHE BOOL "" FORCE)
-else()
-  set(SDL_X11 ON CACHE BOOL "" FORCE)
-endif()
-# Audio on for a2 voice (CallMediaEngine); camera stays off until a3.
-set(SDL_AUDIO ON CACHE BOOL "" FORCE)
 if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  # Prefer Pulse (desktop mixer / PipeWire compat); ALSA as device fallback.
-  set(SDL_PULSEAUDIO ON CACHE BOOL "" FORCE)
-  set(SDL_ALSA ON CACHE BOOL "" FORCE)
   find_package(PkgConfig QUIET)
   set(_pp_pulse_ok FALSE)
   set(_pp_alsa_ok FALSE)
@@ -176,97 +138,10 @@ if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
       "Linux A/V calls need PulseAudio + ALSA development packages for real mic/speaker.\n"
       "  Without them SDL falls back to dummy audio (no capture/playback).\n"
       "  Debian/Ubuntu: sudo apt install libpulse-dev libasound2-dev\n"
-      "  Then reconfigure; if drivers stay dummy: rm -rf build/third_party/sdl3 && cmake -B build -S .")
+      "  Then reconfigure; if drivers stay dummy: rm -rf build/_deps/pp_cpp_ui-build/third_party/sdl3 && cmake -B build -S .")
   else()
     message(STATUS "pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)")
   endif()
 endif()
-set(SDL_RENDER OFF CACHE BOOL "" FORCE)
-set(SDL_GPU OFF CACHE BOOL "" FORCE)
-set(SDL_CAMERA ON CACHE BOOL "" FORCE)  # a3 video capture (V018)
-set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
-set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
-set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
-if(ANDROID)
-  # Android JNI registers HIDDeviceManager natives; hid.cpp must be linked.
-  set(SDL_HIDAPI ON CACHE BOOL "" FORCE)
-else()
-  set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
-endif()
-# Native file picker (profile photo, chat attachments) — portal/zenity on Linux, Cocoa on macOS.
-set(SDL_DIALOG ON CACHE BOOL "" FORCE)
-set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
-set(SDL_PIPEWIRE OFF CACHE BOOL "" FORCE)
-set(SDL_LIBUDEV OFF CACHE BOOL "" FORCE)
-set(SDL_LIBURING OFF CACHE BOOL "" FORCE)
 
-add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3"
-                 "${CMAKE_BINARY_DIR}/third_party/sdl3" EXCLUDE_FROM_ALL)
-# UIKit video events reference GCKeyboard/GCMouse even with SDL_JOYSTICK=OFF.
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  if(TARGET SDL3-static)
-    target_link_libraries(SDL3-static PUBLIC "$<LINK_LIBRARY:FRAMEWORK,GameController>")
-  elseif(TARGET SDL3)
-    target_link_libraries(SDL3 PUBLIC "$<LINK_LIBRARY:FRAMEWORK,GameController>")
-  endif()
-endif()
-pp_configure_status("SDL3 configured; starting SDL3_image...")
-
-# SDL3_image: stb for PNG/JPG (matches FetchContent on Linux); external/ codecs vendored for MSVC.
-set(SDLIMAGE_BACKEND_STB ON CACHE BOOL "" FORCE)
-set(SDLIMAGE_BACKEND_WIC OFF CACHE BOOL "" FORCE)
-# ImageIO.m needs the ImageIO framework; on iOS we use STB only (same as Android).
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(SDLIMAGE_BACKEND_IMAGEIO OFF CACHE BOOL "" FORCE)
-endif()
-set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_JXL OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_TIF OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_WEBP OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_BMP ON CACHE BOOL "" FORCE)
-set(SDLIMAGE_JPG ON CACHE BOOL "" FORCE)
-set(SDLIMAGE_PNG ON CACHE BOOL "" FORCE)
-set(SDLIMAGE_INSTALL OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_SAMPLES OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_TESTS OFF CACHE BOOL "" FORCE)
-
-if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/libavif/CMakeLists.txt")
-  message(FATAL_ERROR
-    "Missing SDL3_image external codecs under third_party/sdl3_image/external/.\n"
-    "  Run: ./scripts/vendor_import.sh")
-endif()
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image"
-                 "${CMAKE_BINARY_DIR}/third_party/sdl3_image" EXCLUDE_FROM_ALL)
-pp_configure_status("SDL3_image configured; finishing dependency setup...")
-
-if(TARGET SDL3::SDL3-static)
-  set(PP_BROWSER_SDL3_TARGET SDL3::SDL3-static)
-elseif(TARGET SDL3::SDL3)
-  set(PP_BROWSER_SDL3_TARGET SDL3::SDL3)
-else()
-  message(FATAL_ERROR "SDL3 target not found")
-endif()
-
-if(TARGET SDL3_image::SDL3_image-static)
-  set(PP_BROWSER_SDL3_IMAGE_TARGET SDL3_image::SDL3_image-static)
-elseif(TARGET SDL3_image::SDL3_image)
-  set(PP_BROWSER_SDL3_IMAGE_TARGET SDL3_image::SDL3_image)
-else()
-  message(FATAL_ERROR "SDL3_image target not found")
-endif()
-
-if(NOT TARGET SDL::SDL)
-  add_library(SDL_alias INTERFACE)
-  add_library(SDL::SDL ALIAS SDL_alias)
-  target_link_libraries(SDL_alias INTERFACE ${PP_BROWSER_SDL3_TARGET})
-  target_compile_definitions(SDL_alias INTERFACE RMLUI_SDL_VERSION_MAJOR=3)
-endif()
-
-if(NOT TARGET SDL_image::SDL_image)
-  add_library(SDL_image_alias INTERFACE)
-  add_library(SDL_image::SDL_image ALIAS SDL_image_alias)
-  target_link_libraries(SDL_image_alias INTERFACE ${PP_BROWSER_SDL3_IMAGE_TARGET})
-endif()
-
-pp_configure_status("All third_party dependencies ready")
+pp_configure_status("All third_party dependencies ready (SDL via PpCppUi next)")

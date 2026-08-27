@@ -12,15 +12,16 @@ pp-browser consumes RmlUi from sibling / FetchContent [`pp-cpp-ui`](https://gith
 | `../pp-cpp-ui/rmlui/Tests/` | Upstream RmlUi unit tests (doctest); fork-specific `ClickRouting.cpp` |
 | `../pp-cpp-ui/rmlui/Samples/shell/` | Test harness utility (`rmlui_shell`); not linked by the app |
 | `../pp-cpp-ui/rmlui/Samples/assets/` | Fonts and minimal RML/RCSS for the test harness |
-| `../pp-cpp-ui/rmlui/reference/backends/` | Upstream sample backends (**reference only**; not linked) |
-| `src/base/render/platform/` | SDL platform adapter (compiled into `pp_base_render`) |
-| `src/base/render/renderer/` | OpenGL3 render interface |
-| `src/base/render/host/` | `BrowserHost` bootstrap |
+| `../pp-cpp-ui/rmlui/reference/backends/` | Upstream sample backends (used by `rmlui_shell` tests; not by the app) |
+| `../pp-cpp-ui/backend/` | Reusable `SystemInterface_SDL` + `RenderInterface_GL3` (`pp_ui_backend`) |
+| `src/base/render/platform/` | Mobile GL lifecycle helpers |
+| `src/base/render/renderer/` | Product overlays (text loupe, call video tiles) |
+| `src/base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
 
 Dependency rule:
 
 ```
-base/render/host → base/render/platform + base/render/renderer → lib/rmlui/Include (public API)
+base/render/host → pp-cpp-ui backend (Platform_SDL + Renderer_GL3) → RmlUi Include (public API)
 ```
 
 ## Provenance
@@ -64,7 +65,7 @@ Do not land speculative fork data-binding patches without a failing unit test un
 
 ## Patching
 
-Edit files under **pp-cpp-ui** `rmlui/` (separate repo commits). App-specific SDL/GL glue stays in `src/base/render/`.
+Edit files under **pp-cpp-ui** `rmlui/` or `backend/` (separate repo commits). Product host/overlays stay in `src/base/render/`.
 
 **pp-browser fork patches (as of import):**
 
