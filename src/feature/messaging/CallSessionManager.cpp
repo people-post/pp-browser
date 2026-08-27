@@ -15,7 +15,8 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
-#include <nlohmann/json.hpp>
+
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -341,8 +342,10 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
 
   SendRelayOptions opts;
   opts.content_type = ChatContentType::System;
-  opts.payload_json =
-      nlohmann::json({{"control_type", CallControlTypeToWire(type)}, {"detail", detail_json}}).dump();
+  Object payload;
+  payload.set("control_type", CallControlTypeToWire(type));
+  payload.set("detail", detail_json);
+  opts.payload_json = DumpJson(payload);
   opts.generation = "system";
   opts.update_preview = false;
   // Call-control must not block Browser IO on libp2p direct OpenStream/ack (MediaKey + Accept).
@@ -1352,11 +1355,12 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   if (!type) {
     return {};
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  auto detail = payload ? payload->getString("detail") : std::nullopt;
+  if (!detail) {
     return Error("Call control missing detail");
   }
-  const std::string detail_json = payload["detail"].get<std::string>();
+  const std::string detail_json = *detail;
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();

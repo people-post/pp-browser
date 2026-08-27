@@ -2,9 +2,9 @@
 
 #include "base/ai/LlmClient.h"
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
 #include <functional>
-#include <nlohmann/json.hpp>
 #include <string>
 
 namespace pbr {
@@ -21,7 +21,7 @@ struct ToolMeta {
 struct ToolDescriptor {
   ToolDefinition definition;
   ToolMeta meta;
-  std::function<Roe<std::string>(const nlohmann::json& arguments)> execute;
+  std::function<Roe<std::string>(const Object& arguments)> execute;
 };
 
 } // namespace pbr

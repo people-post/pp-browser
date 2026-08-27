@@ -1,6 +1,6 @@
 #include "base/people/ContactJson.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -91,23 +91,25 @@ bool HasPeerId(const std::vector<ContactId>& ids, const std::string& peer_id) {
   return false;
 }
 
-void AppendContactIdsFromJson(const nlohmann::json& json, std::vector<ContactId>& ids) {
-  if (!json.contains("ids") || !json["ids"].is_array()) {
+void AppendContactIdsFromJson(const Object& json, std::vector<ContactId>& ids) {
+  const Array* arr = json.getArray("ids");
+  if (!arr) {
     return;
   }
-  for (const auto& item : json["ids"]) {
-    if (!item.is_object()) {
+  for (const Value& item_value : arr->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
       continue;
     }
     ContactId id;
-    if (item.contains("kind") && item["kind"].is_string()) {
-      id.kind = ContactIdKindFromString(item["kind"].get<std::string>());
+    if (auto kind = item->getString("kind")) {
+      id.kind = ContactIdKindFromString(*kind);
     }
-    if (item.contains("value") && item["value"].is_string()) {
-      id.value = item["value"].get<std::string>();
+    if (auto value = item->getString("value")) {
+      id.value = *value;
     }
-    if (item.contains("primary") && item["primary"].is_boolean()) {
-      id.primary = item["primary"].get<bool>();
+    if (auto primary = item->getIf<bool>("primary")) {
+      id.primary = *primary;
     }
     if (!id.value.empty()) {
       ids.push_back(std::move(id));
@@ -115,60 +117,64 @@ void AppendContactIdsFromJson(const nlohmann::json& json, std::vector<ContactId>
   }
 }
 
-nlohmann::json IdsToJson(const std::vector<ContactId>& ids) {
-  nlohmann::json out = nlohmann::json::array();
+Value IdsToJson(const std::vector<ContactId>& ids) {
+  std::vector<Value> out;
+  out.reserve(ids.size());
   for (const ContactId& id : ids) {
-    out.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
+    Object row;
+    row.set("kind", ContactIdKindToString(id.kind));
+    row.set("value", id.value);
+    row.set("primary", id.primary);
+    out.push_back(ObjectValue(std::move(row)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-nlohmann::json MultiaddrsToJson(const std::vector<std::string>& multiaddrs) {
-  nlohmann::json out = nlohmann::json::array();
+Value MultiaddrsToJson(const std::vector<std::string>& multiaddrs) {
+  std::vector<Value> out;
+  out.reserve(multiaddrs.size());
   for (const std::string& ma : multiaddrs) {
-    out.push_back(ma);
+    out.push_back(Value(ma));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-void ParseMultiaddrsArray(const nlohmann::json& json, std::vector<std::string>& multiaddrs) {
-  if (!json.is_array()) {
-    return;
-  }
-  for (const auto& item : json) {
-    if (item.is_string()) {
-      multiaddrs.push_back(item.get<std::string>());
+void ParseMultiaddrsArray(const Array& arr, std::vector<std::string>& multiaddrs) {
+  for (const Value& item : arr.elements) {
+    if (auto s = asString(item)) {
+      multiaddrs.push_back(*s);
     }
   }
 }
 
-nlohmann::json EndpointsToJson(const std::vector<DirectoryEndpoint>& endpoints) {
-  nlohmann::json out = nlohmann::json::array();
+Value EndpointsToJson(const std::vector<DirectoryEndpoint>& endpoints) {
+  std::vector<Value> out;
+  out.reserve(endpoints.size());
   for (const DirectoryEndpoint& endpoint : endpoints) {
-    out.push_back({{"peer_id", endpoint.peer_id},
-                   {"multiaddrs", MultiaddrsToJson(endpoint.multiaddrs)},
-                   {"updated_at", endpoint.updated_at}});
+    Object row;
+    row.set("peer_id", endpoint.peer_id);
+    row.set("multiaddrs", MultiaddrsToJson(endpoint.multiaddrs));
+    row.set("updated_at", endpoint.updated_at);
+    out.push_back(ObjectValue(std::move(row)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-void ParseEndpointsArray(const nlohmann::json& json, std::vector<DirectoryEndpoint>& endpoints) {
-  if (!json.is_array()) {
-    return;
-  }
-  for (const auto& item : json) {
-    if (!item.is_object()) {
+void ParseEndpointsArray(const Array& arr, std::vector<DirectoryEndpoint>& endpoints) {
+  for (const Value& item_value : arr.elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
       continue;
     }
     DirectoryEndpoint endpoint;
-    if (item.contains("peer_id") && item["peer_id"].is_string()) {
-      endpoint.peer_id = item["peer_id"].get<std::string>();
+    if (auto peer_id = item->getString("peer_id")) {
+      endpoint.peer_id = *peer_id;
     }
-    if (item.contains("multiaddrs")) {
-      ParseMultiaddrsArray(item["multiaddrs"], endpoint.multiaddrs);
+    if (const Array* multiaddrs = item->getArray("multiaddrs")) {
+      ParseMultiaddrsArray(*multiaddrs, endpoint.multiaddrs);
     }
-    if (item.contains("updated_at") && item["updated_at"].is_number_integer()) {
-      endpoint.updated_at = item["updated_at"].get<int64_t>();
+    if (auto updated = item->getIf<int64_t>("updated_at")) {
+      endpoint.updated_at = *updated;
     }
     if (!endpoint.peer_id.empty()) {
       endpoints.push_back(std::move(endpoint));
@@ -176,19 +182,16 @@ void ParseEndpointsArray(const nlohmann::json& json, std::vector<DirectoryEndpoi
   }
 }
 
-std::optional<ProfileIconRef> ProfileIconRefFromJson(const nlohmann::json& json) {
-  if (!json.is_object()) {
-    return std::nullopt;
-  }
+std::optional<ProfileIconRef> ProfileIconRefFromJson(const Object& json) {
   ProfileIconRef icon;
-  if (json.contains("url") && json["url"].is_string()) {
-    icon.url = json["url"].get<std::string>();
+  if (auto url = json.getString("url")) {
+    icon.url = *url;
   }
-  if (json.contains("blob_id") && json["blob_id"].is_string()) {
-    icon.blob_id = json["blob_id"].get<std::string>();
+  if (auto blob_id = json.getString("blob_id")) {
+    icon.blob_id = *blob_id;
   }
-  if (json.contains("kind") && json["kind"].is_string()) {
-    icon.kind = json["kind"].get<std::string>();
+  if (auto kind = json.getString("kind")) {
+    icon.kind = *kind;
   }
   if (icon.empty()) {
     return std::nullopt;
@@ -196,73 +199,78 @@ std::optional<ProfileIconRef> ProfileIconRefFromJson(const nlohmann::json& json)
   return icon;
 }
 
-nlohmann::json ProfileIconRefToJson(const ProfileIconRef& icon) {
-  nlohmann::json out = nlohmann::json::object();
+Object ProfileIconRefToJson(const ProfileIconRef& icon) {
+  Object out;
   if (!icon.url.empty()) {
-    out["url"] = icon.url;
+    out.set("url", icon.url);
   }
   if (!icon.blob_id.empty()) {
-    out["blob_id"] = icon.blob_id;
+    out.set("blob_id", icon.blob_id);
   }
   if (!icon.kind.empty()) {
-    out["kind"] = icon.kind;
+    out.set("kind", icon.kind);
   }
   return out;
 }
 
 } // namespace
 
-nlohmann::json ContactToJson(const Contact& contact) {
+Object ContactToJson(const Contact& contact) {
   Contact mirrored = contact;
   SyncContactMirrors(mirrored);
-  nlohmann::json remote = {{"nickname", mirrored.remote.nickname},
-                           {"ids", IdsToJson(mirrored.remote.ids)},
-                           {"endpoints", EndpointsToJson(mirrored.remote.endpoints)},
-                           {"multiaddrs", MultiaddrsToJson(mirrored.remote.multiaddrs)}};
+  Object remote;
+  remote.set("nickname", mirrored.remote.nickname);
+  remote.set("ids", IdsToJson(mirrored.remote.ids));
+  remote.set("endpoints", EndpointsToJson(mirrored.remote.endpoints));
+  remote.set("multiaddrs", MultiaddrsToJson(mirrored.remote.multiaddrs));
   if (mirrored.remote.fetched_at > 0) {
-    remote["fetched_at"] = mirrored.remote.fetched_at;
+    remote.set("fetched_at", mirrored.remote.fetched_at);
   }
   if (mirrored.remote.icon && !mirrored.remote.icon->empty()) {
-    remote["icon"] = ProfileIconRefToJson(*mirrored.remote.icon);
+    remote.set("icon", ProfileIconRefToJson(*mirrored.remote.icon));
   }
-  return {{"id", mirrored.id},
-          {"local",
-           {{"display_name", mirrored.local.display_name}, {"trust", TrustLevelToString(mirrored.local.trust)}}},
-          {"remote", std::move(remote)},
-          {"overrides", nlohmann::json::object()}};
+
+  Object local;
+  local.set("display_name", mirrored.local.display_name);
+  local.set("trust", TrustLevelToString(mirrored.local.trust));
+
+  Object out;
+  out.set("id", mirrored.id);
+  out.set("local", local);
+  out.set("remote", remote);
+  out.set("overrides", Object{});
+  return out;
 }
 
-Contact ContactFromJson(const nlohmann::json& json) {
+Contact ContactFromJson(const Object& json) {
   Contact contact;
-  if (json.contains("id") && json["id"].is_string()) {
-    contact.id = json["id"].get<std::string>();
+  if (auto id = json.getString("id")) {
+    contact.id = *id;
   }
 
-  if (json.contains("local") && json["local"].is_object()) {
-    const auto& local = json["local"];
-    if (local.contains("display_name") && local["display_name"].is_string()) {
-      contact.local.display_name = local["display_name"].get<std::string>();
+  if (const Object* local = json.getObject("local")) {
+    if (auto display_name = local->getString("display_name")) {
+      contact.local.display_name = *display_name;
     }
-    if (local.contains("trust") && local["trust"].is_string()) {
-      contact.local.trust = TrustLevelFromString(local["trust"].get<std::string>());
+    if (auto trust = local->getString("trust")) {
+      contact.local.trust = TrustLevelFromString(*trust);
     }
-    if (json.contains("remote") && json["remote"].is_object()) {
-      const auto& remote = json["remote"];
-      if (remote.contains("nickname") && remote["nickname"].is_string()) {
-        contact.remote.nickname = remote["nickname"].get<std::string>();
+    if (const Object* remote = json.getObject("remote")) {
+      if (auto nickname = remote->getString("nickname")) {
+        contact.remote.nickname = *nickname;
       }
-      AppendContactIdsFromJson(remote, contact.remote.ids);
-      if (remote.contains("endpoints")) {
-        ParseEndpointsArray(remote["endpoints"], contact.remote.endpoints);
+      AppendContactIdsFromJson(*remote, contact.remote.ids);
+      if (const Array* endpoints = remote->getArray("endpoints")) {
+        ParseEndpointsArray(*endpoints, contact.remote.endpoints);
       }
-      if (remote.contains("multiaddrs")) {
-        ParseMultiaddrsArray(remote["multiaddrs"], contact.remote.multiaddrs);
+      if (const Array* multiaddrs = remote->getArray("multiaddrs")) {
+        ParseMultiaddrsArray(*multiaddrs, contact.remote.multiaddrs);
       }
-      if (remote.contains("fetched_at") && remote["fetched_at"].is_number_integer()) {
-        contact.remote.fetched_at = remote["fetched_at"].get<int64_t>();
+      if (auto fetched_at = remote->getIf<int64_t>("fetched_at")) {
+        contact.remote.fetched_at = *fetched_at;
       }
-      if (remote.contains("icon")) {
-        contact.remote.icon = ProfileIconRefFromJson(remote["icon"]);
+      if (const Object* icon = remote->getObject("icon")) {
+        contact.remote.icon = ProfileIconRefFromJson(*icon);
       }
     }
     SyncContactMirrors(contact);
@@ -270,121 +278,117 @@ Contact ContactFromJson(const nlohmann::json& json) {
   }
 
   // Legacy flat contact (pre local/remote split).
-  if (json.contains("display_name") && json["display_name"].is_string()) {
-    contact.local.display_name = json["display_name"].get<std::string>();
+  if (auto display_name = json.getString("display_name")) {
+    contact.local.display_name = *display_name;
   }
-  if (json.contains("server_nickname") && json["server_nickname"].is_string()) {
-    contact.remote.nickname = json["server_nickname"].get<std::string>();
-  } else if (json.contains("nickname") && json["nickname"].is_string()) {
-    contact.remote.nickname = json["nickname"].get<std::string>();
+  if (auto server_nickname = json.getString("server_nickname")) {
+    contact.remote.nickname = *server_nickname;
+  } else if (auto nickname = json.getString("nickname")) {
+    contact.remote.nickname = *nickname;
   }
-  if (json.contains("trust") && json["trust"].is_string()) {
-    contact.local.trust = TrustLevelFromString(json["trust"].get<std::string>());
+  if (auto trust = json.getString("trust")) {
+    contact.local.trust = TrustLevelFromString(*trust);
   }
   AppendContactIdsFromJson(json, contact.remote.ids);
-  if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
-    const std::string relay_user_id = json["relay_user_id"].get<std::string>();
-    if (!relay_user_id.empty() && !HasRelayUserId(contact.remote.ids, relay_user_id)) {
-      contact.remote.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
+  if (auto relay_user_id = json.getString("relay_user_id")) {
+    if (!relay_user_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_user_id)) {
+      contact.remote.ids.push_back({ContactIdKind::RelayUser, *relay_user_id, true});
     }
-  } else if (json.contains("relay_id") && json["relay_id"].is_string()) {
-    const std::string relay_id = json["relay_id"].get<std::string>();
-    if (!relay_id.empty() && !HasRelayUserId(contact.remote.ids, relay_id)) {
-      contact.remote.ids.push_back({ContactIdKind::RelayUser, relay_id, true});
+  } else if (auto relay_id = json.getString("relay_id")) {
+    if (!relay_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_id)) {
+      contact.remote.ids.push_back({ContactIdKind::RelayUser, *relay_id, true});
     }
   }
-  if (json.contains("peer_id") && json["peer_id"].is_string()) {
-    const std::string peer_id = json["peer_id"].get<std::string>();
-    if (!peer_id.empty() && !HasPeerId(contact.remote.ids, peer_id)) {
-      contact.remote.ids.push_back({ContactIdKind::PeerId, peer_id, contact.remote.ids.empty()});
+  if (auto peer_id = json.getString("peer_id")) {
+    if (!peer_id->empty() && !HasPeerId(contact.remote.ids, *peer_id)) {
+      contact.remote.ids.push_back({ContactIdKind::PeerId, *peer_id, contact.remote.ids.empty()});
     }
   }
-  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
-    ParseMultiaddrsArray(json["multiaddrs"], contact.remote.multiaddrs);
-  } else if (json.contains("multiaddr") && json["multiaddr"].is_string()) {
-    contact.remote.multiaddrs.push_back(json["multiaddr"].get<std::string>());
+  if (const Array* multiaddrs = json.getArray("multiaddrs")) {
+    ParseMultiaddrsArray(*multiaddrs, contact.remote.multiaddrs);
+  } else if (auto multiaddr = json.getString("multiaddr")) {
+    contact.remote.multiaddrs.push_back(*multiaddr);
   }
   contact.remote.fetched_at = 0;
   SyncContactMirrors(contact);
   return contact;
 }
 
-nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
-  nlohmann::json out = {{"hit_id", hit.hit_id},
-                        {"display_name", hit.display_name},
-                        {"nickname", hit.nickname},
-                        {"ids", IdsToJson(hit.ids)},
-                        {"endpoints", EndpointsToJson(hit.endpoints)},
-                        {"initiation_floor", hit.initiation_floor}};
+Object DirectoryHitToJson(const DirectoryHit& hit) {
+  Object out;
+  out.set("hit_id", hit.hit_id);
+  out.set("display_name", hit.display_name);
+  out.set("nickname", hit.nickname);
+  out.set("ids", IdsToJson(hit.ids));
+  out.set("endpoints", EndpointsToJson(hit.endpoints));
+  out.set("initiation_floor", hit.initiation_floor);
   if (hit.account_id && !hit.account_id->empty()) {
-    out["account_id"] = *hit.account_id;
+    out.set("account_id", *hit.account_id);
   }
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-    out["signing_public_key_b64"] = *hit.signing_public_key_b64;
+    out.set("signing_public_key_b64", *hit.signing_public_key_b64);
   }
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    out["kem_public_key_b64"] = *hit.kem_public_key_b64;
+    out.set("kem_public_key_b64", *hit.kem_public_key_b64);
   }
   if (hit.icon && !hit.icon->empty()) {
-    out["icon"] = ProfileIconRefToJson(*hit.icon);
+    out.set("icon", ProfileIconRefToJson(*hit.icon));
   }
   return out;
 }
 
-DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
+DirectoryHit DirectoryHitFromJson(const Object& json) {
   DirectoryHit hit;
-  if (json.contains("hit_id") && json["hit_id"].is_string()) {
-    hit.hit_id = json["hit_id"].get<std::string>();
+  if (auto hit_id = json.getString("hit_id")) {
+    hit.hit_id = *hit_id;
   }
-  if (json.contains("display_name") && json["display_name"].is_string()) {
-    hit.display_name = json["display_name"].get<std::string>();
+  if (auto display_name = json.getString("display_name")) {
+    hit.display_name = *display_name;
   }
-  if (json.contains("nickname") && json["nickname"].is_string()) {
-    hit.nickname = json["nickname"].get<std::string>();
+  if (auto nickname = json.getString("nickname")) {
+    hit.nickname = *nickname;
   }
   AppendContactIdsFromJson(json, hit.ids);
-  if (json.contains("account_id") && json["account_id"].is_string()) {
-    const std::string account_id = json["account_id"].get<std::string>();
-    if (!account_id.empty()) {
-      hit.account_id = account_id;
-      if (!HasAccountId(hit.ids, account_id)) {
+  if (auto account_id = json.getString("account_id")) {
+    if (!account_id->empty()) {
+      hit.account_id = *account_id;
+      if (!HasAccountId(hit.ids, *account_id)) {
         // Insert Account as primary; demote prior primary flags.
         for (ContactId& id : hit.ids) {
           id.primary = false;
         }
-        hit.ids.insert(hit.ids.begin(), {ContactIdKind::Account, account_id, true});
+        hit.ids.insert(hit.ids.begin(), {ContactIdKind::Account, *account_id, true});
       }
     }
   }
-  if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
-    const std::string relay_user_id = json["relay_user_id"].get<std::string>();
-    if (!relay_user_id.empty()) {
+  if (auto relay_user_id = json.getString("relay_user_id")) {
+    if (!relay_user_id->empty()) {
       if (hit.hit_id.empty()) {
-        hit.hit_id = relay_user_id;
+        hit.hit_id = *relay_user_id;
       }
-      if (!HasRelayUserId(hit.ids, relay_user_id)) {
-        hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, hit.ids.empty()});
+      if (!HasRelayUserId(hit.ids, *relay_user_id)) {
+        hit.ids.push_back({ContactIdKind::RelayUser, *relay_user_id, hit.ids.empty()});
       }
     }
   }
   if (hit.display_name.empty() && !hit.nickname.empty()) {
     hit.display_name = hit.nickname;
   }
-  if (json.contains("signing_public_key_b64") && json["signing_public_key_b64"].is_string()) {
-    hit.signing_public_key_b64 = json["signing_public_key_b64"].get<std::string>();
+  if (auto signing = json.getString("signing_public_key_b64")) {
+    hit.signing_public_key_b64 = *signing;
   }
-  if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
-    hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
+  if (auto kem = json.getString("kem_public_key_b64")) {
+    hit.kem_public_key_b64 = *kem;
   }
-  if (json.contains("endpoints")) {
-    ParseEndpointsArray(json["endpoints"], hit.endpoints);
+  if (const Array* endpoints = json.getArray("endpoints")) {
+    ParseEndpointsArray(*endpoints, hit.endpoints);
   }
   FlattenDirectoryEndpoints(hit.ids, hit.multiaddrs, hit.endpoints);
-  if (json.contains("initiation_floor") && json["initiation_floor"].is_number_integer()) {
-    hit.initiation_floor = json["initiation_floor"].get<int64_t>();
+  if (auto floor = json.getIf<int64_t>("initiation_floor")) {
+    hit.initiation_floor = *floor;
   }
-  if (json.contains("icon")) {
-    hit.icon = ProfileIconRefFromJson(json["icon"]);
+  if (const Object* icon = json.getObject("icon")) {
+    hit.icon = ProfileIconRefFromJson(*icon);
   }
   return hit;
 }

@@ -2,7 +2,6 @@
 
 #include "common/Error.h"
 
-#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 

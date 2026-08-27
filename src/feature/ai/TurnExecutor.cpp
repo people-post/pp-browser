@@ -1,39 +1,50 @@
 #include "feature/ai/TurnExecutor.h"
 
 #include "base/ai/ToolResultFormatter.h"
-#include "base/messaging/MessagingJson.h"
 #include "base/messaging/PeopleDiscoveryBlocks.h"
-
-#include <nlohmann/json.hpp>
+#include "base/people/ContactJson.h"
+#include "common/ValueJson.h"
 
 namespace pbr {
 
 namespace {
 
-nlohmann::json ToolCallsToJson(const std::vector<PlannedToolCall>& planned, const std::string& id_prefix,
-                               const size_t id_offset = 0) {
-  nlohmann::json out = nlohmann::json::array();
+Value ToolCallsToJson(const std::vector<PlannedToolCall>& planned, const std::string& id_prefix,
+                      const size_t id_offset = 0) {
+  std::vector<Value> out;
+  out.reserve(planned.size());
   for (size_t i = 0; i < planned.size(); ++i) {
-    out.push_back({{"id", id_prefix + std::to_string(id_offset + i + 1)},
-                   {"type", "function"},
-                   {"function", {{"name", planned[i].name}, {"arguments", planned[i].arguments.dump()}}}});
+    Object function;
+    function.set("name", planned[i].name);
+    function.set("arguments", DumpJson(planned[i].arguments));
+
+    Object entry;
+    entry.set("id", id_prefix + std::to_string(id_offset + i + 1));
+    entry.set("type", "function");
+    entry.set("function", function);
+    out.push_back(ObjectValue(std::move(entry)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
 void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits, std::vector<Contact>& contacts) {
-  const nlohmann::json doc = nlohmann::json::parse(raw, nullptr, false);
-  if (doc.is_discarded() || !doc.is_array()) {
+  auto parsed = ParseValue(raw);
+  if (!parsed) {
     return;
   }
-  for (const auto& item : doc) {
-    if (!item.is_object()) {
+  const Array* doc = asArray(*parsed);
+  if (!doc) {
+    return;
+  }
+  for (const Value& item_value : doc->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
       continue;
     }
-    if (item.contains("hit_id")) {
-      hits.push_back(DirectoryHitFromJson(item));
-    } else if (item.contains("id") && item.contains("display_name")) {
-      contacts.push_back(ContactFromJson(item));
+    if (item->contains("hit_id")) {
+      hits.push_back(DirectoryHitFromJson(*item));
+    } else if (item->contains("id") && item->contains("display_name")) {
+      contacts.push_back(ContactFromJson(*item));
     }
   }
 }

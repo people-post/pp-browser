@@ -155,7 +155,11 @@ void MediaRelayRuntime::RunClientAttachOnWorker(
       return;
     }
   }
-  if (!WriteJson(stream, {{"v", 1}, {"op", "accept"}, {"quote_id", quote_id}})) {
+  Object accept_req;
+  accept_req.set("v", int64_t{1});
+  accept_req.set("op", "accept");
+  accept_req.set("quote_id", quote_id);
+  if (!WriteJson(stream, accept_req)) {
     finish(Error("Failed to send accept"), MediaRelayClientEvent::AcceptFail);
     stream->close([](auto&&) {});
     return;
@@ -165,14 +169,14 @@ void MediaRelayRuntime::RunClientAttachOnWorker(
     stream->close([](auto&&) {});
     return;
   }
-  if (!accept_root || !accept_root->value("ok", false)) {
-    finish(Error(accept_root ? accept_root->value("error", "accept failed")
+  if (!accept_root || !accept_root->getIf<bool>("ok").value_or(false)) {
+    finish(Error(accept_root ? accept_root->getString("error").value_or("accept failed")
                              : accept_root.error().message),
            MediaRelayClientEvent::AcceptFail);
     stream->close([](auto&&) {});
     return;
   }
-  const std::string token = accept_root->value("session_token", "");
+  const std::string token = accept_root->getString("session_token").value_or("");
   {
     std::lock_guard<std::mutex> lock(mu);
     if (settled->load(std::memory_order_acquire) ||
@@ -181,11 +185,13 @@ void MediaRelayRuntime::RunClientAttachOnWorker(
       return;
     }
   }
-  if (!WriteJson(stream, {{"v", 1},
-                          {"op", "attach"},
-                          {"session_token", token},
-                          {"call_id", call_id},
-                          {"auth", auth_stub}})) {
+  Object attach_req;
+  attach_req.set("v", int64_t{1});
+  attach_req.set("op", "attach");
+  attach_req.set("session_token", token);
+  attach_req.set("call_id", call_id);
+  attach_req.set("auth", auth_stub);
+  if (!WriteJson(stream, attach_req)) {
     finish(Error("Failed to send attach"), MediaRelayClientEvent::AttachFail);
     stream->close([](auto&&) {});
     return;
@@ -195,8 +201,8 @@ void MediaRelayRuntime::RunClientAttachOnWorker(
     stream->close([](auto&&) {});
     return;
   }
-  if (!attach_root || !attach_root->value("ok", false)) {
-    finish(Error(attach_root ? attach_root->value("error", "attach failed")
+  if (!attach_root || !attach_root->getIf<bool>("ok").value_or(false)) {
+    finish(Error(attach_root ? attach_root->getString("error").value_or("attach failed")
                              : attach_root.error().message),
            MediaRelayClientEvent::AttachFail);
     stream->close([](auto&&) {});

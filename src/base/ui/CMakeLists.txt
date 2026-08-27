@@ -11,8 +11,7 @@ pp_browser_add_base_library(pp_base_ui
     pp_base_platform
     pp_base_i18n
     pp_base_render
-    RmlUi::Core
-    nlohmann_json::nlohmann_json)
+    RmlUi::Core)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

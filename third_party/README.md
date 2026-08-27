@@ -4,18 +4,17 @@ Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependenci
 
 RmlUi + FreeType / HarfBuzz / LunaSVG + **SDL3 / SDL3_image** live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui), not in this directory.
 
-libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies** plus a few app libs (json, curl, sqlite, opus).
+libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies** plus a few app libs (curl, sqlite, opus).
 
 ## Libraries
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|
-| `nlohmann_json/` | [nlohmann/json](https://github.com/nlohmann/json) | `v3.11.3` | MIT |
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
 
-libsodium, mlkem-native, and mldsa-native live in [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto). FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui).
+JSON (`Value` / `Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common). libsodium, mlkem-native, and mldsa-native live in [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto). FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui).
 
 ### libp2p dependencies (when enabled)
 

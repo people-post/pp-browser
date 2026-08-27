@@ -17,7 +17,7 @@
 
 ## pp Binary Wire Profile (D088)
 
-All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E blob tail) use this profile. **Do not** use bare `nlohmann::json::dump()` or ad hoc length widths on wire paths.
+All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E blob tail) use this profile. **Do not** use bare JSON `DumpJson` text or ad hoc length widths on wire paths.
 
 | Type | Encoding |
 |------|----------|

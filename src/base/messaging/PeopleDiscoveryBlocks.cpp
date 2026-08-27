@@ -1,8 +1,7 @@
 #include "base/messaging/PeopleDiscoveryBlocks.h"
 
-#include "base/messaging/MessagingJson.h"
-
-#include <nlohmann/json.hpp>
+#include "base/people/ContactJson.h"
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -25,96 +24,148 @@ std::string PrimaryRelayId(const std::vector<ContactId>& ids) {
   return {};
 }
 
-nlohmann::json DirectoryHitItemActions(const DirectoryHit& hit) {
-  const nlohmann::json hit_json = DirectoryHitToJson(hit);
-  return nlohmann::json::array({
-      {{"label", "Message"},
-       {"message", "Start chat with " + hit.display_name},
-       {"payload", nlohmann::json{{"type", "start_conversation"}, {"directory_hit", hit_json}}}},
-      {{"label", "Add contact"},
-       {"message", "Add " + hit.display_name},
-       {"payload", nlohmann::json{{"type", "add_contact"}, {"directory_hit", hit_json}}}},
-  });
+Value DirectoryHitItemActions(const DirectoryHit& hit) {
+  const Object hit_json = DirectoryHitToJson(hit);
+  std::vector<Value> actions;
+
+  Object message_payload;
+  message_payload.set("type", "start_conversation");
+  message_payload.set("directory_hit", ObjectValue(Object(hit_json)));
+  Object message_action;
+  message_action.set("label", "Message");
+  message_action.set("message", "Start chat with " + hit.display_name);
+  message_action.set("payload", ObjectValue(std::move(message_payload)));
+  actions.push_back(ObjectValue(std::move(message_action)));
+
+  Object add_payload;
+  add_payload.set("type", "add_contact");
+  add_payload.set("directory_hit", ObjectValue(Object(hit_json)));
+  Object add_action;
+  add_action.set("label", "Add contact");
+  add_action.set("message", "Add " + hit.display_name);
+  add_action.set("payload", ObjectValue(std::move(add_payload)));
+  actions.push_back(ObjectValue(std::move(add_action)));
+
+  return ArrayValue(std::move(actions));
 }
 
-nlohmann::json ContactItemActions(const Contact& contact) {
-  return nlohmann::json::array({
-      {{"label", "Message"},
-       {"message", "Start chat with " + contact.display_name},
-       {"payload", nlohmann::json{{"type", "start_conversation"}, {"contact_id", contact.id}}}},
-      {{"label", "View IDs"},
-       {"message", "Show IDs for " + contact.display_name},
-       {"payload", nlohmann::json{{"type", "show_contact"}, {"contact_id", contact.id}}}},
-  });
+Value ContactItemActions(const Contact& contact) {
+  std::vector<Value> actions;
+
+  Object message_payload;
+  message_payload.set("type", "start_conversation");
+  message_payload.set("contact_id", contact.id);
+  Object message_action;
+  message_action.set("label", "Message");
+  message_action.set("message", "Start chat with " + contact.display_name);
+  message_action.set("payload", ObjectValue(std::move(message_payload)));
+  actions.push_back(ObjectValue(std::move(message_action)));
+
+  Object view_payload;
+  view_payload.set("type", "show_contact");
+  view_payload.set("contact_id", contact.id);
+  Object view_action;
+  view_action.set("label", "View IDs");
+  view_action.set("message", "Show IDs for " + contact.display_name);
+  view_action.set("payload", ObjectValue(std::move(view_payload)));
+  actions.push_back(ObjectValue(std::move(view_action)));
+
+  return ArrayValue(std::move(actions));
 }
 
-nlohmann::json BuildLongListBlock(const std::string& title, nlohmann::json items) {
-  return {{"type", "long_list"}, {"title", title}, {"items", std::move(items)}};
+Object BuildLongListBlock(const std::string& title, Value items) {
+  Object block;
+  block.set("type", "long_list");
+  block.set("title", title);
+  block.set("items", std::move(items));
+  return block;
 }
 
-std::string BuildBlocksJson(nlohmann::json blocks) {
-  return nlohmann::json{{"blocks", std::move(blocks)}}.dump();
+std::string BuildBlocksJson(std::vector<Value> blocks) {
+  Object root;
+  root.set("blocks", ArrayValue(std::move(blocks)));
+  return DumpJson(root);
 }
 
 } // namespace
 
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
                                            const std::vector<Contact>& contacts) {
-  nlohmann::json blocks = nlohmann::json::array();
+  std::vector<Value> blocks;
 
   if (!directory_hits.empty()) {
-    blocks.push_back(nlohmann::json{{"type", "paragraph"}, {"text", "Here are people on the network:"}});
-    nlohmann::json items = nlohmann::json::array();
+    Object paragraph;
+    paragraph.set("type", "paragraph");
+    paragraph.set("text", "Here are people on the network:");
+    blocks.push_back(ObjectValue(std::move(paragraph)));
+
+    std::vector<Value> items;
     for (const DirectoryHit& hit : directory_hits) {
-      nlohmann::json item = {{"title", hit.display_name}, {"actions", DirectoryHitItemActions(hit)}};
+      Object item;
+      item.set("title", hit.display_name);
+      item.set("actions", DirectoryHitItemActions(hit));
       if (!hit.nickname.empty()) {
-        item["subtitle"] = "@" + hit.nickname;
+        item.set("subtitle", "@" + hit.nickname);
       }
       const std::string meta = PrimaryRelayId(hit.ids);
       if (!meta.empty()) {
-        item["meta"] = meta;
+        item.set("meta", meta);
       }
-      items.push_back(std::move(item));
+      items.push_back(ObjectValue(std::move(item)));
     }
-    blocks.push_back(BuildLongListBlock("Search results", std::move(items)));
+    blocks.push_back(ObjectValue(BuildLongListBlock("Search results", ArrayValue(std::move(items)))));
   } else if (!contacts.empty()) {
-    blocks.push_back(nlohmann::json{{"type", "paragraph"}, {"text", "Your local contacts:"}});
-    nlohmann::json items = nlohmann::json::array();
+    Object paragraph;
+    paragraph.set("type", "paragraph");
+    paragraph.set("text", "Your local contacts:");
+    blocks.push_back(ObjectValue(std::move(paragraph)));
+
+    std::vector<Value> items;
     for (const Contact& contact : contacts) {
-      nlohmann::json item = {{"title", contact.display_name}, {"actions", ContactItemActions(contact)}};
+      Object item;
+      item.set("title", contact.display_name);
+      item.set("actions", ContactItemActions(contact));
       if (!contact.server_nickname.empty()) {
-        item["subtitle"] = "@" + contact.server_nickname;
+        item.set("subtitle", "@" + contact.server_nickname);
       }
       const std::string meta = PrimaryRelayId(contact.ids);
       if (!meta.empty()) {
-        item["meta"] = meta;
+        item.set("meta", meta);
       }
-      items.push_back(std::move(item));
+      items.push_back(ObjectValue(std::move(item)));
     }
-    blocks.push_back(BuildLongListBlock("Contacts", std::move(items)));
+    blocks.push_back(ObjectValue(BuildLongListBlock("Contacts", ArrayValue(std::move(items)))));
   } else {
-    blocks.push_back(nlohmann::json{{"type", "paragraph"}, {"text", "No people found. Try a different search."}});
+    Object paragraph;
+    paragraph.set("type", "paragraph");
+    paragraph.set("text", "No people found. Try a different search.");
+    blocks.push_back(ObjectValue(std::move(paragraph)));
   }
 
   return BuildBlocksJson(std::move(blocks));
 }
 
 std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
-  const nlohmann::json doc = nlohmann::json::parse(raw_json, nullptr, false);
-  if (doc.is_discarded() || !doc.is_array() || doc.empty()) {
+  auto parsed = ParseValue(raw_json);
+  if (!parsed) {
+    return {};
+  }
+  const Array* doc = asArray(*parsed);
+  if (!doc || doc->elements.empty()) {
     return {};
   }
 
   std::vector<DirectoryHit> hits;
   std::vector<Contact> contacts;
-  for (const auto& item : doc) {
-    if (!item.is_object()) {
+  for (const Value& item_value : doc->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
       continue;
     }
-    if (item.contains("hit_id")) {
-      hits.push_back(DirectoryHitFromJson(item));
-    } else if (item.contains("id") && item.contains("display_name")) {
-      contacts.push_back(ContactFromJson(item));
+    if (item->contains("hit_id")) {
+      hits.push_back(DirectoryHitFromJson(*item));
+    } else if (item->contains("id") && item->contains("display_name")) {
+      contacts.push_back(ContactFromJson(*item));
     }
   }
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
+#include "common/Value.h"
 
-#include <nlohmann/json_fwd.hpp>
 #include <string>
 
 namespace pbr {
@@ -13,10 +13,10 @@ ContactIdKind ContactIdKindFromString(const std::string& value);
 std::string TrustLevelToString(TrustLevel level);
 TrustLevel TrustLevelFromString(const std::string& value);
 
-nlohmann::json ContactToJson(const Contact& contact);
-Contact ContactFromJson(const nlohmann::json& json);
+Object ContactToJson(const Contact& contact);
+Contact ContactFromJson(const Object& json);
 
-nlohmann::json DirectoryHitToJson(const DirectoryHit& hit);
-DirectoryHit DirectoryHitFromJson(const nlohmann::json& json);
+Object DirectoryHitToJson(const DirectoryHit& hit);
+DirectoryHit DirectoryHitFromJson(const Object& json);
 
 } // namespace pbr

@@ -14,33 +14,35 @@ Rml::String ToRmlString(const std::string& value) {
 
 } // namespace
 
-FormWidgetState BuildFormWidgetState(const nlohmann::json& config) {
+FormWidgetState BuildFormWidgetState(const Object& config) {
   FormWidgetState form;
-  form.form_id = ToRmlString(config.value("id", "form"));
-  form.title = ToRmlString(config.value("title", ""));
-  form.submit_label = ToRmlString(config.value("submit_label", "Submit"));
-  form.submit_template = ToRmlString(config.value("submit_template", "Submitted form"));
+  form.form_id = ToRmlString(config.getString("id").value_or("form"));
+  form.title = ToRmlString(config.getString("title").value_or(""));
+  form.submit_label = ToRmlString(config.getString("submit_label").value_or("Submit"));
+  form.submit_template = ToRmlString(config.getString("submit_template").value_or("Submitted form"));
   form.expired = false;
 
-  if (config.contains("fields") && config["fields"].is_array()) {
-    for (const auto& field : config["fields"]) {
-      if (!field.is_object()) {
+  if (const Array* fields = config.getArray("fields")) {
+    for (const Value& field_value : fields->elements) {
+      const Object* field = asObject(field_value);
+      if (!field) {
         continue;
       }
       FormFieldRow row;
-      row.id = ToRmlString(field.value("id", ""));
-      row.label = ToRmlString(field.value("label", row.id.c_str()));
-      row.field_type = ToRmlString(field.value("field_type", "text"));
-      row.value = ToRmlString(field.value("value", ""));
+      row.id = ToRmlString(field->getString("id").value_or(""));
+      row.label = ToRmlString(field->getString("label").value_or(row.id.c_str()));
+      row.field_type = ToRmlString(field->getString("field_type").value_or("text"));
+      row.value = ToRmlString(field->getString("value").value_or(""));
 
-      if (field.contains("options") && field["options"].is_array()) {
-        for (const auto& option : field["options"]) {
-          if (!option.is_object()) {
+      if (const Array* options = field->getArray("options")) {
+        for (const Value& option_value : options->elements) {
+          const Object* option = asObject(option_value);
+          if (!option) {
             continue;
           }
           FormOptionRow opt;
-          opt.label = ToRmlString(option.value("label", ""));
-          opt.value = ToRmlString(option.value("value", opt.label.c_str()));
+          opt.label = ToRmlString(option->getString("label").value_or(""));
+          opt.value = ToRmlString(option->getString("value").value_or(opt.label.c_str()));
           row.options.push_back(std::move(opt));
         }
       }
@@ -51,21 +53,21 @@ FormWidgetState BuildFormWidgetState(const nlohmann::json& config) {
   return form;
 }
 
-CalendarWidgetState BuildCalendarWidgetState(const nlohmann::json& config) {
+CalendarWidgetState BuildCalendarWidgetState(const Object& config) {
   CalendarConfig calendar_config = TodayCalendarConfig();
-  if (config.contains("month") && config["month"].is_number_integer()) {
-    calendar_config.month = config["month"].get<int>();
+  if (auto month = config.getIf<int64_t>("month")) {
+    calendar_config.month = static_cast<int>(*month);
   }
-  if (config.contains("year") && config["year"].is_number_integer()) {
-    calendar_config.year = config["year"].get<int>();
+  if (auto year = config.getIf<int64_t>("year")) {
+    calendar_config.year = static_cast<int>(*year);
   }
-  calendar_config.min_date = config.value("min_date", "");
-  calendar_config.max_date = config.value("max_date", "");
+  calendar_config.min_date = config.getString("min_date").value_or("");
+  calendar_config.max_date = config.getString("max_date").value_or("");
 
-  if (config.contains("available_days") && config["available_days"].is_array()) {
-    for (const auto& day : config["available_days"]) {
-      if (day.is_string()) {
-        calendar_config.available_days.push_back(day.get<std::string>());
+  if (const Array* days = config.getArray("available_days")) {
+    for (const Value& day : days->elements) {
+      if (auto day_text = asString(day)) {
+        calendar_config.available_days.push_back(*day_text);
       }
     }
   }

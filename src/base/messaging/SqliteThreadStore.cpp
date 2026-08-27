@@ -21,7 +21,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <optional>
-#include <nlohmann/json.hpp>
+
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -34,9 +35,9 @@ std::optional<std::string> ControlTypeForDb(const ThreadMessage& message) {
   if (message.content_type != ChatContentType::System) {
     return std::nullopt;
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (payload.is_object() && payload.contains("control_type") && payload["control_type"].is_string()) {
-    return payload["control_type"].get<std::string>();
+  auto payload = TryParseObject(message.payload_json);
+  if (auto control_type = payload ? payload->getString("control_type") : std::nullopt) {
+    return *control_type;
   }
   return std::string("system");
 }
@@ -751,11 +752,13 @@ Roe<Thread> SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
     thread.channel = ThreadChannelFromString(SqlText(stmt, 2));
   }
   thread.title = SqlText(stmt, 3);
-  const nlohmann::json participants = nlohmann::json::parse(SqlText(stmt, 4), nullptr, false);
-  if (participants.is_array()) {
-    for (const auto& item : participants) {
-      if (item.is_string()) {
-        thread.participant_contact_ids.push_back(item.get<std::string>());
+  auto participants = ParseValue(SqlText(stmt, 4));
+  if (participants) {
+    if (const Array* arr = asArray(*participants)) {
+      for (const Value& item : arr->elements) {
+        if (auto s = asString(item)) {
+          thread.participant_contact_ids.push_back(*s);
+        }
       }
     }
   }
@@ -801,11 +804,12 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   (void)OpenThreadDb(thread.id);
 
   std::lock_guard lock(profile_mutex_);
-  nlohmann::json participants = nlohmann::json::array();
+  std::vector<Value> participant_values;
+  participant_values.reserve(thread.participant_contact_ids.size());
   for (const std::string& id : thread.participant_contact_ids) {
-    participants.push_back(id);
+    participant_values.push_back(Value(id));
   }
-  const std::string participants_json = participants.dump();
+  const std::string participants_json = DumpJson(ArrayValue(std::move(participant_values)));
   sqlite3_stmt* stmt = nullptr;
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =

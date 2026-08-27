@@ -2,6 +2,7 @@
 
 #include "base/platform/AssetIO.h"
 #include "base/platform/IAssetLocator.h"
+#include "common/ValueJson.h"
 
 #if !defined(PP_BROWSER_HEADLESS)
 #include <SDL3/SDL_locale.h>
@@ -11,14 +12,13 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
-#include <nlohmann/json.hpp>
 
 namespace pbr {
 
 namespace {
 
-bool LooksLikeLocaleJson(const nlohmann::json& root) {
-  return root.is_object() && root.contains("locale") && root.contains("strings") && root["strings"].is_object();
+bool LooksLikeLocaleObject(const Object& root) {
+  return root.contains("locale") && root.getObject("strings") != nullptr;
 }
 
 } // namespace
@@ -45,18 +45,22 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
     if (!AssetIO::ReadText(absolute_or_relative, text)) {
       return false;
     }
-    const nlohmann::json root = nlohmann::json::parse(text, nullptr, false);
-    if (root.is_discarded() || !LooksLikeLocaleJson(root)) {
+    auto root = TryParseObject(text);
+    if (!root || !LooksLikeLocaleObject(*root)) {
       return false;
     }
     std::unordered_map<std::string, std::string> strings;
-    for (const auto& [key, value] : root["strings"].items()) {
-      if (value.is_string()) {
-        strings[key] = value.get<std::string>();
+    const Object* strings_object = root->getObject("strings");
+    for (const auto& [key, value] : strings_object->fields()) {
+      if (auto text_value = asString(value)) {
+        strings[key] = *text_value;
       }
     }
-    const std::string locale = root["locale"].get<std::string>();
-    catalogs_[locale] = std::move(strings);
+    auto locale = root->getString("locale");
+    if (!locale) {
+      return false;
+    }
+    catalogs_[*locale] = std::move(strings);
     return true;
   };
 

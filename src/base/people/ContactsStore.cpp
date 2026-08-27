@@ -1,15 +1,15 @@
 #include "base/people/ContactsStore.h"
 
 #include "base/data/AtomicFileWrite.h"
-#include "base/data/SchemaVersion.h"
 #include "base/people/ContactJson.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <iterator>
 
 namespace pbr {
 
@@ -50,25 +50,37 @@ Roe<void> ContactsStore::EnsureLoaded() const {
     // Close the read handle before Save() — Windows cannot rename over an open file.
     std::ifstream in(StorePath());
     if (in) {
-      nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-      if (root.is_discarded() || !root.is_object()) {
+      const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      auto root = TryParseObject(content);
+      if (!root) {
         return Error("Invalid contacts.json");
       }
 
       int version = 0;
-      if (root.contains("schema_version")) {
-        if (!root["schema_version"].is_number_integer()) {
+      if (root->contains("schema_version")) {
+        auto version_opt = root->getIf<int64_t>("schema_version");
+        if (!version_opt) {
+          if (auto as_u = root->getNonNegInt("schema_version")) {
+            version_opt = static_cast<int64_t>(*as_u);
+          }
+        }
+        if (!version_opt) {
           return Error("Invalid schema_version in contacts.json");
         }
-        version = root["schema_version"].get<int>();
-        if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "contacts.json"); !checked) {
-          return checked.error();
+        version = static_cast<int>(*version_opt);
+        if (version > kSchemaVersion) {
+          return Error("Unsupported schema version " + std::to_string(version) +
+                       " in contacts.json; delete the data directory and restart");
         }
       }
 
-      if (root.contains("contacts") && root["contacts"].is_array()) {
-        for (const auto& item : root["contacts"]) {
-          contacts_.push_back(ContactFromJson(item));
+      if (const Array* contacts = root->getArray("contacts")) {
+        for (const Value& item_value : contacts->elements) {
+          const Object* item = asObject(item_value);
+          if (!item) {
+            continue;
+          }
+          contacts_.push_back(ContactFromJson(*item));
         }
       }
 
@@ -90,13 +102,16 @@ Roe<void> ContactsStore::EnsureLoaded() const {
 }
 
 Roe<void> ContactsStore::Save() const {
-  nlohmann::json contacts = nlohmann::json::array();
+  std::vector<Value> contacts;
+  contacts.reserve(contacts_.size());
   for (const Contact& contact : contacts_) {
-    contacts.push_back(ContactToJson(contact));
+    contacts.push_back(ObjectValue(ContactToJson(contact)));
   }
-  const nlohmann::json root = {{"schema_version", kSchemaVersion}, {"contacts", std::move(contacts)}};
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(kSchemaVersion));
+  root.set("contacts", ArrayValue(std::move(contacts)));
 
-  return AtomicFileWrite::Write(StorePath(), root.dump(2));
+  return AtomicFileWrite::Write(StorePath(), DumpJson(root, 2));
 }
 
 void ContactsStore::Flush() {

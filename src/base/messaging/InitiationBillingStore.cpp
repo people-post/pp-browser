@@ -1,10 +1,11 @@
 #include "base/messaging/InitiationBillingStore.h"
 
 #include "base/data/AtomicFileWrite.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace pbr {
 
@@ -27,38 +28,45 @@ Roe<void> InitiationBillingStore::Load() {
   if (!in) {
     return Error("Failed to open initiation_billing.json");
   }
-  nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  std::ostringstream buffer;
+  buffer << in.rdbuf();
+  auto root = TryParseObject(buffer.str());
+  if (!root) {
     return Error("Invalid initiation_billing.json");
   }
-  const nlohmann::json* peers = &root;
-  if (root.contains("peers") && root["peers"].is_object()) {
-    peers = &root["peers"];
+  const Object* peers = &*root;
+  if (const Object* nested = root->getObject("peers")) {
+    peers = nested;
   }
-  for (auto it = peers->begin(); it != peers->end(); ++it) {
-    if (!it.value().is_object()) {
+  for (const auto& [key, value] : peers->fields()) {
+    const Object* row_obj = asObject(value);
+    if (!row_obj) {
       continue;
     }
     InitiationPeerBilling row;
-    row.state = InitiationBillingStateFromString(it.value().value("state", "closed"));
-    row.floor_minor = it.value().value("floor_minor", static_cast<int64_t>(0));
-    row.offer_minor = it.value().value("offer_minor", static_cast<int64_t>(0));
-    row.currency = it.value().value("currency", std::string(kPricingCurrencyId));
-    rows_[it.key()] = std::move(row);
+    row.state = InitiationBillingStateFromString(row_obj->getString("state").value_or("closed"));
+    row.floor_minor = row_obj->getIf<int64_t>("floor_minor").value_or(0);
+    row.offer_minor = row_obj->getIf<int64_t>("offer_minor").value_or(0);
+    row.currency = row_obj->getString("currency").value_or(std::string(kPricingCurrencyId));
+    rows_[key] = std::move(row);
   }
   return {};
 }
 
 Roe<void> InitiationBillingStore::SaveUnlocked() const {
-  nlohmann::json peers = nlohmann::json::object();
+  Object peers;
   for (const auto& [peer, row] : rows_) {
-    peers[peer] = {{"state", InitiationBillingStateToString(row.state)},
-                   {"floor_minor", row.floor_minor},
-                   {"offer_minor", row.offer_minor},
-                   {"currency", row.currency}};
+    Object entry;
+    entry.set("state", InitiationBillingStateToString(row.state));
+    entry.set("floor_minor", row.floor_minor);
+    entry.set("offer_minor", row.offer_minor);
+    entry.set("currency", row.currency);
+    peers.set(peer, entry);
   }
-  const nlohmann::json root = {{"schema_version", 1}, {"peers", std::move(peers)}};
-  return AtomicFileWrite::Write(Path(), root.dump(2));
+  Object root;
+  root.setJsonUInt("schema_version", 1);
+  root.set("peers", peers);
+  return AtomicFileWrite::Write(Path(), DumpJson(root, 2));
 }
 
 Roe<void> InitiationBillingStore::Save() const {

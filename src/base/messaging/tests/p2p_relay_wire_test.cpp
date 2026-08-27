@@ -4,7 +4,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace {
 using namespace pbr;
@@ -21,11 +21,13 @@ ByteVector TestDek() {
 TEST(P2pRelayWireTest, RejectsLegacyThreadIdEnvelope) {
   using namespace pbr;
 
-  const nlohmann::json legacy = {{"thread_id", "t1"},
-                                 {"message_id", "m1"},
-                                 {"sender_relay_id", "relay:a"},
-                                 {"body", {{"text", "hi"}}},
-                                 {"timestamp", 1}};
+  const Object legacy = TryParseObject(R"({
+    "thread_id": "t1",
+    "message_id": "m1",
+    "sender_relay_id": "relay:a",
+    "body": {"text": "hi"},
+    "timestamp": 1
+  })").value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 }
 

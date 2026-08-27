@@ -4,6 +4,7 @@
 #include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/StreamJsonFrame.h"
 #include "base/people/RelayScope.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
@@ -100,9 +101,9 @@ void CircuitRelayRuntime::StartBridgeSession(const std::shared_ptr<Stream>& clie
 }
 
 CircuitRelayBridgeResult CircuitRelayRuntime::RelayBridge(
-    const nlohmann::json& root, const std::shared_ptr<Stream>& client_stream) {
+    const Object& root, const std::shared_ptr<Stream>& client_stream) {
   CircuitRelayBridgeResult out;
-  if (root.value("op", "") != "bridge") {
+  if (root.getString("op").value_or("") != "bridge") {
     out.error = "unsupported op";
     return out;
   }
@@ -126,9 +127,9 @@ CircuitRelayBridgeResult CircuitRelayRuntime::RelayBridge(
   }
 
   CircuitBridgeTarget target;
-  target.target_peer_id = root.value("target_peer_id", "");
-  target.target_multiaddr = root.value("target_multiaddr", "");
-  target.target_protocol = root.value("target_protocol", "");
+  target.target_peer_id = root.getString("target_peer_id").value_or("");
+  target.target_multiaddr = root.getString("target_multiaddr").value_or("");
+  target.target_protocol = root.getString("target_protocol").value_or("");
 
   auto normalized = NormalizeCircuitBridgeTarget(*sessions, *host, target);
   if (!normalized) {
@@ -146,7 +147,7 @@ CircuitRelayBridgeResult CircuitRelayRuntime::RelayBridge(
   }
   sessions->ClearDialBackoff(target_key);
 
-  const int timeout_ms = root.value("timeout_ms", 8000);
+  const int timeout_ms = static_cast<int>(root.getNonNegInt("timeout_ms").value_or(8000));
   const auto wait_for = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
 
   auto dial_promise = std::make_shared<std::promise<Roe<void>>>();
@@ -169,7 +170,7 @@ CircuitRelayBridgeResult CircuitRelayRuntime::RelayBridge(
   }
 
   libp2p::StreamProtocols protocols;
-  const std::string target_protocol = root.value("target_protocol", "");
+  const std::string target_protocol = root.getString("target_protocol").value_or("");
   if (!target_protocol.empty()) {
     protocols.push_back(ProtocolName{target_protocol});
   } else {
@@ -196,8 +197,11 @@ CircuitRelayBridgeResult CircuitRelayRuntime::RelayBridge(
     return out;
   }
 
-  nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", resolved_multiaddr}};
-  if (!BlockingWriteStreamJson(client_stream, response.dump())) {
+  Object response;
+  response.set("v", int64_t{1});
+  response.set("ok", true);
+  response.set("resolved_multiaddr", resolved_multiaddr);
+  if (!BlockingWriteStreamJson(client_stream, DumpJson(response))) {
     out.error = "failed to ack bridge";
     return out;
   }
@@ -233,19 +237,22 @@ void CircuitRelayRuntime::HandleStream(libp2p::StreamAndProtocol stream_and_prot
     if (!json_utf8) {
       result.error = json_utf8.error().message;
     } else {
-      nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-      if (root.is_discarded() || !root.is_object()) {
+      auto root = TryParseObject(*json_utf8);
+      if (!root) {
         result.error = "invalid circuit-relay json";
       } else {
-        result = self->RelayBridge(root, stream);
+        result = self->RelayBridge(*root, stream);
         if (result.ok) {
           return;
         }
       }
     }
 
-    nlohmann::json response = {{"v", 1}, {"ok", false}, {"error", result.error}};
-    (void)BlockingWriteStreamJson(stream, response.dump());
+    Object response;
+    response.set("v", int64_t{1});
+    response.set("ok", false);
+    response.set("error", result.error);
+    (void)BlockingWriteStreamJson(stream, DumpJson(response));
     stream->close([](auto&&) {});
   });
 }
@@ -287,16 +294,16 @@ void CircuitRelayRuntime::RunClientBridgeOnWorker(const std::string& json,
     stream->close([](auto&&) {});
     return;
   }
-  nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  auto root = TryParseObject(*json_utf8);
+  if (!root) {
     wait.Finish(Error("invalid circuit-relay response"));
     stream->close([](auto&&) {});
     return;
   }
   CircuitRelayBridgeResult parsed;
-  parsed.ok = root.value("ok", false);
-  parsed.error = root.value("error", "");
-  parsed.resolved_multiaddr = root.value("resolved_multiaddr", "");
+  parsed.ok = root->getIf<bool>("ok").value_or(false);
+  parsed.error = root->getString("error").value_or("");
+  parsed.resolved_multiaddr = root->getString("resolved_multiaddr").value_or("");
   if (!parsed.ok) {
     stream->close([](auto&&) {});
     wait.Finish(parsed);

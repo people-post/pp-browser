@@ -20,7 +20,7 @@ TEST(PayloadTurnPlanBuilderTest, BuildsFeedContinuationToolPlan) {
   EXPECT_EQ(plan->response_goal, pbr::ResponseGoal::DisplayFeed);
   ASSERT_EQ(plan->tools.size(), 1u);
   EXPECT_EQ(plan->tools[0].name, "blog_articles");
-  EXPECT_EQ(plan->tools[0].arguments["before_id"], "art-001");
+  EXPECT_EQ(plan->tools[0].arguments.getString("before_id"), std::optional<std::string>("art-001"));
 }
 
 TEST(PayloadTurnPlanBuilderTest, HandlesFormSubmissionAndEmptyPayload) {

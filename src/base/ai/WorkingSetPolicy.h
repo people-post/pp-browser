@@ -2,8 +2,7 @@
 
 #include "base/ai/TurnPlan.h"
 #include "base/ui/WorkingSetTypes.h"
-
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 #include <optional>
 #include <string>
@@ -28,7 +27,7 @@ struct BlockEligibility {
 
 WorkingSetRouting RouteTurn(ResponseGoal goal, RenderMode render_mode);
 
-BlockEligibility EvaluateBlock(const nlohmann::json& block, ResponseGoal goal);
+BlockEligibility EvaluateBlock(const Object& block, ResponseGoal goal);
 
 std::string BuildWorkingSetTeaser(int block_index, const std::string& label);
 

@@ -2,50 +2,44 @@
 
 #include "base/data/Config.h"
 #include "base/data/UserPreferences.h"
-
-#include <nlohmann/json_fwd.hpp>
-#include <string>
+#include "common/Value.h"
 
 namespace pbr {
 
-void to_json(nlohmann::json& j, const LlmConfig& config);
-void from_json(const nlohmann::json& j, LlmConfig& config);
+Object LlmConfigToObject(const LlmConfig& config);
+void LlmConfigFromObject(const Object& object, LlmConfig& config);
 
-void to_json(nlohmann::json& j, const ContextBudget& budget);
-void from_json(const nlohmann::json& j, ContextBudget& budget);
+Object ContextBudgetToObject(const ContextBudget& budget);
+void ContextBudgetFromObject(const Object& object, ContextBudget& budget);
 
-void to_json(nlohmann::json& j, const SearchConfig& config);
-void from_json(const nlohmann::json& j, SearchConfig& config);
+Object SearchConfigToObject(const SearchConfig& config);
+void SearchConfigFromObject(const Object& object, SearchConfig& config);
 
-void to_json(nlohmann::json& j, const ServiceEndpointConfig& endpoint);
-void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint);
+Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint);
+void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endpoint);
 
-void to_json(nlohmann::json& j, const Libp2pCapabilities& caps);
-void from_json(const nlohmann::json& j, Libp2pCapabilities& caps);
+Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps);
+void Libp2pCapabilitiesFromObject(const Object& object, Libp2pCapabilities& caps);
 
-void to_json(nlohmann::json& j, const Libp2pConfig& config);
-void from_json(const nlohmann::json& j, Libp2pConfig& config);
+Object Libp2pConfigToObject(const Libp2pConfig& config);
+void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config);
 
-void to_json(nlohmann::json& j, const McpConfig& config);
-void from_json(const nlohmann::json& j, McpConfig& config);
+Object McpConfigToObject(const McpConfig& config);
+void McpConfigFromObject(const Object& object, McpConfig& config);
 
-void to_json(nlohmann::json& j, const AppConfig& config);
-void from_json(const nlohmann::json& j, AppConfig& config);
+Object AppConfigToObject(const AppConfig& config);
+void AppConfigFromObject(const Object& object, AppConfig& config);
 
-void to_json(nlohmann::json& j, const MachinePreferences& prefs);
-void from_json(const nlohmann::json& j, MachinePreferences& prefs);
+Object MachinePrefsToObject(const MachinePreferences& prefs);
+void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs);
 
-void to_json(nlohmann::json& j, const ProfilePreferences& prefs);
-void from_json(const nlohmann::json& j, ProfilePreferences& prefs);
+Object ProfilePrefsToObject(const ProfilePreferences& prefs);
+void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs);
 
-void DeepMergeJson(nlohmann::json& base, const nlohmann::json& overlay);
-
-AppConfig MergeConfig(const AppConfig& defaults, const nlohmann::json& overlay);
+AppConfig MergeConfig(const AppConfig& defaults, const Object& overlay);
 
 void ResolveConfigCredentials(AppConfig& config);
 
-nlohmann::json ConfigToJson(const AppConfig& config, int config_version);
-nlohmann::json MachinePrefsToJson(const MachinePreferences& prefs);
-nlohmann::json ProfilePrefsToJson(const ProfilePreferences& prefs);
+Object ConfigToObject(const AppConfig& config, int config_version);
 
 } // namespace pbr

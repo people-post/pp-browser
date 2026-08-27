@@ -5,8 +5,8 @@
 #include "base/ai/LlmClient.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -26,7 +26,7 @@ public:
   std::vector<ToolDefinition> Definitions() const;
   std::string SummaryForPrompt() const;
 
-  Roe<std::string> Execute(const std::string& name, const nlohmann::json& arguments) const;
+  Roe<std::string> Execute(const std::string& name, const Object& arguments) const;
 
 private:
   std::vector<ToolDescriptor> tools_;

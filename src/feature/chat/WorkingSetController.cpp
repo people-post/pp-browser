@@ -3,7 +3,7 @@
 #include "base/ui/ChatFormHelper.h"
 #include "feature/ui/DataModelHost.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -150,11 +150,11 @@ bool WorkingSetController::ShouldCloseForAction(const std::optional<std::string>
   if (!payload || payload->empty()) {
     return false;
   }
-  const nlohmann::json doc = nlohmann::json::parse(*payload, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object()) {
+  auto doc = TryParseObject(*payload);
+  if (!doc) {
     return false;
   }
-  const std::string type = doc.value("type", "");
+  const std::string type = doc->getString("type").value_or("");
   return type == "start_conversation" || type == "add_contact";
 }
 

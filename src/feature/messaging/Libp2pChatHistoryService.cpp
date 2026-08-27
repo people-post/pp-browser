@@ -14,9 +14,9 @@
 #include <chrono>
 #include <future>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -86,12 +86,12 @@ struct Libp2pChatHistoryService::Impl {
               return;
             }
             const std::string json_utf8(body.begin(), body.end());
-            nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-            if (root.is_discarded()) {
+            auto root = TryParseObject(json_utf8);
+            if (!root) {
               fail();
               return;
             }
-            auto request = ChatHistoryRequestFromJson(root);
+            auto request = ChatHistoryRequestFromJson(*root);
             if (!request) {
               fail();
               return;
@@ -107,7 +107,7 @@ struct Libp2pChatHistoryService::Impl {
               fail();
               return;
             }
-            const std::string response_json = ChatHistoryResponseToJson(*response).dump();
+            const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
             auto payload = JsonToBody(response_json);
             host->Post([duplex, stream, payload = std::move(payload)]() mutable {
               if (!duplex->EnqueueOutbound(std::move(payload), [duplex, stream](Roe<void>) {
@@ -192,7 +192,7 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
     }
   };
 
-  const std::string request_json = ChatHistoryRequestToJson(request).dump();
+  const std::string request_json = DumpJson(ChatHistoryRequestToJson(request));
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatHistoryProtocolId}},
                        [host = &host_, request_json, deadline, finish, settled, active_mu,
                         active_stream](libp2p::StreamAndProtocolOrError stream_res) mutable {
@@ -254,11 +254,11 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
   if (!response_json) {
     return response_json.error();
   }
-  nlohmann::json root = nlohmann::json::parse(*response_json, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(*response_json);
+  if (!root) {
     return Error("Invalid chat-history response JSON");
   }
-  return ChatHistoryResponseFromJson(root);
+  return ChatHistoryResponseFromJson(*root);
 }
 
 } // namespace pbr

@@ -2,8 +2,29 @@
 
 #include "base/net/HttpClient.h"
 #include "base/platform/os/OsProcess.h"
+#include "common/ValueJson.h"
 
 namespace pbr {
+
+namespace {
+
+Object EmptyObject() {
+  return {};
+}
+
+Object MakeStringPropsQuerySchema() {
+  Object query;
+  query.set("type", "string");
+  Object properties;
+  properties.set("query", query);
+  Object schema;
+  schema.set("type", "object");
+  schema.set("properties", properties);
+  schema.set("required", ArrayValue({Value(std::string("query"))}));
+  return schema;
+}
+
+} // namespace
 
 McpClient::McpClient() {
   redirectLogger("McpClient");
@@ -55,40 +76,46 @@ bool McpClient::StartHttp(const std::string& url) {
   return true;
 }
 
-Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann::json& params) {
+Roe<Object> McpClient::Request(const std::string& method, const Object& params) {
   if (mock_) {
     if (method == "initialize") {
-      return nlohmann::json{{"protocolVersion", "2024-11-05"}, {"capabilities", nlohmann::json::object()}};
+      Object out;
+      out.set("protocolVersion", "2024-11-05");
+      out.set("capabilities", EmptyObject());
+      return out;
     }
     if (method == "tools/list") {
-      return nlohmann::json{{"tools", nlohmann::json::array({
-                                          {{"name", "user_search"},
-                                           {"description", "Search users by query"},
-                                           {"inputSchema",
-                                            {{"type", "object"},
-                                             {"properties", {{"query", {{"type", "string"}}}}},
-                                             {"required", nlohmann::json::array({"query"})}}}},
-                                      })}};
+      Object tool;
+      tool.set("name", "user_search");
+      tool.set("description", "Search users by query");
+      tool.set("inputSchema", MakeStringPropsQuerySchema());
+      Object out;
+      out.set("tools", ArrayValue({ObjectValue(std::move(tool))}));
+      return out;
     }
     if (method == "tools/call") {
-      const auto name = params.value("name", "");
+      const auto name = params.getString("name").value_or("");
       if (name == "user_search") {
-        return nlohmann::json{{"content",
-                               nlohmann::json::array({{{"type", "text"},
-                                                       {"text", R"([{"name":"Ada","email":"ada@example.com"}])"}}})}};
+        Object text_block;
+        text_block.set("type", "text");
+        text_block.set("text", R"([{"name":"Ada","email":"ada@example.com"}])");
+        Object out;
+        out.set("content", ArrayValue({ObjectValue(std::move(text_block))}));
+        return out;
       }
     }
-    return nlohmann::json::object();
+    return EmptyObject();
   }
 
   if (http_) {
-    nlohmann::json req = {{"jsonrpc", "2.0"},
-                          {"id", request_id_++},
-                          {"method", method},
-                          {"params", params}};
+    Object req;
+    req.set("jsonrpc", "2.0");
+    req.set("id", static_cast<int64_t>(request_id_++));
+    req.set("method", method);
+    req.set("params", params);
 
     log().debug << "HTTP MCP request: " << method;
-    auto response = HttpClient::Post(http_url_, req.dump(), {{"Content-Type", "application/json"}});
+    auto response = HttpClient::Post(http_url_, DumpJson(req), {{"Content-Type", "application/json"}});
     if (!response) {
       log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
       return response.error();
@@ -98,31 +125,41 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
       return Error("HTTP MCP status " + std::to_string(response->status_code));
     }
     if (response->body.empty()) {
-      return nlohmann::json::object();
+      return EmptyObject();
     }
 
-    auto resp = nlohmann::json::parse(response->body, nullptr, false);
-    if (resp.is_discarded()) {
+    auto resp_value = ParseValue(response->body);
+    if (!resp_value) {
       log().error << "HTTP MCP response parse failed for method: " << method;
       return Error("MCP response parse failed");
     }
-    if (resp.contains("error")) {
-      log().error << "MCP error for " << method << ": " << resp["error"].dump();
-      return Error(resp["error"].dump());
+    const Object* resp = asObject(*resp_value);
+    if (!resp) {
+      log().error << "HTTP MCP response parse failed for method: " << method;
+      return Error("MCP response parse failed");
     }
-    return resp.value("result", nlohmann::json::object());
+    if (auto err_slot = resp->fields().tryGet("error")) {
+      const std::string err_text = DumpJson(err_slot->get());
+      log().error << "MCP error for " << method << ": " << err_text;
+      return Error(err_text);
+    }
+    if (const Object* result = resp->getObject("result")) {
+      return *result;
+    }
+    return EmptyObject();
   }
 
   if (!process_.IsActive()) {
-    return nlohmann::json::object();
+    return EmptyObject();
   }
 
-  nlohmann::json req = {{"jsonrpc", "2.0"},
-                        {"id", request_id_++},
-                        {"method", method},
-                        {"params", params}};
+  Object req;
+  req.set("jsonrpc", "2.0");
+  req.set("id", static_cast<int64_t>(request_id_++));
+  req.set("method", method);
+  req.set("params", params);
 
-  const std::string payload = req.dump() + "\n";
+  const std::string payload = DumpJson(req) + "\n";
   log().debug << "MCP request: " << method;
   if (process_.Write(payload.data(), payload.size()) < 0) {
     log().error << "MCP write failed for method: " << method;
@@ -142,21 +179,33 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
     return Error("MCP empty response");
   }
 
-  auto resp = nlohmann::json::parse(line, nullptr, false);
-  if (resp.is_discarded()) {
+  auto resp_value = ParseValue(line);
+  if (!resp_value) {
+    log().error << "MCP response parse failed for method: " << method;
+    return Error("MCP response parse failed");
+  }
+  const Object* resp = asObject(*resp_value);
+  if (!resp) {
     log().error << "MCP response parse failed for method: " << method;
     return Error("MCP response parse failed");
   }
 
-  if (resp.contains("error")) {
-    log().error << "MCP error for " << method << ": " << resp["error"].dump();
-    return Error(resp["error"].dump());
+  if (auto err_slot = resp->fields().tryGet("error")) {
+    const std::string err_text = DumpJson(err_slot->get());
+    log().error << "MCP error for " << method << ": " << err_text;
+    return Error(err_text);
   }
-  return resp.value("result", nlohmann::json::object());
+  if (const Object* result = resp->getObject("result")) {
+    return *result;
+  }
+  return EmptyObject();
 }
 
 Roe<void> McpClient::Initialize() {
-  auto result = Request("initialize", {{"protocolVersion", "2024-11-05"}, {"capabilities", nlohmann::json::object()}});
+  Object params;
+  params.set("protocolVersion", "2024-11-05");
+  params.set("capabilities", EmptyObject());
+  auto result = Request("initialize", params);
   if (!result) {
     log().error << "MCP initialize failed: " << result.error().message;
     return result.error();
@@ -166,24 +215,35 @@ Roe<void> McpClient::Initialize() {
 }
 
 Roe<std::vector<McpTool>> McpClient::ListTools() {
-  auto result = Request("tools/list", nlohmann::json::object());
+  auto result = Request("tools/list", EmptyObject());
   if (!result) {
     return result.error();
   }
 
   std::vector<McpTool> tools;
-  for (const auto& tool : result->value("tools", nlohmann::json::array())) {
-    McpTool entry;
-    entry.name = tool.value("name", "");
-    entry.description = tool.value("description", "");
-    entry.input_schema = tool.value("inputSchema", nlohmann::json::object());
-    tools.push_back(std::move(entry));
+  if (const Array* tool_array = result->getArray("tools")) {
+    for (const Value& tool_value : tool_array->elements) {
+      const Object* tool = asObject(tool_value);
+      if (!tool) {
+        continue;
+      }
+      McpTool entry;
+      entry.name = tool->getString("name").value_or("");
+      entry.description = tool->getString("description").value_or("");
+      if (const Object* schema = tool->getObject("inputSchema")) {
+        entry.input_schema = *schema;
+      }
+      tools.push_back(std::move(entry));
+    }
   }
   return tools;
 }
 
-Roe<nlohmann::json> McpClient::CallTool(const std::string& name, const nlohmann::json& arguments) {
-  return Request("tools/call", {{"name", name}, {"arguments", arguments}});
+Roe<Object> McpClient::CallTool(const std::string& name, const Object& arguments) {
+  Object params;
+  params.set("name", name);
+  params.set("arguments", arguments);
+  return Request("tools/call", params);
 }
 
 McpClient& McpClient::MockInstance() {

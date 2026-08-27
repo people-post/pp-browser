@@ -1,8 +1,9 @@
 #include "base/data/ConfigJson.h"
 
 #include "base/platform/ICredentialStore.h"
+#include "common/ValueJson.h"
 
-#include <nlohmann/json.hpp>
+#include <limits>
 
 namespace pbr {
 
@@ -15,161 +16,79 @@ std::string NormalizeThemePath(std::string theme) {
   return theme;
 }
 
-McpConfig ParseMcpJson(const nlohmann::json& mcp_json) {
+std::optional<int64_t> ReadI64(const Object& object, const char* key) {
+  if (auto value = object.getIf<int64_t>(key)) {
+    return *value;
+  }
+  if (auto value = object.getNonNegInt(key)) {
+    if (*value <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      return static_cast<int64_t>(*value);
+    }
+  }
+  return std::nullopt;
+}
+
+McpConfig ParseMcpObject(const Object& mcp_object) {
   McpConfig mcp;
-  from_json(mcp_json, mcp);
+  McpConfigFromObject(mcp_object, mcp);
   return mcp;
 }
 
-} // namespace
+Object RelayPricingToObject(const RelayPricingConfig& pricing) {
+  Object object;
+  object.set("mode", pricing.mode);
+  object.set("rate", pricing.rate);
+  return object;
+}
 
-void to_json(nlohmann::json& j, const LlmConfig& config) {
-  j = nlohmann::json{{"base_url", config.base_url},
-                     {"model", config.model},
-                     {"require_api_key", config.require_api_key},
-                     {"num_predict", config.num_predict}};
-  if (!config.preset.empty()) {
-    j["preset"] = config.preset;
+void RelayPricingFromObject(const Object& object, RelayPricingConfig& pricing) {
+  if (auto mode = object.getString("mode")) {
+    pricing.mode = *mode;
   }
-  if (!config.api_key.empty()) {
-    j["api_key"] = config.api_key;
+  if (auto rate = object.getIf<double>("rate")) {
+    pricing.rate = *rate;
+  } else if (auto rate_i = ReadI64(object, "rate")) {
+    pricing.rate = static_cast<double>(*rate_i);
   }
 }
 
-void from_json(const nlohmann::json& j, LlmConfig& config) {
-  if (j.contains("base_url") && j["base_url"].is_string()) {
-    config.base_url = j["base_url"].get<std::string>();
-  }
-  if (j.contains("model") && j["model"].is_string()) {
-    config.model = j["model"].get<std::string>();
-  }
-  if (j.contains("preset") && j["preset"].is_string()) {
-    config.preset = j["preset"].get<std::string>();
-  }
-  if (j.contains("api_key") && j["api_key"].is_string()) {
-    config.api_key = j["api_key"].get<std::string>();
-  }
-  if (j.contains("require_api_key") && j["require_api_key"].is_boolean()) {
-    config.require_api_key = j["require_api_key"].get<bool>();
-  }
-  if (j.contains("num_predict") && j["num_predict"].is_number_integer()) {
-    config.num_predict = j["num_predict"].get<int>();
+Object Libp2pPricingToObject(const Libp2pPricingConfig& pricing) {
+  Object object;
+  object.set("media_relay", RelayPricingToObject(pricing.media_relay));
+  return object;
+}
+
+void Libp2pPricingFromObject(const Object& object, Libp2pPricingConfig& pricing) {
+  if (const Object* media_relay = object.getObject("media_relay")) {
+    RelayPricingFromObject(*media_relay, pricing.media_relay);
   }
 }
 
-void to_json(nlohmann::json& j, const ContextBudget& budget) {
-  j = nlohmann::json{{"max_turn_pairs", budget.max_turn_pairs},
-                     {"max_recent_chars", budget.max_recent_chars},
-                     {"max_input_tokens", budget.max_input_tokens},
-                     {"token_estimate_margin", budget.token_estimate_margin},
-                     {"max_summary_chars", budget.max_summary_chars}};
-}
-
-void from_json(const nlohmann::json& j, ContextBudget& budget) {
-  if (j.contains("max_turn_pairs") && j["max_turn_pairs"].is_number_integer()) {
-    budget.max_turn_pairs = j["max_turn_pairs"].get<int>();
-  }
-  if (j.contains("max_recent_chars") && j["max_recent_chars"].is_number_integer()) {
-    budget.max_recent_chars = j["max_recent_chars"].get<int>();
-  }
-  if (j.contains("max_input_tokens") && j["max_input_tokens"].is_number_integer()) {
-    budget.max_input_tokens = j["max_input_tokens"].get<int>();
-  }
-  if (j.contains("token_estimate_margin") && j["token_estimate_margin"].is_number()) {
-    budget.token_estimate_margin = j["token_estimate_margin"].get<double>();
-  }
-  if (j.contains("max_summary_chars") && j["max_summary_chars"].is_number_integer()) {
-    budget.max_summary_chars = j["max_summary_chars"].get<int>();
-  }
-}
-
-void to_json(nlohmann::json& j, const SearchConfig& config) {
-  j = nlohmann::json{{"provider", config.provider}};
-  if (!config.api_key.empty()) {
-    j["api_key"] = config.api_key;
-  }
-}
-
-void from_json(const nlohmann::json& j, SearchConfig& config) {
-  if (j.contains("provider") && j["provider"].is_string()) {
-    config.provider = j["provider"].get<std::string>();
-  }
-  if (j.contains("api_key") && j["api_key"].is_string()) {
-    config.api_key = j["api_key"].get<std::string>();
-  }
-}
-
-void to_json(nlohmann::json& j, const ServiceEndpointConfig& endpoint) {
-  j = nlohmann::json{{"base_url", endpoint.base_url}, {"transport", endpoint.transport}};
-}
-
-void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
-  if (j.contains("base_url") && j["base_url"].is_string()) {
-    endpoint.base_url = j["base_url"].get<std::string>();
-  }
-  if (j.contains("transport") && j["transport"].is_string()) {
-    endpoint.transport = j["transport"].get<std::string>();
-  }
-}
-
-void to_json(nlohmann::json& j, const Libp2pCapabilities& caps) {
-  j = nlohmann::json{{"circuit_relay", caps.circuit_relay}, {"media_relay", caps.media_relay}};
-}
-
-void from_json(const nlohmann::json& j, Libp2pCapabilities& caps) {
-  if (j.contains("circuit_relay") && j["circuit_relay"].is_boolean()) {
-    caps.circuit_relay = j["circuit_relay"].get<bool>();
-  }
-  if (j.contains("media_relay") && j["media_relay"].is_boolean()) {
-    caps.media_relay = j["media_relay"].get<bool>();
-  }
-}
-
-void to_json(nlohmann::json& j, const RelayPricingConfig& pricing) {
-  j = nlohmann::json{{"mode", pricing.mode}, {"rate", pricing.rate}};
-}
-
-void from_json(const nlohmann::json& j, RelayPricingConfig& pricing) {
-  if (j.contains("mode") && j["mode"].is_string()) {
-    pricing.mode = j["mode"].get<std::string>();
-  }
-  if (j.contains("rate") && j["rate"].is_number()) {
-    pricing.rate = j["rate"].get<double>();
-  }
-}
-
-void to_json(nlohmann::json& j, const Libp2pPricingConfig& pricing) {
-  j = nlohmann::json{{"media_relay", pricing.media_relay}};
-}
-
-void from_json(const nlohmann::json& j, Libp2pPricingConfig& pricing) {
-  if (j.contains("media_relay") && j["media_relay"].is_object()) {
-    from_json(j["media_relay"], pricing.media_relay);
-  }
-}
-
-void to_json(nlohmann::json& j, const MediaRelayBudgetConfig& budget) {
-  auto field = [](int64_t v) -> nlohmann::json {
-    if (v <= 0) {
-      return nullptr;
+Object MediaRelayBudgetToObject(const MediaRelayBudgetConfig& budget) {
+  auto set_bps = [](Object& object, const char* key, int64_t value) {
+    if (value <= 0) {
+      object.set(key, Null{});
+    } else {
+      object.set(key, value);
     }
-    return v;
   };
-  j = nlohmann::json{{"node_capacity_up_bps", field(budget.node_capacity_up_bps)},
-                     {"node_capacity_down_bps", field(budget.node_capacity_down_bps)},
-                     {"max_session_up_bps", field(budget.max_session_up_bps)},
-                     {"max_session_down_bps", field(budget.max_session_down_bps)},
-                     {"default_per_user_up_bps", field(budget.default_per_user_up_bps)},
-                     {"default_per_user_down_bps", field(budget.default_per_user_down_bps)}};
+  Object object;
+  set_bps(object, "node_capacity_up_bps", budget.node_capacity_up_bps);
+  set_bps(object, "node_capacity_down_bps", budget.node_capacity_down_bps);
+  set_bps(object, "max_session_up_bps", budget.max_session_up_bps);
+  set_bps(object, "max_session_down_bps", budget.max_session_down_bps);
+  set_bps(object, "default_per_user_up_bps", budget.default_per_user_up_bps);
+  set_bps(object, "default_per_user_down_bps", budget.default_per_user_down_bps);
+  return object;
 }
 
-void from_json(const nlohmann::json& j, MediaRelayBudgetConfig& budget) {
+void MediaRelayBudgetFromObject(const Object& object, MediaRelayBudgetConfig& budget) {
   auto read_bps = [&](const char* key, int64_t& out) {
-    if (!j.contains(key) || j[key].is_null()) {
+    if (!object.contains(key) || object.isNull(key)) {
       return;
     }
-    if (j[key].is_number_integer()) {
-      out = j[key].get<int64_t>();
+    if (auto value = ReadI64(object, key)) {
+      out = *value;
     }
   };
   read_bps("node_capacity_up_bps", budget.node_capacity_up_bps);
@@ -180,449 +99,587 @@ void from_json(const nlohmann::json& j, MediaRelayBudgetConfig& budget) {
   read_bps("default_per_user_down_bps", budget.default_per_user_down_bps);
 }
 
-void to_json(nlohmann::json& j, const Libp2pConfig& config) {
-  nlohmann::json peers = nlohmann::json::array();
-  for (const std::string& peer : config.bootstrap_peers) {
-    peers.push_back(peer);
-  }
-  j = nlohmann::json{{"listen_multiaddr", config.listen_multiaddr},
-                     {"node_enabled", config.node_enabled},
-                     {"bootstrap_peers", std::move(peers)},
-                     {"max_connections", config.max_connections},
-                     {"max_concurrent_dials", config.max_concurrent_dials},
-                     {"dial_timeout_ms", config.dial_timeout_ms},
-                     {"idle_ttl_ms", config.idle_ttl_ms},
-                     {"dial_failure_backoff_ms", config.dial_failure_backoff_ms},
-                     {"prefer_contacts_for_routing", config.prefer_contacts_for_routing},
-                     {"capabilities", config.capabilities},
-                     {"pricing", config.pricing},
-                     {"media_relay_budget", config.media_relay_budget}};
+Object WindowPrefsToObject(const WindowPrefs& window) {
+  Object object;
+  object.set("width", static_cast<int64_t>(window.width));
+  object.set("height", static_cast<int64_t>(window.height));
+  return object;
 }
 
-void from_json(const nlohmann::json& j, Libp2pConfig& config) {
-  if (j.contains("listen_multiaddr") && j["listen_multiaddr"].is_string()) {
-    config.listen_multiaddr = j["listen_multiaddr"].get<std::string>();
+void WindowPrefsFromObject(const Object& object, WindowPrefs& window) {
+  if (auto width = ReadI64(object, "width")) {
+    window.width = static_cast<int>(*width);
   }
-  if (j.contains("node_enabled") && j["node_enabled"].is_boolean()) {
-    config.node_enabled = j["node_enabled"].get<bool>();
-  }
-  if (j.contains("bootstrap_peers") && j["bootstrap_peers"].is_array()) {
-    config.bootstrap_peers.clear();
-    for (const auto& item : j["bootstrap_peers"]) {
-      if (item.is_string()) {
-        config.bootstrap_peers.push_back(item.get<std::string>());
-      }
-    }
-  }
-  if (j.contains("max_connections") && j["max_connections"].is_number_unsigned()) {
-    config.max_connections = j["max_connections"].get<size_t>();
-  }
-  if (j.contains("max_concurrent_dials") && j["max_concurrent_dials"].is_number_unsigned()) {
-    config.max_concurrent_dials = j["max_concurrent_dials"].get<size_t>();
-  }
-  if (j.contains("dial_timeout_ms") && j["dial_timeout_ms"].is_number_integer()) {
-    config.dial_timeout_ms = j["dial_timeout_ms"].get<int>();
-  }
-  if (j.contains("idle_ttl_ms") && j["idle_ttl_ms"].is_number_integer()) {
-    config.idle_ttl_ms = j["idle_ttl_ms"].get<int>();
-  }
-  if (j.contains("dial_failure_backoff_ms") && j["dial_failure_backoff_ms"].is_number_integer()) {
-    config.dial_failure_backoff_ms = j["dial_failure_backoff_ms"].get<int>();
-  }
-  if (j.contains("prefer_contacts_for_routing") && j["prefer_contacts_for_routing"].is_boolean()) {
-    config.prefer_contacts_for_routing = j["prefer_contacts_for_routing"].get<bool>();
-  }
-  if (j.contains("capabilities") && j["capabilities"].is_object()) {
-    from_json(j["capabilities"], config.capabilities);
-  }
-  if (j.contains("pricing") && j["pricing"].is_object()) {
-    from_json(j["pricing"], config.pricing);
-  }
-  if (j.contains("media_relay_budget") && j["media_relay_budget"].is_object()) {
-    from_json(j["media_relay_budget"], config.media_relay_budget);
+  if (auto height = ReadI64(object, "height")) {
+    window.height = static_cast<int>(*height);
   }
 }
 
-void to_json(nlohmann::json& j, const McpConfig& config) {
-  j = nlohmann::json::object();
-  if (!config.id.empty()) {
-    j["id"] = config.id;
+Object SafeAreaToObject(const SafeAreaInsets& safe_area) {
+  Object object;
+  object.set("top", static_cast<int64_t>(safe_area.top));
+  object.set("bottom", static_cast<int64_t>(safe_area.bottom));
+  object.set("left", static_cast<int64_t>(safe_area.left));
+  object.set("right", static_cast<int64_t>(safe_area.right));
+  return object;
+}
+
+void SafeAreaFromObject(const Object& object, SafeAreaInsets& safe_area) {
+  if (auto top = ReadI64(object, "top")) {
+    safe_area.top = static_cast<int>(*top);
   }
-  if (!config.url.empty()) {
-    j["url"] = config.url;
+  if (auto bottom = ReadI64(object, "bottom")) {
+    safe_area.bottom = static_cast<int>(*bottom);
   }
-  if (!config.command.empty()) {
-    j["command"] = config.command;
-    j["args"] = config.args;
+  if (auto left = ReadI64(object, "left")) {
+    safe_area.left = static_cast<int>(*left);
   }
-  if (!config.enabled) {
-    j["enabled"] = false;
+  if (auto right = ReadI64(object, "right")) {
+    safe_area.right = static_cast<int>(*right);
   }
 }
 
-void from_json(const nlohmann::json& j, McpConfig& config) {
-  if (j.contains("id") && j["id"].is_string()) {
-    config.id = j["id"].get<std::string>();
-  }
-  if (j.contains("command") && j["command"].is_string()) {
-    config.command = j["command"].get<std::string>();
-  }
-  if (j.contains("url") && j["url"].is_string()) {
-    config.url = j["url"].get<std::string>();
-  }
-  if (j.contains("args") && j["args"].is_array()) {
-    config.args.clear();
-    for (const auto& arg : j["args"]) {
-      if (arg.is_string()) {
-        config.args.push_back(arg.get<std::string>());
-      }
-    }
-  }
-  if (j.contains("enabled") && j["enabled"].is_boolean()) {
-    config.enabled = j["enabled"].get<bool>();
+Object DisplayPrefsToObject(const DisplayPrefs& display) {
+  Object object;
+  object.set("fullscreen", display.fullscreen);
+  return object;
+}
+
+void DisplayPrefsFromObject(const Object& object, DisplayPrefs& display) {
+  if (auto fullscreen = object.getIf<bool>("fullscreen")) {
+    display.fullscreen = *fullscreen;
   }
 }
 
-void to_json(nlohmann::json& j, const AppConfig& config) {
-  j = nlohmann::json{{"theme", config.theme},
-                     {"llm", config.llm},
-                     {"search", config.search},
-                     {"context", config.context},
-                     {"relay", config.relay},
-                     {"directory", config.directory},
-                     {"registration", config.registration},
-                     {"libp2p", config.libp2p},
-                     {"initiation_floor", config.initiation_floor}};
-  if (!config.llm_api_key_env.empty()) {
-    j["llm"]["api_key_env"] = config.llm_api_key_env;
-    j["llm"].erase("api_key");
-  }
-  if (!config.data_dir.empty()) {
-    j["data_dir"] = config.data_dir;
-  }
-  if (config.promoted_mcp.IsConfigured()) {
-    j["promoted_mcp"] = config.promoted_mcp;
-  }
-  if (!config.mcp_servers.empty()) {
-    j["mcp_servers"] = config.mcp_servers;
-  }
-}
-
-void from_json(const nlohmann::json& j, AppConfig& config) {
-  if (j.contains("theme") && j["theme"].is_string()) {
-    config.theme = NormalizeThemePath(j["theme"].get<std::string>());
-  }
-  if (j.contains("llm") && j["llm"].is_object()) {
-    from_json(j["llm"], config.llm);
-    if (j["llm"].contains("api_key_env") && j["llm"]["api_key_env"].is_string()) {
-      config.llm_api_key_env = j["llm"]["api_key_env"].get<std::string>();
-      config.llm.api_key.clear();
-      config.llm.require_api_key = true;
-    } else if (j["llm"].contains("api_key") && j["llm"]["api_key"].is_string()) {
-      config.llm.api_key = j["llm"]["api_key"].get<std::string>();
-      config.llm_api_key_env.clear();
-    }
-  }
-  if (j.contains("promoted_mcp") && j["promoted_mcp"].is_object()) {
-    config.promoted_mcp = ParseMcpJson(j["promoted_mcp"]);
-  } else if (j.contains("mcp") && j["mcp"].is_object()) {
-    config.promoted_mcp = ParseMcpJson(j["mcp"]);
-  }
-  if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
-    config.mcp_servers.clear();
-    for (const auto& item : j["mcp_servers"]) {
-      if (!item.is_object()) {
-        continue;
-      }
-      McpConfig mcp = ParseMcpJson(item);
-      if (mcp.IsConfigured()) {
-        config.mcp_servers.push_back(std::move(mcp));
-      }
-    }
-  }
-  if (j.contains("context") && j["context"].is_object()) {
-    from_json(j["context"], config.context);
-  }
-  if (j.contains("search") && j["search"].is_object()) {
-    from_json(j["search"], config.search);
-    if (j["search"].contains("api_key_env") && j["search"]["api_key_env"].is_string()) {
-      config.search.api_key =
-          ICredentialStore::Instance().Get(j["search"]["api_key_env"].get<std::string>());
-    }
-  }
-  if (j.contains("data_dir") && j["data_dir"].is_string()) {
-    config.data_dir = j["data_dir"].get<std::string>();
-  }
-  if (j.contains("relay") && j["relay"].is_object()) {
-    from_json(j["relay"], config.relay);
-  }
-  if (j.contains("directory") && j["directory"].is_object()) {
-    from_json(j["directory"], config.directory);
-  }
-  if (j.contains("registration") && j["registration"].is_object()) {
-    from_json(j["registration"], config.registration);
-  }
-  if (j.contains("initiation_floor") && j["initiation_floor"].is_number_integer()) {
-    config.initiation_floor = j["initiation_floor"].get<int64_t>();
-  }
-  if (j.contains("libp2p") && j["libp2p"].is_object()) {
-    from_json(j["libp2p"], config.libp2p);
-  }
-}
-
-void to_json(nlohmann::json& j, const WindowPrefs& window) {
-  j = nlohmann::json{{"width", window.width}, {"height", window.height}};
-}
-
-void from_json(const nlohmann::json& j, WindowPrefs& window) {
-  if (j.contains("width") && j["width"].is_number_integer()) {
-    window.width = j["width"].get<int>();
-  }
-  if (j.contains("height") && j["height"].is_number_integer()) {
-    window.height = j["height"].get<int>();
-  }
-}
-
-void to_json(nlohmann::json& j, const SafeAreaInsets& safe_area) {
-  j = nlohmann::json{{"top", safe_area.top},
-                     {"bottom", safe_area.bottom},
-                     {"left", safe_area.left},
-                     {"right", safe_area.right}};
-}
-
-void from_json(const nlohmann::json& j, SafeAreaInsets& safe_area) {
-  if (j.contains("top") && j["top"].is_number_integer()) {
-    safe_area.top = j["top"].get<int>();
-  }
-  if (j.contains("bottom") && j["bottom"].is_number_integer()) {
-    safe_area.bottom = j["bottom"].get<int>();
-  }
-  if (j.contains("left") && j["left"].is_number_integer()) {
-    safe_area.left = j["left"].get<int>();
-  }
-  if (j.contains("right") && j["right"].is_number_integer()) {
-    safe_area.right = j["right"].get<int>();
-  }
-}
-
-void to_json(nlohmann::json& j, const DisplayPrefs& display) {
-  j = nlohmann::json{{"fullscreen", display.fullscreen}};
-}
-
-void from_json(const nlohmann::json& j, DisplayPrefs& display) {
-  if (j.contains("fullscreen") && j["fullscreen"].is_boolean()) {
-    display.fullscreen = j["fullscreen"].get<bool>();
-  }
-}
-
-void to_json(nlohmann::json& j, const MachinePreferences& prefs) {
-  j = nlohmann::json{{"schema_version", prefs.schema_version},
-                     {"active_profile_id", prefs.active_profile_id},
-                     {"window", prefs.window},
-                     {"safe_area", prefs.safe_area},
-                     {"display", prefs.display}};
-}
-
-void from_json(const nlohmann::json& j, MachinePreferences& prefs) {
-  if (j.contains("schema_version") && j["schema_version"].is_number_integer()) {
-    prefs.schema_version = j["schema_version"].get<int>();
-  }
-  if (j.contains("active_profile_id") && j["active_profile_id"].is_string()) {
-    prefs.active_profile_id = j["active_profile_id"].get<std::string>();
-  }
-  if (j.contains("window") && j["window"].is_object()) {
-    from_json(j["window"], prefs.window);
-  }
-  if (j.contains("safe_area") && j["safe_area"].is_object()) {
-    from_json(j["safe_area"], prefs.safe_area);
-  }
-  if (j.contains("display") && j["display"].is_object()) {
-    from_json(j["display"], prefs.display);
-  }
-}
-
-nlohmann::json ToolPermissionsToJson(const ToolPermissionsPrefs& perms) {
-  nlohmann::json by_tool = nlohmann::json::object();
+Object ToolPermissionsToObject(const ToolPermissionsPrefs& perms) {
+  Object by_tool;
   for (const auto& [name, entry] : perms.by_tool) {
-    by_tool[name] = nlohmann::json{{"decision", entry.decision}};
+    Object node;
+    node.set("decision", entry.decision);
+    by_tool.set(name, node);
   }
-  nlohmann::json by_provider = nlohmann::json::object();
+  Object by_provider;
   for (const auto& [name, entry] : perms.by_provider) {
-    by_provider[name] = nlohmann::json{{"decision", entry.decision}};
+    Object node;
+    node.set("decision", entry.decision);
+    by_provider.set(name, node);
   }
-  return nlohmann::json{{"schema_version", perms.schema_version},
-                        {"defaults",
-                         {{"read", perms.default_read},
-                          {"write", perms.default_write},
-                          {"destructive", perms.default_destructive}}},
-                        {"by_tool", std::move(by_tool)},
-                        {"by_provider", std::move(by_provider)}};
+  Object defaults;
+  defaults.set("read", perms.default_read);
+  defaults.set("write", perms.default_write);
+  defaults.set("destructive", perms.default_destructive);
+
+  Object object;
+  object.set("schema_version", static_cast<int64_t>(perms.schema_version));
+  object.set("defaults", defaults);
+  object.set("by_tool", by_tool);
+  object.set("by_provider", by_provider);
+  return object;
 }
 
-ToolPermissionsPrefs ToolPermissionsFromJson(const nlohmann::json& j) {
+ToolPermissionsPrefs ToolPermissionsFromObject(const Object& object) {
   ToolPermissionsPrefs perms;
-  if (!j.is_object()) {
-    return perms;
+  if (auto version = ReadI64(object, "schema_version")) {
+    perms.schema_version = static_cast<int>(*version);
   }
-  if (j.contains("schema_version") && j["schema_version"].is_number_integer()) {
-    perms.schema_version = j["schema_version"].get<int>();
-  }
-  if (j.contains("defaults") && j["defaults"].is_object()) {
-    const auto& defaults = j["defaults"];
-    if (defaults.contains("read") && defaults["read"].is_string()) {
-      perms.default_read = defaults["read"].get<std::string>();
+  if (const Object* defaults = object.getObject("defaults")) {
+    if (auto read = defaults->getString("read")) {
+      perms.default_read = *read;
     }
-    if (defaults.contains("write") && defaults["write"].is_string()) {
-      perms.default_write = defaults["write"].get<std::string>();
+    if (auto write = defaults->getString("write")) {
+      perms.default_write = *write;
     }
-    if (defaults.contains("destructive") && defaults["destructive"].is_string()) {
-      perms.default_destructive = defaults["destructive"].get<std::string>();
+    if (auto destructive = defaults->getString("destructive")) {
+      perms.default_destructive = *destructive;
     }
   }
-  if (j.contains("by_tool") && j["by_tool"].is_object()) {
-    for (const auto& [name, node] : j["by_tool"].items()) {
-      if (!node.is_object() || !node.contains("decision") || !node["decision"].is_string()) {
+  if (const Object* by_tool = object.getObject("by_tool")) {
+    for (const auto& [name, value] : by_tool->fields()) {
+      const Object* node = asObject(value);
+      if (!node) {
         continue;
       }
-      const std::string decision = node["decision"].get<std::string>();
-      if (!IsValidToolPermissionDecision(decision)) {
+      auto decision = node->getString("decision");
+      if (!decision || !IsValidToolPermissionDecision(*decision)) {
         continue;
       }
-      perms.by_tool[name] = ToolPermissionEntry{.decision = decision};
+      perms.by_tool[name] = ToolPermissionEntry{.decision = *decision};
     }
   }
-  if (j.contains("by_provider") && j["by_provider"].is_object()) {
-    for (const auto& [name, node] : j["by_provider"].items()) {
-      if (!node.is_object() || !node.contains("decision") || !node["decision"].is_string()) {
+  if (const Object* by_provider = object.getObject("by_provider")) {
+    for (const auto& [name, value] : by_provider->fields()) {
+      const Object* node = asObject(value);
+      if (!node) {
         continue;
       }
-      const std::string decision = node["decision"].get<std::string>();
-      if (!IsValidToolPermissionDecision(decision)) {
+      auto decision = node->getString("decision");
+      if (!decision || !IsValidToolPermissionDecision(*decision)) {
         continue;
       }
-      perms.by_provider[name] = ToolPermissionEntry{.decision = decision};
+      perms.by_provider[name] = ToolPermissionEntry{.decision = *decision};
     }
   }
   return perms;
 }
 
-void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
-  nlohmann::json recent = nlohmann::json::array();
-  for (const std::string& e : prefs.recent_emojis) {
-    recent.push_back(e);
+} // namespace
+
+Object LlmConfigToObject(const LlmConfig& config) {
+  Object object;
+  object.set("base_url", config.base_url);
+  object.set("model", config.model);
+  object.set("require_api_key", config.require_api_key);
+  object.set("num_predict", static_cast<int64_t>(config.num_predict));
+  if (!config.preset.empty()) {
+    object.set("preset", config.preset);
   }
-  j = nlohmann::json{{"schema_version", prefs.schema_version},
-                     {"theme", prefs.theme},
-                     {"appearance", prefs.appearance},
-                     {"language", prefs.language},
-                     {"pin_is_default", prefs.pin_is_default},
-                     {"auto_renew_registration", prefs.auto_renew_registration},
-                     {"show_notifications", prefs.show_notifications},
-                     {"call_diagnostics", prefs.call_diagnostics},
-                     {"group_invite_policy", prefs.group_invite_policy},
-                     {"attachment_download_policy", prefs.attachment_download_policy},
-                     {"reduce_transparency", prefs.reduce_transparency},
-                     {"compact_chrome_frost", prefs.compact_chrome_frost},
-                     {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status},
-                     {"tool_permissions", ToolPermissionsToJson(prefs.tool_permissions)},
-                     {"recent_emojis", std::move(recent)}};
+  if (!config.api_key.empty()) {
+    object.set("api_key", config.api_key);
+  }
+  return object;
 }
 
-void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
-  if (j.contains("schema_version") && j["schema_version"].is_number_integer()) {
-    prefs.schema_version = j["schema_version"].get<int>();
+void LlmConfigFromObject(const Object& object, LlmConfig& config) {
+  if (auto base_url = object.getString("base_url")) {
+    config.base_url = *base_url;
   }
-  if (j.contains("theme") && j["theme"].is_string()) {
-    prefs.theme = NormalizeThemePath(j["theme"].get<std::string>());
+  if (auto model = object.getString("model")) {
+    config.model = *model;
   }
-  if (j.contains("appearance") && j["appearance"].is_string()) {
-    prefs.appearance = j["appearance"].get<std::string>();
+  if (auto preset = object.getString("preset")) {
+    config.preset = *preset;
   }
-  if (j.contains("language") && j["language"].is_string()) {
-    prefs.language = j["language"].get<std::string>();
+  if (auto api_key = object.getString("api_key")) {
+    config.api_key = *api_key;
+  }
+  if (auto require_api_key = object.getIf<bool>("require_api_key")) {
+    config.require_api_key = *require_api_key;
+  }
+  if (auto num_predict = ReadI64(object, "num_predict")) {
+    config.num_predict = static_cast<int>(*num_predict);
+  }
+}
+
+Object ContextBudgetToObject(const ContextBudget& budget) {
+  Object object;
+  object.set("max_turn_pairs", static_cast<int64_t>(budget.max_turn_pairs));
+  object.set("max_recent_chars", static_cast<int64_t>(budget.max_recent_chars));
+  object.set("max_input_tokens", static_cast<int64_t>(budget.max_input_tokens));
+  object.set("token_estimate_margin", budget.token_estimate_margin);
+  object.set("max_summary_chars", static_cast<int64_t>(budget.max_summary_chars));
+  return object;
+}
+
+void ContextBudgetFromObject(const Object& object, ContextBudget& budget) {
+  if (auto max_turn_pairs = ReadI64(object, "max_turn_pairs")) {
+    budget.max_turn_pairs = static_cast<int>(*max_turn_pairs);
+  }
+  if (auto max_recent_chars = ReadI64(object, "max_recent_chars")) {
+    budget.max_recent_chars = static_cast<int>(*max_recent_chars);
+  }
+  if (auto max_input_tokens = ReadI64(object, "max_input_tokens")) {
+    budget.max_input_tokens = static_cast<int>(*max_input_tokens);
+  }
+  if (auto margin = object.getIf<double>("token_estimate_margin")) {
+    budget.token_estimate_margin = *margin;
+  } else if (auto margin_i = ReadI64(object, "token_estimate_margin")) {
+    budget.token_estimate_margin = static_cast<double>(*margin_i);
+  }
+  if (auto max_summary_chars = ReadI64(object, "max_summary_chars")) {
+    budget.max_summary_chars = static_cast<int>(*max_summary_chars);
+  }
+}
+
+Object SearchConfigToObject(const SearchConfig& config) {
+  Object object;
+  object.set("provider", config.provider);
+  if (!config.api_key.empty()) {
+    object.set("api_key", config.api_key);
+  }
+  return object;
+}
+
+void SearchConfigFromObject(const Object& object, SearchConfig& config) {
+  if (auto provider = object.getString("provider")) {
+    config.provider = *provider;
+  }
+  if (auto api_key = object.getString("api_key")) {
+    config.api_key = *api_key;
+  }
+}
+
+Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint) {
+  Object object;
+  object.set("base_url", endpoint.base_url);
+  object.set("transport", endpoint.transport);
+  return object;
+}
+
+void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endpoint) {
+  if (auto base_url = object.getString("base_url")) {
+    endpoint.base_url = *base_url;
+  }
+  if (auto transport = object.getString("transport")) {
+    endpoint.transport = *transport;
+  }
+}
+
+Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps) {
+  Object object;
+  object.set("circuit_relay", caps.circuit_relay);
+  object.set("media_relay", caps.media_relay);
+  return object;
+}
+
+void Libp2pCapabilitiesFromObject(const Object& object, Libp2pCapabilities& caps) {
+  if (auto circuit_relay = object.getIf<bool>("circuit_relay")) {
+    caps.circuit_relay = *circuit_relay;
+  }
+  if (auto media_relay = object.getIf<bool>("media_relay")) {
+    caps.media_relay = *media_relay;
+  }
+}
+
+Object Libp2pConfigToObject(const Libp2pConfig& config) {
+  std::vector<Value> peers;
+  peers.reserve(config.bootstrap_peers.size());
+  for (const std::string& peer : config.bootstrap_peers) {
+    peers.emplace_back(peer);
+  }
+
+  Object object;
+  object.set("listen_multiaddr", config.listen_multiaddr);
+  object.set("node_enabled", config.node_enabled);
+  object.set("bootstrap_peers", makeArray(std::move(peers)));
+  object.setJsonUInt("max_connections", config.max_connections);
+  object.setJsonUInt("max_concurrent_dials", config.max_concurrent_dials);
+  object.set("dial_timeout_ms", static_cast<int64_t>(config.dial_timeout_ms));
+  object.set("idle_ttl_ms", static_cast<int64_t>(config.idle_ttl_ms));
+  object.set("dial_failure_backoff_ms", static_cast<int64_t>(config.dial_failure_backoff_ms));
+  object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
+  object.set("capabilities", Libp2pCapabilitiesToObject(config.capabilities));
+  object.set("pricing", Libp2pPricingToObject(config.pricing));
+  object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
+  return object;
+}
+
+void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
+  if (auto listen_multiaddr = object.getString("listen_multiaddr")) {
+    config.listen_multiaddr = *listen_multiaddr;
+  }
+  if (auto node_enabled = object.getIf<bool>("node_enabled")) {
+    config.node_enabled = *node_enabled;
+  }
+  if (const Array* peers = object.getArray("bootstrap_peers")) {
+    config.bootstrap_peers.clear();
+    for (const Value& item : peers->elements) {
+      if (auto peer = asString(item)) {
+        config.bootstrap_peers.push_back(*peer);
+      }
+    }
+  }
+  if (auto max_connections = object.getNonNegInt("max_connections")) {
+    config.max_connections = static_cast<size_t>(*max_connections);
+  }
+  if (auto max_concurrent_dials = object.getNonNegInt("max_concurrent_dials")) {
+    config.max_concurrent_dials = static_cast<size_t>(*max_concurrent_dials);
+  }
+  if (auto dial_timeout_ms = ReadI64(object, "dial_timeout_ms")) {
+    config.dial_timeout_ms = static_cast<int>(*dial_timeout_ms);
+  }
+  if (auto idle_ttl_ms = ReadI64(object, "idle_ttl_ms")) {
+    config.idle_ttl_ms = static_cast<int>(*idle_ttl_ms);
+  }
+  if (auto dial_failure_backoff_ms = ReadI64(object, "dial_failure_backoff_ms")) {
+    config.dial_failure_backoff_ms = static_cast<int>(*dial_failure_backoff_ms);
+  }
+  if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
+    config.prefer_contacts_for_routing = *prefer;
+  }
+  if (const Object* capabilities = object.getObject("capabilities")) {
+    Libp2pCapabilitiesFromObject(*capabilities, config.capabilities);
+  }
+  if (const Object* pricing = object.getObject("pricing")) {
+    Libp2pPricingFromObject(*pricing, config.pricing);
+  }
+  if (const Object* media_relay_budget = object.getObject("media_relay_budget")) {
+    MediaRelayBudgetFromObject(*media_relay_budget, config.media_relay_budget);
+  }
+}
+
+Object McpConfigToObject(const McpConfig& config) {
+  Object object;
+  if (!config.id.empty()) {
+    object.set("id", config.id);
+  }
+  if (!config.url.empty()) {
+    object.set("url", config.url);
+  }
+  if (!config.command.empty()) {
+    object.set("command", config.command);
+    std::vector<Value> args;
+    args.reserve(config.args.size());
+    for (const std::string& arg : config.args) {
+      args.emplace_back(arg);
+    }
+    object.set("args", makeArray(std::move(args)));
+  }
+  if (!config.enabled) {
+    object.set("enabled", false);
+  }
+  return object;
+}
+
+void McpConfigFromObject(const Object& object, McpConfig& config) {
+  if (auto id = object.getString("id")) {
+    config.id = *id;
+  }
+  if (auto command = object.getString("command")) {
+    config.command = *command;
+  }
+  if (auto url = object.getString("url")) {
+    config.url = *url;
+  }
+  if (const Array* args = object.getArray("args")) {
+    config.args.clear();
+    for (const Value& arg : args->elements) {
+      if (auto value = asString(arg)) {
+        config.args.push_back(*value);
+      }
+    }
+  }
+  if (auto enabled = object.getIf<bool>("enabled")) {
+    config.enabled = *enabled;
+  }
+}
+
+Object AppConfigToObject(const AppConfig& config) {
+  Object object;
+  object.set("theme", config.theme);
+  Object llm = LlmConfigToObject(config.llm);
+  if (!config.llm_api_key_env.empty()) {
+    llm.set("api_key_env", config.llm_api_key_env);
+    llm.erase("api_key");
+  }
+  object.set("llm", llm);
+  object.set("search", SearchConfigToObject(config.search));
+  object.set("context", ContextBudgetToObject(config.context));
+  object.set("relay", ServiceEndpointToObject(config.relay));
+  object.set("directory", ServiceEndpointToObject(config.directory));
+  object.set("registration", ServiceEndpointToObject(config.registration));
+  object.set("libp2p", Libp2pConfigToObject(config.libp2p));
+  object.set("initiation_floor", config.initiation_floor);
+  if (!config.data_dir.empty()) {
+    object.set("data_dir", config.data_dir);
+  }
+  if (config.promoted_mcp.IsConfigured()) {
+    object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
+  }
+  if (!config.mcp_servers.empty()) {
+    std::vector<Value> servers;
+    servers.reserve(config.mcp_servers.size());
+    for (const McpConfig& mcp : config.mcp_servers) {
+      servers.push_back(ObjectValue(McpConfigToObject(mcp)));
+    }
+    object.set("mcp_servers", makeArray(std::move(servers)));
+  }
+  return object;
+}
+
+void AppConfigFromObject(const Object& object, AppConfig& config) {
+  if (auto theme = object.getString("theme")) {
+    config.theme = NormalizeThemePath(*theme);
+  }
+  if (const Object* llm = object.getObject("llm")) {
+    LlmConfigFromObject(*llm, config.llm);
+    if (auto api_key_env = llm->getString("api_key_env")) {
+      config.llm_api_key_env = *api_key_env;
+      config.llm.api_key.clear();
+      config.llm.require_api_key = true;
+    } else if (auto api_key = llm->getString("api_key")) {
+      config.llm.api_key = *api_key;
+      config.llm_api_key_env.clear();
+    }
+  }
+  if (const Object* promoted_mcp = object.getObject("promoted_mcp")) {
+    config.promoted_mcp = ParseMcpObject(*promoted_mcp);
+  } else if (const Object* mcp = object.getObject("mcp")) {
+    config.promoted_mcp = ParseMcpObject(*mcp);
+  }
+  if (const Array* mcp_servers = object.getArray("mcp_servers")) {
+    config.mcp_servers.clear();
+    for (const Value& item : mcp_servers->elements) {
+      const Object* mcp_object = asObject(item);
+      if (!mcp_object) {
+        continue;
+      }
+      McpConfig mcp = ParseMcpObject(*mcp_object);
+      if (mcp.IsConfigured()) {
+        config.mcp_servers.push_back(std::move(mcp));
+      }
+    }
+  }
+  if (const Object* context = object.getObject("context")) {
+    ContextBudgetFromObject(*context, config.context);
+  }
+  if (const Object* search = object.getObject("search")) {
+    SearchConfigFromObject(*search, config.search);
+    if (auto api_key_env = search->getString("api_key_env")) {
+      config.search.api_key = ICredentialStore::Instance().Get(*api_key_env);
+    }
+  }
+  if (auto data_dir = object.getString("data_dir")) {
+    config.data_dir = *data_dir;
+  }
+  if (const Object* relay = object.getObject("relay")) {
+    ServiceEndpointFromObject(*relay, config.relay);
+  }
+  if (const Object* directory = object.getObject("directory")) {
+    ServiceEndpointFromObject(*directory, config.directory);
+  }
+  if (const Object* registration = object.getObject("registration")) {
+    ServiceEndpointFromObject(*registration, config.registration);
+  }
+  if (auto initiation_floor = ReadI64(object, "initiation_floor")) {
+    config.initiation_floor = *initiation_floor;
+  }
+  if (const Object* libp2p = object.getObject("libp2p")) {
+    Libp2pConfigFromObject(*libp2p, config.libp2p);
+  }
+}
+
+Object MachinePrefsToObject(const MachinePreferences& prefs) {
+  Object object;
+  object.set("schema_version", static_cast<int64_t>(prefs.schema_version));
+  object.set("active_profile_id", prefs.active_profile_id);
+  object.set("window", WindowPrefsToObject(prefs.window));
+  object.set("safe_area", SafeAreaToObject(prefs.safe_area));
+  object.set("display", DisplayPrefsToObject(prefs.display));
+  return object;
+}
+
+void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
+  if (auto schema_version = ReadI64(object, "schema_version")) {
+    prefs.schema_version = static_cast<int>(*schema_version);
+  }
+  if (auto active_profile_id = object.getString("active_profile_id")) {
+    prefs.active_profile_id = *active_profile_id;
+  }
+  if (const Object* window = object.getObject("window")) {
+    WindowPrefsFromObject(*window, prefs.window);
+  }
+  if (const Object* safe_area = object.getObject("safe_area")) {
+    SafeAreaFromObject(*safe_area, prefs.safe_area);
+  }
+  if (const Object* display = object.getObject("display")) {
+    DisplayPrefsFromObject(*display, prefs.display);
+  }
+}
+
+Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
+  std::vector<Value> recent;
+  recent.reserve(prefs.recent_emojis.size());
+  for (const std::string& emoji : prefs.recent_emojis) {
+    recent.emplace_back(emoji);
+  }
+
+  Object object;
+  object.set("schema_version", static_cast<int64_t>(prefs.schema_version));
+  object.set("theme", prefs.theme);
+  object.set("appearance", prefs.appearance);
+  object.set("language", prefs.language);
+  object.set("pin_is_default", prefs.pin_is_default);
+  object.set("auto_renew_registration", prefs.auto_renew_registration);
+  object.set("show_notifications", prefs.show_notifications);
+  object.set("call_diagnostics", prefs.call_diagnostics);
+  object.set("group_invite_policy", prefs.group_invite_policy);
+  object.set("attachment_download_policy", prefs.attachment_download_policy);
+  object.set("reduce_transparency", prefs.reduce_transparency);
+  object.set("compact_chrome_frost", prefs.compact_chrome_frost);
+  object.set("reachability_nudge_acked_status", prefs.reachability_nudge_acked_status);
+  object.set("tool_permissions", ToolPermissionsToObject(prefs.tool_permissions));
+  object.set("recent_emojis", makeArray(std::move(recent)));
+  return object;
+}
+
+void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
+  if (auto schema_version = ReadI64(object, "schema_version")) {
+    prefs.schema_version = static_cast<int>(*schema_version);
+  }
+  if (auto theme = object.getString("theme")) {
+    prefs.theme = NormalizeThemePath(*theme);
+  }
+  if (auto appearance = object.getString("appearance")) {
+    prefs.appearance = *appearance;
+  }
+  if (auto language = object.getString("language")) {
+    prefs.language = *language;
   } else {
     prefs.language = "system";
   }
-  if (j.contains("pin_is_default") && j["pin_is_default"].is_boolean()) {
-    prefs.pin_is_default = j["pin_is_default"].get<bool>();
+  if (auto pin_is_default = object.getIf<bool>("pin_is_default")) {
+    prefs.pin_is_default = *pin_is_default;
   }
-  if (j.contains("auto_renew_registration") && j["auto_renew_registration"].is_boolean()) {
-    prefs.auto_renew_registration = j["auto_renew_registration"].get<bool>();
+  if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
+    prefs.auto_renew_registration = *auto_renew;
   } else {
     prefs.auto_renew_registration = true;
   }
-  if (j.contains("show_notifications") && j["show_notifications"].is_boolean()) {
-    prefs.show_notifications = j["show_notifications"].get<bool>();
+  if (auto show_notifications = object.getIf<bool>("show_notifications")) {
+    prefs.show_notifications = *show_notifications;
   } else {
     prefs.show_notifications = true;
   }
-  if (j.contains("call_diagnostics") && j["call_diagnostics"].is_boolean()) {
-    prefs.call_diagnostics = j["call_diagnostics"].get<bool>();
+  if (auto call_diagnostics = object.getIf<bool>("call_diagnostics")) {
+    prefs.call_diagnostics = *call_diagnostics;
   } else {
     prefs.call_diagnostics = false;
   }
-  if (j.contains("group_invite_policy") && j["group_invite_policy"].is_string()) {
-    prefs.group_invite_policy = j["group_invite_policy"].get<std::string>();
+  if (auto group_invite_policy = object.getString("group_invite_policy")) {
+    prefs.group_invite_policy = *group_invite_policy;
   } else {
     prefs.group_invite_policy = "contacts_only";
   }
-  if (j.contains("attachment_download_policy") && j["attachment_download_policy"].is_string()) {
-    prefs.attachment_download_policy = j["attachment_download_policy"].get<std::string>();
+  if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
+    prefs.attachment_download_policy = *attachment_download_policy;
   } else {
     prefs.attachment_download_policy = "smart";
   }
-  if (j.contains("reduce_transparency") && j["reduce_transparency"].is_boolean()) {
-    prefs.reduce_transparency = j["reduce_transparency"].get<bool>();
+  if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
+    prefs.reduce_transparency = *reduce_transparency;
   } else {
     prefs.reduce_transparency = false;
   }
-  if (j.contains("compact_chrome_frost") && j["compact_chrome_frost"].is_boolean()) {
-    prefs.compact_chrome_frost = j["compact_chrome_frost"].get<bool>();
+  if (auto compact_chrome_frost = object.getIf<bool>("compact_chrome_frost")) {
+    prefs.compact_chrome_frost = *compact_chrome_frost;
   } else {
     prefs.compact_chrome_frost = true;
   }
-  if (j.contains("reachability_nudge_acked_status") && j["reachability_nudge_acked_status"].is_string()) {
-    prefs.reachability_nudge_acked_status = j["reachability_nudge_acked_status"].get<std::string>();
+  if (auto acked = object.getString("reachability_nudge_acked_status")) {
+    prefs.reachability_nudge_acked_status = *acked;
   } else {
     prefs.reachability_nudge_acked_status.clear();
   }
-  if (j.contains("tool_permissions")) {
-    prefs.tool_permissions = ToolPermissionsFromJson(j["tool_permissions"]);
+  if (const Object* tool_permissions = object.getObject("tool_permissions")) {
+    prefs.tool_permissions = ToolPermissionsFromObject(*tool_permissions);
   } else {
     prefs.tool_permissions = ToolPermissionsPrefs{};
   }
   prefs.recent_emojis.clear();
-  if (j.contains("recent_emojis") && j["recent_emojis"].is_array()) {
-    for (const auto& item : j["recent_emojis"]) {
-      if (item.is_string()) {
-        prefs.recent_emojis.push_back(item.get<std::string>());
+  if (const Array* recent = object.getArray("recent_emojis")) {
+    for (const Value& item : recent->elements) {
+      if (auto emoji = asString(item)) {
+        prefs.recent_emojis.push_back(*emoji);
       }
     }
   }
 }
 
-void DeepMergeJson(nlohmann::json& base, const nlohmann::json& overlay) {
-  if (!overlay.is_object()) {
-    base = overlay;
-    return;
-  }
-  if (!base.is_object()) {
-    base = nlohmann::json::object();
-  }
-  for (const auto& [key, value] : overlay.items()) {
-    if (value.is_object() && base.contains(key) && base[key].is_object()) {
-      DeepMergeJson(base[key], value);
-    } else {
-      base[key] = value;
-    }
-  }
-}
-
-AppConfig MergeConfig(const AppConfig& defaults, const nlohmann::json& overlay) {
-  nlohmann::json merged = defaults;
-  DeepMergeJson(merged, overlay);
+AppConfig MergeConfig(const AppConfig& defaults, const Object& overlay) {
+  Object merged = AppConfigToObject(defaults);
+  DeepMergeObject(merged, overlay);
   AppConfig config = defaults;
-  from_json(merged, config);
+  AppConfigFromObject(merged, config);
   return config;
 }
 
@@ -633,25 +690,21 @@ void ResolveConfigCredentials(AppConfig& config) {
   }
 }
 
-nlohmann::json ConfigToJson(const AppConfig& config, int config_version) {
-  nlohmann::json root = config;
-  root["config_version"] = config_version;
-  if (!config.llm.api_key.empty()) {
-    root["llm"]["api_key"] = config.llm.api_key;
-    root["llm"].erase("api_key_env");
-  } else if (!config.llm_api_key_env.empty()) {
-    root["llm"]["api_key_env"] = config.llm_api_key_env;
-    root["llm"].erase("api_key");
+Object ConfigToObject(const AppConfig& config, int config_version) {
+  Object root = AppConfigToObject(config);
+  root.set("config_version", static_cast<int64_t>(config_version));
+  if (const Object* llm_ptr = root.getObject("llm")) {
+    Object llm = *llm_ptr;
+    if (!config.llm.api_key.empty()) {
+      llm.set("api_key", config.llm.api_key);
+      llm.erase("api_key_env");
+    } else if (!config.llm_api_key_env.empty()) {
+      llm.set("api_key_env", config.llm_api_key_env);
+      llm.erase("api_key");
+    }
+    root.set("llm", llm);
   }
   return root;
-}
-
-nlohmann::json MachinePrefsToJson(const MachinePreferences& prefs) {
-  return prefs;
-}
-
-nlohmann::json ProfilePrefsToJson(const ProfilePreferences& prefs) {
-  return prefs;
 }
 
 } // namespace pbr

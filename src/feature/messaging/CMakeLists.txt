@@ -49,7 +49,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_base_runtime_core
     pp_base_runtime
     p2p
-    nlohmann_json::nlohmann_json
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

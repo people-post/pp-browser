@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,7 +30,7 @@ enum class RenderMode {
 
 struct PlannedToolCall {
   std::string name;
-  nlohmann::json arguments = nlohmann::json::object();
+  Object arguments;
 };
 
 struct TurnPlan {
@@ -49,10 +49,10 @@ const char* RenderModeName(RenderMode mode);
 ResponseGoal ParseResponseGoal(const std::string& name);
 RenderMode ParseRenderMode(const std::string& name);
 
-Roe<TurnPlan> ParseTurnPlanJson(const nlohmann::json& doc, TurnPlanSource source);
+Roe<TurnPlan> ParseTurnPlanJson(const Object& doc, TurnPlanSource source);
 Roe<TurnPlan> ParseTurnPlanFromLlmOutput(const std::string& llm_output, TurnPlanSource source);
 Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& allowed_tools);
 
-nlohmann::json TurnPlanToJson(const TurnPlan& plan);
+Object TurnPlanToJson(const TurnPlan& plan);
 
 } // namespace pbr
