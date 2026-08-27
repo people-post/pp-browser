@@ -42,11 +42,11 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), and (for libp2p) BoringSSL, Boost, lsquic, and related packages. libsodium + ML-KEM/ML-DSA come from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (sibling checkout or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), and (for libp2p) BoringSSL, Boost, lsquic, and related packages. libsodium + ML-KEM/ML-DSA come from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** under `src/lib/rmlui/`. libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
@@ -255,7 +255,7 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) live in pp-cpp-ui `rmlui/Tests/`; enabled with `PP_BROWSER_BUILD_TESTS`.
 - GoogleTest module suites under `src/.../tests/`.
 
 All suites are discovered through CTest. **Writing new tests:** temp SQLite dirs must use a gtest fixture and close stores before `remove_all` — Windows CI fails otherwise; see [TEST_STRATEGY.md § Unit test conventions](TEST_STRATEGY.md#unit-test-conventions).

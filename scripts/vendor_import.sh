@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# FreeType / HarfBuzz / LunaSVG live in people-post/pp-cpp-ui.
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.vendor_import_tmp"
 
@@ -11,17 +12,14 @@ SQLITE_AMALGAMATION_VERSION="3530300"
 SQLITE_AMALGAMATION_YEAR="2026"
 
 declare -A REPOS=(
-  [freetype]="https://github.com/freetype/freetype.git|VER-2-13-3"
   [nlohmann_json]="https://github.com/nlohmann/json.git|v3.11.3"
   [curl]="https://github.com/curl/curl.git|curl-8_11_1"
   [sdl3]="https://github.com/libsdl-org/SDL.git|release-3.2.8"
   [sdl3_image]="https://github.com/libsdl-org/SDL_image.git|release-3.2.4"
-  [lunasvg]="https://github.com/sammycage/lunasvg.git|v3.5.0"
-  [harfbuzz]="https://github.com/harfbuzz/harfbuzz.git|9.0.0"
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
 )
 
-DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg harfbuzz opus sqlite)
+DEFAULT_ORDER=(nlohmann_json curl sdl3 sdl3_image opus sqlite)
 
 # PQ natives (libsodium / mlkem / mldsa) live in people-post/pp-cpp-crypto.
 

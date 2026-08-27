@@ -10,6 +10,7 @@
 |-------|------|------|
 | Common | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp`; browser bridge in [`src/common/PbrCompat.h`](../../src/common/PbrCompat.h) |
 | Crypto | FetchContent / sibling [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers (`pp_crypto`); product wire helpers stay in `base/crypto` |
+| UI | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG (`pp_ui` → `RmlUi::Core`); SDL/GL backend and presenters stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi, libp2p); may use `third_party` (+ optionally `common`); not product domain |
 | Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, p2p/render glue, data, people, messaging/ai/ui |
 | Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
@@ -27,8 +28,7 @@ app → feature → base → lib → common
 
 | Path | Role |
 |------|------|
-| `lib/rmlui/` | Upstream-shaped RmlUi hard fork (`Include/`, `Source/`, `CMake/`, `Tests/`) |
-| `lib/rmlui/reference/backends/` | Upstream sample backends (reference only; not linked) |
+| *(RmlUi)* | Hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`); paths via `PP_LIB_RMLUI_*` |
 | `lib/libp2p/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
 | `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
 
@@ -46,7 +46,7 @@ Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/li
 Dependency rule:
 
 ```
-base/render → lib/rmlui/Include (public API only)
+base/render → pp-cpp-ui RmlUi::Core / PP_LIB_RMLUI_INCLUDE (public API only)
 base/p2p → lib/libp2p/include (public API only)
 feature/ui → base/render
 feature/messaging → base/p2p
@@ -109,7 +109,7 @@ Fork product profiles (embedding policy + path constants): `src/lib/pp_lib_paths
 
 ## Test placement
 
-- Fork-level RmlUi tests live in [`src/lib/rmlui/Tests/`](../../src/lib/rmlui/Tests/) (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
+- Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
 - Libp2p glue tests live under [`src/base/p2p/tests/`](../../src/base/p2p/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).

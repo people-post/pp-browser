@@ -98,6 +98,10 @@ endif()
 option(PP_BROWSER_BUILD_TESTS "Build host unit and integration tests" ${PP_BROWSER_BUILD_TESTS_DEFAULT})
 
 include(dependencies)
+# RmlUi after SDL/third_party so RMLUI_TESTS (SDL_GL3 backend) can find SDL3.
+if(NOT PP_BROWSER_HEADLESS)
+  include(PpCppUi)
+endif()
 include(Progress)
 find_package(Threads REQUIRED)
 

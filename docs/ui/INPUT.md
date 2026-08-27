@@ -18,7 +18,7 @@ SDL events
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
 | Platform | `src/base/render/platform/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
-| RmlUi core | `src/lib/rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
+| RmlUi core | `pp-cpp-ui rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide selection; desktop drag-select; touch word select via long-press / double-tap |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
 | Context menu | `src/base/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
@@ -26,7 +26,7 @@ SDL events
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
-`src/lib/rmlui/reference/backends/` is an upstream reference copy. The running app compiles only `src/base/render/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
+`pp-cpp-ui rmlui/reference/backends/` is an upstream reference copy. The running app compiles only `src/base/render/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
 
 ## Event flow (keyboard)
 

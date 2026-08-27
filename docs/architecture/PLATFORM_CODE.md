@@ -85,7 +85,7 @@ Allowed paths for OS preprocessor branches:
 - Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/base/media/` and `src/base/p2p/`
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
-- `src/lib/rmlui/` (upstream; not product policy)
+- `pp-cpp-ui rmlui/` (upstream; not product policy)
 - `src/lib/libp2p/` (upstream; not product policy)
 
 **Not allowed:** `src/feature/`, `src/app/` (except tests), `src/base/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.

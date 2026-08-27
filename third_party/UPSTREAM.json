@@ -1,9 +1,4 @@
 {
-  "freetype": {
-    "repository": "https://github.com/freetype/freetype.git",
-    "tag": "VER-2-13-3",
-    "commit": "42608f77f20749dd6ddc9e0536788eaad70ea4b5"
-  },
   "nlohmann_json": {
     "repository": "https://github.com/nlohmann/json.git",
     "tag": "v3.11.3",
@@ -23,11 +18,6 @@
     "repository": "https://github.com/libsdl-org/SDL_image.git",
     "tag": "release-3.2.4",
     "commit": "11154afb7855293159588b245b446a4ef09e574f"
-  },
-  "lunasvg": {
-    "repository": "https://github.com/sammycage/lunasvg.git",
-    "tag": "v3.5.0",
-    "commit": "83c58df8103dc7dca423dfd824992af94d49bed6"
   },
   "sdl3_image_externals": {
     "jpeg": {

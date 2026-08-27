@@ -15,13 +15,11 @@ endfunction()
 pp_require_vendored(nlohmann_json)
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
+# FreeType / HarfBuzz / LunaSVG come from FetchContent / sibling pp-cpp-ui.
 if(NOT PP_BROWSER_HEADLESS)
-  pp_require_vendored(freetype)
-  pp_require_vendored(harfbuzz)
   pp_require_vendored(curl)
   pp_require_vendored(sdl3)
   pp_require_vendored(sdl3_image)
-  pp_require_vendored(lunasvg)
   pp_require_vendored(sqlite)
   pp_require_vendored(opus)
 endif()
@@ -56,165 +54,7 @@ endif()
 
 # --- GUI / full-app third_party below ---
 
-# FreeType (RmlUi font engine) — PNG required for Noto Color Emoji CBDT bitmaps.
-# Prefer system zlib/libpng when present; otherwise use SDL3_image vendored copies.
-# On Windows, never trust PATH-discovered MinGW archives (e.g. Strawberry Perl):
-# they are usually the wrong arch/ABI for MSVC (x64 .a linked into ARM64/x64 MSVC).
-set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_PNG OFF CACHE BOOL "" FORCE)
-set(FT_REQUIRE_PNG ON CACHE BOOL "" FORCE)
-set(FT_DISABLE_ZLIB OFF CACHE BOOL "" FORCE)
-set(FT_REQUIRE_ZLIB ON CACHE BOOL "" FORCE)
-
-if(WIN32)
-  set(ZLIB_FOUND FALSE)
-  set(PNG_FOUND FALSE)
-else()
-  find_package(ZLIB QUIET)
-  find_package(PNG QUIET)
-endif()
-if(NOT ZLIB_FOUND OR NOT PNG_FOUND)
-  message(STATUS "pp-browser: vendoring zlib+libpng for FreeType color emoji")
-  # Drop stale FindZLIB/FindPNG cache entries that may name incompatible system libs.
-  unset(ZLIB_LIBRARY CACHE)
-  unset(ZLIB_LIBRARY_RELEASE CACHE)
-  unset(ZLIB_LIBRARY_DEBUG CACHE)
-  unset(PNG_LIBRARY CACHE)
-  unset(PNG_LIBRARY_RELEASE CACHE)
-  unset(PNG_LIBRARY_DEBUG CACHE)
-  unset(PNG_PNG_INCLUDE_DIR CACHE)
-  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  # libp2p_dependencies may already have added third_party/zlib as target `zlib`.
-  # Reuse it (and its headers) so libpng's PNG_ZLIB_VERNUM matches the compile
-  # include path; do not mix sdl3_image zlib headers with the libp2p zlib binary.
-  set(_pp_added_zlib_ft FALSE)
-  if(NOT TARGET zlibstatic AND NOT TARGET zlib)
-    add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib"
-                     "${CMAKE_BINARY_DIR}/third_party/zlib_ft" EXCLUDE_FROM_ALL)
-    set(_pp_added_zlib_ft TRUE)
-  endif()
-  if(TARGET zlibstatic)
-    set(_pp_zlib_lib zlibstatic)
-  else()
-    set(_pp_zlib_lib zlib)
-  endif()
-  if(_pp_added_zlib_ft)
-    set(_pp_zlib_inc
-        "${PP_THIRD_PARTY_DIR}/sdl3_image/external/zlib;${CMAKE_BINARY_DIR}/third_party/zlib_ft")
-  else()
-    set(_pp_zlib_inc
-        "${PP_THIRD_PARTY_DIR}/zlib;${CMAKE_BINARY_DIR}/third_party/zlib")
-  endif()
-  set(ZLIB_LIBRARY ${_pp_zlib_lib} CACHE FILEPATH "zlib for FreeType/libpng" FORCE)
-  set(ZLIB_INCLUDE_DIR "${_pp_zlib_inc}"
-      CACHE PATH "zlib include for FreeType/libpng" FORCE)
-  set(ZLIB_FOUND TRUE CACHE BOOL "" FORCE)
-  set(ZLIB_LIBRARIES ${ZLIB_LIBRARY})
-  set(ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR})
-  if(NOT TARGET ZLIB::ZLIB)
-    add_library(ZLIB::ZLIB ALIAS ${_pp_zlib_lib})
-  endif()
-
-  set(PNG_SHARED OFF CACHE BOOL "" FORCE)
-  set(PNG_STATIC ON CACHE BOOL "" FORCE)
-  set(PNG_TESTS OFF CACHE BOOL "" FORCE)
-  set(PNG_TOOLS OFF CACHE BOOL "" FORCE)
-  set(PNG_FRAMEWORK OFF CACHE BOOL "" FORCE)
-  set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
-  # libpng's project(... LANGUAGES C ASM) needs CMAKE_ASM_COMPILE_OBJECT at
-  # generate time. On WIN32 the root project() declares ASM with `.s;.S` only
-  # (so `.asm` stays with ASM_NASM for BoringSSL), plus an MSVC stub and empty
-  # CMAKE_ASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_* mappings.
-  if(MSVC AND NOT CMAKE_ASM_COMPILE_OBJECT)
-    set(CMAKE_ASM_COMPILE_OBJECT
-        "<CMAKE_C_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /c /Fo<OBJECT> <SOURCE>")
-  endif()
-  if(NOT TARGET png_static AND NOT TARGET png_shared AND NOT TARGET png)
-    add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng"
-                     "${CMAKE_BINARY_DIR}/third_party/libpng_ft" EXCLUDE_FROM_ALL)
-  endif()
-  if(TARGET png_static)
-    set(_pp_png_lib png_static)
-  elseif(TARGET png)
-    set(_pp_png_lib png)
-  else()
-    message(FATAL_ERROR "Vendored libpng target not found after add_subdirectory")
-  endif()
-  # Satisfy FreeType's find_package(PNG) via a redirect config package.
-  set(_pp_png_cfg_dir "${CMAKE_BINARY_DIR}/pp_cmake_png")
-  file(MAKE_DIRECTORY "${_pp_png_cfg_dir}")
-  file(WRITE "${_pp_png_cfg_dir}/PNGConfig.cmake"
-       "set(PNG_FOUND TRUE)\n"
-       "set(PNG_INCLUDE_DIRS \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\")\n"
-       "set(PNG_LIBRARIES ${_pp_png_lib})\n"
-       "set(PNG_LIBRARY ${_pp_png_lib})\n"
-       "set(PNG_PNG_INCLUDE_DIR \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\")\n"
-       "if(NOT TARGET PNG::PNG)\n"
-       "  add_library(PNG::PNG INTERFACE IMPORTED)\n"
-       "  set_target_properties(PNG::PNG PROPERTIES\n"
-       "    INTERFACE_INCLUDE_DIRECTORIES \"${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng\"\n"
-       "    INTERFACE_LINK_LIBRARIES ${_pp_png_lib})\n"
-       "endif()\n")
-  set(_pp_zlib_cfg_dir "${CMAKE_BINARY_DIR}/pp_cmake_zlib")
-  file(MAKE_DIRECTORY "${_pp_zlib_cfg_dir}")
-  file(WRITE "${_pp_zlib_cfg_dir}/ZLIBConfig.cmake"
-       "set(ZLIB_FOUND TRUE)\n"
-       "set(ZLIB_INCLUDE_DIRS \"${ZLIB_INCLUDE_DIR}\")\n"
-       "set(ZLIB_LIBRARIES ${_pp_zlib_lib})\n"
-       "set(ZLIB_LIBRARY ${_pp_zlib_lib})\n"
-       "set(ZLIB_INCLUDE_DIR \"${ZLIB_INCLUDE_DIR}\")\n"
-       "if(NOT TARGET ZLIB::ZLIB)\n"
-       "  add_library(ZLIB::ZLIB INTERFACE IMPORTED)\n"
-       "  set_target_properties(ZLIB::ZLIB PROPERTIES\n"
-       "    INTERFACE_INCLUDE_DIRECTORIES \"${ZLIB_INCLUDE_DIR}\"\n"
-       "    INTERFACE_LINK_LIBRARIES ${_pp_zlib_lib})\n"
-       "endif()\n")
-  list(PREPEND CMAKE_PREFIX_PATH "${_pp_png_cfg_dir}" "${_pp_zlib_cfg_dir}")
-  set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
-  # iOS/Android set CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY, so CMAKE_PREFIX_PATH alone
-  # is ignored for find_package. Point *_DIR at our redirect configs (host paths).
-  set(PNG_DIR "${_pp_png_cfg_dir}" CACHE PATH "Vendored PNG config for FreeType" FORCE)
-  set(ZLIB_DIR "${_pp_zlib_cfg_dir}" CACHE PATH "Vendored ZLIB config for FreeType" FORCE)
-  set(PNG_FOUND TRUE)
-  set(PNG_LIBRARIES ${_pp_png_lib})
-  set(PNG_INCLUDE_DIRS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/libpng")
-endif()
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/freetype"
-                 "${CMAKE_BINARY_DIR}/third_party/freetype" EXCLUDE_FROM_ALL)
-
-if(NOT TARGET Freetype::Freetype)
-  if(TARGET freetype-interface)
-    add_library(Freetype::Freetype ALIAS freetype-interface)
-  elseif(TARGET freetype)
-    add_library(Freetype::Freetype ALIAS freetype)
-  else()
-    message(FATAL_ERROR "FreeType target not found after add_subdirectory")
-  endif()
-endif()
-
-# HarfBuzz (RmlUi text shaping)
-set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)
-set(HB_BUILD_SUBSET OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_GRAPHITE2 OFF CACHE BOOL "" FORCE)
-set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
-# Vendored HarfBuzz compiles CoreText when HB_HAVE_CORETEXT (default ON on
-# Apple). On iOS that requires HB_IOS so it links CoreText/CoreGraphics instead
-# of ApplicationServices (macOS-only); otherwise the final app link fails with
-# undefined CT* symbols.
-if(PP_BROWSER_IS_IOS)
-  set(HB_IOS ON CACHE BOOL "" FORCE)
-endif()
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/harfbuzz"
-                 "${CMAKE_BINARY_DIR}/third_party/harfbuzz" EXCLUDE_FROM_ALL)
-
-if(TARGET harfbuzz AND NOT TARGET harfbuzz::harfbuzz)
-  add_library(harfbuzz::harfbuzz ALIAS harfbuzz)
-endif()
+# FreeType / HarfBuzz / LunaSVG (+ zlib/libpng for CBDT) come from pp-cpp-ui.
 
 # SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
 add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
@@ -227,13 +67,6 @@ set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PP_THIRD_PARTY_DIR}/opus"
                  "${CMAKE_BINARY_DIR}/third_party/opus" EXCLUDE_FROM_ALL)
-
-# LunaSVG (RmlUi SVG plugin)
-set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(PLUTOVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/lunasvg"
-                 "${CMAKE_BINARY_DIR}/third_party/lunasvg" EXCLUDE_FROM_ALL)
 
 # libcurl (LLM HTTP client)
 set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
