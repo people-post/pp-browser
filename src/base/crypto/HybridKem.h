@@ -4,16 +4,18 @@
 
 #include "common/Error.h"
 
+#include "crypto/MlKem.h"
+
 #include <cstddef>
 #include <string>
 
 namespace pbr {
 
-/** ML-KEM-768 (FIPS 203) via vendored mlkem-native — public-tier auto-key (PQ-only). */
-inline constexpr size_t kHybridKemPublicKeyBytes = 1184;
-inline constexpr size_t kHybridKemCiphertextBytes = 1088;
-inline constexpr size_t kHybridKemSharedSecretBytes = 32;
-inline constexpr size_t kHybridKemPrivateKeyBytes = 2400;
+/** ML-KEM-768 sizes — aliases kept for call-site stability (`HybridKem` name). */
+inline constexpr size_t kHybridKemPublicKeyBytes = ::pp::kMlKem768PublicKeyBytes;
+inline constexpr size_t kHybridKemCiphertextBytes = ::pp::kMlKem768CiphertextBytes;
+inline constexpr size_t kHybridKemSharedSecretBytes = ::pp::kMlKem768SharedSecretBytes;
+inline constexpr size_t kHybridKemPrivateKeyBytes = ::pp::kMlKem768PrivateKeyBytes;
 
 struct HybridKemKeyPair {
   ByteVector public_key;
@@ -22,7 +24,7 @@ struct HybridKemKeyPair {
 
 /**
  * ML-KEM-768 encaps/decaps for `e2e_public` key_init.
- * Class name kept for call-site stability; no longer X25519+Kyber draft hybrid.
+ * Class name kept for call-site stability; wraps pp::MlKem + base64 wire encoding.
  */
 class HybridKem {
 public:
