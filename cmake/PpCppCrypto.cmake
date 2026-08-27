@@ -9,10 +9,8 @@ set(PP_CPP_CRYPTO_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-crypto (overrides FetchContent)")
 set(PP_CPP_CRYPTO_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-crypto.git"
   CACHE STRING "Git remote for pp-cpp-crypto")
-# Until pp-cpp-crypto tags v0.1.0 on main, pin the bootstrap commit.
-# After release: set this back to "v0.1.0".
-set(PP_CPP_CRYPTO_GIT_TAG "0988fe1863b387b630e9bd12c8685c530292fc10"
-  CACHE STRING "Release tag or commit on pp-cpp-crypto (prefer release tag from main)")
+set(PP_CPP_CRYPTO_GIT_TAG "v0.1.0"
+  CACHE STRING "Release tag on pp-cpp-crypto main (not a branch name)")
 
 set(PP_CRYPTO_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-crypto tests" FORCE)
 
