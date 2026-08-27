@@ -1,5 +1,6 @@
 #include "feature/ai/TurnExecutor.h"
 #include "base/ai/TurnPlan.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -7,15 +8,23 @@
 namespace {
 
 void FillEchoRegistry(pbr::ToolRegistry& registry) {
+  pbr::Object query_prop;
+  query_prop.set("type", "string");
+  pbr::Object properties;
+  properties.set("query", query_prop);
+  pbr::Object parameters;
+  parameters.set("type", "object");
+  parameters.set("properties", properties);
+
   registry.Register(pbr::ToolDescriptor{
       .definition =
           pbr::ToolDefinition{
               .name = "echo_tool",
               .description = "echo",
-              .parameters = {{"type", "object"}, {"properties", {{"query", {{"type", "string"}}}}}},
+              .parameters = std::move(parameters),
           },
-      .execute = [](const nlohmann::json& args) -> pbr::Roe<std::string> {
-        return args.dump();
+      .execute = [](const pbr::Object& args) -> pbr::Roe<std::string> {
+        return pbr::DumpJson(args);
       },
   });
 }
@@ -24,7 +33,9 @@ void FillEchoRegistry(pbr::ToolRegistry& registry) {
 
 TEST(TurnExecutorTest, ExecutesToolAndBuildsScratchMessages) {
   pbr::TurnPlan plan;
-  plan.tools.push_back({.name = "echo_tool", .arguments = {{"query", "hello"}}});
+  pbr::Object args;
+  args.set("query", "hello");
+  plan.tools.push_back({.name = "echo_tool", .arguments = std::move(args)});
 
   pbr::ToolRegistry registry;
   FillEchoRegistry(registry);

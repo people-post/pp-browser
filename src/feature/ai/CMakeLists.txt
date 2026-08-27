@@ -14,7 +14,6 @@ pp_browser_add_feature_library(pp_feature_ai
   PUBLIC_LIBS
     pp_feature_ai_bindings
     pp_feature_ai_tools
-    nlohmann_json::nlohmann_json
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

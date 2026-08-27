@@ -1,11 +1,23 @@
 #include "feature/ai/ToolPermissionPolicy.h"
 #include "feature/ai/ToolPermissionPrompt.h"
 #include "feature/ai/TurnExecutor.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
 #include <string>
 #include <unordered_set>
+
+namespace {
+
+pbr::Object EmptyObjectSchema() {
+  pbr::Object schema;
+  schema.set("type", "object");
+  schema.set("properties", pbr::Object{});
+  return schema;
+}
+
+} // namespace
 
 TEST(ToolPermissionPolicyTest, DefaultsAskForWriteAllowForRead) {
   pbr::ToolPermissionsPrefs prefs;
@@ -49,25 +61,25 @@ TEST(TurnExecutorPermissionTest, StopsBeforeMutatingAskTool) {
   registry.Register(pbr::ToolDescriptor{
       .definition = {.name = "list_contacts",
                      .description = "list",
-                     .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                     .parameters = EmptyObjectSchema()},
       .meta = {.domain = "people", .risk = "read", .mutating = false},
-      .execute = [](const nlohmann::json&) -> pbr::Roe<std::string> { return std::string("[]"); },
+      .execute = [](const pbr::Object&) -> pbr::Roe<std::string> { return std::string("[]"); },
   });
   registry.Register(pbr::ToolDescriptor{
       .definition = {.name = "add_contact",
                      .description = "add",
-                     .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                     .parameters = EmptyObjectSchema()},
       .meta = {.domain = "people", .risk = "write", .mutating = true},
       .execute =
-          [](const nlohmann::json&) -> pbr::Roe<std::string> {
+          [](const pbr::Object&) -> pbr::Roe<std::string> {
             ADD_FAILURE() << "mutating tool should not execute before permission";
             return std::string("{}");
           },
   });
 
   pbr::TurnPlan plan;
-  plan.tools.push_back({.name = "list_contacts", .arguments = nlohmann::json::object()});
-  plan.tools.push_back({.name = "add_contact", .arguments = nlohmann::json::object()});
+  plan.tools.push_back({.name = "list_contacts", .arguments = {}});
+  plan.tools.push_back({.name = "add_contact", .arguments = {}});
 
   pbr::TurnExecutionOptions options;
   const pbr::TurnExecutionResult result = pbr::TurnExecutor::Execute(plan, registry, {}, options);

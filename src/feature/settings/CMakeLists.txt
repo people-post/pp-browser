@@ -10,8 +10,7 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsSections.cpp
     SettingsTools.cpp
     StorageSettingsSection.cpp
-  PUBLIC_LIBS
-    nlohmann_json::nlohmann_json)
+  PUBLIC_LIBS)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
