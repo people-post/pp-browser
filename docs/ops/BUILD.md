@@ -255,14 +255,16 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) live in pp-cpp-ui `rmlui/Tests/`; enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) live in **pp-cpp-ui** and run there with `-DPP_UI_BUILD_TESTS=ON` (not in this repo’s ctest).
 - GoogleTest module suites under `src/.../tests/`.
 
 All suites are discovered through CTest. **Writing new tests:** temp SQLite dirs must use a gtest fixture and close stores before `remove_all` — Windows CI fails otherwise; see [TEST_STRATEGY.md § Unit test conventions](TEST_STRATEGY.md#unit-test-conventions).
 
-To run RmlUi fork tests:
+To run RmlUi fork tests (from the pp-cpp-ui checkout):
 
 ```bash
+cmake -S . -B build -DPP_UI_BUILD_TESTS=ON
+cmake --build build --target rmlui_unit_tests
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure
 ctest --test-dir build -R ClickRouting --output-on-failure
 ```
