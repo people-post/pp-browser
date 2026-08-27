@@ -1,9 +1,4 @@
 {
-  "nlohmann_json": {
-    "repository": "https://github.com/nlohmann/json.git",
-    "tag": "v3.11.3",
-    "commit": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"
-  },
   "curl": {
     "repository": "https://github.com/curl/curl.git",
     "tag": "curl-8_11_1",
