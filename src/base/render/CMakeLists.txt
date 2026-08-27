@@ -1,4 +1,4 @@
-# Product RmlUi SDL/GL backend (base layer). Fork lives in src/lib/rmlui.
+# Product RmlUi SDL/GL backend (base layer). Fork comes from pp-cpp-ui.
 
 include(pp_lib_paths)
 include(pp_lib_rmlui)

@@ -2,7 +2,7 @@
 
 Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake).
 
-RmlUi remains a hard fork under [`src/lib/rmlui/`](../src/lib/rmlui/), not in this directory.
+RmlUi + FreeType / HarfBuzz / LunaSVG live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui), not in this directory.
 
 libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not here. This directory holds **libp2p's external dependencies**.
 
@@ -10,7 +10,6 @@ libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not 
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|
-| `freetype/` | [freetype/freetype](https://github.com/freetype/freetype) | `VER-2-13-3` | FTL / GPLv2 |
 | `nlohmann_json/` | [nlohmann/json](https://github.com/nlohmann/json) | `v3.11.3` | MIT |
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license |
 | `sdl3/` | [libsdl-org/SDL](https://github.com/libsdl-org/SDL) | `release-3.2.8` | Zlib |
@@ -18,7 +17,7 @@ libp2p itself is a hard fork under [`src/lib/libp2p/`](../src/lib/libp2p/), not 
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
 
-libsodium, mlkem-native, and mldsa-native live in [`people-post/pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (sibling / FetchContent), not in this tree.
+libsodium, mlkem-native, and mldsa-native live in [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto). FreeType / HarfBuzz / LunaSVG live in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui).
 
 ### libp2p dependencies (when enabled)
 
@@ -43,7 +42,6 @@ libp2p wire codecs are handwritten (`src/lib/libp2p/src/wire/`) — no vendored 
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|
-| `freetype/` | [freetype/freetype](https://github.com/freetype/freetype) | `VER-2-13-3` | FTL / GPLv2 |
 | `nlohmann_json/` | [nlohmann/json](https://github.com/nlohmann/json) | `v3.11.3` | MIT |
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license |
 | `sdl3/` | [libsdl-org/SDL](https://github.com/libsdl-org/SDL) | `release-3.2.8` | Zlib |
