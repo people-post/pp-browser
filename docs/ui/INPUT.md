@@ -17,7 +17,7 @@ SDL events
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| Platform | `src/base/render/platform/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
+| Platform | `src/base/render/` host + pp-cpp-ui `backend/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
 | RmlUi core | `pp-cpp-ui rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide selection; desktop drag-select; touch word select via long-press / double-tap |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
@@ -26,7 +26,7 @@ SDL events
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
-`pp-cpp-ui rmlui/reference/backends/` is an upstream reference copy. The running app compiles only `src/base/render/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
+`pp-cpp-ui rmlui/reference/backends/` backs RmlUi unit-test shell. The running app uses pp-cpp-ui `backend/` plus product `BrowserHost` in `src/base/render/host/`. Edit product host for app runtime behavior; edit pp-cpp-ui `backend/` for shared Platform_SDL / Renderer_GL3.
 
 ## Event flow (keyboard)
 

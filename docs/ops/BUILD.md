@@ -42,7 +42,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), and (for libp2p) BoringSSL, Boost, lsquic, and related packages. libsodium + ML-KEM/ML-DSA come from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): nlohmann-json, curl, SQLite (amalgamation), Opus, and (for libp2p) BoringSSL, Boost, lsquic, and related packages. libsodium + ML-KEM/ML-DSA come from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -58,7 +58,7 @@ Chat/CJK fonts (Noto Sans CJK Regular + **Noto Color Emoji** CBDT, with monochro
 
 If libp2p dependency trees are missing, run `./scripts/libp2p_vendor_import.sh`.
 
-Codec sources under `third_party/sdl3_image/external/` are committed as **regular files** (not git submodules). If configure reports missing externals after clone, re-run `./scripts/vendor_import.sh` and ensure those directories contain source files, not empty gitlink placeholders.
+SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump `PP_CPP_UI_GIT_TAG` when updating them.
 
 ## Configure and build
 
@@ -72,7 +72,7 @@ First-party targets (`src/common`, `src/base`, `src/feature`, `src/app`, and ren
 Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
 
 ```bash
-rm -rf build/third_party/sdl3
+rm -rf build/_deps/pp_cpp_ui-build/third_party/sdl3
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```

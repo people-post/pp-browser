@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# FreeType / HarfBuzz / LunaSVG live in people-post/pp-cpp-ui.
+# FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image live in people-post/pp-cpp-ui.
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.vendor_import_tmp"
 
@@ -14,54 +14,14 @@ SQLITE_AMALGAMATION_YEAR="2026"
 declare -A REPOS=(
   [nlohmann_json]="https://github.com/nlohmann/json.git|v3.11.3"
   [curl]="https://github.com/curl/curl.git|curl-8_11_1"
-  [sdl3]="https://github.com/libsdl-org/SDL.git|release-3.2.8"
-  [sdl3_image]="https://github.com/libsdl-org/SDL_image.git|release-3.2.4"
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
 )
 
-DEFAULT_ORDER=(nlohmann_json curl sdl3 sdl3_image opus sqlite)
+DEFAULT_ORDER=(nlohmann_json curl opus sqlite)
 
 # PQ natives (libsodium / mlkem / mldsa) live in people-post/pp-cpp-crypto.
+# SDL3 / SDL3_image live in people-post/pp-cpp-ui.
 
-import_sdl3_image_externals() {
-  local image_root="${THIRD_PARTY}/sdl3_image"
-  local gitmodules="${image_root}/.gitmodules"
-  if [[ ! -f "${gitmodules}" ]]; then
-    echo "error: missing ${gitmodules}" >&2
-    exit 1
-  fi
-
-  echo "==> sdl3_image external/ codec sources"
-  mkdir -p "${image_root}/external"
-
-  cd "${image_root}"
-  while true; do
-    read -r module || break
-    read -r line; set -- ${line}; local path=$3
-    read -r line; set -- ${line}; local url=$3
-    read -r line; set -- ${line}; local branch=$3
-
-    local name="${path##*/}"
-    local dest="${image_root}/${path}"
-    local clone_tmp="${TMP}/sdl3_image_${name}"
-    echo "    ${name} @ ${branch}"
-    rm -rf "${clone_tmp}" "${dest}"
-    git clone --depth 1 --filter=blob:none --branch "${branch}" --recursive \
-      "${url}" "${clone_tmp}"
-    local commit
-    commit="$(git -C "${clone_tmp}" rev-parse HEAD)"
-    mkdir -p "${dest}"
-    rsync -a --delete --exclude='.git' "${clone_tmp}/" "${dest}/"
-    find "${dest}" -name '.git' -exec rm -rf {} + 2>/dev/null || true
-    rm -rf "${clone_tmp}"
-    external_entries+=("    \"${name}\": {
-      \"repository\": \"${url}\",
-      \"branch\": \"${branch}\",
-      \"commit\": \"${commit}\"
-    }")
-  done < "${gitmodules}"
-  cd "${ROOT}"
-}
 
 import_sqlite_amalgamation() {
   local dest="${THIRD_PARTY}/sqlite"
@@ -130,7 +90,6 @@ mkdir -p "${TMP}"
 
 PATCH_JSON="${TMP}/upstream_patch.json"
 echo "{}" > "${PATCH_JSON}"
-external_entries=()
 
 if [[ $# -gt 0 ]]; then
   ORDER=("$@")
@@ -184,9 +143,6 @@ data[name] = {"repository": url, "tag": tag, "commit": commit}
 Path(path).write_text(json.dumps(data))
 PY
 
-  if [[ "${name}" == "sdl3_image" ]]; then
-    import_sdl3_image_externals
-  fi
 done
 
 UPSTREAM="${THIRD_PARTY}/UPSTREAM.json"
@@ -209,28 +165,6 @@ upstream_path.write_text(json.dumps(data, indent=2) + "\n")
 print(f"Updated {upstream_path}")
 PY
 
-if [[ ${#external_entries[@]} -gt 0 ]]; then
-  export UPSTREAM
-  export EXTERNAL_BLOB="${external_entries[*]}"
-  python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-path = Path(os.environ["UPSTREAM"])
-data = json.loads(path.read_text())
-externals = data.setdefault("sdl3_image_externals", {})
-for chunk in os.environ.get("EXTERNAL_BLOB", "").split("    \""):
-    chunk = chunk.strip()
-    if not chunk:
-        continue
-    name = chunk.split("\"", 1)[0]
-    body = "{" + chunk[name.__len__() + 1 :]
-    _, _, rest = body.partition(":")
-    externals[name] = json.loads(rest.strip().rstrip(","))
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
-fi
 
 rm -rf "${TMP}"
 
