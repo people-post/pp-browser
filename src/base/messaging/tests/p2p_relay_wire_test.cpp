@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
-#include <nlohmann/json.hpp>
 
 namespace {
 using namespace pbr;

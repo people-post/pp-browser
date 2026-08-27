@@ -28,8 +28,6 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
 #include "common/ValueJson.h"
 
 namespace pbr {
@@ -121,11 +119,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& messag
   if (!type) {
     return {};
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  auto detail = payload ? payload->getString("detail") : std::nullopt;
+  if (!detail) {
     return Error("Initiation billing control missing detail");
   }
-  const std::string detail_json = payload["detail"].get<std::string>();
+  const std::string detail_json = *detail;
   const std::string peer = actor_identity.empty() ? std::string() : actor_identity;
 
   switch (*type) {

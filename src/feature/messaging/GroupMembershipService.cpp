@@ -8,9 +8,10 @@
 
 #include "common/Utilities.h"
 
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
+
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -100,10 +101,10 @@ Roe<void> GroupMembershipService::SendInviteDirectMessage(const GroupInvitePaylo
   // Send as a system ChatPayload on the wire (same shape as group_renamed). Do not attach
   // Accept/Decline locally — those are for the invitee, hydrated on inbound ingest.
   const std::string display = "Group invitation: " + invite.group_title;
-  const std::string payload_json =
-      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite)},
-                      {"detail", *detail}})
-          .dump();
+  Object payload;
+  payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite));
+  payload.set("detail", *detail);
+  const std::string payload_json = DumpJson(payload);
   SendRelayOptions opts;
   opts.generation = "system";
   opts.content_type = ChatContentType::System;
@@ -252,8 +253,10 @@ Roe<void> GroupMembershipService::SendInviteResponseDirectMessage(const std::str
   }
   const bool accepted = response_type == GroupMembershipControlType::GroupInviteAccept;
   const std::string display = accepted ? "Accepted group invitation" : "Declined group invitation";
-  const std::string payload_json =
-      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(response_type)}, {"detail", *detail}}).dump();
+  Object payload;
+  payload.set("control_type", GroupMembershipControlTypeToWire(response_type));
+  payload.set("detail", *detail);
+  const std::string payload_json = DumpJson(payload);
   SendRelayOptions opts;
   opts.generation = "system";
   opts.update_preview = false;
@@ -447,9 +450,10 @@ Roe<void> GroupMembershipService::SendMembershipDirectMessage(const std::string&
   if (!local) {
     return local.error();
   }
-  const std::string payload_json =
-      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(control_type)}, {"detail", detail_json}})
-          .dump();
+  Object payload;
+  payload.set("control_type", GroupMembershipControlTypeToWire(control_type));
+  payload.set("detail", detail_json);
+  const std::string payload_json = DumpJson(payload);
   SendRelayOptions opts;
   opts.generation = "system";
   opts.update_preview = false;
@@ -712,8 +716,10 @@ Roe<void> GroupMembershipService::EnsureOwnerUnreachableAdvisory(const std::stri
   const std::string body =
       "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing "
       "members need the owner. If they’ve left for good, start a new group from this one.";
-  const std::string detail =
-      nlohmann::json({{"group_id", group_id}, {"owner_identity", metadata->owner_identity}}).dump();
+  Object detail_obj;
+  detail_obj.set("group_id", group_id);
+  detail_obj.set("owner_identity", metadata->owner_identity);
+  const std::string detail = DumpJson(detail_obj);
   auto message = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
                                                           GroupMembershipControlType::GroupOwnerUnreachable,
                                                           title + "\n" + body, detail, metadata->owner_identity);

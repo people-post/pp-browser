@@ -24,7 +24,6 @@ pp_browser_add_base_library(pp_base_net
     pp_base_crypto
     pp_base_people
     pp_base_messaging
-    nlohmann_json::nlohmann_json
     CURL::libcurl)
 
 target_compile_definitions(pp_base_net PUBLIC

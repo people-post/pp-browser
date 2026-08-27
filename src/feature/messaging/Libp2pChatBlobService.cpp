@@ -16,7 +16,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -56,13 +55,13 @@ Roe<std::vector<uint8_t>> ParseFetchResponseBody(const std::vector<uint8_t>& bod
   }
   if (body.front() == '{') {
     const std::string json_utf8(body.begin(), body.end());
-    nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-    if (!root.is_discarded() && root.contains("ok")) {
-      if (root["ok"].get<bool>()) {
+    auto root = TryParseObject(json_utf8);
+    if (root && root->contains("ok")) {
+      if (root->getIf<bool>("ok").value_or(false)) {
         return Error("Unexpected chat-blob ack on fetch");
       }
-      if (root.contains("error") && root["error"].is_string()) {
-        return Error(root["error"].get<std::string>());
+      if (auto err = root->getString("error")) {
+        return Error(*err);
       }
       return Error("Chat-blob fetch failed");
     }
@@ -77,13 +76,13 @@ Roe<void> ParsePushAckBody(const std::vector<uint8_t>& body) {
     return Error("Empty chat-blob push ack");
   }
   const std::string json_utf8(body.begin(), body.end());
-  nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-  if (root.is_discarded() || !root.contains("ok")) {
+  auto root = TryParseObject(json_utf8);
+  if (!root || !root->contains("ok")) {
     return Error("Invalid chat-blob push ack");
   }
-  if (!root["ok"].get<bool>()) {
-    if (root.contains("error") && root["error"].is_string()) {
-      return Error(root["error"].get<std::string>());
+  if (!root->getIf<bool>("ok").value_or(false)) {
+    if (auto err = root->getString("error")) {
+      return Error(*err);
     }
     return Error("Chat-blob push rejected");
   }

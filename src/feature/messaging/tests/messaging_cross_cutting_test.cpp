@@ -18,7 +18,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 #include <string>
 
 namespace {

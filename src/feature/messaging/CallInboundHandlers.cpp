@@ -9,8 +9,6 @@
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
-#include <nlohmann/json.hpp>
-
 namespace pbr {
 
 namespace {

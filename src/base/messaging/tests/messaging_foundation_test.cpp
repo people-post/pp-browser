@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
-#include <nlohmann/json.hpp>
 
 TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   using namespace pbr;

@@ -4,7 +4,6 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
 namespace pbr {
 namespace {
