@@ -1,6 +1,8 @@
 #include "base/messaging/SyncStateCodec.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+
+#include <cstdint>
 
 namespace pbr {
 
@@ -29,69 +31,83 @@ PeerSyncPhase PeerSyncPhaseFromString(const std::string& value) {
 }
 
 std::string PeerSyncStateToJson(const PeerSyncState& state) {
-  nlohmann::json json = {{"contiguous_peer_seq", state.contiguous_peer_seq},
-                         {"loaded_min_seq", state.loaded_min_seq},
-                         {"loaded_max_seq", state.loaded_max_seq},
-                         {"history_floor_seq", state.history_floor_seq},
-                         {"sync_state", PeerSyncPhaseToString(state.phase)},
-                         {"empty_closed_seqs", state.empty_closed_seqs},
-                         {"empty_closed_ranges", nlohmann::json::array()}};
+  Object json;
+  json.setJsonUInt("contiguous_peer_seq", state.contiguous_peer_seq);
+  json.setJsonUInt("loaded_min_seq", state.loaded_min_seq);
+  json.setJsonUInt("loaded_max_seq", state.loaded_max_seq);
+  json.setJsonUInt("history_floor_seq", state.history_floor_seq);
+  json.set("sync_state", PeerSyncPhaseToString(state.phase));
   if (state.user_resolution) {
-    json["user_resolution"] = *state.user_resolution;
+    json.set("user_resolution", *state.user_resolution);
   } else {
-    json["user_resolution"] = nullptr;
+    json.set("user_resolution", Null{});
   }
+  std::vector<Value> empty_closed_seqs;
+  empty_closed_seqs.reserve(state.empty_closed_seqs.size());
+  for (const uint64_t seq : state.empty_closed_seqs) {
+    if (seq <= static_cast<uint64_t>(INT64_MAX)) {
+      empty_closed_seqs.push_back(Value(static_cast<int64_t>(seq)));
+    } else {
+      empty_closed_seqs.push_back(Value(seq));
+    }
+  }
+  json.set("empty_closed_seqs", ArrayValue(std::move(empty_closed_seqs)));
+  std::vector<Value> ranges;
+  ranges.reserve(state.empty_closed_ranges.size());
   for (const SeqClosedRange& range : state.empty_closed_ranges) {
-    json["empty_closed_ranges"].push_back({{"min", range.min}, {"max", range.max}});
+    Object row;
+    row.setJsonUInt("min", range.min);
+    row.setJsonUInt("max", range.max);
+    ranges.push_back(ObjectValue(std::move(row)));
   }
-  return json.dump();
+  json.set("empty_closed_ranges", ArrayValue(std::move(ranges)));
+  return DumpJson(json);
 }
 
 Roe<PeerSyncState> PeerSyncStateFromJson(const std::string& json_text) {
-  nlohmann::json json;
-  try {
-    json = nlohmann::json::parse(json_text);
-  } catch (const std::exception&) {
+  auto json = TryParseObject(json_text);
+  if (!json) {
     return Error("Invalid sync_state JSON");
   }
 
   PeerSyncState state;
-  if (json.contains("contiguous_peer_seq") && json["contiguous_peer_seq"].is_number_unsigned()) {
-    state.contiguous_peer_seq = json["contiguous_peer_seq"].get<uint64_t>();
+  if (auto v = json->getNonNegInt("contiguous_peer_seq")) {
+    state.contiguous_peer_seq = *v;
   }
-  if (json.contains("loaded_min_seq") && json["loaded_min_seq"].is_number_unsigned()) {
-    state.loaded_min_seq = json["loaded_min_seq"].get<uint64_t>();
+  if (auto v = json->getNonNegInt("loaded_min_seq")) {
+    state.loaded_min_seq = *v;
   }
-  if (json.contains("loaded_max_seq") && json["loaded_max_seq"].is_number_unsigned()) {
-    state.loaded_max_seq = json["loaded_max_seq"].get<uint64_t>();
+  if (auto v = json->getNonNegInt("loaded_max_seq")) {
+    state.loaded_max_seq = *v;
   }
-  if (json.contains("history_floor_seq") && json["history_floor_seq"].is_number_unsigned()) {
-    state.history_floor_seq = json["history_floor_seq"].get<uint64_t>();
+  if (auto v = json->getNonNegInt("history_floor_seq")) {
+    state.history_floor_seq = *v;
   }
-  if (json.contains("sync_state") && json["sync_state"].is_string()) {
-    state.phase = PeerSyncPhaseFromString(json["sync_state"].get<std::string>());
+  if (auto phase = json->getString("sync_state")) {
+    state.phase = PeerSyncPhaseFromString(*phase);
   }
-  if (json.contains("user_resolution") && json["user_resolution"].is_string()) {
-    state.user_resolution = json["user_resolution"].get<std::string>();
+  if (auto resolution = json->getString("user_resolution")) {
+    state.user_resolution = *resolution;
   }
-  if (json.contains("empty_closed_seqs") && json["empty_closed_seqs"].is_array()) {
-    for (const auto& item : json["empty_closed_seqs"]) {
-      if (item.is_number_unsigned()) {
-        state.empty_closed_seqs.push_back(item.get<uint64_t>());
+  if (const Array* seqs = json->getArray("empty_closed_seqs")) {
+    for (const Value& item : seqs->elements) {
+      if (auto seq = asNonNegInt(item)) {
+        state.empty_closed_seqs.push_back(*seq);
       }
     }
   }
-  if (json.contains("empty_closed_ranges") && json["empty_closed_ranges"].is_array()) {
-    for (const auto& item : json["empty_closed_ranges"]) {
-      if (!item.is_object()) {
+  if (const Array* ranges = json->getArray("empty_closed_ranges")) {
+    for (const Value& item : ranges->elements) {
+      const Object* row = asObject(item);
+      if (!row) {
         continue;
       }
       SeqClosedRange range;
-      if (item.contains("min") && item["min"].is_number_unsigned()) {
-        range.min = item["min"].get<uint64_t>();
+      if (auto min = row->getNonNegInt("min")) {
+        range.min = *min;
       }
-      if (item.contains("max") && item["max"].is_number_unsigned()) {
-        range.max = item["max"].get<uint64_t>();
+      if (auto max = row->getNonNegInt("max")) {
+        range.max = *max;
       }
       state.empty_closed_ranges.push_back(range);
     }

@@ -13,8 +13,7 @@ pp_browser_add_base_library(pp_base_data
     UserPreferences.cpp
   PUBLIC_LIBS
     pp_base_error
-    pp_base_platform_core
-    nlohmann_json::nlohmann_json)
+    pp_base_platform_core)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

@@ -4,8 +4,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
 #include "base/crypto/MlDsa.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -92,39 +91,44 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
   if (auto valid = Validate(bundle); !valid) {
     return valid.error();
   }
-  nlohmann::json json;
-  json["format"] = kLinkDeviceFormat;
-  json["account_id"] = bundle.account_id;
-  json["account_ml_dsa_pk_b64"] = bundle.account_ml_dsa_pk_b64;
-  json["account_ml_dsa_sk_b64"] = bundle.account_ml_dsa_sk_b64;
-  json["account_kem_pk_b64"] = bundle.account_kem_pk_b64;
-  json["account_kem_sk_b64"] = bundle.account_kem_sk_b64;
-  json["dek_b64"] = bundle.dek_b64;
-  json["relay_user_id"] = bundle.relay_user_id;
-  json["nickname"] = bundle.nickname;
-  json["created_at"] = bundle.created_at_ms;
-  json["expires_at"] = bundle.expires_at_ms;
-  nlohmann::json psks = nlohmann::json::array();
+  Object json;
+  json.set("format", kLinkDeviceFormat);
+  json.set("account_id", bundle.account_id);
+  json.set("account_ml_dsa_pk_b64", bundle.account_ml_dsa_pk_b64);
+  json.set("account_ml_dsa_sk_b64", bundle.account_ml_dsa_sk_b64);
+  json.set("account_kem_pk_b64", bundle.account_kem_pk_b64);
+  json.set("account_kem_sk_b64", bundle.account_kem_sk_b64);
+  json.set("dek_b64", bundle.dek_b64);
+  json.set("relay_user_id", bundle.relay_user_id);
+  json.set("nickname", bundle.nickname);
+  json.set("created_at", bundle.created_at_ms);
+  json.set("expires_at", bundle.expires_at_ms);
+  std::vector<Value> psks;
+  psks.reserve(bundle.public_psks.size());
   for (const LinkDevicePublicPsk& row : bundle.public_psks) {
-    nlohmann::json item = {{"peer_identity_kind", row.key.peer_identity_kind},
-                           {"peer_identity_value", row.key.peer_identity_value},
-                           {"channel", CryptoChannelToString(row.key.channel)},
-                           {"session_epoch", row.session_epoch},
-                           {"master_psk_b64", row.master_psk_b64}};
+    Object item;
+    item.set("peer_identity_kind", row.key.peer_identity_kind);
+    item.set("peer_identity_value", row.key.peer_identity_value);
+    item.set("channel", CryptoChannelToString(row.key.channel));
+    item.setJsonUInt("session_epoch", row.session_epoch);
+    item.set("master_psk_b64", row.master_psk_b64);
     if (row.psk_verified_at) {
-      item["psk_verified_at"] = *row.psk_verified_at;
+      item.set("psk_verified_at", *row.psk_verified_at);
     }
-    nlohmann::json retired = nlohmann::json::array();
+    std::vector<Value> retired;
+    retired.reserve(row.retired_psks.size());
     for (const RetiredPskEntry& entry : row.retired_psks) {
-      retired.push_back({{"epoch", entry.epoch},
-                         {"master_psk_b64", entry.master_psk_b64},
-                         {"retired_at", entry.retired_at}});
+      Object retired_item;
+      retired_item.setJsonUInt("epoch", entry.epoch);
+      retired_item.set("master_psk_b64", entry.master_psk_b64);
+      retired_item.set("retired_at", entry.retired_at);
+      retired.push_back(ObjectValue(std::move(retired_item)));
     }
-    item["retired_psks"] = std::move(retired);
-    psks.push_back(std::move(item));
+    item.set("retired_psks", ArrayValue(std::move(retired)));
+    psks.push_back(ObjectValue(std::move(item)));
   }
-  json["public_psks"] = std::move(psks);
-  const std::string serialized = json.dump();
+  json.set("public_psks", ArrayValue(std::move(psks)));
+  const std::string serialized = DumpJson(json);
   if (serialized.size() > kMaxLinkDeviceBundleBytes) {
     return Error("Serialized link-device bundle exceeds size limit");
   }
@@ -135,46 +139,51 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
   if (json.size() > kMaxLinkDeviceBundleBytes) {
     return Error("Link-device bundle exceeds size limit");
   }
-  const nlohmann::json parsed = nlohmann::json::parse(json, nullptr, false);
-  if (parsed.is_discarded() || !parsed.is_object()) {
+  auto parsed = TryParseObject(json);
+  if (!parsed) {
     return Error("Invalid link-device bundle JSON");
   }
-  if (parsed.value("format", std::string{}) != kLinkDeviceFormat) {
+  if (parsed->getString("format").value_or(std::string{}) != kLinkDeviceFormat) {
     return Error("Unsupported link-device bundle format");
   }
 
   LinkDeviceBundleV1 bundle;
-  bundle.account_id = parsed.value("account_id", std::string{});
-  bundle.account_ml_dsa_pk_b64 = parsed.value("account_ml_dsa_pk_b64", std::string{});
-  bundle.account_ml_dsa_sk_b64 = parsed.value("account_ml_dsa_sk_b64", std::string{});
-  bundle.account_kem_pk_b64 = parsed.value("account_kem_pk_b64", std::string{});
-  bundle.account_kem_sk_b64 = parsed.value("account_kem_sk_b64", std::string{});
-  bundle.dek_b64 = parsed.value("dek_b64", std::string{});
-  bundle.relay_user_id = parsed.value("relay_user_id", std::string{});
-  bundle.nickname = parsed.value("nickname", std::string{});
-  bundle.created_at_ms = parsed.value("created_at", static_cast<int64_t>(0));
-  bundle.expires_at_ms = parsed.value("expires_at", static_cast<int64_t>(0));
+  bundle.account_id = parsed->getString("account_id").value_or(std::string{});
+  bundle.account_ml_dsa_pk_b64 = parsed->getString("account_ml_dsa_pk_b64").value_or(std::string{});
+  bundle.account_ml_dsa_sk_b64 = parsed->getString("account_ml_dsa_sk_b64").value_or(std::string{});
+  bundle.account_kem_pk_b64 = parsed->getString("account_kem_pk_b64").value_or(std::string{});
+  bundle.account_kem_sk_b64 = parsed->getString("account_kem_sk_b64").value_or(std::string{});
+  bundle.dek_b64 = parsed->getString("dek_b64").value_or(std::string{});
+  bundle.relay_user_id = parsed->getString("relay_user_id").value_or(std::string{});
+  bundle.nickname = parsed->getString("nickname").value_or(std::string{});
+  bundle.created_at_ms = parsed->getIf<int64_t>("created_at").value_or(0);
+  bundle.expires_at_ms = parsed->getIf<int64_t>("expires_at").value_or(0);
 
-  if (parsed.contains("public_psks") && parsed["public_psks"].is_array()) {
-    for (const auto& item : parsed["public_psks"]) {
-      if (!item.is_object()) {
+  if (const Array* public_psks = parsed->getArray("public_psks")) {
+    for (const Value& item_value : public_psks->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
         return Error("Invalid public PSK row in link bundle");
       }
       LinkDevicePublicPsk row;
-      row.key.peer_identity_kind = item.value("peer_identity_kind", std::string{});
-      row.key.peer_identity_value = item.value("peer_identity_value", std::string{});
-      row.key.channel = ChannelFromString(item.value("channel", std::string{}));
-      row.session_epoch = item.value("session_epoch", 0u);
-      row.master_psk_b64 = item.value("master_psk_b64", std::string{});
-      if (item.contains("psk_verified_at") && item["psk_verified_at"].is_number_integer()) {
-        row.psk_verified_at = item["psk_verified_at"].get<int64_t>();
+      row.key.peer_identity_kind = item->getString("peer_identity_kind").value_or(std::string{});
+      row.key.peer_identity_value = item->getString("peer_identity_value").value_or(std::string{});
+      row.key.channel = ChannelFromString(item->getString("channel").value_or(std::string{}));
+      row.session_epoch = static_cast<uint32_t>(item->getNonNegInt("session_epoch").value_or(0));
+      row.master_psk_b64 = item->getString("master_psk_b64").value_or(std::string{});
+      if (auto verified = item->getIf<int64_t>("psk_verified_at")) {
+        row.psk_verified_at = *verified;
       }
-      if (item.contains("retired_psks") && item["retired_psks"].is_array()) {
-        for (const auto& retired : item["retired_psks"]) {
+      if (const Array* retired = item->getArray("retired_psks")) {
+        for (const Value& retired_value : retired->elements) {
+          const Object* retired_item = asObject(retired_value);
+          if (!retired_item) {
+            continue;
+          }
           RetiredPskEntry entry;
-          entry.epoch = retired.value("epoch", 0u);
-          entry.master_psk_b64 = retired.value("master_psk_b64", std::string{});
-          entry.retired_at = retired.value("retired_at", static_cast<int64_t>(0));
+          entry.epoch = static_cast<uint32_t>(retired_item->getNonNegInt("epoch").value_or(0));
+          entry.master_psk_b64 = retired_item->getString("master_psk_b64").value_or(std::string{});
+          entry.retired_at = retired_item->getIf<int64_t>("retired_at").value_or(0);
           row.retired_psks.push_back(std::move(entry));
         }
       }

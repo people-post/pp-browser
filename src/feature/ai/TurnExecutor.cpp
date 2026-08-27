@@ -3,12 +3,17 @@
 #include "base/ai/ToolResultFormatter.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/PeopleDiscoveryBlocks.h"
+#include "common/ValueJson.h"
 
 #include <nlohmann/json.hpp>
 
 namespace pbr {
 
 namespace {
+
+Object ObjectFromNlohmann(const nlohmann::json& json) {
+  return TryParseObject(json.dump()).value_or(Object{});
+}
 
 nlohmann::json ToolCallsToJson(const std::vector<PlannedToolCall>& planned, const std::string& id_prefix,
                                const size_t id_offset = 0) {
@@ -31,9 +36,9 @@ void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits
       continue;
     }
     if (item.contains("hit_id")) {
-      hits.push_back(DirectoryHitFromJson(item));
+      hits.push_back(DirectoryHitFromJson(ObjectFromNlohmann(item)));
     } else if (item.contains("id") && item.contains("display_name")) {
-      contacts.push_back(ContactFromJson(item));
+      contacts.push_back(ContactFromJson(ObjectFromNlohmann(item)));
     }
   }
 }

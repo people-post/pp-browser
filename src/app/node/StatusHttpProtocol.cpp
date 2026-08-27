@@ -1,6 +1,6 @@
 #include "app/node/StatusHttpProtocol.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <algorithm>
 #include <cctype>
@@ -54,24 +54,30 @@ bool AuthOk(const StatusHttpAuthConfig& auth, std::string_view authorization) {
   return authorization.substr(prefix.size()) == auth.bearer_token;
 }
 
-StatusHttpResponse JsonResponse(int code, const nlohmann::json& body) {
+StatusHttpResponse JsonResponse(int code, const Object& body) {
   StatusHttpResponse r;
   r.status_code = code;
   r.content_type = "application/json";
-  r.body = body.dump();
+  r.body = DumpJson(body);
   return r;
 }
 
 StatusHttpResponse Unauthorized() {
-  return JsonResponse(401, nlohmann::json{{"error", "unauthorized"}});
+  Object body;
+  body.set("error", "unauthorized");
+  return JsonResponse(401, body);
 }
 
 StatusHttpResponse NotFound() {
-  return JsonResponse(404, nlohmann::json{{"error", "not_found"}});
+  Object body;
+  body.set("error", "not_found");
+  return JsonResponse(404, body);
 }
 
 StatusHttpResponse MethodNotAllowed() {
-  return JsonResponse(405, nlohmann::json{{"error", "method_not_allowed"}});
+  Object body;
+  body.set("error", "method_not_allowed");
+  return JsonResponse(405, body);
 }
 
 const char* StatusReason(int code) {
@@ -207,31 +213,28 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
   }
 
   if (request.path == "/healthz") {
-    return JsonResponse(200, nlohmann::json{
-                                 {"ok", snap.host_running},
-                                 {"host_running", snap.host_running},
-                             });
+    Object body;
+    body.set("ok", snap.host_running);
+    body.set("host_running", snap.host_running);
+    return JsonResponse(200, body);
   }
 
   if (request.path == "/status") {
-    nlohmann::json reach = nlohmann::json::object();
-    try {
-      reach = nlohmann::json::parse(snap.reachability_json.empty() ? "{}" : snap.reachability_json);
-      if (!reach.is_object()) {
-        reach = nlohmann::json::object();
+    Object reach;
+    if (!snap.reachability_json.empty()) {
+      if (auto parsed = TryParseObject(snap.reachability_json)) {
+        reach = std::move(*parsed);
       }
-    } catch (...) {
-      reach = nlohmann::json::object();
     }
-    reach["host_running"] = snap.host_running;
+    reach.set("host_running", snap.host_running);
     if (!snap.listen_multiaddr.empty()) {
-      reach["listen"] = snap.listen_multiaddr;
+      reach.set("listen", snap.listen_multiaddr);
     }
     if (!snap.peer_id.empty()) {
-      reach["peer_id"] = snap.peer_id;
+      reach.set("peer_id", snap.peer_id);
     }
-    reach["circuit_relay"] = snap.circuit_relay;
-    reach["media_relay"] = snap.media_relay;
+    reach.set("circuit_relay", snap.circuit_relay);
+    reach.set("media_relay", snap.media_relay);
     return JsonResponse(200, reach);
   }
 

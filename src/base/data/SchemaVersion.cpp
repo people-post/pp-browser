@@ -1,11 +1,12 @@
 #include "base/data/SchemaVersion.h"
 
 #include "base/data/AtomicFileWrite.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
-#include <nlohmann/json.hpp>
 
 namespace pbr {
 
@@ -16,15 +17,27 @@ std::map<int, SchemaVersion::Migrator>& Migrators() {
   return migrators;
 }
 
+std::optional<int> ReadSchemaVersion(const Object& root) {
+  if (auto value = root.getIf<int64_t>("schema_version")) {
+    return static_cast<int>(*value);
+  }
+  if (auto value = root.getNonNegInt("schema_version")) {
+    if (*value <= static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+      return static_cast<int>(*value);
+    }
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
-Roe<void> SchemaVersion::Validate(const nlohmann::json& root, int expected_version, const std::string& label) {
-  if (!root.contains("schema_version") || !root["schema_version"].is_number_integer()) {
+Roe<void> SchemaVersion::Validate(const Object& root, int expected_version, const std::string& label) {
+  auto version = ReadSchemaVersion(root);
+  if (!version) {
     return Roe<void>::error(Error("Missing schema_version in " + label));
   }
-  const int version = root["schema_version"].get<int>();
-  if (version > expected_version) {
-    return Roe<void>::error(Error("Unsupported schema version " + std::to_string(version) + " in " + label +
+  if (*version > expected_version) {
+    return Roe<void>::error(Error("Unsupported schema version " + std::to_string(*version) + " in " + label +
                                   "; delete the data directory and restart"));
   }
   return {};
@@ -34,11 +47,8 @@ void SchemaVersion::RegisterMigrator(int from_version, Migrator migrator) {
   Migrators()[from_version] = std::move(migrator);
 }
 
-Roe<void> SchemaVersion::RunForwardMigrators(const std::string& path, nlohmann::json& root, int current_version) {
-  int version = 0;
-  if (root.contains("schema_version") && root["schema_version"].is_number_integer()) {
-    version = root["schema_version"].get<int>();
-  }
+Roe<void> SchemaVersion::RunForwardMigrators(const std::string& path, Object& root, int current_version) {
+  int version = ReadSchemaVersion(root).value_or(0);
 
   while (version < current_version) {
     const auto it = Migrators().find(version);
@@ -48,9 +58,7 @@ Roe<void> SchemaVersion::RunForwardMigrators(const std::string& path, nlohmann::
     if (auto migrated = it->second(path, root); !migrated) {
       return Roe<void>::error(Error(migrated.error().message));
     }
-    version = root.contains("schema_version") && root["schema_version"].is_number_integer()
-                  ? root["schema_version"].get<int>()
-                  : version + 1;
+    version = ReadSchemaVersion(root).value_or(version + 1);
   }
   return {};
 }
@@ -68,8 +76,9 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
     if (ec) {
       return Roe<void>::error(Error("Failed to check profile manifest"));
     }
-    const nlohmann::json root = {{"schema_version", kCurrentSchemaVersion}};
-    if (auto written = AtomicFileWrite::Write(manifest_path.string(), root.dump(2)); !written) {
+    Object root;
+    root.set("schema_version", static_cast<int64_t>(kCurrentSchemaVersion));
+    if (auto written = AtomicFileWrite::Write(manifest_path.string(), DumpJson(root, 2)); !written) {
       return Roe<void>::error(Error(written.error().message));
     }
     return {};
@@ -79,18 +88,17 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
   if (!in) {
     return Roe<void>::error(Error("Failed to open profile manifest"));
   }
-
-  nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Roe<void>::error(Error("Failed to parse profile manifest"));
   }
 
-  if (auto validated = Validate(root, kCurrentSchemaVersion, "manifest.json"); !validated) {
+  if (auto validated = Validate(*root, kCurrentSchemaVersion, "manifest.json"); !validated) {
     return Roe<void>::error(Error(validated.error().message));
   }
 
-  if (auto migrated = RunForwardMigrators(manifest_path.string(), root, kCurrentSchemaVersion);
-      !migrated) {
+  if (auto migrated = RunForwardMigrators(manifest_path.string(), *root, kCurrentSchemaVersion); !migrated) {
     return Roe<void>::error(Error(migrated.error().message));
   }
 

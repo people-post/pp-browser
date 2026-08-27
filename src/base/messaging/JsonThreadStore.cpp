@@ -5,11 +5,12 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <algorithm>
-#include <nlohmann/json.hpp>
+#include <iterator>
 
 namespace pbr {
 
@@ -46,10 +47,16 @@ Roe<void> JsonThreadStore::EnsureLoaded() const {
 
   std::ifstream index_in(IndexPath());
   if (index_in) {
-    const nlohmann::json root = nlohmann::json::parse(index_in, nullptr, false);
-    if (!root.is_discarded() && root.contains("threads") && root["threads"].is_array()) {
-      for (const auto& item : root["threads"]) {
-        threads_.push_back(ThreadFromJson(item));
+    const std::string content((std::istreambuf_iterator<char>(index_in)), std::istreambuf_iterator<char>());
+    if (auto root = TryParseObject(content)) {
+      if (const Array* threads = root->getArray("threads")) {
+        for (const Value& item_value : threads->elements) {
+          const Object* item = asObject(item_value);
+          if (!item) {
+            continue;
+          }
+          threads_.push_back(ThreadFromJson(*item));
+        }
       }
     }
   }
@@ -60,15 +67,24 @@ Roe<void> JsonThreadStore::EnsureLoaded() const {
       messages_[thread.id] = {};
       continue;
     }
-    const nlohmann::json root = nlohmann::json::parse(message_in, nullptr, false);
-    if (root.is_discarded() || !root.contains("messages") || !root["messages"].is_array()) {
+    const std::string content((std::istreambuf_iterator<char>(message_in)), std::istreambuf_iterator<char>());
+    auto root = TryParseObject(content);
+    if (!root) {
+      messages_[thread.id] = {};
+      continue;
+    }
+    const Array* messages = root->getArray("messages");
+    if (!messages) {
       messages_[thread.id] = {};
       continue;
     }
     auto& list = messages_[thread.id];
-    for (const auto& item : root["messages"]) {
-      ThreadMessage message = ThreadMessageFromJson(item);
-      list.push_back(message);
+    for (const Value& item_value : messages->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
+        continue;
+      }
+      list.push_back(ThreadMessageFromJson(*item));
     }
   }
 
@@ -77,26 +93,30 @@ Roe<void> JsonThreadStore::EnsureLoaded() const {
 }
 
 Roe<void> JsonThreadStore::SaveIndex() const {
-  nlohmann::json threads = nlohmann::json::array();
+  std::vector<Value> threads;
+  threads.reserve(threads_.size());
   for (const Thread& thread : threads_) {
-    threads.push_back(ThreadToJson(thread));
+    threads.push_back(ObjectValue(ThreadToJson(thread)));
   }
-  const nlohmann::json root = {{"threads", std::move(threads)}};
+  Object root;
+  root.set("threads", ArrayValue(std::move(threads)));
 
-  return AtomicFileWrite::Write(IndexPath(), root.dump(2));
+  return AtomicFileWrite::Write(IndexPath(), DumpJson(root, 2));
 }
 
 Roe<void> JsonThreadStore::SaveMessages(const std::string& thread_id) const {
   const auto it = messages_.find(thread_id);
-  nlohmann::json messages = nlohmann::json::array();
+  std::vector<Value> messages;
   if (it != messages_.end()) {
+    messages.reserve(it->second.size());
     for (const ThreadMessage& message : it->second) {
-      messages.push_back(ThreadMessageToJson(message));
+      messages.push_back(ObjectValue(ThreadMessageToJson(message)));
     }
   }
-  const nlohmann::json root = {{"messages", std::move(messages)}};
+  Object root;
+  root.set("messages", ArrayValue(std::move(messages)));
 
-  return AtomicFileWrite::Write(ThreadPath(thread_id), root.dump(2));
+  return AtomicFileWrite::Write(ThreadPath(thread_id), DumpJson(root, 2));
 }
 
 void JsonThreadStore::Flush() {

@@ -2,10 +2,11 @@
 
 #include "base/crypto/AttachmentContentHash.h"
 #include "base/messaging/AttachmentCache.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace pbr {
 
@@ -42,19 +43,22 @@ Roe<void> AttachmentSuppressionStore::LoadUnlocked() const {
   if (!input) {
     return Error("Failed to read attachment suppression store");
   }
-  const nlohmann::json root = nlohmann::json::parse(input, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  auto root = TryParseObject(buffer.str());
+  if (!root) {
     return Error("Invalid attachment suppression store");
   }
-  if (root.contains("threads") && root["threads"].is_object()) {
-    for (const auto& [thread_id, hashes] : root["threads"].items()) {
-      if (!hashes.is_array()) {
+  if (const Object* threads = root->getObject("threads")) {
+    for (const auto& [thread_id, hashes_value] : threads->fields()) {
+      const Array* hashes = asArray(hashes_value);
+      if (!hashes) {
         continue;
       }
       auto& bucket = threads_[thread_id];
-      for (const auto& item : hashes) {
-        if (item.is_string()) {
-          bucket.insert(item.get<std::string>());
+      for (const Value& item : hashes->elements) {
+        if (auto hash = asString(item)) {
+          bucket.insert(*hash);
         }
       }
     }
@@ -70,15 +74,17 @@ Roe<void> AttachmentSuppressionStore::SaveUnlocked() const {
   std::error_code ec;
   std::filesystem::create_directories(profile_dir_, ec);
 
-  nlohmann::json threads = nlohmann::json::object();
+  Object threads;
   for (const auto& [thread_id, hashes] : threads_) {
-    nlohmann::json array = nlohmann::json::array();
+    std::vector<Value> array;
+    array.reserve(hashes.size());
     for (const std::string& hash : hashes) {
-      array.push_back(hash);
+      array.push_back(Value(hash));
     }
-    threads[thread_id] = std::move(array);
+    threads.set(thread_id, ArrayValue(std::move(array)));
   }
-  const nlohmann::json root = {{"threads", std::move(threads)}};
+  Object root;
+  root.set("threads", ObjectValue(std::move(threads)));
 
   const auto path = std::filesystem::path(StorePath());
   const auto temp = path.string() + ".tmp";
@@ -87,7 +93,7 @@ Roe<void> AttachmentSuppressionStore::SaveUnlocked() const {
     if (!output) {
       return Error("Failed to write attachment suppression store");
     }
-    output << root.dump(2);
+    output << DumpJson(root, 2);
     if (!output) {
       return Error("Failed to write attachment suppression store");
     }

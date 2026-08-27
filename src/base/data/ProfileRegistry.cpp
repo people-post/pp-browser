@@ -2,10 +2,10 @@
 
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 
 namespace pbr {
 
@@ -41,32 +41,34 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
     return Error("Failed to open profile registry: " + path);
   }
 
-  const nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse profile registry: " + path);
   }
 
-  if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "profiles.json"); !checked) {
+  if (auto checked = SchemaVersion::Validate(*root, kSchemaVersion, "profiles.json"); !checked) {
     return checked.error();
   }
 
   std::string active = "default";
-  if (root.contains("active_profile_id") && root["active_profile_id"].is_string()) {
-    active = root["active_profile_id"].get<std::string>();
+  if (auto active_profile_id = root->getString("active_profile_id")) {
+    active = *active_profile_id;
   }
 
   std::vector<ProfileEntry> profiles;
-  if (root.contains("profiles") && root["profiles"].is_array()) {
-    for (const auto& item : root["profiles"]) {
-      if (!item.is_object()) {
+  if (const Array* items = root->getArray("profiles")) {
+    for (const Value& item : items->elements) {
+      const Object* entry_object = asObject(item);
+      if (!entry_object) {
         continue;
       }
       ProfileEntry entry;
-      if (item.contains("id") && item["id"].is_string()) {
-        entry.id = item["id"].get<std::string>();
+      if (auto id = entry_object->getString("id")) {
+        entry.id = *id;
       }
-      if (item.contains("label") && item["label"].is_string()) {
-        entry.label = item["label"].get<std::string>();
+      if (auto label = entry_object->getString("label")) {
+        entry.label = *label;
       }
       if (!entry.id.empty()) {
         profiles.push_back(std::move(entry));
@@ -82,19 +84,24 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
 }
 
 Roe<void> ProfileRegistry::Save(const std::string& data_dir, const ProfileRegistry& registry) {
-  nlohmann::json profiles = nlohmann::json::array();
+  std::vector<Value> profiles;
+  profiles.reserve(registry.profiles_.size());
   for (const ProfileEntry& entry : registry.profiles_) {
-    profiles.push_back({{"id", entry.id}, {"label", entry.label}});
+    Object item;
+    item.set("id", entry.id);
+    item.set("label", entry.label);
+    profiles.push_back(ObjectValue(std::move(item)));
   }
 
-  const nlohmann::json root = {{"schema_version", kSchemaVersion},
-                               {"active_profile_id", registry.active_profile_id_},
-                               {"profiles", std::move(profiles)}};
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(kSchemaVersion));
+  root.set("active_profile_id", registry.active_profile_id_);
+  root.set("profiles", makeArray(std::move(profiles)));
 
   std::error_code ec;
   std::filesystem::create_directories(data_dir, ec);
 
-  return AtomicFileWrite::Write(RegistryPath(data_dir), root.dump(2));
+  return AtomicFileWrite::Write(RegistryPath(data_dir), DumpJson(root, 2));
 }
 
 Roe<void> ProfileRegistry::EnsureActiveProfile() {

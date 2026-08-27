@@ -4,6 +4,7 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -11,6 +12,10 @@
 
 namespace {
 using namespace pbr;
+
+Object ObjectFromNlohmann(const nlohmann::json& json) {
+  return TryParseObject(json.dump()).value_or(Object{});
+}
 
 ByteVector TestDek() {
   ByteVector dek(32);
@@ -78,7 +83,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
       {"route", {{"kind", "direct"}, {"channel", "public_relay"}}},
       {"body", {{"e2e", {{"payload_b64", "aGk="}}}}},
       {"timestamp", 1}};
-  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(public_relay)));
+  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(ObjectFromNlohmann(public_relay))));
 
   const nlohmann::json content_b64 = {
       {"envelope_version", 1},
@@ -88,7 +93,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
       {"route", {{"kind", "direct"}, {"channel", "e2e"}}},
       {"body", {{"content_b64", "aGk="}}},
       {"timestamp", 1}};
-  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(content_b64)));
+  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(ObjectFromNlohmann(content_b64))));
 
   const nlohmann::json remote_rml = {
       {"envelope_version", 1},
@@ -98,7 +103,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
       {"route", {{"kind", "direct"}, {"channel", "e2e"}}},
       {"body", {{"e2e", {{"payload_b64", "aGk="}}}, {"content_rml", "<div>x</div>"}}},
       {"timestamp", 1}};
-  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(remote_rml)));
+  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(ObjectFromNlohmann(remote_rml))));
 }
 
 TEST(ChatPayloadValidatorTest, TransportColumnRoundTrip) {

@@ -1,7 +1,8 @@
 #include "app/node/StatusHttpProtocol.h"
 
+#include "common/ValueJson.h"
+
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
 TEST(StatusHttpProtocolTest, ParsesDefaultBindAndBarePort) {
   auto def = pbr::ParseStatusHttpBind("127.0.0.1:18518");
@@ -46,19 +47,21 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   pbr::StatusHttpRequest health{.method = "GET", .path = "/healthz", .authorization = {}};
   auto h = pbr::HandleStatusHttpRequest(health, {}, snap);
   EXPECT_EQ(h.status_code, 200);
-  auto hj = nlohmann::json::parse(h.body);
-  EXPECT_TRUE(hj["ok"].get<bool>());
-  EXPECT_TRUE(hj["host_running"].get<bool>());
+  auto hj = pbr::TryParseObject(h.body);
+  ASSERT_TRUE(hj);
+  EXPECT_TRUE(hj->getIf<bool>("ok").value_or(false));
+  EXPECT_TRUE(hj->getIf<bool>("host_running").value_or(false));
 
   pbr::StatusHttpRequest status{.method = "GET", .path = "/status", .authorization = {}};
   auto s = pbr::HandleStatusHttpRequest(status, {}, snap);
   EXPECT_EQ(s.status_code, 200);
-  auto sj = nlohmann::json::parse(s.body);
-  EXPECT_EQ(sj["status"], "reachable");
-  EXPECT_EQ(sj["listen"], snap.listen_multiaddr);
-  EXPECT_EQ(sj["peer_id"], snap.peer_id);
-  EXPECT_TRUE(sj["circuit_relay"].get<bool>());
-  EXPECT_FALSE(sj["media_relay"].get<bool>());
+  auto sj = pbr::TryParseObject(s.body);
+  ASSERT_TRUE(sj);
+  EXPECT_EQ(sj->getString("status").value_or(""), "reachable");
+  EXPECT_EQ(sj->getString("listen").value_or(""), snap.listen_multiaddr);
+  EXPECT_EQ(sj->getString("peer_id").value_or(""), snap.peer_id);
+  EXPECT_TRUE(sj->getIf<bool>("circuit_relay").value_or(false));
+  EXPECT_FALSE(sj->getIf<bool>("media_relay").value_or(true));
 }
 
 TEST(StatusHttpProtocolTest, BearerAuth) {

@@ -2,8 +2,7 @@
 
 #include "base/ai/TurnPlan.h"
 #include "base/ui/WorkingSetTypes.h"
-
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 #include <optional>
 #include <string>
@@ -21,7 +20,7 @@ enum class WidgetInitKind { Form, Calendar };
 
 struct WidgetInit {
   WidgetInitKind kind = WidgetInitKind::Form;
-  nlohmann::json config;
+  Object config;
 };
 
 struct ParseResult {
@@ -36,7 +35,7 @@ struct ParseResult {
 
 struct EmbeddedToolCall {
   std::string name;
-  nlohmann::json arguments;
+  Object arguments;
 };
 
 class StructuredTextParser {

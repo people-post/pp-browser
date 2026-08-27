@@ -3,6 +3,7 @@
 #include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/SettledWait.h"
 #include "base/p2p/StreamJsonFrame.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>
@@ -12,7 +13,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
+#include <vector>
 
 namespace pbr {
 
@@ -93,37 +94,37 @@ struct DialBackService::Impl : std::enable_shared_from_this<Impl> {
         stream->close([](auto&&) {});
         return;
       }
-      nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
       DialBackProbeResult result;
-      if (root.is_discarded() || !root.is_object()) {
+      auto root = TryParseObject(*json_utf8);
+      if (!root) {
         result.error = "invalid dial-back json";
       } else {
-        const std::string op = root.value("op", "");
+        const std::string op = root->getString("op").value_or("");
         if (op != "probe") {
           result.error = "unsupported op";
         } else if (!self->sessions) {
           result.error = "dial-back service not ready";
         } else {
           std::vector<std::string> targets;
-          if (root.contains("target_multiaddrs") && root["target_multiaddrs"].is_array()) {
-            for (const auto& item : root["target_multiaddrs"]) {
-              if (item.is_string()) {
-                targets.push_back(item.get<std::string>());
+          if (const Array* addrs = root->getArray("target_multiaddrs")) {
+            for (const auto& item : addrs->elements) {
+              if (auto s = asString(item)) {
+                targets.push_back(*s);
               }
             }
           }
-          const int timeout_ms = root.value("timeout_ms", 8000);
+          const int timeout_ms =
+              static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
           result = DialTargets(*self->sessions, targets, timeout_ms);
         }
       }
 
-      nlohmann::json response = {
-          {"v", 1},
-          {"ok", result.ok},
-          {"dialed", result.dialed},
-          {"error", result.error},
-      };
-      (void)BlockingWriteStreamJson(stream, response.dump());
+      Object response;
+      response.set("v", int64_t{1});
+      response.set("ok", result.ok);
+      response.set("dialed", result.dialed);
+      response.set("error", result.error);
+      (void)BlockingWriteStreamJson(stream, DumpJson(response));
       stream->close([](auto&&) {});
     });
   }
@@ -167,17 +168,21 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
     return Error("no target_multiaddrs");
   }
 
-  nlohmann::json request = {
-      {"v", 1},
-      {"op", "probe"},
-      {"target_multiaddrs", target_multiaddrs},
-      {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000},
-  };
+  Object request;
+  request.set("v", int64_t{1});
+  request.set("op", "probe");
+  std::vector<Value> addrs;
+  addrs.reserve(target_multiaddrs.size());
+  for (const auto& ma : target_multiaddrs) {
+    addrs.emplace_back(ma);
+  }
+  request.set("target_multiaddrs", ArrayValue(std::move(addrs)));
+  request.set("timeout_ms", int64_t{timeout_ms > 0 ? timeout_ms : 8000});
 
   SettledWait<DialBackProbeResult> wait;
 
   sessions_.OpenStream(seed_peer_key, {ProtocolName{kDialBackProtocolId}},
-                       [&host = host_, request = request.dump(), wait](
+                       [&host = host_, request = DumpJson(request), wait](
                            libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
                          PostLibp2pWorker(host, WorkerLane::Normal,
@@ -198,16 +203,15 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
                                               wait.Finish(Error("Failed to read dial-back response"));
                                               return;
                                             }
-                                            nlohmann::json root =
-                                                nlohmann::json::parse(*response_json, nullptr, false);
-                                            if (root.is_discarded() || !root.is_object()) {
+                                            auto root = TryParseObject(*response_json);
+                                            if (!root) {
                                               wait.Finish(Error("invalid dial-back response"));
                                               return;
                                             }
                                             DialBackProbeResult parsed;
-                                            parsed.ok = root.value("ok", false);
-                                            parsed.dialed = root.value("dialed", "");
-                                            parsed.error = root.value("error", "");
+                                            parsed.ok = root->getIf<bool>("ok").value_or(false);
+                                            parsed.dialed = root->getString("dialed").value_or("");
+                                            parsed.error = root->getString("error").value_or("");
                                             wait.Finish(parsed);
                                           });
                        });

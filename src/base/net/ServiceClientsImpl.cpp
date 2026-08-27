@@ -6,6 +6,7 @@
 #include "base/crypto/MlDsa.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "common/ValueJson.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/HttpBlobClient.h"
@@ -21,6 +22,10 @@
 namespace pbr {
 
 namespace {
+
+Object ObjectFromNlohmann(const nlohmann::json& json) {
+  return TryParseObject(json.dump()).value_or(Object{});
+}
 
 std::optional<std::string> MockPeerKemPublicKeyB64() {
   static std::once_flag once;
@@ -407,7 +412,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   record->signature = *signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response = HttpClient::Post(url, RelayWireSendRecordToJson(*record).dump(),
+  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(*record)),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
@@ -464,7 +469,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   if (root.contains("messages") && root["messages"].is_array()) {
     for (const auto& item : root["messages"]) {
       if (item.contains("blob_b64")) {
-        auto inbound = ParseRelayInboundRecord(item);
+        auto inbound = ParseRelayInboundRecord(ObjectFromNlohmann(item));
         if (!inbound) {
           continue;
         }
@@ -476,7 +481,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
           result.messages.push_back(*envelope);
         }
       } else {
-        auto envelope = ParseRelayEnvelope(item);
+        auto envelope = ParseRelayEnvelope(ObjectFromNlohmann(item));
         if (envelope) {
           if (result.server_time_ms) {
             envelope->relay_server_time_ms = result.server_time_ms;
@@ -618,7 +623,7 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
   if (root.is_discarded()) {
     return Error("Invalid relay history JSON");
   }
-  auto parsed = ChatHistoryResponseFromJson(root);
+  auto parsed = ChatHistoryResponseFromJson(ObjectFromNlohmann(root));
   if (!parsed) {
     return parsed.error();
   }
@@ -702,7 +707,7 @@ Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::stri
 
   std::vector<DirectoryHit> hits;
   for (const auto& item : root["hits"]) {
-    hits.push_back(DirectoryHitFromJson(item));
+    hits.push_back(DirectoryHitFromJson(ObjectFromNlohmann(item)));
   }
   return hits;
 }
@@ -727,7 +732,7 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_
   if (root.is_discarded() || !root.contains("relay_user_id")) {
     return Error("Invalid relay user lookup JSON");
   }
-  return DirectoryHitFromJson(root);
+  return DirectoryHitFromJson(ObjectFromNlohmann(root));
 }
 
 namespace {
@@ -776,7 +781,7 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& accoun
   if (root.is_discarded() || !root.contains("relay_user_id")) {
     return Error("Invalid account lookup JSON");
   }
-  return DirectoryHitFromJson(root);
+  return DirectoryHitFromJson(ObjectFromNlohmann(root));
 }
 
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}

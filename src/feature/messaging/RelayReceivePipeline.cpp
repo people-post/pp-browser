@@ -30,6 +30,7 @@
 #include "common/Utilities.h"
 
 #include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -529,8 +530,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                                                                 const MessageTransport transport) {
   RelayReceiveOutcome outcome;
 
-  const nlohmann::json wire_json = RelayEnvelopeToJson(envelope);
-  const std::string serialized = wire_json.dump();
+  const std::string serialized = DumpJson(RelayEnvelopeToJson(envelope));
   if (serialized.size() > kMaxRelayEnvelopeBytes) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;

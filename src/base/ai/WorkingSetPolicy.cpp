@@ -2,6 +2,7 @@
 
 #include "base/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
 #include <sstream>
 
@@ -44,39 +45,40 @@ std::string BuildWorkingSetTeaser(const int block_index, const std::string& labe
          std::to_string(block_index) + ")\">" + StructuredTextParser::EscapeText(label) + "</button>";
 }
 
-BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal goal) {
+BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
   BlockEligibility result;
-  if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
+  const auto type = block.getString("type");
+  if (!type) {
     return result;
   }
 
-  const std::string type = block["type"].get<std::string>();
   const WorkingSetRouting routing = RouteTurn(goal, RenderMode::Blocks);
   result.promote_to_panel_only = routing.panel_primary;
 
-  if (type == "long_list") {
-    if (!block.contains("items") || !block["items"].is_array() || block["items"].empty()) {
+  if (*type == "long_list") {
+    const Array* items = block.getArray("items");
+    if (!items || items->elements.empty()) {
       return result;
     }
     result.eligible = true;
     result.kind = WorkingSetKind::LongList;
     result.affinity = WorkingSetAffinity::Feed;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.value("title", "List");
-    const size_t count = block["items"].size();
+    result.title = block.getString("title").value_or("List");
+    const size_t count = items->elements.size();
     result.subtitle = std::to_string(count) + (count == 1 ? " item" : " items");
     result.teaser_label = "View in panel (" + std::to_string(count) + " items)";
     return result;
   }
 
-  if (type == "form") {
+  if (*type == "form") {
     result.eligible = true;
     result.kind = WorkingSetKind::Form;
     result.affinity = WorkingSetAffinity::Form;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.value("title", "Form");
-    if (block.contains("fields") && block["fields"].is_array()) {
-      const size_t count = block["fields"].size();
+    result.title = block.getString("title").value_or("Form");
+    if (const Array* fields = block.getArray("fields")) {
+      const size_t count = fields->elements.size();
       result.subtitle = std::to_string(count) + (count == 1 ? " field" : " fields");
       result.teaser_label = "Open form (" + std::to_string(count) + " fields)";
     } else {
@@ -86,7 +88,7 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
     return result;
   }
 
-  if (type == "calendar") {
+  if (*type == "calendar") {
     result.eligible = true;
     result.kind = WorkingSetKind::Calendar;
     result.affinity = WorkingSetAffinity::Form;
@@ -97,14 +99,15 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
     return result;
   }
 
-  if (type == "table") {
-    if (!block.contains("rows") || !block["rows"].is_array()) {
+  if (*type == "table") {
+    const Array* rows = block.getArray("rows");
+    if (!rows) {
       return result;
     }
-    const size_t row_count = block["rows"].size();
+    const size_t row_count = rows->elements.size();
     size_t col_count = 0;
-    if (block.contains("headers") && block["headers"].is_array()) {
-      col_count = block["headers"].size();
+    if (const Array* headers = block.getArray("headers")) {
+      col_count = headers->elements.size();
     }
     if (row_count <= 4 && col_count <= 3) {
       return result;
@@ -119,12 +122,12 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
     return result;
   }
 
-  if (type == "code") {
-    if (!block.contains("text") || !block["text"].is_string()) {
+  if (*type == "code") {
+    const auto text = block.getString("text");
+    if (!text) {
       return result;
     }
-    const std::string text = block["text"].get<std::string>();
-    if (CountLines(text) <= 12 && text.size() <= 400) {
+    if (CountLines(*text) <= 12 && text->size() <= 400) {
       return result;
     }
     result.eligible = true;
@@ -132,16 +135,17 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
     result.title = "Code";
-    result.subtitle = std::to_string(CountLines(text)) + " lines";
+    result.subtitle = std::to_string(CountLines(*text)) + " lines";
     result.teaser_label = "View full code";
     return result;
   }
 
-  if (type == "key_value") {
-    if (!block.contains("items") || !block["items"].is_array() || block["items"].size() <= 6) {
+  if (*type == "key_value") {
+    const Array* items = block.getArray("items");
+    if (!items || items->elements.size() <= 6) {
       return result;
     }
-    const size_t count = block["items"].size();
+    const size_t count = items->elements.size();
     result.eligible = true;
     result.kind = WorkingSetKind::KeyValue;
     result.affinity = WorkingSetAffinity::Document;
@@ -152,19 +156,19 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
     return result;
   }
 
-  if (type == "card") {
-    if (!block.contains("body") || !block["body"].is_string()) {
+  if (*type == "card") {
+    const auto body = block.getString("body");
+    if (!body) {
       return result;
     }
-    const std::string body = block["body"].get<std::string>();
-    if (body.size() <= 200) {
+    if (body->size() <= 200) {
       return result;
     }
     result.eligible = true;
     result.kind = WorkingSetKind::Card;
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.value("title", "Card");
+    result.title = block.getString("title").value_or("Card");
     result.subtitle = "";
     result.teaser_label = "View card";
     return result;
@@ -175,18 +179,22 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
 }
 
 ResponseGoal InferResponseGoalFromBlocksJson(const std::string& json) {
-  const nlohmann::json doc = nlohmann::json::parse(util::Trim(json), nullptr, false);
-  if (doc.is_discarded() || !doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {
+  auto doc = TryParseObject(util::Trim(json));
+  if (!doc) {
+    return ResponseGoal::General;
+  }
+  const Array* blocks = doc->getArray("blocks");
+  if (!blocks) {
     return ResponseGoal::General;
   }
 
   bool has_long_list = false;
-  for (const auto& block : doc["blocks"]) {
-    if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
+  for (const Value& block_value : blocks->elements) {
+    const Object* block = asObject(block_value);
+    if (!block) {
       continue;
     }
-    const std::string type = block["type"].get<std::string>();
-    if (type == "long_list") {
+    if (block->getString("type").value_or("") == "long_list") {
       has_long_list = true;
     }
   }

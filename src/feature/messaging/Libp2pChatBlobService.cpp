@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -141,12 +142,12 @@ struct Libp2pChatBlobService::Impl {
 
           if (!pending_push->has_value()) {
             const std::string json_utf8(frame->begin(), frame->end());
-            nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-            if (root.is_discarded()) {
+            auto root = TryParseObject(json_utf8);
+            if (!root) {
               FailStream(duplex, stream);
               return false;
             }
-            auto request = ChatBlobRequestFromJson(root);
+            auto request = ChatBlobRequestFromJson(*root);
             if (!request) {
               FailStream(duplex, stream);
               return false;
@@ -183,7 +184,7 @@ struct Libp2pChatBlobService::Impl {
                   }
                   return;
                 }
-                const std::string ack_json = ChatBlobAckToJson(false, ciphertext.error().message).dump();
+                const std::string ack_json = DumpJson(ChatBlobAckToJson(false, ciphertext.error().message));
                 if (!duplex->EnqueueOutbound(JsonUtf8ToBody(ack_json), [close](Roe<void>) { close(); })) {
                   close();
                 }
@@ -200,7 +201,7 @@ struct Libp2pChatBlobService::Impl {
                            [this, duplex, stream, request = std::move(request),
                             ciphertext = std::move(ciphertext)]() mutable {
                              auto fail = [this, duplex, stream](const std::string& message) {
-                               const std::string ack_json = ChatBlobAckToJson(false, message).dump();
+                               const std::string ack_json = DumpJson(ChatBlobAckToJson(false, message));
                                host->Post([duplex, stream, ack_json]() {
                                  auto close = [duplex, stream]() {
                                    duplex->Stop();
@@ -230,8 +231,8 @@ struct Libp2pChatBlobService::Impl {
                                  CloseQuiet(stream);
                                };
                                const std::string ack_json =
-                                   pushed ? ChatBlobAckToJson(true).dump()
-                                          : ChatBlobAckToJson(false, pushed.error().message).dump();
+                                   pushed ? DumpJson(ChatBlobAckToJson(true))
+                                          : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
                                if (!duplex->EnqueueOutbound(JsonUtf8ToBody(ack_json), [close](Roe<void>) {
                                      close();
                                    })) {
@@ -334,7 +335,7 @@ Roe<std::vector<uint8_t>> Libp2pChatBlobService::FetchChatBlob(const ChatBlobReq
     }
   };
 
-  const std::string request_json = ChatBlobRequestToJson(request).dump();
+  const std::string request_json = DumpJson(ChatBlobRequestToJson(request));
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatBlobProtocolId}},
                        [host = &host_, request_json, deadline, finish, settled, active_mu,
                         active_stream](libp2p::StreamAndProtocolOrError stream_res) mutable {
@@ -429,7 +430,7 @@ Roe<void> Libp2pChatBlobService::PushChatBlob(const ChatBlobRequest& request,
     }
   };
 
-  const std::string request_json = ChatBlobRequestToJson(request).dump();
+  const std::string request_json = DumpJson(ChatBlobRequestToJson(request));
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatBlobProtocolId}},
                        [host = &host_, request_json, ciphertext, deadline, finish, settled, active_mu,
                         active_stream](libp2p::StreamAndProtocolOrError stream_res) mutable {

@@ -1,23 +1,24 @@
 #include "base/data/ConfigJson.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
 TEST(ConfigJsonTest, ParsesLegacyAndModernFields) {
-  const nlohmann::json legacy = nlohmann::json::parse(R"({
+  auto legacy = pbr::TryParseObject(R"({
     "mcp": { "url": "https://legacy.example/mcp" },
     "mcp_servers": [
       { "id": "custom-a", "url": "https://custom.example/mcp" }
     ]
   })");
+  ASSERT_TRUE(legacy.has_value());
 
   pbr::AppConfig config;
-  pbr::from_json(legacy, config);
+  pbr::AppConfigFromObject(*legacy, config);
   EXPECT_EQ(config.promoted_mcp.url, "https://legacy.example/mcp");
   ASSERT_EQ(config.mcp_servers.size(), 1u);
   EXPECT_EQ(config.mcp_servers[0].id, "custom-a");
 
-  const nlohmann::json modern = nlohmann::json::parse(R"({
+  auto modern = pbr::TryParseObject(R"({
     "promoted_mcp": { "url": "https://promoted.example/mcp" },
     "mcp_servers": [
       { "id": "b", "command": "mock", "enabled": true }
@@ -26,8 +27,9 @@ TEST(ConfigJsonTest, ParsesLegacyAndModernFields) {
     "directory": { "base_url": "" },
     "registration": { "base_url": "" }
   })");
+  ASSERT_TRUE(modern.has_value());
 
-  pbr::from_json(modern, config);
+  pbr::AppConfigFromObject(*modern, config);
   EXPECT_EQ(config.promoted_mcp.url, "https://promoted.example/mcp");
   ASSERT_EQ(config.mcp_servers.size(), 1u);
   EXPECT_EQ(config.mcp_servers[0].command, "mock");
@@ -38,8 +40,7 @@ TEST(ConfigJsonTest, EmitsModernConfigKeys) {
   pbr::AppConfig config;
   config.promoted_mcp.url = "https://promoted.example/mcp";
 
-  nlohmann::json out;
-  pbr::to_json(out, config);
+  const pbr::Object out = pbr::AppConfigToObject(config);
   EXPECT_TRUE(out.contains("promoted_mcp"));
   EXPECT_FALSE(out.contains("mcp"));
 }
@@ -66,18 +67,22 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   config.libp2p.pricing.media_relay.mode = "volunteer";
   config.libp2p.media_relay_budget.default_per_user_up_bps = 12345;
 
-  nlohmann::json out;
-  pbr::to_json(out, config);
+  const pbr::Object out = pbr::AppConfigToObject(config);
   ASSERT_TRUE(out.contains("libp2p"));
-  EXPECT_EQ(out["libp2p"]["node_enabled"], false);
-  EXPECT_EQ(out["libp2p"]["listen_multiaddr"], "/ip4/0.0.0.0/tcp/18520");
-  ASSERT_EQ(out["libp2p"]["bootstrap_peers"].size(), 1u);
-  EXPECT_EQ(out["libp2p"]["prefer_contacts_for_routing"], false);
-  EXPECT_EQ(out["libp2p"]["capabilities"]["circuit_relay"], true);
-  EXPECT_EQ(out["libp2p"]["capabilities"]["media_relay"], false);
+  const pbr::Object* libp2p = out.getObject("libp2p");
+  ASSERT_NE(libp2p, nullptr);
+  EXPECT_EQ(libp2p->getIf<bool>("node_enabled"), false);
+  EXPECT_EQ(libp2p->getString("listen_multiaddr"), "/ip4/0.0.0.0/tcp/18520");
+  ASSERT_NE(libp2p->getArray("bootstrap_peers"), nullptr);
+  EXPECT_EQ(libp2p->getArray("bootstrap_peers")->elements.size(), 1u);
+  EXPECT_EQ(libp2p->getIf<bool>("prefer_contacts_for_routing"), false);
+  const pbr::Object* caps = libp2p->getObject("capabilities");
+  ASSERT_NE(caps, nullptr);
+  EXPECT_EQ(caps->getIf<bool>("circuit_relay"), true);
+  EXPECT_EQ(caps->getIf<bool>("media_relay"), false);
 
   pbr::AppConfig parsed;
-  pbr::from_json(out, parsed);
+  pbr::AppConfigFromObject(out, parsed);
   EXPECT_FALSE(parsed.libp2p.node_enabled);
   EXPECT_EQ(parsed.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18520");
   ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);

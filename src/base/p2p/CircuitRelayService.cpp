@@ -8,6 +8,7 @@
 #include "base/people/RelayScope.h"
 #include "base/p2p/CircuitBridgeTarget.h"
 #include "base/p2p/StreamJsonFrame.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>
@@ -19,7 +20,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <vector>
 
 namespace pbr {
@@ -118,17 +118,18 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
     }
   }
 
-  nlohmann::json request = {{"v", 1},
-                            {"op", "bridge"},
-                            {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000}};
+  Object request;
+  request.set("v", int64_t{1});
+  request.set("op", "bridge");
+  request.set("timeout_ms", int64_t{timeout_ms > 0 ? timeout_ms : 8000});
   if (!target.target_peer_id.empty()) {
-    request["target_peer_id"] = target.target_peer_id;
+    request.set("target_peer_id", target.target_peer_id);
   }
   if (!target.target_multiaddr.empty()) {
-    request["target_multiaddr"] = target.target_multiaddr;
+    request.set("target_multiaddr", target.target_multiaddr);
   }
   if (!target.target_protocol.empty()) {
-    request["target_protocol"] = target.target_protocol;
+    request.set("target_protocol", target.target_protocol);
   }
 
   SettledWait<CircuitRelayBridgeResult> wait;
@@ -138,7 +139,7 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
   }
 
   sessions_.OpenStream(relay_peer_key, {ProtocolName{kCircuitRelayProtocolId}},
-                       [runtime = runtime_, json = request.dump(), wait](
+                       [runtime = runtime_, json = DumpJson(request), wait](
                            libp2p::StreamAndProtocolOrError stream_res) {
                          if (wait.IsSettled()) {
                            if (stream_res) {

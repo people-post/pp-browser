@@ -8,9 +8,18 @@
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
+#include "common/ValueJson.h"
+
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+
+namespace {
+Object ObjectFromNlohmann(const nlohmann::json& json) {
+  return TryParseObject(json.dump()).value_or(Object{});
+}
+} // namespace
+
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
                                                  IdentityStore& identity, IThreadStore& store,
@@ -69,7 +78,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (payload.contains("contact_id") && payload["contact_id"].is_string()) {
       contact_id = payload["contact_id"].get<std::string>();
     } else     if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
-      const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+      const DirectoryHit hit = DirectoryHitFromJson(ObjectFromNlohmann(payload["directory_hit"]));
       RegisterKeysFromHit(p2p_, hit);
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
@@ -125,7 +134,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("directory_hit") || !payload["directory_hit"].is_object()) {
       return Error("Missing directory_hit");
     }
-    const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+    const DirectoryHit hit = DirectoryHitFromJson(ObjectFromNlohmann(payload["directory_hit"]));
     RegisterKeysFromHit(p2p_, hit);
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
@@ -148,7 +157,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!contact || !*contact) {
       return Error("Contact not found");
     }
-    return Roe<std::optional<std::string>>(ContactToJson(**contact).dump());
+    return Roe<std::optional<std::string>>(DumpJson(ContactToJson(**contact)));
   }
 
   if (type == "open_conversation") {

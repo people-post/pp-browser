@@ -1,18 +1,9 @@
 #include "base/messaging/InitiationBillingCodec.h"
 
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
-
-namespace {
-
-nlohmann::json ParseObject(const std::string& detail_json) {
-  return nlohmann::json::parse(detail_json, nullptr, false);
-}
-
-} // namespace
 
 std::string InitiationBillingCodec::ControlTypeToWire(const InitiationBillingControlType type) {
   switch (type) {
@@ -41,75 +32,82 @@ std::optional<InitiationBillingControlType> InitiationBillingCodec::ControlTypeF
 
 std::optional<InitiationBillingControlType> InitiationBillingCodec::ControlTypeFromMessage(
     const ThreadMessage& message) {
-  const nlohmann::json json = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!json.is_object() || !json.contains("control_type") || !json["control_type"].is_string()) {
+  auto json = TryParseObject(message.payload_json);
+  if (!json) {
     return std::nullopt;
   }
-  return ControlTypeFromWire(json["control_type"].get<std::string>());
+  auto control_type = json->getString("control_type");
+  if (!control_type) {
+    return std::nullopt;
+  }
+  return ControlTypeFromWire(*control_type);
 }
 
 Roe<std::string> InitiationBillingCodec::EncodeChargeRequired(const ChargeRequiredDetail& detail) {
-  nlohmann::json json{{"peer_identity", detail.peer_identity},
-                      {"floor_minor", detail.floor_minor},
-                      {"currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency}};
+  Object json;
+  json.set("peer_identity", detail.peer_identity);
+  json.set("floor_minor", detail.floor_minor);
+  json.set("currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency);
   if (!detail.message.empty()) {
-    json["message"] = detail.message;
+    json.set("message", detail.message);
   }
-  return json.dump();
+  return DumpJson(json);
 }
 
 Roe<ChargeRequiredDetail> InitiationBillingCodec::DecodeChargeRequired(const std::string& detail_json) {
-  const nlohmann::json json = ParseObject(detail_json);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid charge_required detail");
   }
   ChargeRequiredDetail detail;
-  detail.peer_identity = json.value("peer_identity", "");
-  detail.floor_minor = json.value("floor_minor", static_cast<int64_t>(0));
-  detail.currency = json.value("currency", std::string(kPricingCurrencyId));
-  detail.message = json.value("message", "");
+  detail.peer_identity = json->getString("peer_identity").value_or("");
+  detail.floor_minor = json->getIf<int64_t>("floor_minor").value_or(0);
+  detail.currency = json->getString("currency").value_or(std::string(kPricingCurrencyId));
+  detail.message = json->getString("message").value_or("");
   return detail;
 }
 
 Roe<std::string> InitiationBillingCodec::EncodeInitiationOffer(const InitiationOfferDetail& detail) {
-  return nlohmann::json{{"peer_identity", detail.peer_identity},
-                        {"offer_minor", detail.offer_minor},
-                        {"floor_minor", detail.floor_minor},
-                        {"currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency}}
-      .dump();
+  Object json;
+  json.set("peer_identity", detail.peer_identity);
+  json.set("offer_minor", detail.offer_minor);
+  json.set("floor_minor", detail.floor_minor);
+  json.set("currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency);
+  return DumpJson(json);
 }
 
 Roe<InitiationOfferDetail> InitiationBillingCodec::DecodeInitiationOffer(const std::string& detail_json) {
-  const nlohmann::json json = ParseObject(detail_json);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid initiation_offer detail");
   }
   InitiationOfferDetail detail;
-  detail.peer_identity = json.value("peer_identity", "");
-  detail.offer_minor = json.value("offer_minor", static_cast<int64_t>(0));
-  detail.floor_minor = json.value("floor_minor", static_cast<int64_t>(0));
-  detail.currency = json.value("currency", std::string(kPricingCurrencyId));
+  detail.peer_identity = json->getString("peer_identity").value_or("");
+  detail.offer_minor = json->getIf<int64_t>("offer_minor").value_or(0);
+  detail.floor_minor = json->getIf<int64_t>("floor_minor").value_or(0);
+  detail.currency = json->getString("currency").value_or(std::string(kPricingCurrencyId));
   return detail;
 }
 
 Roe<std::string> InitiationBillingCodec::EncodeInitiationAccept(const InitiationAcceptDetail& detail) {
-  return nlohmann::json{{"peer_identity", detail.peer_identity},
-                        {"offer_minor", detail.offer_minor},
-                        {"decision", InitiationChargeDecisionToWire(detail.decision)},
-                        {"currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency}}
-      .dump();
+  Object json;
+  json.set("peer_identity", detail.peer_identity);
+  json.set("offer_minor", detail.offer_minor);
+  json.set("decision", InitiationChargeDecisionToWire(detail.decision));
+  json.set("currency", detail.currency.empty() ? kPricingCurrencyId : detail.currency);
+  return DumpJson(json);
 }
 
 Roe<InitiationAcceptDetail> InitiationBillingCodec::DecodeInitiationAccept(const std::string& detail_json) {
-  const nlohmann::json json = ParseObject(detail_json);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid initiation_accept detail");
   }
   InitiationAcceptDetail detail;
-  detail.peer_identity = json.value("peer_identity", "");
-  detail.offer_minor = json.value("offer_minor", static_cast<int64_t>(0));
-  detail.decision = InitiationChargeDecisionFromWire(json.value("decision", "waive"));
-  detail.currency = json.value("currency", std::string(kPricingCurrencyId));
+  detail.peer_identity = json->getString("peer_identity").value_or("");
+  detail.offer_minor = json->getIf<int64_t>("offer_minor").value_or(0);
+  detail.decision = InitiationChargeDecisionFromWire(json->getString("decision").value_or("waive"));
+  detail.currency = json->getString("currency").value_or(std::string(kPricingCurrencyId));
   return detail;
 }
 
@@ -125,8 +123,10 @@ Roe<ThreadMessage> InitiationBillingCodec::BuildSystemMessage(const std::string&
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = true;
-  message.payload_json =
-      nlohmann::json({{"control_type", ControlTypeToWire(type)}, {"detail", detail_json}}).dump();
+  Object payload;
+  payload.set("control_type", ControlTypeToWire(type));
+  payload.set("detail", detail_json);
+  message.payload_json = DumpJson(payload);
   return message;
 }
 

@@ -3,6 +3,7 @@
 #include "feature/messaging/MessagingFacade.h"
 
 #include "base/messaging/MessagingJson.h"
+#include "common/ValueJson.h"
 
 #include <nlohmann/json.hpp>
 
@@ -10,10 +11,18 @@ namespace pbr {
 
 namespace {
 
+Object ObjectFromNlohmann(const nlohmann::json& json) {
+  return TryParseObject(json.dump()).value_or(Object{});
+}
+
+nlohmann::json NlohmannFromObject(const Object& object) {
+  return nlohmann::json::parse(DumpJson(object), nullptr, false);
+}
+
 nlohmann::json ContactsToJson(const std::vector<Contact>& contacts) {
   nlohmann::json out = nlohmann::json::array();
   for (const Contact& contact : contacts) {
-    out.push_back(ContactToJson(contact));
+    out.push_back(NlohmannFromObject(ContactToJson(contact)));
   }
   return out;
 }
@@ -21,7 +30,7 @@ nlohmann::json ContactsToJson(const std::vector<Contact>& contacts) {
 nlohmann::json ThreadsToJson(const std::vector<Thread>& threads) {
   nlohmann::json out = nlohmann::json::array();
   for (const Thread& thread : threads) {
-    out.push_back(ThreadToJson(thread));
+    out.push_back(NlohmannFromObject(ThreadToJson(thread)));
   }
   return out;
 }
@@ -62,7 +71,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
          }
          nlohmann::json out = nlohmann::json::array();
          for (const DirectoryHit& hit : *hits) {
-           out.push_back(DirectoryHitToJson(hit));
+           out.push_back(NlohmannFromObject(DirectoryHitToJson(hit)));
          }
          return out.dump();
        }});
@@ -94,12 +103,12 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
          if (!arguments.contains("directory_hit")) {
            return Error("directory_hit required");
          }
-         const DirectoryHit hit = DirectoryHitFromJson(arguments["directory_hit"]);
+         const DirectoryHit hit = DirectoryHitFromJson(ObjectFromNlohmann(arguments["directory_hit"]));
          auto contact = messaging.AddContactFromDirectoryHit(hit);
          if (!contact) {
            return contact.error();
          }
-         return ContactToJson(*contact).dump();
+         return DumpJson(ContactToJson(*contact));
        }});
 
   tools.push_back({.definition = {.name = "list_conversations",
@@ -127,7 +136,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
          if (!thread) {
            return thread.error();
          }
-         return ThreadToJson(*thread).dump();
+         return DumpJson(ThreadToJson(*thread));
        }});
 
   tools.push_back(
@@ -143,7 +152,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
          if (!thread) {
            return thread.error();
          }
-         return ThreadToJson(*thread).dump();
+         return DumpJson(ThreadToJson(*thread));
        }});
 
   tools.push_back(

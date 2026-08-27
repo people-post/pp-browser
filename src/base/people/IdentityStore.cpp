@@ -267,8 +267,12 @@ Roe<void> IdentityStore::EnsureLoaded() const {
       return Error("Invalid schema_version in identity.enc");
     }
     version = root["schema_version"].get<int>();
-    if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "identity.enc"); !checked) {
-      return checked.error();
+    {
+      Object schema_check;
+      schema_check.set("schema_version", static_cast<int64_t>(version));
+      if (auto checked = SchemaVersion::Validate(schema_check, kSchemaVersion, "identity.enc"); !checked) {
+        return checked.error();
+      }
     }
   }
   if (version < kSchemaVersion) {

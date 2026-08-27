@@ -14,6 +14,7 @@
 #include "base/p2p/StreamFrameIo.h"
 #include "base/p2p/SettledWait.h"
 #include "base/p2p/StreamJsonFrame.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
@@ -29,7 +30,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -70,25 +70,29 @@ inline Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std
   return BlockingWriteLengthPrefixedFrame(stream, body);
 }
 
-inline Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
-  return BlockingWriteStreamJson(stream, root.dump());
+inline Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const Object& root) {
+  return BlockingWriteStreamJson(stream, DumpJson(root));
 }
 
-inline Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
+inline Roe<Object> ReadJson(const std::shared_ptr<Stream>& stream) {
   auto json_utf8 = BlockingReadStreamJson(stream);
   if (!json_utf8) {
     return json_utf8.error();
   }
-  nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  auto parsed = TryParseObject(*json_utf8);
+  if (!parsed) {
     return Error("invalid media-relay json");
   }
-  return root;
+  return *parsed;
 }
 
 inline void RejectAndCloseAttach(MediaRelayAttachSm& sm, const std::shared_ptr<Stream>& s,
                                  const std::string& error, const MediaRelayAttachEvent ev) {
-  (void)WriteJson(s, {{"v", 1}, {"ok", false}, {"error", error}});
+  Object reject;
+  reject.set("v", int64_t{1});
+  reject.set("ok", false);
+  reject.set("error", error);
+  (void)WriteJson(s, reject);
   s->close([](auto&&) {});
   // Always terminal — do not rely on Apply guards (wrong-phase reject uses OpAccept etc.).
   sm.SetPhase(MediaRelayAttachPhase::Rejected, ev);
@@ -576,41 +580,52 @@ public:
       return true; // skip; do not tear down
     }
     if (body[0] == '{') {
-      nlohmann::json root =
-          nlohmann::json::parse(std::string(body.begin(), body.end()), nullptr, false);
-      if (root.is_discarded() || !root.is_object()) {
+      auto root = TryParseObject(std::string(body.begin(), body.end()));
+      if (!root) {
         return true; // skip corrupt control; keep uplink
       }
-      const std::string op = root.value("op", "");
+      const std::string op = root->getString("op").value_or("");
+      const uint32_t stream_id =
+          static_cast<uint32_t>(root->getNonNegInt("stream_id").value_or(0));
+      const uint16_t channel_id =
+          static_cast<uint16_t>(root->getNonNegInt("channel_id").value_or(0));
       if (op == "subscribe") {
         {
           std::lock_guard<std::mutex> lock(mu);
-          part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
-                                            static_cast<uint16_t>(root.value("channel_id", 0))));
+          part->subscriptions.insert(SubKey(stream_id, channel_id));
         }
         logging::getLogger("MediaRelayService").info
-            << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
-            << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
+            << "hop subscribe peer=" << part->peer_id << " stream=" << stream_id
+            << " ch=" << channel_id << " call=" << session->call_id
             << " parts=" << session->participants.size();
         if (part->duplex) {
-          const std::string json =
-              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "subscribe"}}).dump();
+          Object ack;
+          ack.set("v", int64_t{1});
+          ack.set("ok", true);
+          ack.set("op", "subscribe");
+          const std::string json = DumpJson(ack);
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         }
       } else if (op == "unsubscribe") {
         {
           std::lock_guard<std::mutex> lock(mu);
-          part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
-                                             static_cast<uint16_t>(root.value("channel_id", 0))));
+          part->subscriptions.erase(SubKey(stream_id, channel_id));
         }
         if (part->duplex) {
-          const std::string json =
-              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "unsubscribe"}}).dump();
+          Object ack;
+          ack.set("v", int64_t{1});
+          ack.set("ok", true);
+          ack.set("op", "unsubscribe");
+          const std::string json = DumpJson(ack);
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         }
       } else if (op == "detach") {
         if (part->duplex) {
-          const std::string json = nlohmann::json({{"v", 1}, {"ok", true}, {"op", "detach"}}).dump();
+          Object ack;
+          ack.set("v", int64_t{1});
+          ack.set("ok", true);
+          ack.set("op", "detach");
+          const std::string json = DumpJson(ack);
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         }
         return false;
@@ -758,7 +773,7 @@ public:
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol);
   void HandleInboundBody(std::shared_ptr<Stream> stream);
-  void RunQuoteExchange(nlohmann::json req, bool circuit_backed,
+  void RunQuoteExchange(Object req, bool circuit_backed,
                         libp2p::StreamAndProtocolOrError stream_res,
                         const SettledWait<MediaRelayQuote>& wait);
   void RunClientAttachOnWorker(const std::string& quote_id, const std::string& call_id,
