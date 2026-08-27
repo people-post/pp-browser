@@ -5,34 +5,50 @@
 #include "base/messaging/MessagingJson.h"
 #include "common/ValueJson.h"
 
-#include <nlohmann/json.hpp>
-
 namespace pbr {
 
 namespace {
 
-Object ObjectFromNlohmann(const nlohmann::json& json) {
-  return TryParseObject(json.dump()).value_or(Object{});
-}
-
-nlohmann::json NlohmannFromObject(const Object& object) {
-  return nlohmann::json::parse(DumpJson(object), nullptr, false);
-}
-
-nlohmann::json ContactsToJson(const std::vector<Contact>& contacts) {
-  nlohmann::json out = nlohmann::json::array();
+Value ContactsToJson(const std::vector<Contact>& contacts) {
+  std::vector<Value> out;
+  out.reserve(contacts.size());
   for (const Contact& contact : contacts) {
-    out.push_back(NlohmannFromObject(ContactToJson(contact)));
+    out.push_back(ObjectValue(ContactToJson(contact)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-nlohmann::json ThreadsToJson(const std::vector<Thread>& threads) {
-  nlohmann::json out = nlohmann::json::array();
+Value ThreadsToJson(const std::vector<Thread>& threads) {
+  std::vector<Value> out;
+  out.reserve(threads.size());
   for (const Thread& thread : threads) {
-    out.push_back(NlohmannFromObject(ThreadToJson(thread)));
+    out.push_back(ObjectValue(ThreadToJson(thread)));
   }
-  return out;
+  return ArrayValue(std::move(out));
+}
+
+Object StringProp(const char* description = nullptr) {
+  Object prop;
+  prop.set("type", "string");
+  if (description) {
+    prop.set("description", description);
+  }
+  return prop;
+}
+
+Object ObjectSchema(Object properties, std::vector<std::string> required = {}) {
+  Object schema;
+  schema.set("type", "object");
+  schema.set("properties", std::move(properties));
+  if (!required.empty()) {
+    std::vector<Value> required_values;
+    required_values.reserve(required.size());
+    for (std::string& key : required) {
+      required_values.push_back(Value(std::move(key)));
+    }
+    schema.set("required", ArrayValue(std::move(required_values)));
+  }
+  return schema;
 }
 
 ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
@@ -56,161 +72,180 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   MessagingFacade& messaging = messaging_;
   std::vector<ToolDescriptor> tools;
 
-  tools.push_back(
-      {.definition = {.name = "search_people",
-                      .description = "Search the public directory for people by name, nickname, or ID fragment.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"query", {{"type", "string"}, {"description", "Search query"}}}}},
-                                     {"required", nlohmann::json::array({"query"})}}},
-       .meta = Meta("people", "read", false),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string query = arguments.value("query", "");
-         auto hits = messaging.SearchPeople(query);
-         if (!hits) {
-           return hits.error();
-         }
-         nlohmann::json out = nlohmann::json::array();
-         for (const DirectoryHit& hit : *hits) {
-           out.push_back(NlohmannFromObject(DirectoryHitToJson(hit)));
-         }
-         return out.dump();
-       }});
+  {
+    Object properties;
+    properties.set("query", StringProp("Search query"));
+    tools.push_back(
+        {.definition = {.name = "search_people",
+                        .description = "Search the public directory for people by name, nickname, or ID fragment.",
+                        .parameters = ObjectSchema(std::move(properties), {"query"})},
+         .meta = Meta("people", "read", false),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           const std::string query = arguments.getString("query").value_or("");
+           auto hits = messaging.SearchPeople(query);
+           if (!hits) {
+             return hits.error();
+           }
+           std::vector<Value> out;
+           out.reserve(hits->size());
+           for (const DirectoryHit& hit : *hits) {
+             out.push_back(ObjectValue(DirectoryHitToJson(hit)));
+           }
+           return DumpJson(ArrayValue(std::move(out)));
+         }});
+  }
 
-  tools.push_back({.definition = {.name = "list_contacts",
-                                  .description = "List or search local contacts.",
-                                  .parameters = {{"type", "object"},
-                                                 {"properties",
-                                                  {{"query", {{"type", "string"}, {"description", "Optional filter"}}}}},
-                                                 {"required", nlohmann::json::array()}}},
-                   .meta = Meta("people", "read", false),
-                   .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-                     const std::string query = arguments.value("query", "");
-                     auto contacts = messaging.SearchLocalContacts(query);
-                     if (!contacts) {
-                       return contacts.error();
-                     }
-                     return ContactsToJson(*contacts).dump();
-                   }});
+  {
+    Object properties;
+    properties.set("query", StringProp("Optional filter"));
+    tools.push_back({.definition = {.name = "list_contacts",
+                                    .description = "List or search local contacts.",
+                                    .parameters = ObjectSchema(std::move(properties))},
+                     .meta = Meta("people", "read", false),
+                     .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+                       const std::string query = arguments.getString("query").value_or("");
+                       auto contacts = messaging.SearchLocalContacts(query);
+                       if (!contacts) {
+                         return contacts.error();
+                       }
+                       return DumpJson(ContactsToJson(*contacts));
+                     }});
+  }
 
-  tools.push_back(
-      {.definition = {.name = "add_contact",
-                      .description = "Add a directory search hit to local contacts.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"directory_hit", {{"type", "object"}}}}},
-                                     {"required", nlohmann::json::array({"directory_hit"})}}},
-       .meta = Meta("people", "write", true),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         if (!arguments.contains("directory_hit")) {
-           return Error("directory_hit required");
-         }
-         const DirectoryHit hit = DirectoryHitFromJson(ObjectFromNlohmann(arguments["directory_hit"]));
-         auto contact = messaging.AddContactFromDirectoryHit(hit);
-         if (!contact) {
-           return contact.error();
-         }
-         return DumpJson(ContactToJson(*contact));
-       }});
+  {
+    Object properties;
+    Object directory_hit;
+    directory_hit.set("type", "object");
+    properties.set("directory_hit", directory_hit);
+    tools.push_back(
+        {.definition = {.name = "add_contact",
+                        .description = "Add a directory search hit to local contacts.",
+                        .parameters = ObjectSchema(std::move(properties), {"directory_hit"})},
+         .meta = Meta("people", "write", true),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           const Object* directory_hit = arguments.getObject("directory_hit");
+           if (!directory_hit) {
+             return Error("directory_hit required");
+           }
+           const DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
+           auto contact = messaging.AddContactFromDirectoryHit(hit);
+           if (!contact) {
+             return contact.error();
+           }
+           return DumpJson(ContactToJson(*contact));
+         }});
+  }
 
   tools.push_back({.definition = {.name = "list_conversations",
                                   .description = "List inbox threads (AI and person-to-person).",
-                                  .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                                  .parameters = ObjectSchema(Object{})},
                    .meta = Meta("communications", "read", false),
-                   .execute = [&messaging](const nlohmann::json& /*arguments*/) -> Roe<std::string> {
+                   .execute = [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
                      auto threads = messaging.ListThreads();
                      if (!threads) {
                        return threads.error();
                      }
-                     return ThreadsToJson(*threads).dump();
+                     return DumpJson(ThreadsToJson(*threads));
                    }});
 
-  tools.push_back(
-      {.definition = {.name = "open_conversation",
-                      .description = "Switch the active inbox thread by thread id.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"thread_id", {{"type", "string"}}}}},
-                                     {"required", nlohmann::json::array({"thread_id"})}}},
-       .meta = Meta("communications", "read", false),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string thread_id = arguments.value("thread_id", "");
-         auto thread = messaging.OpenThread(thread_id);
-         if (!thread) {
-           return thread.error();
-         }
-         return DumpJson(ThreadToJson(*thread));
-       }});
+  {
+    Object properties;
+    properties.set("thread_id", StringProp());
+    tools.push_back(
+        {.definition = {.name = "open_conversation",
+                        .description = "Switch the active inbox thread by thread id.",
+                        .parameters = ObjectSchema(std::move(properties), {"thread_id"})},
+         .meta = Meta("communications", "read", false),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           const std::string thread_id = arguments.getString("thread_id").value_or("");
+           auto thread = messaging.OpenThread(thread_id);
+           if (!thread) {
+             return thread.error();
+           }
+           return DumpJson(ThreadToJson(*thread));
+         }});
+  }
 
-  tools.push_back(
-      {.definition = {.name = "start_conversation",
-                      .description = "Open or create a direct conversation with a local contact id.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"contact_id", {{"type", "string"}}}}},
-                                     {"required", nlohmann::json::array({"contact_id"})}}},
-       .meta = Meta("communications", "write", true),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string contact_id = arguments.value("contact_id", "");
-         auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
-         if (!thread) {
-           return thread.error();
-         }
-         return DumpJson(ThreadToJson(*thread));
-       }});
+  {
+    Object properties;
+    properties.set("contact_id", StringProp());
+    tools.push_back(
+        {.definition = {.name = "start_conversation",
+                        .description = "Open or create a direct conversation with a local contact id.",
+                        .parameters = ObjectSchema(std::move(properties), {"contact_id"})},
+         .meta = Meta("communications", "write", true),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           const std::string contact_id = arguments.getString("contact_id").value_or("");
+           auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+           if (!thread) {
+             return thread.error();
+           }
+           return DumpJson(ThreadToJson(*thread));
+         }});
+  }
 
-  tools.push_back(
-      {.definition = {.name = "register_user",
-                      .description = "Register this device on the network with Ed25519 identity.",
-                      .parameters = {{"type", "object"},
-                                     {"properties",
-                                      {{"nickname",
-                                        {{"type", "string"}, {"description", "Optional nickname override"}}}}},
-                                     {"required", nlohmann::json::array()}}},
-       .meta = Meta("identity", "write", true),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         auto identity = messaging.GetLocalIdentity();
-         if (!identity) {
-           return identity.error();
-         }
-         if (arguments.contains("nickname") && arguments["nickname"].is_string()) {
-           LocalIdentity updated = *identity;
-           updated.nickname = arguments["nickname"].get<std::string>();
-           (void)messaging.UpdateLocalIdentity(updated);
-           identity = messaging.GetLocalIdentity();
-         }
+  {
+    Object properties;
+    properties.set("nickname", StringProp("Optional nickname override"));
+    tools.push_back(
+        {.definition = {.name = "register_user",
+                        .description = "Register this device on the network with Ed25519 identity.",
+                        .parameters = ObjectSchema(std::move(properties))},
+         .meta = Meta("identity", "write", true),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           auto identity = messaging.GetLocalIdentity();
+           if (!identity) {
+             return identity.error();
+           }
+           if (auto nickname = arguments.getString("nickname")) {
+             LocalIdentity updated = *identity;
+             updated.nickname = *nickname;
+             (void)messaging.UpdateLocalIdentity(updated);
+             identity = messaging.GetLocalIdentity();
+           }
 
-         auto result = messaging.FinishAndPersistRegistration(identity->nickname);
-         if (!result) {
-           return result.error();
-         }
-         return nlohmann::json{{"success", result->registered},
-                               {"relay_user_id", result->relay_user_id},
-                               {"message", "Registered"},
-                               {"expires_at", result->registration_expires_at}}
-             .dump();
-       }});
+           auto result = messaging.FinishAndPersistRegistration(identity->nickname);
+           if (!result) {
+             return result.error();
+           }
+           Object out;
+           out.set("success", result->registered);
+           out.set("relay_user_id", result->relay_user_id);
+           out.set("message", "Registered");
+           out.set("expires_at", result->registration_expires_at);
+           return DumpJson(out);
+         }});
+  }
 
-  tools.push_back(
-      {.definition = {.name = "update_profile_nickname",
-                      .description = "Update the registered nickname on the network.",
-                      .parameters = {{"type", "object"},
-                                     {"properties", {{"nickname", {{"type", "string"}}}}},
-                                     {"required", nlohmann::json::array({"nickname"})}}},
-       .meta = Meta("identity", "write", true),
-       .execute = [&messaging](const nlohmann::json& arguments) -> Roe<std::string> {
-         const std::string nickname = arguments.value("nickname", "");
-         if (nickname.empty()) {
-           return Error("nickname required");
-         }
-         auto result = messaging.UpdateRegisteredNickname(nickname);
-         if (!result) {
-           return result.error();
-         }
-         auto identity = messaging.GetLocalIdentity();
-         if (identity) {
-           LocalIdentity updated = *identity;
-           updated.nickname = nickname;
-           (void)messaging.UpdateLocalIdentity(updated);
-         }
-         return nlohmann::json{{"success", result->success}, {"message", result->message}}.dump();
-       }});
+  {
+    Object properties;
+    properties.set("nickname", StringProp());
+    tools.push_back(
+        {.definition = {.name = "update_profile_nickname",
+                        .description = "Update the registered nickname on the network.",
+                        .parameters = ObjectSchema(std::move(properties), {"nickname"})},
+         .meta = Meta("identity", "write", true),
+         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+           const std::string nickname = arguments.getString("nickname").value_or("");
+           if (nickname.empty()) {
+             return Error("nickname required");
+           }
+           auto result = messaging.UpdateRegisteredNickname(nickname);
+           if (!result) {
+             return result.error();
+           }
+           auto identity = messaging.GetLocalIdentity();
+           if (identity) {
+             LocalIdentity updated = *identity;
+             updated.nickname = nickname;
+             (void)messaging.UpdateLocalIdentity(updated);
+           }
+           Object out;
+           out.set("success", result->success);
+           out.set("message", result->message);
+           return DumpJson(out);
+         }});
+  }
 
   return tools;
 }

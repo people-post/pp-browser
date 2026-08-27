@@ -32,7 +32,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+
 #include <unordered_set>
 
 namespace pbr {
@@ -41,14 +42,20 @@ namespace {
 
 constexpr int kMaxIterations = 8;
 
-nlohmann::json ToolCallsToJson(const std::vector<ToolCall>& tool_calls) {
-  nlohmann::json out = nlohmann::json::array();
+Value ToolCallsToJson(const std::vector<ToolCall>& tool_calls) {
+  std::vector<Value> out;
+  out.reserve(tool_calls.size());
   for (const ToolCall& call : tool_calls) {
-    out.push_back({{"id", call.id},
-                   {"type", "function"},
-                   {"function", {{"name", call.name}, {"arguments", call.arguments.dump()}}}});
+    Object function;
+    function.set("name", call.name);
+    function.set("arguments", DumpJson(call.arguments));
+    Object entry;
+    entry.set("id", call.id);
+    entry.set("type", "function");
+    entry.set("function", function);
+    out.push_back(ObjectValue(std::move(entry)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
 void AppendSynthesisReminder(std::vector<ChatMessage>& messages, const TurnPlan& plan) {

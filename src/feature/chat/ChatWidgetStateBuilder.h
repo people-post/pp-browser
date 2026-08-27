@@ -2,6 +2,7 @@
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ui/ChatWidgetTypes.h"
+#include "common/PbrCompat.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 
@@ -10,8 +11,8 @@
 
 namespace pbr {
 
-FormWidgetState BuildFormWidgetState(const nlohmann::json& config);
-CalendarWidgetState BuildCalendarWidgetState(const nlohmann::json& config);
+FormWidgetState BuildFormWidgetState(const Object& config);
+CalendarWidgetState BuildCalendarWidgetState(const Object& config);
 
 void ApplyWidgetInits(const std::vector<WidgetInit>& inits, TurnWidgetState& state);
 

@@ -9,6 +9,7 @@
 #include <cctype>
 #include <optional>
 #include <string_view>
+#include "common/ValueJson.h"
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -20,6 +21,10 @@ ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
                   .domain = std::move(domain),
                   .risk = std::move(risk),
                   .mutating = mutating};
+}
+
+Object MustSchema(const nlohmann::json& schema) {
+  return TryParseObject(schema.dump()).value_or(Object{});
 }
 
 const char* ReachabilityStatusName(SettingsReachabilityView::Status status) {
@@ -80,27 +85,37 @@ bool EqualsIgnoreCaseAscii(std::string_view a, std::string_view b) {
   return true;
 }
 
-/** Safe string read — avoids nlohmann type_error when LLMs pass non-strings. */
-std::string JsonString(const nlohmann::json& value) {
-  if (value.is_string()) {
-    return value.get<std::string>();
+/** Safe string read — avoids type errors when LLMs pass non-strings. */
+std::string JsonString(const Value& value) {
+  if (auto s = asString(value)) {
+    return *s;
   }
-  if (value.is_number_integer()) {
-    return std::to_string(value.get<long long>());
+  if (const bool* b = std::get_if<bool>(&value)) {
+    return *b ? "true" : "false";
   }
-  if (value.is_boolean()) {
-    return value.get<bool>() ? "true" : "false";
+  if (const int64_t* i = std::get_if<int64_t>(&value)) {
+    return std::to_string(*i);
+  }
+  if (const uint64_t* u = std::get_if<uint64_t>(&value)) {
+    return std::to_string(*u);
+  }
+  if (const double* d = std::get_if<double>(&value)) {
+    return std::to_string(*d);
   }
   return {};
 }
 
-std::string FirstStringArg(const nlohmann::json& arguments,
+std::string FirstStringArg(const Object& arguments,
                            std::initializer_list<const char*> keys) {
   for (const char* key : keys) {
     if (!arguments.contains(key)) {
       continue;
     }
-    const std::string value = TrimAscii(JsonString(arguments[key]));
+    auto slot = arguments.fields().tryGet(key);
+    if (!slot) {
+      continue;
+    }
+    const std::string value = TrimAscii(JsonString(slot->get()));
     if (!value.empty()) {
       return value;
     }
@@ -108,37 +123,43 @@ std::string FirstStringArg(const nlohmann::json& arguments,
   return {};
 }
 
-std::optional<bool> ParseFlexibleBool(const nlohmann::json& value) {
-  if (value.is_boolean()) {
-    return value.get<bool>();
+std::optional<bool> ParseFlexibleBool(const Value& value) {
+  if (const bool* b = std::get_if<bool>(&value)) {
+    return *b;
   }
-  if (value.is_number_integer()) {
-    return value.get<long long>() != 0;
-  }
-  if (value.is_number_float()) {
-    return value.get<double>() != 0.0;
-  }
-  if (value.is_string()) {
-    const std::string s = ToLowerAscii(TrimAscii(value.get<std::string>()));
-    if (s == "true" || s == "1" || s == "yes" || s == "y" || s == "on" || s == "enable" ||
-        s == "enabled") {
+  if (auto s = asString(value)) {
+    const std::string lower = ToLowerAscii(TrimAscii(*s));
+    if (lower == "true" || lower == "1" || lower == "yes" || lower == "y" || lower == "on" ||
+        lower == "enable" || lower == "enabled") {
       return true;
     }
-    if (s == "false" || s == "0" || s == "no" || s == "n" || s == "off" || s == "disable" ||
-        s == "disabled") {
+    if (lower == "false" || lower == "0" || lower == "no" || lower == "n" || lower == "off" ||
+        lower == "disable" || lower == "disabled") {
       return false;
     }
+  }
+  if (const int64_t* i = std::get_if<int64_t>(&value)) {
+    if (*i == 0) return false;
+    if (*i == 1) return true;
+  }
+  if (const uint64_t* u = std::get_if<uint64_t>(&value)) {
+    if (*u == 0) return false;
+    if (*u == 1) return true;
   }
   return std::nullopt;
 }
 
-std::optional<bool> BoolFromArgs(const nlohmann::json& arguments,
+std::optional<bool> BoolFromArgs(const Object& arguments,
                                  std::initializer_list<const char*> keys) {
   for (const char* key : keys) {
     if (!arguments.contains(key)) {
       continue;
     }
-    if (auto parsed = ParseFlexibleBool(arguments[key])) {
+    auto slot = arguments.fields().tryGet(key);
+    if (!slot) {
+      continue;
+    }
+    if (auto parsed = ParseFlexibleBool(slot->get())) {
       return parsed;
     }
   }
@@ -150,7 +171,7 @@ bool ValidAppearance(const std::string& appearance) {
 }
 
 /** Prefer `appearance`; accept LLM aliases (`theme`, `mode`, Title Case, dark_mode bool). */
-std::string AppearanceFromArgs(const nlohmann::json& arguments) {
+std::string AppearanceFromArgs(const Object& arguments) {
   std::string value =
       FirstStringArg(arguments, {"appearance", "theme", "mode", "color_scheme", "colorScheme"});
   if (!value.empty()) {
@@ -198,7 +219,7 @@ bool ValidGroupInvitePolicy(const std::string& policy) {
   return policy == "everyone" || policy == "contacts_only" || policy == "nobody";
 }
 
-std::string PolicyFromArgs(const nlohmann::json& arguments) {
+std::string PolicyFromArgs(const Object& arguments) {
   return NormalizePolicyToken(
       FirstStringArg(arguments, {"policy", "group_invite_policy", "invite_policy", "who"}));
 }
@@ -266,7 +287,7 @@ std::string CanonicalLanguagePref(const SettingsToolPorts& ports, std::string ra
   return {};
 }
 
-std::string LanguageFromArgs(const SettingsToolPorts& ports, const nlohmann::json& arguments) {
+std::string LanguageFromArgs(const SettingsToolPorts& ports, const Object& arguments) {
   return CanonicalLanguagePref(
       ports, FirstStringArg(arguments, {"language", "locale", "lang", "language_code", "languageCode"}));
 }
@@ -308,9 +329,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "get_profile_identity",
                       .description = "Read this device's profile identity (nickname, peer id, registration status). "
                                      "Does not return secrets or API keys.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("identity", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          if (!ports.load_profile_identity) {
            return Error("Profile identity unavailable");
          }
@@ -329,9 +350,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back({.definition = {.name = "get_preferences",
                                   .description = "Read profile preferences: appearance, language, notifications, "
                                                  "group invite policy, transparency, call diagnostics, auto-renew.",
-                                  .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                                  .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
                    .meta = Meta("settings", "read", false),
-                   .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+                   .execute = [ports](const Object&) -> Roe<std::string> {
                      auto store = RequireStore(ports);
                      if (!store) {
                        return store.error();
@@ -352,9 +373,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "list_locales",
                       .description = "List available UI languages (BCP-47 tags) and the current language preference.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("settings", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();
@@ -377,9 +398,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "get_reachability",
                       .description = "Read network reachability status for this device (reachable / outbound only / "
                                      "blocked) and related signals.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("network", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          SettingsReachabilityView view;
          if (ports.load_reachability) {
            view = ports.load_reachability();
@@ -398,9 +419,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "get_security_status",
                       .description = "Read security status: PIN vault readiness (not the PIN), group invite policy, "
                                      "and how many assistant tool permissions are remembered.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("security", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();
@@ -427,9 +448,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "get_network_settings",
                       .description = "Read mesh/network participation settings (node, relays, prefer contacts) and "
                                      "listen multiaddr. Does not change endpoints.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("network", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();
@@ -446,9 +467,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "get_llm_settings",
                       .description = "Read assistant LLM settings (preset, base URL, model). Never returns API keys.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("settings", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();
@@ -470,9 +491,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "get_integrations",
                       .description = "Read search provider and MCP server ids/enabled flags. URLs are omitted.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("settings", "read", false),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();
@@ -494,7 +515,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "set_appearance",
                       .description = "Set UI appearance: system, light, or dark. "
                                      "Args: appearance (preferred) or theme/mode; case-insensitive.",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties",
                                       {{"appearance",
                                         {{"type", "string"},
@@ -502,9 +523,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                                        {"theme",
                                         {{"type", "string"},
                                          {"description", "Alias for appearance"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("settings", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const std::string appearance = AppearanceFromArgs(arguments);
          if (!ValidAppearance(appearance)) {
            return Error("appearance must be system, light, or dark");
@@ -531,15 +552,15 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                           "(en, zh-Hans). Accepts locale/lang aliases and common labels "
                           "(Chinese, 简体中文, zh, zh-CN).",
                       .parameters =
-                          {{"type", "object"},
+                          MustSchema({{"type", "object"},
                            {"properties",
                             {{"language",
                               {{"type", "string"},
                                {"description", "system | en | zh-Hans (or alias/label)"}}},
                              {"locale", {{"type", "string"}, {"description", "Alias for language"}}}}},
-                           {"required", nlohmann::json::array()}}},
+                           {"required", nlohmann::json::array()}})},
        .meta = Meta("settings", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const std::string language = LanguageFromArgs(ports, arguments);
          if (language.empty()) {
            return Error("language must be system or a tag from list_locales");
@@ -559,14 +580,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "set_notifications",
                       .description = "Enable or disable OS notification banners (sync continues either way).",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties",
                                       {{"enabled", {{"type", "boolean"}}},
                                        {"show_notifications",
                                         {{"type", "boolean"}, {"description", "Alias for enabled"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("settings", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled =
              BoolFromArgs(arguments, {"enabled", "show_notifications", "notifications"});
          if (!enabled) {
@@ -589,14 +610,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                       .description = "Set who may invite this user to group chats: everyone, "
                                      "contacts_only, or nobody.",
                       .parameters =
-                          {{"type", "object"},
+                          MustSchema({{"type", "object"},
                            {"properties",
                             {{"policy", {{"type", "string"}}},
                              {"group_invite_policy",
                               {{"type", "string"}, {"description", "Alias for policy"}}}}},
-                           {"required", nlohmann::json::array()}}},
+                           {"required", nlohmann::json::array()}})},
        .meta = Meta("security", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const std::string policy = PolicyFromArgs(arguments);
          if (!ValidGroupInvitePolicy(policy)) {
            return Error("policy must be everyone, contacts_only, or nobody");
@@ -616,11 +637,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "set_auto_renew_registration",
                       .description = "Enable or disable automatic network registration renewal near expiry.",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("identity", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "auto_renew_registration"});
          if (!enabled) {
            return Error("enabled boolean required");
@@ -640,11 +661,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "set_reduce_transparency",
                       .description = "When enabled, compact chrome uses opaque surfaces (no backdrop frost).",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("settings", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "reduce_transparency"});
          if (!enabled) {
            return Error("enabled boolean required");
@@ -664,11 +685,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "set_call_diagnostics",
                       .description = "Enable or disable call media diagnostics in the UI.",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("settings", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "call_diagnostics"});
          if (!enabled) {
            return Error("enabled boolean required");
@@ -688,11 +709,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "set_node_enabled",
                       .description = "Enable or disable desktop Node participation (help the network). Ignored on mobile.",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties", {{"enabled", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("network", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "node_enabled"});
          if (!enabled) {
            return Error("enabled boolean required");
@@ -713,14 +734,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "set_mesh_capabilities",
                       .description = "Update mesh capability flags: circuit_relay, media_relay, prefer_contacts_for_routing.",
                       .parameters =
-                          {{"type", "object"},
+                          MustSchema({{"type", "object"},
                            {"properties",
                             {{"circuit_relay", {{"type", "boolean"}}},
                              {"media_relay", {{"type", "boolean"}}},
                              {"prefer_contacts_for_routing", {{"type", "boolean"}}}}},
-                           {"required", nlohmann::json::array()}}},
+                           {"required", nlohmann::json::array()}})},
        .meta = Meta("network", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
          const auto media = BoolFromArgs(arguments, {"media_relay"});
          const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
@@ -753,11 +774,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(
       {.definition = {.name = "probe_reachability",
                       .description = "Re-run the network reachability probe. Optionally try UPnP port mapping first.",
-                      .parameters = {{"type", "object"},
+                      .parameters = MustSchema({{"type", "object"},
                                      {"properties", {{"try_upnp", {{"type", "boolean"}}}}},
-                                     {"required", nlohmann::json::array()}}},
+                                     {"required", nlohmann::json::array()}})},
        .meta = Meta("network", "write", true),
-       .execute = [ports](const nlohmann::json& arguments) -> Roe<std::string> {
+       .execute = [ports](const Object& arguments) -> Roe<std::string> {
          if (!ports.run_reachability_probe) {
            return Error("Reachability probe unavailable");
          }
@@ -774,9 +795,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
       {.definition = {.name = "reset_tool_permissions",
                       .description = "Clear remembered Always allow / Never decisions for assistant tools so the "
                                      "assistant asks again before changing data.",
-                      .parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}}},
+                      .parameters = MustSchema({{"type", "object"}, {"properties", nlohmann::json::object()}})},
        .meta = Meta("security", "write", true),
-       .execute = [ports](const nlohmann::json&) -> Roe<std::string> {
+       .execute = [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
          if (!store) {
            return store.error();

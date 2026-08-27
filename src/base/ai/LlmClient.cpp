@@ -97,13 +97,6 @@ Error MapHttpError(long http_code, const std::string& response_body) {
   return AppError::Network(Err::Network::HttpError, detail);
 }
 
-Object AsObjectOrEmpty(const Value& value) {
-  if (const Object* object = asObject(value)) {
-    return *object;
-  }
-  return {};
-}
-
 } // namespace
 
 LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
