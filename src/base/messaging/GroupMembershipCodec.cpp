@@ -1,10 +1,8 @@
 #include "base/messaging/GroupMembershipCodec.h"
 
 #include "base/messaging/ChatPayloadTypes.h"
-
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 namespace pbr {
 
@@ -52,71 +50,110 @@ GroupHistoryVisibility HistoryVisibilityFromString(const std::string& value) {
   return value == "since_join" ? GroupHistoryVisibility::SinceJoin : GroupHistoryVisibility::Full;
 }
 
+uint64_t ReadRosterEpoch(const Object& json) {
+  return json.getNonNegInt("roster_epoch").value_or(0);
+}
+
+Roe<std::string> DetailFromMessage(const ThreadMessage& message, const GroupMembershipControlType expected,
+                                   const char* not_type_error) {
+  const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
+  if (!control_type || *control_type != expected) {
+    return Error(not_type_error);
+  }
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
+    return Error("Missing membership detail");
+  }
+  auto detail = payload->getString("detail");
+  if (!detail) {
+    return Error("Missing membership detail");
+  }
+  return *detail;
+}
+
+Object MakeStringObject(std::initializer_list<std::pair<const char*, std::string>> fields) {
+  Object object;
+  for (const auto& [key, value] : fields) {
+    object.set(key, value);
+  }
+  return object;
+}
+
 } // namespace
 
 Roe<std::string> GroupMembershipCodec::EncodeInvite(const GroupInvitePayload& payload) {
-  nlohmann::json json = {{"group_id", payload.group_id},
-                         {"group_title", payload.group_title},
-                         {"inviter_identity", payload.inviter_identity},
-                         {"invitee_identity", payload.invitee_identity},
-                         {"invite_nonce", payload.invite_nonce},
-                         {"roster_epoch", payload.roster_epoch},
-                         {"actor_role", MemberRoleToString(payload.actor_role)}};
+  Object json;
+  json.set("group_id", payload.group_id);
+  json.set("group_title", payload.group_title);
+  json.set("inviter_identity", payload.inviter_identity);
+  json.set("invitee_identity", payload.invitee_identity);
+  json.set("invite_nonce", payload.invite_nonce);
+  json.setJsonUInt("roster_epoch", payload.roster_epoch);
+  json.set("actor_role", MemberRoleToString(payload.actor_role));
   if (payload.expires_at) {
-    json["expires_at"] = *payload.expires_at;
+    json.set("expires_at", *payload.expires_at);
   }
-  return json.dump();
+  return DumpJson(json);
 }
 
 Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInvite(const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid group invite JSON");
   }
   GroupInvitePayload payload;
-  if (!json.contains("group_id") || !json["group_id"].is_string()) {
+  auto group_id = json->getString("group_id");
+  if (!group_id) {
     return Error("Missing group_id");
   }
-  payload.group_id = json["group_id"].get<std::string>();
-  if (json.contains("group_title") && json["group_title"].is_string()) {
-    payload.group_title = json["group_title"].get<std::string>();
+  payload.group_id = *group_id;
+  if (auto title = json->getString("group_title")) {
+    payload.group_title = *title;
   }
-  if (!json.contains("inviter_identity") || !json["inviter_identity"].is_string()) {
+  auto inviter = json->getString("inviter_identity");
+  if (!inviter) {
     return Error("Missing inviter_identity");
   }
-  payload.inviter_identity = json["inviter_identity"].get<std::string>();
-  if (!json.contains("invitee_identity") || !json["invitee_identity"].is_string()) {
+  payload.inviter_identity = *inviter;
+  auto invitee = json->getString("invitee_identity");
+  if (!invitee) {
     return Error("Missing invitee_identity");
   }
-  payload.invitee_identity = json["invitee_identity"].get<std::string>();
-  if (!json.contains("invite_nonce") || !json["invite_nonce"].is_string()) {
+  payload.invitee_identity = *invitee;
+  auto nonce = json->getString("invite_nonce");
+  if (!nonce) {
     return Error("Missing invite_nonce");
   }
-  payload.invite_nonce = json["invite_nonce"].get<std::string>();
-  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_unsigned()) {
-    payload.roster_epoch = json["roster_epoch"].get<uint64_t>();
+  payload.invite_nonce = *nonce;
+  if (auto epoch = json->getNonNegInt("roster_epoch")) {
+    payload.roster_epoch = *epoch;
   }
-  if (json.contains("expires_at") && json["expires_at"].is_number_integer()) {
-    payload.expires_at = json["expires_at"].get<int64_t>();
+  if (auto expires = json->getIf<int64_t>("expires_at")) {
+    payload.expires_at = *expires;
   }
-  if (json.contains("actor_role") && json["actor_role"].is_string()) {
-    payload.actor_role = MemberRoleFromString(json["actor_role"].get<std::string>());
+  if (auto role = json->getString("actor_role")) {
+    payload.actor_role = MemberRoleFromString(*role);
   }
   return payload;
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeInviteResponse(const std::string& invite_nonce,
                                                             const std::string& group_id) {
-  return nlohmann::json({{"invite_nonce", invite_nonce}, {"group_id", group_id}}).dump();
+  return DumpJson(MakeStringObject({{"invite_nonce", invite_nonce}, {"group_id", group_id}}));
 }
 
 Roe<std::pair<std::string, std::string>> GroupMembershipCodec::DecodeInviteResponse(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object() || !json.contains("invite_nonce") || !json.contains("group_id")) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid invite response JSON");
   }
-  return std::make_pair(json["invite_nonce"].get<std::string>(), json["group_id"].get<std::string>());
+  auto nonce = json->getString("invite_nonce");
+  auto group_id = json->getString("group_id");
+  if (!nonce || !group_id) {
+    return Error("Invalid invite response JSON");
+  }
+  return std::make_pair(*nonce, *group_id);
 }
 
 Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInviteResponseFromMessage(
@@ -126,11 +163,15 @@ Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInv
                        *control_type != GroupMembershipControlType::GroupInviteDecline)) {
     return Error("Message is not a group invite response");
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return Error("Missing invite response detail");
   }
-  auto decoded = DecodeInviteResponse(payload["detail"].get<std::string>());
+  auto detail = payload->getString("detail");
+  if (!detail) {
+    return Error("Missing invite response detail");
+  }
+  auto decoded = DecodeInviteResponse(*detail);
   if (!decoded) {
     return decoded.error();
   }
@@ -153,101 +194,88 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const std::string& gro
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayload& payload) {
-  nlohmann::json json{{"group_id", payload.group_id},
-                      {"member_identity", payload.member_identity},
-                      {"role", MemberRoleToString(payload.role)},
-                      {"roster_epoch", payload.roster_epoch}};
+  Object json;
+  json.set("group_id", payload.group_id);
+  json.set("member_identity", payload.member_identity);
+  json.set("role", MemberRoleToString(payload.role));
+  json.setJsonUInt("roster_epoch", payload.roster_epoch);
   if (!payload.members.empty()) {
-    nlohmann::json members = nlohmann::json::array();
+    std::vector<Value> members;
+    members.reserve(payload.members.size());
     for (const MemberJoinedEntry& entry : payload.members) {
-      members.push_back(nlohmann::json{{"member_identity", entry.member_identity},
-                                       {"role", MemberRoleToString(entry.role)}});
+      Object row;
+      row.set("member_identity", entry.member_identity);
+      row.set("role", MemberRoleToString(entry.role));
+      members.push_back(ObjectValue(std::move(row)));
     }
-    json["members"] = std::move(members);
+    json.set("members", ArrayValue(std::move(members)));
   }
-  return json.dump();
+  return DumpJson(json);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group_id,
                                                         const std::string& member_identity,
                                                         const uint64_t roster_epoch) {
-  return nlohmann::json(
-             {{"group_id", group_id}, {"member_identity", member_identity}, {"roster_epoch", roster_epoch}})
-      .dump();
+  Object json;
+  json.set("group_id", group_id);
+  json.set("member_identity", member_identity);
+  json.setJsonUInt("roster_epoch", roster_epoch);
+  return DumpJson(json);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberRemoved(const std::string& group_id,
                                                            const std::string& member_identity,
                                                            const uint64_t roster_epoch) {
-  return nlohmann::json(
-             {{"group_id", group_id}, {"member_identity", member_identity}, {"roster_epoch", roster_epoch}})
-      .dump();
+  Object json;
+  json.set("group_id", group_id);
+  json.set("member_identity", member_identity);
+  json.setJsonUInt("roster_epoch", roster_epoch);
+  return DumpJson(json);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeOwnerTransferred(const std::string& group_id,
                                                             const std::string& new_owner_identity,
                                                             const uint64_t roster_epoch,
                                                             const bool leave_previous) {
-  return nlohmann::json({{"group_id", group_id},
-                         {"new_owner_identity", new_owner_identity},
-                         {"roster_epoch", roster_epoch},
-                         {"leave_previous", leave_previous}})
-      .dump();
+  Object json;
+  json.set("group_id", group_id);
+  json.set("new_owner_identity", new_owner_identity);
+  json.setJsonUInt("roster_epoch", roster_epoch);
+  json.set("leave_previous", leave_previous);
+  return DumpJson(json);
 }
-
-namespace {
-
-uint64_t ReadRosterEpoch(const nlohmann::json& json) {
-  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_unsigned()) {
-    return json["roster_epoch"].get<uint64_t>();
-  }
-  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_integer()) {
-    return static_cast<uint64_t>(json["roster_epoch"].get<int64_t>());
-  }
-  return 0;
-}
-
-Roe<std::string> DetailFromMessage(const ThreadMessage& message, const GroupMembershipControlType expected,
-                                   const char* not_type_error) {
-  const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
-  if (!control_type || *control_type != expected) {
-    return Error(not_type_error);
-  }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
-    return Error("Missing membership detail");
-  }
-  return payload["detail"].get<std::string>();
-}
-
-} // namespace
 
 Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMemberJoined(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid member_joined detail");
   }
   MemberJoinedPayload payload;
-  if (json.contains("group_id") && json["group_id"].is_string()) {
-    payload.group_id = json["group_id"].get<std::string>();
+  if (auto group_id = json->getString("group_id")) {
+    payload.group_id = *group_id;
   }
-  if (json.contains("member_identity") && json["member_identity"].is_string()) {
-    payload.member_identity = json["member_identity"].get<std::string>();
+  if (auto member = json->getString("member_identity")) {
+    payload.member_identity = *member;
   }
-  if (json.contains("role") && json["role"].is_string()) {
-    payload.role = MemberRoleFromString(json["role"].get<std::string>());
+  if (auto role = json->getString("role")) {
+    payload.role = MemberRoleFromString(*role);
   }
-  payload.roster_epoch = ReadRosterEpoch(json);
-  if (json.contains("members") && json["members"].is_array()) {
-    for (const nlohmann::json& row : json["members"]) {
-      if (!row.is_object() || !row.contains("member_identity") || !row["member_identity"].is_string()) {
+  payload.roster_epoch = ReadRosterEpoch(*json);
+  if (const Array* members = json->getArray("members")) {
+    for (const Value& row_value : members->elements) {
+      const Object* row = asObject(row_value);
+      if (!row) {
+        continue;
+      }
+      auto member = row->getString("member_identity");
+      if (!member) {
         continue;
       }
       MemberJoinedEntry entry;
-      entry.member_identity = row["member_identity"].get<std::string>();
-      if (row.contains("role") && row["role"].is_string()) {
-        entry.role = MemberRoleFromString(row["role"].get<std::string>());
+      entry.member_identity = *member;
+      if (auto role = row->getString("role")) {
+        entry.role = MemberRoleFromString(*role);
       }
       payload.members.push_back(std::move(entry));
     }
@@ -270,18 +298,18 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
 
 Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeft(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid member_left detail");
   }
   MemberLeftPayload payload;
-  if (json.contains("group_id") && json["group_id"].is_string()) {
-    payload.group_id = json["group_id"].get<std::string>();
+  if (auto group_id = json->getString("group_id")) {
+    payload.group_id = *group_id;
   }
-  if (json.contains("member_identity") && json["member_identity"].is_string()) {
-    payload.member_identity = json["member_identity"].get<std::string>();
+  if (auto member = json->getString("member_identity")) {
+    payload.member_identity = *member;
   }
-  payload.roster_epoch = ReadRosterEpoch(json);
+  payload.roster_epoch = ReadRosterEpoch(*json);
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_left missing group_id or member_identity");
   }
@@ -299,18 +327,18 @@ Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberL
 
 Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemberRemoved(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid member_removed detail");
   }
   MemberRemovedPayload payload;
-  if (json.contains("group_id") && json["group_id"].is_string()) {
-    payload.group_id = json["group_id"].get<std::string>();
+  if (auto group_id = json->getString("group_id")) {
+    payload.group_id = *group_id;
   }
-  if (json.contains("member_identity") && json["member_identity"].is_string()) {
-    payload.member_identity = json["member_identity"].get<std::string>();
+  if (auto member = json->getString("member_identity")) {
+    payload.member_identity = *member;
   }
-  payload.roster_epoch = ReadRosterEpoch(json);
+  payload.roster_epoch = ReadRosterEpoch(*json);
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_removed missing group_id or member_identity");
   }
@@ -329,20 +357,20 @@ Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemb
 
 Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeOwnerTransferred(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid owner_transferred detail");
   }
   OwnerTransferredPayload payload;
-  if (json.contains("group_id") && json["group_id"].is_string()) {
-    payload.group_id = json["group_id"].get<std::string>();
+  if (auto group_id = json->getString("group_id")) {
+    payload.group_id = *group_id;
   }
-  if (json.contains("new_owner_identity") && json["new_owner_identity"].is_string()) {
-    payload.new_owner_identity = json["new_owner_identity"].get<std::string>();
+  if (auto owner = json->getString("new_owner_identity")) {
+    payload.new_owner_identity = *owner;
   }
-  payload.roster_epoch = ReadRosterEpoch(json);
-  if (json.contains("leave_previous") && json["leave_previous"].is_boolean()) {
-    payload.leave_previous = json["leave_previous"].get<bool>();
+  payload.roster_epoch = ReadRosterEpoch(*json);
+  if (auto leave = json->getIf<bool>("leave_previous")) {
+    payload.leave_previous = *leave;
   }
   if (payload.group_id.empty() || payload.new_owner_identity.empty()) {
     return Error("owner_transferred missing group_id or new_owner_identity");
@@ -362,27 +390,27 @@ Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeO
 
 Roe<std::string> GroupMembershipCodec::EncodeGroupRenamed(const std::string& group_id, const std::string& title,
                                                           const uint64_t roster_epoch) {
-  return nlohmann::json({{"group_id", group_id}, {"title", title}, {"roster_epoch", roster_epoch}}).dump();
+  Object json;
+  json.set("group_id", group_id);
+  json.set("title", title);
+  json.setJsonUInt("roster_epoch", roster_epoch);
+  return DumpJson(json);
 }
 
 Roe<GroupMembershipCodec::GroupRenamedPayload> GroupMembershipCodec::DecodeGroupRenamed(
     const std::string& detail_json) {
-  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
     return Error("Invalid group_renamed detail");
   }
   GroupRenamedPayload payload;
-  if (json.contains("group_id") && json["group_id"].is_string()) {
-    payload.group_id = json["group_id"].get<std::string>();
+  if (auto group_id = json->getString("group_id")) {
+    payload.group_id = *group_id;
   }
-  if (json.contains("title") && json["title"].is_string()) {
-    payload.title = json["title"].get<std::string>();
+  if (auto title = json->getString("title")) {
+    payload.title = *title;
   }
-  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_unsigned()) {
-    payload.roster_epoch = json["roster_epoch"].get<uint64_t>();
-  } else if (json.contains("roster_epoch") && json["roster_epoch"].is_number_integer()) {
-    payload.roster_epoch = static_cast<uint64_t>(json["roster_epoch"].get<int64_t>());
-  }
+  payload.roster_epoch = ReadRosterEpoch(*json);
   if (payload.group_id.empty() || payload.title.empty()) {
     return Error("group_renamed missing group_id or title");
   }
@@ -395,61 +423,83 @@ Roe<GroupMembershipCodec::GroupRenamedPayload> GroupMembershipCodec::DecodeGroup
   if (!control_type || *control_type != GroupMembershipControlType::GroupRenamed) {
     return Error("Message is not a group rename");
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return Error("Missing group_renamed detail");
   }
-  return DecodeGroupRenamed(payload["detail"].get<std::string>());
+  auto detail = payload->getString("detail");
+  if (!detail) {
+    return Error("Missing group_renamed detail");
+  }
+  return DecodeGroupRenamed(*detail);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeGroupForked(const GroupForkPayload& payload) {
-  nlohmann::json json = {{"source_group_id", payload.source_group_id},
-                         {"new_group_id", payload.new_group_id},
-                         {"new_group_title", payload.new_group_title},
-                         {"selected_identities", payload.selected_identities},
-                         {"history_mode", HistoryModeToString(payload.history_mode)},
-                         {"actor_identity", payload.actor_identity},
-                         {"roster_epoch", payload.roster_epoch}};
-  if (payload.fork_message_id) {
-    json["fork_message_id"] = *payload.fork_message_id;
+  Object json;
+  json.set("source_group_id", payload.source_group_id);
+  json.set("new_group_id", payload.new_group_id);
+  json.set("new_group_title", payload.new_group_title);
+  std::vector<Value> identities;
+  identities.reserve(payload.selected_identities.size());
+  for (const std::string& identity : payload.selected_identities) {
+    identities.push_back(Value(identity));
   }
-  return json.dump();
+  json.set("selected_identities", ArrayValue(std::move(identities)));
+  json.set("history_mode", HistoryModeToString(payload.history_mode));
+  json.set("actor_identity", payload.actor_identity);
+  json.setJsonUInt("roster_epoch", payload.roster_epoch);
+  if (payload.fork_message_id) {
+    json.set("fork_message_id", *payload.fork_message_id);
+  }
+  return DumpJson(json);
 }
 
 std::vector<TranscriptChatAction> GroupMembershipCodec::BuildInviteChatActions(const GroupInvitePayload& invite) {
   std::vector<TranscriptChatAction> actions;
-  actions.push_back({.label = "Accept",
-                     .message = "Accept group invitation",
-                     .payload = nlohmann::json({{"type", "accept_group_invite"}, {"invite_nonce", invite.invite_nonce}})
-                                     .dump()});
-  actions.push_back({.label = "Decline",
-                     .message = "Decline group invitation",
-                     .payload = nlohmann::json({{"type", "decline_group_invite"}, {"invite_nonce", invite.invite_nonce}})
-                                     .dump()});
-  actions.push_back(
-      {.label = "Block",
-       .message = "Block inviter",
-       .payload = nlohmann::json({{"type", "block_group_inviter"},
-                                  {"inviter_identity", invite.inviter_identity},
-                                  {"invite_nonce", invite.invite_nonce}})
-                       .dump()});
+  {
+    Object payload;
+    payload.set("type", "accept_group_invite");
+    payload.set("invite_nonce", invite.invite_nonce);
+    actions.push_back({.label = "Accept", .message = "Accept group invitation", .payload = DumpJson(payload)});
+  }
+  {
+    Object payload;
+    payload.set("type", "decline_group_invite");
+    payload.set("invite_nonce", invite.invite_nonce);
+    actions.push_back({.label = "Decline", .message = "Decline group invitation", .payload = DumpJson(payload)});
+  }
+  {
+    Object payload;
+    payload.set("type", "block_group_inviter");
+    payload.set("inviter_identity", invite.inviter_identity);
+    payload.set("invite_nonce", invite.invite_nonce);
+    actions.push_back({.label = "Block", .message = "Block inviter", .payload = DumpJson(payload)});
+  }
   return actions;
 }
 
 std::vector<TranscriptChatAction> GroupMembershipCodec::BuildOwnerUnreachableChatActions(
     const std::string& group_id, const std::string& owner_identity) {
   std::vector<TranscriptChatAction> actions;
-  actions.push_back({.label = "Start a new group",
-                     .message = "Fork this group",
-                     .payload = nlohmann::json({{"type", "fork_group"}, {"group_id", group_id}}).dump()});
-  actions.push_back({.label = "Message owner",
-                     .message = "Open a chat with the owner",
-                     .payload =
-                         nlohmann::json({{"type", "message_group_owner"}, {"owner_identity", owner_identity}}).dump()});
-  actions.push_back(
-      {.label = "Got it",
-       .message = "Dismiss this note",
-       .payload = nlohmann::json({{"type", "dismiss_owner_advisory"}, {"group_id", group_id}}).dump()});
+  {
+    Object payload;
+    payload.set("type", "fork_group");
+    payload.set("group_id", group_id);
+    actions.push_back({.label = "Start a new group", .message = "Fork this group", .payload = DumpJson(payload)});
+  }
+  {
+    Object payload;
+    payload.set("type", "message_group_owner");
+    payload.set("owner_identity", owner_identity);
+    actions.push_back(
+        {.label = "Message owner", .message = "Open a chat with the owner", .payload = DumpJson(payload)});
+  }
+  {
+    Object payload;
+    payload.set("type", "dismiss_owner_advisory");
+    payload.set("group_id", group_id);
+    actions.push_back({.label = "Got it", .message = "Dismiss this note", .payload = DumpJson(payload)});
+  }
   return actions;
 }
 
@@ -459,13 +509,10 @@ bool GroupMembershipCodec::IsOwnerUnreachableAdvisory(const ThreadMessage& messa
 }
 
 void GroupMembershipCodec::ApplyOwnerUnreachableResolution(ThreadMessage& message) {
-  nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object()) {
-    payload = nlohmann::json::object();
-  }
-  payload["control_type"] = GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupOwnerUnreachable);
-  payload["resolution"] = "dismissed";
-  message.payload_json = payload.dump();
+  Object payload = TryParseObject(message.payload_json).value_or(Object{});
+  payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupOwnerUnreachable));
+  payload.set("resolution", "dismissed");
+  message.payload_json = DumpJson(payload);
   message.chat_actions.clear();
   message.content_rml.reset();
 }
@@ -474,33 +521,33 @@ bool GroupMembershipCodec::IsOwnerUnreachableResolved(const ThreadMessage& messa
   if (message.payload_json.empty()) {
     return false;
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  return payload.is_object() && payload.contains("resolution") && payload["resolution"].is_string() &&
-         payload["resolution"].get<std::string>() == "dismissed";
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
+    return false;
+  }
+  auto resolution = payload->getString("resolution");
+  return resolution && *resolution == "dismissed";
 }
 
 void GroupMembershipCodec::ApplyInviteResolution(ThreadMessage& message, const InviteStatus status,
                                                  const std::string& status_text) {
-  nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object()) {
-    payload = nlohmann::json::object();
-  }
-  payload["control_type"] = GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite);
+  Object payload = TryParseObject(message.payload_json).value_or(Object{});
+  payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite));
   switch (status) {
   case InviteStatus::Accepted:
-    payload["resolution"] = "accepted";
+    payload.set("resolution", "accepted");
     break;
   case InviteStatus::Declined:
-    payload["resolution"] = "declined";
+    payload.set("resolution", "declined");
     break;
   case InviteStatus::Blocked:
-    payload["resolution"] = "blocked";
+    payload.set("resolution", "blocked");
     break;
   default:
-    payload["resolution"] = "resolved";
+    payload.set("resolution", "resolved");
     break;
   }
-  message.payload_json = payload.dump();
+  message.payload_json = DumpJson(payload);
   message.text = status_text;
   message.chat_actions.clear();
   message.content_rml.reset();
@@ -510,18 +557,21 @@ std::optional<InviteStatus> GroupMembershipCodec::InviteResolutionFromMessage(co
   if (message.payload_json.empty()) {
     return std::nullopt;
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("resolution") || !payload["resolution"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return std::nullopt;
   }
-  const std::string value = payload["resolution"].get<std::string>();
-  if (value == "accepted") {
+  auto value = payload->getString("resolution");
+  if (!value) {
+    return std::nullopt;
+  }
+  if (*value == "accepted") {
     return InviteStatus::Accepted;
   }
-  if (value == "declined") {
+  if (*value == "declined") {
     return InviteStatus::Declined;
   }
-  if (value == "blocked") {
+  if (*value == "blocked") {
     return InviteStatus::Blocked;
   }
   return InviteStatus::Expired;
@@ -531,11 +581,15 @@ std::optional<GroupMembershipControlType> GroupMembershipCodec::ControlTypeFromM
   if (message.content_type != ChatContentType::System || message.payload_json.empty()) {
     return std::nullopt;
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("control_type") || !payload["control_type"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return std::nullopt;
   }
-  return GroupMembershipControlTypeFromWire(payload["control_type"].get<std::string>());
+  auto control_type = payload->getString("control_type");
+  if (!control_type) {
+    return std::nullopt;
+  }
+  return GroupMembershipControlTypeFromWire(*control_type);
 }
 
 Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const ThreadMessage& message) {
@@ -543,11 +597,15 @@ Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const Thre
   if (!control_type || *control_type != GroupMembershipControlType::GroupInvite) {
     return Error("Message is not a group invite");
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return Error("Missing invite detail");
   }
-  return DecodeInvite(payload["detail"].get<std::string>());
+  auto detail = payload->getString("detail");
+  if (!detail) {
+    return Error("Missing invite detail");
+  }
+  return DecodeInvite(*detail);
 }
 
 Roe<ThreadMessage> GroupMembershipCodec::BuildSystemMessage(const std::string& thread_id,
@@ -561,8 +619,10 @@ Roe<ThreadMessage> GroupMembershipCodec::BuildSystemMessage(const std::string& t
   message.sender_contact_id = sender_contact_id;
   message.content_type = ChatContentType::System;
   message.text = display_text;
-  message.payload_json =
-      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(type)}, {"detail", detail_json}}).dump();
+  Object payload;
+  payload.set("control_type", GroupMembershipControlTypeToWire(type));
+  payload.set("detail", detail_json);
+  message.payload_json = DumpJson(payload);
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = false;
@@ -570,24 +630,25 @@ Roe<ThreadMessage> GroupMembershipCodec::BuildSystemMessage(const std::string& t
 }
 
 Roe<GroupPolicy> GroupMembershipCodec::DecodeGroupPolicy(const std::string& policy_json) {
-  const nlohmann::json json = nlohmann::json::parse(policy_json, nullptr, false);
-  if (!json.is_object()) {
+  auto json = TryParseObject(policy_json);
+  if (!json) {
     return Error("Invalid group policy JSON");
   }
   GroupPolicy policy;
-  if (json.contains("invite_policy") && json["invite_policy"].is_string()) {
-    policy.invite_policy = InvitePolicyWireFromString(json["invite_policy"].get<std::string>());
+  if (auto invite_policy = json->getString("invite_policy")) {
+    policy.invite_policy = InvitePolicyWireFromString(*invite_policy);
   }
-  if (json.contains("history_visibility") && json["history_visibility"].is_string()) {
-    policy.history_visibility = HistoryVisibilityFromString(json["history_visibility"].get<std::string>());
+  if (auto history = json->getString("history_visibility")) {
+    policy.history_visibility = HistoryVisibilityFromString(*history);
   }
   return policy;
 }
 
 std::string GroupMembershipCodec::EncodeGroupPolicy(const GroupPolicy& policy) {
-  return nlohmann::json({{"invite_policy", InvitePolicyWireToString(policy.invite_policy)},
-                         {"history_visibility", HistoryVisibilityToString(policy.history_visibility)}})
-      .dump();
+  Object json;
+  json.set("invite_policy", InvitePolicyWireToString(policy.invite_policy));
+  json.set("history_visibility", HistoryVisibilityToString(policy.history_visibility));
+  return DumpJson(json);
 }
 
 } // namespace pbr
