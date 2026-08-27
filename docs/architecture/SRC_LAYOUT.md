@@ -9,6 +9,8 @@
 | Layer | Path | Role |
 |-------|------|------|
 | Common | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp`; browser bridge in [`src/common/PbrCompat.h`](../../src/common/PbrCompat.h) |
+| Crypto | FetchContent / sibling [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers (`pp_crypto`); product wire helpers stay in `base/crypto` |
+| UI | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3 (`pp_ui` = `pp_ui_rml` + `pp_ui_backend`); product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi, libp2p); may use `third_party` (+ optionally `common`); not product domain |
 | Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, p2p/render glue, data, people, messaging/ai/ui |
 | Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
@@ -26,8 +28,7 @@ app → feature → base → lib → common
 
 | Path | Role |
 |------|------|
-| `lib/rmlui/` | Upstream-shaped RmlUi hard fork (`Include/`, `Source/`, `CMake/`, `Tests/`) |
-| `lib/rmlui/reference/backends/` | Upstream sample backends (reference only; not linked) |
+| *(RmlUi)* | Hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`); paths via `PP_LIB_RMLUI_*` |
 | `lib/libp2p/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
 | `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
 
@@ -37,15 +38,15 @@ Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/li
 
 | Path | Role |
 |------|------|
-| `base/render/platform/` | SDL platform adapter |
-| `base/render/renderer/` | OpenGL3 render interface |
-| `base/render/host/` | `BrowserHost` bootstrap |
+| `base/render/platform/` | Mobile GL lifecycle helpers |
+| `base/render/renderer/` | Product overlays (loupe, call video tiles) |
+| `base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
 | `base/p2p/` | `Libp2pHost`, mesh/relay/stream glue |
 
 Dependency rule:
 
 ```
-base/render → lib/rmlui/Include (public API only)
+base/render → pp-cpp-ui `pp_ui` (`pp_ui_rml` + `pp_ui_backend`) / PP_LIB_RMLUI_INCLUDE
 base/p2p → lib/libp2p/include (public API only)
 feature/ui → base/render
 feature/messaging → base/p2p
@@ -60,7 +61,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, `StartupTiming`, lifecycle, branding/version |
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
-| `base/render/` | RmlUi SDL/GL backend (`pp_base_render`); GL/GLES in `render/platform/` |
+| `base/render/` | Product RmlUi host/overlays (`pp_base_render`); reusable SDL/GL in pp-cpp-ui `backend/` |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
@@ -108,7 +109,7 @@ Fork product profiles (embedding policy + path constants): `src/lib/pp_lib_paths
 
 ## Test placement
 
-- Fork-level RmlUi tests live in [`src/lib/rmlui/Tests/`](../../src/lib/rmlui/Tests/) (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
+- Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
 - Libp2p glue tests live under [`src/base/p2p/tests/`](../../src/base/p2p/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).

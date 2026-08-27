@@ -2,30 +2,31 @@
 
 **Tier:** architecture
 
-pp-browser vendors RmlUi under `src/lib/rmlui/` as a **hard fork** (committed source, no git submodule).
+pp-browser consumes RmlUi from sibling / FetchContent [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) as a **hard fork** (`rmlui/` in that repo; no git submodule).
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `src/lib/rmlui/` | Upstream-shaped RmlUi (`Include/`, `Source/`, `CMake/`, `Tests/`, minimal `Samples/`) |
-| `src/lib/rmlui/Tests/` | Upstream RmlUi unit tests (doctest); fork-specific `ClickRouting.cpp` |
-| `src/lib/rmlui/Samples/shell/` | Test harness utility (`rmlui_shell`); not linked by the app |
-| `src/lib/rmlui/Samples/assets/` | Fonts and minimal RML/RCSS for the test harness |
-| `src/lib/rmlui/reference/backends/` | Upstream sample backends (**reference only**; not linked) |
-| `src/base/render/platform/` | SDL platform adapter (compiled into `pp_base_render`) |
-| `src/base/render/renderer/` | OpenGL3 render interface |
-| `src/base/render/host/` | `BrowserHost` bootstrap |
+| `../pp-cpp-ui/rmlui/` | Upstream-shaped RmlUi (`Include/`, `Source/`, `CMake/`, `Tests/`, minimal `Samples/`) |
+| `../pp-cpp-ui/rmlui/Tests/` | Upstream RmlUi unit tests (doctest); fork-specific `ClickRouting.cpp` |
+| `../pp-cpp-ui/rmlui/Samples/shell/` | Test harness utility (`rmlui_shell`); not linked by the app |
+| `../pp-cpp-ui/rmlui/Samples/assets/` | Fonts and minimal RML/RCSS for the test harness |
+| `../pp-cpp-ui/rmlui/reference/backends/` | Upstream sample backends (used by `rmlui_shell` tests; not by the app) |
+| `../pp-cpp-ui/backend/` | Reusable `SystemInterface_SDL` + `RenderInterface_GL3` (`pp_ui_backend`) |
+| `src/base/render/platform/` | Mobile GL lifecycle helpers |
+| `src/base/render/renderer/` | Product overlays (text loupe, call video tiles) |
+| `src/base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
 
 Dependency rule:
 
 ```
-base/render/host → base/render/platform + base/render/renderer → lib/rmlui/Include (public API)
+base/render/host → pp-cpp-ui backend (Platform_SDL + Renderer_GL3) → RmlUi Include (public API)
 ```
 
 ## Provenance
 
-See `src/lib/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
+See `../pp-cpp-ui/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
 
 ## Build flags / product profile
 
@@ -33,15 +34,18 @@ Supported knobs are `PP_BROWSER_*` only. Raw `RMLUI_*` / `BUILD_SHARED_LIBS` cac
 
 | Option | Effect on RmlUi |
 |--------|-----------------|
-| `PP_BROWSER_BUILD_TESTS` | When ON, builds in-tree `rmlui_unit_tests` (no separate `PP_BROWSER_RMLUI_TESTS`) |
+| `PP_UI_BUILD_TESTS` (pp-cpp-ui) | Builds and runs `rmlui_unit_tests` in the **pp-cpp-ui** repo CI — not in pp-browser |
 
 Fixed profile policy (not options): static libs; SVG plugin on; HarfBuzz font engine on; samples / Lua / Lottie off. Headless builds skip the RmlUi subtree entirely.
 
 ## Tests
 
-When `PP_BROWSER_BUILD_TESTS` is on, pp-browser builds upstream `rmlui_unit_tests` (doctest) from `src/lib/rmlui/Tests/`. Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. Visual tests and benchmarks are gated off by default (`RMLUI_VISUAL_TESTS`, `RMLUI_BENCHMARKS`).
+RmlUi unit tests (doctest) run in **pp-cpp-ui** with `-DPP_UI_BUILD_TESTS=ON` (forced `RMLUI_BACKEND=SDL_GL3`). Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. pp-browser does **not** enable `RMLUI_TESTS` (avoids EXCLUDE_FROM_ALL ctest stubs). Visual tests and benchmarks stay off by default.
 
 ```bash
+# From pp-cpp-ui:
+cmake -S . -B build -DPP_UI_BUILD_TESTS=ON
+cmake --build build --target rmlui_unit_tests
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure
 ctest --test-dir build -R ClickRouting --output-on-failure
 ```
@@ -64,7 +68,7 @@ Do not land speculative fork data-binding patches without a failing unit test un
 
 ## Patching
 
-Edit files under `src/lib/rmlui/` directly in pp-browser commits (except `src/base/render/`, which is pp-browser-owned SDL/GL glue).
+Edit files under **pp-cpp-ui** `rmlui/` or `backend/` (separate repo commits). Product host/overlays stay in `src/base/render/`.
 
 **pp-browser fork patches (as of import):**
 
@@ -117,21 +121,21 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 
 **Do not reintroduce app-level layout patches** (e.g. `display: block` on `.bubble-assistant h2`) or parser hacks (bullet characters in `StructuredTextParser`) — fix gaps in the fork instead.
 
-**Workaround marker locations** (search `FORK_WORKAROUND` in `src/lib/rmlui/` and `src/base/render/`):
+**Workaround marker locations** (search `FORK_WORKAROUND` in pp-cpp-ui `rmlui/` and `src/base/render/`):
 
-- `src/lib/rmlui/Source/Core/ListMarker.*` — marker string generation
-- `src/lib/rmlui/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
+- `../pp-cpp-ui/rmlui/Source/Core/ListMarker.*` — marker string generation
+- `../pp-cpp-ui/rmlui/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
 
 **Proper fix direction for lists:** add RCSS `list-style-type` (and eventually `::marker` or an equivalent marker box) so markers participate in layout, selection, and RTL like browsers.
 
 pp-browser-owned integration code:
 
 - `src/base/render/` — SDL3 + OpenGL3 backend (**compiled into the app** via `pp_base_render`)
-- `src/lib/rmlui/reference/backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/platform/` if needed.
+- `../pp-cpp-ui/rmlui/reference/backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/platform/` if needed.
 - `src/app/` — application lifecycle and `InputCoordinator`
 
 See [INPUT.md](../ui/INPUT.md) for the full input architecture.
 
 ## License
 
-RmlUi is MIT licensed. See `src/lib/rmlui/LICENSE.txt`.
+RmlUi is MIT licensed. See `../pp-cpp-ui/rmlui/LICENSE.txt`.

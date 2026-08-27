@@ -46,8 +46,8 @@ License: **MIT** (`LICENSE`). Source is intended to be **publicly available** op
 | Master PSK | CSPRNG | 32 bytes | libsodium `randombytes_buf` |
 | PSK fingerprint | BLAKE2b-256 | 32-byte digest | libsodium |
 | Relay envelope signature (legacy / transitional) | Ed25519 | 32-byte pk / 64-byte sig | OpenSSL EVP |
-| Public-tier auto-key (`e2e_public`) | ML-KEM-768 | FIPS 203; pk 1184 B, ct 1088 B, sk 2400 B | vendored `mlkem-native` |
-| Account / device signing (PQ path) | ML-DSA-65 | FIPS 204 | vendored `mldsa-native` |
+| Public-tier auto-key (`e2e_public`) | ML-KEM-768 | FIPS 203; pk 1184 B, ct 1088 B, sk 2400 B | `pp-cpp-crypto` / `mlkem-native` |
+| Account / device signing (PQ path) | ML-DSA-65 | FIPS 204 | `pp-cpp-crypto` / `mldsa-native` |
 
 Normative detail: [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Code: `src/base/crypto/` (`MessageCipher`, `SessionKeyDeriver`, `HybridKem`, `MlDsa`, …).
 
