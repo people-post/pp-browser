@@ -109,7 +109,7 @@ Fork product profiles (embedding policy + path constants): `src/lib/pp_lib_paths
 
 ## Test placement
 
-- Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
+- Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
 - Libp2p glue tests live under [`src/base/p2p/tests/`](../../src/base/p2p/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).

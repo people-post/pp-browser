@@ -15,14 +15,11 @@ set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
 set(PP_CPP_UI_GIT_TAG "v0.2.0"
   CACHE STRING "Release tag on pp-cpp-ui main (not a branch name)")
 
+# RmlUi unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
+# Enabling RMLUI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
+# leaves rmlui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
-
-# Match former in-tree profile: build RmlUi tests when the browser builds tests.
-if(PP_BROWSER_BUILD_TESTS)
-  set(RMLUI_TESTS ON CACHE BOOL "Build RmlUi unit tests" FORCE)
-  set(RMLUI_BACKEND "SDL_GL3" CACHE STRING "" FORCE)
-  set(RMLUI_SDL_VERSION_MAJOR "3" CACHE STRING "" FORCE)
-endif()
+set(RMLUI_TESTS OFF CACHE BOOL "Build RmlUi unit tests" FORCE)
 
 set(_pp_ui_sibling "${CMAKE_SOURCE_DIR}/../pp-cpp-ui")
 if(PP_CPP_UI_SOURCE_DIR)

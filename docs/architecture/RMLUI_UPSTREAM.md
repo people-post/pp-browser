@@ -34,15 +34,18 @@ Supported knobs are `PP_BROWSER_*` only. Raw `RMLUI_*` / `BUILD_SHARED_LIBS` cac
 
 | Option | Effect on RmlUi |
 |--------|-----------------|
-| `PP_BROWSER_BUILD_TESTS` | When ON, builds in-tree `rmlui_unit_tests` (no separate `PP_BROWSER_RMLUI_TESTS`) |
+| `PP_UI_BUILD_TESTS` (pp-cpp-ui) | Builds and runs `rmlui_unit_tests` in the **pp-cpp-ui** repo CI — not in pp-browser |
 
 Fixed profile policy (not options): static libs; SVG plugin on; HarfBuzz font engine on; samples / Lua / Lottie off. Headless builds skip the RmlUi subtree entirely.
 
 ## Tests
 
-When `PP_BROWSER_BUILD_TESTS` is on, pp-browser builds upstream `rmlui_unit_tests` (doctest) from `../pp-cpp-ui/rmlui/Tests/`. Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. Visual tests and benchmarks are gated off by default (`RMLUI_VISUAL_TESTS`, `RMLUI_BENCHMARKS`).
+RmlUi unit tests (doctest) run in **pp-cpp-ui** with `-DPP_UI_BUILD_TESTS=ON` (forced `RMLUI_BACKEND=SDL_GL3`). Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. pp-browser does **not** enable `RMLUI_TESTS` (avoids EXCLUDE_FROM_ALL ctest stubs). Visual tests and benchmarks stay off by default.
 
 ```bash
+# From pp-cpp-ui:
+cmake -S . -B build -DPP_UI_BUILD_TESTS=ON
+cmake --build build --target rmlui_unit_tests
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure
 ctest --test-dir build -R ClickRouting --output-on-failure
 ```

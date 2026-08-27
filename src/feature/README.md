@@ -152,7 +152,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |-------------|-------|-------|
 | `pp_browser_*_test` (base) | `pp_common` + module under test | Base macro in [`cmake/PpBrowserBase.cmake`](../../cmake/PpBrowserBase.cmake) |
 | `pp_browser_feature_*_test` | `pp_feature` + `pp_base` + `pp_common` | By design — feature tests may pull the full stack |
-| `rmlui_unit_tests` | doctest + RmlUi fork | [`pp-cpp-ui rmlui/Tests/`](../lib/rmlui/Tests/); includes fork `ClickRouting` cases |
+| `rmlui_unit_tests` | doctest + RmlUi fork | Built/run in **pp-cpp-ui** (`PP_UI_BUILD_TESTS`); includes fork `ClickRouting` cases |
 
 Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base tests must not depend on `pp_feature`.
 
