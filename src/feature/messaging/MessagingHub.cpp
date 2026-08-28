@@ -1602,10 +1602,10 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
     auto json = TryParseObject(response->body);
     std::string detail = "Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")";
     if (json) {
-      if (auto err = json->getString("error")) {
-        detail = *err;
-      } else if (const Object* err = json->getObject("error")) {
-        if (auto message = err->getString("message")) {
+      if (auto err_str = json->getString("error")) {
+        detail = *err_str;
+      } else if (const Object* err_obj = json->getObject("error")) {
+        if (auto message = err_obj->getString("message")) {
           detail = *message;
         }
       }
