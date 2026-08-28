@@ -26,9 +26,17 @@ endif()
 
 # pp-browser call sites still use namespace pbr; force-include the bridge so
 # pbr:: aliases exist whenever common headers are used.
+#
+# INTERFACE (not PUBLIC): do not force-include into pp_common's own TUs
+# (Value.cpp / Json.cpp). PbrCompat pulls Value/Json headers and pbr aliases;
+# applying that while compiling those sources breaks MSVC. Dependents still
+# inherit the flag via INTERFACE.
+#
+# MSVC /FI must be a separate argument from the path. Concatenating
+# "/FI${path}" becomes "/FID:/..." on GitHub Actions and is misparsed.
 set(PP_BROWSER_PBR_COMPAT_HEADER "${CMAKE_SOURCE_DIR}/src/common/PbrCompat.h")
 if(MSVC)
-  target_compile_options(pp_common PUBLIC "/FI${PP_BROWSER_PBR_COMPAT_HEADER}")
+  target_compile_options(pp_common INTERFACE "/FI" "${PP_BROWSER_PBR_COMPAT_HEADER}")
 else()
-  target_compile_options(pp_common PUBLIC "-include" "${PP_BROWSER_PBR_COMPAT_HEADER}")
+  target_compile_options(pp_common INTERFACE "-include" "${PP_BROWSER_PBR_COMPAT_HEADER}")
 endif()
