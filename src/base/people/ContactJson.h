@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
-#include "common/Value.h"
+#include "common/PbrCompat.h"
 
 #include <string>
 

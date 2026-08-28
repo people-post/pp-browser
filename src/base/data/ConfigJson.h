@@ -2,7 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/data/UserPreferences.h"
-#include "common/Value.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -4,7 +4,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "common/Error.h"
-#include "common/Value.h"
+#include "common/PbrCompat.h"
 
 #include <string>
 #include <vector>

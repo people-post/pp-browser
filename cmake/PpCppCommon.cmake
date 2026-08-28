@@ -24,19 +24,20 @@ if(NOT TARGET pp_common)
   message(FATAL_ERROR "pp-cpp-common did not define target pp_common")
 endif()
 
-# pp-browser call sites still use namespace pbr; force-include the bridge so
-# pbr:: aliases exist whenever common headers are used.
+# pp-browser call sites still use namespace pbr; force-include the slim bridge
+# (PbrCompatForce.h) so ResultOrError/Logger/etc. aliases keep working.
+# Value/Object/Json stay out of the force-include (explicit PbrCompat.h /
+# ValueJson.h) — pulling variant document types into every TU broke MSVC.
 #
-# INTERFACE (not PUBLIC): do not force-include into pp_common's own TUs
-# (Value.cpp / Json.cpp). PbrCompat pulls Value/Json headers and pbr aliases;
-# applying that while compiling those sources breaks MSVC. Dependents still
-# inherit the flag via INTERFACE.
-#
-# MSVC /FI must be a separate argument from the path. Concatenating
-# "/FI${path}" becomes "/FID:/..." on GitHub Actions and is misparsed.
-set(PP_BROWSER_PBR_COMPAT_HEADER "${CMAKE_SOURCE_DIR}/src/common/PbrCompat.h")
+# INTERFACE (not PUBLIC): do not force-include into pp_common's own TUs.
+# MSVC /FI must be a separate argument from the path so D:/... roots are not
+# misparsed as /FID:.
+set(PP_BROWSER_PBR_COMPAT_FORCE_HEADER
+    "${CMAKE_SOURCE_DIR}/src/common/PbrCompatForce.h")
 if(MSVC)
-  target_compile_options(pp_common INTERFACE "/FI" "${PP_BROWSER_PBR_COMPAT_HEADER}")
+  target_compile_options(pp_common INTERFACE "/FI"
+                         "${PP_BROWSER_PBR_COMPAT_FORCE_HEADER}")
 else()
-  target_compile_options(pp_common INTERFACE "-include" "${PP_BROWSER_PBR_COMPAT_HEADER}")
+  target_compile_options(pp_common INTERFACE "-include"
+                         "${PP_BROWSER_PBR_COMPAT_FORCE_HEADER}")
 endif()
