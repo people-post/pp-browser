@@ -374,7 +374,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          __out.set("group_invite_policy", prefs.group_invite_policy);
          __out.set("reduce_transparency", prefs.reduce_transparency);
          __out.set("call_diagnostics", prefs.call_diagnostics);
-         __out.set("tool_permissions_remembered", RememberedToolPermissionCount(prefs.tool_permissions));
+         __out.set("tool_permissions_remembered",
+                   static_cast<int64_t>(RememberedToolPermissionCount(prefs.tool_permissions)));
          return DumpJson(__out);
                    }});
 
@@ -455,7 +456,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          __out.set("pin_unlocked", pin.unlocked);
          __out.set("pin_status", pin_status);
          __out.set("group_invite_policy", prefs.group_invite_policy);
-         __out.set("tool_permissions_remembered", RememberedToolPermissionCount(prefs.tool_permissions));
+         __out.set("tool_permissions_remembered",
+                   static_cast<int64_t>(RememberedToolPermissionCount(prefs.tool_permissions)));
          return DumpJson(__out);
        }});
 
