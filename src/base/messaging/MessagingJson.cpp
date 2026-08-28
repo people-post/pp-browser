@@ -758,19 +758,21 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const Object& json) {
     }
   }
   if (const Object* cursor = json.getObject("cursor")) {
-    if (auto next_min = cursor->getNonNegInt("next_min_sender_seq")) {
-      response.cursor.next_min_sender_seq = *next_min;
-    } else if (auto next_min = cursor->getNonNegInt("next_min_index_key")) {
-      response.cursor.next_min_sender_seq = *next_min;
-    } else if (auto next_min = cursor->getNonNegInt("next_min_order_key")) {
-      response.cursor.next_min_sender_seq = *next_min;
+    // Distinct names per branch: MSVC C4456 (/WX) treats if-init reuse in
+    // else-if as hiding the previous declaration.
+    if (auto next_min_seq = cursor->getNonNegInt("next_min_sender_seq")) {
+      response.cursor.next_min_sender_seq = *next_min_seq;
+    } else if (auto next_min_index = cursor->getNonNegInt("next_min_index_key")) {
+      response.cursor.next_min_sender_seq = *next_min_index;
+    } else if (auto next_min_order = cursor->getNonNegInt("next_min_order_key")) {
+      response.cursor.next_min_sender_seq = *next_min_order;
     }
-    if (auto next_max = cursor->getNonNegInt("next_max_sender_seq")) {
-      response.cursor.next_max_sender_seq = *next_max;
-    } else if (auto next_max = cursor->getNonNegInt("next_max_index_key")) {
-      response.cursor.next_max_sender_seq = *next_max;
-    } else if (auto next_max = cursor->getNonNegInt("next_max_order_key")) {
-      response.cursor.next_max_sender_seq = *next_max;
+    if (auto next_max_seq = cursor->getNonNegInt("next_max_sender_seq")) {
+      response.cursor.next_max_sender_seq = *next_max_seq;
+    } else if (auto next_max_index = cursor->getNonNegInt("next_max_index_key")) {
+      response.cursor.next_max_sender_seq = *next_max_index;
+    } else if (auto next_max_order = cursor->getNonNegInt("next_max_order_key")) {
+      response.cursor.next_max_sender_seq = *next_max_order;
     }
   }
   return response;
