@@ -16,17 +16,12 @@ void FillEchoRegistry(pbr::ToolRegistry& registry) {
   parameters.set("type", "object");
   parameters.set("properties", properties);
 
-  registry.Register(pbr::ToolDescriptor{
-      .definition =
-          pbr::ToolDefinition{
-              .name = "echo_tool",
-              .description = "echo",
-              .parameters = std::move(parameters),
-          },
-      .execute = [](const pbr::Object& args) -> pbr::Roe<std::string> {
+  registry.Register(pbr::MakeTool(
+      pbr::ToolDefinition{"echo_tool", "echo", std::move(parameters)},
+      pbr::ToolMeta{},
+      [](const pbr::Object& args) -> pbr::Roe<std::string> {
         return pbr::DumpJson(args);
-      },
-  });
+      }));
 }
 
 } // namespace

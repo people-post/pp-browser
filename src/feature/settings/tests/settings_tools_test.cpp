@@ -118,7 +118,7 @@ TEST_F(SettingsToolsTest, GetAndSetAppearance) {
   auto before = registry.Execute("get_preferences", pbr::Object{});
   ASSERT_TRUE(before);
 
-  auto set = registry.Execute("set_appearance", [&]() { pbr::Object __a; __a.set("appearance", "dark"); return __a; }());
+  auto set = registry.Execute("set_appearance", [&]() { pbr::Object args; args.set("appearance", "dark"); return args; }());
   ASSERT_TRUE(set) << set.error().message;
   EXPECT_EQ(last_appearance_, "dark");
   EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
@@ -128,7 +128,7 @@ TEST_F(SettingsToolsTest, SetAppearanceAcceptsThemeAliasAndCase) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
 
-  auto set = registry.Execute("set_appearance", [&]() { pbr::Object __a; __a.set("theme", "Dark"); return __a; }());
+  auto set = registry.Execute("set_appearance", [&]() { pbr::Object args; args.set("theme", "Dark"); return args; }());
   ASSERT_TRUE(set) << set.error().message;
   EXPECT_EQ(last_appearance_, "dark");
   EXPECT_EQ(store_.Snapshot().profile_prefs.appearance, "dark");
@@ -138,7 +138,7 @@ TEST_F(SettingsToolsTest, SetAppearanceAcceptsDarkModeBool) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
 
-  auto set = registry.Execute("set_appearance", [&]() { pbr::Object __a; __a.set("dark_mode", true); return __a; }());
+  auto set = registry.Execute("set_appearance", [&]() { pbr::Object args; args.set("dark_mode", true); return args; }());
   ASSERT_TRUE(set) << set.error().message;
   EXPECT_EQ(last_appearance_, "dark");
 }
@@ -147,10 +147,10 @@ TEST_F(SettingsToolsTest, SetLanguageValidatesLocales) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
 
-  auto bad = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("language", "xx-YY"); return __a; }());
+  auto bad = registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "xx-YY"); return args; }());
   EXPECT_FALSE(bad);
 
-  auto ok = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("language", "zh-Hans"); return __a; }());
+  auto ok = registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "zh-Hans"); return args; }());
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
 }
@@ -159,23 +159,23 @@ TEST_F(SettingsToolsTest, SetLanguageAcceptsLocaleAliasAndTagVariants) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
 
-  auto via_locale = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("locale", "zh"); return __a; }());
+  auto via_locale = registry.Execute("set_language", [&]() { pbr::Object args; args.set("locale", "zh"); return args; }());
   ASSERT_TRUE(via_locale) << via_locale.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
 
-  auto via_cn = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("lang", "zh-CN"); return __a; }());
+  auto via_cn = registry.Execute("set_language", [&]() { pbr::Object args; args.set("lang", "zh-CN"); return args; }());
   ASSERT_TRUE(via_cn) << via_cn.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
 
-  auto via_label = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("language", "中文"); return __a; }());
+  auto via_label = registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "中文"); return args; }());
   ASSERT_TRUE(via_label) << via_label.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
 
-  auto via_english = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("language", "English"); return __a; }());
+  auto via_english = registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "English"); return args; }());
   ASSERT_TRUE(via_english) << via_english.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "en");
 
-  auto via_system = registry.Execute("set_language", [&]() { pbr::Object __a; __a.set("language", "System"); return __a; }());
+  auto via_system = registry.Execute("set_language", [&]() { pbr::Object args; args.set("language", "System"); return args; }());
   ASSERT_TRUE(via_system) << via_system.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "system");
 }
@@ -184,7 +184,7 @@ TEST_F(SettingsToolsTest, SetNotificationsAcceptsStringBoolAndAlias) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
 
-  auto set = registry.Execute("set_notifications", [&]() { pbr::Object __a; __a.set("show_notifications", "false"); return __a; }());
+  auto set = registry.Execute("set_notifications", [&]() { pbr::Object args; args.set("show_notifications", "false"); return args; }());
   ASSERT_TRUE(set) << set.error().message;
   EXPECT_FALSE(store_.Snapshot().profile_prefs.show_notifications);
 }
@@ -194,7 +194,7 @@ TEST_F(SettingsToolsTest, SetGroupInvitePolicyAcceptsAliases) {
   pbr::RegisterSettingsTools(registry, MakePorts());
 
   auto set =
-      registry.Execute("set_group_invite_policy", [&]() { pbr::Object __a; __a.set("group_invite_policy", "Contacts Only"); return __a; }());
+      registry.Execute("set_group_invite_policy", [&]() { pbr::Object args; args.set("group_invite_policy", "Contacts Only"); return args; }());
   ASSERT_TRUE(set) << set.error().message;
   EXPECT_EQ(store_.Snapshot().profile_prefs.group_invite_policy, "contacts_only");
 }
@@ -215,7 +215,7 @@ TEST_F(SettingsToolsTest, ResetToolPermissionsClearsRemembered) {
 TEST_F(SettingsToolsTest, ProbeReachabilityUsesPort) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());
-  auto result = registry.Execute("probe_reachability", [&]() { pbr::Object __a; __a.set("try_upnp", true); return __a; }());
+  auto result = registry.Execute("probe_reachability", [&]() { pbr::Object args; args.set("try_upnp", true); return args; }());
   ASSERT_TRUE(result) << result.error().message;
   EXPECT_TRUE(probed_);
   EXPECT_TRUE(try_upnp_);
