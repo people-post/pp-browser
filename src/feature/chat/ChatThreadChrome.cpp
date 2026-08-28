@@ -9,6 +9,7 @@
 
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/SystemInterface.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

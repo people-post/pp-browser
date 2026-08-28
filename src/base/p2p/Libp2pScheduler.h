@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

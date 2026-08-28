@@ -3,6 +3,7 @@
 #include "common/Utilities.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 namespace {
 

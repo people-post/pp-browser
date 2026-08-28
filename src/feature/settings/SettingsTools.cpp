@@ -10,6 +10,7 @@
 #include <optional>
 #include <string_view>
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

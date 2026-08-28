@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
+#include "common/PbrCompat.h"
 
 namespace {
 

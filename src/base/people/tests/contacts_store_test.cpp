@@ -6,6 +6,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace {
 

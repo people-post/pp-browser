@@ -13,6 +13,7 @@
 #include "base/p2p/Reachability.h"
 
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <random>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

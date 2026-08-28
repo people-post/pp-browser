@@ -10,6 +10,7 @@
 #include <array>
 #include <cstring>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

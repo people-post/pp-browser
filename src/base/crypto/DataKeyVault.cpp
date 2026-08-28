@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

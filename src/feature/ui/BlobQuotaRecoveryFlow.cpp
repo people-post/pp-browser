@@ -1,4 +1,5 @@
 #include "feature/ui/BlobQuotaRecoveryFlow.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -1,10 +1,12 @@
 #pragma once
 
 /**
- * pp-browser bridge: pp-cpp-common owns namespace `pp`. App/base/feature code
- * remains in `pbr`. This header is force-included via the `pp_common` CMake
- * target so qualified and unqualified `pbr::` lookups for common types keep
- * working without rewriting call sites.
+ * Transitional pp-browser bridge: pp-cpp-common owns namespace `pp`. App/base/
+ * feature code remains in `pbr`. Include this header explicitly in TUs that
+ * still rely on unqualified Roe/Object/Module/etc. inside namespace pbr.
+ *
+ * New code should prefer `pp::` types directly; JSON helpers live in
+ * ValueJson.h without this header.
  *
  * Do not use `using namespace ::pp` here — that does not create `pbr::Name`.
  */

@@ -25,6 +25,7 @@
 
 #pragma comment(lib, "runtimeobject.lib")
 #pragma comment(lib, "shell32.lib")
+#include "common/PbrCompat.h"
 
 // Shobjidl.h; forward-declare to avoid pulling shell COM headers alongside WinRT.
 extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(PCWSTR AppID);

@@ -9,6 +9,7 @@
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -1,4 +1,5 @@
 #include "base/p2p/MediaRelayRuntime.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

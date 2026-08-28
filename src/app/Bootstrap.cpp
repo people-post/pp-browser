@@ -11,6 +11,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "base/platform/PlatformLogSink.h"
 #include "base/platform/PlatformServices.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

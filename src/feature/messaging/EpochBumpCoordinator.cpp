@@ -1,4 +1,5 @@
 #include "feature/messaging/EpochBumpCoordinator.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

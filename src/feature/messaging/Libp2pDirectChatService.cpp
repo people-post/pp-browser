@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

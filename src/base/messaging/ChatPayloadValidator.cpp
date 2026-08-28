@@ -3,6 +3,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/MessagingLimits.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

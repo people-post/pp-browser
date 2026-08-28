@@ -20,6 +20,7 @@
 #include <mutex>
 
 #include <soralog/impl/configurator_from_yaml.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

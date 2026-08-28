@@ -14,6 +14,7 @@
 #include "common/Logger.h"
 
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

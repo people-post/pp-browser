@@ -4,6 +4,7 @@
 #include "base/crypto/CryptoConstants.h"
 
 #include <cstring>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

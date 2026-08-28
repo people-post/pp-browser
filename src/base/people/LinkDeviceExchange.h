@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

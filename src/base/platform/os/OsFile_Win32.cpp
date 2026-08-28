@@ -12,6 +12,7 @@
 #endif
 #include <process.h>
 #include <windows.h>
+#include "common/PbrCompat.h"
 
 namespace pbr::os {
 

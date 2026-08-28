@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

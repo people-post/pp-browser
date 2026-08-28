@@ -1,6 +1,7 @@
 #include "base/messaging/GroupTypes.h"
 
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

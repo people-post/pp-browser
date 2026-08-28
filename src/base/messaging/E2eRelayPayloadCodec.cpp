@@ -10,6 +10,7 @@
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

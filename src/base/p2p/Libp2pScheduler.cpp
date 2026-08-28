@@ -1,6 +1,7 @@
 #include "base/p2p/Libp2pScheduler.h"
 
 #include "base/p2p/Libp2pWorker.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

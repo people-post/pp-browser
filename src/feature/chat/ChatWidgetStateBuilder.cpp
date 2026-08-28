@@ -3,6 +3,7 @@
 #include "feature/chat/CalendarHelper.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

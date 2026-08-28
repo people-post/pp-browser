@@ -10,6 +10,7 @@
 #include <libp2p/peer/protocol.hpp>
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

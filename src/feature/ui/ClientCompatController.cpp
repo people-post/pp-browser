@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

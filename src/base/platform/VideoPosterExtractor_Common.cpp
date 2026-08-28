@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

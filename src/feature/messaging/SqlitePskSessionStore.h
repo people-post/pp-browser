@@ -8,6 +8,7 @@
 
 #include <mutex>
 #include <string>
+#include "common/PbrCompat.h"
 
 struct sqlite3;
 

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace {
 

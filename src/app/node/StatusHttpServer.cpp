@@ -11,6 +11,7 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

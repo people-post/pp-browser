@@ -18,6 +18,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

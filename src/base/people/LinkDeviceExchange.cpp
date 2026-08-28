@@ -4,6 +4,7 @@
 #include "base/crypto/CryptoUtil.h"
 
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

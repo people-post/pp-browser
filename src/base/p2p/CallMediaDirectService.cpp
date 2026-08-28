@@ -4,6 +4,7 @@
 
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

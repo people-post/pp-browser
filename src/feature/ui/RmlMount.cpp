@@ -9,6 +9,7 @@
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/StreamMemory.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

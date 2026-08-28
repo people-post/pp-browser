@@ -1,6 +1,7 @@
 #include "base/p2p/MediaRelayRuntime.h"
 
 #include "base/p2p/SettledWait.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

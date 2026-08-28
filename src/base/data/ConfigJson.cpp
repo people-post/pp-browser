@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 
 #include <limits>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

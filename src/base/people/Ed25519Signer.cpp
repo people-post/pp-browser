@@ -4,6 +4,7 @@
 #include <openssl/rand.h>
 
 #include <array>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

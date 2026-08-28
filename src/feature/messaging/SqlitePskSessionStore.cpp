@@ -11,6 +11,7 @@
 #include <sqlite3.h>
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -6,6 +6,7 @@
 #include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

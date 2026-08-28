@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

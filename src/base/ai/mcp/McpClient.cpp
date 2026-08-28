@@ -3,6 +3,7 @@
 #include "base/net/HttpClient.h"
 #include "base/platform/os/OsProcess.h"
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

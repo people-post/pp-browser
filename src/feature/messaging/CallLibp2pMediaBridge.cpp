@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

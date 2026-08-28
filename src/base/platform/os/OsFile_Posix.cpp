@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+#include "common/PbrCompat.h"
 
 namespace pbr::os {
 

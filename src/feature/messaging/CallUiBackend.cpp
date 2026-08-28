@@ -5,6 +5,7 @@
 #include "feature/messaging/CallStack.h"
 
 #include <stdexcept>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

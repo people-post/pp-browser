@@ -26,6 +26,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

@@ -29,6 +29,7 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

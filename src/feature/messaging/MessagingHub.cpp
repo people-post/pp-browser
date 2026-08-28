@@ -61,6 +61,7 @@
 #include <unordered_set>
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

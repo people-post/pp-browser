@@ -6,6 +6,7 @@
 #include <libp2p/host/host.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/peer/peer_id.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

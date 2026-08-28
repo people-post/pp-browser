@@ -30,6 +30,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 // V017: Windows H264 encode/decode via Media Foundation. Hardware MFTs are
 // preferred (see EnumerateTransforms) with software MFTs as fallback so a

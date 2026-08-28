@@ -3,6 +3,7 @@
 #include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

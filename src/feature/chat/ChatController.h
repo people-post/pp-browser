@@ -35,6 +35,7 @@
 #include <functional>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;

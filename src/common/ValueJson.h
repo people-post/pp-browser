@@ -5,7 +5,9 @@
  * Prefer these over ad-hoc parse/dump patterns when migrating off nlohmann.
  */
 
-#include "common/PbrCompat.h"
+#include "common/Error.h"
+#include "common/Value.h"
+#include "common/io/Json.h"
 
 #include <optional>
 #include <string>
@@ -13,6 +15,16 @@
 #include <vector>
 
 namespace pbr {
+
+using pp::Error;
+using pp::Roe;
+using pp::common::Array;
+using pp::common::Object;
+using pp::common::Value;
+using pp::common::asObject;
+using pp::common::makeArray;
+
+namespace json_io = pp::common::io;
 
 inline Roe<Value> ParseValue(const std::string& json_utf8) {
   return json_io::valueFromJsonString(json_utf8);
