@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <ctime>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

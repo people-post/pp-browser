@@ -13,6 +13,7 @@
 #include <cstring>
 #include <regex>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

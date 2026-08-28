@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "common/PbrCompat.h"
 
 struct sqlite3;
 struct sqlite3_stmt;

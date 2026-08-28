@@ -5,6 +5,7 @@
 #include "base/data/UserPreferences.h"
 
 #include <filesystem>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

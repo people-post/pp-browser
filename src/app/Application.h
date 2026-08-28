@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include "common/PbrCompat.h"
 
 class FontEngineInterfaceHarfBuzz;
 

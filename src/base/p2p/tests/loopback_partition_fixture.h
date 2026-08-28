@@ -10,6 +10,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace test {

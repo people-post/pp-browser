@@ -6,6 +6,7 @@
 #include <cctype>
 #include <charconv>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

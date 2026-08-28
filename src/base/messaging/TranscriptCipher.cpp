@@ -2,6 +2,7 @@
 
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/FileCipher.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

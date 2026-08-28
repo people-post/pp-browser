@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

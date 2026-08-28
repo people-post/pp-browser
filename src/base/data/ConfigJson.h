@@ -3,43 +3,46 @@
 #include "base/data/Config.h"
 #include "base/data/UserPreferences.h"
 #include "common/Value.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
-Object LlmConfigToObject(const LlmConfig& config);
-void LlmConfigFromObject(const Object& object, LlmConfig& config);
+pp::common::Object LlmConfigToObject(const LlmConfig& config);
+void LlmConfigFromObject(const pp::common::Object& object, LlmConfig& config);
 
-Object ContextBudgetToObject(const ContextBudget& budget);
-void ContextBudgetFromObject(const Object& object, ContextBudget& budget);
+pp::common::Object ContextBudgetToObject(const ContextBudget& budget);
+void ContextBudgetFromObject(const pp::common::Object& object, ContextBudget& budget);
 
-Object SearchConfigToObject(const SearchConfig& config);
-void SearchConfigFromObject(const Object& object, SearchConfig& config);
+pp::common::Object SearchConfigToObject(const SearchConfig& config);
+void SearchConfigFromObject(const pp::common::Object& object, SearchConfig& config);
 
-Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint);
-void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endpoint);
+pp::common::Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint);
+void ServiceEndpointFromObject(const pp::common::Object& object,
+                               ServiceEndpointConfig& endpoint);
 
-Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps);
-void Libp2pCapabilitiesFromObject(const Object& object, Libp2pCapabilities& caps);
+pp::common::Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps);
+void Libp2pCapabilitiesFromObject(const pp::common::Object& object,
+                                  Libp2pCapabilities& caps);
 
-Object Libp2pConfigToObject(const Libp2pConfig& config);
-void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config);
+pp::common::Object Libp2pConfigToObject(const Libp2pConfig& config);
+void Libp2pConfigFromObject(const pp::common::Object& object, Libp2pConfig& config);
 
-Object McpConfigToObject(const McpConfig& config);
-void McpConfigFromObject(const Object& object, McpConfig& config);
+pp::common::Object McpConfigToObject(const McpConfig& config);
+void McpConfigFromObject(const pp::common::Object& object, McpConfig& config);
 
-Object AppConfigToObject(const AppConfig& config);
-void AppConfigFromObject(const Object& object, AppConfig& config);
+pp::common::Object AppConfigToObject(const AppConfig& config);
+void AppConfigFromObject(const pp::common::Object& object, AppConfig& config);
 
-Object MachinePrefsToObject(const MachinePreferences& prefs);
-void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs);
+pp::common::Object MachinePrefsToObject(const MachinePreferences& prefs);
+void MachinePrefsFromObject(const pp::common::Object& object, MachinePreferences& prefs);
 
-Object ProfilePrefsToObject(const ProfilePreferences& prefs);
-void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs);
+pp::common::Object ProfilePrefsToObject(const ProfilePreferences& prefs);
+void ProfilePrefsFromObject(const pp::common::Object& object, ProfilePreferences& prefs);
 
-AppConfig MergeConfig(const AppConfig& defaults, const Object& overlay);
+AppConfig MergeConfig(const AppConfig& defaults, const pp::common::Object& overlay);
 
 void ResolveConfigCredentials(AppConfig& config);
 
-Object ConfigToObject(const AppConfig& config, int config_version);
+pp::common::Object ConfigToObject(const AppConfig& config, int config_version);
 
 } // namespace pbr

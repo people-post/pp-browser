@@ -2,6 +2,7 @@
 
 #include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

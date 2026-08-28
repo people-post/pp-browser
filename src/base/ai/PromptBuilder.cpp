@@ -5,6 +5,7 @@
 #include <cctype>
 #include <sstream>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

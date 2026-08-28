@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/settings/SettingsSectionHandler.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

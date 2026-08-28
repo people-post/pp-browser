@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <optional>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace {
 

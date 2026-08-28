@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 
 #include <cstdint>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

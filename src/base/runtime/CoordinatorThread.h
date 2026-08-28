@@ -9,6 +9,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

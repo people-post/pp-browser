@@ -5,6 +5,7 @@
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatBlobRequestUtil.h"
 #include "base/net/HttpClient.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

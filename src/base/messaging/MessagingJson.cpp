@@ -6,6 +6,7 @@
 
 #include <map>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

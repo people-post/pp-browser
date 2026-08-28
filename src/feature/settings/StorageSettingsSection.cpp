@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -8,6 +8,7 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/ThreadTypes.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

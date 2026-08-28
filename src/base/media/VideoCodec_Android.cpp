@@ -13,6 +13,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 // V017: Android H264 encode/decode via MediaCodec (NDK).
 

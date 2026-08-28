@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -1,6 +1,7 @@
 #include "base/messaging/PskRotateCodec.h"
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

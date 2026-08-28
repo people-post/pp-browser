@@ -3,6 +3,7 @@
 #include "base/runtime/CoordinatorThread.h"
 
 #include <cassert>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

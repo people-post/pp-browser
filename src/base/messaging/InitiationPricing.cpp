@@ -1,4 +1,5 @@
 #include "base/messaging/InitiationPricing.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

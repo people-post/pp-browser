@@ -39,6 +39,7 @@ static constexpr const char* kFrameIdPrefix = "frame-msg-";
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound);
 #pragma clang diagnostic pop
+#include "common/PbrCompat.h"
   }
 }
 

@@ -1,6 +1,7 @@
 #include "base/platform/PlatformLogDefaults.h"
 
 #include "base/platform/Platform.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

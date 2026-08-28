@@ -49,6 +49,7 @@
 #include <sstream>
 
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

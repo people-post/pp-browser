@@ -2,6 +2,7 @@
 
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/net/ServiceClients.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

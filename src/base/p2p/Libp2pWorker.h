@@ -5,6 +5,7 @@
 #include "base/p2p/Libp2pHost.h"
 
 #include <functional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

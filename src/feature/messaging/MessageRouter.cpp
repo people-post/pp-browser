@@ -6,6 +6,7 @@
 #include "base/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

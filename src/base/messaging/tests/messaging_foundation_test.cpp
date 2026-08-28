@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   using namespace pbr;

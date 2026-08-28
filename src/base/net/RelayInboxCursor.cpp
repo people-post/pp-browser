@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

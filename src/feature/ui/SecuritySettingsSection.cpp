@@ -3,6 +3,7 @@
 #include "base/data/SessionStore.h"
 #include "base/data/ToolPermissions.h"
 #include "base/i18n/LocalizationService.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

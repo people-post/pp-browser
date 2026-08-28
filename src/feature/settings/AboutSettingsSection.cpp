@@ -3,6 +3,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/runtime/AppVersion.h"
 #include "base/runtime/ProductBranding.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -8,6 +8,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

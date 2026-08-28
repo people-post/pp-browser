@@ -21,6 +21,7 @@
 #include <libp2p/protocol/identify/config.hpp>
 
 #include <span>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

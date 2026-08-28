@@ -6,6 +6,7 @@
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/net/AttachmentClientUtil.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

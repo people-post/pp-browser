@@ -23,6 +23,7 @@
 #if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#include "common/PbrCompat.h"
 #endif
 #endif
 

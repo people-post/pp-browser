@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace libp2p {
 struct Host;

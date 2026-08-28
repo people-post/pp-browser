@@ -7,6 +7,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

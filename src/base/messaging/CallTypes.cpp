@@ -1,6 +1,7 @@
 #include "base/messaging/CallTypes.h"
 
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

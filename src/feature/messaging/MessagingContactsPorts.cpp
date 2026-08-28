@@ -1,6 +1,7 @@
 #include "feature/messaging/MessagingContactsPorts.h"
 
 #include "feature/messaging/MessagingHub.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

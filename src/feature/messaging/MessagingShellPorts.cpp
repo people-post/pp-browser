@@ -7,6 +7,7 @@
 #include "base/p2p/Libp2pHost.h"
 #include "base/p2p/MediaRelayService.h"
 #include "base/p2p/MeshHost.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;

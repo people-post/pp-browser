@@ -6,6 +6,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

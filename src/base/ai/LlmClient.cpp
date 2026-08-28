@@ -5,6 +5,7 @@
 #include "common/ValueJson.h"
 
 #include <curl/curl.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
