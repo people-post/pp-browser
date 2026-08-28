@@ -76,12 +76,12 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   {
     Object properties;
     properties.set("query", StringProp("Search query"));
-    tools.push_back(
-        {.definition = {.name = "search_people",
+    tools.push_back(MakeTool(
+      {.name = "search_people",
                         .description = "Search the public directory for people by name, nickname, or ID fragment.",
                         .parameters = ObjectSchema(std::move(properties), {"query"})},
-         .meta = Meta("people", "read", false),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("people", "read", false),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string query = arguments.getString("query").value_or("");
            auto hits = messaging.SearchPeople(query);
            if (!hits) {
@@ -93,24 +93,25 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
              out.push_back(ObjectValue(DirectoryHitToJson(hit)));
            }
            return DumpJson(ArrayValue(std::move(out)));
-         }});
+         }));
   }
 
   {
     Object properties;
     properties.set("query", StringProp("Optional filter"));
-    tools.push_back({.definition = {.name = "list_contacts",
+    tools.push_back(MakeTool(
+      {.name = "list_contacts",
                                     .description = "List or search local contacts.",
                                     .parameters = ObjectSchema(std::move(properties))},
-                     .meta = Meta("people", "read", false),
-                     .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("people", "read", false),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
                        const std::string query = arguments.getString("query").value_or("");
                        auto contacts = messaging.SearchLocalContacts(query);
                        if (!contacts) {
                          return contacts.error();
                        }
                        return DumpJson(ContactsToJson(*contacts));
-                     }});
+                     }));
   }
 
   {
@@ -118,12 +119,12 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object directory_hit;
     directory_hit.set("type", "object");
     properties.set("directory_hit", directory_hit);
-    tools.push_back(
-        {.definition = {.name = "add_contact",
+    tools.push_back(MakeTool(
+      {.name = "add_contact",
                         .description = "Add a directory search hit to local contacts.",
                         .parameters = ObjectSchema(std::move(properties), {"directory_hit"})},
-         .meta = Meta("people", "write", true),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("people", "write", true),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            const Object* directory_hit = arguments.getObject("directory_hit");
            if (!directory_hit) {
              return Error("directory_hit required");
@@ -134,66 +135,67 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
              return contact.error();
            }
            return DumpJson(ContactToJson(*contact));
-         }});
+         }));
   }
 
-  tools.push_back({.definition = {.name = "list_conversations",
+  tools.push_back(MakeTool(
+      {.name = "list_conversations",
                                   .description = "List inbox threads (AI and person-to-person).",
                                   .parameters = ObjectSchema(Object{})},
-                   .meta = Meta("communications", "read", false),
-                   .execute = [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
+      Meta("communications", "read", false),
+      [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
                      auto threads = messaging.ListThreads();
                      if (!threads) {
                        return threads.error();
                      }
                      return DumpJson(ThreadsToJson(*threads));
-                   }});
+                   }));
 
   {
     Object properties;
     properties.set("thread_id", StringProp());
-    tools.push_back(
-        {.definition = {.name = "open_conversation",
+    tools.push_back(MakeTool(
+      {.name = "open_conversation",
                         .description = "Switch the active inbox thread by thread id.",
                         .parameters = ObjectSchema(std::move(properties), {"thread_id"})},
-         .meta = Meta("communications", "read", false),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("communications", "read", false),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string thread_id = arguments.getString("thread_id").value_or("");
            auto thread = messaging.OpenThread(thread_id);
            if (!thread) {
              return thread.error();
            }
            return DumpJson(ThreadToJson(*thread));
-         }});
+         }));
   }
 
   {
     Object properties;
     properties.set("contact_id", StringProp());
-    tools.push_back(
-        {.definition = {.name = "start_conversation",
+    tools.push_back(MakeTool(
+      {.name = "start_conversation",
                         .description = "Open or create a direct conversation with a local contact id.",
                         .parameters = ObjectSchema(std::move(properties), {"contact_id"})},
-         .meta = Meta("communications", "write", true),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("communications", "write", true),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string contact_id = arguments.getString("contact_id").value_or("");
            auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
            if (!thread) {
              return thread.error();
            }
            return DumpJson(ThreadToJson(*thread));
-         }});
+         }));
   }
 
   {
     Object properties;
     properties.set("nickname", StringProp("Optional nickname override"));
-    tools.push_back(
-        {.definition = {.name = "register_user",
+    tools.push_back(MakeTool(
+      {.name = "register_user",
                         .description = "Register this device on the network with Ed25519 identity.",
                         .parameters = ObjectSchema(std::move(properties))},
-         .meta = Meta("identity", "write", true),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("identity", "write", true),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            auto identity = messaging.GetLocalIdentity();
            if (!identity) {
              return identity.error();
@@ -215,18 +217,18 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            out.set("message", "Registered");
            out.set("expires_at", result->registration_expires_at);
            return DumpJson(out);
-         }});
+         }));
   }
 
   {
     Object properties;
     properties.set("nickname", StringProp());
-    tools.push_back(
-        {.definition = {.name = "update_profile_nickname",
+    tools.push_back(MakeTool(
+      {.name = "update_profile_nickname",
                         .description = "Update the registered nickname on the network.",
                         .parameters = ObjectSchema(std::move(properties), {"nickname"})},
-         .meta = Meta("identity", "write", true),
-         .execute = [&messaging](const Object& arguments) -> Roe<std::string> {
+      Meta("identity", "write", true),
+      [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string nickname = arguments.getString("nickname").value_or("");
            if (nickname.empty()) {
              return Error("nickname required");
@@ -245,7 +247,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            out.set("success", result->success);
            out.set("message", result->message);
            return DumpJson(out);
-         }});
+         }));
   }
 
   return tools;
