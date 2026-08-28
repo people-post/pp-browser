@@ -17,10 +17,7 @@ namespace pbr {
 namespace {
 
 ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
-  return ToolMeta{.provider = "settings",
-                  .domain = std::move(domain),
-                  .risk = std::move(risk),
-                  .mutating = mutating};
+  return ToolMeta{"settings", std::move(domain), std::move(risk), mutating};
 }
 
 Object MustSchema(std::string_view schema_json) {
@@ -334,10 +331,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   std::vector<ToolDescriptor> tools;
 
   tools.push_back(MakeTool(
-      {.name = "get_profile_identity",
-                      .description = "Read this device's profile identity (nickname, peer id, registration status). "
-                                     "Does not return secrets or API keys.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_profile_identity", "Read this device's profile identity (nickname, peer id, registration status). "
+                                     "Does not return secrets or API keys.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("identity", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          if (!ports.load_profile_identity) {
@@ -357,10 +352,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_preferences",
-                                  .description = "Read profile preferences: appearance, language, notifications, "
-                                                 "group invite policy, transparency, call diagnostics, auto-renew.",
-                                  .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_preferences", "Read profile preferences: appearance, language, notifications, "
+                                                 "group invite policy, transparency, call diagnostics, auto-renew.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("settings", "read", false),
       [ports](const Object&) -> Roe<std::string> {
                      auto store = RequireStore(ports);
@@ -382,9 +375,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                    }));
 
   tools.push_back(MakeTool(
-      {.name = "list_locales",
-                      .description = "List available UI languages (BCP-47 tags) and the current language preference.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"list_locales", "List available UI languages (BCP-47 tags) and the current language preference.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("settings", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -412,10 +403,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_reachability",
-                      .description = "Read network reachability status for this device (reachable / outbound only / "
-                                     "blocked) and related signals.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_reachability", "Read network reachability status for this device (reachable / outbound only / "
+                                     "blocked) and related signals.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("network", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          SettingsReachabilityView view;
@@ -434,10 +423,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_security_status",
-                      .description = "Read security status: PIN vault readiness (not the PIN), group invite policy, "
-                                     "and how many assistant tool permissions are remembered.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_security_status", "Read security status: PIN vault readiness (not the PIN), group invite policy, "
+                                     "and how many assistant tool permissions are remembered.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("security", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -464,10 +451,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_network_settings",
-                      .description = "Read mesh/network participation settings (node, relays, prefer contacts) and "
-                                     "listen multiaddr. Does not change endpoints.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_network_settings", "Read mesh/network participation settings (node, relays, prefer contacts) and "
+                                     "listen multiaddr. Does not change endpoints.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("network", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -485,9 +470,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_llm_settings",
-                      .description = "Read assistant LLM settings (preset, base URL, model). Never returns API keys.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_llm_settings", "Read assistant LLM settings (preset, base URL, model). Never returns API keys.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("settings", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -510,9 +493,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "get_integrations",
-                      .description = "Read search provider and MCP server ids/enabled flags. URLs are omitted.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_integrations", "Read search provider and MCP server ids/enabled flags. URLs are omitted.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("settings", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -542,10 +523,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_appearance",
-                      .description = "Set UI appearance: system, light, or dark. "
-                                     "Args: appearance (preferred) or theme/mode; case-insensitive.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"appearance":{"type":"string","description":"system | light | dark"},"theme":{"type":"string","description":"Alias for appearance"}},"required":[]})json")},
+      ToolDefinition{"set_appearance", "Set UI appearance: system, light, or dark. "
+                                     "Args: appearance (preferred) or theme/mode; case-insensitive.", MustSchema(R"json({"type":"object","properties":{"appearance":{"type":"string","description":"system | light | dark"},"theme":{"type":"string","description":"Alias for appearance"}},"required":[]})json")},
       Meta("settings", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const std::string appearance = AppearanceFromArgs(arguments);
@@ -570,13 +549,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_language",
-                      .description =
-                          "Set UI language to system or a shipped BCP-47 tag from list_locales "
+      ToolDefinition{"set_language", "Set UI language to system or a shipped BCP-47 tag from list_locales "
                           "(en, zh-Hans). Accepts locale/lang aliases and common labels "
-                          "(Chinese, 简体中文, zh, zh-CN).",
-                      .parameters =
-                          MustSchema(R"json({"type":"object","properties":{"language":{"type":"string","description":"system | en | zh-Hans (or alias/label)"},"locale":{"type":"string","description":"Alias for language"}},"required":[]})json")},
+                          "(Chinese, 简体中文, zh, zh-CN).", MustSchema(R"json({"type":"object","properties":{"language":{"type":"string","description":"system | en | zh-Hans (or alias/label)"},"locale":{"type":"string","description":"Alias for language"}},"required":[]})json")},
       Meta("settings", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const std::string language = LanguageFromArgs(ports, arguments);
@@ -598,9 +573,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_notifications",
-                      .description = "Enable or disable OS notification banners (sync continues either way).",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"},"show_notifications":{"type":"boolean","description":"Alias for enabled"}},"required":[]})json")},
+      ToolDefinition{"set_notifications", "Enable or disable OS notification banners (sync continues either way).", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"},"show_notifications":{"type":"boolean","description":"Alias for enabled"}},"required":[]})json")},
       Meta("settings", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled =
@@ -623,11 +596,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_group_invite_policy",
-                      .description = "Set who may invite this user to group chats: everyone, "
-                                     "contacts_only, or nobody.",
-                      .parameters =
-                          MustSchema(R"json({"type":"object","properties":{"policy":{"type":"string"},"group_invite_policy":{"type":"string","description":"Alias for policy"}},"required":[]})json")},
+      ToolDefinition{"set_group_invite_policy", "Set who may invite this user to group chats: everyone, "
+                                     "contacts_only, or nobody.", MustSchema(R"json({"type":"object","properties":{"policy":{"type":"string"},"group_invite_policy":{"type":"string","description":"Alias for policy"}},"required":[]})json")},
       Meta("security", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const std::string policy = PolicyFromArgs(arguments);
@@ -649,9 +619,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_auto_renew_registration",
-                      .description = "Enable or disable automatic network registration renewal near expiry.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_auto_renew_registration", "Enable or disable automatic network registration renewal near expiry.", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("identity", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "auto_renew_registration"});
@@ -673,9 +641,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_reduce_transparency",
-                      .description = "When enabled, compact chrome uses opaque surfaces (no backdrop frost).",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_reduce_transparency", "When enabled, compact chrome uses opaque surfaces (no backdrop frost).", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("settings", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "reduce_transparency"});
@@ -697,9 +663,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_call_diagnostics",
-                      .description = "Enable or disable call media diagnostics in the UI.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_call_diagnostics", "Enable or disable call media diagnostics in the UI.", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("settings", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "call_diagnostics"});
@@ -721,9 +685,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_node_enabled",
-                      .description = "Enable or disable desktop Node participation (help the network). Ignored on mobile.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_node_enabled", "Enable or disable desktop Node participation (help the network). Ignored on mobile.", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto enabled = BoolFromArgs(arguments, {"enabled", "node_enabled"});
@@ -745,10 +707,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "set_mesh_capabilities",
-                      .description = "Update mesh capability flags: circuit_relay, media_relay, prefer_contacts_for_routing.",
-                      .parameters =
-                          MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, prefer_contacts_for_routing.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
@@ -782,9 +741,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "probe_reachability",
-                      .description = "Re-run the network reachability probe. Optionally try UPnP port mapping first.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{"try_upnp":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"probe_reachability", "Re-run the network reachability probe. Optionally try UPnP port mapping first.", MustSchema(R"json({"type":"object","properties":{"try_upnp":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          if (!ports.run_reachability_probe) {
@@ -803,10 +760,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      {.name = "reset_tool_permissions",
-                      .description = "Clear remembered Always allow / Never decisions for assistant tools so the "
-                                     "assistant asks again before changing data.",
-                      .parameters = MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"reset_tool_permissions", "Clear remembered Always allow / Never decisions for assistant tools so the "
+                                     "assistant asks again before changing data.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("security", "write", true),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);

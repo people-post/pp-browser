@@ -59,12 +59,12 @@ TEST(ToolPermissionPromptTest, BuildsChoiceWithApprovalId) {
 TEST(TurnExecutorPermissionTest, StopsBeforeMutatingAskTool) {
   pbr::ToolRegistry registry;
   registry.Register(pbr::MakeTool(
-      {.name = "list_contacts", .description = "list", .parameters = EmptyObjectSchema()},
-      {.domain = "people", .risk = "read", .mutating = false},
+      pbr::ToolDefinition{"list_contacts", "list", EmptyObjectSchema()},
+      pbr::ToolMeta{.domain = "people", .risk = "read", .mutating = false},
       [](const pbr::Object&) -> pbr::Roe<std::string> { return std::string("[]"); }));
   registry.Register(pbr::MakeTool(
-      {.name = "add_contact", .description = "add", .parameters = EmptyObjectSchema()},
-      {.domain = "people", .risk = "write", .mutating = true},
+      pbr::ToolDefinition{"add_contact", "add", EmptyObjectSchema()},
+      pbr::ToolMeta{.domain = "people", .risk = "write", .mutating = true},
       [](const pbr::Object&) -> pbr::Roe<std::string> {
         ADD_FAILURE() << "mutating tool should not execute before permission";
         return std::string("{}");

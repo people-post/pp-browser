@@ -53,10 +53,7 @@ Object ObjectSchema(Object properties, std::vector<std::string> required = {}) {
 }
 
 ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
-  return ToolMeta{.provider = "messaging",
-                  .domain = std::move(domain),
-                  .risk = std::move(risk),
-                  .mutating = mutating};
+  return ToolMeta{"messaging", std::move(domain), std::move(risk), mutating};
 }
 
 } // namespace
@@ -77,9 +74,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("query", StringProp("Search query"));
     tools.push_back(MakeTool(
-      {.name = "search_people",
-                        .description = "Search the public directory for people by name, nickname, or ID fragment.",
-                        .parameters = ObjectSchema(std::move(properties), {"query"})},
+      ToolDefinition{"search_people", "Search the public directory for people by name, nickname, or ID fragment.", ObjectSchema(std::move(properties), {"query"})},
       Meta("people", "read", false),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string query = arguments.getString("query").value_or("");
@@ -100,9 +95,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("query", StringProp("Optional filter"));
     tools.push_back(MakeTool(
-      {.name = "list_contacts",
-                                    .description = "List or search local contacts.",
-                                    .parameters = ObjectSchema(std::move(properties))},
+      ToolDefinition{"list_contacts", "List or search local contacts.", ObjectSchema(std::move(properties))},
       Meta("people", "read", false),
       [&messaging](const Object& arguments) -> Roe<std::string> {
                        const std::string query = arguments.getString("query").value_or("");
@@ -120,9 +113,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     directory_hit.set("type", "object");
     properties.set("directory_hit", directory_hit);
     tools.push_back(MakeTool(
-      {.name = "add_contact",
-                        .description = "Add a directory search hit to local contacts.",
-                        .parameters = ObjectSchema(std::move(properties), {"directory_hit"})},
+      ToolDefinition{"add_contact", "Add a directory search hit to local contacts.", ObjectSchema(std::move(properties), {"directory_hit"})},
       Meta("people", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const Object* directory_hit = arguments.getObject("directory_hit");
@@ -139,9 +130,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   }
 
   tools.push_back(MakeTool(
-      {.name = "list_conversations",
-                                  .description = "List inbox threads (AI and person-to-person).",
-                                  .parameters = ObjectSchema(Object{})},
+      ToolDefinition{"list_conversations", "List inbox threads (AI and person-to-person).", ObjectSchema(Object{})},
       Meta("communications", "read", false),
       [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
                      auto threads = messaging.ListThreads();
@@ -155,9 +144,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("thread_id", StringProp());
     tools.push_back(MakeTool(
-      {.name = "open_conversation",
-                        .description = "Switch the active inbox thread by thread id.",
-                        .parameters = ObjectSchema(std::move(properties), {"thread_id"})},
+      ToolDefinition{"open_conversation", "Switch the active inbox thread by thread id.", ObjectSchema(std::move(properties), {"thread_id"})},
       Meta("communications", "read", false),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string thread_id = arguments.getString("thread_id").value_or("");
@@ -173,9 +160,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("contact_id", StringProp());
     tools.push_back(MakeTool(
-      {.name = "start_conversation",
-                        .description = "Open or create a direct conversation with a local contact id.",
-                        .parameters = ObjectSchema(std::move(properties), {"contact_id"})},
+      ToolDefinition{"start_conversation", "Open or create a direct conversation with a local contact id.", ObjectSchema(std::move(properties), {"contact_id"})},
       Meta("communications", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string contact_id = arguments.getString("contact_id").value_or("");
@@ -191,9 +176,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("nickname", StringProp("Optional nickname override"));
     tools.push_back(MakeTool(
-      {.name = "register_user",
-                        .description = "Register this device on the network with Ed25519 identity.",
-                        .parameters = ObjectSchema(std::move(properties))},
+      ToolDefinition{"register_user", "Register this device on the network with Ed25519 identity.", ObjectSchema(std::move(properties))},
       Meta("identity", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            auto identity = messaging.GetLocalIdentity();
@@ -224,9 +207,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("nickname", StringProp());
     tools.push_back(MakeTool(
-      {.name = "update_profile_nickname",
-                        .description = "Update the registered nickname on the network.",
-                        .parameters = ObjectSchema(std::move(properties), {"nickname"})},
+      ToolDefinition{"update_profile_nickname", "Update the registered nickname on the network.", ObjectSchema(std::move(properties), {"nickname"})},
       Meta("identity", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string nickname = arguments.getString("nickname").value_or("");
