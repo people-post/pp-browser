@@ -344,16 +344,16 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return Error("Profile identity unavailable");
          }
          const ProfileIdentityView view = ports.load_profile_identity();
-         Object __out;
-         __out.set("ready", view.ready);
-         __out.set("nickname", view.nickname);
-         __out.set("peer_id", view.peer_id);
-         __out.set("relay_id", view.relay_id);
-         __out.set("registered", view.registered);
-         __out.set("registration_status", view.registration_status);
-         __out.set("registration_expires", view.registration_expires);
-         __out.set("show_register", view.show_register);
-         return DumpJson(__out);
+         Object out;
+         out.set("ready", view.ready);
+         out.set("nickname", view.nickname);
+         out.set("peer_id", view.peer_id);
+         out.set("relay_id", view.relay_id);
+         out.set("registered", view.registered);
+         out.set("registration_status", view.registration_status);
+         out.set("registration_expires", view.registration_expires);
+         out.set("show_register", view.show_register);
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -368,17 +368,17 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                        return store.error();
                      }
                      const ProfilePreferences& prefs = (*store)->Snapshot().profile_prefs;
-                     Object __out;
-         __out.set("appearance", prefs.appearance);
-         __out.set("language", prefs.language);
-         __out.set("show_notifications", prefs.show_notifications);
-         __out.set("auto_renew_registration", prefs.auto_renew_registration);
-         __out.set("group_invite_policy", prefs.group_invite_policy);
-         __out.set("reduce_transparency", prefs.reduce_transparency);
-         __out.set("call_diagnostics", prefs.call_diagnostics);
-         __out.set("tool_permissions_remembered",
+                     Object out;
+         out.set("appearance", prefs.appearance);
+         out.set("language", prefs.language);
+         out.set("show_notifications", prefs.show_notifications);
+         out.set("auto_renew_registration", prefs.auto_renew_registration);
+         out.set("group_invite_policy", prefs.group_invite_policy);
+         out.set("reduce_transparency", prefs.reduce_transparency);
+         out.set("call_diagnostics", prefs.call_diagnostics);
+         out.set("tool_permissions_remembered",
                    static_cast<int64_t>(RememberedToolPermissionCount(prefs.tool_permissions)));
-         return DumpJson(__out);
+         return DumpJson(out);
                    }));
 
   tools.push_back(MakeTool(
@@ -405,10 +405,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            }
          }
          const std::string current = (*store)->Snapshot().profile_prefs.language;
-         Object __out;
-         __out.set("current", current);
-         __out.set("locales", ArrayValue(std::move(locales)));
-         return DumpJson(__out);
+         Object out;
+         out.set("current", current);
+         out.set("locales", ArrayValue(std::move(locales)));
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -422,15 +422,15 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (ports.load_reachability) {
            view = ports.load_reachability();
          }
-         Object __out;
-         __out.set("status", ReachabilityStatusName(view.status));
-         __out.set("has_global_ipv6", view.has_global_ipv6);
-         __out.set("dial_back_ok", view.dial_back_ok);
-         __out.set("upnp_mapped", view.upnp_mapped);
-         __out.set("help_kind", view.help_kind);
-         __out.set("messaging_ready", ports.messaging_ready ? ports.messaging_ready() : false);
-         __out.set("last_libp2p_error", ports.last_libp2p_error ? ports.last_libp2p_error() : "");
-         return DumpJson(__out);
+         Object out;
+         out.set("status", ReachabilityStatusName(view.status));
+         out.set("has_global_ipv6", view.has_global_ipv6);
+         out.set("dial_back_ok", view.dial_back_ok);
+         out.set("upnp_mapped", view.upnp_mapped);
+         out.set("help_kind", view.help_kind);
+         out.set("messaging_ready", ports.messaging_ready ? ports.messaging_ready() : false);
+         out.set("last_libp2p_error", ports.last_libp2p_error ? ports.last_libp2p_error() : "");
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -453,14 +453,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (pin.ready) {
            pin_status = prefs.pin_is_default ? "app_default" : "custom";
          }
-         Object __out;
-         __out.set("pin_ready", pin.ready);
-         __out.set("pin_unlocked", pin.unlocked);
-         __out.set("pin_status", pin_status);
-         __out.set("group_invite_policy", prefs.group_invite_policy);
-         __out.set("tool_permissions_remembered",
+         Object out;
+         out.set("pin_ready", pin.ready);
+         out.set("pin_unlocked", pin.unlocked);
+         out.set("pin_status", pin_status);
+         out.set("group_invite_policy", prefs.group_invite_policy);
+         out.set("tool_permissions_remembered",
                    static_cast<int64_t>(RememberedToolPermissionCount(prefs.tool_permissions)));
-         return DumpJson(__out);
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -475,13 +475,13 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          const Libp2pConfig& libp2p = (*store)->Snapshot().config.libp2p;
-         Object __out;
-         __out.set("node_enabled", libp2p.node_enabled);
-         __out.set("listen_multiaddr", libp2p.listen_multiaddr);
-         __out.set("prefer_contacts_for_routing", libp2p.prefer_contacts_for_routing);
-         __out.set("circuit_relay", libp2p.capabilities.circuit_relay);
-         __out.set("media_relay", libp2p.capabilities.media_relay);
-         return DumpJson(__out);
+         Object out;
+         out.set("node_enabled", libp2p.node_enabled);
+         out.set("listen_multiaddr", libp2p.listen_multiaddr);
+         out.set("prefer_contacts_for_routing", libp2p.prefer_contacts_for_routing);
+         out.set("circuit_relay", libp2p.capabilities.circuit_relay);
+         out.set("media_relay", libp2p.capabilities.media_relay);
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -501,12 +501,12 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          } else if (!config.llm_api_key_env.empty()) {
            key_state = "env";
          }
-         Object __out;
-         __out.set("preset", ResolvePreset(config));
-         __out.set("base_url", config.llm.base_url);
-         __out.set("model", config.llm.model);
-         __out.set("api_key", key_state);
-         return DumpJson(__out);
+         Object out;
+         out.set("preset", ResolvePreset(config));
+         out.set("base_url", config.llm.base_url);
+         out.set("model", config.llm.model);
+         out.set("api_key", key_state);
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -535,10 +535,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            entry.set("kind", "custom");
            servers.push_back(ObjectValue(std::move(entry)));
          }
-         Object __out;
-         __out.set("search_provider", config.search.provider);
-         __out.set("mcp_servers", ArrayValue(std::move(servers)));
-         return DumpJson(__out);
+         Object out;
+         out.set("search_provider", config.search.provider);
+         out.set("mcp_servers", ArrayValue(std::move(servers)));
+         return DumpJson(out);
        }));
 
   tools.push_back(MakeTool(
@@ -564,9 +564,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (ports.apply_appearance) {
            ports.apply_appearance(appearance);
          }
-         Object __ok;
-         __ok.set("appearance", appearance);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("appearance", appearance);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -592,9 +592,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("language", language);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("language", language);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -617,9 +617,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("show_notifications", prefs.show_notifications);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("show_notifications", prefs.show_notifications);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -643,9 +643,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("group_invite_policy", policy);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("group_invite_policy", policy);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -667,9 +667,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("auto_renew_registration", prefs.auto_renew_registration);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("auto_renew_registration", prefs.auto_renew_registration);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -691,9 +691,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("reduce_transparency", prefs.reduce_transparency);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("reduce_transparency", prefs.reduce_transparency);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -715,9 +715,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("call_diagnostics", prefs.call_diagnostics);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("call_diagnostics", prefs.call_diagnostics);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -739,9 +739,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("node_enabled", config.libp2p.node_enabled);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("node_enabled", config.libp2p.node_enabled);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -774,11 +774,11 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("circuit_relay", config.libp2p.capabilities.circuit_relay);
-         __ok.set("media_relay", config.libp2p.capabilities.media_relay);
-         __ok.set("prefer_contacts_for_routing", config.libp2p.prefer_contacts_for_routing);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("circuit_relay", config.libp2p.capabilities.circuit_relay);
+         ok.set("media_relay", config.libp2p.capabilities.media_relay);
+         ok.set("prefer_contacts_for_routing", config.libp2p.prefer_contacts_for_routing);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -796,10 +796,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (ports.load_reachability) {
            view = ports.load_reachability();
          }
-         Object __ok;
-         __ok.set("status", ReachabilityStatusName(view.status));
-         __ok.set("try_upnp", try_upnp);
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("status", ReachabilityStatusName(view.status));
+         ok.set("try_upnp", try_upnp);
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   tools.push_back(MakeTool(
@@ -818,9 +818,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (auto saved = SavePrefs(**store, prefs); !saved) {
            return saved.error();
          }
-         Object __ok;
-         __ok.set("tool_permissions_remembered", static_cast<int64_t>(0));
-         return DumpJson(OkJson(std::move(__ok)));
+         Object ok;
+         ok.set("tool_permissions_remembered", static_cast<int64_t>(0));
+         return DumpJson(OkJson(std::move(ok)));
        }));
 
   return tools;
