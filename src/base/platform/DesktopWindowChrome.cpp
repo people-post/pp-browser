@@ -3,6 +3,7 @@
 #include "base/platform/Platform.h"
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include "RmlUi_Backend.h"
 
@@ -23,7 +24,6 @@
 #if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
-#include "common/PbrCompat.h"
 #endif
 #endif
 
