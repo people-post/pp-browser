@@ -3,6 +3,7 @@
 #include "base/platform/desktop/LocalNotifierImpl.h"
 
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include <TargetConditionals.h>
 
@@ -39,7 +40,6 @@ static constexpr const char* kFrameIdPrefix = "frame-msg-";
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound);
 #pragma clang diagnostic pop
-#include "common/PbrCompat.h"
   }
 }
 

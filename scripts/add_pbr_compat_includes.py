@@ -36,8 +36,12 @@ def already_has_include(text: str) -> bool:
     return "common/PbrCompat.h" in text
 
 
+def _is_include(stripped: str) -> bool:
+    return stripped.startswith("#include") or stripped.startswith("#import")
+
+
 def first_include_end(lines: list[str]) -> int:
-    """Index after the first contiguous #include block near the top of the file."""
+    """Index after the first contiguous #include/#import block near the top of the file."""
     insert_at = 0
     in_leading_if = True
     for i, line in enumerate(lines):
@@ -49,16 +53,18 @@ def first_include_end(lines: list[str]) -> int:
             or stripped.startswith("#elif")
             or stripped == ""
         ):
-            if stripped.startswith("#include"):
+            if _is_include(stripped):
                 in_leading_if = False
                 insert_at = i + 1
             continue
-        if stripped.startswith("#include"):
+        if _is_include(stripped):
             insert_at = i + 1
             in_leading_if = False
         elif insert_at > 0 and stripped and not stripped.startswith("#"):
             break
-        elif insert_at > 0 and stripped.startswith("#") and not stripped.startswith("#include"):
+        elif insert_at > 0 and stripped.startswith("#") and not _is_include(stripped):
+            # Stop before #pragma/#endif/etc. so we never insert mid-function
+            # (e.g. after #pragma clang diagnostic inside an ObjC method).
             break
     return insert_at
 
