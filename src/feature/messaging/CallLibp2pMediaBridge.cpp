@@ -771,7 +771,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
           // Belt-and-suspenders if OnMediaKeyReady raced / was missed.
           if (pending_answerer_call_id_ == call_id) {
-            if (auto key = LoadActiveMediaKey(call_id); key) {
+            if (auto deferred_key = LoadActiveMediaKey(call_id); deferred_key) {
               log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
               OnMediaKeyReady(call_id);
               return;

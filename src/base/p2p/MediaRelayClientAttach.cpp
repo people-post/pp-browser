@@ -19,16 +19,16 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   auto result_promise = std::make_shared<std::promise<Roe<MediaRelayAttachResult>>>();
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto runtime = runtime_;
+  auto runtime_keepalive = runtime_;
 
   {
-    std::lock_guard<std::mutex> lock(runtime->mu);
-    runtime->client_attach_settled = settled;
-    runtime->client_attach_promise = result_promise;
-    (void)runtime->ApplyClientLocked(MediaRelayClientEvent::AttachRequested, call_id);
+    std::lock_guard<std::mutex> lock(runtime_keepalive->mu);
+    runtime_keepalive->client_attach_settled = settled;
+    runtime_keepalive->client_attach_promise = result_promise;
+    (void)runtime_keepalive->ApplyClientLocked(MediaRelayClientEvent::AttachRequested, call_id);
   }
 
-  std::weak_ptr<MediaRelayRuntime> weak_runtime = runtime;
+  std::weak_ptr<MediaRelayRuntime> weak_runtime = runtime_keepalive;
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
       [weak_runtime, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), settled,
@@ -50,14 +50,14 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
         PostLibp2pWorker(host, WorkerLane::Normal,
                          [weak_runtime, quote_id, call_id, auth_stub, on_frame = std::move(on_frame),
                           settled, stream_res = std::move(stream_res)]() mutable {
-                           auto runtime = weak_runtime.lock();
-                           if (!runtime) {
+                           auto locked_runtime = weak_runtime.lock();
+                           if (!locked_runtime) {
                              if (stream_res) {
                                stream_res.value().stream->close([](auto&&) {});
                              }
                              return;
                            }
-                           runtime->RunClientAttachOnWorker(quote_id, call_id, auth_stub,
+                           locked_runtime->RunClientAttachOnWorker(quote_id, call_id, auth_stub,
                                                             std::move(on_frame), settled,
                                                             std::move(stream_res));
                          });
@@ -69,51 +69,51 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   for (;;) {
     const auto status = result_future.wait_for(std::chrono::milliseconds(50));
     if (status == std::future_status::ready) {
-      std::lock_guard<std::mutex> lock(runtime->mu);
-      if (runtime->client_attach_settled == settled) {
-        runtime->client_attach_settled.reset();
-        runtime->client_attach_promise.reset();
+      std::lock_guard<std::mutex> lock(runtime_keepalive->mu);
+      if (runtime_keepalive->client_attach_settled == settled) {
+        runtime_keepalive->client_attach_settled.reset();
+        runtime_keepalive->client_attach_promise.reset();
       }
       return result_future.get();
     }
     {
-      std::lock_guard<std::mutex> lock(runtime->mu);
-      if (runtime->ClientPhase() == MediaRelayClientPhase::Attached && runtime->client_stream) {
+      std::lock_guard<std::mutex> lock(runtime_keepalive->mu);
+      if (runtime_keepalive->ClientPhase() == MediaRelayClientPhase::Attached && runtime_keepalive->client_stream) {
         settled->store(true, std::memory_order_release);
-        if (runtime->client_attach_settled == settled) {
-          runtime->client_attach_settled.reset();
-          runtime->client_attach_promise.reset();
+        if (runtime_keepalive->client_attach_settled == settled) {
+          runtime_keepalive->client_attach_settled.reset();
+          runtime_keepalive->client_attach_promise.reset();
         }
         MediaRelayAttachResult out;
         out.ok = true;
-        out.session_token = runtime->client_session_token;
+        out.session_token = runtime_keepalive->client_session_token;
         return out;
       }
     }
     if (std::chrono::steady_clock::now() >= deadline) {
       settled->exchange(true);
       {
-        std::lock_guard<std::mutex> lock(runtime->mu);
-        if (runtime->client_attach_settled == settled) {
-          runtime->client_attach_settled.reset();
-          runtime->client_attach_promise.reset();
+        std::lock_guard<std::mutex> lock(runtime_keepalive->mu);
+        if (runtime_keepalive->client_attach_settled == settled) {
+          runtime_keepalive->client_attach_settled.reset();
+          runtime_keepalive->client_attach_promise.reset();
         }
-        if (runtime->ClientPhase() == MediaRelayClientPhase::Attached && runtime->client_stream) {
+        if (runtime_keepalive->ClientPhase() == MediaRelayClientPhase::Attached && runtime_keepalive->client_stream) {
           MediaRelayAttachResult out;
           out.ok = true;
-          out.session_token = runtime->client_session_token;
+          out.session_token = runtime_keepalive->client_session_token;
           return out;
         }
         // Drop any late-installed stream from a racing worker (should be rare after settled check).
-        if (runtime->ApplyClientLocked(MediaRelayClientEvent::AttachTimeout, call_id)) {
-          runtime->StopClientDuplexLocked();
-          if (runtime->client_stream) {
-            runtime->client_stream->close([](auto&&) {});
-            runtime->client_stream.reset();
+        if (runtime_keepalive->ApplyClientLocked(MediaRelayClientEvent::AttachTimeout, call_id)) {
+          runtime_keepalive->StopClientDuplexLocked();
+          if (runtime_keepalive->client_stream) {
+            runtime_keepalive->client_stream->close([](auto&&) {});
+            runtime_keepalive->client_stream.reset();
           }
-          runtime->client_session_token.clear();
-          runtime->client_on_frame = nullptr;
-          runtime->client_subscriptions.clear();
+          runtime_keepalive->client_session_token.clear();
+          runtime_keepalive->client_on_frame = nullptr;
+          runtime_keepalive->client_subscriptions.clear();
         }
       }
       return Error(std::string("media-relay attach timed out (hop=") + hop_peer_key + ")");
