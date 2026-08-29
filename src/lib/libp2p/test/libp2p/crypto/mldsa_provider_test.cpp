@@ -15,7 +15,6 @@
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
-#include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/peer/peer_id.hpp>
 
 using namespace libp2p::crypto;
@@ -26,11 +25,10 @@ namespace {
     auto ed25519 = std::make_shared<ed25519::Ed25519ProviderImpl>();
     auto rsa = std::make_shared<rsa::RsaProviderImpl>();
     auto ecdsa = std::make_shared<ecdsa::EcdsaProviderImpl>();
-    auto secp = std::make_shared<secp256k1::Secp256k1ProviderImpl>(csprng);
     auto hmac = std::make_shared<hmac::HmacProviderImpl>();
     auto mldsa = std::make_shared<mldsa::MlDsaProviderImpl>();
     return std::make_shared<CryptoProviderImpl>(
-        csprng, ed25519, rsa, ecdsa, secp, hmac, mldsa);
+        csprng, ed25519, rsa, ecdsa, hmac, mldsa);
   }
 }  // namespace
 

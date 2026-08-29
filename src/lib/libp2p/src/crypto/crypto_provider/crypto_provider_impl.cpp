@@ -23,7 +23,6 @@
 #include <libp2p/crypto/mldsa_provider.hpp>
 #include <libp2p/crypto/random_generator.hpp>
 #include <libp2p/crypto/rsa_provider.hpp>
-#include <libp2p/crypto/secp256k1_provider.hpp>
 #include <span>
 
 using libp2p::common::FinalAction;
@@ -45,14 +44,12 @@ namespace libp2p::crypto {
       std::shared_ptr<ed25519::Ed25519Provider> ed25519_provider,
       std::shared_ptr<rsa::RsaProvider> rsa_provider,
       std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider,
-      std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider,
       std::shared_ptr<hmac::HmacProvider> hmac_provider,
       std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider)
       : random_provider_{std::move(random_provider)},
         ed25519_provider_{std::move(ed25519_provider)},
         rsa_provider_{std::move(rsa_provider)},
         ecdsa_provider_{std::move(ecdsa_provider)},
-        secp256k1_provider_{std::move(secp256k1_provider)},
         hmac_provider_{std::move(hmac_provider)},
         mldsa_provider_{std::move(mldsa_provider)} {
     initialize();
@@ -80,7 +77,7 @@ namespace libp2p::crypto {
       case Key::Type::Ed25519:
         return generateEd25519();
       case Key::Type::Secp256k1:
-        return generateSecp256k1();
+        return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
       case Key::Type::ECDSA:
         return generateEcdsa();
       case Key::Type::MlDsa65:
@@ -118,21 +115,6 @@ namespace libp2p::crypto {
     return KeyPair{.publicKey = {{.type = Key::Type::Ed25519,
                                   .data = {pub.begin(), pub.end()}}},
                    .privateKey = {{.type = Key::Type::Ed25519,
-                                   .data = {priv.begin(), priv.end()}}}};
-  }
-
-  outcome::result<KeyPair> CryptoProviderImpl::generateSecp256k1() const {
-    auto secp_res = secp256k1_provider_->generate();
-    if (!secp_res) {
-      return secp_res.as_failure();
-    }
-    auto secp = std::move(secp_res).value();
-
-    auto &&pub = secp.public_key;
-    auto &&priv = secp.private_key;
-    return KeyPair{.publicKey = {{.type = Key::Type::Secp256k1,
-                                  .data = {pub.begin(), pub.end()}}},
-                   .privateKey = {{.type = Key::Type::Secp256k1,
                                    .data = {priv.begin(), priv.end()}}}};
   }
 
@@ -180,7 +162,7 @@ namespace libp2p::crypto {
       case Key::Type::Ed25519:
         return deriveEd25519(private_key);
       case Key::Type::Secp256k1:
-        return deriveSecp256k1(private_key);
+        return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
       case Key::Type::ECDSA:
         return deriveEcdsa(private_key);
       case Key::Type::MlDsa65:
@@ -217,19 +199,6 @@ namespace libp2p::crypto {
     return PublicKey{{key.type, {ed_pub.begin(), ed_pub.end()}}};
   }
 
-  outcome::result<PublicKey> CryptoProviderImpl::deriveSecp256k1(
-      const PrivateKey &key) const {
-    secp256k1::PrivateKey private_key;
-    std::copy_n(key.data.begin(), private_key.size(), private_key.begin());
-    auto secp_pub_res = secp256k1_provider_->derive(private_key);
-    if (!secp_pub_res) {
-      return secp_pub_res.as_failure();
-    }
-    auto secp_pub = std::move(secp_pub_res).value();
-
-    return PublicKey{{key.type, {secp_pub.begin(), secp_pub.end()}}};
-  }
-
   outcome::result<PublicKey> CryptoProviderImpl::deriveEcdsa(
       const PrivateKey &key) const {
     ecdsa::PrivateKey private_key;
@@ -257,7 +226,7 @@ namespace libp2p::crypto {
       case Key::Type::Ed25519:
         return signEd25519(message, private_key);
       case Key::Type::Secp256k1:
-        return signSecp256k1(message, private_key);
+        return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
       case Key::Type::ECDSA:
         return signEcdsa(message, private_key);
       case Key::Type::MlDsa65:
@@ -295,18 +264,6 @@ namespace libp2p::crypto {
     return {signature.begin(), signature.end()};
   }
 
-  outcome::result<Buffer> CryptoProviderImpl::signSecp256k1(
-      BytesIn message, const PrivateKey &private_key) const {
-    secp256k1::PrivateKey priv_key;
-    std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    auto signature_res = secp256k1_provider_->sign(message, priv_key);
-    if (!signature_res) {
-      return signature_res.error();
-    }
-    auto signature = std::move(signature_res).value();
-    return {signature.begin(), signature.end()};
-  }
-
   outcome::result<Buffer> CryptoProviderImpl::signEcdsa(
       BytesIn message, const PrivateKey &private_key) const {
     ecdsa::PrivateKey priv_key;
@@ -333,7 +290,7 @@ namespace libp2p::crypto {
       case Key::Type::Ed25519:
         return verifyEd25519(message, signature, public_key);
       case Key::Type::Secp256k1:
-        return verifySecp256k1(message, signature, public_key);
+        return KeyGeneratorError::UNSUPPORTED_KEY_TYPE;
       case Key::Type::ECDSA:
         return verifyEcdsa(message, signature, public_key);
       case Key::Type::MlDsa65:
@@ -366,17 +323,6 @@ namespace libp2p::crypto {
     std::copy_n(signature.begin(), ed_sig.size(), ed_sig.begin());
 
     return ed25519_provider_->verify(message, ed_sig, ed_pub);
-  }
-
-  outcome::result<bool> CryptoProviderImpl::verifySecp256k1(
-      BytesIn message, BytesIn signature, const PublicKey &public_key) const {
-    secp256k1::PublicKey secp_pub;
-    std::copy_n(public_key.data.begin(), secp_pub.size(), secp_pub.begin());
-
-    ecdsa::Signature secp_sig;
-    secp_sig.insert(secp_sig.end(), signature.begin(), signature.end());
-
-    return secp256k1_provider_->verify(message, secp_sig, secp_pub);
   }
 
   outcome::result<bool> CryptoProviderImpl::verifyEcdsa(

@@ -81,15 +81,6 @@ target_link_libraries(rsa_provider_test
     p2p_rsa_provider
     )
 
-addtest(secp256k1_test
-    secp256k1_test.cpp
-    )
-target_link_libraries(secp256k1_test
-    fmt::fmt
-    p2p_secp256k1_provider
-    p2p_multibase_codec
-    p2p_random_generator
-    )
 
 addtest(x25519_test
     x25519_provider_test.cpp

@@ -125,15 +125,6 @@ if(NOT TARGET c-ares::cares)
   endif()
 endif()
 
-# --- libsecp256k1 ---
-set(SECP256K1_ENABLE_MODULE_ECDH OFF CACHE BOOL "" FORCE)
-set(SECP256K1_ENABLE_MODULE_RECOVERY ON CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_BENCHMARK OFF CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_EXHAUSTIVE_TESTS OFF CACHE BOOL "" FORCE)
-set(SECP256K1_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(libsecp256k1)
-pp_libp2p_alias(secp256k1 libsecp256k1::secp256k1)
 
 # --- standalone Outcome (before qtils) ---
 pp_libp2p_add_vendored(outcome)

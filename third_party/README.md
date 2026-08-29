@@ -26,7 +26,6 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | `asio/` | [chriskohlhoff/asio](https://github.com/chriskohlhoff/asio) 1.34.0 | Standalone Asio (`ASIO_STANDALONE`) |
 | `outcome/` | ned14/outcome v2.2.15 | Standalone Outcome (via `qtils/outcome.hpp`) |
 | `lsquic/` | [qdrvm/lsquic](https://github.com/qdrvm/lsquic) 4.0.9-qdrvm-1 | Patched at import |
-| `libsecp256k1/` | qdrvm/libsecp256k1 0.5.1 | |
 | `c-ares/` | hunter-packages/c-ares 1.14.0-p0 | |
 | `fmt/` | fmtlib/fmt 10.1.1 | |
 | `yaml-cpp/` | hunter-packages/yaml-cpp 0.6.2 | |

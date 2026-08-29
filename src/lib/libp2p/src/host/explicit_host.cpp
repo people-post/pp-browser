@@ -17,7 +17,6 @@
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
-#include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/event/bus.hpp>
 #include <libp2p/host/basic_host/basic_host.hpp>
 #include <libp2p/muxer/mplex.hpp>
@@ -66,14 +65,12 @@ namespace libp2p {
         std::make_shared<crypto::ed25519::Ed25519ProviderImpl>();
     auto rsa = std::make_shared<crypto::rsa::RsaProviderImpl>();
     auto ecdsa = std::make_shared<crypto::ecdsa::EcdsaProviderImpl>();
-    auto secp256k1 =
-        std::make_shared<crypto::secp256k1::Secp256k1ProviderImpl>(csprng);
     auto hmac = std::make_shared<crypto::hmac::HmacProviderImpl>();
     auto mldsa = std::make_shared<crypto::mldsa::MlDsaProviderImpl>();
 
     std::shared_ptr<crypto::CryptoProvider> crypto_provider =
         std::make_shared<crypto::CryptoProviderImpl>(
-            csprng, ed25519, rsa, ecdsa, secp256k1, hmac, mldsa);
+            csprng, ed25519, rsa, ecdsa, hmac, mldsa);
 
     if (!key_pair) {
       // Product Noise path uses ML-DSA-65. TLS/Quic still hard-code Ed25519
