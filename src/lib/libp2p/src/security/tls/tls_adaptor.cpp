@@ -20,7 +20,7 @@ namespace libp2p::security {
 
   TlsAdaptor::TlsAdaptor(
       std::shared_ptr<peer::IdentityManager> idmgr,
-      std::shared_ptr<boost::asio::io_context> io_context,
+      std::shared_ptr<asio::io_context> io_context,
       const SslContext &ssl_context,
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller)
       : idmgr_(std::move(idmgr)),

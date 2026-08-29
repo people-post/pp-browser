@@ -8,7 +8,7 @@
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/connection/stream_and_protocol.hpp>
 
-#include <boost/asio/steady_timer.hpp>
+#include <asio/steady_timer.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -109,7 +109,7 @@ private:
   std::shared_ptr<Stream> stream;
   std::shared_ptr<Stream> handshake_stream;
   std::shared_ptr<std::atomic<bool>> handshake_cancelled;
-  std::shared_ptr<boost::asio::steady_timer> handshake_timer;
+  std::shared_ptr<asio::steady_timer> handshake_timer;
   int handshake_timeout_ms = 15000;
   CallMediaDirectConnectParams active_params;
   CallMediaDirectCallbacks callbacks;

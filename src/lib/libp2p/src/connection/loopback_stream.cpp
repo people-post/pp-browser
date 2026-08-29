@@ -10,13 +10,13 @@ namespace libp2p::connection {
 
   namespace {
     template <typename Callback>
-    void deferCallback(boost::asio::io_context &ctx,
+    void deferCallback(asio::io_context &ctx,
                        std::weak_ptr<LoopbackStream> wptr,
                        Callback cb,
                        outcome::result<size_t> arg) {
       // defers callback to the next event loop cycle,
       // cb will be called iff Loopbackstream is still exists
-      boost::asio::post(
+      asio::post(
           ctx,
           [wptr{std::move(wptr)}, cb{std::move(cb)}, arg{std::move(arg)}]() {
             if (not wptr.expired()) {
@@ -28,7 +28,7 @@ namespace libp2p::connection {
 
   LoopbackStream::LoopbackStream(
       libp2p::peer::PeerInfo own_peer_info,
-      std::shared_ptr<boost::asio::io_context> io_context)
+      std::shared_ptr<asio::io_context> io_context)
       : own_peer_info_(std::move(own_peer_info)),
         io_context_{std::move(io_context)} {}
 
@@ -86,9 +86,9 @@ namespace libp2p::connection {
       return deferWriteCallback(Error::STREAM_INVALID_ARGUMENT, std::move(cb));
     }
 
-    if (boost::asio::buffer_copy(
+    if (asio::buffer_copy(
             buffer_.prepare(in.size()),
-            boost::asio::const_buffer(in.data(), in.size()))
+            asio::const_buffer(in.data(), in.size()))
         != in.size()) {
       return deferWriteCallback(Error::STREAM_INTERNAL_ERROR, std::move(cb));
     }
@@ -131,7 +131,7 @@ namespace libp2p::connection {
       if (self->buffer_.size() > 0) {
         auto to_read = std::min(self->buffer_.size(), out.size());
 
-        if (boost::asio::buffer_copy(boost::asio::buffer(out.data(), to_read),
+        if (asio::buffer_copy(asio::buffer(out.data(), to_read),
                                      self->buffer_.data(),
                                      to_read)
             != to_read) {

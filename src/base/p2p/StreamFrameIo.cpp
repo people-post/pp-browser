@@ -45,7 +45,7 @@ Roe<void> AwaitExactRead(std::future<outcome::result<void>>& future,
   return {};
 }
 
-void CancelSteadyTimer(std::shared_ptr<boost::asio::steady_timer>& timer,
+void CancelSteadyTimer(std::shared_ptr<asio::steady_timer>& timer,
                        const std::shared_ptr<std::atomic<uint64_t>>& generation) {
   if (generation) {
     generation->fetch_add(1, std::memory_order_acq_rel);
@@ -187,12 +187,12 @@ void AsyncLengthPrefixedReader::ArmReadDeadline() {
         << "async frame read_timeout ignored (timer_executor unset)";
     return;
   }
-  auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
+  auto timer = std::make_shared<asio::steady_timer>(config_.timer_executor);
   read_timer_ = timer;
   const uint64_t gen = deadline_generation_->load(std::memory_order_acquire);
   timer->expires_after(config_.read_timeout);
   auto self = shared_from_this();
-  timer->async_wait([self, timer, gen](const boost::system::error_code& ec) {
+  timer->async_wait([self, timer, gen](const std::error_code& ec) {
     if (ec) {
       return;
     }
@@ -422,12 +422,12 @@ void DuplexFrameSession::ArmReadDeadline() {
   if (!config_.timer_executor) {
     return;
   }
-  auto timer = std::make_shared<boost::asio::steady_timer>(config_.timer_executor);
+  auto timer = std::make_shared<asio::steady_timer>(config_.timer_executor);
   read_timer_ = timer;
   const uint64_t gen = deadline_generation_->load(std::memory_order_acquire);
   timer->expires_after(config_.read_timeout);
   auto self = shared_from_this();
-  timer->async_wait([self, timer, gen](const boost::system::error_code& ec) {
+  timer->async_wait([self, timer, gen](const std::error_code& ec) {
     if (ec) {
       return;
     }

@@ -25,6 +25,7 @@ target_link_libraries(pp-node PRIVATE
   pp_base_runtime_core
   pp_base_error
   pp_common
+  Asio::asio
   Threads::Threads
   sodium
 )

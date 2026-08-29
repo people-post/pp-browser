@@ -10,7 +10,8 @@
 #include <deque>
 #include <mutex>
 
-#include <boost/asio/streambuf.hpp>
+#include <asio/streambuf.hpp>
+#include <system_error>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/log/logger.hpp>
 
@@ -95,7 +96,7 @@ namespace libp2p::connection {
     log::Logger log_ = log::createLogger("MplexStream");
 
     /// data, received for this stream, comes here
-    boost::asio::streambuf read_buffer_;
+    asio::streambuf read_buffer_;
 
     std::optional<Reading> reading_;
 

@@ -27,8 +27,8 @@ using ::testing::StrictMock;
 struct TcpListenerTest : public ::testing::Test {
   using CapConnResult = outcome::result<std::shared_ptr<CapableConnection>>;
 
-  std::shared_ptr<boost::asio::io_context> context =
-      std::make_shared<boost::asio::io_context>();
+  std::shared_ptr<asio::io_context> context =
+      std::make_shared<asio::io_context>();
 
   std::shared_ptr<StrictMock<UpgraderMock>> upgrader =
       std::make_shared<StrictMock<UpgraderMock>>();
@@ -55,7 +55,7 @@ struct TcpListenerTest : public ::testing::Test {
 TEST_F(TcpListenerTest, ListenCloseListen) {
   EXPECT_CALL(cb, Call(_)).WillRepeatedly(Invoke([](CapConnResult c) {
     if (!c) {
-      ASSERT_EQ(c.error().value(), (int)boost::asio::error::operation_aborted);
+      ASSERT_EQ(c.error().value(), (int)asio::error::operation_aborted);
     } else {
       ADD_FAILURE();
     }
@@ -83,7 +83,7 @@ TEST_F(TcpListenerTest, DoubleClose) {
   EXPECT_CALL(cb, Call(_)).WillOnce(Invoke([](CapConnResult c) {
     if (!c) {
       if (!c) {
-        ASSERT_EQ(c.error().value(), (int)boost::asio::error::operation_aborted);
+        ASSERT_EQ(c.error().value(), (int)asio::error::operation_aborted);
       } else {
         ADD_FAILURE();
       }

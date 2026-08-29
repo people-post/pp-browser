@@ -59,9 +59,9 @@ int main(int argc, char *argv[]) {
 
   // create io_context - in fact, thing, which allows us to execute async
   // operations
-  auto context = injector.create<std::shared_ptr<boost::asio::io_context>>();
+  auto context = injector.create<std::shared_ptr<asio::io_context>>();
   // the guard to preserve context's running state when tasks queue is empty
-  auto work_guard = boost::asio::make_work_guard(*context);
+  auto work_guard = asio::make_work_guard(*context);
   post(*context, [&] {
     ares.resolveTxt(
         "_dnsaddr.bootstrap.libp2p.io",
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
   // run the IO context
   try {
     context->run();
-  } catch (const boost::system::error_code &ec) {
+  } catch (const std::error_code &ec) {
     std::cout << "Example cannot run: " << ec.message() << std::endl;
   } catch (...) {
     std::cout << "Unknown error happened" << std::endl;

@@ -100,7 +100,7 @@ int main(int argc, char *argv[]) {
 
   // create io_context - in fact, thing, which allows us to execute async
   // operations
-  auto context = injector.create<std::shared_ptr<boost::asio::io_context>>();
+  auto context = injector.create<std::shared_ptr<asio::io_context>>();
   auto sch = injector.create<std::shared_ptr<libp2p::basic::Scheduler>>();
 
   post(

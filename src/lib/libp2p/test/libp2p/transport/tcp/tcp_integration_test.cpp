@@ -97,7 +97,7 @@ namespace {
  * @then get error
  */
 TEST(TCP, TwoListenersCantBindOnSamePort) {
-  auto context = std::make_shared<boost::asio::io_context>(1);
+  auto context = std::make_shared<asio::io_context>(1);
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
@@ -116,7 +116,7 @@ TEST(TCP, TwoListenersCantBindOnSamePort) {
   std::cout << "listener 2 starting...\n";
   auto r = listener2->listen(ma);
   if (!r) {
-    ASSERT_EQ(r.error().value(), (int)boost::asio::error::address_in_use);
+    ASSERT_EQ(r.error().value(), (int)asio::error::address_in_use);
   } else {
     ADD_FAILURE();
   }
@@ -136,7 +136,7 @@ TEST(TCP, SingleListenerCanAcceptManyClients) {
   size_t counter = 0;  // number of answers
   auto ma = "/ip4/127.0.0.1/tcp/40003"_multiaddr;
 
-  auto context = std::make_shared<boost::asio::io_context>();
+  auto context = std::make_shared<asio::io_context>();
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
@@ -167,7 +167,7 @@ TEST(TCP, SingleListenerCanAcceptManyClients) {
   std::vector<std::thread> clients(kClients);
   std::generate(clients.begin(), clients.end(), [&]() {
     return std::thread([&]() {
-      auto context = std::make_shared<boost::asio::io_context>();
+      auto context = std::make_shared<asio::io_context>();
       auto upgrader = makeUpgrader();
       auto transport = std::make_shared<TcpTransport>(
           context, mux_config, std::move(upgrader));
@@ -216,14 +216,14 @@ TEST(TCP, SingleListenerCanAcceptManyClients) {
  * @then get connection_refused error
  */
 TEST(TCP, DialToNoServer) {
-  auto context = std::make_shared<boost::asio::io_context>();
+  auto context = std::make_shared<asio::io_context>();
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
   auto ma = "/ip4/127.0.0.1/tcp/40003"_multiaddr;
 
   transport->dial(testutil::randomPeerId(), ma, [context](auto &&rc) {
-    ASSERT_OUTCOME_ERROR(rc, boost::asio::error::connection_refused);
+    ASSERT_OUTCOME_ERROR(rc, asio::error::connection_refused);
     context->stop();
   });
 
@@ -239,7 +239,7 @@ TEST(TCP, DialToNoServer) {
  * @then server gets EOF
  */
 TEST(TCP, ClientClosesConnection) {
-  auto context = std::make_shared<boost::asio::io_context>(1);
+  auto context = std::make_shared<asio::io_context>(1);
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
@@ -249,7 +249,7 @@ TEST(TCP, ClientClosesConnection) {
 
     auto buf = std::make_shared<std::vector<uint8_t>>(100, 0);
     conn->readSome(*buf, [conn, buf](auto &&res) {
-      ASSERT_OUTCOME_ERROR(res, boost::asio::error::eof);
+      ASSERT_OUTCOME_ERROR(res, asio::error::eof);
     });
   });
 
@@ -272,7 +272,7 @@ TEST(TCP, ClientClosesConnection) {
  * @then client gets EOF
  */
 TEST(TCP, ServerClosesConnection) {
-  auto context = std::make_shared<boost::asio::io_context>(1);
+  auto context = std::make_shared<asio::io_context>(1);
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
@@ -291,7 +291,7 @@ TEST(TCP, ServerClosesConnection) {
     EXPECT_TRUE(conn->isInitiator());
     auto buf = std::make_shared<std::vector<uint8_t>>(100, 0);
     conn->readSome(*buf, [conn, buf](auto &&res) {
-      ASSERT_OUTCOME_ERROR(res, boost::asio::error::eof);
+      ASSERT_OUTCOME_ERROR(res, asio::error::eof);
     });
   });
 
@@ -307,7 +307,7 @@ TEST(TCP, OneTransportServerHandlesManyClients) {
   constexpr int kSize = 1500;
   size_t counter = 0;  // number of answers
 
-  auto context = std::make_shared<boost::asio::io_context>(1);
+  auto context = std::make_shared<asio::io_context>(1);
   auto upgrader = makeUpgrader();
   auto transport =
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));

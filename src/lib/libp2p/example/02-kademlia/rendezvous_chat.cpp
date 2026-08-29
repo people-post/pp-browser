@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
 
     auto ma = libp2p::multi::Multiaddress::create(argv[1]).value();  // NOLINT
 
-    auto io = injector.create<std::shared_ptr<boost::asio::io_context>>();
+    auto io = injector.create<std::shared_ptr<asio::io_context>>();
 
     auto host = injector.create<std::shared_ptr<libp2p::Host>>();
 
@@ -346,13 +346,13 @@ int main(int argc, char *argv[]) {
       });
     });
 
-    boost::asio::posix::stream_descriptor in(*io, ::dup(STDIN_FILENO));
+    asio::posix::stream_descriptor in(*io, ::dup(STDIN_FILENO));
     std::array<uint8_t, 1 << 12> buffer{};
 
     // Asynchronous transmit data from standard input to peers, that's privided
     // same content id
     std::function<void()> read_from_console = [&] {
-      in.async_read_some(boost::asio::buffer(buffer), [&](auto ec, auto size) {
+      in.async_read_some(asio::buffer(buffer), [&](auto ec, auto size) {
         auto i = std::find_if(buffer.begin(),
                               buffer.begin() + size + 1,
                               [](auto c) { return c == '\n'; });
@@ -370,9 +370,9 @@ int main(int argc, char *argv[]) {
     };
     read_from_console();
 
-    boost::asio::signal_set signals(*io, SIGINT, SIGTERM);
+    asio::signal_set signals(*io, SIGINT, SIGTERM);
     signals.async_wait(
-        [&io](const boost::system::error_code &, int) { io->stop(); });
+        [&io](const std::error_code &, int) { io->stop(); });
     io->run();
   } catch (const std::exception &e) {
     std::cerr << "Exception: " << e.what() << std::endl;

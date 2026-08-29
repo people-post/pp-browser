@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
   utility::setupLoggers(options->log_level);
 
   // create asio context
-  auto io = injector.create<std::shared_ptr<boost::asio::io_context>>();
+  auto io = injector.create<std::shared_ptr<asio::io_context>>();
 
   // host is our local libp2p node
   auto host = injector.create<std::shared_ptr<libp2p::Host>>();
@@ -169,9 +169,9 @@ int main(int argc, char *argv[]) {
       });
 
   // gracefully shutdown on signal
-  boost::asio::signal_set signals(*io, SIGINT, SIGTERM);
+  asio::signal_set signals(*io, SIGINT, SIGTERM);
   signals.async_wait(
-      [&io](const boost::system::error_code &, int) { io->stop(); });
+      [&io](const std::error_code &, int) { io->stop(); });
 
   // run event loop
   io->run();

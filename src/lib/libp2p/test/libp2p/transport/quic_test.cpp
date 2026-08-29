@@ -12,7 +12,7 @@
 
 #include "testutil/prepare_loggers.hpp"
 
-using boost::asio::io_context;
+using asio::io_context;
 using libp2p::Host;
 using libp2p::Multiaddress;
 using libp2p::StreamAndProtocol;

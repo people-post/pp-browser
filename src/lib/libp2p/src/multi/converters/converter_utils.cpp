@@ -9,8 +9,8 @@
 #include <list>
 #include <optional>
 
-#include <boost/asio/ip/address_v4.hpp>
-#include <boost/asio/ip/address_v6.hpp>
+#include <asio/ip/address_v4.hpp>
+#include <asio/ip/address_v6.hpp>
 #include <libp2p/common/split.hpp>
 #include <libp2p/common/types.hpp>
 #include <libp2p/multi/converters/conversion_error.hpp>
@@ -280,7 +280,7 @@ namespace libp2p::multi::converters {
           auto data = data_res.value();
           std::copy(data.begin(), data.end(), arr.begin());
           results += "/";
-          results += boost::asio::ip::make_address_v4(arr).to_string();
+          results += asio::ip::make_address_v4(arr).to_string();
           break;
         }
 
@@ -293,7 +293,7 @@ namespace libp2p::multi::converters {
           auto data = data_res.value();
           std::copy(data.begin(), data.end(), arr.begin());
           results += "/";
-          results += boost::asio::ip::make_address_v6(arr).to_string();
+          results += asio::ip::make_address_v6(arr).to_string();
           break;
         }
 

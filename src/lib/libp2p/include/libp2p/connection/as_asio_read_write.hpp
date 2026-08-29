@@ -6,15 +6,16 @@
 
 #pragma once
 
-#include <boost/asio/detail/buffer_sequence_adapter.hpp>
-#include <boost/asio/io_context.hpp>
+#include <asio/detail/buffer_sequence_adapter.hpp>
+#include <system_error>
+#include <asio/io_context.hpp>
 #include <libp2p/common/asio_buffer.hpp>
 #include <libp2p/common/shared_fn.hpp>
 #include <libp2p/connection/layer_connection.hpp>
 
 namespace libp2p {
   struct AsAsioReadWrite {
-    struct ErrorCategory : boost::system::error_category {
+    struct ErrorCategory : std::error_category {
       const char *name() const noexcept override {
         return "libp2p::AsAsioReadWrite::ErrorCategory";
       }
@@ -28,11 +29,11 @@ namespace libp2p {
       }
     };
 
-    static boost::system::error_code error() {
+    static std::error_code error() {
       return {1, ErrorCategory::get()};
     }
 
-    AsAsioReadWrite(std::shared_ptr<boost::asio::io_context> io,
+    AsAsioReadWrite(std::shared_ptr<asio::io_context> io,
                     std::shared_ptr<connection::LayerConnection> impl)
         : io{std::move(io)}, impl{std::move(impl)} {}
 
@@ -44,7 +45,7 @@ namespace libp2p {
       return *this;
     }
 
-    using executor_type = boost::asio::io_context::executor_type;
+    using executor_type = asio::io_context::executor_type;
     executor_type get_executor() {
       return io->get_executor();
     }
@@ -54,7 +55,7 @@ namespace libp2p {
       return SharedFn{
           [cb{std::forward<Cb>(cb)}](outcome::result<size_t> _r) mutable {
             if (_r) {
-              cb(boost::system::error_code{}, _r.value());
+              cb(std::error_code{}, _r.value());
             } else {
               cb(error(), 0);
             }
@@ -63,23 +64,23 @@ namespace libp2p {
 
     template <typename MutableBufferSequence, typename Cb>
     void async_read_some(const MutableBufferSequence &buffers, Cb &&cb) {
-      boost::asio::mutable_buffer buffer{
-          boost::asio::detail::buffer_sequence_adapter<
-              boost::asio::mutable_buffer,
+      asio::mutable_buffer buffer{
+          asio::detail::buffer_sequence_adapter<
+              asio::mutable_buffer,
               MutableBufferSequence>::first(buffers)};
       impl->readSome(asioBuffer(buffer), wrapCb(std::forward<Cb>(cb)));
     }
 
     template <typename ConstBufferSequence, typename Cb>
     void async_write_some(const ConstBufferSequence &buffers, Cb &&cb) {
-      boost::asio::const_buffer buffer{
-          boost::asio::detail::buffer_sequence_adapter<
-              boost::asio::const_buffer,
+      asio::const_buffer buffer{
+          asio::detail::buffer_sequence_adapter<
+              asio::const_buffer,
               ConstBufferSequence>::first(buffers)};
       impl->writeSome(asioBuffer(buffer), wrapCb(std::forward<Cb>(cb)));
     }
 
-    std::shared_ptr<boost::asio::io_context> io;
+    std::shared_ptr<asio::io_context> io;
     std::shared_ptr<connection::LayerConnection> impl;
   };
 }  // namespace libp2p

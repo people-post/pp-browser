@@ -9,8 +9,9 @@
 #include <optional>
 #include <memory>
 
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
+#include <asio.hpp>
+#include <system_error>
+#include <asio/ssl.hpp>
 
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/as_asio_read_write.hpp>
@@ -28,7 +29,7 @@ namespace libp2p::connection {
     TlsConnection(const TlsConnection &) = delete;
     TlsConnection &operator=(const TlsConnection &) = delete;
 
-    using ssl_socket_t = boost::asio::ssl::stream<AsAsioReadWrite>;
+    using ssl_socket_t = asio::ssl::stream<AsAsioReadWrite>;
 
     /// Upgraded connection passed to this callback
     using HandshakeCallback = std::function<void(
@@ -42,9 +43,9 @@ namespace libp2p::connection {
     /// \param remote_peer Expected peer id of remote peer, has value for
     /// outbound connections
     TlsConnection(std::shared_ptr<LayerConnection> original_connection,
-                  std::shared_ptr<boost::asio::ssl::context> ssl_context,
+                  std::shared_ptr<asio::ssl::context> ssl_context,
                   const peer::IdentityManager &idmgr,
-                  std::shared_ptr<boost::asio::io_context> io_context,
+                  std::shared_ptr<asio::io_context> io_context,
                   std::optional<peer::PeerId> remote_peer);
 
     /// Performs async handshake and passes its result into callback. This fn is
@@ -101,7 +102,7 @@ namespace libp2p::connection {
     /// Async handshake callback. Performs libp2p-specific verification and
     /// extraction of remote peer's identity fields
     void onHandshakeResult(
-        const boost::system::error_code &error,
+        const std::error_code &error,
         const HandshakeCallback &cb,
         const crypto::marshaller::KeyMarshaller &key_marshaller);
 
@@ -112,7 +113,7 @@ namespace libp2p::connection {
     std::shared_ptr<LayerConnection> original_connection_;
 
     /// SSL context, shared among connections
-    std::shared_ptr<boost::asio::ssl::context> ssl_context_;
+    std::shared_ptr<asio::ssl::context> ssl_context_;
 
     /// SSL stream
     ssl_socket_t socket_;

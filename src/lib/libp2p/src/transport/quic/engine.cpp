@@ -17,7 +17,8 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #endif
-#include <boost/asio/ssl/context.hpp>
+#include <asio/ssl/context.hpp>
+#include <system_error>
 #include <vector>
 #include <cstring>
 #include <libp2p/common/asio_buffer.hpp>
@@ -35,24 +36,24 @@
 
 namespace libp2p::transport::lsquic {
   namespace {
-    outcome::result<boost::asio::ip::udp::endpoint> udpEndpointFromSockaddr(
+    outcome::result<asio::ip::udp::endpoint> udpEndpointFromSockaddr(
         const sockaddr *addr) {
       if (addr == nullptr) {
         return QuicError::HANDSHAKE_FAILED;
       }
       if (addr->sa_family == AF_INET) {
         const auto *v4 = reinterpret_cast<const sockaddr_in *>(addr);
-        return boost::asio::ip::udp::endpoint{
-            boost::asio::ip::make_address_v4(ntohl(v4->sin_addr.s_addr)),
+        return asio::ip::udp::endpoint{
+            asio::ip::make_address_v4(ntohl(v4->sin_addr.s_addr)),
             ntohs(v4->sin_port)};
       }
       if (addr->sa_family == AF_INET6) {
         const auto *v6 = reinterpret_cast<const sockaddr_in6 *>(addr);
-        boost::asio::ip::address_v6::bytes_type bytes{};
+        asio::ip::address_v6::bytes_type bytes{};
         static_assert(bytes.size() == 16);
         std::memcpy(bytes.data(), &v6->sin6_addr, bytes.size());
-        return boost::asio::ip::udp::endpoint{
-            boost::asio::ip::address_v6{bytes, v6->sin6_scope_id},
+        return asio::ip::udp::endpoint{
+            asio::ip::address_v6{bytes, v6->sin6_scope_id},
             ntohs(v6->sin6_port)};
       }
       return QuicError::HANDSHAKE_FAILED;
@@ -77,12 +78,12 @@ namespace libp2p::transport::lsquic {
     }
   }  // namespace
 
-  Engine::Engine(std::shared_ptr<boost::asio::io_context> io_context,
-                 std::shared_ptr<boost::asio::ssl::context> ssl_context,
+  Engine::Engine(std::shared_ptr<asio::io_context> io_context,
+                 std::shared_ptr<asio::ssl::context> ssl_context,
                  const muxer::MuxedConnectionConfig &mux_config,
                  PeerId local_peer,
                  std::shared_ptr<crypto::marshaller::KeyMarshaller> key_codec,
-                 boost::asio::ip::udp::socket &&socket,
+                 asio::ip::udp::socket &&socket,
                  bool client)
       : io_context_{std::move(io_context)},
         ssl_context_{std::move(ssl_context)},
@@ -93,7 +94,7 @@ namespace libp2p::transport::lsquic {
         socket_local_{socket_.local_endpoint()},
         local_{detail::makeQuicAddr(socket_local_).value()} {
     socket_.non_blocking(true);
-    reading_.remote = boost::asio::ip::udp::endpoint{socket_local_.protocol(), 0};
+    reading_.remote = asio::ip::udp::endpoint{socket_local_.protocol(), 0};
 
     lsquicInit();
 
@@ -260,7 +261,7 @@ namespace libp2p::transport::lsquic {
       auto *self = static_cast<Engine *>(void_self);
       // https://github.com/cbodley/nexus/blob/d1d8486f713fd089917331239d755932c7c8ed8e/src/socket.cc#L218
       auto schedule_send_unsent = [self]() {
-        auto cb = [weak_self{self->weak_from_this()}](boost::system::error_code ec) {
+        auto cb = [weak_self{self->weak_from_this()}](std::error_code ec) {
           auto self = weak_self.lock();
           if (not self) {
             return;
@@ -270,7 +271,7 @@ namespace libp2p::transport::lsquic {
           }
           lsquic_engine_send_unsent_packets(self->engine_);
         };
-        self->socket_.async_wait(boost::asio::socket_base::wait_write,
+        self->socket_.async_wait(asio::socket_base::wait_write,
                                  std::move(cb));
       };
       int r = 0;
@@ -350,7 +351,7 @@ namespace libp2p::transport::lsquic {
     readLoop();
   }
 
-  void Engine::connect(const boost::asio::ip::udp::endpoint &remote,
+  void Engine::connect(const asio::ip::udp::endpoint &remote,
                        const PeerId &peer,
                        OnConnect cb) {
     if (connecting_) {
@@ -398,7 +399,7 @@ namespace libp2p::transport::lsquic {
       return;
     }
     want_process_ = true;
-    boost::asio::post(*io_context_, [weak_self{weak_from_this()}] {
+    asio::post(*io_context_, [weak_self{weak_from_this()}] {
       if (auto self = weak_self.lock()) {
         self->process();
       }
@@ -440,7 +441,7 @@ namespace libp2p::transport::lsquic {
       return;
     }
     timer_.expires_after(std::chrono::microseconds{us});
-    auto cb = [weak_self{weak_from_this()}](boost::system::error_code ec) {
+    auto cb = [weak_self{weak_from_this()}](std::error_code ec) {
       auto self = weak_self.lock();
       if (not self) {
         return;
@@ -480,7 +481,7 @@ namespace libp2p::transport::lsquic {
         if (errno == EAGAIN or errno == EWOULDBLOCK) {
 #endif
           auto cb =
-              [weak_self{weak_from_this()}](boost::system::error_code ec) {
+              [weak_self{weak_from_this()}](std::error_code ec) {
                 auto self = weak_self.lock();
                 if (not self) {
                   return;
@@ -490,7 +491,7 @@ namespace libp2p::transport::lsquic {
                 }
                 self->readLoop();
               };
-          socket_.async_wait(boost::asio::socket_base::wait_read,
+          socket_.async_wait(asio::socket_base::wait_read,
                              std::move(cb));
         }
         return;

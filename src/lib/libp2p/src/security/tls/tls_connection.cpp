@@ -16,9 +16,9 @@ namespace libp2p::connection {
 
   TlsConnection::TlsConnection(
       std::shared_ptr<LayerConnection> original_connection,
-      std::shared_ptr<boost::asio::ssl::context> ssl_context,
+      std::shared_ptr<asio::ssl::context> ssl_context,
       const peer::IdentityManager &idmgr,
-      std::shared_ptr<boost::asio::io_context> io_context,
+      std::shared_ptr<asio::io_context> io_context,
       std::optional<peer::PeerId> remote_peer)
       : local_peer_(idmgr.getId()),
         original_connection_(std::move(original_connection)),
@@ -32,19 +32,19 @@ namespace libp2p::connection {
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller) {
     bool is_client = original_connection_->isInitiator();
 
-    socket_.async_handshake(is_client ? boost::asio::ssl::stream_base::client
-                                      : boost::asio::ssl::stream_base::server,
+    socket_.async_handshake(is_client ? asio::ssl::stream_base::client
+                                      : asio::ssl::stream_base::server,
                             [self = shared_from_this(),
                              cb = std::move(cb),
                              key_marshaller = std::move(key_marshaller)](
-                                const boost::system::error_code &error) {
+                                const std::error_code &error) {
                               self->onHandshakeResult(
                                   error, cb, *key_marshaller);
                             });
   }
 
   void TlsConnection::onHandshakeResult(
-      const boost::system::error_code &error,
+      const std::error_code &error,
       const HandshakeCallback &cb,
       const crypto::marshaller::KeyMarshaller &key_marshaller) {
     std::optional<std::error_code> ec;

@@ -43,8 +43,8 @@ namespace libp2p::connection {
     if (size == 0) {
       return false;
     }
-    if (boost::asio::buffer_copy(
-            boost::asio::buffer(reading_->out.data(), size),
+    if (asio::buffer_copy(
+            asio::buffer(reading_->out.data(), size),
             read_buffer_.data(),
             size)
         != size) {
@@ -232,9 +232,9 @@ namespace libp2p::connection {
       return Error::STREAM_RECEIVE_OVERFLOW;
     }
 
-    if (boost::asio::buffer_copy(
+    if (asio::buffer_copy(
             read_buffer_.prepare(data_size),
-            boost::asio::const_buffer(data.data(), data_size))
+            asio::const_buffer(data.data(), data_size))
         != data_size) {
       return Error::STREAM_INTERNAL_ERROR;
     }

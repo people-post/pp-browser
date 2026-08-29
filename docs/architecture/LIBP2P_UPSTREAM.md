@@ -77,7 +77,7 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)
-- `cmake/libp2p_add_library.cmake` — link `qtils`, `Boost::boost`, `soralog`, `Boost::Boost.DI` in vendored mode
+- `cmake/libp2p_add_library.cmake` — link `qtils`, `Asio::asio`, `Boost::boost`, `soralog`, `Boost::Boost.DI` in vendored mode
 - `cmake/install.cmake` — skip install/export when embedded in pp-browser
 - `src/crypto/sha/CMakeLists.txt` — plain `target_link_libraries` signature (matches rest of tree)
 - `src/security/tls/CMakeLists.txt` — link `OpenSSL::SSL` / `OpenSSL::Crypto`; include `<openssl/x509.h>` in `tls_details.cpp`
@@ -89,7 +89,8 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
 - `qtils/outcome.hpp` — facade over vendored standalone Outcome (`third_party/outcome`, ned14 v2.2.15 single-header); keeps `outcome::result` / `OUTCOME_TRY` / `success` / `failure`; MSVC-safe `OUTCOME_TRY` via one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`); no longer links `Boost::outcome`
 - `outcome/` — standalone Outcome INTERFACE target (`Outcome::outcome`); pulled before qtils in `cmake/libp2p_dependencies.cmake`
-- `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs; vendored build no longer pulls `outcome`, `filesystem`, `program_options`, `algorithm`, `random`, or `beast` (replaced with STL / local helpers / standalone Outcome; CSPRNG is `StdRandomGenerator`); also dropped Boost.Variant / Boost.Container small/static_vector from fork sources
+- `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs; vendored build no longer pulls `outcome`, `filesystem`, `program_options`, `algorithm`, `random`, `beast`, `asio`, or `system` (replaced with STL / local helpers / standalone Outcome / standalone Asio + `std::error_code`; CSPRNG is `StdRandomGenerator`); also dropped Boost.Variant / Boost.Container small/static_vector from fork sources; Boost remains for DI (+ slim header deps such as `smart_ptr`)
+- `asio/` — standalone Asio 1.34.0 (`Asio::asio`, `ASIO_STANDALONE` + `ASIO_NO_DEPRECATED`); fork, `src/base/p2p`, and `pp-node` status HTTP use `#include <asio…>` / `asio::` and `std::error_code` (not Boost.Asio / `boost::system`)
 - fork sources — dropped Boost.Operators (`equality_comparable`), Boost.Range (`for_each` / `filtered`), and unused Boost.Exception include in `event/bus.hpp`
 - fork sources — replaced Boost.MultiIndex tables in gossip `MessageCache` and Kademlia `StorageImpl` / `ContentRoutingTableImpl` / `GetValueExecutor` with `std::unordered_map` (+ vectors); removed dead MultiIndex includes from `put_value_executor.hpp`
 - fork sources — replaced Boost.Signals2 with `libp2p/event/signal.hpp` (`Signal` / `Connection` / `ScopedConnection`) for Bus, Emitter, AddressRepository, and Identify; removed unused Signals2 include from `transport_listener.hpp`

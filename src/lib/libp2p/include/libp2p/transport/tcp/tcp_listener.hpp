@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 #include <libp2p/transport/tcp/tcp_connection.hpp>
 #include <libp2p/transport/transport_listener.hpp>
 #include <libp2p/transport/upgrader.hpp>
@@ -21,7 +21,7 @@ namespace libp2p::transport {
    public:
     ~TcpListener() override = default;
 
-    TcpListener(boost::asio::io_context &context,
+    TcpListener(asio::io_context &context,
                 std::shared_ptr<Upgrader> upgrader,
                 TransportListener::HandlerFunc handler);
 
@@ -36,11 +36,11 @@ namespace libp2p::transport {
     outcome::result<void> close() override;
 
    private:
-    boost::asio::io_context &context_;
+    asio::io_context &context_;
     std::shared_ptr<Upgrader> upgrader_;
     TransportListener::HandlerFunc handle_;
 
-    boost::asio::ip::tcp::acceptor acceptor_;
+    asio::ip::tcp::acceptor acceptor_;
 
     ProtoAddrVec layers_;
 

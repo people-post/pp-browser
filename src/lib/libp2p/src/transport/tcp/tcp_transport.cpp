@@ -32,7 +32,7 @@ namespace libp2p::transport {
          handler = std::move(handler),
          layers = std::move(layers),
          dial_timeout](
-            outcome::result<boost::asio::ip::tcp::resolver::results_type>
+            outcome::result<asio::ip::tcp::resolver::results_type>
                 r) mutable {
           if (not r) {
             return handler(r.error());
@@ -71,7 +71,7 @@ namespace libp2p::transport {
     return detail::asTcp(ma).has_value();
   }
 
-  TcpTransport::TcpTransport(std::shared_ptr<boost::asio::io_context> context,
+  TcpTransport::TcpTransport(std::shared_ptr<asio::io_context> context,
                              const muxer::MuxedConnectionConfig &mux_config,
                              std::shared_ptr<Upgrader> upgrader)
       : context_{std::move(context)},

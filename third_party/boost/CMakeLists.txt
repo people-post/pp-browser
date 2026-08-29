@@ -11,6 +11,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake/include")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BOOST_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+# Minimal Boost for Boost.DI (optional boost::shared_ptr via smart_ptr) and
+# header packaging. Standalone Asio + std::error_code replaced Boost.Asio/System.
 set(BOOST_INCLUDE_LIBRARIES
     headers
     assert
@@ -25,8 +27,6 @@ set(BOOST_INCLUDE_LIBRARIES
     smart_ptr
     move
     utility
-    system
-    asio
     CACHE STRING "" FORCE)
 
 include(BoostRoot)

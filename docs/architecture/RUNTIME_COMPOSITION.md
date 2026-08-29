@@ -258,7 +258,7 @@ flowchart TB
   end
 
   subgraph libp2p_stack["libp2p host"]
-    LpIo["Libp2pHost io_thread_<br/><small>boost::asio::io_context::run</small>"]
+    LpIo["Libp2pHost io_thread_<br/><small>asio::io_context::run</small>"]
     Host["libp2p::Host<br/><small>lib/libp2p — Yamux + Noise</small>"]
     LpIo --> Host
   end
@@ -282,7 +282,7 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **libp2p IO** | `Libp2pHost` | `base/p2p/` | `boost::asio::io_context` run loop |
+| **libp2p IO** | `Libp2pHost` | `base/p2p/` | `asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
 | **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |

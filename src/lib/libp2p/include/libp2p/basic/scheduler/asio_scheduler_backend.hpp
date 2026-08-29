@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/steady_timer.hpp>
+#include <asio/io_context.hpp>
+#include <asio/steady_timer.hpp>
 
 #include <libp2p/basic/scheduler/backend.hpp>
 
@@ -25,7 +25,7 @@ namespace libp2p::basic {
      * @param io_context Asio io context
      */
     explicit AsioSchedulerBackend(
-        std::shared_ptr<boost::asio::io_context> io_context);
+        std::shared_ptr<asio::io_context> io_context);
 
     void post(std::function<void()> &&) override;
 
@@ -49,10 +49,10 @@ namespace libp2p::basic {
     static std::chrono::milliseconds nowImpl();
 
     /// Boost.Asio context
-    std::shared_ptr<boost::asio::io_context> io_context_;
+    std::shared_ptr<asio::io_context> io_context_;
 
     /// Boost.Asio steady timer
-    boost::asio::steady_timer timer_;
+    asio::steady_timer timer_;
   };
 
 }  // namespace libp2p::basic

@@ -23,9 +23,9 @@ namespace libp2p::transport {
     }
   }  // namespace
 
-  TcpConnection::TcpConnection(boost::asio::io_context &ctx,
+  TcpConnection::TcpConnection(asio::io_context &ctx,
                                ProtoAddrVec layers,
-                               boost::asio::ip::tcp::socket &&socket)
+                               asio::ip::tcp::socket &&socket)
       : context_(ctx),
         layers_{std::move(layers)},
         socket_(std::move(socket)),
@@ -34,7 +34,7 @@ namespace libp2p::transport {
     std::ignore = saveMultiaddresses();
   }
 
-  TcpConnection::TcpConnection(boost::asio::io_context &ctx,
+  TcpConnection::TcpConnection(asio::io_context &ctx,
                                ProtoAddrVec layers)
       : context_(ctx),
         layers_{std::move(layers)},
@@ -44,7 +44,7 @@ namespace libp2p::transport {
 
   outcome::result<void> TcpConnection::close() {
     closed_by_host_ = true;
-    close(make_error_code(boost::system::errc::connection_aborted));
+    close(make_error_code(std::errc::connection_aborted));
     return outcome::success();
   }
 
@@ -54,7 +54,7 @@ namespace libp2p::transport {
       log().debug("{} closing with reason: {}", debug_str_, *close_reason_);
     }
     if (socket_.is_open()) {
-      boost::system::error_code ec;
+      std::error_code ec;
       socket_.close(ec);
     }
   }
@@ -118,7 +118,7 @@ namespace libp2p::transport {
       connecting_with_timeout_ = true;
       connect_timer_.expires_after(timeout);
       connect_timer_.async_wait(
-          [wptr{weak_from_this()}, cb](const boost::system::error_code &error) {
+          [wptr{weak_from_this()}, cb](const std::error_code &error) {
             auto self = wptr.lock();
             if (!self || self->closed_by_host_) {
               return;
@@ -129,17 +129,15 @@ namespace libp2p::transport {
               if (not error) {
                 // timeout happened, timer expired before connection was
                 // established
-                cb(boost::system::error_code{boost::system::errc::timed_out,
-                                             boost::system::generic_category()},
-                   Tcp::endpoint{});
+                cb(std::make_error_code(std::errc::timed_out), Tcp::endpoint{});
               }
-              // Another case is: boost::asio::error::operation_aborted == error
+              // Another case is: asio::error::operation_aborted == error
               // connection was established before timeout and timer has been
               // cancelled
             }
           });
     }
-    boost::asio::async_connect(
+    asio::async_connect(
         socket_,
         iterator,
         [wptr{weak_from_this()}, cb{std::move(cb)}](
@@ -188,16 +186,16 @@ namespace libp2p::transport {
 
   void TcpConnection::deferReadCallback(outcome::result<size_t> res,
                                         ReadCallbackFunc cb) {
-    boost::asio::post(context_, [res, cb{std::move(cb)}] { cb(res); });
+    asio::post(context_, [res, cb{std::move(cb)}] { cb(res); });
   }
 
   void TcpConnection::deferWriteCallback(std::error_code ec,
                                          WriteCallbackFunc cb) {
-    boost::asio::post(context_, [ec, cb{std::move(cb)}] { cb(ec); });
+    asio::post(context_, [ec, cb{std::move(cb)}] { cb(ec); });
   }
 
   outcome::result<void> TcpConnection::saveMultiaddresses() {
-    boost::system::error_code ec;
+    std::error_code ec;
     if (socket_.is_open()) {
       if (!local_multiaddress_) {
         auto endpoint(socket_.local_endpoint(ec));
@@ -220,7 +218,7 @@ namespace libp2p::transport {
         }
       }
     } else {
-      return make_error_code(boost::system::errc::not_connected);
+      return make_error_code(std::errc::not_connected);
     }
     if (ec) {
       return ec;

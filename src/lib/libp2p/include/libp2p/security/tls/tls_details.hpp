@@ -12,9 +12,9 @@
 
 struct x509_st;
 
-namespace boost::asio::ssl {
+namespace asio::ssl {
   class verify_context;
-}  // namespace boost::asio::ssl
+}  // namespace asio::ssl
 
 namespace libp2p::security::tls_details {
 
@@ -25,7 +25,7 @@ namespace libp2p::security::tls_details {
   /// \param status preverified status
   /// \param ctx asio wrapper around X509_STORE_CTX
   /// \return verify result
-  bool verifyCallback(bool status, boost::asio::ssl::verify_context &ctx);
+  bool verifyCallback(bool status, asio::ssl::verify_context &ctx);
 
   struct CertificateAndKey {
     /// self-signed certificate in ASN1 DER format

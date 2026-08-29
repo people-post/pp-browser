@@ -8,7 +8,7 @@
 
 namespace libp2p::protocol::example::utility {
 
-  ConsoleAsyncReader::ConsoleAsyncReader(boost::asio::io_context &io,
+  ConsoleAsyncReader::ConsoleAsyncReader(asio::io_context &io,
                                          Handler handler)
       : in_(io, STDIN_FILENO), handler_(std::move(handler)) {
     read();
@@ -20,16 +20,16 @@ namespace libp2p::protocol::example::utility {
 
   void ConsoleAsyncReader::read() {
     input_.consume(input_.data().size());
-    boost::asio::async_read_until(
+    asio::async_read_until(
         in_,
         input_,
         "\n",
-        [this](const boost::system::error_code &e, std::size_t size) {
+        [this](const std::error_code &e, std::size_t size) {
           onRead(e, size);
         });
   }
 
-  void ConsoleAsyncReader::onRead(const boost::system::error_code &e,
+  void ConsoleAsyncReader::onRead(const std::error_code &e,
                                   std::size_t size) {
     if (stopped_) {
       return;

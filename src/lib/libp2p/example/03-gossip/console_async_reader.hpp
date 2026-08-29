@@ -9,7 +9,8 @@
 #include <functional>
 #include <string>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
+#include <system_error>
 
 namespace libp2p::protocol::example::utility {
 
@@ -20,7 +21,7 @@ namespace libp2p::protocol::example::utility {
     using Handler = std::function<void(const std::string &)>;
 
     /// starts the reader
-    ConsoleAsyncReader(boost::asio::io_context &io, Handler handler);
+    ConsoleAsyncReader(asio::io_context &io, Handler handler);
 
     /// stops the reader: no more callbacks after this call
     void stop();
@@ -30,10 +31,10 @@ namespace libp2p::protocol::example::utility {
     void read();
 
     /// read callback from asio
-    void onRead(const boost::system::error_code &e, std::size_t size);
+    void onRead(const std::error_code &e, std::size_t size);
 
-    boost::asio::posix::stream_descriptor in_;
-    boost::asio::streambuf input_;
+    asio::posix::stream_descriptor in_;
+    asio::streambuf input_;
     std::string line_;
     Handler handler_;
     bool stopped_ = false;

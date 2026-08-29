@@ -35,7 +35,7 @@ TEST(NetworkBuilder, DefaultBuilds) {
 
   auto injector = makeNetworkInjector();
 
-  auto io = injector.create<std::shared_ptr<boost::asio::io_context>>();
+  auto io = injector.create<std::shared_ptr<asio::io_context>>();
   ASSERT_NE(io, nullptr);
 
   auto proto_muxer =

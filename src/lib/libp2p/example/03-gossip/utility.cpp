@@ -7,7 +7,8 @@
 #include <optional>
 #include "utility.hpp"
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
+#include <system_error>
 
 namespace libp2p::protocol::example::utility {
 
@@ -50,10 +51,10 @@ namespace libp2p::protocol::example::utility {
     }
   }
 
-  std::string getLocalIP(boost::asio::io_context &io) {
-    boost::asio::ip::tcp::resolver resolver(io);
-    boost::system::error_code ec;
-    for (auto &entry : resolver.resolve(boost::asio::ip::host_name(), "", ec)) {
+  std::string getLocalIP(asio::io_context &io) {
+    asio::ip::tcp::resolver resolver(io);
+    std::error_code ec;
+    for (auto &entry : resolver.resolve(asio::ip::host_name(), "", ec)) {
       auto address = entry.endpoint().address();
       if (address.is_v4()) {
         return address.to_string();

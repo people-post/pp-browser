@@ -11,7 +11,7 @@
 
 namespace libp2p::transport {
   QuicConnection::QuicConnection(
-      std::shared_ptr<boost::asio::io_context> io_context,
+      std::shared_ptr<asio::io_context> io_context,
       lsquic::ConnCtx *conn_ctx,
       bool initiator,
       Multiaddress local,

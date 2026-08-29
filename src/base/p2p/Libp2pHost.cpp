@@ -9,9 +9,9 @@
 #include <libp2p/log/logger.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
 
 #include <condition_variable>
 #include <cstdlib>
@@ -95,10 +95,10 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
     worker_pool_ = owned_worker_pool_.get();
   }
 
-  io_context_ = std::make_shared<boost::asio::io_context>(1);
+  io_context_ = std::make_shared<asio::io_context>(1);
   // Keep run() alive after the startup post: an idle Client host otherwise drains
   // immediately and Identify PostAndWait hangs forever.
-  work_guard_.emplace(boost::asio::make_work_guard(*io_context_));
+  work_guard_.emplace(asio::make_work_guard(*io_context_));
   auto key_pair = BuildKeyPair(config_);
   host_ = libp2p::createExplicitHost(io_context_, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise,
                                      key_pair);
@@ -108,7 +108,7 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   if (!config_.listen_enabled) {
     io_thread_ = std::thread([this, listen_promise = std::move(listen_promise)]() mutable {
-      boost::asio::post(*io_context_, [this, listen_promise = std::move(listen_promise)]() mutable {
+      asio::post(*io_context_, [this, listen_promise = std::move(listen_promise)]() mutable {
         host_->start();
         listen_promise.set_value({});
       });
@@ -135,7 +135,7 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
   const libp2p::multi::Multiaddress ma = ma_res.value();
 
   io_thread_ = std::thread([this, ma, listen_promise = std::move(listen_promise)]() mutable {
-    boost::asio::post(*io_context_, [this, ma, listen_promise = std::move(listen_promise)]() mutable {
+    asio::post(*io_context_, [this, ma, listen_promise = std::move(listen_promise)]() mutable {
       auto listen_res = host_->listen(ma);
       if (!listen_res) {
         listen_promise.set_value(Error("libp2p listen failed on " + config_.listen_multiaddr));
@@ -224,12 +224,12 @@ void Libp2pHost::Post(std::function<void()> fn) {
   if (!running_ || !io_context_ || !fn) {
     return;
   }
-  boost::asio::post(*io_context_, std::move(fn));
+  asio::post(*io_context_, std::move(fn));
 }
 
-boost::asio::any_io_executor Libp2pHost::IoExecutor() const {
+asio::any_io_executor Libp2pHost::IoExecutor() const {
   if (!io_context_) {
-    return boost::asio::any_io_executor{};
+    return asio::any_io_executor{};
   }
   return io_context_->get_executor();
 }
@@ -252,7 +252,7 @@ Roe<void> Libp2pHost::PostAndWait(std::function<void()> fn) {
   }
   std::promise<void> done;
   auto future = done.get_future();
-  boost::asio::post(*io_context_, [fn = std::move(fn), done = std::move(done)]() mutable {
+  asio::post(*io_context_, [fn = std::move(fn), done = std::move(done)]() mutable {
     fn();
     done.set_value();
   });
@@ -272,7 +272,7 @@ Roe<void> Libp2pHost::ListenOn(const std::string& multiaddr_str) {
 
   std::promise<Roe<void>> listen_promise;
   auto listen_future = listen_promise.get_future();
-  boost::asio::post(*io_context_, [this, ma, addr = multiaddr_str, listen_promise = std::move(listen_promise)]() mutable {
+  asio::post(*io_context_, [this, ma, addr = multiaddr_str, listen_promise = std::move(listen_promise)]() mutable {
     listen_promise.set_value(ListenOnIoThread(ma, addr));
   });
   return listen_future.get();
@@ -292,7 +292,7 @@ void Libp2pHost::ListenOnAsync(const std::string& multiaddr_str, std::function<v
     return;
   }
   const libp2p::multi::Multiaddress ma = ma_res.value();
-  boost::asio::post(*io_context_, [this, ma, addr = multiaddr_str, cb = std::move(cb)]() mutable {
+  asio::post(*io_context_, [this, ma, addr = multiaddr_str, cb = std::move(cb)]() mutable {
     cb(ListenOnIoThread(ma, addr));
   });
 }
@@ -329,7 +329,7 @@ Roe<void> Libp2pHost::StopListening() {
   }
   std::promise<Roe<void>> done_promise;
   auto done_future = done_promise.get_future();
-  boost::asio::post(*io_context_, [this, done_promise = std::move(done_promise)]() mutable {
+  asio::post(*io_context_, [this, done_promise = std::move(done_promise)]() mutable {
     StopListeningIoThread();
     done_promise.set_value({});
   });
@@ -343,7 +343,7 @@ void Libp2pHost::StopListeningAsync(std::function<void()> cb) {
     }
     return;
   }
-  boost::asio::post(*io_context_, [this, cb = std::move(cb)]() mutable {
+  asio::post(*io_context_, [this, cb = std::move(cb)]() mutable {
     StopListeningIoThread();
     if (cb) {
       cb();

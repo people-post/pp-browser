@@ -11,7 +11,7 @@
 #include <memory>
 #include <string>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 #include <libp2p/network/cares/cares.hpp>
 
 namespace libp2p::network {
@@ -26,7 +26,7 @@ namespace libp2p::network {
       BAD_ADDR_IN_RESPONSE,
     };
 
-    DnsaddrResolverImpl(std::shared_ptr<boost::asio::io_context> io_context,
+    DnsaddrResolverImpl(std::shared_ptr<asio::io_context> io_context,
                         const c_ares::Ares &cares);
 
     void load(multi::Multiaddress address, AddressesCallback callback) override;
@@ -36,7 +36,7 @@ namespace libp2p::network {
     static outcome::result<std::string> dnsaddrUriFromMultiaddr(
         const multi::Multiaddress &address);
 
-    std::shared_ptr<boost::asio::io_context> io_context_;
+    std::shared_ptr<asio::io_context> io_context_;
     // captured by reference intentionally to force DI use the single instance
     const c_ares::Ares &cares_;
   };

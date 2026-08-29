@@ -9,7 +9,7 @@
 #include <memory>
 #include <optional>
 
-#include <boost/asio/io_context.hpp>
+#include <asio/io_context.hpp>
 
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/host/host.hpp>
@@ -35,7 +35,7 @@ namespace libp2p {
    * @param mux_config yamux/mplex connection config
    */
   std::shared_ptr<Host> createExplicitHost(
-      std::shared_ptr<boost::asio::io_context> io,
+      std::shared_ptr<asio::io_context> io,
       HostMuxerKind muxer = HostMuxerKind::Yamux,
       HostSecurityKind security = HostSecurityKind::Noise,
       std::optional<crypto::KeyPair> key_pair = std::nullopt,

@@ -7,8 +7,8 @@
 #pragma once
 
 #include <optional>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ssl.hpp>
+#include <asio/io_context.hpp>
+#include <asio/ssl.hpp>
 
 #include <libp2p/crypto/key_marshaller.hpp>
 #include <libp2p/peer/identity_manager.hpp>
@@ -28,7 +28,7 @@ namespace libp2p::security {
     /// Ctor.
     TlsAdaptor(
         std::shared_ptr<peer::IdentityManager> idmgr,
-        std::shared_ptr<boost::asio::io_context> io_context,
+        std::shared_ptr<asio::io_context> io_context,
         const SslContext &ssl_context,
         std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller);
 
@@ -54,12 +54,12 @@ namespace libp2p::security {
     std::shared_ptr<peer::IdentityManager> idmgr_;
 
     /// IO context, used to defer callback on error
-    std::shared_ptr<boost::asio::io_context> io_context_;
+    std::shared_ptr<asio::io_context> io_context_;
 
     /// Key marshaller, needed for custom cert extension
     std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller_;
 
     /// Shared ssl context
-    std::shared_ptr<boost::asio::ssl::context> ssl_context_;
+    std::shared_ptr<asio::ssl::context> ssl_context_;
   };
 }  // namespace libp2p::security

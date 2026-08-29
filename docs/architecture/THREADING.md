@@ -188,7 +188,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Library | Model | Policy |
 |---------|-------|--------|
-| boost::asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
+| asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
 | c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
 | libcurl | Sync on caller | Pool only |
 | SQLite | Caller + mutex | Pool for long writes |
