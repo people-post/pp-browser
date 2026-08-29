@@ -9,10 +9,10 @@
 #include <map>
 #include <memory>
 #include <typeindex>
+#include <type_traits>
+#include <utility>
 
-#include <boost/asio.hpp>
-#include <boost/signals2.hpp>
-
+#include <libp2p/event/signal.hpp>
 #include <libp2p/log/logger.hpp>
 
 /**
@@ -77,32 +77,24 @@ namespace libp2p::event {
     Handle() = default;
 
     /// Cancels existing connection
-    Handle &operator=(Handle &&rhs) {
+    Handle &operator=(Handle &&rhs) noexcept {
       unsubscribe();
       handle_ = std::move(rhs.handle_);
-
-      assert(!rhs.handle_.connected());  // move was correct?
-
       return *this;
     }
 
-    // no way they can be noexcept because of none-noexcept
-    // boost::signal2::connection move ctor
-    Handle(Handle &&) = default;  // NOLINT
+    Handle(Handle &&) noexcept = default;
 
     // dont allow copying since this protects the resource
     Handle(const Handle &) = delete;
     Handle &operator=(const Handle &) = delete;
 
    private:
-    using handle_type = boost::signals2::scoped_connection;
+    using handle_type = ScopedConnection;
     handle_type handle_;
 
     /**
-     * Construct a handle from an internal representation of a handle
-     * In this case a boost::signals2::connection
-     *
-     * @param _handle - the boost::signals2::connection to wrap
+     * Construct a handle from an internal ScopedConnection
      */
     explicit Handle(handle_type &&handle) : handle_(std::move(handle)) {}
 
@@ -124,7 +116,23 @@ namespace libp2p::event {
      */
     template <typename Callback>
     Handle subscribe(Callback &&cb) {
-      return Handle(signal_.connect(std::forward<Callback>(cb)));
+      if constexpr (std::is_same_v<DispatchPolicy, drop_exceptions>) {
+        return Handle(ScopedConnection(signal_.connect(
+            [cb = std::forward<Callback>(cb)](const Data &data) mutable {
+              try {
+                cb(data);
+              } catch (const std::exception &e) {
+                log::createLogger("Bus")->error(
+                    "Exception in signal handler, ignored, what={}", e.what());
+              } catch (...) {
+                log::createLogger("Bus")->error(
+                    "Exception in signal handler, ignored");
+              }
+            })));
+      } else {
+        return Handle(
+            ScopedConnection(signal_.connect(std::forward<Callback>(cb))));
+      }
     }
 
     /**
@@ -141,8 +149,7 @@ namespace libp2p::event {
      * Returns whether or not there are subscribers
      */
     bool hasSubscribers() {
-      auto connections = signal_.num_slots();
-      return connections > 0;
+      return signal_.num_slots() > 0;
     }
 
    private:
@@ -178,7 +185,7 @@ namespace libp2p::event {
       return erased_channel_ptr(new Channel(), &deleter);
     }
 
-    boost::signals2::signal<void(const Data &), DispatchPolicy> signal_;
+    Signal<void(const Data &)> signal_;
 
     friend class Bus;
   };
@@ -210,8 +217,14 @@ namespace libp2p::event {
   /**
    * Event bus, containing channels and providing a convenient access to them
    */
-  class Bus : private boost::noncopyable {
+  class Bus {
    public:
+    Bus() = default;
+    Bus(const Bus &) = delete;
+    Bus &operator=(const Bus &) = delete;
+    Bus(Bus &&) = default;
+    Bus &operator=(Bus &&) = default;
+
     /**
      * Fetch a reference to the channel declared by the passed in type. This
      * will construct the channel on first access

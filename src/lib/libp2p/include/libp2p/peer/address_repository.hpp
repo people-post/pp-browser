@@ -10,8 +10,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/signals2.hpp>
 #include <libp2p/basic/garbage_collectable.hpp>
+#include <libp2p/event/signal.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/peer/peer_id.hpp>
 #include <span>
@@ -161,8 +161,7 @@ namespace libp2p::peer {
      * @param cb slot
      * @return connection for that slot (can be used for unsubscribing)
      */
-    boost::signals2::connection onAddressAdded(
-        const std::function<AddressCallback> &cb);
+    event::Connection onAddressAdded(const std::function<AddressCallback> &cb);
 
     /**
      * @brief Attach slot to a signal 'onAddressRemoved'. Is triggered whenever
@@ -171,16 +170,16 @@ namespace libp2p::peer {
      * @param cb slot
      * @return connection for that slot (can be used for unsubscribing)
      */
-    boost::signals2::connection onAddressRemoved(
+    event::Connection onAddressRemoved(
         const std::function<AddressCallback> &cb);
 
    protected:
     // TODO(warchant): change signals to events + Bus PRE-254
 
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
-    boost::signals2::signal<AddressCallback> signal_added_;
+    event::Signal<AddressCallback> signal_added_;
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
-    boost::signals2::signal<AddressCallback> signal_removed_;
+    event::Signal<AddressCallback> signal_removed_;
   };
 
 }  // namespace libp2p::peer

@@ -12,6 +12,7 @@
 
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/crypto/key_marshaller.hpp>
+#include <libp2p/event/signal.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -39,7 +40,7 @@ namespace libp2p::protocol {
         peer::IdentityManager &identity_manager,
         std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller);
 
-    boost::signals2::connection onIdentifyReceived(
+    event::Connection onIdentifyReceived(
         const std::function<IdentifyCallback> &cb);
 
     /**
@@ -133,7 +134,7 @@ namespace libp2p::protocol {
     peer::IdentityManager &identity_manager_;
     std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller_;
     ObservedAddresses observed_addresses_;
-    boost::signals2::signal<IdentifyCallback> signal_identify_received_;
+    event::Signal<IdentifyCallback> signal_identify_received_;
 
     log::Logger log_ = log::createLogger("IdentifyMsgProcessor");
   };

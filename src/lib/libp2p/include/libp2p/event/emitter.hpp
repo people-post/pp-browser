@@ -7,8 +7,9 @@
 #pragma once
 
 #include <functional>
+#include <type_traits>
 
-#include <boost/signals2.hpp>
+#include <libp2p/event/signal.hpp>
 #include <libp2p/event/subscription.hpp>
 
 namespace libp2p::event {
@@ -33,7 +34,7 @@ namespace libp2p::event {
         : public EmitterBase<EventsAmount, OtherEvents...> {
       /// type of underlying signal
       template <typename EventType>
-      using Signal = boost::signals2::signal<void(const EventType &)>;
+      using SignalType = Signal<void(const EventType &)>;
 
       /// base of this template - in fact, the base's "ThisEvent" is the the
       /// first of this "OtherEvents"
@@ -48,7 +49,7 @@ namespace libp2p::event {
       template <typename ExpectedEvent>
       std::enable_if_t<
           std::is_same_v<std::decay_t<ThisEvent>, std::decay_t<ExpectedEvent>>,
-          Signal<ExpectedEvent>>
+          SignalType<ExpectedEvent>>
           &getSignal() {
         return signal_;
       }
@@ -61,14 +62,14 @@ namespace libp2p::event {
       template <typename ExpectedEvent>
       std::enable_if_t<
           !std::is_same_v<std::decay_t<ThisEvent>, std::decay_t<ExpectedEvent>>,
-          Signal<ExpectedEvent>>
+          SignalType<ExpectedEvent>>
           &getSignal() {
         return Base::template getSignal<ExpectedEvent>();
       }
 
      private:
       /// the underlying signal
-      Signal<ThisEvent> signal_;
+      SignalType<ThisEvent> signal_;
     };
 
     /**
