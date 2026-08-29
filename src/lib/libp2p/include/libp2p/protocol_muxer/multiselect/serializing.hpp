@@ -6,8 +6,7 @@
 
 #pragma once
 
-#include <boost/container/static_vector.hpp>
-
+#include <libp2p/common/static_vector.hpp>
 #include <libp2p/protocol_muxer/protocol_muxer.hpp>
 
 #include "common.hpp"
@@ -16,8 +15,7 @@ namespace libp2p::protocol_muxer::multiselect::detail {
 
   /// Static vector for temp msg crafting
   using TmpMsgBuf =
-      boost::container::static_vector<uint8_t,
-                                      kMaxMessageSize + kMaxVarintSize>;
+      libp2p::common::StaticVector<uint8_t, kMaxMessageSize + kMaxVarintSize>;
 
   /// Appends varint prefix to buffer
   template <typename Buffer>
