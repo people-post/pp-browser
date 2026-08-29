@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/get_value_executor.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -46,12 +47,12 @@ namespace libp2p::protocol::kademlia {
         handler_(std::move(handler)),
         target_{NodeId::hash(key_)},
         log_("KademliaExecutor", "kademlia", "GetValue", ++instance_number) {
-    BOOST_ASSERT(host_ != nullptr);
-    BOOST_ASSERT(scheduler_ != nullptr);
-    BOOST_ASSERT(session_host_ != nullptr);
-    BOOST_ASSERT(content_routing_table_ != nullptr);
-    BOOST_ASSERT(executor_factory_ != nullptr);
-    BOOST_ASSERT(validator_ != nullptr);
+    assert(host_ != nullptr);
+    assert(scheduler_ != nullptr);
+    assert(session_host_ != nullptr);
+    assert(content_routing_table_ != nullptr);
+    assert(executor_factory_ != nullptr);
+    assert(validator_ != nullptr);
 
     auto nearest_peer_ids = peer_routing_table->getNearestPeers(
         target_, config_.query_initial_peers);
@@ -243,7 +244,7 @@ namespace libp2p::protocol::kademlia {
     }
 
     auto remote_peer_id_res = session->stream()->remotePeerId();
-    BOOST_ASSERT(remote_peer_id_res.has_value());
+    assert(remote_peer_id_res.has_value());
     auto &remote_peer_id = remote_peer_id_res.value();
 
     auto self_peer_id = host_->getId();

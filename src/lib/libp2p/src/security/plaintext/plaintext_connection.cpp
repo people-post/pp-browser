@@ -6,7 +6,7 @@
 
 #include <libp2p/security/plaintext/plaintext_connection.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/crypto/protobuf/protobuf_key.hpp>
 
 namespace libp2p::connection {
@@ -20,8 +20,8 @@ namespace libp2p::connection {
         local_(std::move(localPubkey)),
         remote_(std::move(remotePubkey)),
         key_marshaller_{std::move(key_marshaller)} {
-    BOOST_ASSERT(original_connection_);
-    BOOST_ASSERT(key_marshaller_);
+    assert(original_connection_);
+    assert(key_marshaller_);
   }
 
   outcome::result<peer::PeerId> PlaintextConnection::localPeer() const {

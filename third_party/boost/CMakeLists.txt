@@ -26,10 +26,7 @@ set(BOOST_INCLUDE_LIBRARIES
     move
     utility
     system
-    filesystem
     random
-    program_options
-    algorithm
     outcome
     asio
     beast
@@ -43,7 +40,7 @@ if(TARGET boost_predef)
 endif()
 
 # Compiled Boost libs include headers from the unified boost/ tree at the superproject root.
-foreach(_boost_compiled_target boost_filesystem boost_random boost_program_options boost_atomic)
+foreach(_boost_compiled_target boost_random boost_atomic)
   if(TARGET ${_boost_compiled_target})
     target_include_directories(${_boost_compiled_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()

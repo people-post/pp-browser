@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/multi/multiaddress.hpp>
 
 #include <algorithm>
 #include <numeric>
 #include <stdexcept>
 
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
+#include <libp2p/common/split.hpp>
 #include <libp2p/multi/converters/converter_utils.hpp>
 
 using std::string_literals::operator""s;
@@ -63,7 +63,7 @@ namespace libp2p::multi {
     auto &&bytes = bytes_result.value();
 
     auto str_res = converters::bytesToMultiaddrString(bytes);
-    BOOST_ASSERT(str_res.has_value());
+    assert(str_res.has_value());
     auto &&str = str_res.value();
 
     return Multiaddress{
@@ -208,7 +208,7 @@ namespace libp2p::multi {
 
     std::list<std::string> tokens;
 
-    boost::algorithm::split(tokens, addr, boost::algorithm::is_any_of("/"));
+    common::split(tokens, addr, '/');
 
     std::list<Protocol> protocols;
     for (auto &token : tokens) {
@@ -233,7 +233,7 @@ namespace libp2p::multi {
 
     std::vector<std::string> tokens;
 
-    boost::algorithm::split(tokens, addr, boost::algorithm::is_any_of("/"));
+    common::split(tokens, addr, '/');
 
     std::vector<std::pair<Protocol, std::string>> pvs;
     for (auto &token : tokens) {

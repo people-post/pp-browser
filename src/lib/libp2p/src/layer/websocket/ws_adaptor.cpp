@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/layer/websocket/ws_adaptor.hpp>
 
 #include <libp2p/log/logger.hpp>
@@ -17,7 +18,7 @@ namespace libp2p::layer {
       : scheduler_(std::move(scheduler)),
         io_context_(std::move(io_context)),
         config_(std::move(config)) {
-    BOOST_ASSERT(scheduler_ != nullptr);
+    assert(scheduler_ != nullptr);
   }
 
   multi::Protocol::Code WsAdaptor::getProtocol() const {

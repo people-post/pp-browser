@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/security/plaintext/plaintext.hpp>
 
 #include <functional>
@@ -42,9 +43,9 @@ namespace libp2p::security {
       : marshaller_(std::move(marshaller)),
         idmgr_(std::move(idmgr)),
         key_marshaller_{std::move(key_marshaller)} {
-    BOOST_ASSERT(marshaller_);
-    BOOST_ASSERT(idmgr_);
-    BOOST_ASSERT(key_marshaller_);
+    assert(marshaller_);
+    assert(idmgr_);
+    assert(key_marshaller_);
   }
 
   peer::ProtocolName Plaintext::getProtocolId() const {

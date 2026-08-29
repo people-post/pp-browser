@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/find_peer_executor.hpp>
 
 #include <libp2p/common/final_action.hpp>
@@ -232,7 +233,7 @@ namespace libp2p::protocol::kademlia {
     }
 
     auto remote_peer_id_res = session->stream()->remotePeerId();
-    BOOST_ASSERT(remote_peer_id_res.has_value());
+    assert(remote_peer_id_res.has_value());
     auto &remote_peer_id = remote_peer_id_res.value();
 
     auto self_peer_id = host_->getId();

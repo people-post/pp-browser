@@ -8,7 +8,7 @@
 #include <string>
 #include <tuple>
 
-#include <boost/assert.hpp>
+#include <cassert>
 
 namespace libp2p::protocol {
   Identify::Identify(const IdentifyConfig &config,
@@ -19,7 +19,7 @@ namespace libp2p::protocol {
         msg_processor_{std::move(msg_processor)},
         bus_{event_bus},
         protocols_{config.protocols} {
-    BOOST_ASSERT(msg_processor_);
+    assert(msg_processor_);
   }
 
   boost::signals2::connection Identify::onIdentifyReceived(
@@ -46,7 +46,7 @@ namespace libp2p::protocol {
 
   void Identify::start() {
     // no double starts
-    BOOST_ASSERT(!started_);
+    assert(!started_);
     started_ = true;
 
     host_.setProtocolHandler(protocols_,

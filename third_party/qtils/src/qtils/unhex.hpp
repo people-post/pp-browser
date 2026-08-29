@@ -6,7 +6,8 @@
 
 #pragma once
 
-#include <boost/algorithm/hex.hpp>
+#include <cstdint>
+#include <string_view>
 
 #include <qtils/bytes.hpp>
 #include <qtils/enum_error_code.hpp>
@@ -52,6 +53,19 @@ namespace qtils {
     return s.size() / 2;
   }
 
+  inline int unhexNibble(char c) {
+    if (c >= '0' && c <= '9') {
+      return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+      return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+      return c - 'A' + 10;
+    }
+    return -1;
+  }
+
   template <typename T>
   outcome::result<void> unhex(
       T &t, std::string_view s, size_t max_size = MAX_UNHEX_SIZE) {
@@ -79,10 +93,13 @@ namespace qtils {
         return UnhexError::TOO_LONG;
       }
     }
-    try {
-      boost::algorithm::unhex(s.begin(), s.end(), t.begin());
-    } catch (const boost::algorithm::non_hex_input &) {
-      return UnhexError::NON_HEX;
+    for (size_t i = 0; i < s.size(); i += 2) {
+      const int hi = unhexNibble(s[i]);
+      const int lo = unhexNibble(s[i + 1]);
+      if (hi < 0 || lo < 0) {
+        return UnhexError::NON_HEX;
+      }
+      t[i / 2] = static_cast<uint8_t>((hi << 4) | lo);
     }
     return outcome::success();
   }

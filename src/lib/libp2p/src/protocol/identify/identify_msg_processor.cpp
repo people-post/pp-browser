@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/identify/identify_msg_processor.hpp>
 
 #include <tuple>
@@ -38,7 +39,7 @@ namespace libp2p::protocol {
         conn_manager_{conn_manager},
         identity_manager_{identity_manager},
         key_marshaller_{std::move(key_marshaller)} {
-    BOOST_ASSERT(key_marshaller_);
+    assert(key_marshaller_);
   }
 
   boost::signals2::connection IdentifyMessageProcessor::onIdentifyReceived(

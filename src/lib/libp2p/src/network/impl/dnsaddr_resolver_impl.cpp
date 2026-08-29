@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <algorithm>
 
 #include <libp2p/network/impl/dnsaddr_resolver_impl.hpp>
@@ -28,7 +29,7 @@ namespace libp2p::network {
       std::shared_ptr<boost::asio::io_context> io_context,
       const c_ares::Ares &cares)
       : io_context_{std::move(io_context)}, cares_{cares} {
-    BOOST_ASSERT(io_context_);
+    assert(io_context_);
   }
 
   void DnsaddrResolverImpl::load(multi::Multiaddress address,

@@ -6,13 +6,14 @@
 
 #include <libp2p/crypto/key.hpp>
 
-#include <boost/container_hash/hash.hpp>
+#include <libp2p/common/hash.hpp>
 
 size_t std::hash<libp2p::crypto::Key>::operator()(
     const libp2p::crypto::Key &x) const {
   size_t seed = 0;
-  boost::hash_combine(seed, x.type);
-  boost::hash_combine(seed, boost::hash_range(x.data.begin(), x.data.end()));
+  libp2p::common::hashCombine(seed, x.type);
+  libp2p::common::hashCombine(seed,
+                              libp2p::common::hashRange(x.data.begin(), x.data.end()));
   return seed;
 }
 
@@ -31,7 +32,7 @@ size_t std::hash<libp2p::crypto::KeyPair>::operator()(
   using libp2p::crypto::PrivateKey;
   using libp2p::crypto::PublicKey;
   size_t seed = 0;
-  boost::hash_combine(seed, std::hash<PublicKey>()(x.publicKey));
-  boost::hash_combine(seed, std::hash<PrivateKey>()(x.privateKey));
+  libp2p::common::hashCombine(seed, std::hash<PublicKey>()(x.publicKey));
+  libp2p::common::hashCombine(seed, std::hash<PrivateKey>()(x.privateKey));
   return seed;
 }

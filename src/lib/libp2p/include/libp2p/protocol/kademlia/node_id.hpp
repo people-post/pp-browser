@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <bitset>
 #include <climits>
 #include <cstring>
@@ -56,7 +57,7 @@ namespace libp2p::protocol::kademlia {
    public:
     explicit NodeId(const peer::PeerId &pid) {
       auto digest_res = crypto::sha256(pid.toVector());
-      BOOST_ASSERT(digest_res.has_value());
+      assert(digest_res.has_value());
       data_ = std::move(digest_res.value());
     }
 

@@ -10,7 +10,6 @@
 #include <mutex>
 
 #include <boost/asio/streambuf.hpp>
-#include <boost/noncopyable.hpp>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/log/logger.hpp>
 
@@ -21,9 +20,11 @@ namespace libp2p::connection {
    * Stream implementation, used by Mplex multiplexer
    */
   class MplexStream : public Stream,
-                      public std::enable_shared_from_this<MplexStream>,
-                      private boost::noncopyable {
+                      public std::enable_shared_from_this<MplexStream> {
    public:
+    MplexStream(const MplexStream &) = delete;
+    MplexStream &operator=(const MplexStream &) = delete;
+
     /**
      * In mplex streams are identified by both number and side, which initiated
      * the stream, so that two stream can have the same id number, given they

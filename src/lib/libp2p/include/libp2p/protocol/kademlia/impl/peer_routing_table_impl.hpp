@@ -8,7 +8,7 @@
 
 #include <libp2p/protocol/kademlia/impl/peer_routing_table.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <boost/optional.hpp>
 #include <list>
 

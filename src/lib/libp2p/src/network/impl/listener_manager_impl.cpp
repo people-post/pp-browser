@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/network/impl/listener_manager_impl.hpp>
 
 #include <libp2p/log/logger.hpp>
@@ -26,10 +27,10 @@ namespace libp2p::network {
         router_(std::move(router)),
         tmgr_(std::move(tmgr)),
         cmgr_(std::move(cmgr)) {
-    BOOST_ASSERT(multiselect_ != nullptr);
-    BOOST_ASSERT(router_ != nullptr);
-    BOOST_ASSERT(tmgr_ != nullptr);
-    BOOST_ASSERT(cmgr_ != nullptr);
+    assert(multiselect_ != nullptr);
+    assert(router_ != nullptr);
+    assert(tmgr_ != nullptr);
+    assert(cmgr_ != nullptr);
   }
 
   bool ListenerManagerImpl::isStarted() const {

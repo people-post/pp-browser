@@ -10,7 +10,6 @@
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/noncopyable.hpp>
 
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/as_asio_read_write.hpp>
@@ -23,9 +22,11 @@ namespace libp2p::connection {
 
   /// Secure connection of TLS 1.3 protocol
   class TlsConnection : public SecureConnection,
-                        public std::enable_shared_from_this<TlsConnection>,
-                        private boost::noncopyable {
+                        public std::enable_shared_from_this<TlsConnection> {
    public:
+    TlsConnection(const TlsConnection &) = delete;
+    TlsConnection &operator=(const TlsConnection &) = delete;
+
     using ssl_socket_t = boost::asio::ssl::stream<AsAsioReadWrite>;
 
     /// Upgraded connection passed to this callback
