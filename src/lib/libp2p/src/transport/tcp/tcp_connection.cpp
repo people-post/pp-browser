@@ -30,7 +30,7 @@ namespace libp2p::transport {
         layers_{std::move(layers)},
         socket_(std::move(socket)),
         connection_phase_done_{false},
-        deadline_timer_(context_) {
+        connect_timer_(context_) {
     std::ignore = saveMultiaddresses();
   }
 
@@ -40,7 +40,7 @@ namespace libp2p::transport {
         layers_{std::move(layers)},
         socket_(context_),
         connection_phase_done_{false},
-        deadline_timer_(context_) {}
+        connect_timer_(context_) {}
 
   outcome::result<void> TcpConnection::close() {
     closed_by_host_ = true;
@@ -116,9 +116,8 @@ namespace libp2p::transport {
       std::chrono::milliseconds timeout) {
     if (timeout > std::chrono::milliseconds::zero()) {
       connecting_with_timeout_ = true;
-      deadline_timer_.expires_from_now(
-          boost::posix_time::milliseconds(timeout.count()));
-      deadline_timer_.async_wait(
+      connect_timer_.expires_after(timeout);
+      connect_timer_.async_wait(
           [wptr{weak_from_this()}, cb](const boost::system::error_code &error) {
             auto self = wptr.lock();
             if (!self || self->closed_by_host_) {
@@ -162,7 +161,7 @@ namespace libp2p::transport {
             return;
           }
           if (self->connecting_with_timeout_) {
-            self->deadline_timer_.cancel();
+            self->connect_timer_.cancel();
           }
           self->initiator_ = true;
           std::ignore = self->saveMultiaddresses();
