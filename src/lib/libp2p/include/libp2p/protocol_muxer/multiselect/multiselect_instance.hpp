@@ -7,6 +7,9 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <vector>
+
 #include <libp2p/basic/scheduler.hpp>
 #include <libp2p/protocol_muxer/multiselect.hpp>
 #include "parser.hpp"
@@ -38,7 +41,7 @@ namespace libp2p::protocol_muxer::multiselect {
                      Multiselect::ProtocolHandlerFunc cb);
 
    private:
-    using Protocols = boost::container::small_vector<std::string, 4>;
+    using Protocols = std::vector<std::string>;
     using Packet = std::shared_ptr<MsgBuf>;
     using Parser = detail::Parser;
     using MaybeResult = std::optional<outcome::result<std::string>>;
