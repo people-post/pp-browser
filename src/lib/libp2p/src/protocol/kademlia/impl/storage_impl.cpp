@@ -7,11 +7,6 @@
 #include <cassert>
 #include <libp2p/protocol/kademlia/impl/storage_impl.hpp>
 
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index_container.hpp>
-#include <unordered_map>
-
 #include <libp2p/protocol/kademlia/config.hpp>
 #include <libp2p/protocol/kademlia/error.hpp>
 
@@ -26,8 +21,6 @@ namespace libp2p::protocol::kademlia {
     assert(backend_ != nullptr);
     assert(scheduler_ != nullptr);
     assert(config_.storageRecordTTL > config_.storageWipingInterval);
-
-    table_ = std::make_unique<Table>();
 
     refresh_timer_ =
         scheduler_->scheduleWithHandle([this] { setTimerRefresh(); });
@@ -46,24 +39,19 @@ namespace libp2p::protocol::kademlia {
     auto now = scheduler_->now();
     auto expire_time = now + config_.storageRecordTTL;
 
-    auto &idx = table_->get<ByKey>();
-
-    if (auto it = idx.find(key); it == idx.end()) {
-      table_->insert({key, expire_time, now});
+    if (auto it = table_.find(key); it == table_.end()) {
+      table_.emplace(key, Record{key, expire_time, now});
     } else {
-      table_->modify(it, [expire_time, now](auto &record) {
-        record.expire_time = expire_time;
-        record.updated_at = now;
-      });
+      it->second.expire_time = expire_time;
+      it->second.updated_at = now;
     }
 
     return outcome::success();
   }
 
   outcome::result<ValueAndTime> StorageImpl::getValue(const Key &key) const {
-    auto &idx = table_->get<ByKey>();
-    auto it = idx.find(key);
-    if (it == idx.end()) {
+    auto it = table_.find(key);
+    if (it == table_.end()) {
       return Error::VALUE_NOT_FOUND;
     }
     auto value_res = backend_->getValue(key);
@@ -71,44 +59,39 @@ namespace libp2p::protocol::kademlia {
       return std::move(value_res).as_failure();
     }
     auto value = std::move(value_res).value();
-    return {value, it->expire_time};
+    return {value, it->second.expire_time};
   }
 
   bool StorageImpl::hasValue(const Key &key) const {
-    auto &idx = table_->get<ByKey>();
-    auto it = idx.find(key);
-    if (it == idx.end()) {
+    auto it = table_.find(key);
+    if (it == table_.end()) {
       return false;
     }
-    return it->expire_time > scheduler_->now();
+    return it->second.expire_time > scheduler_->now();
   }
 
   void StorageImpl::onRefreshTimer() {
     auto now = scheduler_->now();
 
     // cleanup expired records
-    auto &idx_by_expiration = table_->get<ByExpireTime>();
-    for (auto i = idx_by_expiration.begin(); i != idx_by_expiration.end();) {
-      if (i->expire_time > now) {
-        break;
+    for (auto i = table_.begin(); i != table_.end();) {
+      if (i->second.expire_time > now) {
+        ++i;
+        continue;
       }
-
-      auto ci = i++;
-      if (backend_->erase(ci->key)) {
-        idx_by_expiration.erase(ci);
+      if (backend_->erase(i->second.key)) {
+        i = table_.erase(i);
+      } else {
+        ++i;
       }
     }
 
     // refresh if time arrived
-    auto &idx_by_refresing = table_->get<ByRefreshTime>();
-    for (auto i = idx_by_refresing.begin(); i != idx_by_refresing.end(); ++i) {
-      if (i->refresh_time > now) {
-        break;
+    for (auto &entry : table_) {
+      if (entry.second.refresh_time > now) {
+        continue;
       }
-
-      idx_by_refresing.modify(i, [this](auto &record) {
-        record.refresh_time += config_.storageRefreshInterval;
-      });
+      entry.second.refresh_time += config_.storageRefreshInterval;
     }
 
     setTimerRefresh();
@@ -129,10 +112,9 @@ namespace libp2p::protocol::kademlia {
   std::vector<std::pair<Key, Value>> StorageImpl::getAllRecords() const {
     std::vector<std::pair<Key, Value>> records;
     auto now = scheduler_->now();
-    
-    // Iterate through all records and get their values from backend
-    for (const auto& record : *table_) {
-      // Only include non-expired records
+
+    for (const auto &entry : table_) {
+      const auto &record = entry.second;
       if (record.expire_time > now) {
         auto value_result = backend_->getValue(record.key);
         if (value_result) {
@@ -140,7 +122,7 @@ namespace libp2p::protocol::kademlia {
         }
       }
     }
-    
+
     return records;
   }
 }  // namespace libp2p::protocol::kademlia

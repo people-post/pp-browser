@@ -8,10 +8,6 @@
 #include <cassert>
 #include <libp2p/protocol/kademlia/impl/get_value_executor.hpp>
 
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index_container.hpp>
-
 #include <libp2p/common/final_action.hpp>
 #include <libp2p/protocol/kademlia/config.hpp>
 #include <libp2p/protocol/kademlia/error.hpp>
@@ -65,7 +61,6 @@ namespace libp2p::protocol::kademlia {
       queue_.emplace(peer_id, target_);
     }
 
-    received_records_ = std::make_unique<Table>();
     log_.debug("created");
   }
 
@@ -169,7 +164,7 @@ namespace libp2p::protocol::kademlia {
     if (requests_in_progress_ != 0) {
       return;
     }
-    if (received_records_->empty()) {
+    if (received_records_.empty()) {
       done_ = true;
       log_.debug("done");
       handler_(Error::VALUE_NOT_FOUND);
@@ -300,9 +295,9 @@ namespace libp2p::protocol::kademlia {
         return;
       }
 
-      received_records_->insert({remote_peer_id, value});
+      received_records_.emplace(remote_peer_id, value);
 
-      if (received_records_->size() >= config_.valueLookupsQuorum) {
+      if (received_records_.size() >= config_.valueLookupsQuorum) {
         finish();
       }
     }
@@ -310,10 +305,10 @@ namespace libp2p::protocol::kademlia {
 
   void GetValueExecutor::finish() {
     std::vector<Value> values;
-    std::transform(received_records_->begin(),
-                   received_records_->end(),
-                   std::back_inserter(values),
-                   [](auto &record) { return record.value; });
+    values.reserve(received_records_.size());
+    for (auto &record : received_records_) {
+      values.push_back(record.second);
+    }
 
     auto index_res = validator_->select(key_, values);
     if (not index_res.has_value()) {
@@ -329,8 +324,7 @@ namespace libp2p::protocol::kademlia {
 
     // Inform peer of new value
     std::vector<PeerId> addressees;
-    auto &idx_by_value = received_records_->get<ByValue>();
-    for (auto &[peer, value] : idx_by_value) {
+    for (auto &[peer, value] : received_records_) {
       if (value != best) {
         addressees.emplace_back(peer);
       } else {

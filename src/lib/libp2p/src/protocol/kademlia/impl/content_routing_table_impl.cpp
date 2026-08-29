@@ -4,12 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <algorithm>
 #include <cassert>
 #include <libp2p/protocol/kademlia/impl/content_routing_table_impl.hpp>
-
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index_container.hpp>
 
 namespace libp2p::protocol::kademlia {
 
@@ -19,7 +16,6 @@ namespace libp2p::protocol::kademlia {
       std::shared_ptr<event::Bus> bus)
       : config_(config), scheduler_(scheduler), bus_(std::move(bus)) {
     assert(bus_ != nullptr);
-    table_ = std::make_unique<Table>();
   }
 
   void ContentRoutingTableImpl::start() {
@@ -31,10 +27,12 @@ namespace libp2p::protocol::kademlia {
   std::vector<PeerId> ContentRoutingTableImpl::getProvidersFor(
       const ContentId &key, size_t limit) const {
     std::vector<PeerId> result;
-    auto &idx = table_->get<ByKey>();
-    auto [begin, end] = idx.equal_range(key);
-    for (auto it = begin; it != end; ++it) {
-      result.push_back(it->peer);
+    auto it = table_.find(key);
+    if (it == table_.end()) {
+      return result;
+    }
+    for (const auto &provider : it->second) {
+      result.push_back(provider.peer);
       if (limit > 0 and result.size() >= limit) {
         break;
       }
@@ -45,29 +43,28 @@ namespace libp2p::protocol::kademlia {
   void ContentRoutingTableImpl::addProvider(const ContentId &key,
                                             const peer::PeerId &peer) {
     auto expires = scheduler_.now() + config_.providerRecordTTL;
-    auto &idx = table_->get<ByKey>();
-    auto [begin, end] = idx.equal_range(key);
-    auto oldest = begin;
-    auto equal = idx.end();
-    size_t count = 0;
-    for (auto it = begin; it != end; ++it, ++count) {
+    auto &providers = table_[key];
+    auto equal = providers.end();
+    auto oldest = providers.begin();
+    for (auto it = providers.begin(); it != providers.end(); ++it) {
       if (it->peer == peer) {
         equal = it;
         break;
       }
-      if (it->expire_time < oldest->expire_time) {
+      if (oldest == providers.end()
+          || it->expire_time < oldest->expire_time) {
         oldest = it;
       }
     }
-    if (equal != idx.end()) {
+    if (equal != providers.end()) {
       // provider refreshed itself, so do our host
-      table_->modify(equal, [expires](Record &r) { r.expire_time = expires; });
+      equal->expire_time = expires;
       return;
     }
-    if (count >= config_.maxProvidersPerKey) {
-      idx.erase(oldest);
+    if (providers.size() >= config_.maxProvidersPerKey && !providers.empty()) {
+      providers.erase(oldest);
     }
-    table_->insert({key, peer, expires});
+    providers.push_back(Provider{peer, expires});
     bus_->getChannel<event::protocol::kademlia::ProvideContentChannel>()
         .publish({key, peer});
   }
@@ -75,14 +72,19 @@ namespace libp2p::protocol::kademlia {
   void ContentRoutingTableImpl::onCleanupTimer() {
     auto current_time = scheduler_.now();
 
-    // cleanup expired records
-    auto &idx = table_->get<ByExpireTime>();
-    for (auto i = idx.begin(); i != idx.end();) {
-      if (i->expire_time > current_time) {
-        break;
+    for (auto it = table_.begin(); it != table_.end();) {
+      auto &providers = it->second;
+      providers.erase(std::remove_if(providers.begin(),
+                                     providers.end(),
+                                     [current_time](const Provider &p) {
+                                       return p.expire_time <= current_time;
+                                     }),
+                      providers.end());
+      if (providers.empty()) {
+        it = table_.erase(it);
+      } else {
+        ++it;
       }
-      auto ci = i++;
-      idx.erase(ci);
     }
 
     setTimerCleanup();
