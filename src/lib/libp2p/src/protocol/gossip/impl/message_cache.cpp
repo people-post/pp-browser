@@ -9,9 +9,6 @@
 
 #include <cassert>
 
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index_container.hpp>
 #include <qtils/hex.hpp>
 
 #define TRACE_ENABLED 0
@@ -22,25 +19,23 @@ namespace libp2p::protocol::gossip {
   MessageCache::MessageCache(Time message_lifetime, TimeFunction clock)
       : message_lifetime_(message_lifetime), clock_(std::move(clock)) {
     assert(message_lifetime_ > Time::zero());
-    table_ = std::make_unique<msg_cache_table::Table>();
   }
 
   MessageCache::~MessageCache() = default;
 
   bool MessageCache::contains(const MessageId &id) const {
-    return table_->get<ById>().count(id) != 0;
+    return table_.count(id) != 0;
   }
 
   std::optional<TopicMessage::Ptr> MessageCache::getMessage(
       const MessageId &id) const {
-    auto &idx = table_->get<ById>();
-    auto it = idx.find(id);
-    if (it == idx.end()) {
+    auto it = table_.find(id);
+    if (it == table_.end()) {
       TRACE(
-          "MessageCache: {:X} not found, current size {}", id, table_->size());
+          "MessageCache: {:X} not found, current size {}", id, table_.size());
       return std::nullopt;
     }
-    return it->message;
+    return it->second.message;
   }
 
   bool MessageCache::insert(TopicMessage::Ptr message,
@@ -48,35 +43,32 @@ namespace libp2p::protocol::gossip {
     if (!message || msg_id.empty()) {
       return false;
     }
-    auto &idx = table_->get<ById>();
-    auto it = idx.find(msg_id);
-    if (it != idx.end()) {
+    auto it = table_.find(msg_id);
+    if (it != table_.end()) {
       return false;
     }
     auto now = clock_();
-    idx.insert({msg_id, now + message_lifetime_, std::move(message)});
+    table_.emplace(msg_id, Record{now + message_lifetime_, std::move(message)});
     return true;
   }
 
   void MessageCache::shift() {
-    auto &idx = table_->get<ByTimestamp>();
-    if (idx.empty()) {
+    if (table_.empty()) {
       return;
     }
     auto now = clock_();
 
-    TRACE("MessageCache: size before shift: {}", table_->size());
+    TRACE("MessageCache: size before shift: {}", table_.size());
 
-    if (idx.rbegin()->expires_at < now) {
-      table_->clear();
-    } else {
-      auto expired_until = idx.lower_bound(now);
-      if (expired_until != idx.end()) {
-        idx.erase(idx.begin(), expired_until);
+    for (auto it = table_.begin(); it != table_.end();) {
+      if (it->second.expires_at < now) {
+        it = table_.erase(it);
+      } else {
+        ++it;
       }
     }
 
-    TRACE("MessageCache: size after shift: {}", table_->size());
+    TRACE("MessageCache: size after shift: {}", table_.size());
   }
 
 }  // namespace libp2p::protocol::gossip

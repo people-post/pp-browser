@@ -8,9 +8,6 @@
 
 #include <libp2p/protocol/kademlia/impl/response_handler.hpp>
 
-#include <boost/multi_index/hashed_index_fwd.hpp>
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index_container_fwd.hpp>
 #include <memory>
 #include <queue>
 #include <unordered_set>
