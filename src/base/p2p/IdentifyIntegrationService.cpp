@@ -13,7 +13,6 @@
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
-#include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/host/basic_host/basic_host.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -31,12 +30,10 @@ std::shared_ptr<libp2p::crypto::marshaller::KeyMarshaller> CreateKeyMarshaller()
   auto ed25519 = std::make_shared<libp2p::crypto::ed25519::Ed25519ProviderImpl>();
   auto rsa = std::make_shared<libp2p::crypto::rsa::RsaProviderImpl>();
   auto ecdsa = std::make_shared<libp2p::crypto::ecdsa::EcdsaProviderImpl>();
-  auto secp256k1 =
-      std::make_shared<libp2p::crypto::secp256k1::Secp256k1ProviderImpl>(csprng);
   auto hmac = std::make_shared<libp2p::crypto::hmac::HmacProviderImpl>();
   auto mldsa = std::make_shared<libp2p::crypto::mldsa::MlDsaProviderImpl>();
   auto crypto_provider = std::make_shared<libp2p::crypto::CryptoProviderImpl>(
-      csprng, ed25519, rsa, ecdsa, secp256k1, hmac, mldsa);
+      csprng, ed25519, rsa, ecdsa, hmac, mldsa);
   auto key_validator =
       std::make_shared<libp2p::crypto::validator::KeyValidatorImpl>(crypto_provider);
   return std::make_shared<libp2p::crypto::marshaller::KeyMarshallerImpl>(key_validator);

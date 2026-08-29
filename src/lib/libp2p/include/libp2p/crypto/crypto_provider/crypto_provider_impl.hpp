@@ -25,9 +25,6 @@ namespace libp2p::crypto {
   namespace ecdsa {
     class EcdsaProvider;
   }
-  namespace secp256k1 {
-    class Secp256k1Provider;
-  }
 
   class CryptoProviderImpl : public CryptoProvider {
    public:
@@ -43,7 +40,6 @@ namespace libp2p::crypto {
         std::shared_ptr<ed25519::Ed25519Provider> ed25519_provider,
         std::shared_ptr<rsa::RsaProvider> rsa_provider,
         std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider,
-        std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider,
         std::shared_ptr<hmac::HmacProvider> hmac_provider,
         std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider);
 
@@ -91,15 +87,6 @@ namespace libp2p::crypto {
                                         BytesIn signature,
                                         const PublicKey &public_key) const;
 
-    // Secp256k1
-    outcome::result<KeyPair> generateSecp256k1() const;
-    outcome::result<PublicKey> deriveSecp256k1(const PrivateKey &key) const;
-    outcome::result<Buffer> signSecp256k1(BytesIn message,
-                                          const PrivateKey &private_key) const;
-    outcome::result<bool> verifySecp256k1(BytesIn message,
-                                          BytesIn signature,
-                                          const PublicKey &public_key) const;
-
     // ECDSA
     outcome::result<KeyPair> generateEcdsa() const;
     outcome::result<PublicKey> deriveEcdsa(const PrivateKey &key) const;
@@ -121,7 +108,6 @@ namespace libp2p::crypto {
     std::shared_ptr<ed25519::Ed25519Provider> ed25519_provider_;
     std::shared_ptr<rsa::RsaProvider> rsa_provider_;
     std::shared_ptr<ecdsa::EcdsaProvider> ecdsa_provider_;
-    std::shared_ptr<secp256k1::Secp256k1Provider> secp256k1_provider_;
     std::shared_ptr<hmac::HmacProvider> hmac_provider_;
     std::shared_ptr<mldsa::MlDsaProvider> mldsa_provider_;
   };

@@ -14,7 +14,6 @@
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
-#include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <qtils/test/outcome.hpp>
 
 using ::testing::_;
@@ -41,8 +40,6 @@ using libp2p::crypto::random::BoostRandomGenerator;
 using libp2p::crypto::random::CSPRNG;
 using libp2p::crypto::rsa::RsaProvider;
 using libp2p::crypto::rsa::RsaProviderImpl;
-using libp2p::crypto::secp256k1::Secp256k1Provider;
-using libp2p::crypto::secp256k1::Secp256k1ProviderImpl;
 using libp2p::crypto::validator::KeyValidator;
 using libp2p::crypto::validator::KeyValidatorImpl;
 
@@ -52,14 +49,12 @@ struct BaseKeyTest {
       std::make_shared<Ed25519ProviderImpl>();
   std::shared_ptr<RsaProvider> rsa = std::make_shared<RsaProviderImpl>();
   std::shared_ptr<EcdsaProvider> ecdsa = std::make_shared<EcdsaProviderImpl>();
-  std::shared_ptr<Secp256k1Provider> secp256k1 =
-      std::make_shared<Secp256k1ProviderImpl>(random);
   std::shared_ptr<HmacProvider> hmac_provider =
       std::make_shared<HmacProviderImpl>();
   std::shared_ptr<MlDsaProvider> mldsa = std::make_shared<MlDsaProviderImpl>();
   std::shared_ptr<CryptoProvider> crypto_provider =
       std::make_shared<CryptoProviderImpl>(
-          random, ed25519, rsa, ecdsa, secp256k1, hmac_provider, mldsa);
+          random, ed25519, rsa, ecdsa, hmac_provider, mldsa);
   std::shared_ptr<KeyValidator> validator =
       std::make_shared<KeyValidatorImpl>(crypto_provider);
 };
@@ -129,18 +124,17 @@ TEST_P(GeneratedKeysTest, InvalidPublicKeyInvalidatesPair) {
 INSTANTIATE_TEST_SUITE_P(GeneratedValidKeysCases,
                          GeneratedKeysTest,
                          ::testing::Values(Key::Type::RSA,
-                                           Key::Type::Ed25519,
-                                           Key::Type::Secp256k1));
+                                           Key::Type::Ed25519));
 
 class RandomKeyTest : public BaseKeyTest,
                       public ::testing::TestWithParam<Key::Type> {};
 
 /**
- * Every 32 byte can be ED25519 or SECP256K1 private key
+ * Every 32 byte can be ED25519 private key
  */
 
 /**
- * @given key type as parameter (ED25519 or SECP256K1)
+ * @given key type as parameter (ED25519)
  * @when generate arbitrary 32 bytes sequence, compose a key @and validate
  * @then composed key validation result is success,
  * @and derive operation succeeds as well
@@ -155,10 +149,18 @@ TEST_P(RandomKeyTest, Every32byteIsValidPrivateKey) {
 
 INSTANTIATE_TEST_SUITE_P(RandomSequencesCases,
                          RandomKeyTest,
-                         ::testing::Values(Key::Type::Ed25519,
-                                           Key::Type::Secp256k1));
+                         ::testing::Values(Key::Type::Ed25519));
 
 class UnspecifiedKeyTest : public BaseKeyTest, public ::testing::Test {};
+
+/**
+ * Secp256k1 private keys remain size-valid without crypto provider support.
+ */
+TEST_F(UnspecifiedKeyTest, Secp256k1PrivateKeySizeOnlyValid) {
+  auto private_key =
+      PrivateKey{{Key::Type::Secp256k1, random->randomBytes(32)}};
+  EXPECT_OUTCOME_SUCCESS(validator->validate(private_key));
+}
 
 /**
  * @given proposed key type: Key::Type::UNSPECIFIED
