@@ -43,7 +43,7 @@ namespace libp2p::protocol {
     assert(key_marshaller_);
   }
 
-  boost::signals2::connection IdentifyMessageProcessor::onIdentifyReceived(
+  event::Connection IdentifyMessageProcessor::onIdentifyReceived(
       const std::function<IdentifyCallback> &cb) {
     return signal_identify_received_.connect(cb);
   }

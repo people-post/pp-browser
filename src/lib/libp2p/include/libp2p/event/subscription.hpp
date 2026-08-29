@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/signals2.hpp>
+#include <libp2p/event/signal.hpp>
 
 namespace libp2p::event {
 
@@ -15,8 +15,7 @@ namespace libp2p::event {
    */
   class Subscription {
    public:
-    explicit Subscription(boost::signals2::connection conn)  // NOLINT (moved)
-        : connection_{std::move(conn)} {}
+    explicit Subscription(Connection conn) : connection_{std::move(conn)} {}
 
     /**
      * Unsubscribe from the event
@@ -26,7 +25,7 @@ namespace libp2p::event {
     }
 
    private:
-    boost::signals2::connection connection_;
+    Connection connection_;
   };
 
 }  // namespace libp2p::event

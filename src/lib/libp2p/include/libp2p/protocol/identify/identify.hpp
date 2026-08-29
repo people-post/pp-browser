@@ -40,7 +40,7 @@ namespace libp2p::protocol {
 
     ~Identify() override = default;
 
-    boost::signals2::connection onIdentifyReceived(
+    event::Connection onIdentifyReceived(
         const std::function<IdentifyMessageProcessor::IdentifyCallback> &cb);
 
     /**

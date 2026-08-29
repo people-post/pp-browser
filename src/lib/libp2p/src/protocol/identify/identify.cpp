@@ -22,7 +22,7 @@ namespace libp2p::protocol {
     assert(msg_processor_);
   }
 
-  boost::signals2::connection Identify::onIdentifyReceived(
+  event::Connection Identify::onIdentifyReceived(
       const std::function<IdentifyMessageProcessor::IdentifyCallback> &cb) {
     return msg_processor_->onIdentifyReceived(cb);
   }

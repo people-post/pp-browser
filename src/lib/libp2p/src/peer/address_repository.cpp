@@ -8,12 +8,12 @@
 
 namespace libp2p::peer {
 
-  boost::signals2::connection AddressRepository::onAddressAdded(
+  event::Connection AddressRepository::onAddressAdded(
       const std::function<AddressCallback> &cb) {
     return signal_added_.connect(cb);
   }
 
-  boost::signals2::connection AddressRepository::onAddressRemoved(
+  event::Connection AddressRepository::onAddressRemoved(
       const std::function<AddressCallback> &cb) {
     return signal_removed_.connect(cb);
   }
