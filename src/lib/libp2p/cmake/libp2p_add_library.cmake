@@ -6,9 +6,7 @@ function(libp2p_add_library target)
     target_link_libraries(${target}
       qtils::qtils
       Asio::asio
-      Boost::boost
       soralog::soralog
-      Boost::Boost.DI
     )
   endif()
   libp2p_install(${target})

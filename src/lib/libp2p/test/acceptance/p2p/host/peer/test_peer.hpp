@@ -10,7 +10,6 @@
 #include <thread>
 
 #include <libp2p/basic/scheduler.hpp>
-#include <libp2p/injector/host_injector.hpp>
 #include <libp2p/network/cares/cares.hpp>
 #include <libp2p/protocol/echo.hpp>
 #include <testutil/async/impl/clock_impl.hpp>

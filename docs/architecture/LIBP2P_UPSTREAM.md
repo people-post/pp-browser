@@ -56,10 +56,9 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 **pp-browser fork changes (initial import):**
 
 - `Multihash` — inline value storage instead of `shared_ptr` (avoids null moved-from state that broke MSVC Release peer identity paths)
-- `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI moved the same KeyPair into IdentityManager and Noise)
-- `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store; bind `CryptoProvider` and `MlDsaProvider` as instances (same pattern as Ed25519/RSA) so Boost.DI never constructs abstract `MlDsaProvider` when wiring `CryptoProviderImpl`
-- `crypto_provider/crypto_provider_impl.hpp` — include complete `mldsa_provider.hpp` (not a forward declaration) so Boost.DI constructor inspection sees a complete type
-- `host/explicit_host.*` — preferred Host factory (no Boost.DI); used by `Libp2pChatHistoryService` and `muxers_and_streams_test`. Boost.DI injectors remain for upstream-shaped examples/injector unit tests only
+- `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI historically moved the same KeyPair into IdentityManager and Noise)
+- `crypto_provider/crypto_provider_impl.hpp` — include complete `mldsa_provider.hpp` (not a forward declaration)
+- `host/explicit_host.*` — sole Host factory (TCP/Quic; no Boost.DI); used by app (`Libp2pHost`), tests, and built examples; injector headers removed
 - `host/basic_host/basic_host.hpp` — `getIdentityManager()` for pp-browser Identify integration (L2)
 - `network/impl/listener_manager_impl.cpp` — if the host is already `start()`ed, `listen()` binds the transport immediately (needed for mobile N025 ephemeral `/tcp/0` after Client non-listen start; upstream only binds inside `start()`)
 - `basic/read.hpp` / `basic/write.hpp` — return `invalid_argument` instead of throwing `std::logic_error` on zero/oversize `readSome`/`writeSome` results (uncaught throw aborted Android host io during call-media)
@@ -77,7 +76,7 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)
-- `cmake/libp2p_add_library.cmake` — link `qtils`, `Asio::asio`, `Boost::boost`, `soralog`, `Boost::Boost.DI` in vendored mode
+- `cmake/libp2p_add_library.cmake` — link `qtils`, `Asio::asio`, `soralog` in vendored mode (no Boost)
 - `cmake/install.cmake` — skip install/export when embedded in pp-browser
 - `src/crypto/sha/CMakeLists.txt` — plain `target_link_libraries` signature (matches rest of tree)
 - `src/security/tls/CMakeLists.txt` — link `OpenSSL::SSL` / `OpenSSL::Crypto`; include `<openssl/x509.h>` in `tls_details.cpp`
@@ -89,8 +88,8 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
 - `qtils/outcome.hpp` — facade over vendored standalone Outcome (`third_party/outcome`, ned14 v2.2.15 single-header); keeps `outcome::result` / `OUTCOME_TRY` / `success` / `failure`; MSVC-safe `OUTCOME_TRY` via one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`); no longer links `Boost::outcome`
 - `outcome/` — standalone Outcome INTERFACE target (`Outcome::outcome`); pulled before qtils in `cmake/libp2p_dependencies.cmake`
-- `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs; vendored build no longer pulls `outcome`, `filesystem`, `program_options`, `algorithm`, `random`, `beast`, `asio`, or `system` (replaced with STL / local helpers / standalone Outcome / standalone Asio + `std::error_code`; CSPRNG is `StdRandomGenerator`); also dropped Boost.Variant / Boost.Container small/static_vector from fork sources; Boost remains for DI (+ slim header deps such as `smart_ptr`)
-- `asio/` — standalone Asio 1.34.0 (`Asio::asio`, `ASIO_STANDALONE` + `ASIO_NO_DEPRECATED`); fork, `src/base/p2p`, and `pp-node` status HTTP use `#include <asio…>` / `asio::` and `std::error_code` (not Boost.Asio / `boost::system`)
+- Boost + Boost.DI — removed from `third_party/` and CMake; Host wiring is `createExplicitHost` only (injector headers deleted)
+- `asio/` — standalone Asio 1.34.0 (`Asio::asio`, `ASIO_STANDALONE` + `ASIO_NO_DEPRECATED`); fork, `src/base/p2p`, and `pp-node` status HTTP use `#include <asio…>` / `asio::` and `std::error_code`
 - fork sources — dropped Boost.Operators (`equality_comparable`), Boost.Range (`for_each` / `filtered`), and unused Boost.Exception include in `event/bus.hpp`
 - fork sources — replaced Boost.MultiIndex tables in gossip `MessageCache` and Kademlia `StorageImpl` / `ContentRoutingTableImpl` / `GetValueExecutor` with `std::unordered_map` (+ vectors); removed dead MultiIndex includes from `put_value_executor.hpp`
 - fork sources — replaced Boost.Signals2 with `libp2p/event/signal.hpp` (`Signal` / `Connection` / `ScopedConnection`) for Bus, Emitter, AddressRepository, and Identify; removed unused Signals2 include from `transport_listener.hpp`

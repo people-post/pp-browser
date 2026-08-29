@@ -8,9 +8,13 @@
 #include <iostream>
 #include <memory>
 
-#include <libp2p/basic/scheduler.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+
+#include <libp2p/basic/scheduler/asio_scheduler_backend.hpp>
+#include <libp2p/basic/scheduler/scheduler_impl.hpp>
 #include <libp2p/common/literals.hpp>
-#include <libp2p/injector/host_injector.hpp>
+#include <libp2p/host/explicit_host.hpp>
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/protocol/echo.hpp>
@@ -93,18 +97,14 @@ int main(int argc, char *argv[]) {
   // client, but in this example it's used as a client-only
   libp2p::protocol::Echo echo{libp2p::protocol::EchoConfig{1}};
 
-  // create a default Host via an injector
-  auto injector = libp2p::injector::makeHostInjector();
+  auto io = std::make_shared<asio::io_context>();
+  auto host = libp2p::createExplicitHost(io);
+  auto sch = std::make_shared<libp2p::basic::SchedulerImpl>(
+      std::make_shared<libp2p::basic::AsioSchedulerBackend>(io),
+      libp2p::basic::Scheduler::Config{});
 
-  auto host = injector.create<std::shared_ptr<libp2p::Host>>();
-
-  // create io_context - in fact, thing, which allows us to execute async
-  // operations
-  auto context = injector.create<std::shared_ptr<asio::io_context>>();
-  auto sch = injector.create<std::shared_ptr<libp2p::basic::Scheduler>>();
-
-  post(
-      *context,
+  asio::post(
+      *io,
       [log,
        host{std::move(host)},
        &echo,
@@ -186,5 +186,5 @@ int main(int argc, char *argv[]) {
       });
 
   // run the IO context
-  context->run_for(run_duration);
+  io->run_for(run_duration);
 }

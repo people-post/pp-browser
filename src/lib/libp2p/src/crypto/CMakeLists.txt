@@ -23,14 +23,12 @@ libp2p_add_library(p2p_crypto_error
     error.cpp
     )
 target_link_libraries(p2p_crypto_error
-    Boost::boost
     )
 
 libp2p_add_library(p2p_crypto_key
     key.cpp
     )
 target_link_libraries(p2p_crypto_key
-    Boost::boost
     )
 
 libp2p_add_library(p2p_crypto_common

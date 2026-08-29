@@ -18,7 +18,6 @@ libp2p_add_library(p2p_yamuxed_connection
     yamux_reading_state.cpp
     )
 target_link_libraries(p2p_yamuxed_connection
-    Boost::boost
     p2p_byteutil
     p2p_peer_id
     p2p_read_buffer

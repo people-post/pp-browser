@@ -13,6 +13,5 @@ if(PACKAGE_MANAGER STREQUAL "vendored")
 endif()
 
 add_subdirectory(acceptance)
-add_subdirectory(deps)
 add_subdirectory(libp2p)
 add_subdirectory(testutil)

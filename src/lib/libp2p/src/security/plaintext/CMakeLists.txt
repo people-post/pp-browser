@@ -9,7 +9,6 @@ libp2p_add_library(p2p_plaintext
     plaintext_connection.cpp
     )
 target_link_libraries(p2p_plaintext
-    Boost::boost
     p2p_crypto_error
     p2p_logger
     p2p_plaintext_exchange_message_marshaller
@@ -22,7 +21,6 @@ libp2p_add_library(p2p_plaintext_exchange_message_marshaller
     exchange_message_marshaller_impl.cpp
     )
 target_link_libraries(p2p_plaintext_exchange_message_marshaller
-    Boost::boost
     p2p_wire
     p2p_key_marshaller
     )

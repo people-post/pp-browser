@@ -23,4 +23,5 @@ target_link_libraries(p2p_default_host
     p2p_tls
     p2p_noise
     p2p_plaintext
+    p2p_quic
     )

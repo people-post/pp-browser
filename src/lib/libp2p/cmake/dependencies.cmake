@@ -16,7 +16,7 @@ macro(pp_libp2p_require_target target)
 endmacro()
 
 if (PACKAGE_MANAGER STREQUAL "vendored")
-  pp_libp2p_require_target(Boost::boost)
+  pp_libp2p_require_target(Asio::asio)
   pp_libp2p_require_target(OpenSSL::Crypto)
   pp_libp2p_require_target(OpenSSL::SSL)
   pp_libp2p_require_target(libsecp256k1::secp256k1)
@@ -28,7 +28,6 @@ if (PACKAGE_MANAGER STREQUAL "vendored")
   pp_libp2p_require_target(yaml-cpp::yaml-cpp)
   pp_libp2p_require_target(soralog::soralog)
   pp_libp2p_require_target(tsl::tsl_hat_trie)
-  pp_libp2p_require_target(Boost::Boost.DI)
   if (SQLITE_ENABLED)
     pp_libp2p_require_target(SQLiteModernCpp::SQLiteModernCpp)
   endif()
@@ -84,9 +83,6 @@ hunter_add_package(tsl_hat_trie)
 find_package(tsl_hat_trie CONFIG REQUIRED)
 
 # https://github.com/masterjedy/di
-hunter_add_package(Boost.DI)
-find_package(Boost.DI CONFIG REQUIRED)
-
 if (SQLITE_ENABLED)
   # https://github.com/qdrvm/libp2p-sqlite-modern-cpp/tree/hunter
   hunter_add_package(SQLiteModernCpp)
