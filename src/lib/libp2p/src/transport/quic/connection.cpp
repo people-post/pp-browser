@@ -38,7 +38,7 @@ namespace libp2p::transport {
 
   void QuicConnection::deferReadCallback(outcome::result<size_t> res,
                                          ReadCallbackFunc cb) {
-    post(*io_context_, [cb{std::move(cb)}, res] { cb(res); });
+    asio::post(*io_context_, [cb{std::move(cb)}, res] { cb(res); });
   }
 
   void QuicConnection::writeSome(BytesIn in, WriteCallbackFunc cb) {

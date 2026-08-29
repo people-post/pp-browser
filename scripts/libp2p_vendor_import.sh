@@ -11,7 +11,6 @@ PATCHES="${ROOT}/cmake/patches/libp2p"
 # name|url|archive_type (git or tarball)
 declare -A LIBP2P_REPOS=(
   [boringssl]="https://github.com/qdrvm/boringssl/archive/refs/tags/qdrvm1.zip|tarball"
-  [boost]="https://archives.boost.io/release/1.87.0/source/boost_1_87_0.tar.gz|tarball"
   [lsquic]="https://github.com/qdrvm/lsquic/archive/refs/tags/v4.0.9-qdrvm-1.zip|tarball"
   [libsecp256k1]="https://github.com/qdrvm/libsecp256k1/archive/refs/tags/0.5.1.zip|tarball"
   [c-ares]="https://github.com/hunter-packages/c-ares/archive/v1.14.0-p0.tar.gz|tarball"
@@ -20,7 +19,6 @@ declare -A LIBP2P_REPOS=(
   [soralog]="https://github.com/qdrvm/soralog/archive/refs/tags/v0.2.5.tar.gz|tarball"
   [qtils]="https://github.com/qdrvm/qtils/archive/refs/tags/v0.1.1.tar.gz|tarball"
   [tsl_hat_trie]="https://github.com/masterjedy/hat-trie/archive/4fdfc75e75276185eed4b748ea09671601101b8e.tar.gz|tarball"
-  [boost_di]="https://github.com/qdrvm/boost-di/archive/d5de6c9840c7fc2e44bf37134b4a14b88151ecc4.zip|tarball"
   [zlib]="https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz|tarball"
   [googletest]="https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz|tarball"
 )

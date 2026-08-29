@@ -19,7 +19,6 @@ libp2p_add_library(p2p_kademlia_error
     error.cpp
     )
 target_link_libraries(p2p_kademlia_error
-    Boost::boost
     )
 
 add_subdirectory(impl)

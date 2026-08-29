@@ -11,7 +11,6 @@ libp2p_add_library(p2p_tls
     tls_details.cpp
     )
 target_link_libraries(p2p_tls
-    Boost::boost
     OpenSSL::SSL
     OpenSSL::Crypto
     p2p_crypto_error

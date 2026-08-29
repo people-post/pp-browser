@@ -4,19 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <string>
+#include <string_view>
+
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
 
 #include <libp2p/common/literals.hpp>
-#include <libp2p/host/basic_host.hpp>
-#include <libp2p/injector/host_injector.hpp>
+#include <libp2p/host/explicit_host.hpp>
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
 #include <libp2p/protocol/echo.hpp>
-#include <libp2p/security/noise.hpp>
-#include <libp2p/security/plaintext.hpp>
 
 namespace {
   const std::string logger_config(R"(
@@ -34,27 +37,6 @@ groups:
 # ----------------
  )");
 }  // namespace
-
-struct SecureAdaptorProxy : libp2p::security::SecurityAdaptor {
-  libp2p::peer::ProtocolName getProtocolId() const override {
-    return impl->getProtocolId();
-  }
-
-  void secureInbound(
-      std::shared_ptr<libp2p::connection::LayerConnection> inbound,
-      SecConnCallbackFunc cb) override {
-    return impl->secureInbound(inbound, cb);
-  }
-
-  void secureOutbound(
-      std::shared_ptr<libp2p::connection::LayerConnection> outbound,
-      const libp2p::peer::PeerId &p,
-      SecConnCallbackFunc cb) override {
-    return impl->secureOutbound(outbound, p, cb);
-  }
-
-  std::shared_ptr<libp2p::security::SecurityAdaptor> impl;
-};
 
 int main(int argc, char **argv) {
   using libp2p::crypto::Key;
@@ -117,19 +99,11 @@ int main(int argc, char **argv) {
     log->info("Starting in secure mode");
   }
 
-  auto injector = libp2p::injector::makeHostInjector(
-      libp2p::injector::useKeyPair(keypair),
-      libp2p::injector::useSecurityAdaptors<SecureAdaptorProxy>());
-  auto &secure_adaptor = injector.create<SecureAdaptorProxy &>();
-  if (insecure_mode) {
-    secure_adaptor.impl =
-        injector.create<std::shared_ptr<libp2p::security::Plaintext>>();
-  } else {
-    secure_adaptor.impl =
-        injector.create<std::shared_ptr<libp2p::security::Noise>>();
-  }
-  auto host = injector.create<std::shared_ptr<libp2p::Host>>();
-  auto io_context = injector.create<std::shared_ptr<asio::io_context>>();
+  auto io = std::make_shared<asio::io_context>();
+  const auto security = insecure_mode ? libp2p::HostSecurityKind::Plaintext
+                                      : libp2p::HostSecurityKind::Noise;
+  auto host = libp2p::createExplicitHost(
+      io, libp2p::HostMuxerKind::Yamux, security, keypair);
 
   // set a handler for Echo protocol
   libp2p::protocol::Echo echo{libp2p::protocol::EchoConfig{
@@ -146,7 +120,7 @@ int main(int argc, char **argv) {
   auto ma = libp2p::multi::Multiaddress::create(_ma).value();
 
   // launch a Listener part of the Host
-  post(*io_context, [&] {
+  asio::post(*io, [&] {
     auto listen_res = host->listen(ma);
     if (!listen_res) {
       log->error("host cannot listen the given multiaddress: {}",
@@ -165,7 +139,7 @@ int main(int argc, char **argv) {
 
   // run the IO context
   try {
-    io_context->run();
+    io->run();
     std::exit(EXIT_SUCCESS);
   } catch (const std::error_code &ec) {
     log->error("Server cannot run: {}", ec);

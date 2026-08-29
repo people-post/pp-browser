@@ -10,5 +10,4 @@ add_library(p2p_client_test_session
     )
 
 target_link_libraries(p2p_client_test_session
-    Boost::boost
     )

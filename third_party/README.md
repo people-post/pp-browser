@@ -23,7 +23,8 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | Directory | Upstream | Notes |
 |-----------|----------|-------|
 | `boringssl/` | [qdrvm/boringssl](https://github.com/qdrvm/boringssl) `qdrvm1` | TLS for libp2p + curl |
-| `boost/` | Boost 1.87.0 | Wrapper `CMakeLists.txt` added |
+| `asio/` | [chriskohlhoff/asio](https://github.com/chriskohlhoff/asio) 1.34.0 | Standalone Asio (`ASIO_STANDALONE`) |
+| `outcome/` | ned14/outcome v2.2.15 | Standalone Outcome (via `qtils/outcome.hpp`) |
 | `lsquic/` | [qdrvm/lsquic](https://github.com/qdrvm/lsquic) 4.0.9-qdrvm-1 | Patched at import |
 | `libsecp256k1/` | qdrvm/libsecp256k1 0.5.1 | |
 | `c-ares/` | hunter-packages/c-ares 1.14.0-p0 | |
@@ -32,7 +33,6 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | `soralog/` | qdrvm/soralog 0.2.5 | |
 | `qtils/` | qdrvm/qtils 0.1.1 | |
 | `tsl_hat_trie/` | masterjedy/hat-trie | |
-| `boost_di/` | qdrvm/boost-di | |
 | `zlib/` | qdrvm/zlib 1.3.0-p1 | For lsquic |
 
 libp2p wire codecs are handwritten (`src/lib/libp2p/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.

@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <iosfwd>
 
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
 #include <gtest/gtest.h>
 
 #include <libp2p/basic/read.hpp>
@@ -380,7 +382,7 @@ namespace libp2p::regression {
     client = std::make_shared<Node>(
         kClientId, jumbo_msg, client_behavior, io, muxer, security);
 
-    post(*io, [&]() {
+    asio::post(*io, [&]() {
       server->listen(listen_to);
       libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
       client->connect(peer_info);
@@ -475,7 +477,7 @@ namespace libp2p::regression {
     client = std::make_shared<Node>(
         kClientId, false, client_behavior, io, muxer, security);
 
-    post(*io, [&]() {
+    asio::post(*io, [&]() {
       server->listen(listen_to);
       libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
       client->connect(peer_info);

@@ -5,10 +5,9 @@
  */
 
 #include <gtest/gtest.h>
-#include <boost/di/extension/scopes/shared.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
-#include <libp2p/injector/host_injector.hpp>
+#include <libp2p/host/explicit_host.hpp>
 
 #include "testutil/prepare_loggers.hpp"
 
@@ -19,38 +18,16 @@ using libp2p::StreamAndProtocol;
 using libp2p::StreamAndProtocolOrError;
 using libp2p::connection::Stream;
 
-namespace {
-  struct InjectorHolderBase {
-    virtual ~InjectorHolderBase() = default;
-  };
-
-  template <typename Injector>
-  struct InjectorHolder : InjectorHolderBase {
-    Injector injector;
-
-    template <typename... Args>
-    explicit InjectorHolder(Args &&...args)
-        : injector(std::forward<Args>(args)...) {}
-  };
-
-  auto makeInjector(std::shared_ptr<io_context> io) {
-    return libp2p::injector::makeHostInjector<
-        boost::di::extension::shared_config>(
-        boost::di::bind<io_context>().to(io));
-  }
-}  // namespace
-
 struct Peer {
-  explicit Peer(std::shared_ptr<io_context> io) {
-    using Injector = decltype(makeInjector(io));
-    injector_ =
-        std::make_unique<InjectorHolder<Injector>>(makeInjector(std::move(io)));
-    auto &injector = static_cast<InjectorHolder<Injector> *>(injector_.get())
-                         ->injector;
-    host = injector.create<std::shared_ptr<Host>>();
-  }
+  explicit Peer(std::shared_ptr<io_context> io)
+      : host(libp2p::createExplicitHost(
+            std::move(io),
+            libp2p::HostMuxerKind::Yamux,
+            libp2p::HostSecurityKind::Tls,
+            std::nullopt,
+            {},
+            libp2p::HostTransportKind::Quic)) {}
 
-  std::unique_ptr<InjectorHolderBase> injector_;
   std::shared_ptr<Host> host;
   std::shared_ptr<Stream> stream;
 };

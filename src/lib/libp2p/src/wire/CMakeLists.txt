@@ -15,5 +15,4 @@ libp2p_add_library(p2p_wire
     gossip_wire.cpp
     )
 target_link_libraries(p2p_wire
-    Boost::boost
     )

@@ -43,6 +43,7 @@
 #include <libp2p/security/tls/tls_adaptor.hpp>
 #include <libp2p/transport/impl/upgrader_impl.hpp>
 #include <libp2p/transport/tcp/tcp_transport.hpp>
+#include <libp2p/transport/quic/transport.hpp>
 
 namespace libp2p {
   namespace {
@@ -58,7 +59,8 @@ namespace libp2p {
       HostMuxerKind muxer_kind,
       HostSecurityKind security_kind,
       std::optional<crypto::KeyPair> key_pair,
-      muxer::MuxedConnectionConfig mux_config) {
+      muxer::MuxedConnectionConfig mux_config,
+      HostTransportKind transport_kind) {
     auto csprng = std::make_shared<crypto::random::StdRandomGenerator>();
     auto ed25519 =
         std::make_shared<crypto::ed25519::Ed25519ProviderImpl>();
@@ -74,11 +76,13 @@ namespace libp2p {
             csprng, ed25519, rsa, ecdsa, secp256k1, hmac, mldsa);
 
     if (!key_pair) {
-      // Product Noise path uses ML-DSA-65. TLS adaptor still hard-codes
-      // Ed25519 libp2p identity extensions (marshalled pk size 36).
-      const auto default_type = security_kind == HostSecurityKind::Noise
-                                    ? crypto::Key::Type::MlDsa65
-                                    : crypto::Key::Type::Ed25519;
+      // Product Noise path uses ML-DSA-65. TLS/Quic still hard-code Ed25519
+      // libp2p identity extensions (marshalled pk size 36).
+      const auto default_type =
+          (security_kind == HostSecurityKind::Noise
+           && transport_kind == HostTransportKind::Tcp)
+              ? crypto::Key::Type::MlDsa65
+              : crypto::Key::Type::Ed25519;
       key_pair = crypto_provider->generateKeys(default_type).value();
     }
 
@@ -103,51 +107,61 @@ namespace libp2p {
     auto cmgr = std::make_shared<network::ConnectionManagerImpl>(bus);
     auto router = std::make_shared<network::RouterImpl>();
 
-    std::vector<std::shared_ptr<security::SecurityAdaptor>> security_adaptors;
-    switch (security_kind) {
-      case HostSecurityKind::Plaintext: {
-        auto exchange_marshaller = std::make_shared<
-            security::plaintext::ExchangeMessageMarshallerImpl>(
-            key_marshaller);
-        security_adaptors.emplace_back(std::make_shared<security::Plaintext>(
-            std::move(exchange_marshaller), idmgr, key_marshaller));
+    std::vector<std::shared_ptr<transport::TransportAdaptor>> transports;
+    switch (transport_kind) {
+      case HostTransportKind::Tcp: {
+        std::vector<std::shared_ptr<security::SecurityAdaptor>> security_adaptors;
+        switch (security_kind) {
+          case HostSecurityKind::Plaintext: {
+            auto exchange_marshaller = std::make_shared<
+                security::plaintext::ExchangeMessageMarshallerImpl>(
+                key_marshaller);
+            security_adaptors.emplace_back(std::make_shared<security::Plaintext>(
+                std::move(exchange_marshaller), idmgr, key_marshaller));
+            break;
+          }
+          case HostSecurityKind::Noise:
+            security_adaptors.emplace_back(std::make_shared<security::Noise>(
+                idmgr, crypto_provider, key_marshaller));
+            break;
+          case HostSecurityKind::Tls: {
+            security::SslContext ssl_context{*idmgr, *key_marshaller};
+            security_adaptors.emplace_back(std::make_shared<security::TlsAdaptor>(
+                idmgr, io, ssl_context, key_marshaller));
+            break;
+          }
+        }
+
+        std::vector<std::shared_ptr<muxer::MuxerAdaptor>> muxer_adaptors;
+        switch (muxer_kind) {
+          case HostMuxerKind::Yamux:
+            muxer_adaptors.emplace_back(std::make_shared<muxer::Yamux>(
+                mux_config, scheduler, cmgr));
+            break;
+          case HostMuxerKind::Mplex:
+            muxer_adaptors.emplace_back(
+                std::make_shared<muxer::Mplex>(mux_config));
+            break;
+        }
+
+        std::vector<std::shared_ptr<layer::LayerAdaptor>> layer_adaptors;
+        auto upgrader = std::make_shared<transport::UpgraderImpl>(
+            multiselect,
+            std::move(layer_adaptors),
+            std::move(security_adaptors),
+            std::move(muxer_adaptors));
+        transports.emplace_back(std::make_shared<transport::TcpTransport>(
+            io, mux_config, std::move(upgrader)));
         break;
       }
-      case HostSecurityKind::Noise:
-        security_adaptors.emplace_back(std::make_shared<security::Noise>(
-            idmgr, crypto_provider, key_marshaller));
-        break;
-      case HostSecurityKind::Tls: {
+      case HostTransportKind::Quic: {
+        // QuicConnection is already CapableConnection (TLS + mux in-stack).
         security::SslContext ssl_context{*idmgr, *key_marshaller};
-        security_adaptors.emplace_back(std::make_shared<security::TlsAdaptor>(
-            idmgr, io, ssl_context, key_marshaller));
+        transports.emplace_back(std::make_shared<transport::QuicTransport>(
+            io, ssl_context, mux_config, *idmgr, key_marshaller));
         break;
       }
     }
-
-    std::vector<std::shared_ptr<muxer::MuxerAdaptor>> muxer_adaptors;
-    switch (muxer_kind) {
-      case HostMuxerKind::Yamux:
-        muxer_adaptors.emplace_back(std::make_shared<muxer::Yamux>(
-            mux_config, scheduler, cmgr));
-        break;
-      case HostMuxerKind::Mplex:
-        muxer_adaptors.emplace_back(
-            std::make_shared<muxer::Mplex>(mux_config));
-        break;
-    }
-
-    std::vector<std::shared_ptr<layer::LayerAdaptor>> layer_adaptors;
-
-    auto upgrader = std::make_shared<transport::UpgraderImpl>(
-        multiselect,
-        std::move(layer_adaptors),
-        std::move(security_adaptors),
-        std::move(muxer_adaptors));
-
-    std::vector<std::shared_ptr<transport::TransportAdaptor>> transports = {
-        std::make_shared<transport::TcpTransport>(
-            io, mux_config, std::move(upgrader))};
 
     auto tmgr = std::make_shared<network::TransportManagerImpl>(
         std::move(transports));

@@ -10,7 +10,6 @@ libp2p_add_library(p2p_secio
         secio_dialer.cpp
         )
 target_link_libraries(p2p_secio
-        Boost::boost
         p2p_secio_propose_message_marshaller
         p2p_secio_exchange_message_marshaller
         p2p_wire
@@ -25,7 +24,6 @@ libp2p_add_library(p2p_secio_propose_message_marshaller
         propose_message_marshaller_impl.cpp
         )
 target_link_libraries(p2p_secio_propose_message_marshaller
-        Boost::boost
         p2p_wire
         p2p_message_read_writer
         )
@@ -34,7 +32,6 @@ libp2p_add_library(p2p_secio_exchange_message_marshaller
         exchange_message_marshaller_impl.cpp
         )
 target_link_libraries(p2p_secio_exchange_message_marshaller
-        Boost::boost
         p2p_wire
         p2p_message_read_writer
         )

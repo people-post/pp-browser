@@ -88,16 +88,12 @@ endif()
 # --- BoringSSL (before curl on Linux and before lsquic) ---
 pp_browser_add_vendored_boringssl()
 
-# --- standalone Asio (before Boost; Boost remains for DI) ---
+# --- standalone Asio ---
 pp_libp2p_add_vendored(asio)
 if(NOT TARGET Asio::asio)
   message(FATAL_ERROR "Asio::asio target not found")
 endif()
 
-# --- Boost ---
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(boost)
 
 # --- fmt ---
 set(FMT_DOC OFF CACHE BOOL "" FORCE)
@@ -172,17 +168,6 @@ if(NOT TARGET tsl::tsl_hat_trie)
   endif()
 endif()
 
-# --- Boost.DI ---
-set(BOOST_DI_OPT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(BOOST_DI_OPT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(boost_di)
-if(NOT TARGET Boost::Boost.DI)
-  if(TARGET Boost.DI)
-    add_library(Boost::Boost.DI ALIAS Boost.DI)
-  else()
-    message(FATAL_ERROR "Boost.DI target not found")
-  endif()
-endif()
 
 # --- lsquic ---
 set(HUNTER_ENABLED OFF CACHE BOOL "" FORCE)

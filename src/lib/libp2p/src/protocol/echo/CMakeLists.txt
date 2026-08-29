@@ -10,6 +10,5 @@ libp2p_add_library(p2p_protocol_echo
     client_echo_session.cpp
     )
 target_link_libraries(p2p_protocol_echo
-    Boost::boost
     p2p_logger
     )
