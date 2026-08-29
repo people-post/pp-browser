@@ -129,10 +129,7 @@ TEST(NetworkBuilder, CustomAdaptorsBuilds) {
   struct TrMock : public NiceMock<transport::TransportMock> {};
 
   auto injector = makeNetworkInjector(
-      useLayerAdaptors<
-          layer::WsAdaptor,
-          LayerMock
-      >(),
+      useLayerAdaptors<LayerMock>(),
       useSecurityAdaptors<
           security::Plaintext,
           SecMock

@@ -11,7 +11,6 @@
 #include <libp2p/basic/scheduler.hpp>
 #include <libp2p/common/literals.hpp>
 #include <libp2p/injector/host_injector.hpp>
-#include <libp2p/layer/websocket/ws_adaptor.hpp>
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/protocol/echo.hpp>
