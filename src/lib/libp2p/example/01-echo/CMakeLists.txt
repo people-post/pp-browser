@@ -8,13 +8,7 @@ add_executable(libp2p_echo_server
     libp2p_echo_server.cpp
     )
 target_link_libraries(libp2p_echo_server
-    Boost::Boost.DI
-    p2p_basic_host
-    p2p_default_network
-    p2p_peer_repository
-    p2p_inmem_address_repository
-    p2p_inmem_key_repository
-    p2p_inmem_protocol_repository
+    p2p_default_host
     p2p_protocol_echo
     p2p_literals
     )
@@ -24,13 +18,9 @@ add_executable(libp2p_echo_client
     )
 
 target_link_libraries(libp2p_echo_client
-    Boost::Boost.DI
-    p2p_basic_host
-    p2p_default_network
-    p2p_peer_repository
-    p2p_inmem_address_repository
-    p2p_inmem_key_repository
-    p2p_inmem_protocol_repository
+    p2p_default_host
+    p2p_asio_scheduler_backend
+    p2p_basic_scheduler
     p2p_protocol_echo
     p2p_literals
     )

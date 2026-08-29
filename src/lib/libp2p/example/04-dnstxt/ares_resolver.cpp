@@ -7,7 +7,10 @@
 #include <iostream>
 #include <memory>
 
-#include <libp2p/injector/host_injector.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/network/cares/cares.hpp>
@@ -52,20 +55,16 @@ int main(int argc, char *argv[]) {
     libp2p::log::setLevelOfGroup("main", soralog::kLevelError);
   }
 
-  // create a default Host via an injector
-  auto injector = libp2p::injector::makeHostInjector();
-
   libp2p::network::c_ares::Ares ares;
 
-  // create io_context - in fact, thing, which allows us to execute async
-  // operations
-  auto context = injector.create<std::shared_ptr<asio::io_context>>();
+  // Host was unused here previously (injector only supplied io_context).
+  auto io = std::make_shared<asio::io_context>();
   // the guard to preserve context's running state when tasks queue is empty
-  auto work_guard = asio::make_work_guard(*context);
-  post(*context, [&] {
+  auto work_guard = asio::make_work_guard(*io);
+  asio::post(*io, [&] {
     ares.resolveTxt(
         "_dnsaddr.bootstrap.libp2p.io",
-        context,
+        io,
         [&](outcome::result<std::vector<std::string>> result) -> void {
           if (result.has_error()) {
             fmt::println("{}", result.error());
@@ -83,7 +82,7 @@ int main(int argc, char *argv[]) {
   });
   // run the IO context
   try {
-    context->run();
+    io->run();
   } catch (const std::error_code &ec) {
     std::cout << "Example cannot run: " << ec.message() << std::endl;
   } catch (...) {
