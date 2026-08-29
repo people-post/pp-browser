@@ -9,7 +9,7 @@
 #include <libp2p/protocol/kademlia/impl/peer_routing_table.hpp>
 
 #include <cassert>
-#include <boost/optional.hpp>
+#include <optional>
 #include <list>
 
 #include <libp2p/event/bus.hpp>
@@ -68,7 +68,7 @@ namespace libp2p::protocol::kademlia {
                         bool is_replaceable,
                         bool is_connected);
 
-    boost::optional<PeerId> removeReplaceableItem();
+    std::optional<PeerId> removeReplaceableItem();
 
     void truncate(size_t limit);
 

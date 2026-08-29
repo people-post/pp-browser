@@ -8,7 +8,7 @@
 
 #include <tuple>
 
-#include <boost/optional.hpp>
+#include <optional>
 #include <libp2p/common/types.hpp>
 #include <libp2p/crypto/common.hpp>
 #include <libp2p/crypto/common_functions.hpp>

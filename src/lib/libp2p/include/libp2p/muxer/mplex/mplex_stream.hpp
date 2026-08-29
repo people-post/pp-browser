@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <deque>
 #include <mutex>
 
@@ -96,7 +97,7 @@ namespace libp2p::connection {
     /// data, received for this stream, comes here
     boost::asio::streambuf read_buffer_;
 
-    boost::optional<Reading> reading_;
+    std::optional<Reading> reading_;
 
     /// Queue of write requests that were received when stream was writing
     std::deque<std::tuple<Bytes, WriteCallbackFunc>> write_queue_{};

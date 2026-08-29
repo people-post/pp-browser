@@ -93,8 +93,8 @@ namespace libp2p::connection {
         cipher_type_{cipher_type},
         local_stretched_key_{std::move(local_stretched_key)},
         remote_stretched_key_{std::move(remote_stretched_key)},
-        aes128_secrets_{boost::none},
-        aes256_secrets_{boost::none},
+        aes128_secrets_{std::nullopt},
+        aes256_secrets_{std::nullopt},
         write_buffer_{std::make_shared<Bytes>()} {
     assert(original_connection_);
     assert(hmac_provider_);

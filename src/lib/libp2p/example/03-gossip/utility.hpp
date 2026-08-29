@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <boost/asio/io_context.hpp>
 
 #include <libp2p/peer/peer_info.hpp>
@@ -30,6 +31,6 @@ namespace libp2p::protocol::example::utility {
   std::string getLocalIP(boost::asio::io_context &io);
 
   /// Parses listen address and peer id given as uri
-  boost::optional<libp2p::peer::PeerInfo> str2peerInfo(const std::string &str);
+  std::optional<libp2p::peer::PeerInfo> str2peerInfo(const std::string &str);
 
 }  // namespace libp2p::protocol::example::utility

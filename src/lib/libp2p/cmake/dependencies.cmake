@@ -16,7 +16,6 @@ macro(pp_libp2p_require_target target)
 endmacro()
 
 if (PACKAGE_MANAGER STREQUAL "vendored")
-  pp_libp2p_require_target(Boost::random)
   pp_libp2p_require_target(Boost::boost)
   pp_libp2p_require_target(OpenSSL::Crypto)
   pp_libp2p_require_target(OpenSSL::SSL)

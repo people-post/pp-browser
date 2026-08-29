@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #include <libp2p/common/types.hpp>
 
@@ -140,5 +140,5 @@ namespace libp2p::connection {
    * @param frame_bytes to be converted
    * @return frame object, if convertation is successful, none otherwise
    */
-  boost::optional<YamuxFrame> parseFrame(BytesIn frame_bytes);
+  std::optional<YamuxFrame> parseFrame(BytesIn frame_bytes);
 }  // namespace libp2p::connection

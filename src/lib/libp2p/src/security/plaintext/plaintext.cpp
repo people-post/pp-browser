@@ -59,7 +59,7 @@ namespace libp2p::security {
     SL_DEBUG(log_, "securing inbound connection");
     auto rw = std::make_shared<basic::ProtobufMessageReadWriter>(inbound);
     sendExchangeMsg(inbound, rw, cb);
-    receiveExchangeMsg(inbound, rw, boost::none, cb);
+    receiveExchangeMsg(inbound, rw, std::nullopt, cb);
   }
 
   void Plaintext::secureOutbound(

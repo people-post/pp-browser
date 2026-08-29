@@ -37,7 +37,7 @@ namespace libp2p::peer {
             } else {
               auto peer_id_str = addr.getPeerId();
               if (peer_id_str) {
-                auto peer_id = peer::PeerId::fromBase58(peer_id_str.get());
+                auto peer_id = peer::PeerId::fromBase58(*peer_id_str);
                 if (peer_id.has_value()) {
                   std::vector addr_vec = {addr};
                   if (auto added = self->addAddresses(

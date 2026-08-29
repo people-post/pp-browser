@@ -11,7 +11,7 @@
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 #include <libp2p/crypto/key_validator/key_validator_impl.hpp>
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
-#include <libp2p/crypto/random_generator/boost_generator.hpp>
+#include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/host/basic_host/basic_host.hpp>
@@ -27,7 +27,7 @@ namespace pbr {
 namespace {
 
 std::shared_ptr<libp2p::crypto::marshaller::KeyMarshaller> CreateKeyMarshaller() {
-  auto csprng = std::make_shared<libp2p::crypto::random::BoostRandomGenerator>();
+  auto csprng = std::make_shared<libp2p::crypto::random::StdRandomGenerator>();
   auto ed25519 = std::make_shared<libp2p::crypto::ed25519::Ed25519ProviderImpl>();
   auto rsa = std::make_shared<libp2p::crypto::rsa::RsaProviderImpl>();
   auto ecdsa = std::make_shared<libp2p::crypto::ecdsa::EcdsaProviderImpl>();

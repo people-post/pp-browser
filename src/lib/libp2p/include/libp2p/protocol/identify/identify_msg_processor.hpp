@@ -97,7 +97,7 @@ namespace libp2p::protocol {
      * @return peer id, which was derived from the provided public key (if it
      * can be derived)
      */
-    boost::optional<peer::PeerId> consumePublicKey(const StreamSPtr &stream,
+    std::optional<peer::PeerId> consumePublicKey(const StreamSPtr &stream,
                                                    std::string_view pubkey_str);
 
     /**

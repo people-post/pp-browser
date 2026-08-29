@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <cassert>
-#include <boost/optional.hpp>
+#include <optional>
 #include <libp2p/basic/message_read_writer_error.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/varint_reader.hpp>

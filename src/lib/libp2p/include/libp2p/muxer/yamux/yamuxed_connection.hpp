@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <mutex>
 #include <unordered_map>
 
@@ -122,7 +123,7 @@ namespace libp2p::connection {
     void onRead(outcome::result<size_t> res);
 
     /// Processes incoming header, called from YamuxReadingState
-    bool processHeader(boost::optional<YamuxFrame> header);
+    bool processHeader(std::optional<YamuxFrame> header);
 
     /// Processes incoming data, called from YamuxReadingState
     void processData(BytesOut segment, StreamId stream_id);
@@ -149,7 +150,7 @@ namespace libp2p::connection {
 
     /// Closes everything, notifies streams and handlers
     void close(std::error_code notify_streams_code,
-               boost::optional<YamuxFrame::GoAwayError> reply_to_peer_code);
+               std::optional<YamuxFrame::GoAwayError> reply_to_peer_code);
 
     /// Writes data to underlying connection or (if is_writing_) enqueues them
     /// If stream_id != 0, stream will be acknowledged about data written

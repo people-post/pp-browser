@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/muxer/mplex/mplexed_connection.hpp>
 
 #include <cassert>
@@ -286,7 +287,7 @@ namespace libp2p::connection {
     removeStream(stream_id);
   }
 
-  boost::optional<std::shared_ptr<MplexStream>> MplexedConnection::findStream(
+  std::optional<std::shared_ptr<MplexStream>> MplexedConnection::findStream(
       const StreamId &id) const {
     if (auto stream_it = streams_.find(id); stream_it != streams_.end()) {
       return stream_it->second;

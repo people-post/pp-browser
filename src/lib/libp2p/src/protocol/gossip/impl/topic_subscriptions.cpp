@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "topic_subscriptions.hpp"
 
 #include <algorithm>
@@ -19,7 +20,7 @@ namespace libp2p::protocol::gossip {
     // dont forward message to peer it was received from as well as to its
     // original issuer
     bool needToForward(const PeerContextPtr &ctx,
-                       const boost::optional<PeerContextPtr> &from,
+                       const std::optional<PeerContextPtr> &from,
                        const outcome::result<peer::PeerId> &origin) {
       if (from && ctx->peer_id == from.value()->peer_id) {
         return false;
@@ -47,7 +48,7 @@ namespace libp2p::protocol::gossip {
   }
 
   void TopicSubscriptions::onNewMessage(
-      const boost::optional<PeerContextPtr> &from,
+      const std::optional<PeerContextPtr> &from,
       const TopicMessage::Ptr &msg,
       const MessageId &msg_id,
       Time now) {

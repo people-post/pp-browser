@@ -34,12 +34,12 @@ namespace libp2p::protocol::gossip {
     assert(msg);
     if (topics_.count(msg->topic) != 0) {
       Gossip::Message tmp_msg{msg->from, msg->topic, msg->data};
-      publish(tmp_msg);
+      publish(&tmp_msg);
     }
   }
 
   void LocalSubscriptions::forwardEndOfSubscription() {
-    publish(boost::none);
+    publish(nullptr);
   }
 
   bool LocalSubscriptions::filter(uint64_t ticket,
@@ -52,7 +52,7 @@ namespace libp2p::protocol::gossip {
 
     assert(it != filters_.end());
 
-    return it->second.count(data.value().topic) != 0;
+    return it->second.count(data->topic) != 0;
   }
 
   void LocalSubscriptions::unsubscribe(uint64_t ticket) {

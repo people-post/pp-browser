@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <functional>
 #include <set>
 
@@ -17,7 +18,7 @@ namespace libp2p::protocol::gossip {
   class PeerSet {
    public:
     /// Finds peer context by id
-    boost::optional<PeerContextPtr> find(const peer::PeerId &id) const;
+    std::optional<PeerContextPtr> find(const peer::PeerId &id) const;
 
     /// Returns if the set contains such a peer
     bool contains(const peer::PeerId &id) const;
@@ -26,7 +27,7 @@ namespace libp2p::protocol::gossip {
     bool insert(PeerContextPtr ctx);
 
     /// Removes peer context from set, returns erased item if found and erased
-    boost::optional<PeerContextPtr> erase(const peer::PeerId &id);
+    std::optional<PeerContextPtr> erase(const peer::PeerId &id);
 
     /// Clears all data
     void clear();
