@@ -62,9 +62,9 @@ if (PACKAGE_MANAGER STREQUAL "hunter")
     hunter_add_package(Boost)
     find_package(Boost)
 elseif (PACKAGE_MANAGER STREQUAL "vendored")
-    # Boost targets provided by cmake/libp2p_dependencies.cmake
+    # Outcome + Boost targets provided by cmake/libp2p_dependencies.cmake
 else ()
-    find_package(Boost REQUIRED COMPONENTS algorithm outcome)
+    find_package(Boost REQUIRED)
 endif ()
 
 if (PACKAGE_MANAGER STREQUAL "hunter")
@@ -76,8 +76,7 @@ endif()
 
 add_library(qtils INTERFACE)
 target_link_libraries(qtils INTERFACE
-    Boost::algorithm
-    Boost::outcome
+    Outcome::outcome
     fmt::fmt
 )
 if (QTILS_ENABLE_ASSERT)

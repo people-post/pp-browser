@@ -6,8 +6,9 @@
 
 #include <libp2p/transport/impl/multiaddress_parser.hpp>
 
+#include <charconv>
+
 #include <boost/asio/ip/address.hpp>
-#include <boost/lexical_cast.hpp>
 
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::transport, MultiaddressParser::Error, e) {
   using E = libp2p::transport::MultiaddressParser::Error;
@@ -22,7 +23,6 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::transport, MultiaddressParser::Error, e) {
 
 namespace libp2p::transport {
 
-  using boost::lexical_cast;
   using boost::asio::ip::make_address;
   using multi::Protocol;
 
@@ -90,11 +90,14 @@ namespace libp2p::transport {
 
   outcome::result<uint16_t> MultiaddressParser::parseTcp(
       std::string_view value) {
-    try {
-      return lexical_cast<uint16_t>(value);
-    } catch (boost::bad_lexical_cast &) {
+    uint16_t port = 0;
+    const auto *first = value.data();
+    const auto *last = value.data() + value.size();
+    const auto [ptr, ec] = std::from_chars(first, last, port);
+    if (ec != std::errc{} || ptr != last) {
       return Error::INVALID_ADDR_VALUE;
     }
+    return port;
   }
 
   outcome::result<MultiaddressParser::IpAddress> MultiaddressParser::parseIp(

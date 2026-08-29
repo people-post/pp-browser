@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,7 +54,7 @@ namespace libp2p::network {
       std::vector<Dialer::DialResultFunc> callbacks;
 
       /// Result temporary storage to propagate via callbacks
-      boost::optional<DialResult> result;
+      std::optional<DialResult> result;
       // ^ used when all connecting attempts failed and no more known peer
       // addresses are left
 

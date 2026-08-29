@@ -6,7 +6,7 @@
 
 #include <libp2p/protocol/ping/ping_client_session.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/protocol/ping/common.hpp>
@@ -26,18 +26,18 @@ namespace libp2p::protocol {
         config_{config},
         write_buffer_(config_.message_size, 0),
         read_buffer_(config_.message_size, 0) {
-    BOOST_ASSERT(stream_);
-    BOOST_ASSERT(rand_gen_);
+    assert(stream_);
+    assert(rand_gen_);
   }
 
   void PingClientSession::start() {
-    BOOST_ASSERT(!is_started_);
+    assert(!is_started_);
     is_started_ = true;
     write();
   }
 
   void PingClientSession::stop() {
-    BOOST_ASSERT(is_started_);
+    assert(is_started_);
     is_started_ = false;
   }
 

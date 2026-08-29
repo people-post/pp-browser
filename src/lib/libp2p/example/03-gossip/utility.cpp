@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "utility.hpp"
 
 #include <boost/asio.hpp>
@@ -61,21 +62,21 @@ namespace libp2p::protocol::example::utility {
     return "127.0.0.1";
   }
 
-  boost::optional<libp2p::peer::PeerInfo> str2peerInfo(const std::string &str) {
+  std::optional<libp2p::peer::PeerInfo> str2peerInfo(const std::string &str) {
     auto server_ma_res = libp2p::multi::Multiaddress::create(str);
     if (!server_ma_res) {
-      return boost::none;
+      return std::nullopt;
     }
     auto server_ma = std::move(server_ma_res.value());
 
     auto server_peer_id_str = server_ma.getPeerId();
     if (!server_peer_id_str) {
-      return boost::none;
+      return std::nullopt;
     }
 
     auto server_peer_id_res = peer::PeerId::fromBase58(*server_peer_id_str);
     if (!server_peer_id_res) {
-      return boost::none;
+      return std::nullopt;
     }
 
     return peer::PeerInfo{server_peer_id_res.value(), {server_ma}};

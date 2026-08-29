@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/peer_routing_table_impl.hpp>
 
 #include <numeric>
@@ -69,8 +71,8 @@ namespace libp2p::protocol::kademlia {
     peers_.emplace(peers_.begin(), pid, is_replaceable, is_connected);
   }
 
-  boost::optional<PeerId> Bucket::removeReplaceableItem() {
-    boost::optional<PeerId> result;
+  std::optional<PeerId> Bucket::removeReplaceableItem() {
+    std::optional<PeerId> result;
 
     for (auto it = peers_.rbegin(); it != peers_.rend(); ++it) {
       // https://github.com/libp2p/rust-libp2p/blob/3837e33cd4c40ae703138e6aed6f6c9d52928a80/protocols/kad/src/kbucket/bucket.rs#L310-L366
@@ -125,12 +127,12 @@ namespace libp2p::protocol::kademlia {
         identity_manager_(std::move(identity_manager)),
         bus_(std::move(bus)),
         local_([this] {
-          BOOST_ASSERT(identity_manager_ != nullptr);
+          assert(identity_manager_ != nullptr);
           return identity_manager_->getId();
         }()) {
-    BOOST_ASSERT(identity_manager_ != nullptr);
-    BOOST_ASSERT(bus_ != nullptr);
-    BOOST_ASSERT(config_.maxBucketSize > 1);
+    assert(identity_manager_ != nullptr);
+    assert(bus_ != nullptr);
+    assert(config_.maxBucketSize > 1);
   }
 
   void PeerRoutingTableImpl::remove(const peer::PeerId &peer_id) {

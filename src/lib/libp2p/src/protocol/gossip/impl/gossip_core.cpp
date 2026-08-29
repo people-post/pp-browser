@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "gossip_core.hpp"
 
 #include <cassert>
@@ -67,7 +68,7 @@ namespace libp2p::protocol::gossip {
   // clang-format on
 
   void GossipCore::addBootstrapPeer(
-      const peer::PeerId &id, boost::optional<multi::Multiaddress> address) {
+      const peer::PeerId &id, std::optional<multi::Multiaddress> address) {
     if (started_) {
       connectivity_->addBootstrapPeer(id, address);
     }
@@ -188,7 +189,7 @@ namespace libp2p::protocol::gossip {
     [[maybe_unused]] bool inserted = msg_cache_.insert(msg, msg_id);
     assert(inserted);
 
-    remote_subscriptions_->onNewMessage(boost::none, msg, msg_id);
+    remote_subscriptions_->onNewMessage(std::nullopt, msg, msg_id);
 
     if (config_.echo_forward_mode) {
       local_subscriptions_->forwardMessage(msg);

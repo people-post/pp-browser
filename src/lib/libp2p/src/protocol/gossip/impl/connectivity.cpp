@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "connectivity.hpp"
 
 #include <cassert>
-
-#include <boost/range/algorithm/for_each.hpp>
 
 #include "message_builder.hpp"
 #include "message_receiver.hpp"
@@ -92,7 +91,7 @@ namespace libp2p::protocol::gossip {
 
   void Connectivity::addBootstrapPeer(
       const peer::PeerId &id,
-      const boost::optional<multi::Multiaddress> &address) {
+      const std::optional<multi::Multiaddress> &address) {
     if (id == host_->getId()) {
       return;
     }
@@ -453,15 +452,15 @@ namespace libp2p::protocol::gossip {
 
       std::vector<std::pair<bool, TopicId>> flat_changes;
       flat_changes.reserve(local_changes.size());
-      boost::for_each(local_changes, [&flat_changes](auto &&p) {
+      for (auto &p : local_changes) {
         flat_changes.emplace_back(p.second, std::move(p.first));
-      });
+      }
 
       connected_peers_.selectAll(
           [&flat_changes, this](const PeerContextPtr &ctx) {
-            boost::for_each(flat_changes, [&ctx](auto &&p) {
+            for (auto &p : flat_changes) {
               ctx->message_builder->addSubscription(p.first, p.second);
-            });
+            }
             flush(ctx);
           });
 

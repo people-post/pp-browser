@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/muxer/mplex/mplexed_connection.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/muxer/mplex/mplex_frame.hpp>
 
@@ -17,12 +18,11 @@ namespace libp2p::connection {
       std::shared_ptr<SecureConnection> connection,
       muxer::MuxedConnectionConfig config)
       : connection_{std::move(connection)}, config_{config} {
-    BOOST_ASSERT(connection_);
+    assert(connection_);
   }
 
   void MplexedConnection::start() {
-    BOOST_ASSERT_MSG(!is_active_,
-                     "trying to start an active MplexedConnection");
+    assert((!is_active_) && ("trying to start an active MplexedConnection"));
 
     is_active_ = true;
     log_->info("starting an mplex connection");
@@ -30,8 +30,7 @@ namespace libp2p::connection {
   }
 
   void MplexedConnection::stop() {
-    BOOST_ASSERT_MSG(is_active_,
-                     "trying to stop an inactive MplexedConnection");
+    assert((is_active_) && ("trying to stop an inactive MplexedConnection"));
     is_active_ = false;
     log_->info("stopping an mplex connection");
   }
@@ -288,7 +287,7 @@ namespace libp2p::connection {
     removeStream(stream_id);
   }
 
-  boost::optional<std::shared_ptr<MplexStream>> MplexedConnection::findStream(
+  std::optional<std::shared_ptr<MplexStream>> MplexedConnection::findStream(
       const StreamId &id) const {
     if (auto stream_it = streams_.find(id); stream_it != streams_.end()) {
       return stream_it->second;

@@ -6,7 +6,7 @@
 
 #include <libp2p/log/logger.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 
 namespace libp2p::log {
 
@@ -15,9 +15,8 @@ namespace libp2p::log {
     std::shared_ptr<soralog::LoggingSystem> logging_system_{};
 
     inline void ensure_loger_system_is_initialized() {
-      BOOST_ASSERT_MSG(logging_system_,
-                       "Logging system is not ready. "
-                       "setLoggingSystem() must be executed once before");
+      assert((logging_system_) && ("Logging system is not ready. "
+                       "setLoggingSystem() must be executed once before"));
     }
   }  // namespace
 

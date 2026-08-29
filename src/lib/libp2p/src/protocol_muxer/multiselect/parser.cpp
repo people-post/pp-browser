@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
+#include <cstring>
 #include <limits>
 
 #include <libp2p/protocol_muxer/multiselect/parser.hpp>

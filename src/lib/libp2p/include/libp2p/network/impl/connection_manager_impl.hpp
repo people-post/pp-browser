@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <unordered_set>
 
 #include <libp2p/event/bus.hpp>
@@ -45,7 +46,7 @@ namespace libp2p::network {
 
     /// Reentrancy resolver between closeConnectionsToPeer and
     /// onConnectionClosed
-    boost::optional<peer::PeerId> closing_connections_to_peer_;
+    std::optional<peer::PeerId> closing_connections_to_peer_;
   };
 
 }  // namespace libp2p::network

@@ -37,7 +37,7 @@
 #include <array>
 #include <regex>
 
-#include <boost/optional.hpp>
+#include <optional>
 #include <libp2p/multi/multibase_codec/codecs/base_error.hpp>
 
 namespace {
@@ -138,7 +138,7 @@ namespace libp2p::multi::detail {
    * @param src to be decoded
    * @return bytes, if decoding went successful, none otherwise
    */
-  boost::optional<std::vector<uint8_t>> decodeImpl(std::string_view src) {
+  std::optional<std::vector<uint8_t>> decodeImpl(std::string_view src) {
     std::vector<uint8_t> out(decodedSize(src.size()));
 
     std::vector<unsigned char> c3(3);

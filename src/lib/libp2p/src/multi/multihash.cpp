@@ -6,9 +6,9 @@
 
 #include <libp2p/multi/multihash.hpp>
 
-#include <boost/assert.hpp>
-#include <boost/container_hash/hash.hpp>
+#include <cassert>
 #include <libp2p/basic/varint_prefix_reader.hpp>
+#include <libp2p/common/hash.hpp>
 #include <libp2p/common/types.hpp>
 #include <qtils/hex.hpp>
 #include <qtils/unhex.hpp>
@@ -53,11 +53,11 @@ namespace libp2p::multi {
   Multihash::Data::Data(HashType t, BytesIn h) : type(t) {
     bytes.reserve(h.size() + 4);
     appendVarint(bytes, type);
-    BOOST_ASSERT(h.size() <= std::numeric_limits<uint8_t>::max());
+    assert(h.size() <= std::numeric_limits<uint8_t>::max());
     bytes.push_back(static_cast<uint8_t>(h.size()));
     hash_offset = bytes.size();
     bytes.insert(bytes.end(), h.begin(), h.end());
-    std_hash = boost::hash_range(bytes.begin(), bytes.end());
+    std_hash = common::hashRange(bytes.begin(), bytes.end());
   }
 
   size_t Multihash::stdHash() const {

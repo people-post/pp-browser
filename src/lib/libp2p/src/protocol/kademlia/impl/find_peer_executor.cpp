@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/find_peer_executor.hpp>
 
 #include <libp2p/common/final_action.hpp>
@@ -62,7 +64,7 @@ namespace libp2p::protocol::kademlia {
 
     serialized_request_ = std::make_shared<std::vector<uint8_t>>();
 
-    boost::optional<peer::PeerInfo> self_announce;
+    std::optional<peer::PeerInfo> self_announce;
     if (not config_.passiveMode) {
       self_announce = host_->getPeerInfo();
     }
@@ -232,7 +234,7 @@ namespace libp2p::protocol::kademlia {
     }
 
     auto remote_peer_id_res = session->stream()->remotePeerId();
-    BOOST_ASSERT(remote_peer_id_res.has_value());
+    assert(remote_peer_id_res.has_value());
     auto &remote_peer_id = remote_peer_id_res.value();
 
     auto self_peer_id = host_->getId();

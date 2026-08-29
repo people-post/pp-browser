@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/security/noise/handshake.hpp>
 #include <libp2p/security/noise/handshake_message_marshaller_impl.hpp>
 #include <libp2p/security/noise/noise.hpp>
@@ -19,7 +20,7 @@ namespace libp2p::security {
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller)
       : crypto_provider_{std::move(crypto_provider)},
         key_marshaller_{std::move(key_marshaller)} {
-    BOOST_ASSERT(idmgr != nullptr);
+    assert(idmgr != nullptr);
     // Copy from IdentityManager instead of taking KeyPair from DI. Boost.DI
     // moves by-value bindings; KeyPair must only be consumed once (by
     // IdentityManagerImpl) or MSVC leaves a moved-from Multihash in PeerId.
@@ -39,7 +40,7 @@ namespace libp2p::security {
                                            local_key_,
                                            inbound,
                                            false,
-                                           boost::none,
+                                           std::nullopt,
                                            std::move(cb),
                                            key_marshaller_);
     handshake->connect();

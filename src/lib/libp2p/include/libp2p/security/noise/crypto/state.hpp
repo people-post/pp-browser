@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #include <libp2p/security/noise/crypto/interfaces.hpp>
 #include <libp2p/security/noise/crypto/message_patterns.hpp>
@@ -119,7 +119,7 @@ namespace libp2p::security::noise {
 
    private:
     template <typename T>
-    using opt = boost::optional<T>;
+    using opt = std::optional<T>;
     friend class HandshakeState;
 
     std::shared_ptr<CipherSuite> cipher_suite_;

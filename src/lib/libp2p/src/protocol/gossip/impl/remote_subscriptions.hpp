@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/basic/scheduler.hpp>
 #include <libp2p/log/sublogger.hpp>
 
@@ -50,7 +51,7 @@ namespace libp2p::protocol::gossip {
 
     /// Forwards message to its topics. If 'from' is not set then the message is
     /// published locally
-    void onNewMessage(const boost::optional<PeerContextPtr> &from,
+    void onNewMessage(const std::optional<PeerContextPtr> &from,
                       const TopicMessage::Ptr &msg,
                       const MessageId &msg_id);
 
@@ -59,8 +60,7 @@ namespace libp2p::protocol::gossip {
 
    private:
     /// Returns table item, creates a new one if needed
-    boost::optional<TopicSubscriptions &> getItem(const TopicId &topic,
-                                                  bool create_if_not_exist);
+    TopicSubscriptions *getItem(const TopicId &topic, bool create_if_not_exist);
 
     const Config &config_;
     Connectivity &connectivity_;

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/peer/address_repository/inmem_address_repository.hpp>
 
 #include <libp2p/peer/errors.hpp>
@@ -13,7 +14,7 @@ namespace libp2p::peer {
   InmemAddressRepository::InmemAddressRepository(
       std::shared_ptr<network::DnsaddrResolver> dnsaddr_resolver)
       : dnsaddr_resolver_{std::move(dnsaddr_resolver)} {
-    BOOST_ASSERT(dnsaddr_resolver_);
+    assert(dnsaddr_resolver_);
   }
 
   void InmemAddressRepository::bootstrap(const multi::Multiaddress &ma,
@@ -36,7 +37,7 @@ namespace libp2p::peer {
             } else {
               auto peer_id_str = addr.getPeerId();
               if (peer_id_str) {
-                auto peer_id = peer::PeerId::fromBase58(peer_id_str.get());
+                auto peer_id = peer::PeerId::fromBase58(*peer_id_str);
                 if (peer_id.has_value()) {
                   std::vector addr_vec = {addr};
                   if (auto added = self->addAddresses(

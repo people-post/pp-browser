@@ -11,7 +11,6 @@
 #include <typeindex>
 
 #include <boost/asio.hpp>
-#include <boost/exception/diagnostic_information.hpp>
 #include <boost/signals2.hpp>
 
 #include <libp2p/log/logger.hpp>

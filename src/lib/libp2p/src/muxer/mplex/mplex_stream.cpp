@@ -8,8 +8,8 @@
 
 #include <algorithm>
 
-#include <boost/container_hash/hash.hpp>
 #include <libp2p/basic/write.hpp>
+#include <libp2p/common/hash.hpp>
 #include <libp2p/muxer/mplex/mplexed_connection.hpp>
 
 #define TRY_GET_CONNECTION(tmp)         \
@@ -252,9 +252,9 @@ namespace libp2p::connection {
 size_t std::hash<libp2p::connection::MplexStream::StreamId>::operator()(
     const libp2p::connection::MplexStream::StreamId &id) const {
   size_t seed = 0;
-  boost::hash_combine(
+  libp2p::common::hashCombine(
       seed,
       std::hash<libp2p::connection::MplexStream::StreamNumber>()(id.number));
-  boost::hash_combine(seed, std::hash<bool>()(id.initiator));
+  libp2p::common::hashCombine(seed, std::hash<bool>()(id.initiator));
   return seed;
 }

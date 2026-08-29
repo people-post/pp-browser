@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/network/impl/network_impl.hpp>
 
 namespace libp2p::network {
@@ -30,8 +31,8 @@ namespace libp2p::network {
       : listener_(std::move(listener)),
         dialer_(std::move(dialer)),
         cmgr_(std::move(cmgr)) {
-    BOOST_ASSERT(listener_ != nullptr);
-    BOOST_ASSERT(dialer_ != nullptr);
-    BOOST_ASSERT(cmgr_ != nullptr);
+    assert(listener_ != nullptr);
+    assert(dialer_ != nullptr);
+    assert(cmgr_ != nullptr);
   }
 }  // namespace libp2p::network

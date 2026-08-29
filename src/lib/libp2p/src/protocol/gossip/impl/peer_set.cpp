@@ -4,21 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "peer_set.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <random>
 
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/algorithm/for_each.hpp>
-
 namespace libp2p::protocol::gossip {
 
-  boost::optional<PeerContextPtr> PeerSet::find(const peer::PeerId &id) const {
+  std::optional<PeerContextPtr> PeerSet::find(const peer::PeerId &id) const {
     auto it = peers_.find(id);
     if (it == peers_.end()) {
-      return boost::none;
+      return std::nullopt;
     }
     return *it;
   }
@@ -35,12 +33,12 @@ namespace libp2p::protocol::gossip {
     return true;
   }
 
-  boost::optional<PeerContextPtr> PeerSet::erase(const peer::PeerId &id) {
+  std::optional<PeerContextPtr> PeerSet::erase(const peer::PeerId &id) {
     auto it = peers_.find(id);
     if (it == peers_.end()) {
-      return boost::none;
+      return std::nullopt;
     }
-    boost::optional<PeerContextPtr> ret(*it);
+    std::optional<PeerContextPtr> ret(*it);
     peers_.erase(it);
     return ret;
   }
@@ -70,12 +68,16 @@ namespace libp2p::protocol::gossip {
   }
 
   void PeerSet::selectAll(const SelectCallback &callback) const {
-    boost::for_each(peers_, callback);
+    std::for_each(peers_.begin(), peers_.end(), callback);
   }
 
   void PeerSet::selectIf(const SelectCallback &callback,
                          const FilterCallback &filter) const {
-    boost::for_each(peers_ | boost::adaptors::filtered(filter), callback);
+    for (const auto &peer : peers_) {
+      if (filter(peer)) {
+        callback(peer);
+      }
+    }
   }
 
   void PeerSet::eraseIf(const FilterCallback &filter) {

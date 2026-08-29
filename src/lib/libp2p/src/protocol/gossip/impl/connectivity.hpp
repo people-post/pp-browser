@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <map>
 #include <unordered_map>
 
@@ -47,7 +48,7 @@ namespace libp2p::protocol::gossip {
 
     /// Adds bootstrap peer to the set of connectable peers
     void addBootstrapPeer(const peer::PeerId &id,
-                          const boost::optional<multi::Multiaddress> &address);
+                          const std::optional<multi::Multiaddress> &address);
 
     /// Add peer to writable set, actual writes occur on flush() (piggybacking)
     /// The idea behind writable set and flush() is a compromise between

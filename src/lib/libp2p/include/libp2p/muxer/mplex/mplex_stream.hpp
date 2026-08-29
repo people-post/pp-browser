@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include <optional>
 #include <deque>
 #include <mutex>
 
 #include <boost/asio/streambuf.hpp>
-#include <boost/noncopyable.hpp>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/log/logger.hpp>
 
@@ -21,9 +21,11 @@ namespace libp2p::connection {
    * Stream implementation, used by Mplex multiplexer
    */
   class MplexStream : public Stream,
-                      public std::enable_shared_from_this<MplexStream>,
-                      private boost::noncopyable {
+                      public std::enable_shared_from_this<MplexStream> {
    public:
+    MplexStream(const MplexStream &) = delete;
+    MplexStream &operator=(const MplexStream &) = delete;
+
     /**
      * In mplex streams are identified by both number and side, which initiated
      * the stream, so that two stream can have the same id number, given they
@@ -95,7 +97,7 @@ namespace libp2p::connection {
     /// data, received for this stream, comes here
     boost::asio::streambuf read_buffer_;
 
-    boost::optional<Reading> reading_;
+    std::optional<Reading> reading_;
 
     /// Queue of write requests that were received when stream was writing
     std::deque<std::tuple<Bytes, WriteCallbackFunc>> write_queue_{};
