@@ -10,8 +10,6 @@
 #include <set>
 #include <vector>
 
-#include <boost/beast.hpp>
-
 #include <libp2p/basic/write.hpp>
 #include <libp2p/common/literals.hpp>
 #include <libp2p/injector/kademlia_injector.hpp>

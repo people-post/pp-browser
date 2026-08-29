@@ -8,11 +8,7 @@
 
 #include <libp2p/protocol/kademlia/impl/storage.hpp>
 
-#include <boost/multi_index/hashed_index_fwd.hpp>
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/ordered_index_fwd.hpp>
-#include <boost/multi_index/tag.hpp>
-#include <boost/multi_index_container_fwd.hpp>
+#include <unordered_map>
 
 #include <libp2p/basic/scheduler.hpp>
 #include <libp2p/protocol/kademlia/config.hpp>
@@ -22,34 +18,12 @@ namespace libp2p::protocol::kademlia {
 
   class StorageImpl : public Storage,
                       public std::enable_shared_from_this<StorageImpl> {
-    struct ByKey;
-    struct ByExpireTime;
-    struct ByRefreshTime;
-
-    // namespace mi = boost::multi_index;
-
     struct Record {
       ContentId key;
       Time expire_time{};
       Time refresh_time{};
       Time updated_at{};
     };
-
-    /// Table of Record indexed by key, expire time and refresh time
-    using Table = boost::multi_index_container<
-        Record,
-        boost::multi_index::indexed_by<
-            boost::multi_index::hashed_unique<
-                boost::multi_index::tag<ByKey>,
-                boost::multi_index::member<Record, ContentId, &Record::key>,
-                std::hash<ContentId>>,
-            boost::multi_index::ordered_non_unique<
-                boost::multi_index::tag<ByExpireTime>,
-                boost::multi_index::member<Record, Time, &Record::expire_time>>,
-            boost::multi_index::ordered_non_unique<
-                boost::multi_index::tag<ByRefreshTime>,
-                boost::multi_index::
-                    member<Record, Time, &Record::refresh_time>>>>;
 
    public:
     StorageImpl(const Config &config,
@@ -75,7 +49,7 @@ namespace libp2p::protocol::kademlia {
     std::shared_ptr<StorageBackend> backend_;
     std::shared_ptr<basic::Scheduler> scheduler_;
 
-    std::unique_ptr<Table> table_;
+    std::unordered_map<ContentId, Record> table_;
     basic::Scheduler::Handle refresh_timer_;
   };
 

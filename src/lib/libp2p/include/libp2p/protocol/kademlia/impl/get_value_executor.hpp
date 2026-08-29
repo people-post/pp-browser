@@ -8,11 +8,9 @@
 
 #include <libp2p/protocol/kademlia/impl/response_handler.hpp>
 
-#include <boost/multi_index/hashed_index_fwd.hpp>
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index_container_fwd.hpp>
 #include <memory>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <libp2p/common/types.hpp>
@@ -91,26 +89,8 @@ namespace libp2p::protocol::kademlia {
     std::priority_queue<PeerIdWithDistance> queue_;
     size_t requests_in_progress_ = 0;
 
-    struct ByPeerId;
-    struct ByValue;
-    struct Record {
-      PeerId peer;
-      Value value;
-    };
-
-    /// Table of Record indexed by peer and value
-    using Table = boost::multi_index_container<
-        Record,
-        boost::multi_index::indexed_by<
-            boost::multi_index::hashed_unique<
-                boost::multi_index::tag<ByPeerId>,
-                boost::multi_index::member<Record, PeerId, &Record::peer>,
-                std::hash<PeerId>>,
-            boost::multi_index::ordered_non_unique<
-                boost::multi_index::tag<ByValue>,
-                boost::multi_index::member<Record, Value, &Record::value>>>>;
-
-    std::unique_ptr<Table> received_records_;
+    /// PeerId -> received value (unique by peer)
+    std::unordered_map<PeerId, Value> received_records_;
 
     bool started_ = false;
     bool done_ = false;

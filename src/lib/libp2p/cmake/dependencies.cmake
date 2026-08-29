@@ -49,7 +49,7 @@ if (PACKAGE_MANAGER STREQUAL "hunter")
   hunter_add_package(Boost COMPONENTS random filesystem program_options)
   find_package(Boost CONFIG REQUIRED filesystem random program_options)
 else ()
-  find_package(Boost CONFIG REQUIRED filesystem random beast program_options)
+  find_package(Boost CONFIG REQUIRED filesystem random program_options)
 endif ()
 
 # https://www.openssl.org/

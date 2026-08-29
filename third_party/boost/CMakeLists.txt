@@ -27,7 +27,6 @@ set(BOOST_INCLUDE_LIBRARIES
     utility
     system
     asio
-    beast
     CACHE STRING "" FORCE)
 
 include(BoostRoot)

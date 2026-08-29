@@ -11,7 +11,6 @@
 #include <libp2p/common/literals.hpp>
 #include <libp2p/host/basic_host.hpp>
 #include <libp2p/injector/host_injector.hpp>
-#include <libp2p/layer/websocket.hpp>
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
@@ -75,10 +74,6 @@ int main(int argc, char **argv) {
     fmt::print("    Print help\n");
     fmt::print("  -insecure\n");
     fmt::print("    Use plaintext protocol instead of noise\n");
-    fmt::print("  --ws\n");
-    fmt::print("    Accept websocket connections instead of tcp\n");
-    fmt::print("  --wss\n");
-    fmt::print("    Accept secure websocket connections instead of tcp\n");
     return 0;
   }
 
@@ -124,24 +119,7 @@ int main(int argc, char **argv) {
 
   auto injector = libp2p::injector::makeHostInjector(
       libp2p::injector::useKeyPair(keypair),
-      libp2p::injector::useSecurityAdaptors<SecureAdaptorProxy>(),
-      libp2p::injector::useWssPem(R"(
------BEGIN CERTIFICATE-----
-MIIBODCB3qADAgECAghv+C53VY1w3TAKBggqhkjOPQQDAjAUMRIwEAYDVQQDDAls
-b2NhbGhvc3QwIBcNNzUwMTAxMDAwMDAwWhgPNDA5NjAxMDEwMDAwMDBaMBQxEjAQ
-BgNVBAMMCWxvY2FsaG9zdDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABLNFvFLB
-kzZEhSjaSNnS5Q+364BqSLF0+2x7gZVEDazBtdxlfmIVWL9Xymgil1WuCfmIxp2R
-Cdh/0A9Ym4Zx5sqjGDAWMBQGA1UdEQQNMAuCCWxvY2FsaG9zdDAKBggqhkjOPQQD
-AgNJADBGAiEAnfqMaHg9KVCbg1OHmZ19f7ArfwNLj5fmTFB3OYeisycCIQCg2rDy
-MLbRdSECggJ2ae10PIutrY7c+78h1vHDfXRM7A==
------END CERTIFICATE-----
-
------BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgdfUHplIKKrgBaZUd
-FVg0biAiKZmXu+iWX43vprg2c/ShRANCAASzRbxSwZM2RIUo2kjZ0uUPt+uAakix
-dPtse4GVRA2swbXcZX5iFVi/V8poIpdVrgn5iMadkQnYf9APWJuGcebK
------END PRIVATE KEY-----
-)"));
+      libp2p::injector::useSecurityAdaptors<SecureAdaptorProxy>());
   auto &secure_adaptor = injector.create<SecureAdaptorProxy &>();
   if (insecure_mode) {
     secure_adaptor.impl =
@@ -165,11 +143,6 @@ dPtse4GVRA2swbXcZX5iFVi/V8poIpdVrgn5iMadkQnYf9APWJuGcebK
                            });
 
   std::string _ma = "/ip4/127.0.0.1/tcp/40010";
-  if (has_arg("--wss")) {
-    _ma += "/wss";
-  } else if (has_arg("--ws")) {
-    _ma += "/ws";
-  }
   auto ma = libp2p::multi::Multiaddress::create(_ma).value();
 
   // launch a Listener part of the Host

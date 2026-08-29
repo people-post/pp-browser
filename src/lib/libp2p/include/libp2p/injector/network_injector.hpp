@@ -22,7 +22,7 @@
 #include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
-#include <libp2p/layer/websocket.hpp>
+#include <libp2p/layer/layer_adaptor.hpp>
 #include <libp2p/muxer/mplex.hpp>
 #include <libp2p/muxer/yamux.hpp>
 #include <libp2p/network/impl/connection_manager_impl.hpp>
@@ -168,25 +168,6 @@ namespace libp2p::injector {
   }
 
   /**
-   * @brief Instruct injector to use wss ssl server with key and certificates
-   * from pem. Can be used once.
-   */
-  inline auto useWssPem(std::string_view pem) {
-    layer::WssCertificate cert;
-    if (not pem.empty()) {
-      if (auto cert_res = layer::WssCertificate::make(pem)) {
-        cert = std::move(cert_res.value());
-      } else {
-        SL_WARN(log::createLogger("libp2p::injector::useWssPem"),
-                "{}",
-                cert_res.error());
-      }
-    }
-    return boost::di::bind<layer::WssCertificate>.to(
-        std::move(cert))[boost::di::override];
-  }
-
-  /**
    * @brief Instruct injector to use specific config type. Can be used many
    * times for different types.
    * @tparam C config type
@@ -228,7 +209,7 @@ namespace libp2p::injector {
    * struct SomeNewAdaptor : public LayerAdaptor {...};
    *
    * auto injector = makeNetworkInjector(
-   *   useLayerAdaptors<WsAdaptor>()
+   *   useLayerAdaptors<SomeNewAdaptor>()
    * );
    * @endcode
    */
@@ -340,8 +321,6 @@ namespace libp2p::injector {
         di::bind<security::plaintext::ExchangeMessageMarshaller>().to<security::plaintext::ExchangeMessageMarshallerImpl>(),
         di::bind<security::secio::ProposeMessageMarshaller>().to<security::secio::ProposeMessageMarshallerImpl>(),
         di::bind<security::secio::ExchangeMessageMarshaller>().to<security::secio::ExchangeMessageMarshallerImpl>(),
-        di::bind<layer::WsConnectionConfig>.to(layer::WsConnectionConfig{}),
-        di::bind<layer::WssCertificate>.to(layer::WssCertificate{}),
 
         di::bind<basic::Scheduler::Config>.to(basic::Scheduler::Config{}),
         di::bind<basic::SchedulerBackend>().to<basic::AsioSchedulerBackend>(),
@@ -360,7 +339,7 @@ namespace libp2p::injector {
 
         // default adaptors
         di::bind<muxer::MuxedConnectionConfig>.to(muxer::MuxedConnectionConfig{}),
-        di::bind<layer::LayerAdaptor *[]>().to<layer::WsAdaptor, layer::WssAdaptor>(),  // NOLINT
+        di::bind<layer::LayerAdaptor *[]>().to<>(),  // NOLINT
         di::bind<security::SecurityAdaptor *[]>().to<security::Plaintext, security::Secio, security::Noise, security::TlsAdaptor>(),  // NOLINT
         di::bind<muxer::MuxerAdaptor *[]>().to<muxer::Yamux, muxer::Mplex>(),  // NOLINT
         di::bind<transport::TransportAdaptor *[]>().to<transport::TcpTransport, transport::QuicTransport>(),  // NOLINT
