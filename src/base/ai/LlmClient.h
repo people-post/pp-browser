@@ -3,8 +3,8 @@
 #include "base/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,13 +15,13 @@ struct ChatMessage {
   std::string role;
   std::string content;
   std::optional<std::string> tool_call_id;
-  std::optional<nlohmann::json> tool_calls;
+  std::optional<Value> tool_calls;
 };
 
 struct ToolDefinition {
   std::string name;
   std::string description;
-  nlohmann::json parameters;
+  Object parameters;
 };
 
 struct ChatCompletionRequest {
@@ -32,7 +32,7 @@ struct ChatCompletionRequest {
 struct ToolCall {
   std::string id;
   std::string name;
-  nlohmann::json arguments;
+  Object arguments;
 };
 
 struct ChatCompletionResponse {

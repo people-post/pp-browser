@@ -3,8 +3,8 @@
 #include "base/platform/os/OsProcess.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -13,7 +13,7 @@ namespace pbr {
 struct McpTool {
   std::string name;
   std::string description;
-  nlohmann::json input_schema;
+  Object input_schema;
 };
 
 class McpClient : public Module {
@@ -31,12 +31,12 @@ public:
 
   Roe<void> Initialize();
   Roe<std::vector<McpTool>> ListTools();
-  Roe<nlohmann::json> CallTool(const std::string& name, const nlohmann::json& arguments);
+  Roe<Object> CallTool(const std::string& name, const Object& arguments);
 
   static McpClient& MockInstance();
 
 private:
-  Roe<nlohmann::json> Request(const std::string& method, const nlohmann::json& params);
+  Roe<Object> Request(const std::string& method, const Object& params);
 
   bool running_ = false;
   bool mock_ = false;

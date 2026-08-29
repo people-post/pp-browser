@@ -65,7 +65,7 @@
 #include <RmlUi/Core/SystemInterface.h>
 #include "feature/ui/SettingsController.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -80,6 +80,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -1423,16 +1424,11 @@ void ChatController::SyncDisplayFromThread() {
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
   if (payload && !payload->empty()) {
-    const nlohmann::json action_json = nlohmann::json::parse(*payload, nullptr, false);
-    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
-        action_json["type"].get<std::string>() == "tool_permission") {
-      const std::string approval_id =
-          action_json.contains("approval_id") && action_json["approval_id"].is_string()
-              ? action_json["approval_id"].get<std::string>()
-              : "";
-      const std::string decision = action_json.contains("decision") && action_json["decision"].is_string()
-                                       ? action_json["decision"].get<std::string>()
-                                       : "";
+    auto action_json = TryParseObject(*payload);
+    auto action_type = action_json ? action_json->getString("type") : std::nullopt;
+    if (action_type && *action_type == "tool_permission") {
+      const std::string approval_id = action_json->getString("approval_id").value_or("");
+      const std::string decision = action_json->getString("decision").value_or("");
       if (!agent_ports_.resume_tool_permission) {
         ShowToast("Assistant is not ready for permission decisions.");
         return;
@@ -1443,8 +1439,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       }
       return;
     }
-    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
-        action_json["type"].get<std::string>() == "fork_group") {
+    if (action_type && *action_type == "fork_group") {
       const std::string confirmed_payload = *payload;
       ShowConfirm("Start a new group?",
           "This creates a new group with a fresh history. People who are still reachable can be invited again.",
@@ -2367,24 +2362,27 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
           thread_id.empty() ? ActiveThreadId() : thread_id;
       std::string relay_plain = raw_output;
       if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
-        try {
-          const nlohmann::json blocks_doc = nlohmann::json::parse(raw_output);
-          if (blocks_doc.contains("blocks") && blocks_doc["blocks"].is_array()) {
+        if (auto blocks_doc = TryParseObject(raw_output)) {
+          if (const Array* blocks = blocks_doc->getArray("blocks")) {
             std::string joined;
-            for (const auto& block : blocks_doc["blocks"]) {
-              if (block.value("type", "") == "paragraph" && block.contains("text") &&
-                  block["text"].is_string()) {
-                if (!joined.empty()) {
-                  joined += "\n";
+            for (const Value& block_value : blocks->elements) {
+              const Object* block = asObject(block_value);
+              if (!block) {
+                continue;
+              }
+              if (block->getString("type").value_or("") == "paragraph") {
+                if (auto text = block->getString("text")) {
+                  if (!joined.empty()) {
+                    joined += "\n";
+                  }
+                  joined += *text;
                 }
-                joined += block["text"].get<std::string>();
               }
             }
             if (!joined.empty()) {
               relay_plain = joined;
             }
           }
-        } catch (const std::exception&) {
         }
       }
       SendSharedAssistantRelay(active_thread, shared_ai_mode, relay_plain);

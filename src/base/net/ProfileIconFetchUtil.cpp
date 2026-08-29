@@ -2,6 +2,7 @@
 
 #include "base/net/HttpClient.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

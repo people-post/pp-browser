@@ -25,7 +25,6 @@ target_link_libraries(pp-node PRIVATE
   pp_base_runtime_core
   pp_base_error
   pp_common
-  nlohmann_json::nlohmann_json
   Threads::Threads
   sodium
 )
@@ -81,7 +80,6 @@ if(PP_BROWSER_BUILD_TESTS)
   target_link_libraries(pp_browser_pp_node_test PRIVATE
     GTest::gtest
     GTest::gtest_main
-    nlohmann_json::nlohmann_json
     pp_common
   )
   pp_browser_apply_warnings(pp_browser_pp_node_test)

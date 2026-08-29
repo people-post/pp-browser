@@ -1,4 +1,5 @@
 #include "feature/messaging/LinkDeviceCoordinator.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

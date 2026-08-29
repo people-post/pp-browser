@@ -4,6 +4,7 @@
 #include "base/net/CurlSsl.h"
 
 #include <curl/curl.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

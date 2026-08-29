@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

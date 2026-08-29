@@ -1,6 +1,7 @@
 #include "base/platform/IPushDeviceRegistrar.h"
 
 #include <mutex>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

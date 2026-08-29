@@ -48,7 +48,8 @@
 #include <optional>
 #include <sstream>
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -331,13 +332,13 @@ void P2pMessagingService::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& 
     local.sender_contact_id = kLocalSelfContactId;
     local.content_type = ChatContentType::System;
     local.text = notice;
-    local.payload_json =
-        nlohmann::json({{"control_type", "receive_failure"},
-                        {"detail",
-                         nlohmann::json({{"sender", outcome.receive_failure_sender.value_or("")},
-                                         {"detail", outcome.receive_failure_detail}})
-                             .dump()}})
-            .dump();
+    Object detail;
+    detail.set("sender", outcome.receive_failure_sender.value_or(""));
+    detail.set("detail", outcome.receive_failure_detail);
+    Object payload;
+    payload.set("control_type", "receive_failure");
+    payload.set("detail", DumpJson(detail));
+    local.payload_json = DumpJson(payload);
     local.timestamp = now_ms;
     local.delivery = MessageDelivery::Local;
     local.relay_visible = false;
@@ -1325,11 +1326,11 @@ Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identi
 
   SendRelayOptions opts;
   opts.content_type = ChatContentType::System;
-  opts.payload_json =
-      nlohmann::json({{"control_type", InitiationBillingCodec::ControlTypeToWire(
-                                           InitiationBillingControlType::ChargeRequired)},
-                      {"detail", *detail_json}})
-          .dump();
+  Object payload;
+  payload.set("control_type",
+              InitiationBillingCodec::ControlTypeToWire(InitiationBillingControlType::ChargeRequired));
+  payload.set("detail", *detail_json);
+  opts.payload_json = DumpJson(payload);
   opts.generation = "system";
   opts.update_preview = false;
   opts.prefer_relay = true;

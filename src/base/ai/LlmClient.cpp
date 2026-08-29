@@ -2,24 +2,17 @@
 
 #include "base/error/AppError.h"
 #include "base/net/CurlSsl.h"
+#include "common/ValueJson.h"
 
 #include <curl/curl.h>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
-                                const std::string& default_value = {}) {
-  if (!json.contains(key)) {
-    return default_value;
-  }
-  const auto& value = json[key];
-  if (value.is_string()) {
-    return value.get<std::string>();
-  }
-  return default_value;
+std::string JsonStringOrDefault(const Object& json, const char* key, const std::string& default_value = {}) {
+  return json.getString(key).value_or(default_value);
 }
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
@@ -28,27 +21,34 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out
   return total;
 }
 
-nlohmann::json MessageToJson(const ChatMessage& message) {
-  nlohmann::json out = {{"role", message.role}, {"content", message.content}};
+Object MessageToObject(const ChatMessage& message) {
+  Object out;
+  out.set("role", message.role);
+  out.set("content", message.content);
   if (message.tool_call_id) {
-    out["tool_call_id"] = *message.tool_call_id;
+    out.set("tool_call_id", *message.tool_call_id);
   }
   if (message.tool_calls) {
-    out["tool_calls"] = *message.tool_calls;
+    out.set("tool_calls", *message.tool_calls);
   }
   return out;
 }
 
-nlohmann::json ToolsToJson(const std::vector<ToolDefinition>& tools) {
-  nlohmann::json out = nlohmann::json::array();
+Value ToolsToValue(const std::vector<ToolDefinition>& tools) {
+  std::vector<Value> out;
+  out.reserve(tools.size());
   for (const ToolDefinition& tool : tools) {
-    out.push_back({{"type", "function"},
-                   {"function",
-                    {{"name", tool.name},
-                     {"description", tool.description},
-                     {"parameters", tool.parameters.empty() ? nlohmann::json::object() : tool.parameters}}}});
+    Object function;
+    function.set("name", tool.name);
+    function.set("description", tool.description);
+    function.set("parameters", tool.parameters.empty() ? Object{} : tool.parameters);
+
+    Object entry;
+    entry.set("type", "function");
+    entry.set("function", function);
+    out.push_back(ObjectValue(std::move(entry)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
 bool IsOllamaEndpoint(const std::string& base_url) {
@@ -56,20 +56,21 @@ bool IsOllamaEndpoint(const std::string& base_url) {
 }
 
 Error MapHttpError(long http_code, const std::string& response_body) {
-  auto json = nlohmann::json::parse(response_body, nullptr, false);
   std::string api_message;
   std::string api_code;
-  if (!json.is_discarded() && json.contains("error")) {
-    const auto& err = json["error"];
-    if (err.is_object()) {
-      if (err.contains("message") && err["message"].is_string()) {
-        api_message = err["message"].get<std::string>();
+  if (auto json = TryParseObject(response_body)) {
+    if (auto err_slot = json->fields().tryGet("error")) {
+      const Value& err = err_slot->get();
+      if (const Object* err_obj = asObject(err)) {
+        if (auto message = err_obj->getString("message")) {
+          api_message = *message;
+        }
+        if (auto code = err_obj->getString("code")) {
+          api_code = *code;
+        }
+      } else if (auto message = asString(err)) {
+        api_message = *message;
       }
-      if (err.contains("code") && err["code"].is_string()) {
-        api_code = err["code"].get<std::string>();
-      }
-    } else if (err.is_string()) {
-      api_message = err.get<std::string>();
     }
   }
 
@@ -155,24 +156,29 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   const std::vector<ChatMessage> wire_messages = CoalesceLeadingSystemMessages(request.messages);
-  nlohmann::json messages = nlohmann::json::array();
+  std::vector<Value> messages;
+  messages.reserve(wire_messages.size());
   for (const ChatMessage& message : wire_messages) {
-    messages.push_back(MessageToJson(message));
+    messages.push_back(ObjectValue(MessageToObject(message)));
   }
 
-  nlohmann::json body = {{"model", config_.model}, {"messages", messages}};
+  Object body;
+  body.set("model", config_.model);
+  body.set("messages", ArrayValue(std::move(messages)));
   if (config_.num_predict > 0) {
-    body["max_tokens"] = config_.num_predict;
+    body.set("max_tokens", static_cast<int64_t>(config_.num_predict));
     if (IsOllamaEndpoint(config_.base_url)) {
-      body["options"] = {{"num_predict", config_.num_predict}};
+      Object options;
+      options.set("num_predict", static_cast<int64_t>(config_.num_predict));
+      body.set("options", options);
     }
   }
   if (!request.tools.empty()) {
-    body["tools"] = ToolsToJson(request.tools);
-    body["tool_choice"] = "auto";
+    body.set("tools", ToolsToValue(request.tools));
+    body.set("tool_choice", "auto");
   }
 
-  const std::string payload = body.dump();
+  const std::string payload = DumpJson(body);
   std::string response;
 
   CURL* curl = curl_easy_init();
@@ -222,52 +228,77 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 }
 
 Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::string& response) {
-  auto json = nlohmann::json::parse(response, nullptr, false);
-  if (json.is_discarded()) {
+  auto parsed = ParseValue(response);
+  if (!parsed) {
+    return AppError::Internal("Failed to parse LLM response JSON");
+  }
+  const Object* json = asObject(*parsed);
+  if (!json) {
     return AppError::Internal("Failed to parse LLM response JSON");
   }
 
-  if (json.contains("error")) {
-    const auto& err = json["error"];
-    const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
+  if (auto err_slot = json->fields().tryGet("error")) {
+    const Value& err = err_slot->get();
+    std::string message;
+    if (const Object* err_obj = asObject(err)) {
+      message = err_obj->getString("message").value_or(DumpJson(err));
+    } else {
+      message = DumpJson(err);
+    }
     return AppError::Network(Err::Network::HttpError, "LLM API error: " + message)
         .WithUser("LLM API error: " + message);
   }
 
-  if (!json.contains("choices") || !json["choices"].is_array() || json["choices"].empty()) {
+  const Array* choices = json->getArray("choices");
+  if (!choices || choices->elements.empty()) {
     return AppError::Internal("LLM response missing choices");
   }
 
-  const auto& choice = json["choices"][0];
-  const auto& message = choice.value("message", nlohmann::json::object());
+  const Object* choice = asObject(choices->elements[0]);
+  if (!choice) {
+    return AppError::Internal("LLM response missing choices");
+  }
+  Object message;
+  if (const Object* message_obj = choice->getObject("message")) {
+    message = *message_obj;
+  }
 
   ChatCompletionResponse out;
-  out.finish_reason = choice.value("finish_reason", "stop");
+  out.finish_reason = JsonStringOrDefault(*choice, "finish_reason", "stop");
 
-  if (message.contains("content") && !message["content"].is_null()) {
-    if (message["content"].is_string()) {
-      out.content = message["content"].get<std::string>();
-    } else {
-      out.content = message["content"].dump();
+  if (auto content_slot = message.fields().tryGet("content")) {
+    const Value& content = content_slot->get();
+    if (!isNullValue(content)) {
+      if (auto text = asString(content)) {
+        out.content = *text;
+      } else {
+        out.content = DumpJson(content);
+      }
     }
   }
 
-  if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
-    for (const auto& call : message["tool_calls"]) {
+  if (const Array* tool_calls = message.getArray("tool_calls")) {
+    for (const Value& call_value : tool_calls->elements) {
+      const Object* call = asObject(call_value);
+      if (!call) {
+        continue;
+      }
       ToolCall tool_call;
-      tool_call.id = JsonStringOrDefault(call, "id");
-      if (call.contains("function") && call["function"].is_object()) {
-        const auto& fn = call["function"];
-        tool_call.name = JsonStringOrDefault(fn, "name");
-        const nlohmann::json args_field = fn.value("arguments", nlohmann::json("{}"));
-        if (args_field.is_string()) {
-          tool_call.arguments = nlohmann::json::parse(args_field.get<std::string>(), nullptr, false);
-          if (tool_call.arguments.is_discarded()) {
-            tool_call.arguments = nlohmann::json::object();
+      tool_call.id = JsonStringOrDefault(*call, "id");
+      if (const Object* fn = call->getObject("function")) {
+        tool_call.name = JsonStringOrDefault(*fn, "name");
+        Object arguments;
+        if (auto args_slot = fn->fields().tryGet("arguments")) {
+          const Value& args_field = args_slot->get();
+          if (auto args_string = asString(args_field)) {
+            if (auto parsed_args = TryParseObject(*args_string)) {
+              arguments = std::move(*parsed_args);
+            }
+          } else if (const Object* args_object = asObject(args_field)) {
+            arguments = *args_object;
           }
-        } else {
-          tool_call.arguments = args_field;
         }
+        tool_call.arguments = std::move(arguments);
       }
       if (!tool_call.name.empty()) {
         out.tool_calls.push_back(std::move(tool_call));

@@ -35,6 +35,7 @@
 
 #include <filesystem>
 #include <functional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

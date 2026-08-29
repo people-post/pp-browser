@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

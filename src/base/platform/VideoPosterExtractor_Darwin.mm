@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

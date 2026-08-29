@@ -1,11 +1,12 @@
 #include "base/net/ClientCompat.h"
 
 #include "base/runtime/AppVersion.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -64,6 +65,24 @@ std::filesystem::path CachePath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "client_compat.json";
 }
 
+Object ClientCompatDocumentToObject(const ClientCompatDocument& doc) {
+  Object document;
+  document.set("schema_version", static_cast<int64_t>(doc.schema_version));
+  document.set("min_client_version", doc.min_client_version);
+  document.set("latest_client_version", doc.latest_client_version);
+  document.set("min_protocol_gen", static_cast<int64_t>(doc.min_protocol_gen));
+  document.set("upgrade_url", doc.upgrade_url);
+  document.set("message", doc.message);
+  if (doc.support) {
+    Object support;
+    support.set("enabled", doc.support->enabled);
+    support.set("account_id", doc.support->account_id);
+    support.set("display_name", doc.support->display_name);
+    document.set("support", support);
+  }
+  return document;
+}
+
 } // namespace
 
 SemverCore ParseSemverCore(std::string_view version) {
@@ -97,14 +116,20 @@ int CompareSemverCore(std::string_view a, std::string_view b) {
 }
 
 Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) {
-  const nlohmann::json root = nlohmann::json::parse(json_text, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  auto root = TryParseObject(std::string(json_text));
+  if (!root) {
     return Error("Invalid client-compat JSON");
   }
-  if (!root.contains("schema_version") || !root["schema_version"].is_number_integer()) {
+  auto schema_version_opt = root->getIf<int64_t>("schema_version");
+  if (!schema_version_opt) {
+    if (auto as_u = root->getNonNegInt("schema_version")) {
+      schema_version_opt = static_cast<int64_t>(*as_u);
+    }
+  }
+  if (!schema_version_opt) {
     return Error("client-compat missing schema_version");
   }
-  const int schema_version = root["schema_version"].get<int>();
+  const int schema_version = static_cast<int>(*schema_version_opt);
   if (schema_version > kClientCompatSchemaVersion) {
     return Error("Unsupported client-compat schema_version");
   }
@@ -114,46 +139,44 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
 
   ClientCompatDocument doc;
   doc.schema_version = schema_version;
-  if (root.contains("min_client_version") && root["min_client_version"].is_string()) {
-    doc.min_client_version = root["min_client_version"].get<std::string>();
+  if (auto v = root->getString("min_client_version")) {
+    doc.min_client_version = *v;
   }
-  if (root.contains("latest_client_version") && root["latest_client_version"].is_string()) {
-    doc.latest_client_version = root["latest_client_version"].get<std::string>();
+  if (auto v = root->getString("latest_client_version")) {
+    doc.latest_client_version = *v;
   }
-  if (root.contains("min_protocol_gen") && root["min_protocol_gen"].is_number_integer()) {
-    doc.min_protocol_gen = root["min_protocol_gen"].get<int>();
+  if (auto v = root->getIf<int64_t>("min_protocol_gen")) {
+    doc.min_protocol_gen = static_cast<int>(*v);
   }
-  if (root.contains("upgrade_url") && root["upgrade_url"].is_string()) {
-    doc.upgrade_url = root["upgrade_url"].get<std::string>();
+  if (auto v = root->getString("upgrade_url")) {
+    doc.upgrade_url = *v;
   }
-  if (root.contains("message") && root["message"].is_string()) {
-    doc.message = root["message"].get<std::string>();
+  if (auto v = root->getString("message")) {
+    doc.message = *v;
   }
-  if (root.contains("support")) {
-    const auto& support = root["support"];
-    if (support.is_object()) {
-      ClientCompatSupport block;
-      if (support.contains("enabled") && support["enabled"].is_boolean()) {
-        block.enabled = support["enabled"].get<bool>();
-      }
-      if (support.contains("account_id") && support["account_id"].is_string()) {
-        block.account_id = support["account_id"].get<std::string>();
-      }
-      if (support.contains("display_name") && support["display_name"].is_string()) {
-        block.display_name = support["display_name"].get<std::string>();
-      }
-      // On only when enabled + non-empty account_id (matches www ClientCompat.ts).
-      if (block.enabled && !block.account_id.empty()) {
-        doc.support = std::move(block);
-      } else if (support.contains("enabled") && support["enabled"].is_boolean() && !block.enabled) {
-        block.enabled = false;
-        block.account_id.clear();
-        doc.support = std::move(block);
-      }
-      // Malformed / incomplete enabled block: omit (fail-open for Support only).
+  if (const Object* support = root->getObject("support")) {
+    ClientCompatSupport block;
+    const auto enabled_opt = support->getIf<bool>("enabled");
+    if (enabled_opt) {
+      block.enabled = *enabled_opt;
     }
-    // Non-object support: omit (do not fail the whole document).
+    if (auto account_id = support->getString("account_id")) {
+      block.account_id = *account_id;
+    }
+    if (auto display_name = support->getString("display_name")) {
+      block.display_name = *display_name;
+    }
+    // On only when enabled + non-empty account_id (matches www ClientCompat.ts).
+    if (block.enabled && !block.account_id.empty()) {
+      doc.support = std::move(block);
+    } else if (enabled_opt && !*enabled_opt) {
+      block.enabled = false;
+      block.account_id.clear();
+      doc.support = std::move(block);
+    }
+    // Malformed / incomplete enabled block: omit (fail-open for Support only).
   }
+  // Non-object support: omit (do not fail the whole document).
   return doc;
 }
 
@@ -185,22 +208,24 @@ Roe<ClientCompatCacheEntry> LoadClientCompatCache(const std::string& profile_dat
   }
   std::ostringstream ss;
   ss << in.rdbuf();
-  const nlohmann::json root = nlohmann::json::parse(ss.str(), nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  auto root = TryParseObject(ss.str());
+  if (!root) {
     return Error("Invalid client_compat cache");
   }
-  if (!root.contains("fetched_at_unix") || !root["fetched_at_unix"].is_number_integer()) {
+  auto fetched_at = root->getIf<int64_t>("fetched_at_unix");
+  if (!fetched_at) {
     return Error("client_compat cache missing fetched_at_unix");
   }
-  if (!root.contains("document") || !root["document"].is_object()) {
+  const Object* document = root->getObject("document");
+  if (!document) {
     return Error("client_compat cache missing document");
   }
-  auto parsed = ParseClientCompatDocument(root["document"].dump());
+  auto parsed = ParseClientCompatDocument(DumpJson(*document));
   if (!parsed) {
     return parsed.error();
   }
   ClientCompatCacheEntry entry;
-  entry.fetched_at_unix = root["fetched_at_unix"].get<int64_t>();
+  entry.fetched_at_unix = *fetched_at;
   entry.document = std::move(*parsed);
   return entry;
 }
@@ -211,24 +236,15 @@ Roe<void> SaveClientCompatCache(const std::string& profile_data_dir, const Clien
   }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
-  nlohmann::json document = {{"schema_version", entry.document.schema_version},
-                             {"min_client_version", entry.document.min_client_version},
-                             {"latest_client_version", entry.document.latest_client_version},
-                             {"min_protocol_gen", entry.document.min_protocol_gen},
-                             {"upgrade_url", entry.document.upgrade_url},
-                             {"message", entry.document.message}};
-  if (entry.document.support) {
-    document["support"] = {{"enabled", entry.document.support->enabled},
-                           {"account_id", entry.document.support->account_id},
-                           {"display_name", entry.document.support->display_name}};
-  }
-  const nlohmann::json root = {{"fetched_at_unix", entry.fetched_at_unix}, {"document", std::move(document)}};
+  Object root;
+  root.set("fetched_at_unix", entry.fetched_at_unix);
+  root.set("document", ClientCompatDocumentToObject(entry.document));
   const auto path = CachePath(profile_data_dir);
   std::ofstream out(path, std::ios::trunc);
   if (!out) {
     return Error("Failed to write client_compat cache");
   }
-  out << root.dump(2);
+  out << DumpJson(root, 2);
   return {};
 }
 

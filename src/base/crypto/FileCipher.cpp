@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/EncryptedPayload.h"
 #include "base/crypto/MessageCipher.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

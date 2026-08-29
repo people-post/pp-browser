@@ -1,6 +1,7 @@
 #include "base/error/AppError.h"
 
 #include "base/i18n/LocalizationService.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

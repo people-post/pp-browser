@@ -1,7 +1,7 @@
 #include "base/ai/WorkingSetPolicy.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
 #include <string>
 
@@ -16,29 +16,32 @@ TEST(WorkingSetPolicyTest, RoutesFeedAndAnswerTurns) {
 }
 
 TEST(WorkingSetPolicyTest, EvaluatesBlockEligibilityByShape) {
-  const auto long_list_doc = nlohmann::json::parse(R"({
+  const auto long_list_doc = pbr::TryParseObject(R"({
     "type": "long_list",
     "items": [{ "title": "Alice" }]
   })");
-  const auto long_list_eligibility = pbr::EvaluateBlock(long_list_doc, pbr::ResponseGoal::PeopleDiscovery);
+  ASSERT_TRUE(long_list_doc.has_value());
+  const auto long_list_eligibility = pbr::EvaluateBlock(*long_list_doc, pbr::ResponseGoal::PeopleDiscovery);
   EXPECT_TRUE(long_list_eligibility.eligible);
   EXPECT_EQ(long_list_eligibility.kind, pbr::WorkingSetKind::LongList);
   EXPECT_EQ(long_list_eligibility.affinity, pbr::WorkingSetAffinity::Feed);
 
-  const auto small_table_doc = nlohmann::json::parse(R"({
+  const auto small_table_doc = pbr::TryParseObject(R"({
     "type": "table",
     "headers": ["A", "B"],
     "rows": [["1", "2"], ["3", "4"]]
   })");
-  const auto small_table_eligibility = pbr::EvaluateBlock(small_table_doc, pbr::ResponseGoal::General);
+  ASSERT_TRUE(small_table_doc.has_value());
+  const auto small_table_eligibility = pbr::EvaluateBlock(*small_table_doc, pbr::ResponseGoal::General);
   EXPECT_FALSE(small_table_eligibility.eligible);
 
-  const auto large_table_doc = nlohmann::json::parse(R"({
+  const auto large_table_doc = pbr::TryParseObject(R"({
     "type": "table",
     "headers": ["A", "B", "C", "D"],
     "rows": [["1","2","3","4"],["5","6","7","8"],["9","10","11","12"],["13","14","15","16"],["17","18","19","20"]]
   })");
-  const auto large_table_eligibility = pbr::EvaluateBlock(large_table_doc, pbr::ResponseGoal::General);
+  ASSERT_TRUE(large_table_doc.has_value());
+  const auto large_table_eligibility = pbr::EvaluateBlock(*large_table_doc, pbr::ResponseGoal::General);
   EXPECT_TRUE(large_table_eligibility.eligible);
   EXPECT_EQ(large_table_eligibility.kind, pbr::WorkingSetKind::Table);
 }

@@ -2,8 +2,8 @@
 
 #include "base/ai/RmlValidator.h"
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
 
@@ -11,7 +11,7 @@ namespace pbr {
 
 struct ActionBinding {
   std::string tool;
-  nlohmann::json params;
+  Object params;
   std::string result_bind;
   std::string risk = "read"; // read | write | destructive
 };

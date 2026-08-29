@@ -4,6 +4,7 @@
 #include "base/crypto/PskBundleCodec.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -14,6 +14,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 // V017: macOS H264 encode/decode via VideoToolbox. Encode sessions are
 // created synchronously in ConfigureEncoder (dimensions are known up

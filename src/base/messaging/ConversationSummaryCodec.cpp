@@ -1,8 +1,8 @@
 #include "base/messaging/ConversationSummaryCodec.h"
 
 #include "base/messaging/MessagingLimits.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -10,51 +10,53 @@ Roe<std::string> ConversationSummaryCodec::Encode(const ConversationSummary& sum
   if (summary.text.size() > kMaxSummaryBytes) {
     return Error("Summary text exceeds kMaxSummaryBytes");
   }
-  nlohmann::json json;
-  json["schema_version"] = summary.schema_version;
-  json["version"] = summary.version;
-  json["text"] = summary.text;
+  Object json;
+  json.set("schema_version", static_cast<int64_t>(summary.schema_version));
+  json.set("version", static_cast<int64_t>(summary.version));
+  json.set("text", summary.text);
   if (summary.compacted_through_display_order.has_value()) {
-    json["compacted_through_display_order"] = *summary.compacted_through_display_order;
+    json.set("compacted_through_display_order", *summary.compacted_through_display_order);
   }
-  json["updated_at"] = summary.updated_at;
-  return json.dump();
+  json.set("updated_at", summary.updated_at);
+  return DumpJson(json);
 }
 
 Roe<ConversationSummary> ConversationSummaryCodec::Decode(const std::string& json_text) {
-  nlohmann::json json;
-  try {
-    json = nlohmann::json::parse(json_text);
-  } catch (const nlohmann::json::exception&) {
+  auto json = TryParseObject(json_text);
+  if (!json) {
     return Error("Invalid ConversationSummary JSON");
   }
 
   ConversationSummary summary;
-  if (!json.contains("schema_version") || !json["schema_version"].is_number_integer()) {
+  auto schema_version = json->getIf<int64_t>("schema_version");
+  if (!schema_version) {
     return Error("ConversationSummary missing schema_version");
   }
-  summary.schema_version = json["schema_version"].get<int>();
+  summary.schema_version = static_cast<int>(*schema_version);
   if (summary.schema_version != kSchemaVersion) {
     return Error("Unsupported ConversationSummary schema_version");
   }
-  if (!json.contains("version") || !json["version"].is_number_integer()) {
+  auto version = json->getIf<int64_t>("version");
+  if (!version) {
     return Error("ConversationSummary missing version");
   }
-  summary.version = json["version"].get<int>();
-  if (!json.contains("text") || !json["text"].is_string()) {
+  summary.version = static_cast<int>(*version);
+  auto text = json->getString("text");
+  if (!text) {
     return Error("ConversationSummary missing text");
   }
-  summary.text = json["text"].get<std::string>();
+  summary.text = *text;
   if (summary.text.size() > kMaxSummaryBytes) {
     return Error("Summary text exceeds kMaxSummaryBytes");
   }
-  if (json.contains("compacted_through_display_order") && json["compacted_through_display_order"].is_number_integer()) {
-    summary.compacted_through_display_order = json["compacted_through_display_order"].get<int64_t>();
+  if (auto compacted = json->getIf<int64_t>("compacted_through_display_order")) {
+    summary.compacted_through_display_order = *compacted;
   }
-  if (!json.contains("updated_at") || !json["updated_at"].is_number_integer()) {
+  auto updated_at = json->getIf<int64_t>("updated_at");
+  if (!updated_at) {
     return Error("ConversationSummary missing updated_at");
   }
-  summary.updated_at = json["updated_at"].get<int64_t>();
+  summary.updated_at = *updated_at;
   return summary;
 }
 

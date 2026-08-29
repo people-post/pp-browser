@@ -1,5 +1,6 @@
 #include "base/ai/IToolProvider.h"
 #include "base/ai/ToolRegistry.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +8,13 @@
 #include <vector>
 
 namespace {
+
+pbr::Object EmptyObjectSchema() {
+  pbr::Object schema;
+  schema.set("type", "object");
+  schema.set("properties", pbr::Object{});
+  return schema;
+}
 
 class FakeToolProvider : public pbr::IToolProvider {
 public:
@@ -16,10 +24,12 @@ public:
     pbr::ToolDescriptor tool;
     tool.definition.name = "echo_tool";
     tool.definition.description = "Echoes arguments";
-    tool.definition.parameters = {{"type", "object"}, {"properties", nlohmann::json::object()}};
+    tool.definition.parameters = EmptyObjectSchema();
     tool.meta.domain = "general";
     tool.meta.risk = "read";
-    tool.execute = [](const nlohmann::json& arguments) -> pbr::Roe<std::string> { return arguments.dump(); };
+    tool.execute = [](const pbr::Object& arguments) -> pbr::Roe<std::string> {
+      return pbr::DumpJson(arguments);
+    };
     return {std::move(tool)};
   }
 };
@@ -39,7 +49,9 @@ TEST(ToolRegistryProviderTest, RegisterProviderFillsProviderMetaAndSummary) {
   EXPECT_NE(summary.find("echo_tool [general, read]"), std::string::npos);
   EXPECT_NE(summary.find("Echoes arguments"), std::string::npos);
 
-  auto result = registry.Execute("echo_tool", nlohmann::json{{"ok", true}});
+  pbr::Object args;
+  args.set("ok", true);
+  auto result = registry.Execute("echo_tool", args);
   ASSERT_TRUE(result);
   EXPECT_NE(result->find("\"ok\":true"), std::string::npos);
 }
@@ -49,8 +61,8 @@ TEST(ToolRegistryProviderTest, RegisterProviderSkipsDuplicateNames) {
   pbr::ToolDescriptor first;
   first.definition.name = "echo_tool";
   first.definition.description = "first";
-  first.definition.parameters = nlohmann::json::object();
-  first.execute = [](const nlohmann::json&) -> pbr::Roe<std::string> { return std::string("first"); };
+  first.definition.parameters = pbr::Object{};
+  first.execute = [](const pbr::Object&) -> pbr::Roe<std::string> { return std::string("first"); };
   registry.Register(std::move(first));
 
   FakeToolProvider provider;

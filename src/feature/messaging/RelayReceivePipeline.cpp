@@ -28,8 +28,8 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -120,54 +120,55 @@ Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& messag
   if (!type) {
     return {};
   }
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  auto detail_text = payload ? payload->getString("detail") : std::nullopt;
+  if (!detail_text) {
     return Error("Initiation billing control missing detail");
   }
-  const std::string detail_json = payload["detail"].get<std::string>();
+  const std::string detail_json = *detail_text;
   const std::string peer = actor_identity.empty() ? std::string() : actor_identity;
 
   switch (*type) {
   case InitiationBillingControlType::ChargeRequired: {
-    auto detail = InitiationBillingCodec::DecodeChargeRequired(detail_json);
-    if (!detail) {
-      return detail.error();
+    auto charge = InitiationBillingCodec::DecodeChargeRequired(detail_json);
+    if (!charge) {
+      return charge.error();
     }
-    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    const std::string key = charge->peer_identity.empty() ? peer : charge->peer_identity;
     if (key.empty()) {
       return {};
     }
-    (void)initiation_billing_->SetFloor(key, detail->floor_minor);
+    (void)initiation_billing_->SetFloor(key, charge->floor_minor);
     (void)initiation_billing_->MarkClosed(key);
-    log().info << "charge_required from " << key << " floor=" << detail->floor_minor;
+    log().info << "charge_required from " << key << " floor=" << charge->floor_minor;
     return {};
   }
   case InitiationBillingControlType::InitiationOffer: {
-    auto detail = InitiationBillingCodec::DecodeInitiationOffer(detail_json);
-    if (!detail) {
-      return detail.error();
+    auto offer = InitiationBillingCodec::DecodeInitiationOffer(detail_json);
+    if (!offer) {
+      return offer.error();
     }
-    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    const std::string key = offer->peer_identity.empty() ? peer : offer->peer_identity;
     int64_t local_floor = 0;
     if (auto id = identity_.Get()) {
       local_floor = id->initiation_floor;
     }
     if (local_floor > 0) {
-      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(detail->offer_minor, local_floor); !ok) {
+      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(offer->offer_minor, local_floor); !ok) {
         log().info << "initiation_offer rejected offer_too_low peer=" << key
-                   << " offer=" << detail->offer_minor << " floor=" << local_floor;
+                   << " offer=" << offer->offer_minor << " floor=" << local_floor;
         return {}; // soft drop; sender sees no accept
       }
     }
-    (void)initiation_billing_->MarkOffered(key, detail->offer_minor, local_floor > 0 ? local_floor : detail->floor_minor);
+    (void)initiation_billing_->MarkOffered(key, offer->offer_minor, local_floor > 0 ? local_floor : offer->floor_minor);
     return {};
   }
   case InitiationBillingControlType::InitiationAccept: {
-    auto detail = InitiationBillingCodec::DecodeInitiationAccept(detail_json);
-    if (!detail) {
-      return detail.error();
+    auto accept = InitiationBillingCodec::DecodeInitiationAccept(detail_json);
+    if (!accept) {
+      return accept.error();
     }
-    const std::string key = detail->peer_identity.empty() ? peer : detail->peer_identity;
+    const std::string key = accept->peer_identity.empty() ? peer : accept->peer_identity;
     // waive or take_all both open the relationship; settlement deferred.
     (void)initiation_billing_->MarkOpen(key);
     return {};
@@ -529,8 +530,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                                                                 const MessageTransport transport) {
   RelayReceiveOutcome outcome;
 
-  const nlohmann::json wire_json = RelayEnvelopeToJson(envelope);
-  const std::string serialized = wire_json.dump();
+  const std::string serialized = DumpJson(RelayEnvelopeToJson(envelope));
   if (serialized.size() > kMaxRelayEnvelopeBytes) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;

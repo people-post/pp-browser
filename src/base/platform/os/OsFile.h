@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include "common/PbrCompat.h"
 
 namespace pbr::os {
 

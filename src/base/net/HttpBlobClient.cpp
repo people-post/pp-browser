@@ -4,17 +4,18 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RelayBlobSignPayload.h"
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
 std::string HttpFailureMessage(const HttpResponse& response) {
-  const nlohmann::json root = nlohmann::json::parse(response.body, nullptr, false);
-  if (!root.is_discarded() && root.contains("error") && root["error"].is_string()) {
-    return root["error"].get<std::string>();
+  if (auto root = TryParseObject(response.body)) {
+    if (auto error = root->getString("error")) {
+      return *error;
+    }
   }
   return "HTTP request failed with status " + std::to_string(response.status_code);
 }
@@ -29,43 +30,43 @@ Roe<void> ExpectSuccess(const HttpResponse& response) {
   return Error(HttpFailureMessage(response));
 }
 
-RelayBlobRecord ParseBlobRecord(const nlohmann::json& item) {
+RelayBlobRecord ParseBlobRecord(const Object& item) {
   RelayBlobRecord record;
-  if (item.contains("blob_id") && item["blob_id"].is_string()) {
-    record.blob_id = item["blob_id"].get<std::string>();
+  if (auto v = item.getString("blob_id")) {
+    record.blob_id = *v;
   }
-  if (item.contains("url") && item["url"].is_string()) {
-    record.url = item["url"].get<std::string>();
+  if (auto v = item.getString("url")) {
+    record.url = *v;
   }
-  if (item.contains("status") && item["status"].is_string()) {
-    if (auto status = BlobStatusFromWire(item["status"].get<std::string>())) {
+  if (auto v = item.getString("status")) {
+    if (auto status = BlobStatusFromWire(*v)) {
       record.status = *status;
     }
   }
-  if (item.contains("tier") && item["tier"].is_string()) {
-    if (auto tier = BlobTierFromWire(item["tier"].get<std::string>())) {
+  if (auto v = item.getString("tier")) {
+    if (auto tier = BlobTierFromWire(*v)) {
       record.tier = *tier;
     }
   }
-  if (item.contains("content_type") && item["content_type"].is_string()) {
-    record.content_type = item["content_type"].get<std::string>();
+  if (auto v = item.getString("content_type")) {
+    record.content_type = *v;
   }
-  if (item.contains("byte_length") && item["byte_length"].is_number_unsigned()) {
-    record.byte_length = item["byte_length"].get<uint64_t>();
+  if (auto v = item.getNonNegInt("byte_length")) {
+    record.byte_length = *v;
   }
-  if (item.contains("purpose") && item["purpose"].is_string()) {
-    if (auto purpose = BlobPurposeFromWire(item["purpose"].get<std::string>())) {
+  if (auto v = item.getString("purpose")) {
+    if (auto purpose = BlobPurposeFromWire(*v)) {
       record.purpose = *purpose;
     }
   }
-  if (item.contains("created_at") && item["created_at"].is_string()) {
-    record.created_at = item["created_at"].get<std::string>();
+  if (auto v = item.getString("created_at")) {
+    record.created_at = *v;
   }
-  if (item.contains("retained_at") && item["retained_at"].is_string()) {
-    record.retained_at = item["retained_at"].get<std::string>();
+  if (auto v = item.getString("retained_at")) {
+    record.retained_at = *v;
   }
-  if (item.contains("pending_expires_at") && item["pending_expires_at"].is_string()) {
-    record.pending_expires_at = item["pending_expires_at"].get<std::string>();
+  if (auto v = item.getString("pending_expires_at")) {
+    record.pending_expires_at = *v;
   }
   return record;
 }
@@ -101,14 +102,15 @@ Roe<BlobPresignResult> HttpBlobClient::Presign(const std::string& relay_user_id,
     return signature.error();
   }
 
-  const nlohmann::json body = {{"relay_user_id", relay_user_id},
-                               {"content_type", content_type},
-                               {"byte_length", byte_length},
-                               {"purpose", BlobPurposeToWire(purpose)},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("content_type", content_type);
+  body.setJsonUInt("byte_length", byte_length);
+  body.set("purpose", BlobPurposeToWire(purpose));
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/blobs/presign", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/blobs/presign", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -116,22 +118,22 @@ Roe<BlobPresignResult> HttpBlobClient::Presign(const std::string& relay_user_id,
     return ok.error();
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("blob_id") || !root.contains("upload_url") || !root.contains("public_url")) {
+  auto root = TryParseObject(response.value().body);
+  if (!root || !root->contains("blob_id") || !root->contains("upload_url") || !root->contains("public_url")) {
     return Error("Invalid blob presign JSON");
   }
 
   BlobPresignResult result;
-  result.blob_id = root["blob_id"].get<std::string>();
-  result.upload_url = root["upload_url"].get<std::string>();
-  result.public_url = root["public_url"].get<std::string>();
-  if (root.contains("tier") && root["tier"].is_string()) {
-    if (auto tier = BlobTierFromWire(root["tier"].get<std::string>())) {
-      result.tier = *tier;
+  result.blob_id = root->getString("blob_id").value_or("");
+  result.upload_url = root->getString("upload_url").value_or("");
+  result.public_url = root->getString("public_url").value_or("");
+  if (auto tier = root->getString("tier")) {
+    if (auto parsed = BlobTierFromWire(*tier)) {
+      result.tier = *parsed;
     }
   }
-  if (root.contains("pending_expires_at") && root["pending_expires_at"].is_string()) {
-    result.pending_expires_at = root["pending_expires_at"].get<std::string>();
+  if (auto expires = root->getString("pending_expires_at")) {
+    result.pending_expires_at = *expires;
   }
   return result;
 }
@@ -147,12 +149,13 @@ Roe<void> HttpBlobClient::Retain(const std::string& relay_user_id, const std::st
     return signature.error();
   }
 
-  const nlohmann::json body = {{"relay_user_id", relay_user_id},
-                               {"blob_id", blob_id},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("blob_id", blob_id);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/blobs/retain", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/blobs/retain", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -170,12 +173,13 @@ Roe<void> HttpBlobClient::Delete(const std::string& relay_user_id, const std::st
     return signature.error();
   }
 
-  const nlohmann::json body = {{"relay_user_id", relay_user_id},
-                               {"blob_id", blob_id},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("blob_id", blob_id);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/blobs/delete", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/blobs/delete", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -193,14 +197,15 @@ Roe<BlobListResult> HttpBlobClient::List(const std::string& relay_user_id, const
     return signature.error();
   }
 
-  nlohmann::json body = {{"relay_user_id", relay_user_id},
-                         {"timestamp", timestamp},
-                         {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   if (!status_filter.empty()) {
-    body["status"] = status_filter;
+    body.set("status", status_filter);
   }
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/blobs/list", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/blobs/list", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -208,28 +213,32 @@ Roe<BlobListResult> HttpBlobClient::List(const std::string& relay_user_id, const
     return ok.error();
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("blobs") || !root["blobs"].is_array()) {
+  auto root = TryParseObject(response.value().body);
+  const Array* blobs = root ? root->getArray("blobs") : nullptr;
+  if (!blobs) {
     return Error("Invalid blob list JSON");
   }
 
   BlobListResult result;
-  for (const auto& item : root["blobs"]) {
-    result.blobs.push_back(ParseBlobRecord(item));
+  for (const Value& item_value : blobs->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
+      continue;
+    }
+    result.blobs.push_back(ParseBlobRecord(*item));
   }
-  if (root.contains("usage") && root["usage"].is_object()) {
-    const auto& usage = root["usage"];
-    if (usage.contains("small_count") && usage["small_count"].is_number_unsigned()) {
-      result.usage.small_count = usage["small_count"].get<uint64_t>();
+  if (const Object* usage = root->getObject("usage")) {
+    if (auto v = usage->getNonNegInt("small_count")) {
+      result.usage.small_count = *v;
     }
-    if (usage.contains("large_bytes") && usage["large_bytes"].is_number_unsigned()) {
-      result.usage.large_bytes = usage["large_bytes"].get<uint64_t>();
+    if (auto v = usage->getNonNegInt("large_bytes")) {
+      result.usage.large_bytes = *v;
     }
-    if (usage.contains("large_included_bytes") && usage["large_included_bytes"].is_number_unsigned()) {
-      result.usage.large_included_bytes = usage["large_included_bytes"].get<uint64_t>();
+    if (auto v = usage->getNonNegInt("large_included_bytes")) {
+      result.usage.large_included_bytes = *v;
     }
-    if (usage.contains("overage_bytes") && usage["overage_bytes"].is_number_unsigned()) {
-      result.usage.overage_bytes = usage["overage_bytes"].get<uint64_t>();
+    if (auto v = usage->getNonNegInt("overage_bytes")) {
+      result.usage.overage_bytes = *v;
     }
   }
   return result;
@@ -247,14 +256,15 @@ Roe<void> HttpBlobClient::SetProfileIcon(const std::string& relay_user_id, const
     return signature.error();
   }
 
-  const nlohmann::json body = {{"relay_user_id", relay_user_id},
-                               {"url", url},
-                               {"blob_id", blob_id},
-                               {"kind", kind},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("url", url);
+  body.set("blob_id", blob_id);
+  body.set("kind", kind);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/profile/icon", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/profile/icon", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }

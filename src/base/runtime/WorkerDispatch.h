@@ -3,6 +3,7 @@
 #include "common/WorkerPool.h"
 
 #include <functional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

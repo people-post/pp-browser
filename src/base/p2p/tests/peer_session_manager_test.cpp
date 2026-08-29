@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <thread>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

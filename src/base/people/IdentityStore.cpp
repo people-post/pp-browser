@@ -9,11 +9,12 @@
 #include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
 #include "base/p2p/PeerIdUtil.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -87,65 +88,67 @@ Roe<void> DerivePeerId(LocalIdentity& identity) {
   return {};
 }
 
-LocalIdentity IdentityFromJson(const nlohmann::json& root) {
+LocalIdentity IdentityFromJson(const Object& root) {
   LocalIdentity identity;
-  if (root.contains("public_key_b64") && root["public_key_b64"].is_string()) {
-    identity.public_key_b64 = root["public_key_b64"].get<std::string>();
+  if (auto v = root.getString("public_key_b64")) {
+    identity.public_key_b64 = *v;
   }
-  if (root.contains("private_key_b64") && root["private_key_b64"].is_string()) {
-    identity.private_key_b64 = root["private_key_b64"].get<std::string>();
+  if (auto v = root.getString("private_key_b64")) {
+    identity.private_key_b64 = *v;
   }
-  if (root.contains("account_signing_public_key_b64") && root["account_signing_public_key_b64"].is_string()) {
-    identity.account_signing_public_key_b64 = root["account_signing_public_key_b64"].get<std::string>();
+  if (auto v = root.getString("account_signing_public_key_b64")) {
+    identity.account_signing_public_key_b64 = *v;
   }
-  if (root.contains("account_signing_private_key_b64") && root["account_signing_private_key_b64"].is_string()) {
-    identity.account_signing_private_key_b64 = root["account_signing_private_key_b64"].get<std::string>();
+  if (auto v = root.getString("account_signing_private_key_b64")) {
+    identity.account_signing_private_key_b64 = *v;
   }
-  if (root.contains("account_id") && root["account_id"].is_string()) {
-    identity.account_id = root["account_id"].get<std::string>();
+  if (auto v = root.getString("account_id")) {
+    identity.account_id = *v;
   }
-  if (root.contains("nickname") && root["nickname"].is_string()) {
-    identity.nickname = root["nickname"].get<std::string>();
+  if (auto v = root.getString("nickname")) {
+    identity.nickname = *v;
   }
-  if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
-    identity.relay_user_id = root["relay_user_id"].get<std::string>();
+  if (auto v = root.getString("relay_user_id")) {
+    identity.relay_user_id = *v;
   }
-  if (root.contains("brief_llm_api_key") && root["brief_llm_api_key"].is_string()) {
-    identity.brief_llm_api_key = root["brief_llm_api_key"].get<std::string>();
+  if (auto v = root.getString("brief_llm_api_key")) {
+    identity.brief_llm_api_key = *v;
   }
-  if (root.contains("registered") && root["registered"].is_boolean()) {
-    identity.registered = root["registered"].get<bool>();
+  if (auto v = root.getIf<bool>("registered")) {
+    identity.registered = *v;
   }
-  if (root.contains("registration_expires_at") && root["registration_expires_at"].is_string()) {
-    identity.registration_expires_at = root["registration_expires_at"].get<std::string>();
+  if (auto v = root.getString("registration_expires_at")) {
+    identity.registration_expires_at = *v;
   }
-  if (root.contains("kem_public_key_b64") && root["kem_public_key_b64"].is_string()) {
-    identity.kem_public_key_b64 = root["kem_public_key_b64"].get<std::string>();
+  if (auto v = root.getString("kem_public_key_b64")) {
+    identity.kem_public_key_b64 = *v;
   }
-  if (root.contains("kem_private_key_b64") && root["kem_private_key_b64"].is_string()) {
-    identity.kem_private_key_b64 = root["kem_private_key_b64"].get<std::string>();
+  if (auto v = root.getString("kem_private_key_b64")) {
+    identity.kem_private_key_b64 = *v;
   }
-  if (root.contains("initiation_floor") && root["initiation_floor"].is_number_integer()) {
-    identity.initiation_floor = root["initiation_floor"].get<int64_t>();
+  if (auto v = root.getIf<int64_t>("initiation_floor")) {
+    identity.initiation_floor = *v;
   }
   return identity;
 }
 
-nlohmann::json IdentityToJson(const LocalIdentity& identity) {
-  return {{"schema_version", IdentityStore::kSchemaVersion},
-          {"public_key_b64", identity.public_key_b64},
-          {"private_key_b64", identity.private_key_b64},
-          {"account_signing_public_key_b64", identity.account_signing_public_key_b64},
-          {"account_signing_private_key_b64", identity.account_signing_private_key_b64},
-          {"account_id", identity.account_id},
-          {"kem_public_key_b64", identity.kem_public_key_b64},
-          {"kem_private_key_b64", identity.kem_private_key_b64},
-          {"nickname", identity.nickname},
-          {"relay_user_id", identity.relay_user_id},
-          {"brief_llm_api_key", identity.brief_llm_api_key},
-          {"registered", identity.registered},
-          {"registration_expires_at", identity.registration_expires_at},
-          {"initiation_floor", identity.initiation_floor}};
+Object IdentityToJson(const LocalIdentity& identity) {
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  root.set("public_key_b64", identity.public_key_b64);
+  root.set("private_key_b64", identity.private_key_b64);
+  root.set("account_signing_public_key_b64", identity.account_signing_public_key_b64);
+  root.set("account_signing_private_key_b64", identity.account_signing_private_key_b64);
+  root.set("account_id", identity.account_id);
+  root.set("kem_public_key_b64", identity.kem_public_key_b64);
+  root.set("kem_private_key_b64", identity.kem_private_key_b64);
+  root.set("nickname", identity.nickname);
+  root.set("relay_user_id", identity.relay_user_id);
+  root.set("brief_llm_api_key", identity.brief_llm_api_key);
+  root.set("registered", identity.registered);
+  root.set("registration_expires_at", identity.registration_expires_at);
+  root.set("initiation_floor", identity.initiation_floor);
+  return root;
 }
 
 } // namespace
@@ -255,19 +258,25 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   if (!plaintext) {
     return plaintext.error();
   }
-  const nlohmann::json root =
-      nlohmann::json::parse(plaintext->begin(), plaintext->end(), nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  const std::string text(plaintext->begin(), plaintext->end());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse decrypted identity");
   }
 
   int version = 0;
-  if (root.contains("schema_version")) {
-    if (!root["schema_version"].is_number_integer()) {
+  if (root->contains("schema_version")) {
+    auto version_opt = root->getIf<int64_t>("schema_version");
+    if (!version_opt) {
+      if (auto as_u = root->getNonNegInt("schema_version")) {
+        version_opt = static_cast<int64_t>(*as_u);
+      }
+    }
+    if (!version_opt) {
       return Error("Invalid schema_version in identity.enc");
     }
-    version = root["schema_version"].get<int>();
-    if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "identity.enc"); !checked) {
+    version = static_cast<int>(*version_opt);
+    if (auto checked = SchemaVersion::Validate(*root, kSchemaVersion, "identity.enc"); !checked) {
       return checked.error();
     }
   }
@@ -277,7 +286,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
         "(libp2p-pq-transport hard cut)");
   }
 
-  identity_ = IdentityFromJson(root);
+  identity_ = IdentityFromJson(*root);
   auto private_key = Base64Decode(identity_.private_key_b64);
   if (!private_key) {
     return private_key.error();
@@ -306,7 +315,7 @@ Roe<void> IdentityStore::Save() const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
-  const std::string json = IdentityToJson(identity_).dump(2);
+  const std::string json = DumpJson(IdentityToJson(identity_), 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto ciphertext = FileCipher::Encrypt(dek_, plaintext, aad);

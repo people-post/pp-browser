@@ -1,4 +1,5 @@
 #include "base/messaging/PeerKemKeyStore.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

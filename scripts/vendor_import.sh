@@ -12,12 +12,11 @@ SQLITE_AMALGAMATION_VERSION="3530300"
 SQLITE_AMALGAMATION_YEAR="2026"
 
 declare -A REPOS=(
-  [nlohmann_json]="https://github.com/nlohmann/json.git|v3.11.3"
   [curl]="https://github.com/curl/curl.git|curl-8_11_1"
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
 )
 
-DEFAULT_ORDER=(nlohmann_json curl opus sqlite)
+DEFAULT_ORDER=(curl opus sqlite)
 
 # PQ natives (libsodium / mlkem / mldsa) live in people-post/pp-cpp-crypto.
 # SDL3 / SDL3_image live in people-post/pp-cpp-ui.

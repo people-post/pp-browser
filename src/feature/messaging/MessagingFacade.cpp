@@ -9,6 +9,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

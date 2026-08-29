@@ -4,6 +4,7 @@
 #include "base/crypto/MessageCipher.h"
 
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

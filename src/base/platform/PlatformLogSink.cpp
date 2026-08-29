@@ -2,6 +2,7 @@
 
 #include "base/runtime/ProductBranding.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include <cstdio>
 #include <iostream>

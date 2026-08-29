@@ -80,7 +80,6 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_base_p2p
   RmlUi::Core
   p2p
-  nlohmann_json::nlohmann_json
   CURL::libcurl
   Threads::Threads
 )

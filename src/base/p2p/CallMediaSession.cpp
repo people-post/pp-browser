@@ -6,12 +6,13 @@
 #include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/PeerSessionManager.h"
 #include "base/p2p/StreamJsonFrame.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
 #include <chrono>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -28,12 +29,12 @@ void ResetQuiet(const std::shared_ptr<Stream>& stream) {
   }
 }
 
-Roe<nlohmann::json> ParseJsonObject(const std::string& json_utf8) {
-  nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+Roe<Object> ParseJsonObject(const std::string& json_utf8) {
+  auto root = TryParseObject(json_utf8);
+  if (!root) {
     return Error("invalid call-media json");
   }
-  return root;
+  return *root;
 }
 
 } // namespace
@@ -446,13 +447,16 @@ void CallMediaSession::FailInboundHello(const std::shared_ptr<Stream>& s, const 
 
 void CallMediaSession::WriteInboundAckAndFinish(std::shared_ptr<Stream> s, CallMediaDirectConnectParams params,
                               CallMediaDirectCallbacks cbs, bool ok, const char* error) {
-  nlohmann::json ack{{"v", 1}, {"type", "hello_ack"}, {"ok", ok}};
+  Object ack;
+  ack.set("v", int64_t{1});
+  ack.set("type", "hello_ack");
+  ack.set("ok", ok);
   if (!ok && error) {
-    ack["error"] = error;
+    ack.set("error", error);
   }
   auto self = shared_from_this();
   AsyncWriteStreamJson(
-      s, ack.dump(),
+      s, DumpJson(ack),
       [self, s, params = std::move(params), cbs = std::move(cbs), ok](Roe<void> write_res) mutable {
         if (!ok) {
           self->FailInboundHello(s, params.call_id);
@@ -569,7 +573,7 @@ void CallMediaSession::HandleInbound(libp2p::StreamAndProtocol stream_in) {
           return;
         }
         auto hello = ParseJsonObject(*json_utf8);
-        if (!hello || hello->value("type", "") != "hello") {
+        if (!hello || hello->getString("type").value_or("") != "hello") {
           self->log().warning << "Inbound call-media hello read failed err="
                               << (hello ? "bad type" : hello.error().message);
           self->FailInboundHello(stream);
@@ -577,9 +581,10 @@ void CallMediaSession::HandleInbound(libp2p::StreamAndProtocol stream_in) {
         }
 
         CallMediaDirectConnectParams params;
-        params.call_id = hello->value("call_id", "");
-        params.media_epoch = hello->value("media_epoch", 1u);
-        params.offerer = hello->value("role", "") == "offerer";
+        params.call_id = hello->getString("call_id").value_or("");
+        params.media_epoch =
+            static_cast<uint32_t>(hello->getNonNegInt("media_epoch").value_or(1));
+        params.offerer = hello->getString("role").value_or("") == "offerer";
         if (auto peer = stream->remotePeerId()) {
           params.peer_key = peer.value().toBase58();
         }
@@ -702,13 +707,13 @@ void CallMediaSession::BeginOutboundHello(std::shared_ptr<Stream> stream,
   }
 
   const std::string role = params.offerer ? "offerer" : "answerer";
-  const std::string hello =
-      nlohmann::json{{"v", 1},
-                     {"type", "hello"},
-                     {"call_id", params.call_id},
-                     {"media_epoch", params.media_epoch},
-                     {"role", role}}
-          .dump();
+  Object hello_obj;
+  hello_obj.set("v", int64_t{1});
+  hello_obj.set("type", "hello");
+  hello_obj.set("call_id", params.call_id);
+  hello_obj.setJsonUInt("media_epoch", params.media_epoch);
+  hello_obj.set("role", role);
+  const std::string hello = DumpJson(hello_obj);
   auto self = shared_from_this();
   AsyncWriteStreamJson(
       stream, hello,
@@ -803,14 +808,15 @@ void CallMediaSession::OnHelloAck(std::shared_ptr<Stream> stream, CallMediaDirec
     }
   }
 
-  Roe<nlohmann::json> ack = Error("hello ack missing");
+  Roe<Object> ack = Error("hello ack missing");
   if (ack_utf8) {
     ack = ParseJsonObject(*ack_utf8);
   } else {
     ack = ack_utf8.error();
   }
-  if (!ack || !ack->value("ok", false)) {
-    const std::string why = ack ? ack->value("error", "hello rejected") : ack.error().message;
+  if (!ack || !ack->getIf<bool>("ok").value_or(false)) {
+    const std::string why =
+        ack ? ack->getString("error").value_or("hello rejected") : ack.error().message;
     Log().warning << "Call-media hello rejected peer=" << params.peer_key << " err=" << why;
     {
       std::lock_guard lock(mu);

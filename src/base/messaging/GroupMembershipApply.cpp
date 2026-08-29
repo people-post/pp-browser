@@ -3,6 +3,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

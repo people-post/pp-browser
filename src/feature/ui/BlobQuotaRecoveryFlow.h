@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -2,6 +2,7 @@
 
 #include "base/people/IdentityStore.h"
 #include "base/error/AppError.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

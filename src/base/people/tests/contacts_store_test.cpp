@@ -1,10 +1,12 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/ContactTypes.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include <sstream>
+#include "common/PbrCompat.h"
 
 namespace {
 
@@ -132,17 +134,24 @@ TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {
   const auto path = data_dir_ / "contacts.json";
   std::filesystem::create_directories(data_dir_);
   {
-    const nlohmann::json legacy = {
-        {"contacts",
-         {{{"id", "c1"},
-           {"display_name", "Alice"},
-           {"server_nickname", "alice"},
-           {"ids", {{{"kind", "relay_user"}, {"value", "relay:alice"}, {"primary", true}}}},
-           {"multiaddrs", nlohmann::json::array()},
-           {"trust", "friendly"}}}}};
+    Object id_row;
+    id_row.set("kind", "relay_user");
+    id_row.set("value", "relay:alice");
+    id_row.set("primary", true);
+
+    Object contact;
+    contact.set("id", "c1");
+    contact.set("display_name", "Alice");
+    contact.set("server_nickname", "alice");
+    contact.set("ids", ArrayValue({ObjectValue(std::move(id_row))}));
+    contact.set("multiaddrs", ArrayValue({}));
+    contact.set("trust", "friendly");
+
+    Object legacy;
+    legacy.set("contacts", ArrayValue({ObjectValue(std::move(contact))}));
     std::ofstream out(path);
     ASSERT_TRUE(static_cast<bool>(out));
-    out << legacy.dump(2);
+    out << DumpJson(legacy, 2);
   }
 
   ContactsStore store(data_dir_.string());
@@ -155,27 +164,33 @@ TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {
 
   std::ifstream in(path);
   ASSERT_TRUE(static_cast<bool>(in));
-  const nlohmann::json rewritten = nlohmann::json::parse(in, nullptr, false);
-  ASSERT_FALSE(rewritten.is_discarded());
-  ASSERT_TRUE(rewritten.contains("schema_version"));
-  EXPECT_EQ(rewritten["schema_version"].get<int>(), ContactsStore::kSchemaVersion);
-  ASSERT_TRUE(rewritten.contains("contacts"));
-  ASSERT_TRUE(rewritten["contacts"].is_array());
-  ASSERT_EQ(rewritten["contacts"].size(), 1u);
-  EXPECT_TRUE(rewritten["contacts"][0].contains("local"));
-  EXPECT_TRUE(rewritten["contacts"][0].contains("remote"));
-  EXPECT_TRUE(rewritten["contacts"][0].contains("overrides"));
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  auto rewritten = TryParseObject(ss.str());
+  ASSERT_TRUE(static_cast<bool>(rewritten));
+  ASSERT_TRUE(rewritten->contains("schema_version"));
+  EXPECT_EQ(static_cast<int>(rewritten->getIf<int64_t>("schema_version").value_or(-1)),
+            ContactsStore::kSchemaVersion);
+  const Array* contacts = rewritten->getArray("contacts");
+  ASSERT_NE(contacts, nullptr);
+  ASSERT_EQ(contacts->elements.size(), 1u);
+  const Object* first = asObject(contacts->elements[0]);
+  ASSERT_NE(first, nullptr);
+  EXPECT_TRUE(first->contains("local"));
+  EXPECT_TRUE(first->contains("remote"));
+  EXPECT_TRUE(first->contains("overrides"));
 }
 
 TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
   const auto path = data_dir_ / "contacts.json";
   std::filesystem::create_directories(data_dir_);
   {
-    const nlohmann::json newer = {{"schema_version", ContactsStore::kSchemaVersion + 1},
-                                  {"contacts", nlohmann::json::array()}};
+    Object newer;
+    newer.set("schema_version", static_cast<int64_t>(ContactsStore::kSchemaVersion + 1));
+    newer.set("contacts", ArrayValue({}));
     std::ofstream out(path);
     ASSERT_TRUE(static_cast<bool>(out));
-    out << newer.dump(2);
+    out << DumpJson(newer, 2);
   }
 
   ContactsStore store(data_dir_.string());

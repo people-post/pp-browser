@@ -3,6 +3,7 @@
 #include "base/p2p/CircuitRelayService.h"
 #include "base/p2p/SettledWait.h"
 #include "base/p2p/StreamFrameIo.h"
+#include "common/ValueJson.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/connection/stream_and_protocol.hpp>
@@ -12,8 +13,8 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -56,7 +57,7 @@ public:
   void RemoveBridgeSessionLocked(const std::shared_ptr<ActiveBridgeSession>& session);
   void PruneCancelledBridgesLocked();
   void StartBridgeSession(const std::shared_ptr<Stream>& client, const std::shared_ptr<Stream>& target);
-  CircuitRelayBridgeResult RelayBridge(const nlohmann::json& root,
+  CircuitRelayBridgeResult RelayBridge(const Object& root,
                                        const std::shared_ptr<Stream>& client_stream);
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol);
   void RunClientBridgeOnWorker(const std::string& json, SettledWait<CircuitRelayBridgeResult> wait,

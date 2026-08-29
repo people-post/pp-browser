@@ -3,6 +3,7 @@
 #include "common/Logger.h"
 
 #include <SDL3/SDL.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

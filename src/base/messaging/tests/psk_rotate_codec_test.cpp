@@ -1,9 +1,10 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -39,9 +40,12 @@ TEST(PskRotateCodecTest, EncodeDecodeRoundTrip) {
 TEST(PskRotateCodecTest, RejectsObjectDetail) {
   ThreadMessage message;
   message.content_type = ChatContentType::System;
-  message.payload_json = nlohmann::json({{"control_type", kPskRotateControlType},
-                                         {"detail", {{"rotation_id", "x"}}}})
-                             .dump();
+  Object detail;
+  detail.set("rotation_id", "x");
+  Object payload;
+  payload.set("control_type", kPskRotateControlType);
+  payload.set("detail", ObjectValue(std::move(detail)));
+  message.payload_json = DumpJson(payload);
   auto decoded = PskRotateCodec::Decode(message);
   ASSERT_FALSE(static_cast<bool>(decoded));
   EXPECT_NE(decoded.error().message.find("JSON string"), std::string::npos);

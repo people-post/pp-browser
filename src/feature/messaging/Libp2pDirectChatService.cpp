@@ -13,9 +13,10 @@
 #include <chrono>
 #include <future>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -69,15 +70,15 @@ struct Libp2pDirectChatService::Impl {
               return;
             }
             const std::string json_utf8(body.begin(), body.end());
-            nlohmann::json root = nlohmann::json::parse(json_utf8, nullptr, false);
-            if (root.is_discarded()) {
+            auto root = TryParseObject(json_utf8);
+            if (!root) {
               host->Post([duplex, stream]() {
                 duplex->Stop();
                 CloseQuiet(stream);
               });
               return;
             }
-            auto envelope = ParseRelayEnvelope(root);
+            auto envelope = ParseRelayEnvelope(*root);
             if (!envelope) {
               host->Post([duplex, stream]() {
                 duplex->Stop();
@@ -165,7 +166,7 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
         .WithUser("No usable peer address — add a dialable multiaddr on the contact.");
   }
 
-  const std::string envelope_json = RelayEnvelopeToJson(envelope).dump();
+  const std::string envelope_json = DumpJson(RelayEnvelopeToJson(envelope));
 
   auto result_promise = std::make_shared<std::promise<Roe<void>>>();
   auto result_future = result_promise->get_future();

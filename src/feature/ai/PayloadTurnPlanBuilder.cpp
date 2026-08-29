@@ -1,23 +1,15 @@
 #include "feature/ai/PayloadTurnPlanBuilder.h"
 
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
-                                const std::string& default_value = {}) {
-  if (!json.contains(key)) {
-    return default_value;
-  }
-  const auto& value = json[key];
-  if (value.is_string()) {
-    return value.get<std::string>();
-  }
-  return default_value;
+std::string JsonStringOrDefault(const Object& json, const char* key, const std::string& default_value = {}) {
+  return json.getString(key).value_or(default_value);
 }
 
 bool IsMcpArticleFeedToolName(const std::string& tool_name) {
@@ -28,13 +20,13 @@ bool IsMcpArticleFeedToolName(const std::string& tool_name) {
   return lower.find("article") != std::string::npos || lower.find("feed") != std::string::npos;
 }
 
-nlohmann::json ToolArgumentsFromPayload(const nlohmann::json& doc) {
-  nlohmann::json args = nlohmann::json::object();
-  for (auto it = doc.begin(); it != doc.end(); ++it) {
-    if (it.key() == "tool" || it.key() == "type" || it.key() == "message" || it.key() == "label") {
+Object ToolArgumentsFromPayload(const Object& doc) {
+  Object args;
+  for (const auto& [key, value] : doc.fields()) {
+    if (key == "tool" || key == "type" || key == "message" || key == "label") {
       continue;
     }
-    args[it.key()] = it.value();
+    args.set(key, value);
   }
   return args;
 }
@@ -46,8 +38,8 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     return std::nullopt;
   }
 
-  const nlohmann::json doc = nlohmann::json::parse(payload, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object()) {
+  auto doc = TryParseObject(payload);
+  if (!doc) {
     return std::nullopt;
   }
 
@@ -58,7 +50,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     plan.user_request = payload;
   }
 
-  const std::string type = JsonStringOrDefault(doc, "type");
+  const std::string type = JsonStringOrDefault(*doc, "type");
   if (type == "article") {
     plan.response_goal = ResponseGoal::Summarize;
     plan.render_mode = RenderMode::Blocks;
@@ -75,11 +67,11 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     return plan;
   }
 
-  const std::string tool = JsonStringOrDefault(doc, "tool");
+  const std::string tool = JsonStringOrDefault(*doc, "tool");
   if (!tool.empty()) {
     PlannedToolCall call;
     call.name = tool;
-    call.arguments = ToolArgumentsFromPayload(doc);
+    call.arguments = ToolArgumentsFromPayload(*doc);
 
     if (tool == "blog_articles" || IsMcpArticleFeedToolName(tool)) {
       plan.response_goal = ResponseGoal::DisplayFeed;

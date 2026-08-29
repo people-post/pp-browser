@@ -4,6 +4,7 @@
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

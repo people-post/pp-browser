@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -16,6 +16,7 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
+#include "common/PbrCompat.h"
 
 namespace libp2p {
 struct Host;

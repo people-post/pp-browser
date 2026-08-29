@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <system_error>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

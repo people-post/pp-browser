@@ -55,12 +55,13 @@
 
 #include <SDL3/SDL_timer.h>
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <unordered_set>
+
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -1598,25 +1599,27 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
         .WithUser(renew_hint);
   }
   if (response->status_code < 200 || response->status_code >= 300) {
-    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    auto json = TryParseObject(response->body);
     std::string detail = "Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")";
-    if (!json.is_discarded() && json.contains("error")) {
-      const auto& err = json["error"];
-      if (err.is_string()) {
-        detail = err.get<std::string>();
-      } else if (err.is_object() && err.contains("message") && err["message"].is_string()) {
-        detail = err["message"].get<std::string>();
+    if (json) {
+      if (auto err_str = json->getString("error")) {
+        detail = *err_str;
+      } else if (const Object* err_obj = json->getObject("error")) {
+        if (auto message = err_obj->getString("message")) {
+          detail = *message;
+        }
       }
     }
     return AppError::Network(Err::Network::HttpError, detail);
   }
 
-  auto root = nlohmann::json::parse(response->body, nullptr, false);
-  if (root.is_discarded() || !root.contains("llm_api_key") || !root["llm_api_key"].is_string()) {
+  auto root = TryParseObject(response->body);
+  auto new_key_opt = root ? root->getString("llm_api_key") : std::nullopt;
+  if (!new_key_opt) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
         .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
   }
-  const std::string new_key = root["llm_api_key"].get<std::string>();
+  const std::string new_key = *new_key_opt;
   if (new_key.empty()) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
         .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");

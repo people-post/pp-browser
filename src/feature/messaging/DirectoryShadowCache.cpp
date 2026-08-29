@@ -2,6 +2,7 @@
 
 #include "base/people/ContactIdentity.h"
 #include "base/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

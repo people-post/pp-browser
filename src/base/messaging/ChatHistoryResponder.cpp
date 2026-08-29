@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

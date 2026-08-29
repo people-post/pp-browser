@@ -1,7 +1,9 @@
 #include "feature/ai/ToolPermissionPrompt.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -18,12 +20,20 @@ std::string DescribeTools(const std::vector<PlannedToolCall>& tools) {
   return out.str();
 }
 
-nlohmann::json Option(const std::string& label, const std::string& message, const nlohmann::json& payload) {
-  return nlohmann::json{{"label", label}, {"message", message}, {"payload", payload}};
+Object Option(const std::string& label, const std::string& message, Object payload) {
+  Object option;
+  option.set("label", label);
+  option.set("message", message);
+  option.set("payload", std::move(payload));
+  return option;
 }
 
-nlohmann::json DecisionPayload(const std::string& approval_id, const std::string& decision) {
-  return nlohmann::json{{"type", "tool_permission"}, {"approval_id", approval_id}, {"decision", decision}};
+Object DecisionPayload(const std::string& approval_id, const std::string& decision) {
+  Object payload;
+  payload.set("type", "tool_permission");
+  payload.set("approval_id", approval_id);
+  payload.set("decision", decision);
+  return payload;
 }
 
 } // namespace
@@ -39,19 +49,22 @@ std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
   }
   prompt += "?";
 
-  nlohmann::json blocks = nlohmann::json::array();
-  blocks.push_back({{"type", "paragraph"},
-                    {"text", "I need your permission before changing contacts, chats, or identity settings."}});
-  blocks.push_back({{"type", "choice"},
-                    {"prompt", prompt},
-                    {"options", nlohmann::json::array({
-                                    Option("Allow once", "Allow once", DecisionPayload(approval_id, "allow_once")),
-                                    Option("Always allow", "Always allow",
-                                           DecisionPayload(approval_id, "allow_always")),
-                                    Option("Deny", "Deny", DecisionPayload(approval_id, "deny")),
-                                })}});
+  Object paragraph;
+  paragraph.set("type", "paragraph");
+  paragraph.set("text", "I need your permission before changing contacts, chats, or identity settings.");
 
-  return nlohmann::json{{"blocks", blocks}}.dump();
+  Object choice;
+  choice.set("type", "choice");
+  choice.set("prompt", prompt);
+  choice.set("options",
+             ArrayValue({ObjectValue(Option("Allow once", "Allow once", DecisionPayload(approval_id, "allow_once"))),
+                         ObjectValue(Option("Always allow", "Always allow",
+                                            DecisionPayload(approval_id, "allow_always"))),
+                         ObjectValue(Option("Deny", "Deny", DecisionPayload(approval_id, "deny")))}));
+
+  Object root;
+  root.set("blocks", ArrayValue({ObjectValue(std::move(paragraph)), ObjectValue(std::move(choice))}));
+  return DumpJson(root);
 }
 
 std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& offered_tools) {
@@ -59,7 +72,12 @@ std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& 
   std::string text = "Okay — I won't run ";
   text += names.empty() ? "those actions" : names;
   text += ".";
-  return nlohmann::json{{"blocks", nlohmann::json::array({{{"type", "paragraph"}, {"text", text}}})}}.dump();
+  Object paragraph;
+  paragraph.set("type", "paragraph");
+  paragraph.set("text", text);
+  Object root;
+  root.set("blocks", ArrayValue({ObjectValue(std::move(paragraph))}));
+  return DumpJson(root);
 }
 
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code) {
@@ -68,9 +86,13 @@ std::string BuildToolPermissionStaleBlocks(const std::string& reason_code) {
     text += " (" + reason_code + ")";
   }
   text += ". Ask again if you still want this.";
-  return nlohmann::json{{"blocks", nlohmann::json::array(
-                                       {{{"type", "callout"}, {"variant", "info"}, {"text", text}}})}}
-      .dump();
+  Object callout;
+  callout.set("type", "callout");
+  callout.set("variant", "info");
+  callout.set("text", text);
+  Object root;
+  root.set("blocks", ArrayValue({ObjectValue(std::move(callout))}));
+  return DumpJson(root);
 }
 
 } // namespace pbr

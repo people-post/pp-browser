@@ -7,7 +7,8 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   using namespace pbr;
@@ -23,7 +24,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   thread.title = "Alice";
   thread.participant_contact_ids = {"c1"};
   thread.encrypted = true;
-  const nlohmann::json thread_json = ThreadToJson(thread);
+  const Object thread_json = ThreadToJson(thread);
   const Thread restored = ThreadFromJson(thread_json);
   EXPECT_EQ(restored.id, "t1");
   EXPECT_EQ(restored.kind, ThreadKind::Direct);
@@ -59,7 +60,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(roundtrip));
   EXPECT_EQ(roundtrip.value().message_id, "m1");
 
-  const nlohmann::json legacy = {{"thread_id", "t1"}, {"message_id", "m2"}, {"body", {{"text", "nope"}}}};
+  const Object legacy = TryParseObject(R"({"thread_id":"t1","message_id":"m2","body":{"text":"nope"}})").value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 
   auto keys = Ed25519Signer::GenerateKeyPair();

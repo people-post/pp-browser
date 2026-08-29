@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <memory>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

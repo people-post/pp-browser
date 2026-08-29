@@ -132,7 +132,7 @@ Policy API:
 ```cpp
 WorkingSetRouting RouteTurn(ResponseGoal goal, RenderMode render_mode);
 std::optional<WorkingSetCandidate> BuildCandidate(
-    const nlohmann::json& block, int block_index,
+    const Object& block, int block_index,
     ResponseGoal goal, /* rendered artifact + teaser */);
 ```
 

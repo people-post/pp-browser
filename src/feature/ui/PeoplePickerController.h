@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;

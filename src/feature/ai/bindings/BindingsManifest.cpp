@@ -1,35 +1,43 @@
 #include "feature/ai/bindings/BindingsManifest.h"
 
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
+
 namespace pbr {
 
 Roe<void> BindingsManifest::Parse(const std::string& json_text, BindingsManifest& out) {
-  auto root = nlohmann::json::parse(json_text, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(json_text);
+  if (!root) {
     return Error("Invalid bindings manifest JSON");
   }
 
-  if (!root.contains("actions") || !root["actions"].is_object()) {
+  const Object* actions = root->getObject("actions");
+  if (!actions) {
     return Error("Bindings manifest missing actions object");
   }
 
   out.actions_.clear();
-  for (auto it = root["actions"].begin(); it != root["actions"].end(); ++it) {
+  for (const auto& [key, value] : actions->fields()) {
+    const Object* node = asObject(value);
+    if (!node) {
+      return Error("Action binding missing tool field: " + key);
+    }
     ActionBinding binding;
-    const auto& node = it.value();
-    if (!node.contains("tool") || !node["tool"].is_string()) {
-      return Error("Action binding missing tool field: " + it.key());
+    auto tool = node->getString("tool");
+    if (!tool) {
+      return Error("Action binding missing tool field: " + key);
     }
-    binding.tool = node["tool"].get<std::string>();
-    if (node.contains("params")) {
-      binding.params = node["params"];
+    binding.tool = *tool;
+    if (const Object* params = node->getObject("params")) {
+      binding.params = *params;
     }
-    if (node.contains("result_bind") && node["result_bind"].is_string()) {
-      binding.result_bind = node["result_bind"].get<std::string>();
+    if (auto result_bind = node->getString("result_bind")) {
+      binding.result_bind = *result_bind;
     }
-    if (node.contains("risk") && node["risk"].is_string()) {
-      binding.risk = node["risk"].get<std::string>();
+    if (auto risk = node->getString("risk")) {
+      binding.risk = *risk;
     }
-    out.actions_[it.key()] = std::move(binding);
+    out.actions_[key] = std::move(binding);
   }
   return {};
 }

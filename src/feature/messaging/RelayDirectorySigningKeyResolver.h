@@ -5,6 +5,7 @@
 #include "base/people/ContactTypes.h"
 
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

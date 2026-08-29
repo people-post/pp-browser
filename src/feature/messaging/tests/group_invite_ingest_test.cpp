@@ -19,11 +19,12 @@
 #include "feature/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace {
 
@@ -128,7 +129,12 @@ struct PartyHarness {
     ThreadMessage system;
     system.content_type = ChatContentType::System;
     system.text = text;
-    system.payload_json = nlohmann::json({{"control_type", control_type}, {"detail", detail}}).dump();
+    system.payload_json = [&] {
+      Object payload;
+      payload.set("control_type", control_type);
+      payload.set("detail", detail);
+      return DumpJson(payload);
+    }();
     auto plaintext = ChatPayloadCodec::EncodeToRow(system);
     if (!plaintext) {
       throw std::runtime_error("Failed to encode system payload");

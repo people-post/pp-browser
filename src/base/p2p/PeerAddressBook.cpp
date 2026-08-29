@@ -7,6 +7,7 @@
 #include <libp2p/peer/peer_id.hpp>
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

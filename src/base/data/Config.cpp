@@ -8,12 +8,13 @@
 #include "base/data/PlatformDefaults.h"
 #include "base/platform/DeploymentProfile.h"
 #include "base/platform/Platform.h"
+#include "common/ValueJson.h"
 
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -98,19 +99,23 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     return Error("Failed to open config file: " + path);
   }
 
-  nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse config: " + path);
   }
 
-  if (root.contains("config_version") && root["config_version"].is_number_integer()) {
-    const int version = root["config_version"].get<int>();
-    if (version > kConfigVersion) {
-      return Error("Unsupported config version " + std::to_string(version) + " in " + path);
+  if (auto version = root->getIf<int64_t>("config_version")) {
+    if (*version > kConfigVersion) {
+      return Error("Unsupported config version " + std::to_string(*version) + " in " + path);
+    }
+  } else if (auto version_u = root->getNonNegInt("config_version")) {
+    if (*version_u > static_cast<uint64_t>(kConfigVersion)) {
+      return Error("Unsupported config version " + std::to_string(*version_u) + " in " + path);
     }
   }
 
-  AppConfig config = MergeConfig(DefaultAppConfig(), root);
+  AppConfig config = MergeConfig(DefaultAppConfig(), *root);
   ApplySandboxBriefUrlRewrites(config);
   const AppConfig defaults = DefaultAppConfig();
   if (config.relay.base_url.empty()) {
@@ -129,12 +134,12 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
 }
 
 Roe<void> Config::SaveToFile(const std::string& path, const AppConfig& config) {
-  const nlohmann::json root = ConfigToJson(config, kConfigVersion);
+  const Object root = ConfigToObject(config, kConfigVersion);
 
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
 
-  return AtomicFileWrite::Write(path, root.dump(2));
+  return AtomicFileWrite::Write(path, DumpJson(root, 2));
 }
 
 } // namespace pbr

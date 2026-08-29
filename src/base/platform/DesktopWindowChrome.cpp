@@ -3,6 +3,7 @@
 #include "base/platform/Platform.h"
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include "RmlUi_Backend.h"
 

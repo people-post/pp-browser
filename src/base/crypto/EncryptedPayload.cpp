@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

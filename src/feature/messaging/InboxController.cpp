@@ -17,14 +17,15 @@
 #include "base/messaging/EmojiKey.h"
 #include "common/Utilities.h"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
 #include <cstdio>
 #include <map>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -66,11 +67,11 @@ bool IsPlumbingCallControl(const CallControlType type) {
 }
 
 std::optional<std::string> CallDetailJson(const ThreadMessage& message) {
-  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
-  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload) {
     return std::nullopt;
   }
-  return payload["detail"].get<std::string>();
+  return payload->getString("detail");
 }
 
 std::string FormatCallDurationMs(const int64_t duration_ms) {

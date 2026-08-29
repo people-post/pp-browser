@@ -2,11 +2,12 @@
 
 #include "base/people/ContactIdentity.h"
 #include "common/Utilities.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
+#include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -82,25 +83,27 @@ Roe<ProfileIconCacheMeta> LoadProfileIconCacheMeta(const std::string& profile_di
   if (!in) {
     return Error("Failed to read profile icon cache metadata");
   }
-  nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  auto root = TryParseObject(ss.str());
+  if (!root) {
     return Error("Invalid profile icon cache metadata");
   }
   ProfileIconCacheMeta meta;
-  if (root.contains("url") && root["url"].is_string()) {
-    meta.url = root["url"].get<std::string>();
+  if (auto v = root->getString("url")) {
+    meta.url = *v;
   }
-  if (root.contains("blob_id") && root["blob_id"].is_string()) {
-    meta.blob_id = root["blob_id"].get<std::string>();
+  if (auto v = root->getString("blob_id")) {
+    meta.blob_id = *v;
   }
-  if (root.contains("kind") && root["kind"].is_string()) {
-    meta.kind = root["kind"].get<std::string>();
+  if (auto v = root->getString("kind")) {
+    meta.kind = *v;
   }
-  if (root.contains("fetched_at_ms") && root["fetched_at_ms"].is_number_integer()) {
-    meta.fetched_at_ms = root["fetched_at_ms"].get<int64_t>();
+  if (auto v = root->getIf<int64_t>("fetched_at_ms")) {
+    meta.fetched_at_ms = *v;
   }
-  if (root.contains("local_filename") && root["local_filename"].is_string()) {
-    meta.local_filename = root["local_filename"].get<std::string>();
+  if (auto v = root->getString("local_filename")) {
+    meta.local_filename = *v;
   } else {
     meta.local_filename = kDefaultIconFilename;
   }
@@ -151,17 +154,18 @@ Roe<void> SaveProfileIconCache(const std::string& profile_dir, const std::vector
     saved.fetched_at_ms = util::NowUnixMs();
   }
 
-  nlohmann::json root_json = {{"url", saved.url},
-                              {"blob_id", saved.blob_id},
-                              {"kind", saved.kind},
-                              {"fetched_at_ms", saved.fetched_at_ms},
-                              {"local_filename", saved.local_filename}};
+  Object root_json;
+  root_json.set("url", saved.url);
+  root_json.set("blob_id", saved.blob_id);
+  root_json.set("kind", saved.kind);
+  root_json.set("fetched_at_ms", saved.fetched_at_ms);
+  root_json.set("local_filename", saved.local_filename);
   const auto meta_path = root / kMetaFilename;
   std::ofstream meta_out(meta_path, std::ios::trunc);
   if (!meta_out) {
     return Error("Failed to write profile icon cache metadata");
   }
-  meta_out << root_json.dump(2);
+  meta_out << DumpJson(root_json, 2);
   return Roe<void>{};
 }
 

@@ -1,6 +1,7 @@
 #include "base/crypto/HybridKem.h"
 
 #include "base/crypto/CryptoUtil.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

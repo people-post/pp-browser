@@ -1,6 +1,7 @@
 #include "base/p2p/MediaRelayRuntime.h"
 
 #include "base/p2p/SettledWait.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -75,12 +76,13 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
     return Error("hop peer endpoint not registered");
   }
 
-  nlohmann::json req = {{"v", 1},
-                        {"op", "quote"},
-                        {"call_id", request.call_id},
-                        {"participants", request.participants},
-                        {"want_up_bps", request.want_up_bps},
-                        {"want_down_bps", request.want_down_bps}};
+  Object req;
+  req.set("v", int64_t{1});
+  req.set("op", "quote");
+  req.set("call_id", request.call_id);
+  req.set("participants", int64_t{request.participants});
+  req.set("want_up_bps", request.want_up_bps);
+  req.set("want_down_bps", request.want_down_bps);
 
   SettledWait<MediaRelayQuote> wait;
   const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key, kMediaRelayProtocolId);
@@ -90,9 +92,9 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
                        [req = std::move(req), wait, circuit_backed, runtime, &host = host_](
                            libp2p::StreamAndProtocolOrError stream_res) {
                          PostLibp2pWorker(host, WorkerLane::Normal,
-                                          [runtime, req, wait, circuit_backed,
+                                          [runtime, req = std::move(req), wait, circuit_backed,
                                            stream_res = std::move(stream_res)]() mutable {
-                                            runtime->RunQuoteExchange(req, circuit_backed,
+                                            runtime->RunQuoteExchange(std::move(req), circuit_backed,
                                                                       std::move(stream_res), wait);
                                           });
                        });
@@ -232,9 +234,12 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
   }
   logging::getLogger("MediaRelayService").info
       << "client subscribe stream=" << stream_id << " ch=" << channel_id;
-  const std::string json =
-      nlohmann::json({{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
-          .dump();
+  Object sub;
+  sub.set("v", int64_t{1});
+  sub.set("op", "subscribe");
+  sub.setJsonUInt("stream_id", stream_id);
+  sub.setJsonUInt("channel_id", channel_id);
+  const std::string json = DumpJson(sub);
   if (!runtime_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
     std::lock_guard<std::mutex> lock(runtime_->mu);
     runtime_->client_subscriptions.erase(key);
@@ -256,9 +261,12 @@ Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id
       return Error("not attached");
     }
   }
-  const std::string json =
-      nlohmann::json({{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
-          .dump();
+  Object unsub;
+  unsub.set("v", int64_t{1});
+  unsub.set("op", "unsubscribe");
+  unsub.setJsonUInt("stream_id", stream_id);
+  unsub.setJsonUInt("channel_id", channel_id);
+  const std::string json = DumpJson(unsub);
   if (!runtime_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
     return Error("not attached");
   }
@@ -423,7 +431,7 @@ CallHopHealth MediaRelayService::HealthSnapshot() const {
   return h;
 }
 
-void MediaRelayRuntime::RunQuoteExchange(nlohmann::json req, bool circuit_backed,
+void MediaRelayRuntime::RunQuoteExchange(Object req, bool circuit_backed,
                                          libp2p::StreamAndProtocolOrError stream_res,
                                          const SettledWait<MediaRelayQuote>& wait) {
   if (!stream_res) {
@@ -447,18 +455,27 @@ void MediaRelayRuntime::RunQuoteExchange(nlohmann::json req, bool circuit_backed
     wait.Finish(root.error());
     return;
   }
+  auto readDouble = [](const Object& o, const char* key, double def) {
+    if (auto d = o.getIf<double>(key)) {
+      return *d;
+    }
+    if (auto i = o.getIf<int64_t>(key)) {
+      return static_cast<double>(*i);
+    }
+    return def;
+  };
   MediaRelayQuote q;
-  q.ok = root->value("ok", false);
-  q.error = root->value("error", "");
-  q.quote_id = root->value("quote_id", "");
-  q.a_up_bps = root->value("A_up", static_cast<int64_t>(0));
-  q.a_down_bps = root->value("A_down", static_cast<int64_t>(0));
-  q.b_up_bps = root->value("B_up", static_cast<int64_t>(0));
-  q.b_down_bps = root->value("B_down", static_cast<int64_t>(0));
-  q.pricing_mode = root->value("mode", "volunteer");
-  q.rate = root->value("rate", 0.0);
-  q.ceiling_bytes = root->value("ceiling_bytes", static_cast<int64_t>(0));
-  q.ceiling_amount = root->value("ceiling_amount", 0.0);
+  q.ok = root->getIf<bool>("ok").value_or(false);
+  q.error = root->getString("error").value_or("");
+  q.quote_id = root->getString("quote_id").value_or("");
+  q.a_up_bps = root->getIf<int64_t>("A_up").value_or(0);
+  q.a_down_bps = root->getIf<int64_t>("A_down").value_or(0);
+  q.b_up_bps = root->getIf<int64_t>("B_up").value_or(0);
+  q.b_down_bps = root->getIf<int64_t>("B_down").value_or(0);
+  q.pricing_mode = root->getString("mode").value_or("volunteer");
+  q.rate = readDouble(*root, "rate", 0.0);
+  q.ceiling_bytes = root->getIf<int64_t>("ceiling_bytes").value_or(0);
+  q.ceiling_amount = readDouble(*root, "ceiling_amount", 0.0);
   wait.Finish(q);
 }
 

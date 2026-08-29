@@ -1,5 +1,6 @@
 #include "base/ai/mcp/McpClient.h"
 #include "base/ai/mcp/SchemaAdapter.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
@@ -15,11 +16,15 @@ TEST(McpMockTest, InitializesAndCallsMockTools) {
   ASSERT_FALSE(tools_result->empty());
   EXPECT_EQ(tools_result->front().name, "user_search");
 
-  auto call_result = client.CallTool("user_search", {{"query", "ada"}});
+  pbr::Object args;
+  args.set("query", "ada");
+  auto call_result = client.CallTool("user_search", args);
   ASSERT_TRUE(static_cast<bool>(call_result));
 
   auto rows_result = pbr::SchemaAdapter::ToolResultToRows(*call_result);
   ASSERT_TRUE(static_cast<bool>(rows_result));
-  EXPECT_TRUE(rows_result->is_array());
-  EXPECT_FALSE(rows_result->empty());
+  EXPECT_TRUE(pbr::isArrayValue(*rows_result));
+  const pbr::Array* rows = pbr::asArray(*rows_result);
+  ASSERT_NE(rows, nullptr);
+  EXPECT_FALSE(rows->elements.empty());
 }

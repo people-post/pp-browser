@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -19,6 +19,7 @@
 #include <va/va.h>
 #include <va/va_drm.h>
 #include <va/va_enc_h264.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

@@ -1,4 +1,5 @@
 #include "base/p2p/MediaRelayRuntime.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -34,13 +35,14 @@ void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
         stream->close([](auto&&) {});
         return;
       }
-      const std::string op = root->value("op", "");
+      const std::string op = root->getString("op").value_or("");
       if (op == "quote") {
         MediaRelayQuoteRequest req;
-        req.call_id = root->value("call_id", "");
-        req.participants = root->value("participants", 1);
-        req.want_up_bps = root->value("want_up_bps", static_cast<int64_t>(0));
-        req.want_down_bps = root->value("want_down_bps", static_cast<int64_t>(0));
+        req.call_id = root->getString("call_id").value_or("");
+        req.participants =
+            static_cast<int>(root->getNonNegInt("participants").value_or(1));
+        req.want_up_bps = root->getIf<int64_t>("want_up_bps").value_or(0);
+        req.want_down_bps = root->getIf<int64_t>("want_down_bps").value_or(0);
         sm.call_id = req.call_id;
         {
           std::lock_guard<std::mutex> lock(mu);
@@ -55,18 +57,20 @@ void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
           std::lock_guard<std::mutex> lock(mu);
           quotes_by_id[q.quote_id] = PendingQuote{q, req.call_id};
         }
-        (void)WriteJson(stream, {{"v", 1},
-                                 {"ok", true},
-                                 {"op", "quote"},
-                                 {"quote_id", q.quote_id},
-                                 {"A_up", q.a_up_bps},
-                                 {"A_down", q.a_down_bps},
-                                 {"B_up", q.b_up_bps},
-                                 {"B_down", q.b_down_bps},
-                                 {"mode", q.pricing_mode},
-                                 {"rate", q.rate},
-                                 {"ceiling_bytes", q.ceiling_bytes},
-                                 {"ceiling_amount", q.ceiling_amount}});
+        Object quote_resp;
+        quote_resp.set("v", int64_t{1});
+        quote_resp.set("ok", true);
+        quote_resp.set("op", "quote");
+        quote_resp.set("quote_id", q.quote_id);
+        quote_resp.set("A_up", q.a_up_bps);
+        quote_resp.set("A_down", q.a_down_bps);
+        quote_resp.set("B_up", q.b_up_bps);
+        quote_resp.set("B_down", q.b_down_bps);
+        quote_resp.set("mode", q.pricing_mode);
+        quote_resp.set("rate", q.rate);
+        quote_resp.set("ceiling_bytes", q.ceiling_bytes);
+        quote_resp.set("ceiling_amount", q.ceiling_amount);
+        (void)WriteJson(stream, quote_resp);
         (void)sm.Apply(MediaRelayAttachEvent::OpQuote);
       } else if (op == "accept") {
         // Accept from Control or Quoted (quote may have been issued on another stream).
@@ -74,7 +78,7 @@ void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
           RejectAndCloseAttach(sm, stream, "accept not allowed in phase", MediaRelayAttachEvent::OpAccept);
           return;
         }
-        const std::string quote_id = root->value("quote_id", "");
+        const std::string quote_id = root->getString("quote_id").value_or("");
         PendingQuote pending;
         {
           std::lock_guard<std::mutex> lock(mu);
@@ -94,20 +98,22 @@ void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
         sm.call_id = pending.call_id;
         sm.accepted_quote_id = quote_id;
         sm.session_token = MakeId("s");
-        (void)WriteJson(stream, {{"v", 1},
-                                 {"ok", true},
-                                 {"op", "accept"},
-                                 {"session_token", sm.session_token},
-                                 {"quote_id", sm.accepted_quote_id}});
+        Object accept_resp;
+        accept_resp.set("v", int64_t{1});
+        accept_resp.set("ok", true);
+        accept_resp.set("op", "accept");
+        accept_resp.set("session_token", sm.session_token);
+        accept_resp.set("quote_id", sm.accepted_quote_id);
+        (void)WriteJson(stream, accept_resp);
         (void)sm.Apply(MediaRelayAttachEvent::OpAccept);
       } else if (op == "attach") {
         if (!sm.Apply(MediaRelayAttachEvent::OpAttach)) {
           RejectAndCloseAttach(sm, stream, "attach not allowed in phase", MediaRelayAttachEvent::OpAttach);
           return;
         }
-        const std::string token = root->value("session_token", sm.session_token);
-        const std::string call_id = root->value("call_id", "");
-        const std::string auth = root->value("auth", "");
+        const std::string token = root->getString("session_token").value_or(sm.session_token);
+        const std::string call_id = root->getString("call_id").value_or("");
+        const std::string auth = root->getString("auth").value_or("");
         sm.call_id = call_id;
         if (token.empty() || call_id.empty()) {
           RejectAndCloseAttach(sm, stream, "missing session_token or call_id",
@@ -185,7 +191,11 @@ void MediaRelayRuntime::HandleInboundBody(std::shared_ptr<Stream> stream) {
           CleanupParticipant(session, old, "replaced_by_reattach");
         }
 
-        (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
+        Object attach_resp;
+        attach_resp.set("v", int64_t{1});
+        attach_resp.set("ok", true);
+        attach_resp.set("op", "attach");
+        (void)WriteJson(stream, attach_resp);
         (void)sm.Apply(MediaRelayAttachEvent::AttachOk);
         StartParticipantAsync(session, part);
         return;

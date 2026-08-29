@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

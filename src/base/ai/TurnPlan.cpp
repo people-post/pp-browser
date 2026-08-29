@@ -1,8 +1,10 @@
 #include "base/ai/TurnPlan.h"
 
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -10,19 +12,11 @@ namespace {
 
 constexpr int kMaxPlannedTools = 4;
 
-std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
-                                const std::string& default_value = {}) {
-  if (!json.contains(key)) {
-    return default_value;
-  }
-  const auto& value = json[key];
-  if (value.is_string()) {
-    return value.get<std::string>();
-  }
-  return default_value;
+std::string JsonStringOrDefault(const Object& json, const char* key, const std::string& default_value = {}) {
+  return json.getString(key).value_or(default_value);
 }
 
-std::optional<nlohmann::json> ExtractJsonObject(const std::string& text) {
+std::optional<Object> ExtractJsonObject(const std::string& text) {
   const std::string fence = "```json";
   const size_t start = text.find(fence);
   if (start != std::string::npos) {
@@ -33,19 +27,14 @@ std::optional<nlohmann::json> ExtractJsonObject(const std::string& text) {
     const size_t end = text.find("```", content_start);
     if (end != std::string::npos) {
       const std::string fenced = util::Trim(text.substr(content_start, end - content_start));
-      const nlohmann::json doc = nlohmann::json::parse(fenced, nullptr, false);
-      if (!doc.is_discarded() && doc.is_object()) {
+      if (auto doc = TryParseObject(fenced)) {
         return doc;
       }
     }
   }
 
   const std::string trimmed = util::Trim(text);
-  const nlohmann::json bare = nlohmann::json::parse(trimmed, nullptr, false);
-  if (!bare.is_discarded() && bare.is_object()) {
-    return bare;
-  }
-  return std::nullopt;
+  return TryParseObject(trimmed);
 }
 
 } // namespace
@@ -114,11 +103,7 @@ RenderMode ParseRenderMode(const std::string& name) {
   return RenderMode::Blocks;
 }
 
-Roe<TurnPlan> ParseTurnPlanJson(const nlohmann::json& doc, const TurnPlanSource source) {
-  if (!doc.is_object()) {
-    return Error("Turn plan must be a JSON object");
-  }
-
+Roe<TurnPlan> ParseTurnPlanJson(const Object& doc, const TurnPlanSource source) {
   TurnPlan plan;
   plan.source = source;
   plan.response_goal = ParseResponseGoal(JsonStringOrDefault(doc, "response_goal", "general"));
@@ -126,22 +111,21 @@ Roe<TurnPlan> ParseTurnPlanJson(const nlohmann::json& doc, const TurnPlanSource 
   plan.synthesis_hints = JsonStringOrDefault(doc, "synthesis_hints");
   plan.user_request = JsonStringOrDefault(doc, "user_request");
 
-  if (doc.contains("tools") && doc["tools"].is_array()) {
-    for (const auto& item : doc["tools"]) {
-      if (!item.is_object()) {
+  if (const Array* tools = doc.getArray("tools")) {
+    for (const Value& item_value : tools->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
         return Error("Each planned tool must be an object");
       }
       PlannedToolCall call;
-      call.name = JsonStringOrDefault(item, "name");
+      call.name = JsonStringOrDefault(*item, "name");
       if (call.name.empty()) {
         return Error("Planned tool missing name");
       }
-      if (item.contains("arguments") && item["arguments"].is_object()) {
-        call.arguments = item["arguments"];
-      } else if (item.contains("args") && item["args"].is_object()) {
-        call.arguments = item["args"];
-      } else {
-        call.arguments = nlohmann::json::object();
+      if (const Object* arguments = item->getObject("arguments")) {
+        call.arguments = *arguments;
+      } else if (const Object* args = item->getObject("args")) {
+        call.arguments = *args;
       }
       plan.tools.push_back(std::move(call));
     }
@@ -177,18 +161,24 @@ Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& al
   return plan;
 }
 
-nlohmann::json TurnPlanToJson(const TurnPlan& plan) {
-  nlohmann::json tools = nlohmann::json::array();
+Object TurnPlanToJson(const TurnPlan& plan) {
+  std::vector<Value> tools;
+  tools.reserve(plan.tools.size());
   for (const PlannedToolCall& call : plan.tools) {
-    tools.push_back({{"name", call.name}, {"arguments", call.arguments}});
+    Object entry;
+    entry.set("name", call.name);
+    entry.set("arguments", call.arguments);
+    tools.push_back(ObjectValue(std::move(entry)));
   }
 
-  return {{"source", TurnPlanSourceName(plan.source)},
-          {"response_goal", ResponseGoalName(plan.response_goal)},
-          {"tools", std::move(tools)},
-          {"render_mode", RenderModeName(plan.render_mode)},
-          {"synthesis_hints", plan.synthesis_hints},
-          {"user_request", plan.user_request}};
+  Object out;
+  out.set("source", TurnPlanSourceName(plan.source));
+  out.set("response_goal", ResponseGoalName(plan.response_goal));
+  out.set("tools", ArrayValue(std::move(tools)));
+  out.set("render_mode", RenderModeName(plan.render_mode));
+  out.set("synthesis_hints", plan.synthesis_hints);
+  out.set("user_request", plan.user_request);
+  return out;
 }
 
 } // namespace pbr

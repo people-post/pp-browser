@@ -11,8 +11,8 @@ function(pp_require_vendored name)
 endfunction()
 
 # Always required for pp-node and the GUI app.
+# JSON document tree comes from FetchContent pp-cpp-common (Value/Object).
 # libsodium + ML-KEM/ML-DSA come from FetchContent / sibling pp-cpp-crypto.
-pp_require_vendored(nlohmann_json)
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
@@ -38,15 +38,8 @@ endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# nlohmann-json (header-only)
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-set(JSON_Install OFF CACHE BOOL "" FORCE)
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
-                 "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
-
 if(PP_BROWSER_HEADLESS)
-  pp_configure_status("Headless deps ready (json, pp-cpp-crypto, libp2p); skipping GUI third_party")
+  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p); skipping GUI third_party")
   return()
 endif()
 

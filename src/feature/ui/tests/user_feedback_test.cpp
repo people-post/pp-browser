@@ -2,6 +2,7 @@
 #include "base/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 namespace {
 

@@ -6,6 +6,7 @@
 #include <sodium.h>
 
 #include <cstring>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

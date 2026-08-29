@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

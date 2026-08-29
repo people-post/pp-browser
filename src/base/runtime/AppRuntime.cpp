@@ -2,6 +2,7 @@
 
 #include "base/runtime/ThreadRuntime.h"
 #include "base/runtime/WorkerDispatch.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoTypes.h"
 
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

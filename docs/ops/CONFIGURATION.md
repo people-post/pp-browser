@@ -15,7 +15,7 @@ There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config
 
 **Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
 
-Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
+Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
 ### `pp-node` deploy overlays
 

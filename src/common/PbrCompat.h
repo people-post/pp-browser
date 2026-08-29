@@ -1,10 +1,12 @@
 #pragma once
 
 /**
- * pp-browser bridge: pp-cpp-common owns namespace `pp`. App/base/feature code
- * remains in `pbr`. This header is force-included via the `pp_common` CMake
- * target so qualified and unqualified `pbr::` lookups for common types keep
- * working without rewriting call sites.
+ * Transitional pp-browser bridge: pp-cpp-common owns namespace `pp`. App/base/
+ * feature code remains in `pbr`. Include this header explicitly in TUs that
+ * still rely on unqualified Roe/Object/Module/etc. inside namespace pbr.
+ *
+ * New code should prefer `pp::` types directly; JSON helpers live in
+ * ValueJson.h without this header.
  *
  * Do not use `using namespace ::pp` here — that does not create `pbr::Name`.
  */
@@ -18,7 +20,9 @@
 #include "common/SequencedTaskRunner.h"
 #include "common/Serialize.hpp"
 #include "common/Utilities.h"
+#include "common/Value.h"
 #include "common/WorkerPool.h"
+#include "common/io/Json.h"
 
 namespace pbr {
 
@@ -37,8 +41,27 @@ using ::pp::InputArchive;
 using ::pp::binaryPack;
 using ::pp::binaryUnpack;
 
+using ::pp::common::Array;
+using ::pp::common::ArrayPtr;
+using ::pp::common::Null;
+using ::pp::common::Object;
+using ::pp::common::ObjectPtr;
+using ::pp::common::Value;
+using ::pp::common::asArray;
+using ::pp::common::asNonNegInt;
+using ::pp::common::asObject;
+using ::pp::common::asString;
+using ::pp::common::isArrayValue;
+using ::pp::common::isBoolValue;
+using ::pp::common::isNullValue;
+using ::pp::common::isObjectValue;
+using ::pp::common::isStringValue;
+using ::pp::common::makeArray;
+using ::pp::common::valueEqual;
+
 namespace logging = ::pp::logging;
 namespace util = ::pp::util;
 namespace civil_time = ::pp::civil_time;
+namespace json_io = ::pp::common::io;
 
 } // namespace pbr

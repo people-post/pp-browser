@@ -5,6 +5,7 @@
 
 #include <stdexcept>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

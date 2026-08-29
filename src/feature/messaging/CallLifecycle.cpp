@@ -3,6 +3,7 @@
 #include "feature/messaging/CallSessionManager.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

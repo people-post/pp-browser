@@ -3,8 +3,8 @@
 #include "base/ai/ToolRegistry.h"
 #include "base/data/Config.h"
 #include "common/Error.h"
+#include "common/PbrCompat.h"
 
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -13,13 +13,13 @@ namespace pbr {
 class WebSearchTool {
 public:
   static ToolDescriptor Make(const SearchConfig& config);
-  static Roe<std::string> Search(const SearchConfig& config, const nlohmann::json& arguments);
+  static Roe<std::string> Search(const SearchConfig& config, const Object& arguments);
 
   // Exposed for unit tests.
-  static nlohmann::json ParseDuckDuckGoInstantAnswerJson(const std::string& json_text);
-  static nlohmann::json ParseDuckDuckGoLiteHtmlResults(const std::string& html);
-  static nlohmann::json ParseDuckDuckGoHtmlPageResults(const std::string& html);
-  static nlohmann::json ParseGoogleNewsRssItems(const std::string& xml);
+  static Value ParseDuckDuckGoInstantAnswerJson(const std::string& json_text);
+  static Value ParseDuckDuckGoLiteHtmlResults(const std::string& html);
+  static Value ParseDuckDuckGoHtmlPageResults(const std::string& html);
+  static Value ParseGoogleNewsRssItems(const std::string& xml);
 };
 
 } // namespace pbr

@@ -2,11 +2,11 @@
 
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <algorithm>
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -61,18 +61,18 @@ Roe<PskBundleV1> PskBundleCodec::ParseBundleJson(const std::string& json) {
   if (json.size() > kMaxPskBundleBytes) {
     return Error("PSK bundle exceeds size limit");
   }
-  const nlohmann::json parsed = nlohmann::json::parse(json, nullptr, false);
-  if (parsed.is_discarded() || !parsed.is_object()) {
+  auto parsed = TryParseObject(json);
+  if (!parsed) {
     return Error("Invalid PSK bundle JSON");
   }
-  if (parsed.value("format", std::string{}) != "pp-browser-psk-bundle-v1") {
+  if (parsed->getString("format").value_or(std::string{}) != "pp-browser-psk-bundle-v1") {
     return Error("Unsupported PSK bundle format");
   }
 
   PskBundleV1 bundle;
-  bundle.channel = ChannelFromBundleString(parsed.value("channel", std::string{"e2e"}));
-  bundle.active_epoch = parsed.value("active_epoch", 0u);
-  bundle.master_psk_b64 = parsed.value("master_psk_b64", std::string{});
+  bundle.channel = ChannelFromBundleString(parsed->getString("channel").value_or(std::string{"e2e"}));
+  bundle.active_epoch = static_cast<uint32_t>(parsed->getNonNegInt("active_epoch").value_or(0));
+  bundle.master_psk_b64 = parsed->getString("master_psk_b64").value_or(std::string{});
   if (bundle.active_epoch == 0) {
     return Error("PSK bundle missing active_epoch");
   }
@@ -80,14 +80,18 @@ Roe<PskBundleV1> PskBundleCodec::ParseBundleJson(const std::string& json) {
     return valid.error();
   }
 
-  if (parsed.contains("retired_epochs") && parsed["retired_epochs"].is_array()) {
+  if (const Array* retired_epochs = parsed->getArray("retired_epochs")) {
     uint32_t last_epoch = 0;
     std::unordered_set<uint32_t> seen;
-    for (const auto& item : parsed["retired_epochs"]) {
+    for (const Value& item_value : retired_epochs->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
+        continue;
+      }
       RetiredPskEntry entry;
-      entry.epoch = item.value("epoch", 0u);
-      entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
-      entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
+      entry.epoch = static_cast<uint32_t>(item->getNonNegInt("epoch").value_or(0));
+      entry.master_psk_b64 = item->getString("master_psk_b64").value_or(std::string{});
+      entry.retired_at = item->getIf<int64_t>("retired_at").value_or(0);
       if (entry.epoch == 0 || entry.epoch >= bundle.active_epoch) {
         return Error("Invalid retired epoch in bundle");
       }
@@ -118,19 +122,22 @@ Roe<std::string> PskBundleCodec::SerializeBundle(const PskBundleV1& bundle) {
   if (auto valid = ValidateBundle(bundle); !valid) {
     return valid.error();
   }
-  nlohmann::json json;
-  json["format"] = "pp-browser-psk-bundle-v1";
-  json["channel"] = CryptoChannelToString(bundle.channel);
-  json["active_epoch"] = bundle.active_epoch;
-  json["master_psk_b64"] = bundle.master_psk_b64;
-  nlohmann::json retired = nlohmann::json::array();
+  Object json;
+  json.set("format", "pp-browser-psk-bundle-v1");
+  json.set("channel", CryptoChannelToString(bundle.channel));
+  json.setJsonUInt("active_epoch", bundle.active_epoch);
+  json.set("master_psk_b64", bundle.master_psk_b64);
+  std::vector<Value> retired;
+  retired.reserve(bundle.retired_epochs.size());
   for (const RetiredPskEntry& entry : bundle.retired_epochs) {
-    retired.push_back({{"epoch", entry.epoch},
-                       {"master_psk_b64", entry.master_psk_b64},
-                       {"retired_at", entry.retired_at}});
+    Object item;
+    item.setJsonUInt("epoch", entry.epoch);
+    item.set("master_psk_b64", entry.master_psk_b64);
+    item.set("retired_at", entry.retired_at);
+    retired.push_back(ObjectValue(std::move(item)));
   }
-  json["retired_epochs"] = std::move(retired);
-  const std::string serialized = json.dump();
+  json.set("retired_epochs", ArrayValue(std::move(retired)));
+  const std::string serialized = DumpJson(json);
   if (serialized.size() > kMaxPskBundleBytes) {
     return Error("Serialized PSK bundle exceeds size limit");
   }

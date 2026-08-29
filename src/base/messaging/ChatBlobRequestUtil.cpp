@@ -4,6 +4,7 @@
 #include "base/messaging/AttachmentCache.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

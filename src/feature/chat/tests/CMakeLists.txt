@@ -1,8 +1,6 @@
 pp_browser_add_feature_folder_tests(
   pp_feature_chat
-  pp_browser_feature_chat_test
-  LINK_LIBS
-    nlohmann_json::nlohmann_json)
+  pp_browser_feature_chat_test)
 
 include(pp_lib_rmlui)
 pp_browser_link_rmlui_core(pp_browser_feature_chat_test)

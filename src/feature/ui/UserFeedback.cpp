@@ -2,6 +2,7 @@
 
 #include "base/error/AppError.h"
 #include "feature/ui/ShellFeedback.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

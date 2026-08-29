@@ -6,6 +6,7 @@
 #include "common/Error.h"
 
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

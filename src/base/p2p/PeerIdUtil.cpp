@@ -4,6 +4,7 @@
 
 #include <libp2p/peer/peer_id.hpp>
 #include <libp2p/wire/keys_wire.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -11,6 +11,7 @@
 
 #include <sodium.h>
 #include <sqlite3.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

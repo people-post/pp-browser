@@ -1,6 +1,7 @@
 #include "base/net/RelaySignBytes.h"
 
 #include "common/Serialize.hpp"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

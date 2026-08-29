@@ -3,11 +3,12 @@
 #include "base/ai/WorkingSetPolicy.h"
 #include "base/messaging/PeopleDiscoveryBlocks.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 #include <algorithm>
 #include <cctype>
 #include <regex>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -176,23 +177,20 @@ std::string ReplaceAll(std::string text, const std::string& from, const std::str
   return text;
 }
 
-std::optional<std::string> ParseOptionalButtonPayload(const nlohmann::json& block) {
-  if (!block.contains("payload")) {
+std::optional<std::string> ParseOptionalButtonPayload(const Object& block) {
+  auto payload_slot = block.fields().tryGet("payload");
+  if (!payload_slot) {
     return std::nullopt;
   }
-  const nlohmann::json& payload = block["payload"];
-  if (payload.is_object()) {
-    return payload.dump();
+  const Value& payload = payload_slot->get();
+  if (const Object* payload_obj = asObject(payload)) {
+    return DumpJson(*payload_obj);
   }
-  if (!payload.is_string()) {
+  auto payload_str = asString(payload);
+  if (!payload_str || payload_str->empty()) {
     return std::nullopt;
   }
-  const std::string payload_str = payload.get<std::string>();
-  if (payload_str.empty()) {
-    return std::nullopt;
-  }
-  const nlohmann::json doc = nlohmann::json::parse(payload_str, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object()) {
+  if (!TryParseObject(*payload_str)) {
     return std::nullopt;
   }
   return payload_str;
@@ -214,11 +212,11 @@ ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label
   return result;
 }
 
-ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("label") || !block["label"].is_string()) {
+ParseResult ParseButtonBlock(const Object& block, ParseResult& parent) {
+  if (!block.getString("label")) {
     return BlockError("button block requires label");
   }
-  if (!block.contains("message") || !block["message"].is_string()) {
+  if (!block.getString("message")) {
     return BlockError("button block requires message");
   }
 
@@ -230,26 +228,26 @@ ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
     }
   }
 
-  return AppendChatActionButton(parent, block["label"].get<std::string>(), block["message"].get<std::string>(),
+  return AppendChatActionButton(parent, *block.getString("label"), *block.getString("message"),
                                 payload);
 }
 
-ParseResult ParseCardBlock(const nlohmann::json& block) {
-  if (!block.contains("title") || !block["title"].is_string()) {
+ParseResult ParseCardBlock(const Object& block) {
+  if (!block.getString("title")) {
     return BlockError("card block requires title");
   }
-  if (!block.contains("body") || !block["body"].is_string()) {
+  if (!block.getString("body")) {
     return BlockError("card block requires body");
   }
 
-  const std::string variant = block.value("variant", "default");
+  const std::string variant = block.getString("variant").value_or("default");
   std::ostringstream out;
   out << "<div class=\"chat-card chat-card-" << StructuredTextParser::EscapeText(variant) << "\">";
-  out << "<h3>" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</h3>";
-  if (block.contains("subtitle") && block["subtitle"].is_string()) {
-    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["subtitle"].get<std::string>()) << "</p>";
+  out << "<h3>" << StructuredTextParser::EscapeText(*block.getString("title")) << "</h3>";
+  if (block.getString("subtitle")) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*block.getString("subtitle")) << "</p>";
   }
-  out << "<p>" << StructuredTextParser::EscapeText(block["body"].get<std::string>()) << "</p>";
+  out << "<p>" << StructuredTextParser::EscapeText(*block.getString("body")) << "</p>";
   out << "</div>";
 
   ParseResult result;
@@ -258,33 +256,36 @@ ParseResult ParseCardBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseTableBlock(const nlohmann::json& block) {
-  if (!block.contains("headers") || !block["headers"].is_array()) {
+ParseResult ParseTableBlock(const Object& block) {
+  if (!block.getArray("headers")) {
     return BlockError("table block requires headers array");
   }
-  if (!block.contains("rows") || !block["rows"].is_array()) {
+  if (!block.getArray("rows")) {
     return BlockError("table block requires rows array");
   }
 
   std::ostringstream out;
   out << "<table class=\"chat-table\"><thead><tr>";
-  for (const auto& header : block["headers"]) {
-    if (!header.is_string()) {
+  for (const Value& header : block.getArray("headers")->elements) {
+    auto header_text = asString(header);
+    if (!header_text) {
       return BlockError("table headers must be strings");
     }
-    out << "<th>" << StructuredTextParser::EscapeText(header.get<std::string>()) << "</th>";
+    out << "<th>" << StructuredTextParser::EscapeText(*header_text) << "</th>";
   }
   out << "</tr></thead><tbody>";
-  for (const auto& row : block["rows"]) {
-    if (!row.is_array()) {
+  for (const Value& row : block.getArray("rows")->elements) {
+    const Array* cells = asArray(row);
+    if (!cells) {
       return BlockError("table rows must be arrays");
     }
     out << "<tr>";
-    for (const auto& cell : row) {
-      if (!cell.is_string()) {
+    for (const Value& cell : cells->elements) {
+      auto cell_text = asString(cell);
+      if (!cell_text) {
         return BlockError("table cells must be strings");
       }
-      out << "<td>" << StructuredTextParser::EscapeText(cell.get<std::string>()) << "</td>";
+      out << "<td>" << StructuredTextParser::EscapeText(*cell_text) << "</td>";
     }
     out << "</tr>";
   }
@@ -296,24 +297,22 @@ ParseResult ParseTableBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseKeyValueBlock(const nlohmann::json& block) {
-  if (!block.contains("items") || !block["items"].is_array()) {
+ParseResult ParseKeyValueBlock(const Object& block) {
+  if (!block.getArray("items")) {
     return BlockError("key_value block requires items array");
   }
 
   std::ostringstream out;
   out << "<div class=\"chat-key-value\">";
-  for (const auto& item : block["items"]) {
-    if (!item.is_object() || !item.contains("label") || !item.contains("value")) {
+  for (const Value& item_value : block.getArray("items")->elements) {
+    const Object* item = asObject(item_value);
+    if (!item || !item->getString("label") || !item->getString("value")) {
       return BlockError("key_value items require label and value");
     }
-    if (!item["label"].is_string() || !item["value"].is_string()) {
-      return BlockError("key_value label and value must be strings");
-    }
     out << "<div class=\"chat-key-value-row\">";
-    out << "<span class=\"chat-key-value-label\">" << StructuredTextParser::EscapeText(item["label"].get<std::string>())
+    out << "<span class=\"chat-key-value-label\">" << StructuredTextParser::EscapeText(*item->getString("label"))
         << "</span>";
-    out << "<span class=\"chat-key-value-value\">" << StructuredTextParser::EscapeText(item["value"].get<std::string>())
+    out << "<span class=\"chat-key-value-value\">" << StructuredTextParser::EscapeText(*item->getString("value"))
         << "</span>";
     out << "</div>";
   }
@@ -325,27 +324,27 @@ ParseResult ParseKeyValueBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseCalloutBlock(const nlohmann::json& block) {
-  if (!block.contains("text") || !block["text"].is_string()) {
+ParseResult ParseCalloutBlock(const Object& block) {
+  if (!block.getString("text")) {
     return BlockError("callout block requires text");
   }
-  const std::string variant = block.value("variant", "info");
+  const std::string variant = block.getString("variant").value_or("info");
   ParseResult result;
   result.ok = true;
   result.rml = "<div class=\"chat-callout chat-callout-" + StructuredTextParser::EscapeText(variant) + "\"><p>" +
-               StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</p></div>";
+               StructuredTextParser::EscapeText(*block.getString("text")) + "</p></div>";
   return result;
 }
 
-ParseResult ParseQuoteBlock(const nlohmann::json& block) {
-  if (!block.contains("text") || !block["text"].is_string()) {
+ParseResult ParseQuoteBlock(const Object& block) {
+  if (!block.getString("text")) {
     return BlockError("quote block requires text");
   }
   std::ostringstream out;
-  out << "<blockquote class=\"chat-quote\"><p>" << StructuredTextParser::EscapeText(block["text"].get<std::string>())
+  out << "<blockquote class=\"chat-quote\"><p>" << StructuredTextParser::EscapeText(*block.getString("text"))
       << "</p>";
-  if (block.contains("attribution") && block["attribution"].is_string()) {
-    out << "<p class=\"muted\">— " << StructuredTextParser::EscapeText(block["attribution"].get<std::string>()) << "</p>";
+  if (block.getString("attribution")) {
+    out << "<p class=\"muted\">— " << StructuredTextParser::EscapeText(*block.getString("attribution")) << "</p>";
   }
   out << "</blockquote>";
 
@@ -355,27 +354,28 @@ ParseResult ParseQuoteBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseFormBlock(const nlohmann::json& block) {
-  if (!block.contains("id") || !block["id"].is_string()) {
+ParseResult ParseFormBlock(const Object& block) {
+  if (!block.getString("id")) {
     return BlockError("form block requires id");
   }
-  if (!block.contains("fields") || !block["fields"].is_array()) {
+  if (!block.getArray("fields")) {
     return BlockError("form block requires fields array");
   }
-  if (!block.contains("submit_template") || !block["submit_template"].is_string()) {
+  if (!block.getString("submit_template")) {
     return BlockError("form block requires submit_template");
   }
 
-  for (const auto& field : block["fields"]) {
-    if (!field.is_object() || !field.contains("id") || !field["id"].is_string()) {
+  for (const Value& field_value : block.getArray("fields")->elements) {
+    const Object* field = asObject(field_value);
+    if (!field || !field->getString("id")) {
       return BlockError("form fields require id");
     }
-    if (!field.contains("label") || !field["label"].is_string()) {
+    if (!field->getString("label")) {
       return BlockError("form fields require label");
     }
   }
 
-  const std::string form_id = block["id"].get<std::string>();
+  const std::string form_id = *block.getString("id");
   ParseResult result;
   result.ok = true;
   result.rml = ReplaceAll(ReplaceAll(kFormWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
@@ -383,16 +383,12 @@ ParseResult ParseFormBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseCalendarBlock(const nlohmann::json& block) {
-  if (block.contains("month")) {
-    if (!block["month"].is_number_integer()) {
-      return BlockError("calendar month must be an integer");
-    }
+ParseResult ParseCalendarBlock(const Object& block) {
+  if (block.contains("month") && !block.getIf<int64_t>("month")) {
+    return BlockError("calendar month must be an integer");
   }
-  if (block.contains("year")) {
-    if (!block["year"].is_number_integer()) {
-      return BlockError("calendar year must be an integer");
-    }
+  if (block.contains("year") && !block.getIf<int64_t>("year")) {
+    return BlockError("calendar year must be an integer");
   }
 
   ParseResult result;
@@ -402,55 +398,54 @@ ParseResult ParseCalendarBlock(const nlohmann::json& block) {
   return result;
 }
 
-ParseResult ParseLongListActionButton(ParseResult& parent, const nlohmann::json& action) {
-  if (!action.is_object() || !action.contains("label") || !action.contains("message")) {
+ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_value) {
+  const Object* action = asObject(action_value);
+  if (!action || !action->getString("label") || !action->getString("message")) {
     return BlockError("long_list actions require label and message");
   }
-  if (!action["label"].is_string() || !action["message"].is_string()) {
-    return BlockError("long_list action label and message must be strings");
-  }
-  if (action.contains("payload")) {
-    const auto payload = ParseOptionalButtonPayload(action);
+  if (action->contains("payload")) {
+    const auto payload = ParseOptionalButtonPayload(*action);
     if (!payload) {
       return BlockError("long_list action payload must be a JSON object or object string");
     }
-    return AppendChatActionButton(parent, action["label"].get<std::string>(), action["message"].get<std::string>(),
+    return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
                                   payload);
   }
-  return AppendChatActionButton(parent, action["label"].get<std::string>(), action["message"].get<std::string>(),
+  return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
                                 std::nullopt);
 }
 
-ParseResult ParseLongListBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("items") || !block["items"].is_array()) {
+ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
+  if (!block.getArray("items")) {
     return BlockError("long_list block requires items array");
   }
 
   std::ostringstream out;
   out << "<div class=\"chat-long-list\">";
-  if (block.contains("title") && block["title"].is_string()) {
-    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</p>";
+  if (block.getString("title")) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*block.getString("title")) << "</p>";
   }
   out << "<div class=\"chat-long-list-scroll\">";
-  for (const auto& item : block["items"]) {
-    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+  for (const Value& item_value : block.getArray("items")->elements) {
+    const Object* item = asObject(item_value);
+    if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");
     }
     out << "<div class=\"chat-long-list-item\">";
-    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item->getString("title"))
         << "</p>";
-    if (item.contains("subtitle") && item["subtitle"].is_string()) {
+    if (auto subtitle = item->getString("subtitle")) {
       out << "<p class=\"muted chat-long-list-subtitle\">"
-          << StructuredTextParser::EscapeText(item["subtitle"].get<std::string>()) << "</p>";
+          << StructuredTextParser::EscapeText(*subtitle) << "</p>";
     }
-    if (item.contains("meta") && item["meta"].is_string()) {
-      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(item["meta"].get<std::string>())
+    if (auto meta = item->getString("meta")) {
+      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta)
           << "</p>";
     }
-    if (item.contains("actions") && item["actions"].is_array()) {
+    if (const Array* actions = item->getArray("actions")) {
       out << "<div class=\"row chat-long-list-actions\">";
-      for (const auto& action : item["actions"]) {
-        auto button = ParseLongListActionButton(parent, action);
+      for (const Value& action_value : actions->elements) {
+        auto button = ParseLongListActionButton(parent, action_value);
         if (!button.ok) {
           return button;
         }
@@ -461,10 +456,10 @@ ParseResult ParseLongListBlock(const nlohmann::json& block, ParseResult& parent)
     out << "</div>";
   }
   out << "</div>";
-  if (block.contains("footer_actions") && block["footer_actions"].is_array()) {
+  if (block.getArray("footer_actions")) {
     out << "<div class=\"row chat-long-list-footer\">";
-    for (const auto& action : block["footer_actions"]) {
-      auto button = ParseLongListActionButton(parent, action);
+    for (const Value& action_value : block.getArray("footer_actions")->elements) {
+      auto button = ParseLongListActionButton(parent, action_value);
       if (!button.ok) {
         return button;
       }
@@ -480,36 +475,37 @@ ParseResult ParseLongListBlock(const nlohmann::json& block, ParseResult& parent)
   return result;
 }
 
-ParseResult ParseLongListArtifact(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("items") || !block["items"].is_array()) {
+ParseResult ParseLongListArtifact(const Object& block, ParseResult& parent) {
+  if (!block.getArray("items")) {
     return BlockError("long_list block requires items array");
   }
 
   std::ostringstream out;
   out << "<div class=\"working-set-long-list\">";
-  if (block.contains("title") && block["title"].is_string()) {
-    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</p>";
+  if (block.getString("title")) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*block.getString("title")) << "</p>";
   }
   out << "<div class=\"working-set-long-list-body\">";
-  for (const auto& item : block["items"]) {
-    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+  for (const Value& item_value : block.getArray("items")->elements) {
+    const Object* item = asObject(item_value);
+    if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");
     }
     out << "<div class=\"chat-long-list-item\">";
-    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item->getString("title"))
         << "</p>";
-    if (item.contains("subtitle") && item["subtitle"].is_string()) {
+    if (auto subtitle = item->getString("subtitle")) {
       out << "<p class=\"muted chat-long-list-subtitle\">"
-          << StructuredTextParser::EscapeText(item["subtitle"].get<std::string>()) << "</p>";
+          << StructuredTextParser::EscapeText(*subtitle) << "</p>";
     }
-    if (item.contains("meta") && item["meta"].is_string()) {
-      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(item["meta"].get<std::string>())
+    if (auto meta = item->getString("meta")) {
+      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta)
           << "</p>";
     }
-    if (item.contains("actions") && item["actions"].is_array()) {
+    if (const Array* actions = item->getArray("actions")) {
       out << "<div class=\"row chat-long-list-actions\">";
-      for (const auto& action : item["actions"]) {
-        auto button = ParseLongListActionButton(parent, action);
+      for (const Value& action_value : actions->elements) {
+        auto button = ParseLongListActionButton(parent, action_value);
         if (!button.ok) {
           return button;
         }
@@ -520,10 +516,10 @@ ParseResult ParseLongListArtifact(const nlohmann::json& block, ParseResult& pare
     out << "</div>";
   }
   out << "</div>";
-  if (block.contains("footer_actions") && block["footer_actions"].is_array()) {
+  if (block.getArray("footer_actions")) {
     out << "<div class=\"row chat-long-list-footer\">";
-    for (const auto& action : block["footer_actions"]) {
-      auto button = ParseLongListActionButton(parent, action);
+    for (const Value& action_value : block.getArray("footer_actions")->elements) {
+      auto button = ParseLongListActionButton(parent, action_value);
       if (!button.ok) {
         return button;
       }
@@ -539,7 +535,7 @@ ParseResult ParseLongListArtifact(const nlohmann::json& block, ParseResult& pare
   return result;
 }
 
-std::string BuildArtifactRml(const nlohmann::json& block, const WorkingSetKind kind, const std::string& inline_rml,
+std::string BuildArtifactRml(const Object& block, const WorkingSetKind kind, const std::string& inline_rml,
                              ParseResult& parent) {
   switch (kind) {
   case WorkingSetKind::LongList: {
@@ -547,7 +543,7 @@ std::string BuildArtifactRml(const nlohmann::json& block, const WorkingSetKind k
     return artifact.ok ? artifact.rml : inline_rml;
   }
   case WorkingSetKind::Form: {
-    const std::string form_id = block["id"].get<std::string>();
+    const std::string form_id = *block.getString("id");
     return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
   }
   case WorkingSetKind::Calendar:
@@ -565,32 +561,34 @@ std::string BuildArtifactRml(const nlohmann::json& block, const WorkingSetKind k
   }
 }
 
-ParseResult ParseActionListBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("items") || !block["items"].is_array()) {
+ParseResult ParseActionListBlock(const Object& block, ParseResult& parent) {
+  if (!block.getArray("items")) {
     return BlockError("action_list block requires items array");
   }
 
   std::ostringstream out;
   out << "<div class=\"chat-action-list\">";
-  for (const auto& item : block["items"]) {
-    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+  for (const Value& item_value : block.getArray("items")->elements) {
+    const Object* item = asObject(item_value);
+    if (!item || !item->getString("title")) {
       return BlockError("action_list items require title");
     }
     out << "<div class=\"chat-action-list-item\">";
-    out << "<p class=\"chat-action-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+    out << "<p class=\"chat-action-list-title\">" << StructuredTextParser::EscapeText(*item->getString("title"))
         << "</p>";
-    if (item.contains("description") && item["description"].is_string()) {
-      out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(item["description"].get<std::string>()) << "</p>";
+    if (auto description = item->getString("description")) {
+      out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(*description) << "</p>";
     }
-    if (item.contains("actions") && item["actions"].is_array()) {
+    if (const Array* actions = item->getArray("actions")) {
       out << "<div class=\"row chat-action-list-actions\">";
-      for (const auto& action : item["actions"]) {
-        if (!action.is_object() || !action.contains("label") || !action.contains("message")) {
+      for (const Value& action_value : actions->elements) {
+        const Object* action = asObject(action_value);
+        if (!action || !action->getString("label") || !action->getString("message")) {
           return BlockError("action_list actions require label and message");
         }
-        auto button = AppendChatActionButton(parent, action["label"].get<std::string>(),
-                                               action["message"].get<std::string>(),
-                                               action.contains("payload") ? ParseOptionalButtonPayload(action)
+        auto button = AppendChatActionButton(parent, *action->getString("label"),
+                                               *action->getString("message"),
+                                               action->contains("payload") ? ParseOptionalButtonPayload(*action)
                                                                           : std::nullopt);
         if (!button.ok) {
           return button;
@@ -609,23 +607,24 @@ ParseResult ParseActionListBlock(const nlohmann::json& block, ParseResult& paren
   return result;
 }
 
-ParseResult ParseChoiceBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("prompt") || !block["prompt"].is_string()) {
+ParseResult ParseChoiceBlock(const Object& block, ParseResult& parent) {
+  if (!block.getString("prompt")) {
     return BlockError("choice block requires prompt");
   }
-  if (!block.contains("options") || !block["options"].is_array()) {
+  if (!block.getArray("options")) {
     return BlockError("choice block requires options array");
   }
 
   std::ostringstream out;
-  out << "<div class=\"chat-choice\"><p>" << StructuredTextParser::EscapeText(block["prompt"].get<std::string>())
+  out << "<div class=\"chat-choice\"><p>" << StructuredTextParser::EscapeText(*block.getString("prompt"))
       << "</p><div class=\"row chat-choice-options\">";
-  for (const auto& option : block["options"]) {
-    if (!option.is_object() || !option.contains("label") || !option.contains("message")) {
+  for (const Value& option_value : block.getArray("options")->elements) {
+    const Object* option = asObject(option_value);
+    if (!option || !option->getString("label") || !option->getString("message")) {
       return BlockError("choice options require label and message");
     }
-    auto button = AppendChatActionButton(parent, option["label"].get<std::string>(), option["message"].get<std::string>(),
-                                         option.contains("payload") ? ParseOptionalButtonPayload(option)
+    auto button = AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
+                                         option->contains("payload") ? ParseOptionalButtonPayload(*option)
                                                                     : std::nullopt);
     if (!button.ok) {
       return button;
@@ -640,24 +639,25 @@ ParseResult ParseChoiceBlock(const nlohmann::json& block, ParseResult& parent) {
   return result;
 }
 
-ParseResult ParsePollBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("question") || !block["question"].is_string()) {
+ParseResult ParsePollBlock(const Object& block, ParseResult& parent) {
+  if (!block.getString("question")) {
     return BlockError("poll block requires question");
   }
-  if (!block.contains("options") || !block["options"].is_array()) {
+  if (!block.getArray("options")) {
     return BlockError("poll block requires options array");
   }
 
   std::ostringstream out;
   out << "<div class=\"chat-poll\"><p class=\"chat-poll-question\">"
-      << StructuredTextParser::EscapeText(block["question"].get<std::string>())
+      << StructuredTextParser::EscapeText(*block.getString("question"))
       << "</p><div class=\"row chat-poll-options\">";
-  for (const auto& option : block["options"]) {
-    if (!option.is_object() || !option.contains("label") || !option.contains("message")) {
+  for (const Value& option_value : block.getArray("options")->elements) {
+    const Object* option = asObject(option_value);
+    if (!option || !option->getString("label") || !option->getString("message")) {
       return BlockError("poll options require label and message");
     }
-    auto button = AppendChatActionButton(parent, option["label"].get<std::string>(), option["message"].get<std::string>(),
-                                         option.contains("payload") ? ParseOptionalButtonPayload(option)
+    auto button = AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
+                                         option->contains("payload") ? ParseOptionalButtonPayload(*option)
                                                                     : std::nullopt);
     if (!button.ok) {
       return button;
@@ -672,56 +672,58 @@ ParseResult ParsePollBlock(const nlohmann::json& block, ParseResult& parent) {
   return result;
 }
 
-ParseResult RenderBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
+ParseResult RenderBlock(const Object& block, ParseResult& parent) {
+  if (!block.getString("type")) {
     return BlockError("Block must be an object with a type field");
   }
 
-  const std::string type = block["type"].get<std::string>();
+  const std::string type = *block.getString("type");
 
   if (type == "paragraph") {
-    if (!block.contains("text") || !block["text"].is_string()) {
+    if (!block.getString("text")) {
       return BlockError("paragraph block requires text");
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<p>" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</p>";
+    result.rml = "<p>" + StructuredTextParser::EscapeText(*block.getString("text")) + "</p>";
     return result;
   }
 
   if (type == "heading") {
-    if (!block.contains("text") || !block["text"].is_string()) {
+    if (!block.getString("text")) {
       return BlockError("heading block requires text");
     }
     int level = 2;
     if (block.contains("level")) {
-      if (!block["level"].is_number_integer()) {
+      auto level_value = block.getIf<int64_t>("level");
+      if (!level_value) {
         return BlockError("heading level must be an integer");
       }
-      level = block["level"].get<int>();
+      level = static_cast<int>(*level_value);
     }
     if (level < 1 || level > 3) {
       return BlockError("heading level must be 1-3");
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<h" + std::to_string(level) + ">" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) +
+    result.rml = "<h" + std::to_string(level) + ">" + StructuredTextParser::EscapeText(*block.getString("text")) +
                  "</h" + std::to_string(level) + ">";
     return result;
   }
 
   if (type == "list") {
-    if (!block.contains("items") || !block["items"].is_array()) {
+    if (!block.getArray("items")) {
       return BlockError("list block requires items array");
     }
-    const bool ordered = block.value("ordered", false);
+    const bool ordered = block.getIf<bool>("ordered").value_or(false);
     std::ostringstream out;
     out << (ordered ? "<ol>" : "<ul>");
-    for (const auto& item : block["items"]) {
-      if (!item.is_string()) {
+    for (const Value& item_value : block.getArray("items")->elements) {
+      auto item_text = asString(item_value);
+      if (!item_text) {
         return BlockError("list items must be strings");
       }
-      out << "<li>" << StructuredTextParser::EscapeText(item.get<std::string>()) << "</li>";
+      out << "<li>" << StructuredTextParser::EscapeText(*item_text) << "</li>";
     }
     out << (ordered ? "</ol>" : "</ul>");
     ParseResult result;
@@ -731,12 +733,12 @@ ParseResult RenderBlock(const nlohmann::json& block, ParseResult& parent) {
   }
 
   if (type == "code") {
-    if (!block.contains("text") || !block["text"].is_string()) {
+    if (!block.getString("text")) {
       return BlockError("code block requires text");
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<div class=\"code-block\">" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</div>";
+    result.rml = "<div class=\"code-block\">" + StructuredTextParser::EscapeText(*block.getString("text")) + "</div>";
     return result;
   }
 
@@ -806,13 +808,9 @@ bool IsKnownToolName(const std::string& name) {
   return name == "web_search";
 }
 
-bool IsEmbeddedToolBlock(const nlohmann::json& block) {
-  if (!block.is_object()) {
-    return false;
-  }
-
-  if (block.contains("type") && block["type"].is_string()) {
-    const std::string type = block["type"].get<std::string>();
+bool IsEmbeddedToolBlock(const Object& block) {
+  if (block.getString("type")) {
+    const std::string type = *block.getString("type");
     if (IsDisplayBlockType(type)) {
       return false;
     }
@@ -821,41 +819,42 @@ bool IsEmbeddedToolBlock(const nlohmann::json& block) {
     }
   }
 
-  if (block.contains("tool") && block["tool"].is_string()) {
+  if (block.getString("tool")) {
     return true;
   }
 
-  if (block.contains("name") && block["name"].is_string() && IsKnownToolName(block["name"].get<std::string>())) {
+  if (block.getString("name") && IsKnownToolName(*block.getString("name"))) {
     return true;
   }
 
   return false;
 }
 
-nlohmann::json ToolArgumentsFromBlock(const nlohmann::json& block) {
+Object ToolArgumentsFromBlock(const Object& block) {
   for (const char* key : {"params", "arguments", "parameters"}) {
-    if (block.contains(key) && block[key].is_object()) {
-      return block[key];
+    if (const Object* args = block.getObject(key)) {
+      return *args;
     }
   }
-  if (block.contains("query") && block["query"].is_string()) {
-    return {{"query", block["query"]}};
+  if (auto query = block.getString("query")) {
+    Object args;
+    args.set("query", *query);
+    return args;
   }
-  return nlohmann::json::object();
+  return {};
 }
 
-std::string ToolNameFromBlock(const nlohmann::json& block) {
-  if (block.contains("tool") && block["tool"].is_string()) {
-    return block["tool"].get<std::string>();
+std::string ToolNameFromBlock(const Object& block) {
+  if (auto tool = block.getString("tool")) {
+    return *tool;
   }
-  if (block.contains("type") && block["type"].is_string()) {
-    const std::string type = block["type"].get<std::string>();
-    if (IsKnownToolName(type)) {
-      return type;
+  if (auto type = block.getString("type")) {
+    if (IsKnownToolName(*type)) {
+      return *type;
     }
   }
-  if (block.contains("name") && block["name"].is_string()) {
-    return block["name"].get<std::string>();
+  if (auto name = block.getString("name")) {
+    return *name;
   }
   return {};
 }
@@ -865,17 +864,18 @@ std::string ToolNameFromBlock(const nlohmann::json& block) {
 ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const ResponseGoal goal,
                                                   const RenderMode render_mode) {
   const std::string trimmed = TrimAsciiWhitespace(json);
-  nlohmann::json doc = nlohmann::json::parse(trimmed, nullptr, false);
-  if (doc.is_discarded()) {
+  auto doc_opt = TryParseObject(trimmed);
+  if (!doc_opt) {
     const std::string repaired = BalanceJsonBraces(trimmed);
-    if (repaired != trimmed)
-      doc = nlohmann::json::parse(repaired, nullptr, false);
+    if (repaired != trimmed) {
+      doc_opt = TryParseObject(repaired);
+    }
   }
-  if (doc.is_discarded()) {
+  if (!doc_opt) {
     return Fail("Invalid JSON");
   }
-
-  if (!doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {
+  const Object& doc = *doc_opt;
+  if (!doc.getArray("blocks")) {
     return Fail("JSON must contain a blocks array");
   }
 
@@ -886,7 +886,14 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
   result.ok = true;
 
   int block_index = 0;
-  for (const auto& block : doc["blocks"]) {
+  for (const Value& block_value : doc.getArray("blocks")->elements) {
+    const Object* block_ptr = asObject(block_value);
+    if (!block_ptr) {
+      result.warnings.push_back("Block must be an object with a type field");
+      ++block_index;
+      continue;
+    }
+    const Object& block = *block_ptr;
     const BlockEligibility eligibility = EvaluateBlock(block, goal);
     const bool undo_inline_long_list_actions =
         eligibility.eligible && eligibility.kind == WorkingSetKind::LongList;
@@ -948,20 +955,22 @@ std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbedd
     return std::nullopt;
   }
 
-  nlohmann::json doc = nlohmann::json::parse(*payload, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {
+  auto doc_opt = TryParseObject(*payload);
+  if (!doc_opt || !doc_opt->getArray("blocks")) {
     return std::nullopt;
   }
+  const Object& doc = *doc_opt;
 
   std::vector<EmbeddedToolCall> tools;
   bool has_display = false;
 
-  for (const auto& block : doc["blocks"]) {
-    if (!block.is_object()) {
+  for (const Value& block_value : doc.getArray("blocks")->elements) {
+    const Object* block_ptr = asObject(block_value);
+    if (!block_ptr) {
       continue;
     }
-    if (block.contains("type") && block["type"].is_string() &&
-        IsDisplayBlockType(block["type"].get<std::string>())) {
+    const Object& block = *block_ptr;
+    if (auto type = block.getString("type"); type && IsDisplayBlockType(*type)) {
       has_display = true;
       continue;
     }
@@ -987,8 +996,8 @@ bool StructuredTextParser::IsBlocksJsonDocument(const std::string& text) {
   if (trimmed.empty() || trimmed.front() != '{') {
     return false;
   }
-  const nlohmann::json doc = nlohmann::json::parse(trimmed, nullptr, false);
-  return !doc.is_discarded() && doc.is_object() && doc.contains("blocks") && doc["blocks"].is_array();
+  auto doc = TryParseObject(trimmed);
+  return doc && doc->getArray("blocks");
 }
 
 ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_output, const ResponseGoal goal,

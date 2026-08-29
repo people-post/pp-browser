@@ -2,8 +2,8 @@
 
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadCodec.h"
-
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -11,33 +11,40 @@ namespace {
 
 constexpr uint8_t kBodyVersion = 1;
 
-nlohmann::json ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
-  nlohmann::json out = nlohmann::json::array();
+Value ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
+  std::vector<Value> out;
+  out.reserve(actions.size());
   for (const TranscriptChatAction& action : actions) {
-    nlohmann::json item = {{"label", action.label}, {"message", action.message}};
+    Object item;
+    item.set("label", action.label);
+    item.set("message", action.message);
     if (action.payload) {
-      item["payload"] = *action.payload;
+      item.set("payload", *action.payload);
     }
-    out.push_back(std::move(item));
+    out.push_back(ObjectValue(std::move(item)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-std::vector<TranscriptChatAction> ChatActionsFromJson(const nlohmann::json& parsed) {
+std::vector<TranscriptChatAction> ChatActionsFromJson(const Array* arr) {
   std::vector<TranscriptChatAction> out;
-  if (!parsed.is_array()) {
+  if (!arr) {
     return out;
   }
-  for (const auto& item : parsed) {
+  for (const Value& item_value : arr->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
+      continue;
+    }
     TranscriptChatAction action;
-    if (item.contains("label") && item["label"].is_string()) {
-      action.label = item["label"].get<std::string>();
+    if (auto label = item->getString("label")) {
+      action.label = *label;
     }
-    if (item.contains("message") && item["message"].is_string()) {
-      action.message = item["message"].get<std::string>();
+    if (auto message = item->getString("message")) {
+      action.message = *message;
     }
-    if (item.contains("payload") && item["payload"].is_string()) {
-      action.payload = item["payload"].get<std::string>();
+    if (auto payload = item->getString("payload")) {
+      action.payload = *payload;
     }
     out.push_back(std::move(action));
   }
@@ -47,44 +54,45 @@ std::vector<TranscriptChatAction> ChatActionsFromJson(const nlohmann::json& pars
 } // namespace
 
 Roe<std::vector<uint8_t>> TranscriptBodyCodec::Encode(const TranscriptBodyPlaintext& body) {
-  nlohmann::json json;
-  json["v"] = kBodyVersion;
-  json["chat_payload_b64"] = Base64Encode(body.chat_payload);
-  json["text"] = body.text;
-  json["payload"] = body.payload_json;
+  Object json;
+  json.set("v", static_cast<int64_t>(kBodyVersion));
+  json.set("chat_payload_b64", Base64Encode(body.chat_payload));
+  json.set("text", body.text);
+  json.set("payload", body.payload_json);
   if (body.content_rml) {
-    json["content_rml"] = *body.content_rml;
+    json.set("content_rml", *body.content_rml);
   }
-  json["chat_actions"] = ChatActionsToJson(body.chat_actions);
-  const std::string serialized = json.dump();
+  json.set("chat_actions", ChatActionsToJson(body.chat_actions));
+  const std::string serialized = DumpJson(json);
   return std::vector<uint8_t>(serialized.begin(), serialized.end());
 }
 
 Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::Decode(const std::vector<uint8_t>& bytes) {
   const std::string serialized(bytes.begin(), bytes.end());
-  const nlohmann::json json = nlohmann::json::parse(serialized, nullptr, false);
-  if (json.is_discarded() || !json.is_object()) {
+  auto json = TryParseObject(serialized);
+  if (!json) {
     return Error("Invalid transcript body JSON");
   }
-  if (json.value("v", 0) != kBodyVersion) {
+  if (json->getIf<int64_t>("v").value_or(0) != kBodyVersion) {
     return Error("Unsupported transcript body version");
   }
-  if (!json.contains("chat_payload_b64") || !json["chat_payload_b64"].is_string()) {
+  auto chat_payload_b64 = json->getString("chat_payload_b64");
+  if (!chat_payload_b64) {
     return Error("Missing transcript chat_payload");
   }
-  auto chat_payload = Base64Decode(json["chat_payload_b64"].get<std::string>());
+  auto chat_payload = Base64Decode(*chat_payload_b64);
   if (!chat_payload) {
     return chat_payload.error();
   }
   TranscriptBodyPlaintext body;
   body.chat_payload = std::move(*chat_payload);
-  body.text = json.value("text", std::string{});
-  body.payload_json = json.value("payload", std::string{});
-  if (json.contains("content_rml") && json["content_rml"].is_string()) {
-    body.content_rml = json["content_rml"].get<std::string>();
+  body.text = json->getString("text").value_or(std::string{});
+  body.payload_json = json->getString("payload").value_or(std::string{});
+  if (auto content_rml = json->getString("content_rml")) {
+    body.content_rml = *content_rml;
   }
-  if (json.contains("chat_actions")) {
-    body.chat_actions = ChatActionsFromJson(json["chat_actions"]);
+  if (const Array* chat_actions = json->getArray("chat_actions")) {
+    body.chat_actions = ChatActionsFromJson(chat_actions);
   }
   return body;
 }
