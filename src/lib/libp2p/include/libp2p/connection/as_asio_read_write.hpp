@@ -15,7 +15,7 @@
 namespace libp2p {
   struct AsAsioReadWrite {
     struct ErrorCategory : boost::system::error_category {
-      const char *name() const BOOST_NOEXCEPT override {
+      const char *name() const noexcept override {
         return "libp2p::AsAsioReadWrite::ErrorCategory";
       }
       std::string message(int) const override {

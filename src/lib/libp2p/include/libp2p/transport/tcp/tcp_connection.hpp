@@ -102,7 +102,7 @@ namespace libp2p::transport {
     bool initiator_ = false;
     bool connecting_with_timeout_ = false;
     std::atomic_bool connection_phase_done_;
-    boost::asio::deadline_timer deadline_timer_;
+    boost::asio::steady_timer connect_timer_;
 
     /// If true then no more callbacks will be issued
     bool closed_by_host_ = false;

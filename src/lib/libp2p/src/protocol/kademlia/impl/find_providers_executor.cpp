@@ -246,7 +246,9 @@ namespace libp2p::protocol::kademlia {
 
     // Skip inappropriate messages
     if (not match(msg)) {
-      BOOST_UNREACHABLE_RETURN();
+      assert(false
+             && "FindProvidersExecutor::onResult: unexpected message type");
+      return;
     }
 
     auto remote_peer_id_res = session->stream()->remotePeerId();
