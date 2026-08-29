@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <memory>
 
 #include <boost/asio.hpp>
@@ -44,7 +45,7 @@ namespace libp2p::connection {
                   std::shared_ptr<boost::asio::ssl::context> ssl_context,
                   const peer::IdentityManager &idmgr,
                   std::shared_ptr<boost::asio::io_context> io_context,
-                  boost::optional<peer::PeerId> remote_peer);
+                  std::optional<peer::PeerId> remote_peer);
 
     /// Performs async handshake and passes its result into callback. This fn is
     /// distinct from the ctor because it uses shared_from_this()
@@ -117,10 +118,10 @@ namespace libp2p::connection {
     ssl_socket_t socket_;
 
     /// Remote peer id
-    boost::optional<peer::PeerId> remote_peer_;
+    std::optional<peer::PeerId> remote_peer_;
 
     /// Remote public key, extracted from peer certificate during handshake
-    boost::optional<crypto::PublicKey> remote_pubkey_;
+    std::optional<crypto::PublicKey> remote_pubkey_;
 
    public:
     LIBP2P_METRICS_INSTANCE_COUNT_IF_ENABLED(libp2p::connection::TlsConnection);

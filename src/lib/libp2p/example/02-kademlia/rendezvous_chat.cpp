@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -29,7 +30,7 @@ struct Cmp {
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-boost::optional<libp2p::peer::PeerId> self_id;
+std::optional<libp2p::peer::PeerId> self_id;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::set<std::shared_ptr<Session>, Cmp> sessions;

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <cstdint>
 #include <memory>
 
@@ -65,8 +66,8 @@ namespace libp2p::protocol::gossip {
 
     // TODO(artem): signing and protobuf issue. Seems they didn't try their
     // kitchen
-    boost::optional<Bytes> signature;
-    boost::optional<Bytes> key;
+    std::optional<Bytes> signature;
+    std::optional<Bytes> key;
 
     /// Creates a new message from wire or storage
     TopicMessage(Bytes _from, Bytes _seq, Bytes _data);

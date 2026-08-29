@@ -40,7 +40,7 @@ namespace libp2p::security {
                                            local_key_,
                                            inbound,
                                            false,
-                                           boost::none,
+                                           std::nullopt,
                                            std::move(cb),
                                            key_marshaller_);
     handshake->connect();

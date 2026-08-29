@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "remote_subscriptions.hpp"
 
 #include <algorithm>
@@ -29,7 +30,7 @@ namespace libp2p::protocol::gossip {
       log_.error("error in self subscribe to {}", topic);
       return;
     }
-    TopicSubscriptions &subs = res.value();
+    TopicSubscriptions &subs = *res;
     subs.onSelfSubscribed(subscribed);
     if (subs.empty()) {
       table_.erase(topic);
@@ -54,7 +55,7 @@ namespace libp2p::protocol::gossip {
       log_.debug("entry doesnt exist for {}", topic);
       return;
     }
-    TopicSubscriptions &subs = res.value();
+    TopicSubscriptions &subs = *res;
     subs.onPeerSubscribed(peer);
   }
 
@@ -75,7 +76,7 @@ namespace libp2p::protocol::gossip {
       return;
     }
 
-    TopicSubscriptions &subs = res.value();
+    TopicSubscriptions &subs = *res;
 
     subs.onPeerUnsubscribed(peer);
     if (subs.empty()) {
@@ -105,7 +106,7 @@ namespace libp2p::protocol::gossip {
       connectivity_.peerIsWritable(peer, true);
       return;
     }
-    res.value().onGraft(peer);
+    res->onGraft(peer);
   }
 
   void RemoteSubscriptions::onPrune(const PeerContextPtr &peer,
@@ -115,12 +116,12 @@ namespace libp2p::protocol::gossip {
     if (!res) {
       return;
     }
-    res.value().onPrune(peer,
+    res->onPrune(peer,
                         scheduler_.now() + std::chrono::seconds(backoff_time));
   }
 
   void RemoteSubscriptions::onNewMessage(
-      const boost::optional<PeerContextPtr> &from,
+      const std::optional<PeerContextPtr> &from,
       const TopicMessage::Ptr &msg,
       const MessageId &msg_id) {
     auto now = scheduler_.now();
@@ -130,7 +131,7 @@ namespace libp2p::protocol::gossip {
       log_.error("error getting item for {}", msg->topic);
       return;
     }
-    res.value().onNewMessage(from, msg, msg_id, now);
+    res->onNewMessage(from, msg, msg_id, now);
   }
 
   void RemoteSubscriptions::onHeartbeat() {
@@ -147,11 +148,11 @@ namespace libp2p::protocol::gossip {
     }
   }
 
-  boost::optional<TopicSubscriptions &> RemoteSubscriptions::getItem(
+  TopicSubscriptions *RemoteSubscriptions::getItem(
       const TopicId &topic, bool create_if_not_exist) {
     auto it = table_.find(topic);
     if (it != table_.end()) {
-      return it->second;
+      return &it->second;
     }
     if (create_if_not_exist) {
       auto [it, _] = table_.emplace(
@@ -163,9 +164,9 @@ namespace libp2p::protocol::gossip {
             return ctx->subscribed_to.count(topic) != 0;
           });
       log_.debug("created entry for topic {}", topic);
-      return item;
+      return &item;
     }
-    return boost::none;
+    return nullptr;
   }
 
 }  // namespace libp2p::protocol::gossip

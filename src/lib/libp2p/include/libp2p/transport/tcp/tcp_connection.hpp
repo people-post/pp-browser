@@ -110,8 +110,8 @@ namespace libp2p::transport {
     /// Close reason, is set on close to respond to further calls
     std::optional<std::error_code> close_reason_;
 
-    boost::optional<multi::Multiaddress> remote_multiaddress_;
-    boost::optional<multi::Multiaddress> local_multiaddress_;
+    std::optional<multi::Multiaddress> remote_multiaddress_;
+    std::optional<multi::Multiaddress> local_multiaddress_;
 
     friend class security::TlsAdaptor;
 

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <queue>
 #include <unordered_map>
 #include <utility>
@@ -133,7 +134,7 @@ namespace libp2p::connection {
      * Find a stream with (\param id)
      * @return found stream or nothing
      */
-    boost::optional<std::shared_ptr<MplexStream>> findStream(
+    std::optional<std::shared_ptr<MplexStream>> findStream(
         const MplexStream::StreamId &id) const;
 
     /**

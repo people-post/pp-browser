@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "message_cache.hpp"
 
 #include <cassert>
@@ -30,14 +31,14 @@ namespace libp2p::protocol::gossip {
     return table_->get<ById>().count(id) != 0;
   }
 
-  boost::optional<TopicMessage::Ptr> MessageCache::getMessage(
+  std::optional<TopicMessage::Ptr> MessageCache::getMessage(
       const MessageId &id) const {
     auto &idx = table_->get<ById>();
     auto it = idx.find(id);
     if (it == idx.end()) {
       TRACE(
           "MessageCache: {:X} not found, current size {}", id, table_->size());
-      return boost::none;
+      return std::nullopt;
     }
     return it->message;
   }

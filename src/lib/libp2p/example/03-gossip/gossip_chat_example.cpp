@@ -29,7 +29,7 @@ namespace {
     std::string topic = "chat";
 
     // optional remote peer to connect to
-    boost::optional<libp2p::peer::PeerInfo> remote;
+    std::optional<libp2p::peer::PeerInfo> remote;
 
     // log level: 'd' for debug, 'i' for info, 'w' for warning, 'e' for error
     char log_level = 'w';
@@ -131,10 +131,9 @@ int main(int argc, char *argv[]) {
 
   // subscribe to chat topic, print messages to the console
   auto subscription = gossip->subscribe(
-      {options->topic}, [](const boost::optional<const Message &> &m) {
+      {options->topic}, [](const Message *m) {
         if (!m) {
-          // message with no value means EOS, this occurs when the node has
-          // stopped
+          // nullptr means EOS, this occurs when the node has stopped
           return;
         }
         std::cerr << utility::formatPeerId(m->from) << ": "

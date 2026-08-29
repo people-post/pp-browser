@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/basic/wire_message_read_writer.hpp>
 #include <libp2p/crypto/key_marshaller.hpp>
 #include <libp2p/log/logger.hpp>
@@ -51,7 +52,7 @@ namespace libp2p::security {
                         SecConnCallbackFunc cb) override;
 
    private:
-    using MaybePeerId = boost::optional<peer::PeerId>;
+    using MaybePeerId = std::optional<peer::PeerId>;
 
     void sendExchangeMsg(
         const std::shared_ptr<connection::LayerConnection> &conn,

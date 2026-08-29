@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/basic/scheduler.hpp>
 #include <libp2p/protocol_muxer/multiselect.hpp>
 #include "parser.hpp"
@@ -40,7 +41,7 @@ namespace libp2p::protocol_muxer::multiselect {
     using Protocols = boost::container::small_vector<std::string, 4>;
     using Packet = std::shared_ptr<MsgBuf>;
     using Parser = detail::Parser;
-    using MaybeResult = boost::optional<outcome::result<std::string>>;
+    using MaybeResult = std::optional<outcome::result<std::string>>;
 
     /// Sends the first message with multistream protocol ID
     void sendOpening();
@@ -117,7 +118,7 @@ namespace libp2p::protocol_muxer::multiselect {
     /// Server specific: has value if negotiation was successful and
     /// the instance waits for write callback completion.
     /// Inside is index of protocol chosen
-    boost::optional<size_t> wait_for_reply_sent_;
+    std::optional<size_t> wait_for_reply_sent_;
 
     /// Incoming messages parser
     Parser parser_;
@@ -133,7 +134,7 @@ namespace libp2p::protocol_muxer::multiselect {
     bool is_writing_ = false;
 
     /// Cache: serialized NA response
-    boost::optional<Packet> na_response_;
+    std::optional<Packet> na_response_;
 
     /// Scheduler for timeout handling
     std::shared_ptr<basic::Scheduler> scheduler_;

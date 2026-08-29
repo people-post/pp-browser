@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/protocol/gossip/gossip.hpp>
 
 #include <map>
@@ -48,7 +49,7 @@ namespace libp2p::protocol::gossip {
     // Gossip overrides
     void addBootstrapPeer(
         const peer::PeerId &id,
-        boost::optional<multi::Multiaddress> address) override;
+        std::optional<multi::Multiaddress> address) override;
     outcome::result<void> addBootstrapPeer(const std::string &address) override;
     void start() override;
     void stop() override;
@@ -94,7 +95,7 @@ namespace libp2p::protocol::gossip {
     MessageIdFn create_message_id_;
 
     /// Bootstrap peers to dial to
-    std::unordered_map<peer::PeerId, boost::optional<multi::Multiaddress>>
+    std::unordered_map<peer::PeerId, std::optional<multi::Multiaddress>>
         bootstrap_peers_;
 
     /// Scheduler for timers and async calls

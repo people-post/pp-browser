@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <functional>
 
 #include <boost/multi_index/hashed_index_fwd.hpp>
@@ -59,7 +60,7 @@ namespace libp2p::protocol::gossip {
     bool contains(const MessageId &id) const;
 
     /// Returns message by id if found
-    boost::optional<TopicMessage::Ptr> getMessage(const MessageId &id) const;
+    std::optional<TopicMessage::Ptr> getMessage(const MessageId &id) const;
 
     /// Inserts a new message into cache. If already there, returns false
     bool insert(TopicMessage::Ptr message, const MessageId &msg_id);

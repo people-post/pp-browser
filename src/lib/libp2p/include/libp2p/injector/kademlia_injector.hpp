@@ -6,11 +6,12 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/injector/host_injector.hpp>
 
 // implementations
 #include <libp2p/basic/scheduler.hpp>
-#include <libp2p/crypto/random_generator/boost_generator.hpp>
+#include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/protocol/kademlia/config.hpp>
 #include <libp2p/protocol/kademlia/impl/content_routing_table_impl.hpp>
 #include <libp2p/protocol/kademlia/impl/kademlia_impl.hpp>
@@ -25,8 +26,8 @@ namespace libp2p::injector {
   std::shared_ptr<libp2p::protocol::kademlia::Kademlia> get_kademlia(
       const Injector &injector) {
     static auto initialized =
-        boost::optional<std::shared_ptr<libp2p::protocol::kademlia::Kademlia>>(
-            boost::none);
+        std::optional<std::shared_ptr<libp2p::protocol::kademlia::Kademlia>>(
+            std::nullopt);
     if (initialized) {
       return initialized.value();
     }

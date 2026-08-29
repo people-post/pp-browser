@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <functional>
 
 #include <libp2p/basic/read_buffer.hpp>
@@ -21,7 +22,7 @@ namespace libp2p::connection {
 
     /// Callback on headers, returns false to terminate further processing
     using HeaderCallback =
-        std::function<bool(boost::optional<YamuxFrame> header)>;
+        std::function<bool(std::optional<YamuxFrame> header)>;
 
     /// Callback on data segments
     using DataCallback = std::function<void(
