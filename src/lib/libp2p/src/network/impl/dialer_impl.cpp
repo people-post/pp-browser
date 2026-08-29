@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <functional>
 #include <iostream>
 
@@ -55,7 +56,7 @@ namespace libp2p::network {
     };
     new_ctx.callbacks.emplace_back(std::move(cb));
     bool scheduled = dialing_peers_.emplace(p.id, std::move(new_ctx)).second;
-    BOOST_ASSERT(scheduled);
+    assert(scheduled);
     rotate(p.id);
   }
 
@@ -97,7 +98,7 @@ namespace libp2p::network {
                   peer_id.toBase58());
               if (result.has_value() and not result.value()->isClosed()) {
                 auto close_res = result.value()->close();
-                BOOST_ASSERT(close_res);
+                assert(close_res);
               }
               return;
             }
@@ -122,7 +123,7 @@ namespace libp2p::network {
           // callback no more exist
           if (result.has_value() and not result.value()->isClosed()) {
             auto close_res = result.value()->close();
-            BOOST_ASSERT(close_res);
+            assert(close_res);
           }
         };
     if (auto tr = tmgr_->findBest(addr); nullptr != tr) {
@@ -217,12 +218,12 @@ namespace libp2p::network {
         addr_repo_{std::move(addr_repo)},
         scheduler_{std::move(scheduler)},
         log_{log::createLogger("DialerImpl")} {
-    BOOST_ASSERT(multiselect_ != nullptr);
-    BOOST_ASSERT(tmgr_ != nullptr);
-    BOOST_ASSERT(cmgr_ != nullptr);
-    BOOST_ASSERT(listener_ != nullptr);
-    BOOST_ASSERT(scheduler_ != nullptr);
-    BOOST_ASSERT(log_ != nullptr);
+    assert(multiselect_ != nullptr);
+    assert(tmgr_ != nullptr);
+    assert(cmgr_ != nullptr);
+    assert(listener_ != nullptr);
+    assert(scheduler_ != nullptr);
+    assert(log_ != nullptr);
   }
 
 }  // namespace libp2p::network

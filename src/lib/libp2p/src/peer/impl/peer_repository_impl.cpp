@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/peer/impl/peer_repository_impl.hpp>
 
 #include <libp2p/multi/multiaddress.hpp>
@@ -27,9 +28,9 @@ namespace libp2p::peer {
       : addr_(std::move(addr_repo)),
         key_(std::move(key_repo)),
         proto_(std::move(protocol_repo)) {
-    BOOST_ASSERT(addr_ != nullptr);
-    BOOST_ASSERT(key_ != nullptr);
-    BOOST_ASSERT(proto_ != nullptr);
+    assert(addr_ != nullptr);
+    assert(key_ != nullptr);
+    assert(proto_ != nullptr);
   }
 
   AddressRepository &PeerRepositoryImpl::getAddressRepository() {

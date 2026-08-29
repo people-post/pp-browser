@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include "testutil/prepare_loggers.hpp"
 
@@ -61,8 +61,8 @@ struct Persistence : public ::testing::Test {
 
   ~Persistence() {
     // this code will be executed even if test has thrown an exception
-    if (boost::filesystem::exists(kTestDbFile)) {
-      boost::filesystem::remove(kTestDbFile);
+    if (std::filesystem::exists(kTestDbFile)) {
+      std::filesystem::remove(kTestDbFile);
     }
   }
 

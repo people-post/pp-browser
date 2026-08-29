@@ -5,6 +5,7 @@
  */
 
 #ifdef _WIN32
+#include <optional>
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
@@ -129,7 +130,7 @@ namespace libp2p::connection {
                                   window_delta);
   }
 
-  boost::optional<YamuxFrame> parseFrame(BytesIn frame_bytes) {
+  std::optional<YamuxFrame> parseFrame(BytesIn frame_bytes) {
     if (frame_bytes.size() < static_cast<int>(YamuxFrame::kHeaderLength)) {
       return {};
     }

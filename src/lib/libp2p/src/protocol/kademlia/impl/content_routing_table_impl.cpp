@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/content_routing_table_impl.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -17,7 +18,7 @@ namespace libp2p::protocol::kademlia {
       basic::Scheduler &scheduler,
       std::shared_ptr<event::Bus> bus)
       : config_(config), scheduler_(scheduler), bus_(std::move(bus)) {
-    BOOST_ASSERT(bus_ != nullptr);
+    assert(bus_ != nullptr);
     table_ = std::make_unique<Table>();
   }
 

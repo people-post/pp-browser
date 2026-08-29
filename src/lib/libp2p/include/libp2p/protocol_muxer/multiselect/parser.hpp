@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include <libp2p/basic/read_buffer.hpp>
 #include <libp2p/basic/varint_prefix_reader.hpp>
 
@@ -22,7 +24,7 @@ namespace libp2p::protocol_muxer::multiselect::detail {
     Parser() = default;
 
     /// Number of messages in a packet will rarely exceed 4
-    using Messages = boost::container::small_vector<Message, 4>;
+    using Messages = std::vector<Message>;
 
     using IndexType = BytesIn::size_type;
 

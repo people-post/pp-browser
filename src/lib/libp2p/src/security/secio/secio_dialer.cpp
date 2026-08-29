@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/security/secio/secio_dialer.hpp>
 
 #include <libp2p/basic/message_read_writer_bigendian.hpp>
@@ -44,9 +45,9 @@ namespace {
    * @param second_set - second set of comma-separated values as string
    * @param first_is_preferred - sets which input set is preferred
    * @return a common value. If there is nothing in common between two given
-   * inputs, then boost::none will be returned.
+   * inputs, then std::nullopt will be returned.
    */
-  boost::optional<std::string> BestMatch(std::string_view first_set,
+  std::optional<std::string> BestMatch(std::string_view first_set,
                                          std::string_view second_set,
                                          bool first_is_preferred) {
     auto split =
@@ -77,7 +78,7 @@ namespace {
       }
     }
 
-    return boost::none;
+    return std::nullopt;
   }
 }  // namespace
 
@@ -176,7 +177,7 @@ namespace libp2p::security::secio {
     if (not ekey_pair_) {
       return Error::INTERNAL_FAILURE;
     }
-    auto shared_secret_res = ekey_pair_.get().shared_secret_generator(
+    auto shared_secret_res = ekey_pair_->shared_secret_generator(
         std::move(remote_ephemeral_public_key));
     if (!shared_secret_res) {
       return shared_secret_res.as_failure();

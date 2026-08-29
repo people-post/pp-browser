@@ -6,7 +6,7 @@
 #include "acceptance/p2p/host/protocol/client_test_session.hpp"
 
 #include <gtest/gtest.h>
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
@@ -19,7 +19,7 @@ namespace libp2p::protocol {
         random_generator_{
             std::make_shared<crypto::random::BoostRandomGenerator>()},
         messages_left_{ping_times} {
-    BOOST_ASSERT(stream_ != nullptr);
+    assert(stream_ != nullptr);
   }
 
   void ClientTestSession::handle(Callback cb) {

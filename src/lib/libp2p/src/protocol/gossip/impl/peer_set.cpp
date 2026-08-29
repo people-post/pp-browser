@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "peer_set.hpp"
 
 #include <algorithm>
@@ -15,10 +16,10 @@
 
 namespace libp2p::protocol::gossip {
 
-  boost::optional<PeerContextPtr> PeerSet::find(const peer::PeerId &id) const {
+  std::optional<PeerContextPtr> PeerSet::find(const peer::PeerId &id) const {
     auto it = peers_.find(id);
     if (it == peers_.end()) {
-      return boost::none;
+      return std::nullopt;
     }
     return *it;
   }
@@ -35,12 +36,12 @@ namespace libp2p::protocol::gossip {
     return true;
   }
 
-  boost::optional<PeerContextPtr> PeerSet::erase(const peer::PeerId &id) {
+  std::optional<PeerContextPtr> PeerSet::erase(const peer::PeerId &id) {
     auto it = peers_.find(id);
     if (it == peers_.end()) {
-      return boost::none;
+      return std::nullopt;
     }
-    boost::optional<PeerContextPtr> ret(*it);
+    std::optional<PeerContextPtr> ret(*it);
     peers_.erase(it);
     return ret;
   }

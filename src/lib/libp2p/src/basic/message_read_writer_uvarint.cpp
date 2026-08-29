@@ -8,8 +8,8 @@
 
 #include <vector>
 
-#include <boost/assert.hpp>
-#include <boost/optional.hpp>
+#include <cassert>
+#include <optional>
 #include <libp2p/basic/message_read_writer_error.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/varint_reader.hpp>
@@ -20,7 +20,7 @@ namespace libp2p::basic {
   MessageReadWriterUvarint::MessageReadWriterUvarint(
       std::shared_ptr<ReadWriter> conn)
       : conn_{std::move(conn)} {
-    BOOST_ASSERT(conn_ != nullptr);
+    assert(conn_ != nullptr);
   }
 
   void MessageReadWriterUvarint::read(ReadCallbackFunc cb) {

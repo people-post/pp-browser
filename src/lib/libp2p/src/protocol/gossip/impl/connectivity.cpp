@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include "connectivity.hpp"
 
 #include <cassert>
@@ -92,7 +93,7 @@ namespace libp2p::protocol::gossip {
 
   void Connectivity::addBootstrapPeer(
       const peer::PeerId &id,
-      const boost::optional<multi::Multiaddress> &address) {
+      const std::optional<multi::Multiaddress> &address) {
     if (id == host_->getId()) {
       return;
     }

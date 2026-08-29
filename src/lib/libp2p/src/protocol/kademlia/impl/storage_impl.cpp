@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/storage_impl.hpp>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -22,9 +23,9 @@ namespace libp2p::protocol::kademlia {
       : config_(config),
         backend_(std::move(backend)),
         scheduler_(std::move(scheduler)) {
-    BOOST_ASSERT(backend_ != nullptr);
-    BOOST_ASSERT(scheduler_ != nullptr);
-    BOOST_ASSERT(config_.storageRecordTTL > config_.storageWipingInterval);
+    assert(backend_ != nullptr);
+    assert(scheduler_ != nullptr);
+    assert(config_.storageRecordTTL > config_.storageWipingInterval);
 
     table_ = std::make_unique<Table>();
 

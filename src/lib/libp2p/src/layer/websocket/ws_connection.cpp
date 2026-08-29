@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/layer/websocket/ws_connection.hpp>
 
 #include <libp2p/common/asio_buffer.hpp>
@@ -21,8 +22,8 @@ namespace libp2p::connection {
         connection_(std::move(connection)),
         ws_(AsAsioReadWrite{std::move(io_context), connection_}),
         scheduler_(std::move(scheduler)) {
-    BOOST_ASSERT(connection_ != nullptr);
-    BOOST_ASSERT(scheduler_ != nullptr);
+    assert(connection_ != nullptr);
+    assert(scheduler_ != nullptr);
     ws_.binary(true);
   }
 

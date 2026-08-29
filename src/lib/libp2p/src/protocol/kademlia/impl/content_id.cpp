@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/content_id.hpp>
 
 #include <libp2p/crypto/sha/sha256.hpp>
@@ -16,11 +17,11 @@ namespace libp2p::protocol::kademlia {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<const uint8_t *>(str.data()),
         str.size()));
-    BOOST_ASSERT(digest_res.has_value());
+    assert(digest_res.has_value());
 
     auto mhash_res = libp2p::multi::Multihash::create(
         libp2p::multi::HashType::sha256, digest_res.value());
-    BOOST_ASSERT(mhash_res.has_value());
+    assert(mhash_res.has_value());
 
     return multi::ContentIdentifierCodec::encodeCIDV1(
         libp2p::multi::MulticodecType::Code::RAW, mhash_res.value());

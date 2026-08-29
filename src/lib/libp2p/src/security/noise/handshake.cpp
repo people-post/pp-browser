@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <memory>
 
 #include <libp2p/security/noise/handshake.hpp>
@@ -40,7 +41,7 @@ namespace libp2p::security::noise {
       crypto::KeyPair local_key,
       std::shared_ptr<connection::LayerConnection> connection,
       bool is_initiator,
-      boost::optional<peer::PeerId> remote_peer_id,
+      std::optional<peer::PeerId> remote_peer_id,
       SecurityAdaptor::SecConnCallbackFunc cb,
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller)
       : crypto_provider_{std::move(crypto_provider)},

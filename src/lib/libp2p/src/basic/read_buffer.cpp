@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <cassert>
 #include <cstring>
 
@@ -260,7 +261,7 @@ namespace libp2p::basic {
     }
   }
 
-  boost::optional<BytesIn> FixedBufferCollector::add(BytesIn &data) {
+  std::optional<BytesIn> FixedBufferCollector::add(BytesIn &data) {
     assert(expected_size_ >= buffer_.size());
 
     auto appending = static_cast<size_t>(data.size());
@@ -280,7 +281,7 @@ namespace libp2p::basic {
     auto unread = expected_size_ - buffer_.size();
     if (unread == 0) {
       // didnt expect anything
-      return boost::none;
+      return std::nullopt;
     }
 
     bool filled = false;
@@ -296,17 +297,17 @@ namespace libp2p::basic {
       return BytesIn(buffer_);
     }
 
-    return boost::none;
+    return std::nullopt;
   }
 
-  boost::optional<BytesOut> FixedBufferCollector::add(BytesOut &data) {
+  std::optional<BytesOut> FixedBufferCollector::add(BytesOut &data) {
     auto &span = (BytesIn &)(data);  // NOLINT
     auto ret = add(span);
     if (ret.has_value()) {
       auto &v = ret.value();
       return BytesOut((uint8_t *)v.data(), v.size());  // NOLINT
     }
-    return boost::none;
+    return std::nullopt;
   }
 
   void FixedBufferCollector::reset() {

@@ -6,7 +6,7 @@
 
 #include <libp2p/host/basic_host/basic_host.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 
 namespace libp2p::host {
@@ -24,11 +24,11 @@ namespace libp2p::host {
         bus_{std::move(bus)},
         transport_manager_{std::move(transport_manager)},
         libp2p_client_version_{std::move(libp2p_client_version)} {
-    BOOST_ASSERT(idmgr_ != nullptr);
-    BOOST_ASSERT(network_ != nullptr);
-    BOOST_ASSERT(repo_ != nullptr);
-    BOOST_ASSERT(bus_ != nullptr);
-    BOOST_ASSERT(transport_manager_ != nullptr);
+    assert(idmgr_ != nullptr);
+    assert(network_ != nullptr);
+    assert(repo_ != nullptr);
+    assert(bus_ != nullptr);
+    assert(transport_manager_ != nullptr);
   }
 
   std::string_view BasicHost::getLibp2pVersion() const {

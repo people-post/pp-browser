@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
+#include <cassert>
 #include <libp2p/protocol/identify/identify_msg_processor.hpp>
 
 #include <tuple>
@@ -38,7 +40,7 @@ namespace libp2p::protocol {
         conn_manager_{conn_manager},
         identity_manager_{identity_manager},
         key_marshaller_{std::move(key_marshaller)} {
-    BOOST_ASSERT(key_marshaller_);
+    assert(key_marshaller_);
   }
 
   boost::signals2::connection IdentifyMessageProcessor::onIdentifyReceived(
@@ -205,7 +207,7 @@ namespace libp2p::protocol {
     signal_identify_received_(peer_id);
   }
 
-  boost::optional<peer::PeerId> IdentifyMessageProcessor::consumePublicKey(
+  std::optional<peer::PeerId> IdentifyMessageProcessor::consumePublicKey(
       const StreamSPtr &stream, std::string_view pubkey_str) {
     auto stream_peer_id_res = stream->remotePeerId();
 
@@ -213,15 +215,15 @@ namespace libp2p::protocol {
     // return the already known peer id
     if (pubkey_str.empty()) {
       if (!stream_peer_id_res) {
-        return boost::none;
+        return std::nullopt;
       }
       return stream_peer_id_res.value();
     }
 
     // peer id can be set in stream, derived from the received public key or
     // both; handle all possible cases
-    boost::optional<peer::PeerId> stream_peer_id;
-    boost::optional<crypto::PublicKey> pubkey;
+    std::optional<peer::PeerId> stream_peer_id;
+    std::optional<crypto::PublicKey> pubkey;
 
     // retrieve a peer id from the stream
     if (stream_peer_id_res) {
@@ -271,7 +273,7 @@ namespace libp2p::protocol {
           "must be equal",
           stream_peer_id->toBase58(),
           msg_peer_id.toBase58());
-      return boost::none;
+      return std::nullopt;
     }
 
     // insert the derived key into key repository

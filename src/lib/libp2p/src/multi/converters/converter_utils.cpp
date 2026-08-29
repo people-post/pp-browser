@@ -6,12 +6,12 @@
 
 #include <libp2p/multi/converters/converter_utils.hpp>
 
+#include <list>
 #include <optional>
 
-#include <boost/algorithm/string.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
-#include <boost/endian/conversion.hpp>
+#include <libp2p/common/split.hpp>
 #include <libp2p/common/types.hpp>
 #include <libp2p/multi/converters/conversion_error.hpp>
 #include <libp2p/multi/converters/dns_converter.hpp>
@@ -99,7 +99,7 @@ namespace libp2p::multi::converters {
     const Protocol *protx = nullptr;
 
     std::list<std::string> tokens;
-    boost::algorithm::split(tokens, str, boost::algorithm::is_any_of("/"));
+    common::split(tokens, str, '/');
 
     for (auto &word : tokens) {
       if (type == WordType::PROTOCOL) {
@@ -305,7 +305,8 @@ namespace libp2p::multi::converters {
           }
           auto data = data_res.value();
           results += "/";
-          results += std::to_string(boost::endian::load_big_u16(data.data()));
+          results += std::to_string(
+              (static_cast<uint16_t>(data[0]) << 8) | data[1]);
           break;
         }
 

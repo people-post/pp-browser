@@ -13,7 +13,7 @@
 #else
 #include <arpa/inet.h>
 #endif
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/basic/message_read_writer_error.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
@@ -23,7 +23,7 @@ namespace libp2p::basic {
   MessageReadWriterBigEndian::MessageReadWriterBigEndian(
       std::shared_ptr<ReadWriter> conn)
       : conn_{std::move(conn)} {
-    BOOST_ASSERT(conn_ != nullptr);
+    assert(conn_ != nullptr);
   }
 
   void MessageReadWriterBigEndian::read(ReadCallbackFunc cb) {

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/security/noise/noise_connection.hpp>
 
 #include <libp2p/crypto/x25519_provider/x25519_provider_impl.hpp>
@@ -26,12 +27,12 @@ namespace libp2p::connection {
         frame_buffer_{std::make_shared<Bytes>(security::noise::kMaxMsgLen)},
         framer_{std::make_shared<security::noise::InsecureReadWriter>(
             connection_, frame_buffer_)} {
-    BOOST_ASSERT(connection_);
-    BOOST_ASSERT(key_marshaller_);
-    BOOST_ASSERT(encoder_cs_);
-    BOOST_ASSERT(decoder_cs_);
-    BOOST_ASSERT(frame_buffer_);
-    BOOST_ASSERT(framer_);
+    assert(connection_);
+    assert(key_marshaller_);
+    assert(encoder_cs_);
+    assert(decoder_cs_);
+    assert(frame_buffer_);
+    assert(framer_);
     frame_buffer_->resize(0);
   }
 

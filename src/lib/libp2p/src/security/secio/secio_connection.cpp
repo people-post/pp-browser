@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/security/secio/secio_connection.hpp>
 
 #include <algorithm>
@@ -92,12 +93,12 @@ namespace libp2p::connection {
         cipher_type_{cipher_type},
         local_stretched_key_{std::move(local_stretched_key)},
         remote_stretched_key_{std::move(remote_stretched_key)},
-        aes128_secrets_{boost::none},
-        aes256_secrets_{boost::none},
+        aes128_secrets_{std::nullopt},
+        aes256_secrets_{std::nullopt},
         write_buffer_{std::make_shared<Bytes>()} {
-    BOOST_ASSERT(original_connection_);
-    BOOST_ASSERT(hmac_provider_);
-    BOOST_ASSERT(key_marshaller_);
+    assert(original_connection_);
+    assert(hmac_provider_);
+    assert(key_marshaller_);
   }
 
   outcome::result<void> SecioConnection::init() {

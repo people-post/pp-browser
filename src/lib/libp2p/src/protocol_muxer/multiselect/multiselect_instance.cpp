@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/protocol_muxer/multiselect/multiselect_instance.hpp>
 
 #include <cctype>
@@ -231,7 +232,7 @@ namespace libp2p::protocol_muxer::multiselect {
     BytesIn span(*read_buffer_);
     span = span.first(static_cast<Parser::IndexType>(parser_.bytesNeeded()));
 
-    boost::optional<outcome::result<std::string>> got_result;
+    std::optional<outcome::result<std::string>> got_result;
 
     auto state = parser_.consume(span);
     switch (state) {
@@ -319,7 +320,7 @@ namespace libp2p::protocol_muxer::multiselect {
       sendNA();
     }
 
-    return boost::none;
+    return std::nullopt;
   }
 
   MultiselectInstance::MaybeResult MultiselectInstance::handleNA() {
@@ -334,7 +335,7 @@ namespace libp2p::protocol_muxer::multiselect {
 
       if (sendProposal()) {
         // will try the next protocol
-        return boost::none;
+        return std::nullopt;
       }
 
       SL_DEBUG(log(),

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -153,11 +154,11 @@ namespace libp2p::connection {
     crypto::StretchedKey local_stretched_key_;
     crypto::StretchedKey remote_stretched_key_;
 
-    boost::optional<AesSecrets<crypto::common::Aes128Secret>> aes128_secrets_;
-    boost::optional<AesSecrets<crypto::common::Aes256Secret>> aes256_secrets_;
+    std::optional<AesSecrets<crypto::common::Aes128Secret>> aes128_secrets_;
+    std::optional<AesSecrets<crypto::common::Aes256Secret>> aes256_secrets_;
 
-    boost::optional<std::unique_ptr<crypto::aes::AesCtr>> local_encryptor_;
-    boost::optional<std::unique_ptr<crypto::aes::AesCtr>> remote_decryptor_;
+    std::optional<std::unique_ptr<crypto::aes::AesCtr>> local_encryptor_;
+    std::optional<std::unique_ptr<crypto::aes::AesCtr>> remote_decryptor_;
 
     std::queue<uint8_t> user_data_buffer_;
 

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #include <libp2p/common/byteutil.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -105,7 +105,7 @@ namespace libp2p::protocol::gossip {
     /// Adds bootstrap peer to the set of connectable peers
     virtual void addBootstrapPeer(
         const peer::PeerId &id,
-        boost::optional<multi::Multiaddress> address) = 0;
+        std::optional<multi::Multiaddress> address) = 0;
 
     /// Adds bootstrap peer address in string form
     virtual outcome::result<void> addBootstrapPeer(
@@ -138,8 +138,10 @@ namespace libp2p::protocol::gossip {
     /// Sets message ID funtion that differs from default (from+sec_no)
     virtual void setMessageIdFn(MessageIdFn fn) = 0;
 
-    /// Empty message means EOS (end of subscription data stream)
-    using SubscriptionData = boost::optional<const Message &>;
+    /// Empty message means EOS (end of subscription data stream).
+    /// nullptr is EOS; non-null points at a temporary Message valid for the
+    /// duration of the callback.
+    using SubscriptionData = const Message *;
     using SubscriptionCallback = std::function<void(SubscriptionData)>;
 
     /// Subscribes to topics

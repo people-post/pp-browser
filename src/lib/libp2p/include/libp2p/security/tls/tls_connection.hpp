@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include <optional>
 #include <memory>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/noncopyable.hpp>
 
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/as_asio_read_write.hpp>
@@ -23,9 +23,11 @@ namespace libp2p::connection {
 
   /// Secure connection of TLS 1.3 protocol
   class TlsConnection : public SecureConnection,
-                        public std::enable_shared_from_this<TlsConnection>,
-                        private boost::noncopyable {
+                        public std::enable_shared_from_this<TlsConnection> {
    public:
+    TlsConnection(const TlsConnection &) = delete;
+    TlsConnection &operator=(const TlsConnection &) = delete;
+
     using ssl_socket_t = boost::asio::ssl::stream<AsAsioReadWrite>;
 
     /// Upgraded connection passed to this callback
@@ -43,7 +45,7 @@ namespace libp2p::connection {
                   std::shared_ptr<boost::asio::ssl::context> ssl_context,
                   const peer::IdentityManager &idmgr,
                   std::shared_ptr<boost::asio::io_context> io_context,
-                  boost::optional<peer::PeerId> remote_peer);
+                  std::optional<peer::PeerId> remote_peer);
 
     /// Performs async handshake and passes its result into callback. This fn is
     /// distinct from the ctor because it uses shared_from_this()
@@ -116,10 +118,10 @@ namespace libp2p::connection {
     ssl_socket_t socket_;
 
     /// Remote peer id
-    boost::optional<peer::PeerId> remote_peer_;
+    std::optional<peer::PeerId> remote_peer_;
 
     /// Remote public key, extracted from peer certificate during handshake
-    boost::optional<crypto::PublicKey> remote_pubkey_;
+    std::optional<crypto::PublicKey> remote_pubkey_;
 
    public:
     LIBP2P_METRICS_INSTANCE_COUNT_IF_ENABLED(libp2p::connection::TlsConnection);

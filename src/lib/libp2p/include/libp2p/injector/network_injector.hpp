@@ -19,7 +19,7 @@
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 #include <libp2p/crypto/key_validator/key_validator_impl.hpp>
 #include <libp2p/crypto/mldsa_provider/mldsa_provider_impl.hpp>
-#include <libp2p/crypto/random_generator/boost_generator.hpp>
+#include <libp2p/crypto/random_generator/std_generator.hpp>
 #include <libp2p/crypto/rsa_provider/rsa_provider_impl.hpp>
 #include <libp2p/crypto/secp256k1_provider/secp256k1_provider_impl.hpp>
 #include <libp2p/layer/websocket.hpp>
@@ -295,7 +295,7 @@ namespace libp2p::injector {
   inline auto makeNetworkInjector(Ts &&...args) {
     namespace di = boost::di;
 
-    auto csprng = std::make_shared<crypto::random::BoostRandomGenerator>();
+    auto csprng = std::make_shared<crypto::random::StdRandomGenerator>();
     auto ed25519_provider =
         std::make_shared<crypto::ed25519::Ed25519ProviderImpl>();
     auto rsa_provider = std::make_shared<crypto::rsa::RsaProviderImpl>();
@@ -322,7 +322,7 @@ namespace libp2p::injector {
 
     // clang-format off
     return di::make_injector<InjectorConfig>(
-        di::bind<crypto::random::RandomGenerator>.to<crypto::random::BoostRandomGenerator>(),
+        di::bind<crypto::random::RandomGenerator>.to<crypto::random::StdRandomGenerator>(),
 
         detail::bindSharedKeyPair(std::move(keypair)),
         di::bind<crypto::random::CSPRNG>().to(std::move(csprng)),
