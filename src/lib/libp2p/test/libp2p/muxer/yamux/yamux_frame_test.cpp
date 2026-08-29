@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/muxer/yamux/yamux_frame.hpp>
 
 #include <gtest/gtest.h>
@@ -26,7 +27,7 @@ class YamuxFrameTest : public ::testing::Test {
   /**
    * Check that all frame's fields are as expected
    */
-  void checkFrame(boost::optional<YamuxFrame> frame_opt,
+  void checkFrame(std::optional<YamuxFrame> frame_opt,
                   uint8_t version,
                   YamuxFrame::FrameType type,
                   YamuxFrame::Flag flag,

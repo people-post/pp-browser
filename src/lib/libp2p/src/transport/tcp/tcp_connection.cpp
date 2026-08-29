@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/transport/tcp/tcp_connection.hpp>
 
 #include <libp2p/common/asio_buffer.hpp>
@@ -151,7 +152,7 @@ namespace libp2p::transport {
           bool expected = false;
           if (not self->connection_phase_done_.compare_exchange_strong(expected,
                                                                        true)) {
-            BOOST_ASSERT(expected);
+            assert(expected);
             // connection phase already done - means that user's callback was
             // already called by timer expiration so we are closing socket if
             // it was actually connected

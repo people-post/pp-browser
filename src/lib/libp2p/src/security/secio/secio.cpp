@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/security/secio/secio.hpp>
 
 #include <libp2p/basic/wire_message_read_writer.hpp>
@@ -50,18 +51,18 @@ namespace libp2p::security {
                          .exchanges = kExchanges,
                          .ciphers = kCiphers,
                          .hashes = kHashes} {
-    BOOST_ASSERT(csprng_);
-    BOOST_ASSERT(propose_marshaller_);
-    BOOST_ASSERT(exchange_marshaller_);
-    BOOST_ASSERT(idmgr_);
-    BOOST_ASSERT(key_marshaller_);
+    assert(csprng_);
+    assert(propose_marshaller_);
+    assert(exchange_marshaller_);
+    assert(idmgr_);
+    assert(key_marshaller_);
 
     /* Due to weird SECIO protobuf specification, we have to deal with a public
      * key in raw-bytes (marshalled) format. That is a known drawback.
      */
     auto public_key_res{
         key_marshaller_->marshal(idmgr_->getKeyPair().publicKey)};
-    BOOST_ASSERT(public_key_res);
+    assert(public_key_res);
     propose_message_.pubkey.swap(public_key_res.value().key);
   }
 

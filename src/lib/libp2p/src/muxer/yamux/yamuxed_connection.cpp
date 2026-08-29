@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/muxer/yamux/yamuxed_connection.hpp>
 
 #include <boost/asio/error.hpp>
@@ -37,7 +38,7 @@ namespace libp2p::connection {
         scheduler_(std::move(scheduler)),
         raw_read_buffer_(std::make_shared<Buffer>()),
         reading_state_(
-            [this](boost::optional<YamuxFrame> header) {
+            [this](std::optional<YamuxFrame> header) {
               return processHeader(std::move(header));
             },
             [this](BytesOut segment, StreamId stream_id, bool rst, bool fin) {
@@ -204,7 +205,7 @@ namespace libp2p::connection {
       if (res.error() == make_error_code(boost::asio::error::eof)) {
         res.error() = Error::CONNECTION_CLOSED_BY_PEER;
       }
-      close(std::move(res.error()), boost::none);
+      close(std::move(res.error()), std::nullopt);
       return;
     }
 
@@ -255,7 +256,7 @@ namespace libp2p::connection {
     continueReading();
   }
 
-  bool YamuxedConnection::processHeader(boost::optional<YamuxFrame> header) {
+  bool YamuxedConnection::processHeader(std::optional<YamuxFrame> header) {
     using FrameType = YamuxFrame::FrameType;
 
     if (!header) {
@@ -339,7 +340,7 @@ namespace libp2p::connection {
 
   void YamuxedConnection::processGoAway(const YamuxFrame &frame) {
     SL_DEBUG(log(), "closed by remote peer, code={}", frame.length);
-    close(Error::CONNECTION_CLOSED_BY_PEER, boost::none);
+    close(Error::CONNECTION_CLOSED_BY_PEER, std::nullopt);
   }
 
   bool YamuxedConnection::processSyn(const YamuxFrame &frame) {
@@ -514,7 +515,7 @@ namespace libp2p::connection {
 
   void YamuxedConnection::close(
       std::error_code notify_streams_code,
-      boost::optional<YamuxFrame::GoAwayError> reply_to_peer_code) {
+      std::optional<YamuxFrame::GoAwayError> reply_to_peer_code) {
     if (!started_) {
       return;
     }
@@ -633,7 +634,7 @@ namespace libp2p::connection {
       }
       std::ignore = connection_->close();
       // write error
-      close(res.error(), boost::none);
+      close(res.error(), std::nullopt);
       return;
     }
 

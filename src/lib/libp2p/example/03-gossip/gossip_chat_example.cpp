@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <string>
+#include <string_view>
 
 #include <fmt/format.h>
-#include <boost/program_options.hpp>
 
 #include <libp2p/injector/host_injector.hpp>
 #include <libp2p/log/configurator.hpp>
@@ -26,14 +29,16 @@ namespace {
     std::string topic = "chat";
 
     // optional remote peer to connect to
-    boost::optional<libp2p::peer::PeerInfo> remote;
+    std::optional<libp2p::peer::PeerInfo> remote;
 
     // log level: 'd' for debug, 'i' for info, 'w' for warning, 'e' for error
     char log_level = 'w';
   };
 
   // parses command line, returns non-empty Options on success
-  boost::optional<Options> parseCommandLine(int argc, char **argv);
+  std::optional<Options> parseCommandLine(int argc, char **argv);
+
+  void printUsage();
 
   const std::string logger_config(R"(
 # ----------------
@@ -126,10 +131,9 @@ int main(int argc, char *argv[]) {
 
   // subscribe to chat topic, print messages to the console
   auto subscription = gossip->subscribe(
-      {options->topic}, [](const boost::optional<const Message &> &m) {
+      {options->topic}, [](const Message *m) {
         if (!m) {
-          // message with no value means EOS, this occurs when the node has
-          // stopped
+          // nullptr means EOS, this occurs when the node has stopped
           return;
         }
         std::cerr << utility::formatPeerId(m->from) << ": "
@@ -178,36 +182,83 @@ int main(int argc, char *argv[]) {
 
 namespace {
 
-  boost::optional<Options> parseCommandLine(int argc, char **argv) {
-    namespace po = boost::program_options;
+  void printUsage() {
+    std::cerr
+        << "gossip_chat_example options:\n"
+           "  -h, --help              print usage message\n"
+           "  -p, --port <port>       port to listen to\n"
+           "  -t, --topic <name>      chat topic name (default is 'chat')\n"
+           "  -r, --remote <uri>      remote peer uri to connect to\n"
+           "  -l, --log <e|w|i|d>     log level\n";
+  }
+
+  std::optional<std::string_view> takeArg(int &i, int argc, char **argv) {
+    if (i + 1 >= argc) {
+      return std::nullopt;
+    }
+    ++i;
+    return std::string_view{argv[i]};
+  }
+
+  std::optional<Options> parseCommandLine(int argc, char **argv) {
     try {
       Options o;
       std::string remote;
 
-      po::options_description desc("gossip_chat_example options");
-      desc.add_options()("help,h", "print usage message")(
-          "port,p", po::value(&o.port), "port to listen to")(
-          "topic,t", po::value(&o.topic), "chat topic name (default is 'chat'")(
-          "remote,r", po::value(&remote), "remote peer uri to connect to")(
-          "log,l", po::value(&o.log_level), "log level, [e,w,i,d]");
+      if (argc <= 1) {
+        printUsage();
+        return std::nullopt;
+      }
 
-      po::variables_map vm;
-      po::store(parse_command_line(argc, argv, desc), vm);
-      po::notify(vm);
-
-      if (vm.count("help") != 0 || argc == 1) {
-        std::cerr << desc << "\n";
-        return boost::none;
+      for (int i = 1; i < argc; ++i) {
+        const std::string_view arg{argv[i]};
+        if (arg == "-h" || arg == "--help") {
+          printUsage();
+          return std::nullopt;
+        }
+        if (arg == "-p" || arg == "--port") {
+          auto v = takeArg(i, argc, argv);
+          if (!v) {
+            std::cerr << "Missing value for " << arg << "\n";
+            return std::nullopt;
+          }
+          o.port = std::stoi(std::string{*v});
+        } else if (arg == "-t" || arg == "--topic") {
+          auto v = takeArg(i, argc, argv);
+          if (!v) {
+            std::cerr << "Missing value for " << arg << "\n";
+            return std::nullopt;
+          }
+          o.topic = std::string{*v};
+        } else if (arg == "-r" || arg == "--remote") {
+          auto v = takeArg(i, argc, argv);
+          if (!v) {
+            std::cerr << "Missing value for " << arg << "\n";
+            return std::nullopt;
+          }
+          remote = std::string{*v};
+        } else if (arg == "-l" || arg == "--log") {
+          auto v = takeArg(i, argc, argv);
+          if (!v || v->empty()) {
+            std::cerr << "Missing value for " << arg << "\n";
+            return std::nullopt;
+          }
+          o.log_level = (*v)[0];
+        } else {
+          std::cerr << "Unknown option: " << arg << "\n";
+          printUsage();
+          return std::nullopt;
+        }
       }
 
       if (o.port == 0) {
         std::cerr << "Port cannot be zero\n";
-        return boost::none;
+        return std::nullopt;
       }
 
       if (o.topic.empty()) {
         std::cerr << "Topic name cannot be empty\n";
-        return boost::none;
+        return std::nullopt;
       }
 
       if (!remote.empty()) {
@@ -215,7 +266,7 @@ namespace {
         if (!o.remote) {
           std::cerr << "Cannot resolve remote peer address from " << remote
                     << "\n";
-          return boost::none;
+          return std::nullopt;
         }
       }
 
@@ -224,7 +275,7 @@ namespace {
     } catch (const std::exception &e) {
       std::cerr << e.what() << "\n";
     }
-    return boost::none;
+    return std::nullopt;
   }
 
 }  // namespace

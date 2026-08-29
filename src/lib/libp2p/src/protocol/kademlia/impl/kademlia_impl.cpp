@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/protocol/kademlia/impl/kademlia_impl.hpp>
 
 #include <unordered_set>
@@ -47,18 +48,18 @@ namespace libp2p::protocol::kademlia {
         random_generator_(std::move(random_generator)),
         self_id_(host_->getId()),
         log_("Kademlia", "kademlia") {
-    BOOST_ASSERT(host_ != nullptr);
-    BOOST_ASSERT(storage_ != nullptr);
-    BOOST_ASSERT(content_routing_table_ != nullptr);
-    BOOST_ASSERT(peer_routing_table_ != nullptr);
-    BOOST_ASSERT(validator_ != nullptr);
-    BOOST_ASSERT(scheduler_ != nullptr);
-    BOOST_ASSERT(bus_ != nullptr);
-    BOOST_ASSERT(random_generator_ != nullptr);
+    assert(host_ != nullptr);
+    assert(storage_ != nullptr);
+    assert(content_routing_table_ != nullptr);
+    assert(peer_routing_table_ != nullptr);
+    assert(validator_ != nullptr);
+    assert(scheduler_ != nullptr);
+    assert(bus_ != nullptr);
+    assert(random_generator_ != nullptr);
   }
 
   void KademliaImpl::start() {
-    BOOST_ASSERT(not started_);
+    assert(not started_);
     if (started_) {
       return;
     }
@@ -284,7 +285,7 @@ namespace libp2p::protocol::kademlia {
 
   outcome::result<void> KademliaImpl::findPeer(const peer::PeerId &peer_id,
                                                FoundPeerInfoHandler handler) {
-    BOOST_ASSERT(handler);
+    assert(handler);
     log_.debug("CALL: FindPeer ({})", peer_id.toBase58());
 
     // Try to find locally
@@ -556,7 +557,7 @@ namespace libp2p::protocol::kademlia {
   }
 
   void KademliaImpl::randomWalk() {
-    BOOST_ASSERT(config_.randomWalk.enabled);
+    assert(config_.randomWalk.enabled);
 
     // Doing walk
     [[maybe_unused]] auto result = findRandomPeer();

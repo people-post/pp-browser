@@ -6,7 +6,6 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <boost/filesystem.hpp>
 #include <libp2p/common/literals.hpp>
 #include <libp2p/crypto/crypto_provider/crypto_provider_impl.hpp>
 #include <libp2p/crypto/ecdsa_provider/ecdsa_provider_impl.hpp>

@@ -6,7 +6,7 @@
 
 #include <libp2p/peer/peer_id.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <libp2p/crypto/sha/sha256.hpp>
 #include <libp2p/multi/multibase_codec/codecs/base58.hpp>
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/transport/impl/upgrader_impl.hpp>
 
 #include <fmt/format.h>
@@ -48,21 +49,19 @@ namespace libp2p::transport {
         layer_adaptors_{std::move(layer_adaptors)},
         security_adaptors_{std::move(security_adaptors)},
         muxer_adaptors_{std::move(muxer_adaptors)} {
-    BOOST_ASSERT(protocol_muxer_ != nullptr);
+    assert(protocol_muxer_ != nullptr);
 
-    BOOST_ASSERT(std::all_of(layer_adaptors_.begin(),
+    assert(std::all_of(layer_adaptors_.begin(),
                              layer_adaptors_.end(),
                              [](auto &&ptr) { return ptr != nullptr; }));
 
-    BOOST_ASSERT_MSG(!security_adaptors_.empty(),
-                     "upgrader has no security adaptors");
-    BOOST_ASSERT(std::all_of(security_adaptors_.begin(),
+    assert((!security_adaptors_.empty()) && ("upgrader has no security adaptors"));
+    assert(std::all_of(security_adaptors_.begin(),
                              security_adaptors_.end(),
                              [](auto &&ptr) { return ptr != nullptr; }));
 
-    BOOST_ASSERT_MSG(!muxer_adaptors_.empty(),
-                     "upgrader got no muxer adaptors");
-    BOOST_ASSERT(std::all_of(muxer_adaptors_.begin(),
+    assert((!muxer_adaptors_.empty()) && ("upgrader got no muxer adaptors"));
+    assert(std::all_of(muxer_adaptors_.begin(),
                              muxer_adaptors_.end(),
                              [](auto &&ptr) { return ptr != nullptr; }));
 
@@ -99,9 +98,8 @@ namespace libp2p::transport {
                                                ProtoAddrVec layers,
                                                size_t layer_index,
                                                OnLayerCallbackFunc cb) {
-    BOOST_ASSERT_MSG(!conn->isInitiator(),
-                     "connection is initiator, and upgrade for inbound is "
-                     "called (should be upgrade for outbound)");
+    assert((!conn->isInitiator()) && ("connection is initiator, and upgrade for inbound is "
+                     "called (should be upgrade for outbound)"));
 
     if (layer_index >= layers.size()) {
       return cb(conn);
@@ -146,9 +144,8 @@ namespace libp2p::transport {
       ProtoAddrVec layers,
       size_t layer_index,
       OnLayerCallbackFunc cb) {
-    BOOST_ASSERT_MSG(conn->isInitiator(),
-                     "connection is NOT initiator, and upgrade of outbound is "
-                     "called (should be upgrade of inbound)");
+    assert((conn->isInitiator()) && ("connection is NOT initiator, and upgrade of outbound is "
+                     "called (should be upgrade of inbound)"));
 
     if (layer_index >= layers.size()) {
       return cb(conn);
@@ -190,9 +187,8 @@ namespace libp2p::transport {
 
   void UpgraderImpl::upgradeToSecureInbound(LayerSPtr conn,
                                             OnSecuredCallbackFunc cb) {
-    BOOST_ASSERT_MSG(!conn->isInitiator(),
-                     "connection is initiator, and upgrade for inbound is "
-                     "called (should be upgrade for outbound)");
+    assert((!conn->isInitiator()) && ("connection is initiator, and upgrade for inbound is "
+                     "called (should be upgrade for outbound)"));
 
     protocol_muxer_->selectOneOf(
         security_protocols_,
@@ -218,9 +214,8 @@ namespace libp2p::transport {
   void UpgraderImpl::upgradeToSecureOutbound(LayerSPtr conn,
                                              const peer::PeerId &remoteId,
                                              OnSecuredCallbackFunc cb) {
-    BOOST_ASSERT_MSG(conn->isInitiator(),
-                     "connection is NOT initiator, and upgrade for outbound is "
-                     "called (should be upgrade for inbound)");
+    assert((conn->isInitiator()) && ("connection is NOT initiator, and upgrade for outbound is "
+                     "called (should be upgrade for inbound)"));
 
     protocol_muxer_->selectOneOf(
         security_protocols_,

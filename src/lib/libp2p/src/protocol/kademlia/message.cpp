@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/protocol/kademlia/message.hpp>
 
 #include <functional>
@@ -52,7 +53,7 @@ namespace libp2p::protocol::kademlia {
                            ConnStatus(static_cast<int>(src.connection))};
     }
 
-    outcome::result<void> assign_peers(boost::optional<Message::Peers> &dst,
+    outcome::result<void> assign_peers(std::optional<Message::Peers> &dst,
                                        const std::vector<wire::KademliaPeerWire> &src) {
       if (!src.empty()) {
         dst = Message::Peers{};
@@ -178,7 +179,7 @@ namespace libp2p::protocol::kademlia {
   }
 
   Message createGetValueRequest(const Key &key,
-                                boost::optional<PeerInfo> self_announce) {
+                                std::optional<PeerInfo> self_announce) {
     Message msg;
     msg.type = Message::Type::kGetValue;
     msg.key = key;
@@ -198,7 +199,7 @@ namespace libp2p::protocol::kademlia {
   }
 
   Message createGetProvidersRequest(const Key &key,
-                                    boost::optional<PeerInfo> self_announce) {
+                                    std::optional<PeerInfo> self_announce) {
     Message msg;
     msg.type = Message::Type::kGetProviders;
     msg.key = key;
@@ -209,7 +210,7 @@ namespace libp2p::protocol::kademlia {
   }
 
   Message createFindNodeRequest(Key key,
-                                boost::optional<PeerInfo> self_announce) {
+                                std::optional<PeerInfo> self_announce) {
     Message msg;
     msg.type = Message::Type::kFindNode;
     msg.key = std::move(key);

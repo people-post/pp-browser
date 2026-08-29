@@ -11,7 +11,6 @@
 #include <optional>
 
 #include <boost/asio.hpp>
-#include <boost/noncopyable.hpp>
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/raw_connection.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -26,9 +25,11 @@ namespace libp2p::transport {
    * @brief boost::asio implementation of TCP connection (socket).
    */
   class TcpConnection : public connection::RawConnection,
-                        public std::enable_shared_from_this<TcpConnection>,
-                        private boost::noncopyable {
+                        public std::enable_shared_from_this<TcpConnection> {
    public:
+    TcpConnection(const TcpConnection &) = delete;
+    TcpConnection &operator=(const TcpConnection &) = delete;
+
     ~TcpConnection() override = default;
 
     using Tcp = boost::asio::ip::tcp;
@@ -109,8 +110,8 @@ namespace libp2p::transport {
     /// Close reason, is set on close to respond to further calls
     std::optional<std::error_code> close_reason_;
 
-    boost::optional<multi::Multiaddress> remote_multiaddress_;
-    boost::optional<multi::Multiaddress> local_multiaddress_;
+    std::optional<multi::Multiaddress> remote_multiaddress_;
+    std::optional<multi::Multiaddress> local_multiaddress_;
 
     friend class security::TlsAdaptor;
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/network/impl/transport_manager_impl.hpp>
 
 #include <algorithm>
@@ -12,9 +13,8 @@ namespace libp2p::network {
   TransportManagerImpl::TransportManagerImpl(
       std::vector<TransportSPtr> transports)
       : transports_{std::move(transports)} {
-    BOOST_ASSERT_MSG(!transports_.empty(),
-                     "TransportManagerImpl got 0 transports");
-    BOOST_ASSERT(std::all_of(transports_.begin(),
+    assert((!transports_.empty()) && ("TransportManagerImpl got 0 transports"));
+    assert(std::all_of(transports_.begin(),
                              transports_.end(),
                              [](auto &&t) { return t != nullptr; }));
   }

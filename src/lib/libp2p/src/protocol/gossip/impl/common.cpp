@@ -6,7 +6,7 @@
 
 #include "common.hpp"
 
-#include <boost/endian/conversion.hpp>
+#include <libp2p/common/byteutil.hpp>
 
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::protocol::gossip, Error, e) {
   using E = libp2p::protocol::gossip::Error;
@@ -63,20 +63,9 @@ namespace libp2p::protocol::gossip {
   }
 
   Bytes createSeqNo(uint64_t seq) {
-    // NOLINTNEXTLINE
-    union {
-      uint64_t number;
-      std::array<uint8_t, 8> bytes;
-    } seq_buf;
-
-    // NOLINTNEXTLINE
-    seq_buf.number = seq;
-
-    // NOLINTNEXTLINE
-    boost::endian::native_to_big_inplace(seq_buf.number);
-
-    // NOLINTNEXTLINE
-    return Bytes(seq_buf.bytes.begin(), seq_buf.bytes.end());
+    Bytes ret;
+    libp2p::common::putUint64BE(ret, seq);
+    return ret;
   }
 
   Bytes fromString(const std::string &s) {

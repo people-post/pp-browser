@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl.hpp>
 
@@ -46,7 +47,7 @@ namespace libp2p::security {
    private:
     /// Creates TLSConnection and starts handshake
     void asyncHandshake(std::shared_ptr<connection::LayerConnection> conn,
-                        boost::optional<peer::PeerId> remote_peer,
+                        std::optional<peer::PeerId> remote_peer,
                         SecConnCallbackFunc cb);
 
     /// Identity manager which contains this host's keys and peer id

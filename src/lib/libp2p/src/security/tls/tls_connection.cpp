@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/common/asio_buffer.hpp>
 #include <libp2p/security/tls/tls_connection.hpp>
 #include <libp2p/security/tls/tls_details.hpp>
@@ -18,7 +19,7 @@ namespace libp2p::connection {
       std::shared_ptr<boost::asio::ssl::context> ssl_context,
       const peer::IdentityManager &idmgr,
       std::shared_ptr<boost::asio::io_context> io_context,
-      boost::optional<peer::PeerId> remote_peer)
+      std::optional<peer::PeerId> remote_peer)
       : local_peer_(idmgr.getId()),
         original_connection_(std::move(original_connection)),
         ssl_context_(std::move(ssl_context)),

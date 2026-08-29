@@ -9,7 +9,6 @@ if (SQLITE_ENABLED)
         sqlite_test.cpp
         )
     target_link_libraries(libp2p_sqlite_test
-        Boost::filesystem
         p2p_sqlite
         )
 endif ()

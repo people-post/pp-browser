@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/host/host.hpp>
 #include <libp2p/protocol/kademlia/common.hpp>
 
@@ -44,9 +45,9 @@ namespace libp2p::protocol::kademlia {
 
     Type type = Type::kPing;
     std::vector<uint8_t> key;
-    boost::optional<Record> record;
-    boost::optional<Peers> closer_peers;
-    boost::optional<Peers> provider_peers;
+    std::optional<Record> record;
+    std::optional<Peers> closer_peers;
+    std::optional<Peers> provider_peers;
 
     void clear();
 
@@ -70,15 +71,15 @@ namespace libp2p::protocol::kademlia {
   Message createPutValueRequest(const Key &key, const Value &value);
 
   Message createGetValueRequest(const Key &key,
-                                boost::optional<PeerInfo> self_announce);
+                                std::optional<PeerInfo> self_announce);
 
   Message createAddProviderRequest(PeerInfo self, const Key &key);
 
   Message createGetProvidersRequest(const Key &key,
-                                    boost::optional<PeerInfo> self_announce);
+                                    std::optional<PeerInfo> self_announce);
 
   Message createFindNodeRequest(Key key,
-                                boost::optional<PeerInfo> self_announce);
+                                std::optional<PeerInfo> self_announce);
 
 }  // namespace libp2p::protocol::kademlia
 

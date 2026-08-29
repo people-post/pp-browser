@@ -76,7 +76,6 @@ endif()
 
 add_library(qtils INTERFACE)
 target_link_libraries(qtils INTERFACE
-    Boost::algorithm
     Boost::outcome
     fmt::fmt
 )

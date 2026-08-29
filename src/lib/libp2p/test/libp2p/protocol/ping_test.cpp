@@ -8,7 +8,7 @@
 
 #include <libp2p/protocol/ping.hpp>
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #include <libp2p/common/literals.hpp>
 #include <libp2p/common/types.hpp>
@@ -167,7 +167,7 @@ TEST_F(PingTest, PingClientTimeoutExpired) {
   EXPECT_CALL(*stream_, remotePeerId()).WillOnce(Return(peer_id_));
   EXPECT_CALL(*stream_, reset());
 
-  boost::optional<peer::PeerId> dead_peer_id;
+  std::optional<peer::PeerId> dead_peer_id;
   auto h = bus_.getChannel<event::protocol::PeerIsDeadChannel>().subscribe(
       [&dead_peer_id](auto &&peer_id) mutable { dead_peer_id = peer_id; });
 

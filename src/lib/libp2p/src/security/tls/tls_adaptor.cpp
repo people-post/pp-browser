@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <optional>
 #include <libp2p/security/tls/tls_adaptor.hpp>
 
 #include <libp2p/peer/peer_id.hpp>
@@ -38,7 +39,7 @@ namespace libp2p::security {
   void TlsAdaptor::secureInbound(
       std::shared_ptr<connection::LayerConnection> inbound,
       SecConnCallbackFunc cb) {
-    asyncHandshake(std::move(inbound), boost::none, std::move(cb));
+    asyncHandshake(std::move(inbound), std::nullopt, std::move(cb));
   }
 
   void TlsAdaptor::secureOutbound(
@@ -50,7 +51,7 @@ namespace libp2p::security {
 
   void TlsAdaptor::asyncHandshake(
       std::shared_ptr<connection::LayerConnection> conn,
-      boost::optional<peer::PeerId> remote_peer,
+      std::optional<peer::PeerId> remote_peer,
       SecConnCallbackFunc cb) {
     bool is_client = conn->isInitiator();
 

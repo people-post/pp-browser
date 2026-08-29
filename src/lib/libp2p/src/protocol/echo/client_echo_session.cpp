@@ -6,7 +6,7 @@
 
 #include <libp2p/protocol/echo/client_echo_session.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 
 #include <libp2p/basic/write.hpp>
 #include <libp2p/log/logger.hpp>
@@ -16,7 +16,7 @@ namespace libp2p::protocol {
   ClientEchoSession::ClientEchoSession(
       std::shared_ptr<connection::Stream> stream)
       : stream_(std::move(stream)) {
-    BOOST_ASSERT(stream_ != nullptr);
+    assert(stream_ != nullptr);
   }
 
   void ClientEchoSession::sendAnd(const std::string &send,

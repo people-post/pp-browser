@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
+#include <optional>
 #include <libp2p/basic/wire_message_read_writer.hpp>
 #include <libp2p/connection/raw_connection.hpp>
 #include <libp2p/crypto/common.hpp>
@@ -128,12 +128,12 @@ namespace libp2p::security::secio {
         const ProposeMessage &remote,
         bool local_peer_is_preferred);
 
-    boost::optional<std::vector<uint8_t>> local_peer_proposal_bytes_;
-    boost::optional<std::vector<uint8_t>> remote_peer_proposal_bytes_;
-    boost::optional<Algorithm> chosen_algorithm_;
-    boost::optional<bool> local_peer_is_preferred_;
-    boost::optional<crypto::EphemeralKeyPair> ekey_pair_;
-    boost::optional<std::pair<crypto::StretchedKey, crypto::StretchedKey>>
+    std::optional<std::vector<uint8_t>> local_peer_proposal_bytes_;
+    std::optional<std::vector<uint8_t>> remote_peer_proposal_bytes_;
+    std::optional<Algorithm> chosen_algorithm_;
+    std::optional<bool> local_peer_is_preferred_;
+    std::optional<crypto::EphemeralKeyPair> ekey_pair_;
+    std::optional<std::pair<crypto::StretchedKey, crypto::StretchedKey>>
         stretched_keys_;
   };
 }  // namespace libp2p::security::secio

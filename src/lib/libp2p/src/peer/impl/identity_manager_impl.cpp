@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <libp2p/peer/impl/identity_manager_impl.hpp>
 
 #include <libp2p/crypto/key_marshaller.hpp>
@@ -11,20 +12,20 @@
 namespace libp2p::peer {
 
   const peer::PeerId &IdentityManagerImpl::getId() const {
-    BOOST_ASSERT(id_ != nullptr);
+    assert(id_ != nullptr);
     return *id_;
   }
 
   const crypto::KeyPair &IdentityManagerImpl::getKeyPair() const {
-    BOOST_ASSERT(keyPair_ != nullptr);
+    assert(keyPair_ != nullptr);
     return *keyPair_;
   }
 
   IdentityManagerImpl::IdentityManagerImpl(
       crypto::KeyPair keyPair,
       const std::shared_ptr<crypto::marshaller::KeyMarshaller> &marshaller) {
-    BOOST_ASSERT(!keyPair.publicKey.data.empty());
-    BOOST_ASSERT(marshaller);
+    assert(!keyPair.publicKey.data.empty());
+    assert(marshaller);
 
     keyPair_ = std::make_unique<crypto::KeyPair>(std::move(keyPair));
 

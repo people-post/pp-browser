@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cassert>
 #include <cstring>
 
 #include <libp2p/crypto/sha/sha256.hpp>
@@ -83,7 +84,7 @@ namespace libp2p::multi {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<const uint8_t *>(byte_buffer),
         sz));
-    BOOST_ASSERT(digest_res.has_value());
+    assert(digest_res.has_value());
 
     auto &hash = digest_res.value();
 

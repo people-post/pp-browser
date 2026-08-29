@@ -51,7 +51,7 @@ namespace {
       topics = ts;
 
       subscr = subs.subscribe(ts, [this](g::Gossip::SubscriptionData d) {
-        ASSERT_TRUE(d.has_value());
+        ASSERT_TRUE(d);
 
         // topic sets must intersect
         ASSERT_TRUE(topics.count(d->topic));

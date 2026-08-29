@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <deque>
 
 #include <libp2p/log/sublogger.hpp>
@@ -31,7 +32,7 @@ namespace libp2p::protocol::gossip {
     bool empty() const;
 
     /// Forwards message to mesh members and announce to other subscribers
-    void onNewMessage(const boost::optional<PeerContextPtr> &from,
+    void onNewMessage(const std::optional<PeerContextPtr> &from,
                       const TopicMessage::Ptr &msg,
                       const MessageId &msg_id,
                       Time now);

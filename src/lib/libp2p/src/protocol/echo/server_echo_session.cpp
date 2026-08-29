@@ -6,7 +6,7 @@
 
 #include <libp2p/protocol/echo/server_echo_session.hpp>
 
-#include <boost/assert.hpp>
+#include <cassert>
 #include <qtils/bytestr.hpp>
 
 #include <libp2p/basic/write.hpp>
@@ -18,8 +18,8 @@ namespace libp2p::protocol {
       : stream_(std::move(stream)),
         config_{config},
         repeat_infinitely_{config.max_server_repeats == 0} {
-    BOOST_ASSERT(stream_ != nullptr);
-    BOOST_ASSERT(config_.max_recv_size > 0);
+    assert(stream_ != nullptr);
+    assert(config_.max_recv_size > 0);
 
     size_t max_recv_size = 65536;
     if (config_.max_recv_size < max_recv_size) {

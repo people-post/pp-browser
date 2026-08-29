@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <libp2p/connection/raw_connection.hpp>
 #include <libp2p/crypto/crypto_provider.hpp>
 #include <libp2p/crypto/key_marshaller.hpp>
@@ -31,7 +32,7 @@ namespace libp2p::security::noise {
         crypto::KeyPair local_key,
         std::shared_ptr<connection::LayerConnection> connection,
         bool is_initiator,
-        boost::optional<peer::PeerId> remote_peer_id,
+        std::optional<peer::PeerId> remote_peer_id,
         SecurityAdaptor::SecConnCallbackFunc cb,
         std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller);
 
@@ -75,8 +76,8 @@ namespace libp2p::security::noise {
 
     std::shared_ptr<CipherState> enc_;
     std::shared_ptr<CipherState> dec_;
-    boost::optional<peer::PeerId> remote_peer_id_;
-    boost::optional<crypto::PublicKey> remote_peer_pubkey_;
+    std::optional<peer::PeerId> remote_peer_id_;
+    std::optional<crypto::PublicKey> remote_peer_pubkey_;
 
     log::Logger log_ = log::createLogger("NoiseHandshake");
   };
