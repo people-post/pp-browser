@@ -7,6 +7,7 @@
 #include <libp2p/transport/impl/multiaddress_parser.hpp>
 
 #include <gtest/gtest.h>
+#include <variant>
 #include <libp2p/common/literals.hpp>
 
 using libp2p::multi::Multiaddress;
@@ -67,6 +68,6 @@ TEST_F(TransportParserTest, CorrectAlternative) {
     }
   } visitor;
 
-  ASSERT_TRUE(boost::apply_visitor(visitor, r4.value().data));
-  ASSERT_TRUE(boost::apply_visitor(visitor, r6.value().data));
+  ASSERT_TRUE(std::visit(visitor, r4.value().data));
+  ASSERT_TRUE(std::visit(visitor, r6.value().data));
 }

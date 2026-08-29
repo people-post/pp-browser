@@ -6,9 +6,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string_view>
-
-#include <boost/container/small_vector.hpp>
+#include <vector>
 
 namespace libp2p::protocol_muxer::multiselect {
 
@@ -42,7 +42,7 @@ namespace libp2p::protocol_muxer::multiselect {
     std::string_view content;
   };
 
-  /// Vector that holds most of protocol messages w/o dynamic alloc
-  using MsgBuf = boost::container::small_vector<uint8_t, 80>;
+  /// Buffer for protocol messages (previously boost::container::small_vector)
+  using MsgBuf = std::vector<uint8_t>;
 
 }  // namespace libp2p::protocol_muxer::multiselect

@@ -8,8 +8,7 @@
 
 #include <type_traits>  // for std::decay
 #include <utility>      // for std::forward
-
-#include <boost/variant/apply_visitor.hpp>  // for boost::apply_visitor
+#include <variant>      // for std::visit
 
 namespace libp2p {
 
@@ -38,23 +37,6 @@ namespace libp2p {
   /**
    * @brief Convenient in-place compile-time visitor creation, from a set of
    * lambdas
-   *
-   * @code
-   * make_visitor([](int a){ return 1; },
-   *              [](std::string b) { return 2; });
-   * @nocode
-   *
-   * is essentially the same as
-   *
-   * @code
-   * struct visitor : public boost::static_visitor<int> {
-   *   int operator()(int a) { return 1; }
-   *   int operator()(std::string b) { return 2; }
-   * }
-   * @nocode
-   *
-   * @param lambdas
-   * @return visitor
    */
   template <class... Fs>
   constexpr auto make_visitor(Fs &&...fs) {
@@ -63,26 +45,13 @@ namespace libp2p {
   }
 
   /**
-   * @brief Inplace visitor for boost::variant.
-   * @code
-   *   boost::variant<int, std::string> value = "1234";
-   *   ...
-   *   visit_in_place(value,
-   *                  [](int v) { std::cout << "(int)" << v; },
-   *                  [](std::string v) { std::cout << "(string)" << v;}
-   *                  );
-   * @nocode
-   *
-   * @param variant
-   * @param lambdas
-   * @param lambdas
+   * @brief In-place visitor for std::variant (and any type std::visit accepts).
    */
   template <typename TVariant, typename... TVisitors>
   constexpr decltype(auto) visit_in_place(TVariant &&variant,
                                           TVisitors &&...visitors) {
-    return boost::apply_visitor(
-        make_visitor(std::forward<TVisitors>(visitors)...),
-        std::forward<TVariant>(variant));
+    return std::visit(make_visitor(std::forward<TVisitors>(visitors)...),
+                      std::forward<TVariant>(variant));
   }
 
   /// apply Matcher to optional T
