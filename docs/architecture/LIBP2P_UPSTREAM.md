@@ -75,7 +75,7 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 - `host/host.hpp` / `network/dialer.hpp` — `PeerInfo{.id=…, .addresses={}}` so first-party `-Werror` builds that include these headers do not trip `-Wmissing-field-initializers`
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
-- `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)
+- `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock)
 - `cmake/libp2p_add_library.cmake` — link `qtils`, `Asio::asio`, `soralog` in vendored mode (no Boost)
 - `cmake/install.cmake` — skip install/export when embedded in pp-browser
 - `src/crypto/sha/CMakeLists.txt` — plain `target_link_libraries` signature (matches rest of tree)
@@ -88,6 +88,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
 - `qtils/outcome.hpp` — facade over vendored standalone Outcome (`third_party/outcome`, ned14 v2.2.15 single-header); keeps `outcome::result` / `OUTCOME_TRY` / `success` / `failure`; MSVC-safe `OUTCOME_TRY` via one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`); no longer links `Boost::outcome`
 - `outcome/` — standalone Outcome INTERFACE target (`Outcome::outcome`); pulled before qtils in `cmake/libp2p_dependencies.cmake`
+- `libsecp256k1` / `Secp256k1Provider` — removed; `Key::Type::Secp256k1` wire code kept for marshal compatibility but crypto ops return `UNSUPPORTED_KEY_TYPE` (product identity is ML-DSA-65 / Ed25519)
 - Boost + Boost.DI — removed from `third_party/` and CMake; Host wiring is `createExplicitHost` only (injector headers deleted)
 - `asio/` — standalone Asio 1.34.0 (`Asio::asio`, `ASIO_STANDALONE` + `ASIO_NO_DEPRECATED`); fork, `src/base/p2p`, and `pp-node` status HTTP use `#include <asio…>` / `asio::` and `std::error_code`
 - fork sources — dropped Boost.Operators (`equality_comparable`), Boost.Range (`for_each` / `filtered`), and unused Boost.Exception include in `event/bus.hpp`
