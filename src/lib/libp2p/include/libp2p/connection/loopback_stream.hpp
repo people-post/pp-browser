@@ -6,7 +6,8 @@
 
 #pragma once
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
+#include <system_error>
 #include <libp2p/connection/stream.hpp>
 
 #include <libp2p/log/logger.hpp>
@@ -18,7 +19,7 @@ namespace libp2p::connection {
                          public std::enable_shared_from_this<LoopbackStream> {
    public:
     LoopbackStream(libp2p::peer::PeerInfo own_peer_info,
-                   std::shared_ptr<boost::asio::io_context> io_context);
+                   std::shared_ptr<asio::io_context> io_context);
 
     bool isClosedForRead() const override;
     bool isClosedForWrite() const override;
@@ -51,12 +52,12 @@ namespace libp2p::connection {
 
    private:
     libp2p::peer::PeerInfo own_peer_info_;
-    std::shared_ptr<boost::asio::io_context> io_context_;
+    std::shared_ptr<asio::io_context> io_context_;
 
     log::Logger log_ = log::createLogger("LoopbackStream");
 
     /// data, received for this stream, comes here
-    boost::asio::streambuf buffer_;
+    asio::streambuf buffer_;
 
     /// when a new data arrives, this function is to be called
     std::function<void(outcome::result<size_t>)> data_notifyee_;

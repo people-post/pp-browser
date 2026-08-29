@@ -8,7 +8,7 @@
 
 #include <memory>
 
-namespace boost::asio::ssl {
+namespace asio::ssl {
   class context;
 }
 
@@ -28,7 +28,7 @@ namespace libp2p::security {
     SslContext(const peer::IdentityManager &idmgr,
                const crypto::marshaller::KeyMarshaller &key_marshaller);
 
-    std::shared_ptr<boost::asio::ssl::context> tls;
-    std::shared_ptr<boost::asio::ssl::context> quic;
+    std::shared_ptr<asio::ssl::context> tls;
+    std::shared_ptr<asio::ssl::context> quic;
   };
 }  // namespace libp2p::security

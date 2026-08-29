@@ -1,0 +1,4 @@
+Source: https://github.com/chriskohlhoff/asio
+Tag: asio-1-34-0  (Asio 1.34.0 — matches Boost.Asio in Boost 1.87)
+Contents: asio/include only (header-only)
+License: Boost Software License 1.0

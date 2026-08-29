@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/asio/ip/tcp.hpp>
+#include <asio/ip/tcp.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
 #include <libp2p/transport/tcp/tcp_listener.hpp>
 #include <libp2p/transport/transport_adaptor.hpp>
@@ -22,7 +22,7 @@ namespace libp2p::transport {
    public:
     ~TcpTransport() override = default;
 
-    TcpTransport(std::shared_ptr<boost::asio::io_context> context,
+    TcpTransport(std::shared_ptr<asio::io_context> context,
                  const muxer::MuxedConnectionConfig &mux_config,
                  std::shared_ptr<Upgrader> upgrader);
 
@@ -38,9 +38,9 @@ namespace libp2p::transport {
     peer::ProtocolName getProtocolId() const override;
 
    private:
-    std::shared_ptr<boost::asio::io_context> context_;
+    std::shared_ptr<asio::io_context> context_;
     muxer::MuxedConnectionConfig mux_config_;
     std::shared_ptr<Upgrader> upgrader_;
-    boost::asio::ip::tcp::resolver resolver_;
+    asio::ip::tcp::resolver resolver_;
   };
 }  // namespace libp2p::transport

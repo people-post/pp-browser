@@ -195,7 +195,7 @@ struct Server : public std::enable_shared_from_this<Server> {
 struct Client : public std::enable_shared_from_this<Client> {
   Client(std::shared_ptr<TcpTransport> transport,
          size_t seed,
-         std::shared_ptr<boost::asio::io_context> context,
+         std::shared_ptr<asio::io_context> context,
          size_t streams,
          size_t rounds)
       : context_(std::move(context)),
@@ -220,7 +220,7 @@ struct Client : public std::enable_shared_from_this<Client> {
 
   void onConnection(const std::shared_ptr<CapableConnection> &conn) {
     for (size_t i = 0; i < streams_; i++) {
-      boost::asio::post(*context_, [i, conn, this]() {
+      asio::post(*context_, [i, conn, this]() {
         conn->newStream(
             [i, conn, this](outcome::result<std::shared_ptr<Stream>> rstream) {
               ASSERT_OUTCOME_SUCCESS(stream, rstream);
@@ -300,7 +300,7 @@ struct Client : public std::enable_shared_from_this<Client> {
     return buf;
   }
 
-  std::shared_ptr<boost::asio::io_context> context_;
+  std::shared_ptr<asio::io_context> context_;
 
   size_t streams_;
   size_t rounds_;
@@ -370,7 +370,7 @@ TEST_P(MuxerAcceptanceTest, ParallelEcho) {
   // number, which makes tests reproducible
   const int seed = 0;
 
-  auto server_context = std::make_shared<boost::asio::io_context>(1);
+  auto server_context = std::make_shared<asio::io_context>(1);
   std::default_random_engine randomEngine(seed);
 
   auto serverAddr = "/ip4/127.0.0.1/tcp/40312"_multiaddr;
@@ -411,7 +411,7 @@ TEST_P(MuxerAcceptanceTest, ParallelEcho) {
     for (int i = 0; i < totalClients; i++) {
       auto localSeed = randomEngine();
       clients.emplace_back([&, localSeed]() {
-        auto context = std::make_shared<boost::asio::io_context>(1);
+        auto context = std::make_shared<asio::io_context>(1);
 
         KeyPair clientKeyPair = {{{Key::Type::Ed25519, {3}}},
                                  {{Key::Type::Ed25519, {4}}}};

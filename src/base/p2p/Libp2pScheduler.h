@@ -3,8 +3,8 @@
 #include "common/WorkerPool.h"
 #include "base/p2p/Libp2pHost.h"
 
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/strand.hpp>
+#include <asio/any_io_executor.hpp>
+#include <asio/strand.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -48,9 +48,9 @@ public:
   void ClearSessionStrands();
 
 private:
-  using Strand = boost::asio::strand<boost::asio::any_io_executor>;
+  using Strand = asio::strand<asio::any_io_executor>;
 
-  boost::asio::any_io_executor HostIoExecutor() const;
+  asio::any_io_executor HostIoExecutor() const;
   std::shared_ptr<Strand> StrandFor(Libp2pSessionId session_id);
 
   Libp2pHost& host_;

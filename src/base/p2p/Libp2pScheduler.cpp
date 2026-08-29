@@ -32,7 +32,7 @@ void Libp2pScheduler::PostToSession(Libp2pSessionId session_id, std::function<vo
     return;
   }
   auto strand = StrandFor(session_id);
-  boost::asio::post(*strand, std::move(task));
+  asio::post(*strand, std::move(task));
 }
 
 Libp2pSessionId Libp2pScheduler::NextSessionId() {
@@ -56,7 +56,7 @@ void Libp2pScheduler::ClearSessionStrands() {
   strands_.clear();
 }
 
-boost::asio::any_io_executor Libp2pScheduler::HostIoExecutor() const {
+asio::any_io_executor Libp2pScheduler::HostIoExecutor() const {
   return host_.IoExecutor();
 }
 

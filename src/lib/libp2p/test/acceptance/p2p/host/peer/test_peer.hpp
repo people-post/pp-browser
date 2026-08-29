@@ -42,7 +42,7 @@ class Peer {
   using MlDsaProvider = libp2p::crypto::mldsa::MlDsaProvider;
   using CryptoProvider = libp2p::crypto::CryptoProvider;
 
-  using Context = boost::asio::io_context;
+  using Context = asio::io_context;
   using Scheduler = libp2p::basic::Scheduler;
 
  public:

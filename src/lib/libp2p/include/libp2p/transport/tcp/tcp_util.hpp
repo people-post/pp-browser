@@ -6,8 +6,9 @@
 
 #pragma once
 
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ip/udp.hpp>
+#include <asio/ip/tcp.hpp>
+#include <system_error>
+#include <asio/ip/udp.hpp>
 #include <charconv>
 #include <libp2p/boost/outcome.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -20,7 +21,7 @@ namespace libp2p::transport::detail {
     std::optional<bool> v4;
     std::string name;
   };
-  using IpOrDns = std::variant<boost::asio::ip::address, Dns>;
+  using IpOrDns = std::variant<asio::ip::address, Dns>;
 
   static outcome::result<IpOrDns> readIpOrDns(ProtoAddrVec::iterator &it,
                                               ProtoAddrVec::iterator end) {
@@ -31,14 +32,14 @@ namespace libp2p::transport::detail {
     switch (p.code) {
       case P::IP4:
       case P::IP6: {
-        boost::asio::ip::address ip;
-        boost::system::error_code ec;
+        asio::ip::address ip;
+        std::error_code ec;
         switch (p.code) {
           case P::IP4:
-            ip = boost::asio::ip::make_address_v4(v, ec);
+            ip = asio::ip::make_address_v4(v, ec);
             break;
           case P::IP6:
-            ip = boost::asio::ip::make_address_v6(v, ec);
+            ip = asio::ip::make_address_v6(v, ec);
             break;
         }
         if (ec) {
@@ -71,17 +72,17 @@ namespace libp2p::transport::detail {
 
     template <typename T>
     outcome::result<T> as(bool udp) const {
-      auto ip = std::get_if<boost::asio::ip::address>(&this->ip);
+      auto ip = std::get_if<asio::ip::address>(&this->ip);
       if (this->udp != udp or not ip) {
         return std::errc::protocol_not_supported;
       }
       return T{*ip, port};
     }
     auto asTcp() const {
-      return as<boost::asio::ip::tcp::endpoint>(false);
+      return as<asio::ip::tcp::endpoint>(false);
     }
     auto asUdp() const {
-      return as<boost::asio::ip::udp::endpoint>(true);
+      return as<asio::ip::udp::endpoint>(true);
     }
   };
 
@@ -110,7 +111,7 @@ namespace libp2p::transport::detail {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     auto r = std::from_chars(v.data(), v.data() + v.size(), addr.port);
     if (r.ec != std::errc{}) {
-      return make_error_code(r.ec);
+      return std::make_error_code(r.ec);
     }
     return addr;
   }
@@ -154,13 +155,13 @@ namespace libp2p::transport::detail {
 
   template <typename T>
   void resolve(T &resolver, const TcpOrUdp &addr, auto &&cb) {
-    if (auto ip = std::get_if<boost::asio::ip::address>(&addr.ip)) {
+    if (auto ip = std::get_if<asio::ip::address>(&addr.ip)) {
       return cb(T::results_type::create(
           typename T::endpoint_type{*ip, addr.port}, "", ""));
     }
     auto &dns = std::get<Dns>(addr.ip);
     auto cb2 = [cb{std::forward<decltype(cb)>(cb)}](
-                   boost::system::error_code ec,
+                   std::error_code ec,
                    typename T::results_type r) mutable {
       if (ec) {
         return cb(ec);
@@ -181,8 +182,8 @@ namespace libp2p::transport::detail {
 
   template <typename T>
   outcome::result<std::string> toMultiaddr(const T &endpoint) {
-    constexpr auto tcp = std::is_same_v<T, boost::asio::ip::tcp::endpoint>;
-    constexpr auto udp = std::is_same_v<T, boost::asio::ip::udp::endpoint>;
+    constexpr auto tcp = std::is_same_v<T, asio::ip::tcp::endpoint>;
+    constexpr auto udp = std::is_same_v<T, asio::ip::udp::endpoint>;
     static_assert(tcp or udp);
     auto ip = endpoint.address();
     auto ip_str_res = boost_outcome::to_string(ip);
@@ -198,7 +199,7 @@ namespace libp2p::transport::detail {
   }
 
   inline outcome::result<Multiaddress> makeAddress(
-      const boost::asio::ip::tcp::endpoint &endpoint,
+      const asio::ip::tcp::endpoint &endpoint,
       const ProtoAddrVec &layers) {
     auto s_res = toMultiaddr(endpoint);
     if (!s_res) {
@@ -217,7 +218,7 @@ namespace libp2p::transport::detail {
   }
 
   inline outcome::result<Multiaddress> makeQuicAddr(
-      const boost::asio::ip::udp::endpoint &endpoint) {
+      const asio::ip::udp::endpoint &endpoint) {
     auto s_res = toMultiaddr(endpoint);
     if (!s_res) {
       return s_res.as_failure();

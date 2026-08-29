@@ -15,7 +15,7 @@
 
 namespace libp2p::transport {
   QuicTransport::QuicTransport(
-      std::shared_ptr<boost::asio::io_context> io_context,
+      std::shared_ptr<asio::io_context> io_context,
       const security::SslContext &ssl_context,
       const muxer::MuxedConnectionConfig &mux_config,
       const peer::IdentityManager &id_mgr,
@@ -37,7 +37,7 @@ namespace libp2p::transport {
     auto &info = r.value();
     auto connect =
         [weak_self{weak_from_this()}, peer, cb{std::move(cb)}](
-            outcome::result<boost::asio::ip::udp::resolver::results_type>
+            outcome::result<asio::ip::udp::resolver::results_type>
                 r) mutable {
           auto self = weak_self.lock();
           if (not self) {
@@ -84,28 +84,28 @@ namespace libp2p::transport {
   }
 
   std::shared_ptr<lsquic::Engine> QuicTransport::clientFor(
-      boost::asio::ip::udp::endpoint remote) {
-    const auto v4 = remote.protocol() == boost::asio::ip::udp::v4();
+      asio::ip::udp::endpoint remote) {
+    const auto v4 = remote.protocol() == asio::ip::udp::v4();
     auto &client = v4 ? client4_ : client6_;
     if (client) {
       return client;
     }
     try {
-      client = makeClient(v4 ? boost::asio::ip::udp::v4()
-                             : boost::asio::ip::udp::v6());
-    } catch (const boost::system::system_error &) {
+      client = makeClient(v4 ? asio::ip::udp::v4()
+                             : asio::ip::udp::v6());
+    } catch (const std::system_error &) {
       return nullptr;
     }
     return client;
   }
 
   std::shared_ptr<lsquic::Engine> QuicTransport::makeClient(
-      boost::asio::ip::udp protocol) const {
-    boost::asio::ip::udp::socket socket{*io_context_, protocol};
-    boost::system::error_code ec;
+      asio::ip::udp protocol) const {
+    asio::ip::udp::socket socket{*io_context_, protocol};
+    std::error_code ec;
     socket.bind({protocol, 0}, ec);
     if (ec) {
-      throw boost::system::system_error{ec};
+      throw std::system_error{ec};
     }
     return std::make_shared<lsquic::Engine>(io_context_,
                                             ssl_context_,

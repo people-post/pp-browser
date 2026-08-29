@@ -7,7 +7,8 @@
 #include <optional>
 #include <libp2p/muxer/yamux/yamuxed_connection.hpp>
 
-#include <boost/asio/error.hpp>
+#include <asio/error.hpp>
+#include <system_error>
 
 #include <libp2p/basic/write.hpp>
 #include <libp2p/log/logger.hpp>
@@ -202,7 +203,7 @@ namespace libp2p::connection {
     }
 
     if (!res) {
-      if (res.error() == make_error_code(boost::asio::error::eof)) {
+      if (res.error() == make_error_code(asio::error::eof)) {
         res.error() = Error::CONNECTION_CLOSED_BY_PEER;
       }
       close(std::move(res.error()), std::nullopt);

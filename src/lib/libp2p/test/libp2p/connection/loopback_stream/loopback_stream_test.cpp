@@ -5,7 +5,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <boost/asio/io_context.hpp>
+#include <asio/io_context.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/connection/loopback_stream.hpp>
@@ -26,10 +26,10 @@ class LoopbackStreamTest : public testing::Test {
  public:
   static constexpr size_t kBufferSize = 43;
   const Buffer kBuffer = Buffer(kBufferSize, 1);
-  std::shared_ptr<boost::asio::io_context> context;
+  std::shared_ptr<asio::io_context> context;
 
   void SetUp() override {
-    context = std::make_shared<boost::asio::io_context>();
+    context = std::make_shared<asio::io_context>();
   };
 
   static void SetUpTestCase() {

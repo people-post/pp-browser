@@ -26,7 +26,7 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::network, DnsaddrResolverImpl::Error, e) {
 
 namespace libp2p::network {
   DnsaddrResolverImpl::DnsaddrResolverImpl(
-      std::shared_ptr<boost::asio::io_context> io_context,
+      std::shared_ptr<asio::io_context> io_context,
       const c_ares::Ares &cares)
       : io_context_{std::move(io_context)}, cares_{cares} {
     assert(io_context_);

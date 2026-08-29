@@ -93,7 +93,7 @@ auto timers(std::shared_ptr<Scheduler> scheduler) {
 TEST(Scheduler, BasicThings) {
   using namespace libp2p::basic;
 
-  auto io = std::make_shared<boost::asio::io_context>(1);
+  auto io = std::make_shared<asio::io_context>(1);
   auto backend = std::make_shared<AsioSchedulerBackend>(io);
   auto scheduler =
       std::make_shared<SchedulerImpl>(std::move(backend), Scheduler::Config{});

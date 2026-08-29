@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/asio/error.hpp>
+#include <asio/error.hpp>
 #include <libp2p/basic/writer.hpp>
 #include <memory>
 
@@ -30,12 +30,12 @@ namespace libp2p {
           }
           // Never throw from asio/libp2p callbacks (same as libp2p::read).
           if (n == 0 || n > in.size()) {
-            return cb(make_error_code(boost::asio::error::invalid_argument));
+            return cb(make_error_code(asio::error::invalid_argument));
           }
           // write remaining bytes
           auto writer = weak.lock();
           if (not writer) {
-            return cb(make_error_code(boost::asio::error::operation_aborted));
+            return cb(make_error_code(asio::error::operation_aborted));
           }
           write(writer, in.subspan(n), std::move(cb));
         });

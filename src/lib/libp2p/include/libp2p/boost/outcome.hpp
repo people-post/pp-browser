@@ -17,7 +17,7 @@ namespace boost_outcome {
   outcome::result<std::invoke_result_t<F>> tryCatch(const F &f) {
     try {
       return f();
-    } catch (boost::system::system_error &e) {
+    } catch (std::system_error &e) {
       return e.code();
     }
   }

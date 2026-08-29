@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/asio/ip/address.hpp>
+#include <asio/ip/address.hpp>
 #include <variant>
 #include <libp2p/multi/multiaddress.hpp>
 
@@ -18,9 +18,9 @@ namespace libp2p::transport {
    */
   class MultiaddressParser {
    public:
-    using Ip4Address = boost::asio::ip::address_v4;
-    using Ip6Address = boost::asio::ip::address_v6;
-    using IpAddress = boost::asio::ip::address;
+    using Ip4Address = asio::ip::address_v4;
+    using Ip6Address = asio::ip::address_v6;
+    using IpAddress = asio::ip::address;
     using AddressData = std::variant<std::pair<Ip4Address, uint16_t>,
                                      std::pair<Ip6Address, uint16_t>>;
 

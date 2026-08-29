@@ -8,7 +8,8 @@
 
 #include <charconv>
 
-#include <boost/asio/ip/address.hpp>
+#include <asio/ip/address.hpp>
+#include <system_error>
 
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::transport, MultiaddressParser::Error, e) {
   using E = libp2p::transport::MultiaddressParser::Error;
@@ -23,7 +24,7 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::transport, MultiaddressParser::Error, e) {
 
 namespace libp2p::transport {
 
-  using boost::asio::ip::make_address;
+  using asio::ip::make_address;
   using multi::Protocol;
 
   // clang-format off
@@ -102,7 +103,7 @@ namespace libp2p::transport {
 
   outcome::result<MultiaddressParser::IpAddress> MultiaddressParser::parseIp(
       std::string_view value) {
-    boost::system::error_code ec;
+    std::error_code ec;
     auto addr = make_address(value, ec);
     if (!ec) {
       return addr;

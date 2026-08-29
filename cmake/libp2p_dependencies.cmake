@@ -88,6 +88,12 @@ endif()
 # --- BoringSSL (before curl on Linux and before lsquic) ---
 pp_browser_add_vendored_boringssl()
 
+# --- standalone Asio (before Boost; Boost remains for DI / system leftovers) ---
+pp_libp2p_add_vendored(asio)
+if(NOT TARGET Asio::asio)
+  message(FATAL_ERROR "Asio::asio target not found")
+endif()
+
 # --- Boost ---
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)

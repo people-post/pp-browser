@@ -13,9 +13,9 @@
 #include <thread>
 #include <vector>
 
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
+#include <asio/any_io_executor.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/io_context.hpp>
 #include "common/PbrCompat.h"
 
 namespace libp2p {
@@ -71,7 +71,7 @@ public:
   void Post(std::function<void()> fn);
 
   /** Executor for host io_context (async pumps, strands). */
-  boost::asio::any_io_executor IoExecutor() const;
+  asio::any_io_executor IoExecutor() const;
 
   /** Bounded worker pool for blocking protocol / HTTP hop-offs (not the io thread). */
   WorkerPool& GetWorkerPool();
@@ -103,9 +103,9 @@ private:
 
   bool available_ = false;
   std::atomic<bool> running_{false};
-  std::shared_ptr<boost::asio::io_context> io_context_;
+  std::shared_ptr<asio::io_context> io_context_;
   /** Keeps io_context::run() alive when the host has no pending handlers (Client / idle). */
-  std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
+  std::optional<asio::executor_work_guard<asio::io_context::executor_type>> work_guard_;
   std::shared_ptr<libp2p::Host> host_;
   std::unique_ptr<WorkerPool> owned_worker_pool_;
   WorkerPool* worker_pool_ = nullptr;

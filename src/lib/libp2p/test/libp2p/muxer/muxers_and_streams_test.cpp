@@ -109,7 +109,7 @@ namespace libp2p::regression {
     Node(int node_id,
          bool jumbo_msg,
          const Behavior &behavior,
-         std::shared_ptr<boost::asio::io_context> io,
+         std::shared_ptr<asio::io_context> io,
          HostMuxerKind muxer,
          HostSecurityKind security)
         : behavior_(behavior) {
@@ -304,7 +304,7 @@ namespace libp2p::regression {
     }
   };
 
-  void runEventLoop(std::shared_ptr<boost::asio::io_context> io) {
+  void runEventLoop(std::shared_ptr<asio::io_context> io) {
     auto max_duration = std::chrono::seconds(300);
     if (std::getenv("TRACE_DEBUG") != nullptr) {
       max_duration = std::chrono::seconds(86400);
@@ -323,7 +323,7 @@ namespace libp2p::regression {
     bool client_read = false;
     bool eof_passed = false;
 
-    std::shared_ptr<boost::asio::io_context> io;
+    std::shared_ptr<asio::io_context> io;
     std::shared_ptr<Node> client;
     std::shared_ptr<Node> server;
 
@@ -373,7 +373,7 @@ namespace libp2p::regression {
     auto listen_to =
         libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40000").value();
 
-    io = std::make_shared<boost::asio::io_context>();
+    io = std::make_shared<asio::io_context>();
 
     server = std::make_shared<Node>(
         kServerId, jumbo_msg, server_behavior, io, muxer, security);
@@ -409,7 +409,7 @@ namespace libp2p::regression {
     bool client_read_from_accepted_stream = false;
     bool server_read_from_connected_stream = false;
 
-    std::shared_ptr<boost::asio::io_context> io;
+    std::shared_ptr<asio::io_context> io;
     std::shared_ptr<Node> client;
     std::shared_ptr<Node> server;
 
@@ -468,7 +468,7 @@ namespace libp2p::regression {
     auto listen_to =
         libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40001").value();
 
-    io = std::make_shared<boost::asio::io_context>();
+    io = std::make_shared<asio::io_context>();
 
     server = std::make_shared<Node>(
         kServerId, false, server_behavior, io, muxer, security);

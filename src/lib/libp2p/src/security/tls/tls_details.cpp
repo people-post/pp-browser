@@ -7,7 +7,7 @@
 #include <openssl/asn1.h>
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
-#include <boost/asio/ssl/verify_context.hpp>
+#include <asio/ssl/verify_context.hpp>
 #include <optional>
 
 #include <libp2p/crypto/ecdsa_provider/ecdsa_provider_impl.hpp>
@@ -77,7 +77,7 @@ namespace libp2p::security::tls_details {
     return true;
   }
 
-  bool verifyCallback(bool status, boost::asio::ssl::verify_context &ctx) {
+  bool verifyCallback(bool status, asio::ssl::verify_context &ctx) {
     X509_STORE_CTX *store_ctx = ctx.native_handle();
     assert(store_ctx);
 

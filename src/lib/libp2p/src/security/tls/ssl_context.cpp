@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <boost/asio/ssl/context.hpp>
+#include <asio/ssl/context.hpp>
 #include <libp2p/common/asio_buffer.hpp>
 #include <libp2p/peer/identity_manager.hpp>
 #include <libp2p/security/tls/ssl_context.hpp>
@@ -31,16 +31,16 @@ namespace libp2p::security {
   SslContext::SslContext(
       const peer::IdentityManager &idmgr,
       const crypto::marshaller::KeyMarshaller &key_marshaller) {
-    using boost::asio::ssl::context;
+    using asio::ssl::context;
     auto r = tls_details::makeCertificate(idmgr.getKeyPair(), key_marshaller);
     auto make = [&] {
       auto ctx = std::make_shared<context>(context::tlsv13);
       ctx->set_options(context::no_compression | context::no_sslv2
                        | context::no_sslv3 | context::no_tlsv1_1
                        | context::no_tlsv1_2);
-      ctx->set_verify_mode(boost::asio::ssl::verify_peer
-                           | boost::asio::ssl::verify_fail_if_no_peer_cert
-                           | boost::asio::ssl::verify_client_once);
+      ctx->set_verify_mode(asio::ssl::verify_peer
+                           | asio::ssl::verify_fail_if_no_peer_cert
+                           | asio::ssl::verify_client_once);
       ctx->set_verify_callback(&tls_details::verifyCallback);
       ctx->use_certificate(asioBuffer(r.certificate), context::asn1);
       ctx->use_private_key(asioBuffer(r.private_key), context::asn1);

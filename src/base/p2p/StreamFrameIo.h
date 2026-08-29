@@ -5,8 +5,8 @@
 
 #include <libp2p/connection/stream.hpp>
 
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/steady_timer.hpp>
+#include <asio/any_io_executor.hpp>
+#include <asio/steady_timer.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -32,7 +32,7 @@ struct LengthPrefixedFrameConfig {
    */
   std::chrono::milliseconds read_timeout{0};
   /** Host io_context executor — required for async/duplex read_timeout. */
-  boost::asio::any_io_executor timer_executor{};
+  asio::any_io_executor timer_executor{};
 };
 
 /** App-level QoS for one DuplexFrameSession (not Yamux / not the peer). */
@@ -86,7 +86,7 @@ inline StreamIoPolicy MediaRelayClientIoPolicy() {
 }
 
 inline StreamIoPolicy ControlJsonIoPolicy(
-    boost::asio::any_io_executor timer_executor,
+    asio::any_io_executor timer_executor,
     std::chrono::milliseconds read_timeout = kDefaultControlFrameReadTimeout,
     size_t max_frame_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes) {
   StreamIoPolicy policy;
@@ -102,7 +102,7 @@ inline StreamIoPolicy ControlJsonIoPolicy(
 
 /** E2E chat attachment blob transfer (`/pp-browser/chat-blob/1.0.0`). */
 inline StreamIoPolicy ChatBlobIoPolicy(
-    boost::asio::any_io_executor timer_executor,
+    asio::any_io_executor timer_executor,
     std::chrono::milliseconds read_timeout = kDefaultControlFrameReadTimeout,
     bool read_once = false) {
   StreamIoPolicy policy;
@@ -160,7 +160,7 @@ private:
   Phase phase_ = Phase::Idle;
   libp2p::Bytes header_buf_;
   libp2p::Bytes payload_buf_;
-  std::shared_ptr<boost::asio::steady_timer> read_timer_;
+  std::shared_ptr<asio::steady_timer> read_timer_;
   std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };
 
@@ -258,7 +258,7 @@ private:
   libp2p::Bytes header_buf_;
   libp2p::Bytes payload_buf_;
   std::vector<PendingWrite> outbound_;
-  std::shared_ptr<boost::asio::steady_timer> read_timer_;
+  std::shared_ptr<asio::steady_timer> read_timer_;
   std::shared_ptr<std::atomic<uint64_t>> deadline_generation_;
 };
 

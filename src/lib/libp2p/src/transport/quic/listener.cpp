@@ -11,8 +11,8 @@
 
 namespace libp2p::transport {
   QuicListener::QuicListener(
-      std::shared_ptr<boost::asio::io_context> io_context,
-      std::shared_ptr<boost::asio::ssl::context> ssl_context,
+      std::shared_ptr<asio::io_context> io_context,
+      std::shared_ptr<asio::ssl::context> ssl_context,
       const muxer::MuxedConnectionConfig &mux_config,
       PeerId local_peer,
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_codec,
@@ -38,8 +38,8 @@ namespace libp2p::transport {
       return std::move(endpoint_res).as_failure();
     }
     auto endpoint = std::move(endpoint_res).value();
-    boost::asio::ip::udp::socket socket{*io_context_, endpoint.protocol()};
-    boost::system::error_code ec;
+    asio::ip::udp::socket socket{*io_context_, endpoint.protocol()};
+    std::error_code ec;
     socket.bind(endpoint, ec);
     if (ec) {
       return ec;

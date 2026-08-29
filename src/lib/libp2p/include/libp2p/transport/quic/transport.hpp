@@ -6,17 +6,17 @@
 
 #pragma once
 
-#include <boost/asio/ip/udp.hpp>
+#include <asio/ip/udp.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
 #include <libp2p/transport/transport_adaptor.hpp>
 
-namespace boost::asio {
+namespace asio {
   class io_context;
-}  // namespace boost::asio
+}  // namespace asio
 
-namespace boost::asio::ssl {
+namespace asio::ssl {
   class context;
-}  // namespace boost::asio::ssl
+}  // namespace asio::ssl
 
 namespace libp2p::crypto::marshaller {
   class KeyMarshaller;
@@ -38,7 +38,7 @@ namespace libp2p::transport {
   class QuicTransport : public TransportAdaptor,
                         public std::enable_shared_from_this<QuicTransport> {
    public:
-    QuicTransport(std::shared_ptr<boost::asio::io_context> io_context,
+    QuicTransport(std::shared_ptr<asio::io_context> io_context,
                   const security::SslContext &ssl_context,
                   const muxer::MuxedConnectionConfig &mux_config,
                   const peer::IdentityManager &id_mgr,
@@ -57,17 +57,17 @@ namespace libp2p::transport {
 
    private:
     std::shared_ptr<lsquic::Engine> makeClient(
-        boost::asio::ip::udp protocol) const;
+        asio::ip::udp protocol) const;
 
     std::shared_ptr<lsquic::Engine> clientFor(
-        boost::asio::ip::udp::endpoint remote);
+        asio::ip::udp::endpoint remote);
 
-    std::shared_ptr<boost::asio::io_context> io_context_;
-    std::shared_ptr<boost::asio::ssl::context> ssl_context_;
+    std::shared_ptr<asio::io_context> io_context_;
+    std::shared_ptr<asio::ssl::context> ssl_context_;
     muxer::MuxedConnectionConfig mux_config_;
     PeerId local_peer_;
     std::shared_ptr<crypto::marshaller::KeyMarshaller> key_codec_;
-    boost::asio::ip::udp::resolver resolver_;
+    asio::ip::udp::resolver resolver_;
     std::shared_ptr<lsquic::Engine> client4_, client6_;
   };
 }  // namespace libp2p::transport

@@ -54,7 +54,7 @@ namespace libp2p {
   }  // namespace
 
   std::shared_ptr<Host> createExplicitHost(
-      std::shared_ptr<boost::asio::io_context> io,
+      std::shared_ptr<asio::io_context> io,
       HostMuxerKind muxer_kind,
       HostSecurityKind security_kind,
       std::optional<crypto::KeyPair> key_pair,

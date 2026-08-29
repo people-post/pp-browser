@@ -13,7 +13,7 @@
 #pragma once
 
 #include <gmock/gmock.h>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 /**
  * @code
@@ -36,7 +36,7 @@ ACTION_P(AsioSuccess, size) {
 /**
  * @code
  * const int size = 1;
- * boost::system::error_code ec = ...;
+ * std::error_code ec = ...;
  * EXPECT_CALL(*connection_, read(_, _, _)).WillOnce(AsioCallback(ec, size));
  * auto buf = std::make_shared<std::vector<uint8_t>>(size, 0);
  * secure_connection_->read(*buf, size, [&size, buf, e=ec](auto &&ec, size_t

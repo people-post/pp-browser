@@ -6,7 +6,8 @@
 
 #include <libp2p/multi/converters/ip_v4_converter.hpp>
 
-#include <boost/asio/ip/address_v4.hpp>
+#include <asio/ip/address_v4.hpp>
+#include <system_error>
 #include <cctype>
 #include <libp2p/multi/converters/conversion_error.hpp>
 
@@ -58,8 +59,8 @@ namespace libp2p::multi::converters {
       return ConversionError::INVALID_ADDRESS;
     }
 
-    boost::system::error_code ec;
-    auto address = boost::asio::ip::make_address_v4(addr, ec);
+    std::error_code ec;
+    auto address = asio::ip::make_address_v4(addr, ec);
     if (ec) {
       return ConversionError::INVALID_ADDRESS;
     }

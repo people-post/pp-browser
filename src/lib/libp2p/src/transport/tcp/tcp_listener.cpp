@@ -12,7 +12,7 @@
 
 namespace libp2p::transport {
 
-  TcpListener::TcpListener(boost::asio::io_context &context,
+  TcpListener::TcpListener(asio::io_context &context,
                            std::shared_ptr<Upgrader> upgrader,
                            TransportListener::HandlerFunc handler)
       : context_(context),
@@ -38,7 +38,7 @@ namespace libp2p::transport {
     auto endpoint = std::move(endpoint_res).value();
 
     // TODO(@warchant): replace with parser PRE-129
-    using namespace boost::asio;  // NOLINT
+    using namespace asio;  // NOLINT
     try {
       // setup acceptor, throws
       acceptor_.open(endpoint.protocol());
@@ -53,7 +53,7 @@ namespace libp2p::transport {
       doAccept();
 
       return outcome::success();
-    } catch (const boost::system::system_error &e) {
+    } catch (const std::system_error &e) {
       log::createLogger("Listener")
           ->error(
               "Cannot listen to {}: {}", address.getStringAddress(), e.code());
@@ -66,7 +66,7 @@ namespace libp2p::transport {
   }
 
   outcome::result<multi::Multiaddress> TcpListener::getListenMultiaddr() const {
-    boost::system::error_code ec;
+    std::error_code ec;
     auto endpoint = acceptor_.local_endpoint(ec);
     if (ec) {
       return ec;
@@ -79,7 +79,7 @@ namespace libp2p::transport {
   }
 
   outcome::result<void> TcpListener::close() {
-    boost::system::error_code ec;
+    std::error_code ec;
     acceptor_.close(ec);
     if (ec) {
       return ec;
@@ -88,15 +88,14 @@ namespace libp2p::transport {
   }
 
   void TcpListener::doAccept() {
-    using namespace boost::asio;    // NOLINT
-    using namespace boost::system;  // NOLINT
+    using namespace asio;    // NOLINT
 
     if (!acceptor_.is_open()) {
       return;
     }
 
     acceptor_.async_accept(
-        [self{this->shared_from_this()}](const boost::system::error_code &ec,
+        [self{this->shared_from_this()}](const std::error_code &ec,
                                          ip::tcp::socket sock) {
           if (ec) {
             return self->handle_(ec);

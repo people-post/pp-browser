@@ -10,7 +10,8 @@
 #include <chrono>
 #include <optional>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
+#include <system_error>
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/raw_connection.hpp>
 #include <libp2p/multi/multiaddress.hpp>
@@ -22,7 +23,7 @@ namespace libp2p::security {
 namespace libp2p::transport {
 
   /**
-   * @brief boost::asio implementation of TCP connection (socket).
+   * @brief asio implementation of TCP connection (socket).
    */
   class TcpConnection : public connection::RawConnection,
                         public std::enable_shared_from_this<TcpConnection> {
@@ -32,15 +33,15 @@ namespace libp2p::transport {
 
     ~TcpConnection() override = default;
 
-    using Tcp = boost::asio::ip::tcp;
-    using ErrorCode = boost::system::error_code;
+    using Tcp = asio::ip::tcp;
+    using ErrorCode = std::error_code;
     using ResolverResultsType = Tcp::resolver::results_type;
     using ConnectCallback = void(const ErrorCode &, const Tcp::endpoint &);
     using ConnectCallbackFunc = std::function<ConnectCallback>;
 
-    explicit TcpConnection(boost::asio::io_context &ctx, ProtoAddrVec layers);
+    explicit TcpConnection(asio::io_context &ctx, ProtoAddrVec layers);
 
-    TcpConnection(boost::asio::io_context &ctx,
+    TcpConnection(asio::io_context &ctx,
                   ProtoAddrVec layers,
                   Tcp::socket &&socket);
 
@@ -96,13 +97,13 @@ namespace libp2p::transport {
    private:
     outcome::result<void> saveMultiaddresses();
 
-    boost::asio::io_context &context_;
+    asio::io_context &context_;
     ProtoAddrVec layers_;
     Tcp::socket socket_;
     bool initiator_ = false;
     bool connecting_with_timeout_ = false;
     std::atomic_bool connection_phase_done_;
-    boost::asio::steady_timer connect_timer_;
+    asio::steady_timer connect_timer_;
 
     /// If true then no more callbacks will be issued
     bool closed_by_host_ = false;

@@ -95,12 +95,12 @@ void CallMediaSession::StartHandshakeTimerLocked() {
     return;
   }
   const int ms = handshake_timeout_ms > 0 ? handshake_timeout_ms : kDefaultHandshakeTimeoutMs;
-  auto timer = std::make_shared<boost::asio::steady_timer>(ex);
+  auto timer = std::make_shared<asio::steady_timer>(ex);
   handshake_timer = timer;
   auto token = handshake_cancelled;
   auto self = shared_from_this();
   timer->expires_after(std::chrono::milliseconds(ms));
-  timer->async_wait([self, timer, token](const boost::system::error_code& ec) {
+  timer->async_wait([self, timer, token](const std::error_code& ec) {
     if (ec) {
       return; // cancelled
     }

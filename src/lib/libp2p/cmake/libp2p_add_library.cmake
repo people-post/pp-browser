@@ -5,6 +5,7 @@ function(libp2p_add_library target)
   if(PACKAGE_MANAGER STREQUAL "vendored")
     target_link_libraries(${target}
       qtils::qtils
+      Asio::asio
       Boost::boost
       soralog::soralog
       Boost::Boost.DI

@@ -7,7 +7,7 @@
 #pragma once
 
 #include <optional>
-#include <boost/asio/io_context.hpp>
+#include <asio/io_context.hpp>
 
 #include <libp2p/peer/peer_info.hpp>
 
@@ -28,7 +28,7 @@ namespace libp2p::protocol::example::utility {
   std::string formatPeerId(const std::vector<uint8_t> &bytes);
 
   /// Returns the 1st local ipv4 as string
-  std::string getLocalIP(boost::asio::io_context &io);
+  std::string getLocalIP(asio::io_context &io);
 
   /// Parses listen address and peer id given as uri
   std::optional<libp2p::peer::PeerInfo> str2peerInfo(const std::string &str);

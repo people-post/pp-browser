@@ -9,9 +9,9 @@
 #include <libp2p/common/metrics/instance_count.hpp>
 #include <libp2p/connection/capable_connection.hpp>
 
-namespace boost::asio {
+namespace asio {
   class io_context;
-}  // namespace boost::asio
+}  // namespace asio
 
 namespace libp2p::transport::lsquic {
   class Engine;
@@ -22,7 +22,7 @@ namespace libp2p::transport {
   class QuicConnection : public connection::CapableConnection,
                          public std::enable_shared_from_this<QuicConnection> {
    public:
-    QuicConnection(std::shared_ptr<boost::asio::io_context> io_context,
+    QuicConnection(std::shared_ptr<asio::io_context> io_context,
                    lsquic::ConnCtx *conn_ctx,
                    bool initiator,
                    Multiaddress local,
@@ -75,7 +75,7 @@ namespace libp2p::transport {
     }
 
    private:
-    std::shared_ptr<boost::asio::io_context> io_context_;
+    std::shared_ptr<asio::io_context> io_context_;
     lsquic::ConnCtx *conn_ctx_;
     bool initiator_;
     Multiaddress local_, remote_;

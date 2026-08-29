@@ -7,8 +7,8 @@
 #pragma once
 
 #include <lsquic.h>
-#include <boost/asio/ip/udp.hpp>
-#include <boost/asio/steady_timer.hpp>
+#include <asio/ip/udp.hpp>
+#include <asio/steady_timer.hpp>
 #include <deque>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/peer/peer_id.hpp>
@@ -17,13 +17,13 @@
 #include <qtils/bytes.hpp>
 #include <qtils/outcome.hpp>
 
-namespace boost::asio {
+namespace asio {
   class io_context;
-}  // namespace boost::asio
+}  // namespace asio
 
-namespace boost::asio::ssl {
+namespace asio::ssl {
   class context;
-}  // namespace boost::asio::ssl
+}  // namespace asio::ssl
 
 namespace libp2p::connection {
   struct QuicStream;
@@ -54,7 +54,7 @@ namespace libp2p::transport::lsquic {
    * Connect operation arguments.
    */
   struct Connecting {
-    boost::asio::ip::udp::endpoint remote;
+    asio::ip::udp::endpoint remote;
     PeerId peer;
     OnConnect cb;
   };
@@ -88,12 +88,12 @@ namespace libp2p::transport::lsquic {
    */
   class Engine : public std::enable_shared_from_this<Engine> {
    public:
-    Engine(std::shared_ptr<boost::asio::io_context> io_context,
-           std::shared_ptr<boost::asio::ssl::context> ssl_context,
+    Engine(std::shared_ptr<asio::io_context> io_context,
+           std::shared_ptr<asio::ssl::context> ssl_context,
            const muxer::MuxedConnectionConfig &mux_config,
            PeerId local_peer,
            std::shared_ptr<crypto::marshaller::KeyMarshaller> key_codec,
-           boost::asio::ip::udp::socket &&socket,
+           asio::ip::udp::socket &&socket,
            bool client);
     ~Engine();
 
@@ -107,7 +107,7 @@ namespace libp2p::transport::lsquic {
       return local_;
     }
     void start();
-    void connect(const boost::asio::ip::udp::endpoint &remote,
+    void connect(const asio::ip::udp::endpoint &remote,
                  const PeerId &peer,
                  OnConnect cb);
     outcome::result<std::shared_ptr<QuicStream>> newStream(ConnCtx *conn_ctx);
@@ -121,13 +121,13 @@ namespace libp2p::transport::lsquic {
     void process();
     void readLoop();
 
-    std::shared_ptr<boost::asio::io_context> io_context_;
-    std::shared_ptr<boost::asio::ssl::context> ssl_context_;
+    std::shared_ptr<asio::io_context> io_context_;
+    std::shared_ptr<asio::ssl::context> ssl_context_;
     PeerId local_peer_;
     std::shared_ptr<crypto::marshaller::KeyMarshaller> key_codec_;
-    boost::asio::ip::udp::socket socket_;
-    boost::asio::steady_timer timer_;
-    boost::asio::ip::udp::endpoint socket_local_;
+    asio::ip::udp::socket socket_;
+    asio::steady_timer timer_;
+    asio::ip::udp::endpoint socket_local_;
     Multiaddress local_;
     lsquic_engine_t *engine_ = nullptr;
     OnAccept on_accept_;
@@ -138,7 +138,7 @@ namespace libp2p::transport::lsquic {
     struct Reading {
       static constexpr size_t kMaxUdpPacketSize = 64 << 10;
       qtils::BytesN<kMaxUdpPacketSize> buf;
-      boost::asio::ip::udp::endpoint remote;
+      asio::ip::udp::endpoint remote;
     };
     Reading reading_;
   };

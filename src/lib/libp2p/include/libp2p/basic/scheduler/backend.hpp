@@ -36,7 +36,7 @@ namespace libp2p::basic {
     virtual ~SchedulerBackend() = default;
 
     /**
-     * boost::asio::io_context::post
+     * asio::io_context::post
      */
     virtual void post(std::function<void()> &&) = 0;
 

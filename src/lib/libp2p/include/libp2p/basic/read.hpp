@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <boost/asio/error.hpp>
+#include <asio/error.hpp>
 #include <libp2p/basic/reader.hpp>
 #include <memory>
 
@@ -31,12 +31,12 @@ namespace libp2p {
           // Never throw from asio/libp2p callbacks — uncaught logic_error aborts the
           // process (moto dogfood: call-media audio read → SIGABRT on pp-browser-io).
           if (n == 0 || n > out.size()) {
-            return cb(make_error_code(boost::asio::error::invalid_argument));
+            return cb(make_error_code(asio::error::invalid_argument));
           }
           // read remaining bytes
           auto reader = weak.lock();
           if (not reader) {
-            return cb(make_error_code(boost::asio::error::operation_aborted));
+            return cb(make_error_code(asio::error::operation_aborted));
           }
           read(reader, out.subspan(n), std::move(cb));
         });

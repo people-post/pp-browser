@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <ares.h>
-#include <boost/asio.hpp>
+#include <asio.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/outcome/outcome.hpp>
 
@@ -78,16 +78,16 @@ namespace libp2p::network::c_ares {
 
     static void resolveTxt(
         const std::string &uri,
-        const std::weak_ptr<boost::asio::io_context> &io_context,
+        const std::weak_ptr<asio::io_context> &io_context,
         TxtCallback callback);
 
    private:
     struct RequestContext {
-      std::weak_ptr<boost::asio::io_context> io_context;
+      std::weak_ptr<asio::io_context> io_context;
       std::string uri;
       TxtCallback callback;
 
-      RequestContext(std::weak_ptr<boost::asio::io_context> io_context_,
+      RequestContext(std::weak_ptr<asio::io_context> io_context_,
                      std::string uri_,
                      TxtCallback callback_)
           : io_context{std::move(io_context_)},
@@ -97,7 +97,7 @@ namespace libp2p::network::c_ares {
 
     /// schedules to user's io_context the call of callback with specified error
     static void reportError(
-        const std::weak_ptr<boost::asio::io_context> &io_context,
+        const std::weak_ptr<asio::io_context> &io_context,
         TxtCallback callback,
         Error error);
 

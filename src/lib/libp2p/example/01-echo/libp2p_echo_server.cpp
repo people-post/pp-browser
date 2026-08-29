@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
         injector.create<std::shared_ptr<libp2p::security::Noise>>();
   }
   auto host = injector.create<std::shared_ptr<libp2p::Host>>();
-  auto io_context = injector.create<std::shared_ptr<boost::asio::io_context>>();
+  auto io_context = injector.create<std::shared_ptr<asio::io_context>>();
 
   // set a handler for Echo protocol
   libp2p::protocol::Echo echo{libp2p::protocol::EchoConfig{
@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
   try {
     io_context->run();
     std::exit(EXIT_SUCCESS);
-  } catch (const boost::system::error_code &ec) {
+  } catch (const std::error_code &ec) {
     log->error("Server cannot run: {}", ec);
     std::exit(EXIT_FAILURE);
   } catch (...) {

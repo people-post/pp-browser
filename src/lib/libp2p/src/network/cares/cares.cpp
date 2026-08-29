@@ -101,7 +101,7 @@ namespace libp2p::network::c_ares {
 
   void Ares::resolveTxt(
       const std::string &uri,
-      const std::weak_ptr<boost::asio::io_context> &io_context,
+      const std::weak_ptr<asio::io_context> &io_context,
       Ares::TxtCallback callback) {
     if (not initialized_.load()) {
       SL_DEBUG(
@@ -149,7 +149,7 @@ namespace libp2p::network::c_ares {
   }
 
   void Ares::reportError(
-      const std::weak_ptr<boost::asio::io_context> &io_context,
+      const std::weak_ptr<asio::io_context> &io_context,
       Ares::TxtCallback callback,
       Ares::Error error) {
     if (auto ctx = io_context.lock()) {
