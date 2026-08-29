@@ -9,13 +9,11 @@
 #include <cstdint>
 #include <vector>
 
-#include <boost/operators.hpp>
-
 namespace libp2p::crypto {
   /**
    * Strict type for key, which is encoded into Protobuf format
    */
-  struct ProtobufKey : public boost::equality_comparable<ProtobufKey> {
+  struct ProtobufKey {
     explicit ProtobufKey(std::vector<uint8_t> key) : key{std::move(key)} {}
 
     std::vector<uint8_t> key;

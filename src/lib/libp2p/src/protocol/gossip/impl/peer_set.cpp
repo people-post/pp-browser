@@ -11,9 +11,6 @@
 #include <chrono>
 #include <random>
 
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/algorithm/for_each.hpp>
-
 namespace libp2p::protocol::gossip {
 
   std::optional<PeerContextPtr> PeerSet::find(const peer::PeerId &id) const {
@@ -71,12 +68,16 @@ namespace libp2p::protocol::gossip {
   }
 
   void PeerSet::selectAll(const SelectCallback &callback) const {
-    boost::for_each(peers_, callback);
+    std::for_each(peers_.begin(), peers_.end(), callback);
   }
 
   void PeerSet::selectIf(const SelectCallback &callback,
                          const FilterCallback &filter) const {
-    boost::for_each(peers_ | boost::adaptors::filtered(filter), callback);
+    for (const auto &peer : peers_) {
+      if (filter(peer)) {
+        callback(peer);
+      }
+    }
   }
 
   void PeerSet::eraseIf(const FilterCallback &filter) {
