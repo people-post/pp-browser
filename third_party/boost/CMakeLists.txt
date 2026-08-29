@@ -26,7 +26,6 @@ set(BOOST_INCLUDE_LIBRARIES
     move
     utility
     system
-    outcome
     asio
     beast
     CACHE STRING "" FORCE)

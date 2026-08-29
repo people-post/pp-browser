@@ -133,6 +133,12 @@ set(SECP256K1_INSTALL OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(libsecp256k1)
 pp_libp2p_alias(secp256k1 libsecp256k1::secp256k1)
 
+# --- standalone Outcome (before qtils) ---
+pp_libp2p_add_vendored(outcome)
+if(NOT TARGET Outcome::outcome)
+  message(FATAL_ERROR "Outcome::outcome target not found")
+endif()
+
 # --- qtils ---
 set(QTILS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(FORMAT_ERROR_WITH_FULLTYPE ON CACHE BOOL "" FORCE)

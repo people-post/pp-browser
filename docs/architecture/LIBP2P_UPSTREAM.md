@@ -87,11 +87,13 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 - `boringssl/CMakeLists.txt` — skip installing `bssl` on iOS (CMake requires `BUNDLE DESTINATION` for MACOSX_BUNDLE executables; app links `crypto`/`ssl` only)
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
-- `qtils/outcome.hpp` — MSVC-safe `OUTCOME_TRY`: select and invoke the 1/2-arg overload inside one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`)
+- `qtils/outcome.hpp` — facade over vendored standalone Outcome (`third_party/outcome`, ned14 v2.2.15 single-header); keeps `outcome::result` / `OUTCOME_TRY` / `success` / `failure`; MSVC-safe `OUTCOME_TRY` via one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`); no longer links `Boost::outcome`
+- `outcome/` — standalone Outcome INTERFACE target (`Outcome::outcome`); pulled before qtils in `cmake/libp2p_dependencies.cmake`
+- `boost/CMakeLists.txt` — vendored build no longer pulls `outcome` (nor `filesystem`, `program_options`, `algorithm`, or `random`; replaced with STL / local helpers; CSPRNG is `StdRandomGenerator`)
 
 - `soralog/` — MSVC toolchain support; skip Unix-only `pthread`/`syslog` pieces on Windows/Android; `configurator_from_yaml.cpp` guards `SinkToSyslog` like Windows on Android; guard `sysexits.h` in `sink_to_file.cpp`; `util.hpp` uses generated thread names on Windows/Android; C++20 `atomic_flag` init, Clang-only sanitizer attrs, and MSVC `do/while` log macros; `level.hpp` undefs Windows `ERROR`/`DEBUG`/`IGNORE`/`min`/`max` macros before the `Level` enum and `std::min`/`std::max` (c-ares/Boost include `windows.h` first) and exposes `kLevelError`/`kLevelDebug` for call sites after `windows.h` redefines those macros; root `CMakeLists.txt` defines `NOMINMAX` for MSVC
 - libp2p tests/examples — use `soralog::kLevelError` / `kLevelDebug` instead of `Level::ERROR` / `Level::DEBUG` (MSVC: `wingdi.h` `ERROR` macro)
-- `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs; vendored build no longer pulls `filesystem`, `program_options`, `algorithm`, or `random` (replaced with STL / local helpers; CSPRNG is `StdRandomGenerator`)
+- `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs
 - `lsquic/` — skip duplicate `lsquic_conn_ssl.patch` on qdrvm tag; fix double-applied symbols in-tree
 - lsquic — remaining patches applied at import (`cmake/patches/libp2p/lsquic/`)
 - `lsquic/CMakeLists.txt` — vendored `ZLIB::ZLIB` include/link paths for Windows builds

@@ -6,7 +6,13 @@
 
 #pragma once
 
-#include <boost/outcome/result.hpp>
+// Standalone Outcome (ned14). Kept free of Boost.Outcome so Boost.Asio can
+// coexist without flipping Outcome into the Boost edition.
+#include <outcome.hpp>
+
+#include <functional>
+#include <system_error>
+#include <utility>
 
 #include <qtils/error.hpp>
 #include <qtils/macro/common.hpp>
@@ -14,14 +20,21 @@
 #define QTILS_OUTCOME_UNIQUE_NAME QTILS_UNIQUE_NAME(outcome_res_)
 
 namespace qtils {
+  // Match prior Boost.Outcome facade: std::error_code + default_policy.
   template <typename T, typename E = std::error_code>
-  using Result = boost::outcome_v2::
-      basic_result<T, E, boost::outcome_v2::policy::default_policy<T, E, void>>;
+  using Result = OUTCOME_V2_NAMESPACE::basic_result<
+      T,
+      E,
+      OUTCOME_V2_NAMESPACE::policy::default_policy<T, E, void>>;
 }  // namespace qtils
 
-// - - - - - - -
-// compatibility
-// v v v v v v v
+// Prefer our MSVC-safe OUTCOME_TRY over the amalgamation's macros.
+#ifdef OUTCOME_TRY
+#undef OUTCOME_TRY
+#endif
+#ifdef BOOST_OUTCOME_TRY
+#undef BOOST_OUTCOME_TRY
+#endif
 
 #define _OUTCOME_TRY_void(tmp, expr)    \
   auto &&tmp = expr;                    \
@@ -48,6 +61,6 @@ namespace qtils {
 namespace outcome {
   template <class R>
   using result = qtils::Result<R>;
-  using boost::outcome_v2::failure;
-  using boost::outcome_v2::success;
+  using OUTCOME_V2_NAMESPACE::failure;
+  using OUTCOME_V2_NAMESPACE::success;
 }  // namespace outcome
