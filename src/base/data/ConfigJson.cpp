@@ -347,11 +347,18 @@ Object Libp2pConfigToObject(const Libp2pConfig& config) {
   for (const std::string& peer : config.bootstrap_peers) {
     peers.emplace_back(peer);
   }
+  std::vector<Value> advertise;
+  advertise.reserve(config.advertise_multiaddrs.size());
+  for (const std::string& ma : config.advertise_multiaddrs) {
+    advertise.emplace_back(ma);
+  }
 
   Object object;
   object.set("listen_multiaddr", config.listen_multiaddr);
   object.set("node_enabled", config.node_enabled);
   object.set("bootstrap_peers", makeArray(std::move(peers)));
+  object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
+  object.set("mesh_publish", config.mesh_publish);
   object.setJsonUInt("max_connections", config.max_connections);
   object.setJsonUInt("max_concurrent_dials", config.max_concurrent_dials);
   object.set("dial_timeout_ms", static_cast<int64_t>(config.dial_timeout_ms));
@@ -378,6 +385,17 @@ void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
         config.bootstrap_peers.push_back(*peer);
       }
     }
+  }
+  if (const Array* advertise = object.getArray("advertise_multiaddrs")) {
+    config.advertise_multiaddrs.clear();
+    for (const Value& item : advertise->elements) {
+      if (auto ma = asString(item)) {
+        config.advertise_multiaddrs.push_back(*ma);
+      }
+    }
+  }
+  if (auto mesh_publish = object.getIf<bool>("mesh_publish")) {
+    config.mesh_publish = *mesh_publish;
   }
   if (auto max_connections = object.getNonNegInt("max_connections")) {
     config.max_connections = static_cast<size_t>(*max_connections);

@@ -201,4 +201,46 @@ TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   EXPECT_NE(identity.error().message.find("schema"), std::string::npos);
 }
 
+TEST_F(IdentityStoreTest, SeededMintIsDeterministicAndFailClosed) {
+  ByteVector seed(32, 0x55);
+  std::string peer_id;
+  std::string account_id;
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    ASSERT_TRUE(store.SetIdentitySeed(seed));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    peer_id = identity->peer_id;
+    account_id = identity->account_id;
+  }
+  {
+    IdentityStore reloaded(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+    ASSERT_TRUE(reloaded.SetIdentitySeed(seed));
+    auto identity = reloaded.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    EXPECT_EQ(identity->peer_id, peer_id);
+    EXPECT_EQ(identity->account_id, account_id);
+  }
+  {
+    IdentityStore mismatch(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(mismatch.SetDek(MakeTestDek()));
+    ByteVector other(32, 0x66);
+    ASSERT_TRUE(mismatch.SetIdentitySeed(other));
+    auto identity = mismatch.LoadOrCreate();
+    ASSERT_FALSE(static_cast<bool>(identity));
+    EXPECT_NE(identity.error().message.find("fail-closed"), std::string::npos);
+  }
+  // Wipe + same seed remints identical ids
+  std::filesystem::remove_all(data_dir_);
+  IdentityStore remint(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(remint.SetDek(MakeTestDek()));
+  ASSERT_TRUE(remint.SetIdentitySeed(seed));
+  auto again = remint.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
+  EXPECT_EQ(again->peer_id, peer_id);
+  EXPECT_EQ(again->account_id, account_id);
+}
+
 } // namespace

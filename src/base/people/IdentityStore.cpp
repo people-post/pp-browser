@@ -4,6 +4,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/IdentitySeedDeriver.h"
 #include "base/crypto/MlDsa.h"
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
@@ -13,6 +14,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sodium.h>
 #include "common/PbrCompat.h"
 
@@ -20,7 +22,8 @@ namespace pbr {
 
 namespace {
 
-Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
+Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
+                              const ByteVector* seeded_coins = nullptr) {
   const bool have_both = !identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty();
   if (have_both) {
     auto pk = Base64Decode(identity.kem_public_key_b64);
@@ -32,7 +35,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
   }
   // First create (or size mismatch): mint account KEM. Link-device Import replaces these
   // with the shared account secret (M015) after LoadOrCreate.
-  auto generated = HybridKem::GenerateKeyPair();
+  Roe<HybridKemKeyPair> generated =
+      seeded_coins ? HybridKem::GenerateKeyPairFromSeed(*seeded_coins) : HybridKem::GenerateKeyPair();
   if (!generated) {
     return generated.error();
   }
@@ -42,7 +46,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
   return {};
 }
 
-Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
+Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
+                                 const ByteVector* seeded_seed = nullptr) {
   const bool have_both =
       !identity.account_signing_public_key_b64.empty() && !identity.account_signing_private_key_b64.empty();
   if (have_both) {
@@ -60,7 +65,8 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
       return {};
     }
   }
-  auto generated = MlDsa::GenerateKeyPair();
+  Roe<MlDsaKeyPair> generated =
+      seeded_seed ? MlDsa::GenerateKeyPairFromSeed(*seeded_seed) : MlDsa::GenerateKeyPair();
   if (!generated) {
     return generated.error();
   }
@@ -72,6 +78,41 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
   }
   identity.account_id = *account_id;
   dirty_flag = true;
+  return {};
+}
+
+bool ConstantTimeEqualB64(const std::string& a, const std::string& b) {
+  auto da = Base64Decode(a);
+  auto db = Base64Decode(b);
+  if (!da || !db || da->size() != db->size()) {
+    return false;
+  }
+  return sodium_memcmp(da->data(), db->data(), da->size()) == 0;
+}
+
+Roe<void> FailClosedIfSeedMismatch(const LocalIdentity& identity, const DerivedNodeIdentitySeeds& seeds) {
+  auto device = MlDsa::GenerateKeyPairFromSeed(seeds.device_ml_dsa_seed);
+  if (!device) {
+    return device.error();
+  }
+  auto account = MlDsa::GenerateKeyPairFromSeed(seeds.account_ml_dsa_seed);
+  if (!account) {
+    return account.error();
+  }
+  auto kem = HybridKem::GenerateKeyPairFromSeed(seeds.account_ml_kem_coins);
+  if (!kem) {
+    return kem.error();
+  }
+  const std::string expect_device_pk = Base64Encode(device->public_key);
+  const std::string expect_account_pk = Base64Encode(account->public_key);
+  const std::string expect_kem_pk = Base64Encode(kem->public_key);
+  if (!ConstantTimeEqualB64(identity.public_key_b64, expect_device_pk) ||
+      !ConstantTimeEqualB64(identity.account_signing_public_key_b64, expect_account_pk) ||
+      !ConstantTimeEqualB64(identity.kem_public_key_b64, expect_kem_pk)) {
+    return Error(
+        "PP_NODE_IDENTITY_SEED does not match existing identity.enc (fail-closed); "
+        "use the seed that minted this profile, or wipe the volume");
+  }
   return {};
 }
 
@@ -164,6 +205,18 @@ IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
   }
 }
 
+Roe<void> IdentityStore::SetIdentitySeed(ByteVector master_seed) {
+  if (master_seed.size() < 32) {
+    return Error("identity seed must be at least 32 bytes");
+  }
+  std::lock_guard lock(mutex_);
+  if (!identity_seed_.empty()) {
+    sodium_memzero(identity_seed_.data(), identity_seed_.size());
+  }
+  identity_seed_ = std::move(master_seed);
+  return {};
+}
+
 Roe<void> IdentityStore::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
@@ -226,7 +279,16 @@ Roe<void> IdentityStore::EnsureLoaded() const {
 
   std::ifstream in(StorePath(), std::ios::binary);
   if (!in) {
-    auto keys = MlDsa::GenerateKeyPair();
+    std::optional<DerivedNodeIdentitySeeds> derived;
+    if (!identity_seed_.empty()) {
+      auto seeds = DeriveNodeIdentitySeeds(identity_seed_);
+      if (!seeds) {
+        return seeds.error();
+      }
+      derived = std::move(*seeds);
+    }
+    Roe<MlDsaKeyPair> keys =
+        derived ? MlDsa::GenerateKeyPairFromSeed(derived->device_ml_dsa_seed) : MlDsa::GenerateKeyPair();
     if (!keys) {
       return keys.error();
     }
@@ -241,10 +303,12 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
-    if (auto kem = EnsureHybridKemKeys(identity_, dirty_); !kem) {
+    const ByteVector* kem_coins = derived ? &derived->account_ml_kem_coins : nullptr;
+    const ByteVector* account_seed = derived ? &derived->account_ml_dsa_seed : nullptr;
+    if (auto kem = EnsureHybridKemKeys(identity_, dirty_, kem_coins); !kem) {
       return kem.error();
     }
-    if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
+    if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_, account_seed); !account) {
       return account.error();
     }
     loaded_ = true;
@@ -306,6 +370,15 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   }
   if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
     return account.error();
+  }
+  if (!identity_seed_.empty()) {
+    auto seeds = DeriveNodeIdentitySeeds(identity_seed_);
+    if (!seeds) {
+      return seeds.error();
+    }
+    if (auto matched = FailClosedIfSeedMismatch(identity_, *seeds); !matched) {
+      return matched.error();
+    }
   }
   loaded_ = true;
   return {};

@@ -9,7 +9,7 @@
 | Layer | Path | Role |
 |-------|------|------|
 | Common | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp`; transitional explicit bridge in [`src/common/PbrCompat.h`](../../src/common/PbrCompat.h); JSON helpers in [`src/common/ValueJson.h`](../../src/common/ValueJson.h) (`pp::` directly) |
-| Crypto | FetchContent / sibling [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers (`pp_crypto`); product wire helpers stay in `base/crypto` |
+| Crypto | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (pinned tag) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers (`pp_crypto`); product wire helpers stay in `base/crypto` |
 | UI | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3 (`pp_ui` = `pp_ui_rml` + `pp_ui_backend`); product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi, libp2p); may use `third_party` (+ optionally `common`); not product domain |
 | Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, p2p/render glue, data, people, messaging/ai/ui |

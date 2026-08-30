@@ -91,6 +91,17 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
       config.libp2p.capabilities.media_relay = *parsed;
     }
   }
+  if (const char* advertise = EnvOrNull("PP_NODE_ADVERTISE_MULTIADDRS")) {
+    config.libp2p.advertise_multiaddrs = ParsePpNodeBootstrapPeersCsv(advertise);
+  }
+  if (const char* mesh_publish = EnvOrNull("PP_NODE_MESH_PUBLISH")) {
+    if (auto parsed = ParsePpNodeBoolEnv(mesh_publish)) {
+      config.libp2p.mesh_publish = *parsed;
+    }
+  } else if (!config.libp2p.advertise_multiaddrs.empty()) {
+    // Convenience: advertise list implies mesh_node publish for pp-node (N027).
+    config.libp2p.mesh_publish = true;
+  }
 }
 
 } // namespace pbr

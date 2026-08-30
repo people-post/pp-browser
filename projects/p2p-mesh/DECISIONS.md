@@ -418,3 +418,25 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Alternatives rejected:** One giant HostSession hierarchical SM; SM per JSON op instance (lose multi-message stream context); bundling into CallLifecycle.
 
 **Cross-link:** N018–N021; V032 / V033; [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md).
+
+---
+
+## N027 — Mesh directory: `entity_kind`, pluggable providers, bootstrap→directory
+
+**Date:** 2026-08-30  
+**Status:** Accepted (implementing)  
+**Spec:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md)  
+**Amends:** N002 (bootstrap role reframed, seed kept as L0); M011/M017 (people search excludes `mesh_node`).
+
+**Decision:**
+
+1. **Directory entity kinds:** `person` (default; GUI users) vs `mesh_node` (org/`pp-node` infra). Same Account ID crypto + `endpoints[]` upsert (M017). `mesh_node` may advertise `capabilities` (`circuit_relay`, `media_relay`, …).
+2. **People search** (`GET /v1/search`) excludes `mesh_node`. Exact by-account / by-relay lookups still return any kind. **New** `GET /v1/mesh/nodes` lists non-expired mesh nodes.
+3. **Publish policy:** `pp-node` auto register/renew as `mesh_node` with operator `advertise_multiaddrs`. **pp-browser does not** mesh-publish by default (desktop Node ≠ persistent infra). Person register/renew unchanged for device dialability.
+4. **Pluggable directories:** Brief HTTP is the default provider (`directory.base_url` / factory). Interface stays `IDirectoryClient` (+ mesh list); additional providers plug via config/`transport` later. Do not hard-wire a single host into mesh hop pick forever.
+5. **Bootstrap layering:** Long-term bootstrap discovers **directory providers** (and L0 emergency dial). Mesh services come from directory. Keep N002 hardcoded seed as **L0 fallback** until directory-first path is proven; do not remove the default multiaddr in this change.
+6. **Absorb ops patterns:** app-support self register/renew on boot (+ timer) against www `register/*`, persist `relay_user_id` (no required env id). Optional `PP_NODE_IDENTITY_SEED` HKDF (`pp-node-identity-v1`) for deterministic device/account/KEM mint; fail-closed vs existing `identity.enc`.
+
+**Rationale:** Customers pin Account ID / org handle, not Peer ID; durable volume (or org master seed) keeps Peer ID across container redeploys; people search stays clean; decentralization needs swappable registries.
+
+**Alternatives rejected:** Overloading person register for seeds; sidecar publish scripts as steady-state; removing bootstrap seed immediately; auto mesh-listing every desktop Node.

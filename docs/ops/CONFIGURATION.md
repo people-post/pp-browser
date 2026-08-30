@@ -32,6 +32,9 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated multiaddrs |
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
+| `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
+| `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
+| `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_LISTEN_FALLBACK` | busy-port fallback | Or `--listen-fallback`; default fail-loud |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |

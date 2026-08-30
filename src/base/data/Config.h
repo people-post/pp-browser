@@ -70,8 +70,21 @@ struct Libp2pConfig {
   std::string listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
   /** Desktop opt-out of Node; ignored on mobile (always Client). */
   bool node_enabled = true;
-  /** Seed / bootstrap dial targets (must include /p2p/<PeerId>). */
+  /**
+   * Seed / bootstrap dial targets (must include /p2p/<PeerId>).
+   * L0 cold-start / emergency (N002); mesh services prefer directory (N027).
+   */
   std::vector<std::string> bootstrap_peers;
+  /**
+   * Public multiaddrs published to directory (N027). Never use 0.0.0.0.
+   * pp-node mesh_node renew uses these; GUI person register may use listen set.
+   */
+  std::vector<std::string> advertise_multiaddrs;
+  /**
+   * When true, register/renew as entity_kind=mesh_node with local capabilities.
+   * Default false (pp-browser). pp-node enables via env/config when advertising.
+   */
+  bool mesh_publish = false;
   size_t max_connections = 48;
   size_t max_concurrent_dials = 6;
   int dial_timeout_ms = 8000;

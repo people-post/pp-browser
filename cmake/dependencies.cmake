@@ -12,12 +12,13 @@ endfunction()
 
 # Always required for pp-node and the GUI app.
 # JSON document tree comes from FetchContent pp-cpp-common (Value/Object).
-# libsodium + ML-KEM/ML-DSA come from FetchContent / sibling pp-cpp-crypto.
+# libsodium + ML-KEM/ML-DSA come from FetchContent pp-cpp-crypto (pinned tag).
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
+# curl is required for headless too (pp-node mesh directory publish — N027).
+pp_require_vendored(curl)
 if(NOT PP_BROWSER_HEADLESS)
-  pp_require_vendored(curl)
   pp_require_vendored(sqlite)
   pp_require_vendored(opus)
 endif()
@@ -38,28 +39,7 @@ endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-if(PP_BROWSER_HEADLESS)
-  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p); skipping GUI third_party")
-  return()
-endif()
-
-# --- GUI / full-app third_party below ---
-
-# FreeType / HarfBuzz / LunaSVG (+ zlib/libpng for CBDT) come from pp-cpp-ui.
-
-# SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
-add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
-                 "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
-
-# Opus (p2p-av-calls a2 voice)
-set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
-set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
-set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
-add_subdirectory("${PP_THIRD_PARTY_DIR}/opus"
-                 "${CMAKE_BINARY_DIR}/third_party/opus" EXCLUDE_FROM_ALL)
-
-# libcurl (LLM HTTP client)
+# libcurl — headless pp-node + GUI (LLM / Brief HTTP)
 set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
@@ -91,13 +71,9 @@ else()
   set(HAVE_SSL_SET0_WBIO TRUE CACHE BOOL "" FORCE)
   set(HAVE_OPENSSL_SRP FALSE CACHE BOOL "" FORCE)
   set(HAVE_ECH FALSE CACHE BOOL "" FORCE)
-  # Prime OpenSSL for vendored curl (it calls find_package(OpenSSL) again).
   find_package(OpenSSL REQUIRED)
 endif()
 
-# Mobile + BoringSSL: do not bake host (/etc/ssl) CA paths into curl_config.h.
-# Android: runtime os::TlsCaPath() / ApplyPlatformCurlSsl sets CAPATH (apex preferred).
-# iOS: ApplyPlatformCurlSsl installs a SecTrust SSL_CTX verify callback.
 if(ANDROID)
   set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
   set(CURL_CA_PATH "/system/etc/security/cacerts" CACHE STRING "" FORCE)
@@ -108,6 +84,27 @@ endif()
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
                  "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
+
+if(PP_BROWSER_HEADLESS)
+  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p, curl); skipping GUI third_party")
+  return()
+endif()
+
+# --- GUI / full-app third_party below ---
+
+# FreeType / HarfBuzz / LunaSVG (+ zlib/libpng for CBDT) come from pp-cpp-ui.
+
+# SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
+                 "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
+
+# Opus (p2p-av-calls a2 voice)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/opus"
+                 "${CMAKE_BINARY_DIR}/third_party/opus" EXCLUDE_FROM_ALL)
 
 # SDL3 + SDL3_image come from pp-cpp-ui (included after this file for non-headless).
 # PP_BROWSER_SDL3_* aliases are set in cmake/PpCppUi.cmake.

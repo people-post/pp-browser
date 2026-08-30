@@ -9,6 +9,7 @@ pp_browser_add_base_library(pp_base_crypto
     EncryptedPayload.cpp
     FileCipher.cpp
     HybridKem.cpp
+    IdentitySeedDeriver.cpp
     MlDsa.cpp
     MessageCipher.cpp
     PinKeyDeriver.cpp
