@@ -29,7 +29,8 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallLibp2pMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
-| **CallMediaDirectService** | 1:1 `/pp-browser/call-media/1.0.0` — hello, AEAD Opus frames; capture enqueues, **host IO thread** owns Yamux R/W |
+| **CallMediaDirectService** | 1:1 `/pp-browser/call-media/1.0.0` — hello, AEAD Opus/H264 frames; capture enqueues, **host IO thread** owns Yamux R/W |
+| **CallMediaAdpPath** | Optional **Opus-only** BestEffort side-path over ADP UDP (TEMP `CallMediaAdpDogfood.h`); hello advertises `adp_*`; falls back to stream Opus ([projects/adp](../../projects/adp/)) |
 | **MessagingHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
 
 ```mermaid

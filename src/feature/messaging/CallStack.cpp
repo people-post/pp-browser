@@ -7,6 +7,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/MeshHopPolicy.h"
+#include "base/p2p/CallMediaAdpDogfood.h"
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -213,7 +214,8 @@ void CallStack::WireMediaRelayDeps() {
       libp2p_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0) << ")";
+      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
+                 << " adp_opus_dogfood=" << (kCallMediaAdpOpusDogfood ? 1 : 0) << ")";
     } else {
       call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
       if (call_lifecycle_) {

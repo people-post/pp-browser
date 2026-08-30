@@ -45,6 +45,8 @@ public:
   void ClearInboundHandler();
   bool IsActive() const;
   CallMediaSessionPhase Phase() const;
+  /** Negotiated connect params (includes peer ADP hello fields when present). */
+  CallMediaDirectConnectParams ActiveParams() const;
   void Detach();
   Roe<void> Connect(PeerSessionManager& sessions, const CallMediaDirectConnectParams& params,
                     CallMediaDirectCallbacks callbacks, int timeout_ms);

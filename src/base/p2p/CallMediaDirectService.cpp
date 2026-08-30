@@ -110,6 +110,10 @@ bool CallMediaDirectService::IsActive() const {
   return session_->IsActive();
 }
 
+CallMediaDirectConnectParams CallMediaDirectService::ActiveParams() const {
+  return session_->ActiveParams();
+}
+
 CallMediaSessionPhase CallMediaDirectService::Phase() const {
   return session_->Phase();
 }
