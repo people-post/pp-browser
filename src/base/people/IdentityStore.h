@@ -20,6 +20,13 @@ public:
 
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
+  /** Optional master identity seed (≥32 bytes). When set:
+   *  - empty identity.enc → mint device/account/KEM from HKDF (pp-node-identity-v1)
+   *  - existing identity.enc → fail closed if derived keys ≠ stored keys
+   * Call before LoadOrCreate (pp-node: PP_NODE_IDENTITY_SEED).
+   */
+  Roe<void> SetIdentitySeed(ByteVector master_seed);
+
   /** Required before LoadOrCreate/Get/Save — DEK from unlocked DataKeyVault. */
   Roe<void> SetDek(ByteVector dek) override;
   /**
@@ -55,6 +62,7 @@ private:
   std::string data_dir_;
   std::string profile_id_;
   mutable ByteVector dek_;
+  mutable ByteVector identity_seed_;
   mutable std::mutex mutex_;
   mutable bool loaded_ = false;
   mutable LocalIdentity identity_;

@@ -8,10 +8,11 @@
 ## Goals
 
 1. Customers resolve org/`pp-node` hosts by **Account ID / org handle**, not hardcoded Peer ID.
-2. Stable Peer ID across container redeploys via **durable data volume + PIN** (existing `identity.enc`).
+2. Stable Peer ID / Account ID across container redeploys via **durable data volume + PIN**, or optional **`PP_NODE_IDENTITY_SEED`** (HKDF → device/account keys; fail-closed vs existing `identity.enc`).
 3. Directory is **pluggable** (Brief HTTP default; other providers later).
 4. **`mesh_node` publish** is for persistent infra (`pp-node`); **pp-browser does not** auto-list as mesh service.
 5. **Bootstrap** evolves toward **finding directory providers**; mesh services come from directory (keep L0 seed fallback).
+6. **Absorb ops patterns:** app-support boot register/renew (like pp-node); pp-node optional master identity seed (like app-support).
 
 ## Architecture
 

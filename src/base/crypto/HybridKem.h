@@ -30,6 +30,8 @@ struct HybridKemKeyPair {
 class HybridKem {
 public:
   static Roe<HybridKemKeyPair> GenerateKeyPair();
+  /** Deterministic ML-KEM-768 from 64-byte coins. */
+  static Roe<HybridKemKeyPair> GenerateKeyPairFromSeed(const ByteVector& coins);
   static Roe<ByteVector> Encapsulate(const ByteVector& peer_public_key, std::string& key_init_b64_out);
   static Roe<ByteVector> Decapsulate(const ByteVector& private_key, const std::string& key_init_b64);
 };

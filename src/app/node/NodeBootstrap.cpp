@@ -1,6 +1,7 @@
 #include "app/node/NodeBootstrap.h"
 #include "app/node/NodeEnvOverlay.h"
 
+#include "base/crypto/CryptoUtil.h"
 #include "base/crypto/PinResolver.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
@@ -13,6 +14,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
+#include <cstdlib>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -70,6 +72,19 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (auto unlocked = secrets->Unlock(*pin); !unlocked) {
     secrets->UnregisterDekConsumer(identity.get());
     return unlocked.error();
+  }
+
+  if (const char* seed_hex = std::getenv("PP_NODE_IDENTITY_SEED");
+      seed_hex != nullptr && seed_hex[0] != '\0') {
+    auto seed_bytes = HexToBytes(seed_hex);
+    if (!seed_bytes) {
+      secrets->UnregisterDekConsumer(identity.get());
+      return Error("PP_NODE_IDENTITY_SEED is not valid hex: " + seed_bytes.error().message);
+    }
+    if (auto set_seed = identity->SetIdentitySeed(std::move(*seed_bytes)); !set_seed) {
+      secrets->UnregisterDekConsumer(identity.get());
+      return set_seed.error();
+    }
   }
 
   if (auto loaded = identity->LoadOrCreate(); !loaded) {

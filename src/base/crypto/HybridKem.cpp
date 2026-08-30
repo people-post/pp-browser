@@ -16,6 +16,17 @@ Roe<HybridKemKeyPair> HybridKem::GenerateKeyPair() {
   return out;
 }
 
+Roe<HybridKemKeyPair> HybridKem::GenerateKeyPairFromSeed(const ByteVector& coins) {
+  auto keys = ::pp::MlKem::GenerateKeyPairFromSeed(coins);
+  if (!keys) {
+    return keys.error();
+  }
+  HybridKemKeyPair out;
+  out.public_key = std::move(keys->public_key);
+  out.private_key = std::move(keys->private_key);
+  return out;
+}
+
 Roe<ByteVector> HybridKem::Encapsulate(const ByteVector& peer_public_key, std::string& key_init_b64_out) {
   auto encap = ::pp::MlKem::Encapsulate(peer_public_key);
   if (!encap) {
