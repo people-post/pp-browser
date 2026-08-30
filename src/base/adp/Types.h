@@ -45,12 +45,13 @@ struct AssocId {
 
 struct AssocIdHash {
   size_t operator()(const AssocId& id) const noexcept {
-    size_t h = 14695981039346656037ull;
+    // FNV-1a in uint64_t so 32-bit Android size_t does not truncate the constants.
+    uint64_t h = 14695981039346656037ull;
     for (uint8_t b : id.bytes) {
       h ^= b;
       h *= 1099511628211ull;
     }
-    return h;
+    return static_cast<size_t>(h);
   }
 };
 
