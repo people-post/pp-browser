@@ -62,6 +62,7 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   config.libp2p.bootstrap_peers = {
       "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.libp2p.prefer_contacts_for_routing = false;
+  config.libp2p.adp_opus = true;
   config.libp2p.capabilities.circuit_relay = true;
   config.libp2p.capabilities.media_relay = false;
   config.libp2p.pricing.media_relay.mode = "volunteer";
@@ -76,6 +77,7 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   ASSERT_NE(libp2p->getArray("bootstrap_peers"), nullptr);
   EXPECT_EQ(libp2p->getArray("bootstrap_peers")->elements.size(), 1u);
   EXPECT_EQ(libp2p->getIf<bool>("prefer_contacts_for_routing"), false);
+  EXPECT_EQ(libp2p->getIf<bool>("adp_opus"), true);
   const pbr::Object* caps = libp2p->getObject("capabilities");
   ASSERT_NE(caps, nullptr);
   EXPECT_EQ(caps->getIf<bool>("circuit_relay"), true);
@@ -88,6 +90,7 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.libp2p.bootstrap_peers[0], config.libp2p.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.libp2p.prefer_contacts_for_routing);
+  EXPECT_TRUE(parsed.libp2p.adp_opus);
   EXPECT_TRUE(parsed.libp2p.capabilities.circuit_relay);
   EXPECT_FALSE(parsed.libp2p.capabilities.media_relay);
   EXPECT_EQ(parsed.libp2p.media_relay_budget.default_per_user_up_bps, 12345);

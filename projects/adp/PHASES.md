@@ -24,11 +24,18 @@
 - [x] Promote `docs/contracts/ADP.md`
 - [x] `pp_browser_adp_test` green
 
+## Phase 4 — Opus media slice (product dogfood)
+
+- [x] ADRs A008–A011
+- [x] `CallMediaAdpPath` + HKDF + hello negotiate + bridge Opus path
+- [x] Config `libp2p.adp_opus` (default off)
+- [ ] LAN dogfood with flag on
+
 ## Run tests
 
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
-cmake --build build --target pp_browser_adp_test -j
+cmake --build build --target pp_browser_adp_test pp_browser_p2p_test -j
 ./build/src/base/adp/tests/pp_browser_adp_test
-# or: cd build && ctest -R adp --output-on-failure   # after gtest discovery
+./build/src/base/p2p/tests/pp_browser_p2p_test --gtest_filter='CallMediaAdp*'
 ```

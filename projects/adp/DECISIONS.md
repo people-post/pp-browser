@@ -48,3 +48,31 @@
 **Decision:** `pp_base_adp` does not link or include Asio. I/O is `DatagramIo` + `MemoryDatagramIo` / `OsUdpDatagramIo`. Timers use injectable `Clock`. Optional Asio adapter is out of scope and never required by the core target.  
 **Rationale:** Keep L1 shareable with pp-ledger; deterministic tests without a reactor.  
 **Alternatives:** Asio UDP as hard dependency.
+
+## A008 — First consumer = Opus BestEffort
+
+**Date:** 2026-08-30  
+**Decision:** First product dogfood of ADP is **1:1 call Opus (channel 0) BestEffort** only. Video, signaling, hello/key exchange, SoftMigrate/`media_relay` stay on TCP+Noise+Yamux.  
+**Rationale:** Matches phone IP-churn motivation; ADP v1 max payload 1200 B fits Opus, not typical H264 AUs.  
+**Alternatives:** Control RPC first; video-over-ADP with fragmentation.
+
+## A009 — `K_assoc` from call media key
+
+**Date:** 2026-08-30  
+**Decision:** Derive 32-byte `K_assoc` via HKDF-SHA256 from the existing call media key. Info string `pp-adp-call-media-v1|call_id:<id>|epoch:<n>`. Never send `K_assoc` on the wire.  
+**Rationale:** Reuses call key agreement on TCP hello; ADP stays L1 binding only.  
+**Alternatives:** Separate key exchange; send key in hello.
+
+## A010 — Hello extension (TCP) + local IP
+
+**Date:** 2026-08-30  
+**Decision:** Additive JSON on call-media `hello` / `hello_ack` (ignore if absent): `adp_v` (1), `adp_port`, `adp_assoc` (32 hex chars), `adp_ip` (dotted IPv4 for outbound dial). Offerer mints `adp_assoc`; answerer echoes it.  
+**Rationale:** Need peer IP+port before first Opus packet; TCP hello already runs.  
+**Alternatives:** Learn IP only from first packet; use libp2p remote multiaddr only.
+
+## A011 — Fallback to TCP stream Opus
+
+**Date:** 2026-08-30  
+**Decision:** If peer omits ADP fields, config `libp2p.adp_opus` is false, bind fails, or path is not alive after grace, Opus uses existing `SendMedia` stream path. Calls must not fail solely because ADP is unavailable.  
+**Rationale:** Safe dogfood; dual-NAT without punch falls back cleanly.  
+**Alternatives:** Hard-require ADP when flag on.

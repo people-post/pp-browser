@@ -82,6 +82,11 @@ struct Libp2pConfig {
    * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
    */
   bool prefer_contacts_for_routing = true;
+  /**
+   * Dogfood: send 1:1 Opus (channel 0) over ADP BestEffort when negotiated (A008/A011).
+   * Default off — TCP call-media remains the path until enabled in config.json.
+   */
+  bool adp_opus = false;
   Libp2pCapabilities capabilities;
   Libp2pPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;

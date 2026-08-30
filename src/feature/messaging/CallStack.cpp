@@ -213,9 +213,12 @@ void CallStack::WireMediaRelayDeps() {
       libp2p_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0) << ")";
+      call_libp2p_bridge_->SetAdpOpusEnabled(config().libp2p.adp_opus);
+      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
+                 << " adp_opus=" << (config().libp2p.adp_opus ? 1 : 0) << ")";
     } else {
       call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
+      call_libp2p_bridge_->SetAdpOpusEnabled(config().libp2p.adp_opus);
       if (call_lifecycle_) {
         call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
       }
