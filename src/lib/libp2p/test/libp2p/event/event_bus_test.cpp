@@ -6,6 +6,8 @@
 
 #include <libp2p/event/bus.hpp>
 
+#include <optional>
+
 #include <gtest/gtest.h>
 
 using namespace libp2p::event;
@@ -49,4 +51,20 @@ TEST_F(EventBusTest, SubscribePublish) {
   ASSERT_EQ(int1, expected_int);
   ASSERT_EQ(int2, expected_int);
   ASSERT_EQ(str, expected_str);
+}
+
+/**
+ * @given a handle subscribed to a bus channel
+ * @when the bus is destroyed before the handle
+ * @then handle unsubscribe is a no-op (no UAF)
+ */
+TEST(EventBusLifetimeTest, UnsubscribeAfterBusDestroyed) {
+  std::optional<Handle> handle;
+  {
+    Bus bus;
+    handle = bus.getChannel<EventBusTest::Event1Channel>().subscribe([](auto &&) {});
+  }
+  ASSERT_TRUE(handle.has_value());
+  handle->unsubscribe();
+  handle.reset();
 }

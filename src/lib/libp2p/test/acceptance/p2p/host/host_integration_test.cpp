@@ -32,7 +32,7 @@ struct HostIntegrationTestConfig {
   Duration future_timeout;     ///< how long to wait to obtain peer info
   Duration system_timeout;  ///< how long to wait before starting clients after
                             ///< all peer info obtained
-  bool secured;             ///< use SECIO if true, otherwise Plaintext
+  bool secured;             ///< use Noise if true, otherwise Plaintext
 };
 
 /*
@@ -107,7 +107,7 @@ TEST_P(HostIntegrationTest, InteractAllToAllSuccess) {
   for (size_t i = 0; i < peer_count; ++i) {
     for (size_t j = 0; j < peer_count; ++j) {
       if (secured and i == j) {
-        // SECIO does not allow communicating itself
+        // Skip self-dial in the secured (Noise) case; mirrors prior SECIO skip.
         continue;
       }
       const auto &pinfo = peerinfo_futures[j].get();
@@ -137,5 +137,5 @@ INSTANTIATE_TEST_SUITE_P(AllTestCases, HostIntegrationTest,
                             Config{1u, 1u, 40510u, 2s, 2s, 200ms, false},
                             Config{2u, 1u, 40510u, 2s, 2s, 200ms, false},
                             Config{2u, 1u, 40510u, 5s, 2s, 200ms, true}
-                            /*, TODO(igor-egorov) FIL-143 enable test for more than two SECIO peers
+                            /*, TODO(igor-egorov) FIL-143 enable test for more than two secured peers
                             Config{3u, 1u, 40510u, 5s, 2s, 200ms, true}*/));

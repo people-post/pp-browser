@@ -75,7 +75,9 @@ Edit files under `src/lib/libp2p/` directly in pp-browser commits (except `src/b
 - `host/host.hpp` / `network/dialer.hpp` — `PeerInfo{.id=…, .addresses={}}` so first-party `-Werror` builds that include these headers do not trip `-Wmissing-field-initializers`
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
-- `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock)
+- `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, Asio, gmock)
+- acceptance `Peer` helper — builds via `createExplicitHost` (Noise/Plaintext); no injector/SECIO wiring
+- `test/acceptance/.../protocol/CMakeLists.txt` — link `p2p_random_generator` after Boost drop
 - `cmake/libp2p_add_library.cmake` — link `qtils`, `Asio::asio`, `soralog` in vendored mode (no Boost)
 - `cmake/install.cmake` — skip install/export when embedded in pp-browser
 - `src/crypto/sha/CMakeLists.txt` — plain `target_link_libraries` signature (matches rest of tree)
@@ -93,7 +95,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 - `asio/` — standalone Asio 1.34.0 (`Asio::asio`, `ASIO_STANDALONE` + `ASIO_NO_DEPRECATED`); fork, `src/base/p2p`, and `pp-node` status HTTP use `#include <asio…>` / `asio::` and `std::error_code`
 - fork sources — dropped Boost.Operators (`equality_comparable`), Boost.Range (`for_each` / `filtered`), and unused Boost.Exception include in `event/bus.hpp`
 - fork sources — replaced Boost.MultiIndex tables in gossip `MessageCache` and Kademlia `StorageImpl` / `ContentRoutingTableImpl` / `GetValueExecutor` with `std::unordered_map` (+ vectors); removed dead MultiIndex includes from `put_value_executor.hpp`
-- fork sources — replaced Boost.Signals2 with `libp2p/event/signal.hpp` (`Signal` / `Connection` / `ScopedConnection`) for Bus, Emitter, AddressRepository, and Identify; removed unused Signals2 include from `transport_listener.hpp`
+- fork sources — replaced Boost.Signals2 with `libp2p/event/signal.hpp` (`Signal` / `Connection` / `ScopedConnection`) for Bus, Emitter, AddressRepository, and Identify; removed unused Signals2 include from `transport_listener.hpp`; `Connection` disconnect uses `weak_ptr` to slot state so unsubscribe after the owning `Signal`/Bus is destroyed is a no-op (matches signals2; prevents UAF when `Libp2pHost::Stop()` resets the host before `PeerSessionManager` tears down)
 - fork sources — removed libp2p WebSocket/WSS layer (`layer/websocket`, Beast); default injectors bind no layer adaptors; multiaddr `/ws`/`/wss` codec tokens remain for address parsing only
 - fork sources — TCP connect timeout uses `steady_timer` + `std::chrono` (not `deadline_timer` / `posix_time`); dropped leftover `BOOST_UNREACHABLE_RETURN` / `BOOST_NOEXCEPT` in fork sources
 

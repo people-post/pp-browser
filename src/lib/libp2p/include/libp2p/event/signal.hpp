@@ -113,6 +113,9 @@ namespace libp2p::event {
   /**
    * Minimal multicast signal replacing boost::signals2::signal.
    * @tparam Signature function type, e.g. void(const T &)
+   *
+   * Connection tickets hold a weak_ptr to slot state so disconnect after the
+   * Signal is destroyed is a no-op (boost::signals2 lifetime semantics).
    */
   template <typename Signature>
   class Signal;
@@ -130,15 +133,26 @@ namespace libp2p::event {
 
     template <typename F>
     Connection connect(F &&slot) {
-      const auto id = next_id_++;
+      const auto id = state_->next_id_++;
       auto shared = std::make_shared<Slot>(std::forward<F>(slot));
-      entries_.push_back(Entry{id, std::move(shared)});
-      return Connection([this, id] { disconnect(id); });
+      state_->entries_.push_back(Entry{id, std::move(shared)});
+      std::weak_ptr<State> weak = state_;
+      return Connection([weak, id] {
+        if (auto state = weak.lock()) {
+          for (auto it = state->entries_.begin(); it != state->entries_.end();
+               ++it) {
+            if (it->id == id) {
+              state->entries_.erase(it);
+              return;
+            }
+          }
+        }
+      });
     }
 
     void operator()(Args... args) const {
       // Snapshot so disconnect during emit is safe.
-      auto snapshot = entries_;
+      auto snapshot = state_->entries_;
       for (const auto &entry : snapshot) {
         if (entry.slot) {
           (*entry.slot)(args...);
@@ -147,11 +161,11 @@ namespace libp2p::event {
     }
 
     std::size_t num_slots() const {
-      return entries_.size();
+      return state_->entries_.size();
     }
 
     bool empty() const {
-      return entries_.empty();
+      return state_->entries_.empty();
     }
 
    private:
@@ -160,17 +174,12 @@ namespace libp2p::event {
       std::shared_ptr<Slot> slot;
     };
 
-    void disconnect(uint64_t id) {
-      for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-        if (it->id == id) {
-          entries_.erase(it);
-          return;
-        }
-      }
-    }
+    struct State {
+      uint64_t next_id_ = 1;
+      std::vector<Entry> entries_;
+    };
 
-    uint64_t next_id_ = 1;
-    std::vector<Entry> entries_;
+    std::shared_ptr<State> state_ = std::make_shared<State>();
   };
 
 }  // namespace libp2p::event

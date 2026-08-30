@@ -62,6 +62,33 @@ SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, const int max_dimension) {
   return SDL_ScaleSurface(source, dst_w, dst_h, SDL_SCALEMODE_LINEAR);
 }
 
+// Sync frame grab: macOS 15+ uses the async generator API (sync copy is deprecated).
+CGImageRef CopyCGImageAtTimeSync(AVAssetImageGenerator* gen, const CMTime time, NSError* __autoreleasing* out_error) {
+  if (@available(macOS 15.0, *)) {
+    __block CGImageRef result = nullptr;
+    __block NSError* block_err = nil;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    [gen generateCGImageAsynchronouslyForTime:time
+                            completionHandler:^(CGImageRef image, CMTime actual_time, NSError* error) {
+                              (void)actual_time;
+                              if (image) {
+                                result = CGImageRetain(image);
+                              }
+                              block_err = error;
+                              dispatch_semaphore_signal(sem);
+                            }];
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    if (out_error) {
+      *out_error = block_err;
+    }
+    return result;
+  }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  return [gen copyCGImageAtTime:time actualTime:nullptr error:out_error];
+#pragma clang diagnostic pop
+}
+
 Roe<std::vector<uint8_t>> ExtractWithAvFoundation(const std::string& video_path, const int max_dimension) {
   @autoreleasepool {
     if (video_path.empty()) {
@@ -83,9 +110,9 @@ Roe<std::vector<uint8_t>> ExtractWithAvFoundation(const std::string& video_path,
 
     const CMTime at = CMTimeMake(1, 10); // ~0.1s
     NSError* err = nil;
-    CGImageRef image = [gen copyCGImageAtTime:at actualTime:nullptr error:&err];
+    CGImageRef image = CopyCGImageAtTimeSync(gen, at, &err);
     if (!image) {
-      image = [gen copyCGImageAtTime:kCMTimeZero actualTime:nullptr error:&err];
+      image = CopyCGImageAtTimeSync(gen, kCMTimeZero, &err);
     }
     if (!image) {
       return Error("AVAssetImageGenerator failed");
