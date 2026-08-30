@@ -12,7 +12,7 @@ endfunction()
 
 # Always required for pp-node and the GUI app.
 # JSON document tree comes from FetchContent pp-cpp-common (Value/Object).
-# libsodium + ML-KEM/ML-DSA come from FetchContent / sibling pp-cpp-crypto.
+# libsodium + ML-KEM/ML-DSA come from FetchContent pp-cpp-crypto (pinned tag).
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
