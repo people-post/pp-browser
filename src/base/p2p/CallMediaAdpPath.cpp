@@ -3,15 +3,10 @@
 #include "base/adp/Clock.h"
 #include "base/adp/OsUdpDatagramIo.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
+#include "base/p2p/ReachabilityNetIf.h"
 
 #include <cstdio>
 #include <cstring>
-
-#if !defined(_WIN32)
-#include <arpa/inet.h>
-#include <ifaddrs.h>
-#include <netinet/in.h>
-#endif
 
 namespace pbr {
 
@@ -31,33 +26,18 @@ bool ParseIpv4Dotted(const std::string& s, uint8_t out[4]) {
 }
 
 std::string GuessPrimaryIpv4() {
-#if defined(_WIN32)
+  // Prefer an up, non-loopback LAN IPv4 from the shared netif helpers (Posix/Win32 split).
+  for (const auto& nif : reachability_netif::LanIpv4Interfaces()) {
+    if (nif.up_running_non_loopback && nif.ip.rfind("127.", 0) != 0) {
+      return nif.ip;
+    }
+  }
+  for (const auto& nif : reachability_netif::LanIpv4Interfaces()) {
+    if (nif.ip.rfind("127.", 0) != 0) {
+      return nif.ip;
+    }
+  }
   return "127.0.0.1";
-#else
-  ifaddrs* list = nullptr;
-  if (getifaddrs(&list) != 0) {
-    return "127.0.0.1";
-  }
-  std::string found = "127.0.0.1";
-  for (ifaddrs* p = list; p != nullptr; p = p->ifa_next) {
-    if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) {
-      continue;
-    }
-    const auto* in = reinterpret_cast<sockaddr_in*>(p->ifa_addr);
-    char buf[INET_ADDRSTRLEN] = {};
-    if (!inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf))) {
-      continue;
-    }
-    const std::string ip(buf);
-    if (ip.rfind("127.", 0) == 0) {
-      continue;
-    }
-    found = ip;
-    break;
-  }
-  freeifaddrs(list);
-  return found;
-#endif
 }
 
 CallMediaAdpPath::~CallMediaAdpPath() { Stop(); }

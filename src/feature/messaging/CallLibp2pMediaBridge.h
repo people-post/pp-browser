@@ -77,10 +77,6 @@ public:
 
   void SetLifecycle(CallLifecycle* lifecycle);
 
-  /** A011: enable Opus-over-ADP when true (from `libp2p.adp_opus`, default off). */
-  void SetAdpOpusEnabled(bool enabled) { adp_opus_enabled_ = enabled; }
-  bool AdpOpusEnabled() const { return adp_opus_enabled_; }
-
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
   Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity, uint64_t connect_gen);
@@ -91,7 +87,7 @@ private:
   void CommitDirectConnected(const std::string& call_id);
   void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
                                  const std::vector<uint8_t>& payload);
-  /** Fill local ADP hello fields when flag on (A010). */
+  /** Fill local ADP hello fields when dogfood gate on (A010). */
   void MaybeFillLocalAdpOffer(CallMediaDirectConnectParams& params, bool offerer_mints_assoc);
   /** Open ADP path after TCP hello negotiated peer ADP (A008/A011). */
   void MaybeActivateAdp(const CallMediaDirectConnectParams& params);
@@ -103,7 +99,6 @@ private:
   CallMediaEngine& media_;
   CallMediaDirectService& direct_;
   CallMediaAdpPath adp_;
-  bool adp_opus_enabled_ = false;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;

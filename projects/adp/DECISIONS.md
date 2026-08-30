@@ -73,6 +73,6 @@
 ## A011 — Fallback to TCP stream Opus
 
 **Date:** 2026-08-30  
-**Decision:** If peer omits ADP fields, config `libp2p.adp_opus` is false, bind fails, or path is not alive after grace, Opus uses existing `SendMedia` stream path. Calls must not fail solely because ADP is unavailable.  
-**Rationale:** Safe dogfood; dual-NAT without punch falls back cleanly.  
-**Alternatives:** Hard-require ADP when flag on.
+**Decision:** If peer omits ADP fields, TEMP dogfood gate `kCallMediaAdpOpusDogfood` is false, bind fails, or path is not alive after grace, Opus uses existing `SendMedia` stream path. Calls must not fail solely because ADP is unavailable. Gate lives in `CallMediaAdpDogfood.h` (not settings) and is deleted when Opus-over-ADP becomes default-on.  
+**Rationale:** Safe dogfood; dual-NAT without punch falls back cleanly; no config surface.  
+**Alternatives:** Hard-require ADP; persist `libp2p.adp_opus` in config.json (rejected for short dogfood).

@@ -2,6 +2,7 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/SfuAttachFanout.h"
+#include "base/p2p/CallMediaAdpDogfood.h"
 #include "base/p2p/CallMediaAdpKey.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/runtime/AppRuntime.h"
@@ -189,7 +190,7 @@ void CallLibp2pMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
 
 void CallLibp2pMediaBridge::MaybeFillLocalAdpOffer(CallMediaDirectConnectParams& params,
                                                    const bool offerer_mints_assoc) {
-  if (!adp_opus_enabled_) {
+  if (!kCallMediaAdpOpusDogfood) {
     return;
   }
   auto offer = adp_.BindLocal(offerer_mints_assoc);
@@ -221,7 +222,7 @@ void CallLibp2pMediaBridge::MaybeFillLocalAdpOffer(CallMediaDirectConnectParams&
 }
 
 void CallLibp2pMediaBridge::MaybeActivateAdp(const CallMediaDirectConnectParams& params) {
-  if (!adp_opus_enabled_) {
+  if (!kCallMediaAdpOpusDogfood) {
     return;
   }
   if (params.peer_adp_port == 0 || params.peer_adp_ip.empty()) {
@@ -343,7 +344,7 @@ void CallLibp2pMediaBridge::ClearLibp2pConnectFailed() {
 }
 
 void CallLibp2pMediaBridge::PollLibp2pConnectHealth() {
-  if (adp_opus_enabled_ && adp_.LocalOffer().port != 0) {
+  if (kCallMediaAdpOpusDogfood && adp_.LocalOffer().port != 0) {
     adp_.Pump();
   }
   if (libp2p_connect_failed_ || host_.P2pIsAwaitingSfuRecovery() || !media_.IsActive() || !media_.IsSfuMode()) {
@@ -614,7 +615,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
             return;
           }
           // A011: fall back to TCP stream Opus if ADP send fails.
-        } else if (adp_opus_enabled_ && adp_.LocalOffer().port != 0) {
+        } else if (kCallMediaAdpOpusDogfood && adp_.LocalOffer().port != 0) {
           adp_.Pump();
         }
         (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);

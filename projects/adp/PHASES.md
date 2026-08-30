@@ -28,8 +28,8 @@
 
 - [x] ADRs A008–A011
 - [x] `CallMediaAdpPath` + HKDF + hello negotiate + bridge Opus path
-- [x] Config `libp2p.adp_opus` (default off)
-- [ ] LAN dogfood with flag on
+- [x] TEMP dogfood gate `CallMediaAdpDogfood.h` (not settings/config)
+- [ ] LAN dogfood; then delete gate → default-on
 
 ## Run tests
 

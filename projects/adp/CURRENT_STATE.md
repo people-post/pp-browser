@@ -9,13 +9,14 @@
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
 - `pp_browser_adp_test` (26 tests)
 - Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
-- **Slice 1 (Opus dogfood):** `CallMediaAdpPath` + HKDF `K_assoc`, call-media hello `adp_*` fields, `CallLibp2pMediaBridge` Opus→ADP when `libp2p.adp_opus=true` (default **off**), TCP fallback (A011)
+- **Slice 1 (Opus dogfood):** `CallMediaAdpPath` + HKDF `K_assoc`, call-media hello `adp_*` fields, bridge Opus→ADP gated by TEMP `CallMediaAdpDogfood.h` (`kCallMediaAdpOpusDogfood`), TCP fallback (A011)
 
 ## Dogfood checklist (LAN)
 
-1. Both peers: set `"libp2p": { "adp_opus": true }` in profile `config.json`.
-2. 1:1 call on same LAN (or one side public); confirm audio.
-3. Set `adp_opus` false (or omit) → Opus stays on TCP call-media only.
+1. Both peers build with `kCallMediaAdpOpusDogfood = true` (current default in that header).
+2. 1:1 call on same LAN (or one public side); confirm audio.
+3. Flip constexpr to `false` (or omit ADP hello) → Opus stays on TCP call-media only.
+4. When proven: delete `CallMediaAdpDogfood.h` and the gate checks — ADP Opus becomes default-on.
 
 ## Next
 
