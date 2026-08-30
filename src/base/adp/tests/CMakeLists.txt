@@ -1,0 +1,1 @@
+pp_browser_add_base_folder_tests(pp_base_adp pp_browser_adp_test)

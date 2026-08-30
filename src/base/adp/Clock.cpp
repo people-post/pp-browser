@@ -1,0 +1,12 @@
+#include "base/adp/Clock.h"
+
+#include <chrono>
+
+namespace pbr::adp {
+
+int64_t WallClock::NowMs() const {
+  using namespace std::chrono;
+  return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+} // namespace pbr::adp
