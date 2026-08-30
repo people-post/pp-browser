@@ -14,6 +14,7 @@ add_executable(pp-node
   # Headless has no pp_base_net; compile registration HTTP pieces here (N027).
   ${CMAKE_SOURCE_DIR}/src/base/net/HttpClient.cpp
   ${CMAKE_SOURCE_DIR}/src/base/net/CurlSsl.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/net/RelaySignBytes.cpp
   ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationSignPayload.cpp
   ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationClientUtil.cpp
 )
