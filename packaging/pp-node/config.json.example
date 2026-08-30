@@ -4,6 +4,8 @@
   "libp2p": {
     "node_enabled": true,
     "listen_multiaddr": "/ip4/0.0.0.0/tcp/443",
+    "advertise_multiaddrs": [],
+    "mesh_publish": false,
     "bootstrap_peers": [],
     "max_connections": 128,
     "max_concurrent_dials": 16,

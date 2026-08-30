@@ -8,8 +8,14 @@ add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
   NodeEnvOverlay.cpp
+  NodeMeshPublish.cpp
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
+  # Headless has no pp_base_net; compile registration HTTP pieces here (N027).
+  ${CMAKE_SOURCE_DIR}/src/base/net/HttpClient.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/net/CurlSsl.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationSignPayload.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationClientUtil.cpp
 )
 
 target_include_directories(pp-node PRIVATE
@@ -28,6 +34,7 @@ target_link_libraries(pp-node PRIVATE
   Asio::asio
   Threads::Threads
   sodium
+  CURL::libcurl
 )
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)

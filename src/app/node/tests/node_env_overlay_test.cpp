@@ -57,6 +57,8 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g3("PP_NODE_BOOTSTRAP_PEERS");
   EnvGuard g4("PP_NODE_CAP_CIRCUIT_RELAY");
   EnvGuard g5("PP_NODE_CAP_MEDIA_RELAY");
+  EnvGuard g6("PP_NODE_ADVERTISE_MULTIADDRS");
+  EnvGuard g7("PP_NODE_MESH_PUBLISH");
 
   pbr::AppConfig config;
   config.data_dir = "/old";
@@ -64,12 +66,14 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   config.libp2p.bootstrap_peers = {"/ip4/9.9.9.9/tcp/443/p2p/x"};
   config.libp2p.capabilities.circuit_relay = false;
   config.libp2p.capabilities.media_relay = false;
+  config.libp2p.mesh_publish = false;
 
   SetEnv("PP_NODE_DATA_DIR", "/var/lib/pp-node");
   SetEnv("PP_NODE_LISTEN", "/ip4/0.0.0.0/tcp/443");
   SetEnv("PP_NODE_BOOTSTRAP_PEERS", "/ip4/1.1.1.1/tcp/443/p2p/a,/ip4/2.2.2.2/tcp/443/p2p/b");
   SetEnv("PP_NODE_CAP_CIRCUIT_RELAY", "true");
   SetEnv("PP_NODE_CAP_MEDIA_RELAY", "0");
+  SetEnv("PP_NODE_ADVERTISE_MULTIADDRS", "/ip4/8.8.8.8/tcp/443/p2p/seed");
 
   pbr::ApplyPpNodeConfigEnvOverlays(config);
 
@@ -79,4 +83,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EXPECT_EQ(config.libp2p.bootstrap_peers[0], "/ip4/1.1.1.1/tcp/443/p2p/a");
   EXPECT_TRUE(config.libp2p.capabilities.circuit_relay);
   EXPECT_FALSE(config.libp2p.capabilities.media_relay);
+  ASSERT_EQ(config.libp2p.advertise_multiaddrs.size(), 1u);
+  EXPECT_EQ(config.libp2p.advertise_multiaddrs[0], "/ip4/8.8.8.8/tcp/443/p2p/seed");
+  EXPECT_TRUE(config.libp2p.mesh_publish);
 }

@@ -1,5 +1,6 @@
 #include "app/node/NodeBootstrap.h"
 #include "app/node/NodeEnvOverlay.h"
+#include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
@@ -58,6 +59,7 @@ void PrintUsage(const char* argv0) {
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_LISTEN, PP_NODE_BOOTSTRAP_PEERS,\n"
       << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
+      << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
       << "\n"
       << "Live status HTTP (long-running mode), e.g.:\n"
@@ -216,15 +218,26 @@ int main(int argc, char** argv) {
   };
   schedule_probe();
 
+  // Publish/renew mesh_node listing when advertise multiaddrs configured (N027).
+  if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+    root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+  }
+
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
   auto last_probe = std::chrono::steady_clock::now();
+  auto last_mesh_publish = std::chrono::steady_clock::now();
   while (!g_stop.load()) {
     boot->mesh->Tick();
-    // Refresh reachability snapshot periodically for /status (non-blocking probe).
     const auto now = std::chrono::steady_clock::now();
     if (now - last_probe > std::chrono::seconds(60)) {
       last_probe = now;
       schedule_probe();
+    }
+    if (now - last_mesh_publish > std::chrono::hours(12)) {
+      last_mesh_publish = now;
+      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+        root.warning << "mesh directory renew failed: " << published.error().message;
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }

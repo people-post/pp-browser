@@ -344,7 +344,8 @@ Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std
                                                                        const std::string& signature_alg,
                                                                        const std::string& /*kem_public_key_b64*/,
                                                                        const std::string& /*peer_id*/,
-                                                                       const std::vector<std::string>& /*multiaddrs*/) {
+                                                                       const std::vector<std::string>& /*multiaddrs*/,
+                                                                       const RegistrationPublishOpts& /*publish*/) {
   return RegistrationStartResult{.challenge = "mock-challenge", .signature_alg = signature_alg,
                                  .expires_at = "2099-01-01T00:00:00.000Z"};
 }
@@ -358,7 +359,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& /*kem_public_key_b64*/,
                                                                    const std::string& /*peer_id*/,
                                                                    const std::vector<std::string>& /*multiaddrs*/,
-                                                                   int64_t initiation_floor) {
+                                                                   int64_t initiation_floor,
+                                                                   const RegistrationPublishOpts& /*publish*/) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
                             .message = "Registered as " + nickname,
@@ -751,6 +753,18 @@ std::string EncodePathSegment(const std::string& value) {
   return out;
 }
 
+void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& publish) {
+  if (!publish.entity_kind.empty()) {
+    body.set("entity_kind", publish.entity_kind);
+  }
+  if (publish.has_capabilities) {
+    Object caps;
+    caps.set("circuit_relay", publish.capabilities.circuit_relay);
+    caps.set("media_relay", publish.capabilities.media_relay);
+    body.set("capabilities", std::move(caps));
+  }
+}
+
 } // namespace
 
 Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
@@ -779,6 +793,93 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& accoun
   return DirectoryHitFromJson(*root);
 }
 
+Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
+  if (base_url_.empty()) {
+    return Error("Directory base_url not configured");
+  }
+  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Mesh nodes list failed with status " + std::to_string(response.value().status_code));
+  }
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
+    return Error("Invalid mesh nodes JSON");
+  }
+  const Array* nodes = root->getArray("nodes");
+  if (!nodes) {
+    return Error("Invalid mesh nodes JSON (missing nodes)");
+  }
+  std::vector<MeshNodeHit> out;
+  out.reserve(nodes->elements.size());
+  for (const Value& item : nodes->elements) {
+    const Object* obj = asObject(item);
+    if (!obj) {
+      continue;
+    }
+    MeshNodeHit hit;
+    if (auto relay = obj->getString("relay_user_id")) {
+      hit.relay_user_id = *relay;
+    }
+    if (hit.relay_user_id.empty()) {
+      continue;
+    }
+    if (auto account = obj->getString("account_id")) {
+      hit.account_id = *account;
+    }
+    if (auto nick = obj->getString("nickname")) {
+      hit.nickname = *nick;
+    }
+    if (auto expires = obj->getString("expires_at")) {
+      hit.expires_at = *expires;
+    }
+    if (auto pk = obj->getString("signing_public_key_b64")) {
+      hit.signing_public_key_b64 = *pk;
+    }
+    if (auto kem = obj->getString("kem_public_key_b64")) {
+      hit.kem_public_key_b64 = *kem;
+    }
+    if (const Object* caps = obj->getObject("capabilities")) {
+      if (auto circuit = caps->getIf<bool>("circuit_relay")) {
+        hit.capabilities.circuit_relay = *circuit;
+      }
+      if (auto media = caps->getIf<bool>("media_relay")) {
+        hit.capabilities.media_relay = *media;
+      }
+    }
+    if (const Array* endpoints = obj->getArray("endpoints")) {
+      for (const Value& ep_val : endpoints->elements) {
+        const Object* ep = asObject(ep_val);
+        if (!ep) {
+          continue;
+        }
+        DirectoryEndpoint row;
+        if (auto peer = ep->getString("peer_id")) {
+          row.peer_id = *peer;
+        }
+        if (row.peer_id.empty()) {
+          continue;
+        }
+        if (auto updated = ep->getIf<int64_t>("updated_at")) {
+          row.updated_at = *updated;
+        }
+        if (const Array* mas = ep->getArray("multiaddrs")) {
+          for (const Value& ma : mas->elements) {
+            if (auto s = asString(ma)) {
+              row.multiaddrs.push_back(*s);
+            }
+          }
+        }
+        hit.endpoints.push_back(std::move(row));
+      }
+    }
+    out.push_back(std::move(hit));
+  }
+  return out;
+}
+
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std::string& public_key_b64,
@@ -786,7 +887,8 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
                                                                      const std::string& signature_alg,
                                                                      const std::string& kem_public_key_b64,
                                                                      const std::string& peer_id,
-                                                                     const std::vector<std::string>& multiaddrs) {
+                                                                     const std::vector<std::string>& multiaddrs,
+                                                                     const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -809,6 +911,7 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
     }
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
+  ApplyRegistrationPublishOpts(body, publish);
   const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
@@ -846,7 +949,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& kem_public_key_b64,
                                                                    const std::string& peer_id,
                                                                    const std::vector<std::string>& multiaddrs,
-                                                                   int64_t initiation_floor) {
+                                                                   int64_t initiation_floor,
+                                                                   const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -873,6 +977,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     }
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
+  ApplyRegistrationPublishOpts(body, publish);
   const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
