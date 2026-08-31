@@ -41,12 +41,29 @@
 ## Landed (link layer — D4)
 
 - `src/base/mesh/link/` → `pp_base_mesh_link`
-- ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`
+- ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`, **`MeshRuntime`**
+- PeerId from MSH identity; inbound link adopt/rekey to registered alias
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
-- `pp_browser_amp_link_test` (3 tests, green)
+- `pp_browser_amp_link_test` (5 tests, green)
+
+## Landed (L4 chat — D5)
+
+- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/chat/1.0.0` and `/pp-browser/chat-history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
+- `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
+
+## Landed (L4 call-media — D6)
+
+- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
+- Dual-dial glare: higher base58 PeerId keeps outbound; lower yields and adopts inbound
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` for provisional roles
+- Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
+- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + 9× `CallMediaLeg*` cases
+- Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
 
 ## Next (implementation)
 
-1. **D5** — port chat + history onto `ChannelSession`
+1. **D9** — wire `CallMediaLegCoordinator` into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood`
+2. **D7** — circuit + media-relay on ChannelSession
 
 See [PHASES.md](PHASES.md) for full ordering.

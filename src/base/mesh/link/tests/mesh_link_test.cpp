@@ -6,6 +6,7 @@
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/MeshPump.h"
 #include "base/mesh/link/PeerLinkManager.h"
+#include "base/mesh/link/tests/mesh_test_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -154,6 +155,58 @@ TEST(MeshLinkTest, OpenChannelDataRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(outbound->Mux()->SendData(channel_id, msg)));
   fixture->PumpBoth();
   EXPECT_EQ(received, msg);
+}
+
+TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
+  ASSERT_GE(sodium_init(), 0);
+  auto created = test::AmpMeshHarness::Create();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto harness = std::move(*created);
+
+  ASSERT_TRUE(static_cast<bool>(harness->mgr_a().RegisterEndpoint("b", harness->ma_b)));
+  ASSERT_TRUE(static_cast<bool>(harness->mgr_b().RegisterEndpoint("a", harness->ma_a)));
+
+  bool associated = false;
+  harness->mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  harness->PumpUntil([&] {
+    return associated && harness->mgr_a().IsConnected("b") && harness->mgr_b().FindLinkByPeerId(harness->peer_id_a);
+  });
+
+  EXPECT_TRUE(associated);
+  EXPECT_TRUE(harness->mgr_a().IsConnected("b"));
+  auto* inbound_on_b = harness->mgr_b().FindLinkByPeerId(harness->peer_id_a);
+  ASSERT_NE(inbound_on_b, nullptr);
+  EXPECT_EQ(inbound_on_b->RemotePeerId(), harness->peer_id_a);
+  EXPECT_EQ(inbound_on_b->PeerKey(), "a");
+}
+
+TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
+  ASSERT_GE(sodium_init(), 0);
+  auto created = test::AmpMeshHarness::Create();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto harness = std::move(*created);
+
+  test::AmpMeshHarness& h = *harness;
+
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+  ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
+
+  bool associated = false;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.PumpUntil([&] { return associated; });
+  ASSERT_TRUE(associated);
+
+  auto* outbound = h.mgr_a().FindLink("b");
+  ASSERT_NE(outbound, nullptr);
+  EXPECT_EQ(outbound->RemotePeerId(), h.peer_id_b);
+
+  auto* inbound = h.mgr_b().FindLink("a");
+  ASSERT_NE(inbound, nullptr);
+  EXPECT_EQ(inbound->RemotePeerId(), h.peer_id_a);
+  EXPECT_FALSE(inbound->IsOutbound());
+
+  EXPECT_EQ(h.mgr_b().FindLinkByPeerId(h.peer_id_a), inbound);
+  EXPECT_EQ(h.mgr_a().FindLinkByPeerId(h.peer_id_b), outbound);
 }
 
 } // namespace

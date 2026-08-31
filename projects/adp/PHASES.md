@@ -82,15 +82,21 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D5 — L4 port: chat + history
 
-- [ ] `/pp-browser/chat/1.0.0` on ChannelSession
-- [ ] `/pp-browser/chat-history/1.0.0`
-- [ ] Port gtests; single transport entry ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- [x] `/pp-browser/chat/1.0.0` on ChannelSession
+- [x] `/pp-browser/chat-history/1.0.0`
+- [x] Port gtests; single transport entry ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 
 ### D6 — L4 port: call-media
 
-- [ ] Reliable hello + BestEffort media channels
-- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
-- [ ] Port `CallMediaAdp*` tests to AMP path
+- [x] `CallMediaLegCoordinator` — non-blocking hello on Reliable `RealtimeControl` + AEAD on BestEffort `Realtime` (`MeshRuntime` + `PeerLinkManager::OpenChannel`)
+- [x] `MeshRuntime` — io-thread `Pump`/`PostToIo` harness for AMP L4 tests
+- [x] L3 remote terminal events (`peer_close` / `peer_reset`) propagate to `ChannelSession`
+- [x] PeerId-keyed link merge (`FindLinkByPeerId`, inbound adopt/rekey)
+- [x] `CallMediaControlChannelPolicy` + split control/media channel bundle (normative AMP-CHANNEL)
+- [x] `CallMediaLegCoordinatorTest` — 8 tests + `CallMediaLegTripleTest` (audio, video, detach, timeout, handler clear, k-cycle, dual-dial glare, conflict)
+- [x] Shared `mesh_test_harness.h` + `MeshRuntime` for AMP L4 tests
+- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — blocked on D9 cutover (`CallStack` still references dogfood)
+- [ ] Wire `CallMediaLegCoordinator` into `MeshHost` / `CallStack` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 
 ### D7 — L4 port: circuit + media-relay
 

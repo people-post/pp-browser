@@ -100,6 +100,43 @@ TEST(ChannelMuxTest, CapabilityChannelZero) {
   EXPECT_EQ(decoded.protocols, offer.protocols);
 }
 
+TEST(ChannelMuxTest, InboundProtocolHandler) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  uint32_t opened_id = 0;
+  link.responder.mux.SetProtocolHandler("/pp-browser/chat/1.0.0", [&](const uint32_t channel_id, const std::string& pid) {
+    opened_id = channel_id;
+    EXPECT_EQ(pid, "/pp-browser/chat/1.0.0");
+  });
+
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+  EXPECT_EQ(opened_id, *ch);
+}
+
+TEST(ChannelMuxTest, RemoteResetNotifiesChannelSession) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  auto ch1 = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  auto ch2 = link.initiator.mux.OpenOutbound("/pp-browser/chat-history/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch1));
+  ASSERT_TRUE(static_cast<bool>(ch2));
+
+  std::string terminal_reason;
+  ChannelSession session;
+  session.Bind(link.responder.mux, *ch1, ControlJsonChannelPolicy(), [](Roe<std::vector<uint8_t>>) { return true; },
+                 [&](const char* reason) { terminal_reason = reason ? reason : ""; });
+
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.ResetChannel(*ch1)));
+  EXPECT_EQ(terminal_reason, "peer_reset");
+  EXPECT_TRUE(session.IsClosed());
+  EXPECT_EQ(link.initiator.mux.State(*ch2), ChannelState::Open);
+}
+
 TEST(ChannelSessionTest, ReadOnceClosesAfterFirstFrame) {
   auto link_result = test::AmpTestLink::Create();
   ASSERT_TRUE(static_cast<bool>(link_result));

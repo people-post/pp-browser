@@ -37,6 +37,7 @@ public:
   bool IsOutbound() const { return outbound_; }
   const std::string& PeerKey() const { return peer_key_; }
   const std::string& RemotePeerId() const { return remote_peer_id_; }
+  const ByteVector& RemoteIdentityPublicKey() const { return remote_identity_public_key_; }
   adp::Connection& Connection() { return *connection_; }
   ChannelMux* Mux() { return mux_.get(); }
   Session* GetSession() { return session_.get(); }
@@ -48,6 +49,8 @@ public:
 private:
   friend class PeerLinkManager;
 
+  void SetPeerKey(std::string peer_key) { peer_key_ = std::move(peer_key); }
+
   Roe<void> SendAdp(std::vector<uint8_t> payload, adp::QosClass qos);
   void OnHandshakeComplete(Roe<MshAdpEstablished> established);
   void FinishEstablishment(MshAdpEstablished established);
@@ -56,6 +59,7 @@ private:
 
   std::string peer_key_;
   std::string remote_peer_id_;
+  ByteVector remote_identity_public_key_;
   bool outbound_;
   std::shared_ptr<adp::Connection> connection_;
   MshIdentity identity_;

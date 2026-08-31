@@ -48,6 +48,42 @@ const PeerLink* PeerLinkManager::FindLink(const std::string& peer_key) const {
   return it->second.get();
 }
 
+PeerLink* PeerLinkManager::FindLinkByPeerId(const std::string& peer_id) {
+  if (peer_id.empty()) {
+    return nullptr;
+  }
+  if (const auto it = peer_id_to_key_.find(peer_id); it != peer_id_to_key_.end()) {
+    return FindLink(it->second);
+  }
+  for (auto& [key, link] : links_) {
+    if (link->Phase() == PeerLinkPhase::Connected && link->RemotePeerId() == peer_id) {
+      peer_id_to_key_[peer_id] = key;
+      return link.get();
+    }
+  }
+  return nullptr;
+}
+
+const PeerLink* PeerLinkManager::FindLinkByPeerId(const std::string& peer_id) const {
+  return const_cast<PeerLinkManager*>(this)->FindLinkByPeerId(peer_id);
+}
+
+PeerLink* PeerLinkManager::FindConnectedLinkForPeerId(const std::string& peer_id) {
+  if (auto* link = FindLinkByPeerId(peer_id)) {
+    if (link->Phase() == PeerLinkPhase::Connected) {
+      return link;
+    }
+  }
+  return nullptr;
+}
+
+std::string PeerLinkManager::DeriveRemotePeerId(const ByteVector& identity_public_key) const {
+  if (config_.peer_id_from_identity) {
+    return config_.peer_id_from_identity(identity_public_key);
+  }
+  return IdentityPublicKeyFingerprint(identity_public_key);
+}
+
 PeerLink* PeerLinkManager::FindConnectedInboundLink() {
   for (auto& [_, link] : links_) {
     if (!link->IsOutbound() && link->Phase() == PeerLinkPhase::Connected) {
@@ -99,6 +135,19 @@ void PeerLinkManager::EnsureAssociation(const std::string& peer_key, LinkCb on_c
     return;
   }
 
+  const auto ep_it = endpoints_.find(peer_key);
+  if (ep_it != endpoints_.end()) {
+    if (auto* existing = FindConnectedLinkForPeerId(ep_it->second.peer_id)) {
+      if (existing->PeerKey() != peer_key) {
+        RekeyLink(existing->PeerKey(), peer_key);
+      }
+      if (on_complete) {
+        on_complete(Roe<void>());
+      }
+      return;
+    }
+  }
+
   if (auto* existing = FindLink(peer_key)) {
     if (existing->Phase() == PeerLinkPhase::Handshaking || existing->Phase() == PeerLinkPhase::Dialing) {
       inflight_associations_[peer_key].push_back(std::move(on_complete));
@@ -106,7 +155,6 @@ void PeerLinkManager::EnsureAssociation(const std::string& peer_key, LinkCb on_c
     }
   }
 
-  const auto ep_it = endpoints_.find(peer_key);
   if (ep_it == endpoints_.end()) {
     if (on_complete) {
       on_complete(Error("amp link: peer endpoint not registered"));
@@ -154,10 +202,24 @@ void PeerLinkManager::EnsureAssociation(const std::string& peer_key, LinkCb on_c
   links_[peer_key] = std::move(link);
 }
 
+void PeerLinkManager::OpenChannelOnLink(PeerLink& link, const std::string& protocol_id, ChannelPolicy policy,
+                                        ChannelCb on_complete) {
+  if (link.Phase() != PeerLinkPhase::Connected || !link.Mux()) {
+    if (on_complete) {
+      on_complete(Error("amp link: association not ready"));
+    }
+    return;
+  }
+  auto channel_id = link.Mux()->OpenOutbound(protocol_id, policy);
+  if (on_complete) {
+    on_complete(channel_id);
+  }
+}
+
 void PeerLinkManager::OpenChannel(const std::string& peer_key, const std::string& protocol_id, ChannelPolicy policy,
                                   ChannelCb on_complete) {
   EnsureAssociation(peer_key, [this, peer_key, protocol_id, policy = std::move(policy),
-                               on_complete = std::move(on_complete)](Roe<void> assoc) mutable {
+                                 on_complete = std::move(on_complete)](Roe<void> assoc) mutable {
     if (!assoc) {
       if (on_complete) {
         on_complete(assoc.error());
@@ -165,17 +227,58 @@ void PeerLinkManager::OpenChannel(const std::string& peer_key, const std::string
       return;
     }
     auto* link = FindLink(peer_key);
-    if (!link || !link->Mux()) {
+    if (!link) {
       if (on_complete) {
         on_complete(Error("amp link: association not ready"));
       }
       return;
     }
-    auto channel_id = link->Mux()->OpenOutbound(protocol_id, policy);
-    if (on_complete) {
-      on_complete(channel_id);
-    }
+    OpenChannelOnLink(*link, protocol_id, policy, std::move(on_complete));
   });
+}
+
+void PeerLinkManager::SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler) {
+  protocol_handlers_[protocol_id] = std::move(handler);
+  for (auto& [_, link] : links_) {
+    ApplyProtocolHandlers(*link);
+  }
+}
+
+void PeerLinkManager::RemoveProtocolHandler(const std::string& protocol_id) {
+  protocol_handlers_.erase(protocol_id);
+  for (auto& [_, link] : links_) {
+    if (link->Mux()) {
+      link->Mux()->SetProtocolHandler(protocol_id, {});
+    }
+  }
+}
+
+void PeerLinkManager::ClearProtocolHandlers() {
+  protocol_handlers_.clear();
+  for (auto& [_, link] : links_) {
+    if (link->Mux()) {
+      link->Mux()->ClearProtocolHandlers();
+    }
+  }
+}
+
+void PeerLinkManager::ApplyProtocolHandlers(PeerLink& link) {
+  if (!link.Mux()) {
+    return;
+  }
+  const std::string peer_key = link.PeerKey();
+  link.Mux()->ClearProtocolHandlers();
+  for (const auto& [protocol_id, handler] : protocol_handlers_) {
+    link.Mux()->SetProtocolHandler(protocol_id, [this, peer_key, handler](const uint32_t channel_id,
+                                                                           const std::string&) {
+      if (!handler) {
+        return;
+      }
+      if (auto* live = FindLink(peer_key)) {
+        handler(*live, channel_id);
+      }
+    });
+  }
 }
 
 void PeerLinkManager::FinishDial(const std::string& peer_key, Roe<void> result) {
@@ -213,8 +316,46 @@ void PeerLinkManager::OnInboundConnection(std::shared_ptr<adp::Connection> conne
   links_[peer_key] = std::move(link);
 }
 
+void PeerLinkManager::RekeyLink(const std::string& from_key, const std::string& to_key) {
+  if (from_key == to_key || links_.contains(to_key)) {
+    return;
+  }
+  auto node = links_.extract(from_key);
+  if (node.empty()) {
+    return;
+  }
+  node.mapped()->SetPeerKey(to_key);
+  if (!node.mapped()->RemotePeerId().empty()) {
+    peer_id_to_key_[node.mapped()->RemotePeerId()] = to_key;
+  }
+  links_.emplace(to_key, std::move(node.mapped()));
+}
+
+void PeerLinkManager::TryAdoptInboundLink(PeerLink& inbound) {
+  if (inbound.IsOutbound() || inbound.RemotePeerId().empty()) {
+    return;
+  }
+  if (auto* existing = FindConnectedLinkForPeerId(inbound.RemotePeerId())) {
+    if (existing != &inbound) {
+      links_.erase(inbound.PeerKey());
+      return;
+    }
+  }
+  for (const auto& [alias, rec] : endpoints_) {
+    if (rec.peer_id == inbound.RemotePeerId() && !links_.contains(alias)) {
+      RekeyLink(inbound.PeerKey(), alias);
+      return;
+    }
+  }
+  peer_id_to_key_[inbound.RemotePeerId()] = inbound.PeerKey();
+}
+
 void PeerLinkManager::OnLinkEstablished(PeerLink& link) {
-  (void)link;
+  if (!link.RemotePeerId().empty()) {
+    peer_id_to_key_[link.RemotePeerId()] = link.PeerKey();
+  }
+  TryAdoptInboundLink(link);
+  ApplyProtocolHandlers(link);
 }
 
 void PeerLinkManager::MarkWarm(const std::string& peer_key) {

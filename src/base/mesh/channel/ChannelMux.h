@@ -27,6 +27,8 @@ public:
   using TransportSend =
       std::function<void(uint32_t channel_id, uint32_t channel_seq, adp::QosClass qos, std::vector<uint8_t> sealed)>;
   using DataHandler = std::function<void(uint32_t channel_id, std::vector<uint8_t> payload)>;
+  using TerminalHandler = std::function<void(uint32_t channel_id, const char* reason)>;
+  using InboundOpenHandler = std::function<void(uint32_t channel_id, const std::string& protocol_id)>;
 
   explicit ChannelMux(Session& session);
 
@@ -40,6 +42,13 @@ public:
 
   /** Register handler for inbound DATA on a channel. */
   void SetDataHandler(uint32_t channel_id, DataHandler handler);
+
+  /** Invoked on inbound CLOSE/RESET for a channel. */
+  void SetTerminalHandler(uint32_t channel_id, TerminalHandler handler);
+
+  /** Invoked after inbound OPEN + OpenAck for registered protocol_id (L4 entry). */
+  void SetProtocolHandler(const std::string& protocol_id, InboundOpenHandler handler);
+  void ClearProtocolHandlers();
 
   Roe<void> SendData(uint32_t channel_id, std::vector<uint8_t> payload);
   Roe<void> ResetChannel(uint32_t channel_id, uint32_t code = 1);
@@ -63,6 +72,7 @@ private:
     uint32_t tx_seq = 1;
     uint32_t rx_seq = 1;
     DataHandler on_data;
+    TerminalHandler on_terminal;
     MessageReassembly reassembly;
   };
 
@@ -73,6 +83,7 @@ private:
   Roe<void> DeliverPayload(ChannelRecord& channel, std::vector<uint8_t> payload);
   Roe<void> HandleOpen(ChannelFrame frame);
   Roe<void> HandleOpenAck(ChannelFrame frame);
+  void NotifyTerminal(ChannelRecord& channel, const char* reason);
 
   Session& session_;
   Session* peer_session_ = nullptr;
@@ -80,6 +91,8 @@ private:
   std::function<int64_t()> now_ms_;
   std::unordered_map<uint32_t, ChannelRecord> channels_;
   std::unordered_map<uint32_t, DataHandler> pending_handlers_;
+  std::unordered_map<uint32_t, TerminalHandler> pending_terminal_handlers_;
+  std::unordered_map<std::string, InboundOpenHandler> protocol_handlers_;
   uint32_t next_dynamic_id_ = 1;
   adp::QosClass last_send_qos_ = adp::QosClass::Reliable;
   uint64_t next_frag_msg_id_ = 1;
