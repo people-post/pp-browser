@@ -155,6 +155,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("brief_llm_api_key")) {
     identity.brief_llm_api_key = *v;
   }
+  if (auto v = root.getString("brief_llm_guest_api_key")) {
+    identity.brief_llm_guest_api_key = *v;
+  }
   if (auto v = root.getIf<bool>("registered")) {
     identity.registered = *v;
   }
@@ -186,6 +189,7 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("nickname", identity.nickname);
   root.set("relay_user_id", identity.relay_user_id);
   root.set("brief_llm_api_key", identity.brief_llm_api_key);
+  root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key);
   root.set("registered", identity.registered);
   root.set("registration_expires_at", identity.registration_expires_at);
   root.set("initiation_floor", identity.initiation_floor);
@@ -298,6 +302,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.nickname = "user";
     identity_.relay_user_id.clear();
     identity_.brief_llm_api_key.clear();
+    identity_.brief_llm_guest_api_key.clear();
     identity_.registered = false;
     identity_.registration_expires_at.clear();
     if (auto peer = DerivePeerId(identity_); !peer) {

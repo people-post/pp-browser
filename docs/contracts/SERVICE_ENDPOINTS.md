@@ -173,17 +173,23 @@ Default assistant preset uses OpenAI-compatible completions at:
 
 | Requirement | Detail |
 |-------------|--------|
-| Auth | `Authorization: Bearer <brf_llm_…>` issued on directory registration finish |
-| Issue | Opaque key returned once in `register/finish` as `llm_api_key`; stored hashed on `RelayUser` |
-| Rotate | `POST /api/llm/v1/keys/rotate` with current Bearer; returns new `llm_api_key` once |
-| Limits | Global 300 req/min (`llm:global`); per-user 30 req/min (`llm:user:{id}`). Env: `BRF_WWW_LLM_GLOBAL_RPM`, `BRF_WWW_LLM_USER_RPM` |
-| Errors | `401` invalid key, `403` registration expired (`code: not_registered`), `429` (`global_rate_limit` / `user_rate_limit`), `400` if `stream: true` |
+| Auth | `Authorization: Bearer <brf_llm_…>` (registration) **or** `Bearer <brf_guest_…>` (free tier) |
+| Guest mint | `POST /api/llm/v1/guest/start` — no Bearer; returns `{ llm_api_key, expires_at, guest: true }` once |
+| Issue (registered) | Opaque key returned once in `register/finish` as `llm_api_key`; stored hashed on `RelayUser` |
+| Rotate | `POST /api/llm/v1/keys/rotate` with registered Bearer only; guest → `403 guest_rotate_unsupported` (remint via `/guest/start`) |
+| Limits | Global 300 req/min (`llm:global`); registered 30/min (`llm:user:{id}`); guest 10/min + 50/day (`llm:guest:…`). Mint 5/IP/hour. Env: `BRF_WWW_LLM_*` |
+| Errors | `401` invalid key, `403` registration/guest expired, `429` (`global_rate_limit` / `user_rate_limit` / `guest_rate_limit` / `guest_daily_limit` / `guest_mint_rate_limit`), `400` if `stream: true` |
 
-Upstream is user-ai `POST /v1/chat/completions` (stateless; www→user-ai uses service token). pp-browser stores the plaintext key in profile `identity.enc` (`brief_llm_api_key`) and sends standard Bearer auth when preset is `brief`.
+Upstream is AI harness `POST /v1/chat/completions` (stateless; www→harness uses `X-Harness-Token`). pp-browser stores:
 
-Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; user-ai maps them to the configured provider (xAI or openai-compatible).
+- Registered key in `identity.enc` as `brief_llm_api_key`
+- Guest key as `brief_llm_guest_api_key` (auto-minted when preset is Brief and registered key is empty)
 
-Lost key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active.
+Overlay prefers registered over guest. Soft banner for free tier; register for higher limits.
+
+Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; the harness maps them to the configured provider.
+
+Lost registered key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active. Guests remint via `/guest/start` (app caches until expiry / register).
 
 ## libp2p (deferred)
 
