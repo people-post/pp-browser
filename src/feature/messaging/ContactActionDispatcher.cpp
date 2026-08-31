@@ -8,7 +8,8 @@
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -56,20 +57,19 @@ void RegisterKeysFromHit(P2pMessagingService* p2p, const DirectoryHit& hit) {
 } // namespace
 
 Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::string& payload_json) {
-  const nlohmann::json payload = nlohmann::json::parse(payload_json, nullptr, false);
-  if (payload.is_discarded() || !payload.contains("type") || !payload["type"].is_string()) {
+  auto payload = TryParseObject(payload_json);
+  auto type = payload ? payload->getString("type") : std::nullopt;
+  if (!type) {
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  const std::string type = payload["type"].get<std::string>();
-
-  if (type == "start_conversation") {
+  if (*type == "start_conversation") {
     std::string contact_id;
     ThreadChannel channel = ThreadChannel::E2ePublic;
-    if (payload.contains("contact_id") && payload["contact_id"].is_string()) {
-      contact_id = payload["contact_id"].get<std::string>();
-    } else     if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
-      const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+    if (auto cid = payload->getString("contact_id")) {
+      contact_id = *cid;
+    } else if (const Object* hit_obj = payload->getObject("directory_hit")) {
+      const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
       RegisterKeysFromHit(p2p_, hit);
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
@@ -99,16 +99,17 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "secure_message") {
-    if (!payload.contains("contact_id") || !payload["contact_id"].is_string()) {
+  if (*type == "secure_message") {
+    auto contact_id = payload->getString("contact_id");
+    if (!contact_id) {
       return Error("Missing contact_id");
     }
-    auto thread = inbox_.FindOrCreateDirectThread(payload["contact_id"].get<std::string>(), ThreadChannel::E2e);
+    auto thread = inbox_.FindOrCreateDirectThread(*contact_id, ThreadChannel::E2e);
     if (!thread) {
       return thread.error();
     }
     if (p2p_) {
-      auto contact = contacts_.Get(payload["contact_id"].get<std::string>());
+      auto contact = contacts_.Get(*contact_id);
       if (contact && *contact) {
         p2p_->RegisterContactDirectEndpoints(**contact);
       }
@@ -121,11 +122,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "add_contact") {
-    if (!payload.contains("directory_hit") || !payload["directory_hit"].is_object()) {
+  if (*type == "add_contact") {
+    const Object* hit_obj = payload->getObject("directory_hit");
+    if (!hit_obj) {
       return Error("Missing directory_hit");
     }
-    const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+    const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
     RegisterKeysFromHit(p2p_, hit);
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
@@ -140,22 +142,24 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "show_contact") {
-    if (!payload.contains("contact_id") || !payload["contact_id"].is_string()) {
+  if (*type == "show_contact") {
+    auto contact_id = payload->getString("contact_id");
+    if (!contact_id) {
       return Error("Missing contact_id");
     }
-    auto contact = contacts_.Get(payload["contact_id"].get<std::string>());
+    auto contact = contacts_.Get(*contact_id);
     if (!contact || !*contact) {
       return Error("Contact not found");
     }
-    return Roe<std::optional<std::string>>(ContactToJson(**contact).dump());
+    return Roe<std::optional<std::string>>(DumpJson(ContactToJson(**contact)));
   }
 
-  if (type == "open_conversation") {
-    if (!payload.contains("thread_id") || !payload["thread_id"].is_string()) {
+  if (*type == "open_conversation") {
+    auto thread_id = payload->getString("thread_id");
+    if (!thread_id) {
       return Error("Missing thread_id");
     }
-    auto thread = inbox_.OpenThread(payload["thread_id"].get<std::string>());
+    auto thread = inbox_.OpenThread(*thread_id);
     if (!thread) {
       return thread.error();
     }
@@ -165,7 +169,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "register_user") {
+  if (*type == "register_user") {
     auto identity = identity_.Get();
     if (!identity) {
       return identity.error();
@@ -184,14 +188,15 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "accept_group_invite") {
-    if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
+  if (*type == "accept_group_invite") {
+    auto invite_nonce = payload->getString("invite_nonce");
+    if (!invite_nonce) {
       return Error("Missing invite_nonce");
     }
     if (!groups_) {
       return Error("Messaging not initialized");
     }
-    auto thread = groups_->AcceptInvite(payload["invite_nonce"].get<std::string>());
+    auto thread = groups_->AcceptInvite(*invite_nonce);
     if (!thread) {
       return thread.error();
     }
@@ -202,15 +207,15 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "decline_group_invite") {
-    if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
+  if (*type == "decline_group_invite") {
+    auto invite_nonce = payload->getString("invite_nonce");
+    if (!invite_nonce) {
       return Error("Missing invite_nonce");
     }
     if (!groups_) {
       return Error("Messaging not initialized");
     }
-    if (auto declined = groups_->DeclineInvite(payload["invite_nonce"].get<std::string>());
-        !declined) {
+    if (auto declined = groups_->DeclineInvite(*invite_nonce); !declined) {
       return declined.error();
     }
     if (on_action_message_) {
@@ -219,11 +224,11 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "block_group_inviter") {
-    if (!payload.contains("inviter_identity") || !payload["inviter_identity"].is_string()) {
+  if (*type == "block_group_inviter") {
+    auto inviter_identity = payload->getString("inviter_identity");
+    if (!inviter_identity) {
       return Error("Missing inviter_identity");
     }
-    const std::string inviter_identity = payload["inviter_identity"].get<std::string>();
     auto contacts = contacts_.List();
     if (!contacts) {
       return contacts.error();
@@ -231,7 +236,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     bool updated = false;
     for (Contact& contact : *contacts) {
       for (const ContactId& id : contact.ids) {
-        if (id.value == inviter_identity) {
+        if (id.value == *inviter_identity) {
           contact.trust = TrustLevel::Blocked;
           if (auto saved = contacts_.Upsert(contact); !saved) {
             return saved.error();
@@ -241,12 +246,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
         }
       }
     }
-    if (payload.contains("invite_nonce") && payload["invite_nonce"].is_string() &&
-        groups_) {
-      const std::string invite_nonce = payload["invite_nonce"].get<std::string>();
-      (void)groups_->DeclineInvite(invite_nonce);
-      (void)groups_->ResolveInviteCard(inviter_identity, invite_nonce,
-                                                                InviteStatus::Blocked, "You blocked the inviter");
+    if (auto invite_nonce = payload->getString("invite_nonce"); invite_nonce && groups_) {
+      (void)groups_->DeclineInvite(*invite_nonce);
+      (void)groups_->ResolveInviteCard(*inviter_identity, *invite_nonce, InviteStatus::Blocked,
+                                       "You blocked the inviter");
     }
     if (on_action_message_) {
       on_action_message_(updated ? "Blocked inviter" : "Blocked unknown inviter");
@@ -254,19 +257,20 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "create_group") {
-    if (!payload.contains("title") || !payload["title"].is_string()) {
+  if (*type == "create_group") {
+    auto title = payload->getString("title");
+    if (!title) {
       return Error("Missing title");
     }
     std::vector<std::string> member_contact_ids;
-    if (payload.contains("member_contact_ids") && payload["member_contact_ids"].is_array()) {
-      for (const nlohmann::json& entry : payload["member_contact_ids"]) {
-        if (entry.is_string()) {
-          member_contact_ids.push_back(entry.get<std::string>());
+    if (const Array* members = payload->getArray("member_contact_ids")) {
+      for (const Value& entry : members->elements) {
+        if (auto s = asString(entry)) {
+          member_contact_ids.push_back(*s);
         }
       }
     }
-    auto thread = inbox_.CreateGroup(payload["title"].get<std::string>(), member_contact_ids);
+    auto thread = inbox_.CreateGroup(*title, member_contact_ids);
     if (!thread) {
       return thread.error();
     }
@@ -276,17 +280,17 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "fork_group") {
-    if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
+  if (*type == "fork_group") {
+    auto group_id = payload->getString("group_id");
+    if (!group_id) {
       return Error("Missing group_id");
     }
     if (!groups_) {
       return Error("Messaging not initialized");
     }
-    const std::string group_id = payload["group_id"].get<std::string>();
-    auto roster = groups_->ListRoster(group_id);
+    auto roster = groups_->ListRoster(*group_id);
     std::string old_title = "Group";
-    if (auto thread = store_.FindGroupThread(group_id); thread && *thread) {
+    if (auto thread = store_.FindGroupThread(*group_id); thread && *thread) {
       old_title = (*thread)->title.empty() ? old_title : (*thread)->title;
     }
     const std::string new_title = old_title + " (continued)";
@@ -297,7 +301,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
         if (local && member.member_identity == local->account_id) {
           continue;
         }
-        if (groups_->IsMemberUnreachable(group_id, member.member_identity)) {
+        if (groups_->IsMemberUnreachable(*group_id, member.member_identity)) {
           continue;
         }
         if (auto contact = contacts_.FindByIdentity(member.member_identity, ContactIdKind::Account)) {
@@ -307,11 +311,11 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
         }
       }
     }
-    auto forked = groups_->ForkGroup(group_id, new_title, member_contact_ids);
+    auto forked = groups_->ForkGroup(*group_id, new_title, member_contact_ids);
     if (!forked) {
       return forked.error();
     }
-    (void)groups_->ResolveOwnerUnreachableAdvisory(group_id);
+    (void)groups_->ResolveOwnerUnreachableAdvisory(*group_id);
     (void)inbox_.OpenThread(forked->id);
     if (on_action_message_) {
       on_action_message_("Started " + forked->title + " (fresh history)");
@@ -319,14 +323,15 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "message_group_owner") {
-    if (!payload.contains("owner_identity") || !payload["owner_identity"].is_string()) {
+  if (*type == "message_group_owner") {
+    auto owner_identity = payload->getString("owner_identity");
+    if (!owner_identity) {
       return Error("Missing owner_identity");
     }
     if (!groups_) {
       return Error("Messaging not initialized");
     }
-    auto thread = groups_->OpenOwnerDirectMessage(payload["owner_identity"].get<std::string>());
+    auto thread = groups_->OpenOwnerDirectMessage(*owner_identity);
     if (!thread) {
       return thread.error();
     }
@@ -337,14 +342,15 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 
-  if (type == "dismiss_owner_advisory") {
-    if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
+  if (*type == "dismiss_owner_advisory") {
+    auto group_id = payload->getString("group_id");
+    if (!group_id) {
       return Error("Missing group_id");
     }
     if (!groups_) {
       return Error("Messaging not initialized");
     }
-    if (auto resolved = groups_->ResolveOwnerUnreachableAdvisory(payload["group_id"].get<std::string>()); !resolved) {
+    if (auto resolved = groups_->ResolveOwnerUnreachableAdvisory(*group_id); !resolved) {
       return resolved.error();
     }
     inbox_.NotifyThreadChanged();

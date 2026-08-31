@@ -2,51 +2,94 @@
 #include "base/messaging/RelayStreamKey.h"
 
 #include "base/crypto/CryptoUtil.h"
+#include "common/ValueJson.h"
 
-#include <nlohmann/json.hpp>
 #include <map>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-nlohmann::json ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
-  nlohmann::json out = nlohmann::json::array();
+Value ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
+  std::vector<Value> out;
+  out.reserve(actions.size());
   for (const TranscriptChatAction& action : actions) {
-    nlohmann::json item = {{"label", action.label}, {"message", action.message}};
+    Object item;
+    item.set("label", action.label);
+    item.set("message", action.message);
     if (action.payload) {
-      item["payload"] = *action.payload;
+      item.set("payload", *action.payload);
     }
-    out.push_back(std::move(item));
+    out.push_back(ObjectValue(std::move(item)));
   }
-  return out;
+  return ArrayValue(std::move(out));
 }
 
-std::vector<TranscriptChatAction> ChatActionsFromJson(const nlohmann::json& json) {
+std::vector<TranscriptChatAction> ChatActionsFromJson(const Array& arr) {
   std::vector<TranscriptChatAction> out;
-  if (!json.is_array()) {
-    return out;
-  }
-  for (const auto& item : json) {
+  for (const Value& item_value : arr.elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
+      continue;
+    }
     TranscriptChatAction action;
-    if (item.contains("label") && item["label"].is_string()) {
-      action.label = item["label"].get<std::string>();
+    if (auto label = item->getString("label")) {
+      action.label = *label;
     }
-    if (item.contains("message") && item["message"].is_string()) {
-      action.message = item["message"].get<std::string>();
+    if (auto message = item->getString("message")) {
+      action.message = *message;
     }
-    if (item.contains("payload")) {
-      if (item["payload"].is_string()) {
-        action.payload = item["payload"].get<std::string>();
-      } else if (item["payload"].is_object()) {
+    if (item->contains("payload")) {
+      if (auto payload = item->getString("payload")) {
+        action.payload = *payload;
+      } else if (const Object* payload_obj = item->getObject("payload")) {
         // Older / in-memory shapes stored payload as a nested object.
-        action.payload = item["payload"].dump();
+        action.payload = DumpJson(*payload_obj);
       }
     }
     out.push_back(std::move(action));
   }
   return out;
+}
+
+Value StringArrayToJson(const std::vector<std::string>& values) {
+  std::vector<Value> out;
+  out.reserve(values.size());
+  for (const std::string& value : values) {
+    out.push_back(Value(value));
+  }
+  return ArrayValue(std::move(out));
+}
+
+Object BuildE2eBody(const RelayEnvelope& envelope) {
+  Object e2e_body;
+  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
+    Object payloads;
+    for (const auto& [key, value] : *envelope.body.e2e.member_payloads) {
+      payloads.set(key, value);
+    }
+    e2e_body.set("member_payloads", payloads);
+  } else {
+    e2e_body.set("payload_b64", envelope.body.e2e.payload_b64);
+  }
+  if (envelope.body.e2e.key_init_b64) {
+    e2e_body.set("key_init_b64", *envelope.body.e2e.key_init_b64);
+  }
+  return e2e_body;
+}
+
+Object BuildRouteObject(const RelayEnvelope& envelope) {
+  Object route;
+  route.set("kind", envelope.route.kind);
+  if (envelope.route.kind == "direct") {
+    route.set("channel", ThreadChannelToString(envelope.route.channel));
+  }
+  if (envelope.route.group_id) {
+    route.set("group_id", *envelope.route.group_id);
+  }
+  return route;
 }
 
 } // namespace
@@ -156,328 +199,321 @@ std::string MessageTransportBadgeLabel(const MessageTransport transport) {
   return "Local";
 }
 
-nlohmann::json ThreadToJson(const Thread& thread) {
-  nlohmann::json json = {{"id", thread.id},
-                         {"kind", ThreadKindToString(thread.kind)},
-                         {"title", thread.title},
-                         {"participant_contact_ids", thread.participant_contact_ids},
-                         {"updated_at", thread.updated_at},
-                         {"unread_count", thread.unread_count},
-                         {"preview", thread.preview},
-                         {"encrypted", thread.encrypted}};
+Object ThreadToJson(const Thread& thread) {
+  Object json;
+  json.set("id", thread.id);
+  json.set("kind", ThreadKindToString(thread.kind));
+  json.set("title", thread.title);
+  json.set("participant_contact_ids", StringArrayToJson(thread.participant_contact_ids));
+  json.set("updated_at", thread.updated_at);
+  json.set("unread_count", static_cast<int64_t>(thread.unread_count));
+  json.set("preview", thread.preview);
+  json.set("encrypted", thread.encrypted);
   if (!thread.local_title.empty()) {
-    json["local_title"] = thread.local_title;
+    json.set("local_title", thread.local_title);
   }
   if (thread.channel != ThreadChannel::None) {
-    json["channel"] = ThreadChannelToString(thread.channel);
+    json.set("channel", ThreadChannelToString(thread.channel));
   }
   if (!thread.peer_identity_kind.empty()) {
-    json["peer_identity_kind"] = thread.peer_identity_kind;
+    json.set("peer_identity_kind", thread.peer_identity_kind);
   }
   if (!thread.peer_identity_value.empty()) {
-    json["peer_identity_value"] = thread.peer_identity_value;
+    json.set("peer_identity_value", thread.peer_identity_value);
   }
   return json;
 }
 
-Thread ThreadFromJson(const nlohmann::json& json) {
+Thread ThreadFromJson(const Object& json) {
   Thread thread;
-  if (json.contains("id") && json["id"].is_string()) {
-    thread.id = json["id"].get<std::string>();
+  if (auto id = json.getString("id")) {
+    thread.id = *id;
   }
-  if (json.contains("kind") && json["kind"].is_string()) {
-    thread.kind = ThreadKindFromString(json["kind"].get<std::string>());
+  if (auto kind = json.getString("kind")) {
+    thread.kind = ThreadKindFromString(*kind);
   }
-  if (json.contains("channel") && json["channel"].is_string()) {
-    thread.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+  if (auto channel = json.getString("channel")) {
+    thread.channel = ThreadChannelFromString(*channel);
   }
-  if (json.contains("title") && json["title"].is_string()) {
-    thread.title = json["title"].get<std::string>();
+  if (auto title = json.getString("title")) {
+    thread.title = *title;
   }
-  if (json.contains("local_title") && json["local_title"].is_string()) {
-    thread.local_title = json["local_title"].get<std::string>();
+  if (auto local_title = json.getString("local_title")) {
+    thread.local_title = *local_title;
   }
-  if (json.contains("participant_contact_ids") && json["participant_contact_ids"].is_array()) {
-    for (const auto& id : json["participant_contact_ids"]) {
-      if (id.is_string()) {
-        thread.participant_contact_ids.push_back(id.get<std::string>());
+  if (const Array* ids = json.getArray("participant_contact_ids")) {
+    for (const Value& id : ids->elements) {
+      if (auto s = asString(id)) {
+        thread.participant_contact_ids.push_back(*s);
       }
     }
   }
-  if (json.contains("peer_identity_kind") && json["peer_identity_kind"].is_string()) {
-    thread.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+  if (auto kind = json.getString("peer_identity_kind")) {
+    thread.peer_identity_kind = *kind;
   }
-  if (json.contains("peer_identity_value") && json["peer_identity_value"].is_string()) {
-    thread.peer_identity_value = json["peer_identity_value"].get<std::string>();
+  if (auto value = json.getString("peer_identity_value")) {
+    thread.peer_identity_value = *value;
   }
-  if (json.contains("updated_at") && json["updated_at"].is_number_integer()) {
-    thread.updated_at = json["updated_at"].get<int64_t>();
+  if (auto updated_at = json.getIf<int64_t>("updated_at")) {
+    thread.updated_at = *updated_at;
   }
-  if (json.contains("unread_count") && json["unread_count"].is_number_integer()) {
-    thread.unread_count = json["unread_count"].get<int>();
+  if (auto unread = json.getIf<int64_t>("unread_count")) {
+    thread.unread_count = static_cast<int>(*unread);
+  } else if (auto unread_u = json.getNonNegInt("unread_count")) {
+    thread.unread_count = static_cast<int>(*unread_u);
   }
-  if (json.contains("preview") && json["preview"].is_string()) {
-    thread.preview = json["preview"].get<std::string>();
+  if (auto preview = json.getString("preview")) {
+    thread.preview = *preview;
   }
-  if (json.contains("encrypted") && json["encrypted"].is_boolean()) {
-    thread.encrypted = json["encrypted"].get<bool>();
+  if (auto encrypted = json.getIf<bool>("encrypted")) {
+    thread.encrypted = *encrypted;
   } else if (ThreadChannelIsE2e(thread.channel)) {
     thread.encrypted = true;
   }
   return thread;
 }
 
-nlohmann::json ThreadMessageToJson(const ThreadMessage& message) {
-  nlohmann::json json = {{"id", message.id},
-                         {"thread_id", message.thread_id},
-                         {"sender_contact_id", message.sender_contact_id},
-                         {"display_order", message.display_order},
-                         {"text", message.text},
-                         {"timestamp", message.timestamp},
-                         {"delivery", MessageDeliveryToString(message.delivery)},
-                         {"relay_visible", message.relay_visible},
-                         {"chat_actions", ChatActionsToJson(message.chat_actions)}};
+Object ThreadMessageToJson(const ThreadMessage& message) {
+  Object json;
+  json.set("id", message.id);
+  json.set("thread_id", message.thread_id);
+  json.set("sender_contact_id", message.sender_contact_id);
+  json.set("display_order", message.display_order);
+  json.set("text", message.text);
+  json.set("timestamp", message.timestamp);
+  json.set("delivery", MessageDeliveryToString(message.delivery));
+  json.set("relay_visible", message.relay_visible);
+  json.set("chat_actions", ChatActionsToJson(message.chat_actions));
   if (message.content_rml) {
-    json["content_rml"] = *message.content_rml;
+    json.set("content_rml", *message.content_rml);
   }
   return json;
 }
 
-ThreadMessage ThreadMessageFromJson(const nlohmann::json& json) {
+ThreadMessage ThreadMessageFromJson(const Object& json) {
   ThreadMessage message;
-  if (json.contains("id") && json["id"].is_string()) {
-    message.id = json["id"].get<std::string>();
+  if (auto id = json.getString("id")) {
+    message.id = *id;
   }
-  if (json.contains("thread_id") && json["thread_id"].is_string()) {
-    message.thread_id = json["thread_id"].get<std::string>();
+  if (auto thread_id = json.getString("thread_id")) {
+    message.thread_id = *thread_id;
   }
-  if (json.contains("sender_contact_id") && json["sender_contact_id"].is_string()) {
-    message.sender_contact_id = json["sender_contact_id"].get<std::string>();
+  if (auto sender = json.getString("sender_contact_id")) {
+    message.sender_contact_id = *sender;
   }
-  if (json.contains("display_order") && json["display_order"].is_number_integer()) {
-    message.display_order = json["display_order"].get<int64_t>();
+  if (auto display_order = json.getIf<int64_t>("display_order")) {
+    message.display_order = *display_order;
   }
-  if (json.contains("text") && json["text"].is_string()) {
-    message.text = json["text"].get<std::string>();
+  if (auto text = json.getString("text")) {
+    message.text = *text;
   }
-  if (json.contains("content_rml") && json["content_rml"].is_string()) {
-    message.content_rml = json["content_rml"].get<std::string>();
+  if (auto content_rml = json.getString("content_rml")) {
+    message.content_rml = *content_rml;
   }
-  if (json.contains("timestamp") && json["timestamp"].is_number_integer()) {
-    message.timestamp = json["timestamp"].get<int64_t>();
+  if (auto timestamp = json.getIf<int64_t>("timestamp")) {
+    message.timestamp = *timestamp;
   }
-  if (json.contains("delivery") && json["delivery"].is_string()) {
-    message.delivery = MessageDeliveryFromString(json["delivery"].get<std::string>());
+  if (auto delivery = json.getString("delivery")) {
+    message.delivery = MessageDeliveryFromString(*delivery);
   }
-  if (json.contains("relay_visible") && json["relay_visible"].is_boolean()) {
-    message.relay_visible = json["relay_visible"].get<bool>();
+  if (auto relay_visible = json.getIf<bool>("relay_visible")) {
+    message.relay_visible = *relay_visible;
   }
-  if (json.contains("chat_actions")) {
-    message.chat_actions = ChatActionsFromJson(json["chat_actions"]);
+  if (const Array* actions = json.getArray("chat_actions")) {
+    message.chat_actions = ChatActionsFromJson(*actions);
   }
   return message;
 }
 
-nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope) {
-  nlohmann::json e2e_body = nlohmann::json::object();
-  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
-    e2e_body["member_payloads"] = *envelope.body.e2e.member_payloads;
-  } else {
-    e2e_body["payload_b64"] = envelope.body.e2e.payload_b64;
-  }
-  if (envelope.body.e2e.key_init_b64) {
-    e2e_body["key_init_b64"] = *envelope.body.e2e.key_init_b64;
-  }
-  nlohmann::json body = {{"e2e", std::move(e2e_body)}};
-  nlohmann::json route = {{"kind", envelope.route.kind}};
-  if (envelope.route.kind == "direct") {
-    route["channel"] = ThreadChannelToString(envelope.route.channel);
-  }
-  if (envelope.route.group_id) {
-    route["group_id"] = *envelope.route.group_id;
-  }
-  nlohmann::json json = {{"envelope_version", envelope.envelope_version},
-                         {"message_id", envelope.message_id},
-                         {"sender_relay_id", envelope.sender_relay_id},
-                         {"sender_contact_id", envelope.sender_contact_id},
-                         {"route", std::move(route)},
-                         {"body", std::move(body)},
-                         {"sender_seq", envelope.sender_seq},
-                         {"session_epoch", envelope.session_epoch},
-                         {"timestamp", envelope.timestamp},
-                         {"signature", envelope.signature},
-                         {"stream_key", envelope.stream_key},
-                         {"order_key", envelope.order_key}};
+Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
+  Object body;
+  body.set("e2e", BuildE2eBody(envelope));
+
+  Object json;
+  json.set("envelope_version", static_cast<int64_t>(envelope.envelope_version));
+  json.set("message_id", envelope.message_id);
+  json.set("sender_relay_id", envelope.sender_relay_id);
+  json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("route", BuildRouteObject(envelope));
+  json.set("body", body);
+  json.setJsonUInt("sender_seq", envelope.sender_seq);
+  json.setJsonUInt("session_epoch", envelope.session_epoch);
+  json.set("timestamp", envelope.timestamp);
+  json.set("signature", envelope.signature);
+  json.set("stream_key", envelope.stream_key);
+  json.setJsonUInt("order_key", envelope.order_key);
   if (envelope.recipient_contact_id) {
-    json["recipient_contact_id"] = *envelope.recipient_contact_id;
+    json.set("recipient_contact_id", *envelope.recipient_contact_id);
   }
   return json;
 }
 
-nlohmann::json RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
-  nlohmann::json e2e_body = nlohmann::json::object();
-  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
-    e2e_body["member_payloads"] = *envelope.body.e2e.member_payloads;
-  } else {
-    e2e_body["payload_b64"] = envelope.body.e2e.payload_b64;
-  }
-  if (envelope.body.e2e.key_init_b64) {
-    e2e_body["key_init_b64"] = *envelope.body.e2e.key_init_b64;
-  }
-  nlohmann::json body = {{"e2e", std::move(e2e_body)}};
-  nlohmann::json route = {{"kind", envelope.route.kind}};
-  if (envelope.route.kind == "direct") {
-    route["channel"] = ThreadChannelToString(envelope.route.channel);
-  }
-  if (envelope.route.group_id) {
-    route["group_id"] = *envelope.route.group_id;
-  }
-  return {{"envelope_version", envelope.envelope_version},
-          {"message_id", envelope.message_id},
-          {"sender_relay_id", envelope.sender_relay_id},
-          {"sender_contact_id", envelope.sender_contact_id},
-          {"route", std::move(route)},
-          {"body", std::move(body)},
-          {"sender_seq", envelope.sender_seq},
-          {"session_epoch", envelope.session_epoch},
-          {"timestamp", envelope.timestamp},
-          {"signature", envelope.signature}};
+Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
+  Object body;
+  body.set("e2e", BuildE2eBody(envelope));
+
+  Object json;
+  json.set("envelope_version", static_cast<int64_t>(envelope.envelope_version));
+  json.set("message_id", envelope.message_id);
+  json.set("sender_relay_id", envelope.sender_relay_id);
+  json.set("sender_contact_id", envelope.sender_contact_id);
+  json.set("route", BuildRouteObject(envelope));
+  json.set("body", body);
+  json.setJsonUInt("sender_seq", envelope.sender_seq);
+  json.setJsonUInt("session_epoch", envelope.session_epoch);
+  json.set("timestamp", envelope.timestamp);
+  json.set("signature", envelope.signature);
+  return json;
 }
 
-Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
+Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (json.contains("thread_id")) {
     return Error("Legacy relay envelope thread_id is not supported");
   }
-  if (!json.contains("envelope_version") || !json["envelope_version"].is_number_integer()) {
+  auto version_opt = json.getIf<int64_t>("envelope_version");
+  if (!version_opt) {
+    if (auto as_u = json.getNonNegInt("envelope_version")) {
+      version_opt = static_cast<int64_t>(*as_u);
+    }
+  }
+  if (!version_opt) {
     return Error("Missing envelope_version");
   }
-  const int version = json["envelope_version"].get<int>();
+  const int version = static_cast<int>(*version_opt);
   if (version != kRelayEnvelopeVersion) {
     return Error("Unsupported envelope_version");
   }
-  if (!json.contains("message_id") || !json["message_id"].is_string()) {
+  auto message_id = json.getString("message_id");
+  if (!message_id) {
     return Error("Missing message_id");
   }
-  if (!json.contains("sender_relay_id") || !json["sender_relay_id"].is_string()) {
+  auto sender_relay_id = json.getString("sender_relay_id");
+  if (!sender_relay_id) {
     return Error("Missing sender_relay_id");
   }
-  if (!json.contains("sender_contact_id") || !json["sender_contact_id"].is_string()) {
+  auto sender_contact_id = json.getString("sender_contact_id");
+  if (!sender_contact_id) {
     return Error("Missing sender_contact_id");
   }
-  if (!json.contains("route") || !json["route"].is_object()) {
+  const Object* route = json.getObject("route");
+  if (!route) {
     return Error("Missing route");
   }
-  if (!json.contains("body") || !json["body"].is_object()) {
+  const Object* body = json.getObject("body");
+  if (!body) {
     return Error("Missing body");
   }
-  const auto& body = json["body"];
-  if (body.contains("text")) {
+  if (body->contains("text")) {
     return Error("Legacy relay body.text is not supported");
   }
-  if (body.contains("content_b64")) {
+  if (body->contains("content_b64")) {
     return Error("Legacy relay body.content_b64 is not supported");
   }
-  if (body.contains("content_rml")) {
+  if (body->contains("content_rml")) {
     return Error("Remote content_rml is not supported on wire");
   }
-  if (body.contains("public_relay")) {
+  if (body->contains("public_relay")) {
     return Error("public_relay body is not supported");
   }
-  if (!body.contains("e2e") || !body["e2e"].is_object()) {
+  const Object* e2e = body->getObject("e2e");
+  if (!e2e) {
     return Error("Missing body.e2e");
   }
-  const auto& e2e = body["e2e"];
-  if (e2e.contains("content_rml")) {
+  if (e2e->contains("content_rml")) {
     return Error("Remote content_rml is not supported on wire");
   }
-  if (!e2e.contains("payload_b64") && !e2e.contains("member_payloads")) {
+  if (!e2e->contains("payload_b64") && !e2e->contains("member_payloads")) {
     return Error("Missing body.e2e.payload_b64 or member_payloads");
   }
 
   RelayEnvelope envelope;
   envelope.envelope_version = version;
-  envelope.message_id = json["message_id"].get<std::string>();
-  envelope.sender_relay_id = json["sender_relay_id"].get<std::string>();
-  envelope.sender_contact_id = json["sender_contact_id"].get<std::string>();
-  if (e2e.contains("payload_b64") && e2e["payload_b64"].is_string()) {
-    envelope.body.e2e.payload_b64 = e2e["payload_b64"].get<std::string>();
+  envelope.message_id = *message_id;
+  envelope.sender_relay_id = *sender_relay_id;
+  envelope.sender_contact_id = *sender_contact_id;
+  if (auto payload_b64 = e2e->getString("payload_b64")) {
+    envelope.body.e2e.payload_b64 = *payload_b64;
   }
-  if (e2e.contains("member_payloads") && e2e["member_payloads"].is_object()) {
-    std::map<std::string, std::string> payloads;
-    for (auto it = e2e["member_payloads"].begin(); it != e2e["member_payloads"].end(); ++it) {
-      if (it.value().is_string()) {
-        payloads[it.key()] = it.value().get<std::string>();
+  if (const Object* payloads = e2e->getObject("member_payloads")) {
+    std::map<std::string, std::string> mapped;
+    for (const auto& [key, value] : payloads->fields()) {
+      if (auto s = asString(value)) {
+        mapped[key] = *s;
       }
     }
-    envelope.body.e2e.member_payloads = std::move(payloads);
+    envelope.body.e2e.member_payloads = std::move(mapped);
   }
-  if (e2e.contains("key_init_b64") && e2e["key_init_b64"].is_string()) {
-    envelope.body.e2e.key_init_b64 = e2e["key_init_b64"].get<std::string>();
+  if (auto key_init = e2e->getString("key_init_b64")) {
+    envelope.body.e2e.key_init_b64 = *key_init;
   }
 
-  const auto& route = json["route"];
-  if (route.contains("kind") && route["kind"].is_string()) {
-    envelope.route.kind = route["kind"].get<std::string>();
+  if (auto kind = route->getString("kind")) {
+    envelope.route.kind = *kind;
   }
   if (envelope.route.kind == "direct") {
-    if (!route.contains("channel") || !route["channel"].is_string()) {
+    auto channel_value = route->getString("channel");
+    if (!channel_value) {
       return Error("Missing route.channel");
     }
-    const std::string channel_value = route["channel"].get<std::string>();
-    if (channel_value == "public_relay") {
+    if (*channel_value == "public_relay") {
       return Error("public_relay channel is not supported");
     }
-    envelope.route.channel = ThreadChannelFromString(channel_value);
+    envelope.route.channel = ThreadChannelFromString(*channel_value);
     if (envelope.route.channel == ThreadChannel::None) {
       return Error("Invalid route.channel");
     }
   } else if (envelope.route.kind == "group") {
     envelope.route.channel = ThreadChannel::None;
-  } else if (route.contains("channel") && route["channel"].is_string()) {
-    envelope.route.channel = ThreadChannelFromString(route["channel"].get<std::string>());
+  } else if (auto channel_value = route->getString("channel")) {
+    envelope.route.channel = ThreadChannelFromString(*channel_value);
   }
-  if (route.contains("group_id") && route["group_id"].is_string()) {
-    envelope.route.group_id = route["group_id"].get<std::string>();
+  if (auto group_id = route->getString("group_id")) {
+    envelope.route.group_id = *group_id;
   }
   if (envelope.route.kind == "group" && !envelope.route.group_id) {
     return Error("Missing route.group_id for group envelope");
   }
 
-  if (json.contains("sender_seq") && json["sender_seq"].is_number_unsigned()) {
-    envelope.sender_seq = json["sender_seq"].get<uint64_t>();
+  if (auto sender_seq = json.getNonNegInt("sender_seq")) {
+    envelope.sender_seq = *sender_seq;
   }
-  if (json.contains("session_epoch") && json["session_epoch"].is_number_unsigned()) {
-    envelope.session_epoch = json["session_epoch"].get<uint32_t>();
+  if (auto session_epoch = json.getNonNegInt("session_epoch")) {
+    envelope.session_epoch = static_cast<uint32_t>(*session_epoch);
   }
-  if (json.contains("timestamp") && json["timestamp"].is_number_integer()) {
-    envelope.timestamp = json["timestamp"].get<int64_t>();
+  if (auto timestamp = json.getIf<int64_t>("timestamp")) {
+    envelope.timestamp = *timestamp;
   }
-  if (json.contains("signature") && json["signature"].is_string()) {
-    envelope.signature = json["signature"].get<std::string>();
+  if (auto signature = json.getString("signature")) {
+    envelope.signature = *signature;
   }
-  if (json.contains("stream_key") && json["stream_key"].is_string()) {
-    envelope.stream_key = json["stream_key"].get<std::string>();
+  if (auto stream_key = json.getString("stream_key")) {
+    envelope.stream_key = *stream_key;
   }
-  if (json.contains("order_key") && json["order_key"].is_number_unsigned()) {
-    envelope.order_key = json["order_key"].get<uint64_t>();
+  if (auto order_key = json.getNonNegInt("order_key")) {
+    envelope.order_key = *order_key;
   }
-  if (json.contains("recipient_contact_id") && json["recipient_contact_id"].is_string()) {
-    envelope.recipient_contact_id = json["recipient_contact_id"].get<std::string>();
+  if (auto recipient = json.getString("recipient_contact_id")) {
+    envelope.recipient_contact_id = *recipient;
   }
   return envelope;
 }
 
-nlohmann::json RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
-  return {{"sender_contact_id", record.sender_contact_id},
-          {"recipient_contact_id", record.recipient_contact_id},
-          {"stream_id", record.stream_id},
-          {"index_key", record.index_key},
-          {"blob_b64", record.blob_b64},
-          {"timestamp", record.timestamp},
-          {"signature", record.signature}};
+Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
+  Object json;
+  json.set("sender_contact_id", record.sender_contact_id);
+  json.set("recipient_contact_id", record.recipient_contact_id);
+  json.set("stream_id", record.stream_id);
+  json.setJsonUInt("index_key", record.index_key);
+  json.set("blob_b64", record.blob_b64);
+  json.set("timestamp", record.timestamp);
+  json.set("signature", record.signature);
+  return json;
 }
 
 Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope) {
+  if (envelope.sender_relay_id.empty()) {
+    return Error("Missing sender_relay_id for relay send");
+  }
   if (!envelope.recipient_contact_id || envelope.recipient_contact_id->empty()) {
     return Error("Missing recipient_contact_id for relay send");
   }
@@ -485,10 +521,12 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
     return Error("Missing stream_key for relay send");
   }
   const uint64_t index_key = envelope.order_key != 0 ? envelope.order_key : envelope.sender_seq;
-  const std::string serialized = RelayEnvelopeToApplicationJson(envelope).dump();
+  const std::string serialized = DumpJson(RelayEnvelopeToApplicationJson(envelope));
   const ByteVector bytes(serialized.begin(), serialized.end());
   RelayWireSendRecord record;
-  record.sender_contact_id = envelope.sender_contact_id;
+  // HTTP routing / auth id is always the relay registration id (WIRE_SCHEMAS RelayWireRecord).
+  // Application blob keeps Account ID in envelope.sender_contact_id (D079).
+  record.sender_contact_id = envelope.sender_relay_id;
   record.recipient_contact_id = *envelope.recipient_contact_id;
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;
@@ -496,26 +534,30 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   return record;
 }
 
-Roe<RelayInboundRecord> ParseRelayInboundRecord(const nlohmann::json& json) {
-  if (!json.contains("sender_contact_id") || !json["sender_contact_id"].is_string()) {
+Roe<RelayInboundRecord> ParseRelayInboundRecord(const Object& json) {
+  auto sender = json.getString("sender_contact_id");
+  if (!sender) {
     return Error("Missing sender_contact_id");
   }
-  if (!json.contains("stream_id") || !json["stream_id"].is_string()) {
+  auto stream_id = json.getString("stream_id");
+  if (!stream_id) {
     return Error("Missing stream_id");
   }
-  if (!json.contains("index_key") || !json["index_key"].is_number_unsigned()) {
+  auto index_key = json.getNonNegInt("index_key");
+  if (!index_key) {
     return Error("Missing index_key");
   }
-  if (!json.contains("blob_b64") || !json["blob_b64"].is_string()) {
+  auto blob_b64 = json.getString("blob_b64");
+  if (!blob_b64) {
     return Error("Missing blob_b64");
   }
   RelayInboundRecord record;
-  record.sender_contact_id = json["sender_contact_id"].get<std::string>();
-  record.stream_id = json["stream_id"].get<std::string>();
-  record.index_key = json["index_key"].get<uint64_t>();
-  record.blob_b64 = json["blob_b64"].get<std::string>();
-  if (json.contains("created_at") && json["created_at"].is_number_integer()) {
-    record.created_at_ms = json["created_at"].get<int64_t>();
+  record.sender_contact_id = *sender;
+  record.stream_id = *stream_id;
+  record.index_key = *index_key;
+  record.blob_b64 = *blob_b64;
+  if (auto created_at = json.getIf<int64_t>("created_at")) {
+    record.created_at_ms = *created_at;
   }
   return record;
 }
@@ -526,11 +568,11 @@ Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& reco
     return decoded.error();
   }
   const std::string serialized(decoded->begin(), decoded->end());
-  const nlohmann::json app_json = nlohmann::json::parse(serialized, nullptr, false);
-  if (app_json.is_discarded()) {
+  auto app_json = TryParseObject(serialized);
+  if (!app_json) {
     return Error("Invalid relay blob JSON");
   }
-  auto envelope = ParseRelayEnvelope(app_json);
+  auto envelope = ParseRelayEnvelope(*app_json);
   if (!envelope) {
     return envelope.error();
   }
@@ -540,48 +582,53 @@ Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& reco
   return *envelope;
 }
 
-nlohmann::json ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
-  nlohmann::json json = {{"requester_identity_kind", request.requester_identity_kind},
-                         {"requester_identity_value", request.requester_identity_value},
-                         {"peer_identity_kind", request.peer_identity_kind},
-                         {"peer_identity_value", request.peer_identity_value},
-                         {"channel", ThreadChannelToString(request.channel)},
-                         {"session_epoch", request.session_epoch},
-                         {"limit", request.limit},
-                         {"order", request.order}};
+Object ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
+  Object json;
+  json.set("requester_identity_kind", request.requester_identity_kind);
+  json.set("requester_identity_value", request.requester_identity_value);
+  json.set("peer_identity_kind", request.peer_identity_kind);
+  json.set("peer_identity_value", request.peer_identity_value);
+  json.set("channel", ThreadChannelToString(request.channel));
+  json.setJsonUInt("session_epoch", request.session_epoch);
+  json.setJsonUInt("limit", static_cast<uint64_t>(request.limit));
+  json.set("order", request.order);
   if (request.min_sender_seq) {
-    json["min_sender_seq"] = *request.min_sender_seq;
+    json.setJsonUInt("min_sender_seq", *request.min_sender_seq);
   }
   if (request.max_sender_seq) {
-    json["max_sender_seq"] = *request.max_sender_seq;
+    json.setJsonUInt("max_sender_seq", *request.max_sender_seq);
   }
   return json;
 }
 
-Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json) {
+Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const Object& json) {
   ChatHistoryRequest request;
-  if (!json.contains("requester_identity_kind") || !json.contains("requester_identity_value") ||
-      !json.contains("peer_identity_kind") || !json.contains("peer_identity_value") ||
-      !json.contains("channel") || !json.contains("session_epoch")) {
+  auto requester_kind = json.getString("requester_identity_kind");
+  auto requester_value = json.getString("requester_identity_value");
+  auto peer_kind = json.getString("peer_identity_kind");
+  auto peer_value = json.getString("peer_identity_value");
+  auto channel = json.getString("channel");
+  auto session_epoch = json.getNonNegInt("session_epoch");
+  if (!requester_kind || !requester_value || !peer_kind || !peer_value || !channel || !session_epoch) {
     return Error("Incomplete ChatHistoryRequest");
   }
-  request.requester_identity_kind = json["requester_identity_kind"].get<std::string>();
-  request.requester_identity_value = json["requester_identity_value"].get<std::string>();
-  request.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
-  request.peer_identity_value = json["peer_identity_value"].get<std::string>();
-  request.channel = ThreadChannelFromString(json["channel"].get<std::string>());
-  request.session_epoch = json["session_epoch"].get<uint32_t>();
-  if (json.contains("min_sender_seq") && json["min_sender_seq"].is_number_unsigned()) {
-    request.min_sender_seq = json["min_sender_seq"].get<uint64_t>();
+  request.requester_identity_kind = *requester_kind;
+  request.requester_identity_value = *requester_value;
+  request.peer_identity_kind = *peer_kind;
+  request.peer_identity_value = *peer_value;
+  request.channel = ThreadChannelFromString(*channel);
+  request.session_epoch = static_cast<uint32_t>(*session_epoch);
+  if (auto min_seq = json.getNonNegInt("min_sender_seq")) {
+    request.min_sender_seq = *min_seq;
   }
-  if (json.contains("max_sender_seq") && json["max_sender_seq"].is_number_unsigned()) {
-    request.max_sender_seq = json["max_sender_seq"].get<uint64_t>();
+  if (auto max_seq = json.getNonNegInt("max_sender_seq")) {
+    request.max_sender_seq = *max_seq;
   }
-  if (json.contains("limit") && json["limit"].is_number_unsigned()) {
-    request.limit = json["limit"].get<size_t>();
+  if (auto limit = json.getNonNegInt("limit")) {
+    request.limit = static_cast<size_t>(*limit);
   }
-  if (json.contains("order") && json["order"].is_string()) {
-    request.order = json["order"].get<std::string>();
+  if (auto order = json.getString("order")) {
+    request.order = *order;
   }
   return request;
 }
@@ -614,49 +661,52 @@ std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request) {
   return StreamHistoryRequestToQueryString(request);
 }
 
-nlohmann::json ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request) {
-  nlohmann::json json = {{"requester_contact_id", request.requester_identity_value},
-                         {"sender_contact_id", request.peer_identity_value},
-                         {"stream_id", BuildCanonicalRelayStreamKey(request.requester_identity_value,
-                                                                    request.peer_identity_value, request.channel,
-                                                                    request.session_epoch)},
-                         {"limit", request.limit},
-                         {"order", request.order}};
+Object ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request) {
+  Object json;
+  json.set("requester_contact_id", request.requester_identity_value);
+  json.set("sender_contact_id", request.peer_identity_value);
+  json.set("stream_id", BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value,
+                                                     request.channel, request.session_epoch));
+  json.setJsonUInt("limit", static_cast<uint64_t>(request.limit));
+  json.set("order", request.order);
   if (request.min_sender_seq) {
-    json["min_index_key"] = *request.min_sender_seq;
+    json.setJsonUInt("min_index_key", *request.min_sender_seq);
   }
   if (request.max_sender_seq) {
-    json["max_index_key"] = *request.max_sender_seq;
+    json.setJsonUInt("max_index_key", *request.max_sender_seq);
   }
   return json;
 }
 
-nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
-  nlohmann::json messages = nlohmann::json::array();
+Object ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
+  std::vector<Value> messages;
+  messages.reserve(response.messages.size());
   for (const RelayEnvelope& envelope : response.messages) {
-    messages.push_back(RelayEnvelopeToJson(envelope));
+    messages.push_back(ObjectValue(RelayEnvelopeToJson(envelope)));
   }
-  nlohmann::json cursor = nlohmann::json::object();
+  Object cursor;
   if (response.cursor.next_min_sender_seq) {
-    cursor["next_min_sender_seq"] = *response.cursor.next_min_sender_seq;
+    cursor.setJsonUInt("next_min_sender_seq", *response.cursor.next_min_sender_seq);
   } else {
-    cursor["next_min_sender_seq"] = nullptr;
+    cursor.set("next_min_sender_seq", Null{});
   }
   if (response.cursor.next_max_sender_seq) {
-    cursor["next_max_sender_seq"] = *response.cursor.next_max_sender_seq;
+    cursor.setJsonUInt("next_max_sender_seq", *response.cursor.next_max_sender_seq);
   } else {
-    cursor["next_max_sender_seq"] = nullptr;
+    cursor.set("next_max_sender_seq", Null{});
   }
-  return {{"peer_identity_kind", response.peer_identity_kind},
-          {"peer_identity_value", response.peer_identity_value},
-          {"channel", ThreadChannelToString(response.channel)},
-          {"session_epoch", response.session_epoch},
-          {"messages", std::move(messages)},
-          {"has_more", response.has_more},
-          {"cursor", std::move(cursor)}};
+  Object json;
+  json.set("peer_identity_kind", response.peer_identity_kind);
+  json.set("peer_identity_value", response.peer_identity_value);
+  json.set("channel", ThreadChannelToString(response.channel));
+  json.setJsonUInt("session_epoch", response.session_epoch);
+  json.set("messages", ArrayValue(std::move(messages)));
+  json.set("has_more", response.has_more);
+  json.set("cursor", cursor);
+  return json;
 }
 
-Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json) {
+Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const Object& json) {
   ChatHistoryResponse response;
   const bool stream_shape =
       (json.contains("stream_id") || json.contains("stream_key")) && json.contains("sender_contact_id");
@@ -665,18 +715,36 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json)
     return Error("Incomplete ChatHistoryResponse");
   }
   if (chat_shape) {
-    response.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
-    response.peer_identity_value = json["peer_identity_value"].get<std::string>();
-    response.channel = ThreadChannelFromString(json["channel"].get<std::string>());
-    response.session_epoch = json["session_epoch"].get<uint32_t>();
+    if (auto kind = json.getString("peer_identity_kind")) {
+      response.peer_identity_kind = *kind;
+    }
+    if (auto value = json.getString("peer_identity_value")) {
+      response.peer_identity_value = *value;
+    }
+    if (auto channel = json.getString("channel")) {
+      response.channel = ThreadChannelFromString(*channel);
+    }
+    if (auto session_epoch = json.getNonNegInt("session_epoch")) {
+      response.session_epoch = static_cast<uint32_t>(*session_epoch);
+    }
   } else {
-    response.peer_identity_value = json["sender_contact_id"].get<std::string>();
+    if (auto sender = json.getString("sender_contact_id")) {
+      response.peer_identity_value = *sender;
+    }
   }
-  response.has_more = json["has_more"].get<bool>();
-  if (json["messages"].is_array()) {
-    for (const auto& item : json["messages"]) {
-      if (item.contains("blob_b64")) {
-        auto inbound = ParseRelayInboundRecord(item);
+  if (auto has_more = json.getIf<bool>("has_more")) {
+    response.has_more = *has_more;
+  } else {
+    return Error("Incomplete ChatHistoryResponse");
+  }
+  if (const Array* messages = json.getArray("messages")) {
+    for (const Value& item_value : messages->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
+        continue;
+      }
+      if (item->contains("blob_b64")) {
+        auto inbound = ParseRelayInboundRecord(*item);
         if (!inbound) {
           return inbound.error();
         }
@@ -686,7 +754,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json)
         }
         response.messages.push_back(*envelope);
       } else {
-        auto envelope = ParseRelayEnvelope(item);
+        auto envelope = ParseRelayEnvelope(*item);
         if (!envelope) {
           return envelope.error();
         }
@@ -694,24 +762,89 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json)
       }
     }
   }
-  if (json.contains("cursor") && json["cursor"].is_object()) {
-    const auto& cursor = json["cursor"];
-    if (cursor.contains("next_min_sender_seq") && cursor["next_min_sender_seq"].is_number_unsigned()) {
-      response.cursor.next_min_sender_seq = cursor["next_min_sender_seq"].get<uint64_t>();
-    } else if (cursor.contains("next_min_index_key") && cursor["next_min_index_key"].is_number_unsigned()) {
-      response.cursor.next_min_sender_seq = cursor["next_min_index_key"].get<uint64_t>();
-    } else if (cursor.contains("next_min_order_key") && cursor["next_min_order_key"].is_number_unsigned()) {
-      response.cursor.next_min_sender_seq = cursor["next_min_order_key"].get<uint64_t>();
+  if (const Object* cursor = json.getObject("cursor")) {
+    // Distinct names per branch: MSVC C4456 (/WX) treats if-init reuse in
+    // else-if as hiding the previous declaration.
+    if (auto next_min_seq = cursor->getNonNegInt("next_min_sender_seq")) {
+      response.cursor.next_min_sender_seq = *next_min_seq;
+    } else if (auto next_min_index = cursor->getNonNegInt("next_min_index_key")) {
+      response.cursor.next_min_sender_seq = *next_min_index;
+    } else if (auto next_min_order = cursor->getNonNegInt("next_min_order_key")) {
+      response.cursor.next_min_sender_seq = *next_min_order;
     }
-    if (cursor.contains("next_max_sender_seq") && cursor["next_max_sender_seq"].is_number_unsigned()) {
-      response.cursor.next_max_sender_seq = cursor["next_max_sender_seq"].get<uint64_t>();
-    } else if (cursor.contains("next_max_index_key") && cursor["next_max_index_key"].is_number_unsigned()) {
-      response.cursor.next_max_sender_seq = cursor["next_max_index_key"].get<uint64_t>();
-    } else if (cursor.contains("next_max_order_key") && cursor["next_max_order_key"].is_number_unsigned()) {
-      response.cursor.next_max_sender_seq = cursor["next_max_order_key"].get<uint64_t>();
+    if (auto next_max_seq = cursor->getNonNegInt("next_max_sender_seq")) {
+      response.cursor.next_max_sender_seq = *next_max_seq;
+    } else if (auto next_max_index = cursor->getNonNegInt("next_max_index_key")) {
+      response.cursor.next_max_sender_seq = *next_max_index;
+    } else if (auto next_max_order = cursor->getNonNegInt("next_max_order_key")) {
+      response.cursor.next_max_sender_seq = *next_max_order;
     }
   }
   return response;
+}
+
+std::string ChatBlobOpToString(const ChatBlobOp op) {
+  switch (op) {
+  case ChatBlobOp::Fetch:
+    return "fetch";
+  case ChatBlobOp::Push:
+    return "push";
+  }
+  return "fetch";
+}
+
+ChatBlobOp ChatBlobOpFromString(const std::string& value) {
+  if (value == "push") {
+    return ChatBlobOp::Push;
+  }
+  return ChatBlobOp::Fetch;
+}
+
+Object ChatBlobRequestToJson(const ChatBlobRequest& request) {
+  Object json;
+  json.set("op", ChatBlobOpToString(request.op));
+  json.set("requester_identity_kind", request.requester_identity_kind);
+  json.set("requester_identity_value", request.requester_identity_value);
+  json.set("peer_identity_kind", request.peer_identity_kind);
+  json.set("peer_identity_value", request.peer_identity_value);
+  json.set("thread_id", request.thread_id);
+  json.set("content_hash_hex", request.content_hash_hex);
+  json.set("channel", ThreadChannelToString(request.channel));
+  return json;
+}
+
+Roe<ChatBlobRequest> ChatBlobRequestFromJson(const Object& json) {
+  ChatBlobRequest request;
+  auto requester_kind = json.getString("requester_identity_kind");
+  auto requester_value = json.getString("requester_identity_value");
+  auto peer_kind = json.getString("peer_identity_kind");
+  auto peer_value = json.getString("peer_identity_value");
+  auto thread_id = json.getString("thread_id");
+  auto content_hash = json.getString("content_hash_hex");
+  auto channel = json.getString("channel");
+  if (!requester_kind || !requester_value || !peer_kind || !peer_value || !thread_id || !content_hash || !channel) {
+    return Error("Incomplete ChatBlobRequest");
+  }
+  if (auto op = json.getString("op")) {
+    request.op = ChatBlobOpFromString(*op);
+  }
+  request.requester_identity_kind = *requester_kind;
+  request.requester_identity_value = *requester_value;
+  request.peer_identity_kind = *peer_kind;
+  request.peer_identity_value = *peer_value;
+  request.thread_id = *thread_id;
+  request.content_hash_hex = *content_hash;
+  request.channel = ThreadChannelFromString(*channel);
+  return request;
+}
+
+Object ChatBlobAckToJson(const bool ok, const std::string& error) {
+  Object json;
+  json.set("ok", ok);
+  if (!error.empty()) {
+    json.set("error", error);
+  }
+  return json;
 }
 
 } // namespace pbr

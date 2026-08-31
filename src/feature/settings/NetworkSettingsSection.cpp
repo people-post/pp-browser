@@ -1,11 +1,11 @@
 #include "feature/settings/NetworkSettingsSection.h"
 
 #include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -30,10 +30,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.media_relay_enabled = bootstrap.config.libp2p.capabilities.media_relay ? "on" : "off";
   state.prefer_contacts_for_routing = bootstrap.config.libp2p.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
-  Libp2pConfig libp2p = bootstrap.config.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  state.libp2p_listen_multiaddr = libp2p.listen_multiaddr;
-  // libp2p_status_message is filled by SettingsController (needs MessagingHub).
+  // amp_listen_multiaddr is filled by SettingsController from MessagingHub runtime.
 }
 
 bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
@@ -68,9 +65,6 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.media_relay_enabled = defaults.libp2p.capabilities.media_relay ? "on" : "off";
   state.prefer_contacts_for_routing = defaults.libp2p.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
-  Libp2pConfig libp2p = defaults.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  state.libp2p_listen_multiaddr = libp2p.listen_multiaddr;
   state.libp2p_status_message.clear();
 }
 

@@ -35,7 +35,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Require Pulse/ALSA on Windows/macOS/mobile | Only Linux needs those `-dev` packages |
 | Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
 | Assume LAN ICE proves mobile NAT | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
-| Ship macOS Frame.app without Local Network usage string | Add `NSLocalNetworkUsageDescription` (and Bonjour services key); otherwise Sequoia silently blocks ICE host UDP to Android/LAN peers |
+| Ship macOS PP.app without Local Network usage string | Add `NSLocalNetworkUsageDescription` (and Bonjour services key); otherwise Sequoia silently blocks ICE host UDP to Android/LAN peers |
 | Dogfood LAN ICE only from Cursor’s integrated terminal | Prefer a normal OS terminal or packaged `.app` — Cursor’s env can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
@@ -95,7 +95,7 @@ iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-s
 |-----------|---------|-----|
 | `Platform::Detect()` | `Desktop` | `IOS` (`TARGET_OS_IPHONE`) |
 | `IPathProvider` | `DesktopPathProvider` | `IosPathProvider` (SDL pref path sandbox) |
-| `IAssetLocator` | `DesktopAssetLocator` | `IosAssetLocator` → `Frame.app/assets/` |
+| `IAssetLocator` | `DesktopAssetLocator` | `IosAssetLocator` → `PP.app/assets/` |
 | `AssetIO` | filesystem | `SdlAssetFileInterface` + bundle-relative paths |
 | Renderer | OpenGL 3.3 | OpenGL ES 3 (SDL) |
 | libp2p | Built and linked | Built and linked |

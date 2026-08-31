@@ -1,0 +1,22 @@
+pp_browser_add_base_library(pp_base_mesh_link
+  SOURCES
+    AdpMultiaddr.cpp
+    AmpAdpCarrier.cpp
+    MeshPump.cpp
+    MeshRuntime.cpp
+    AmpStack.cpp
+    MshAdpHandshake.cpp
+    PeerLink.cpp
+    PeerLinkManager.cpp
+    Types.cpp
+  PUBLIC_LIBS
+    pp_base_mesh_channel
+    pp_base_mesh_session
+    pp_base_adp
+    pp_base_crypto
+    pp_base_error
+    sodium)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

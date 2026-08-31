@@ -1,5 +1,6 @@
-# Vendored libp2p dependencies for pp-browser (replaces Hunter).
+# Vendored libp2p / shared networking dependencies for pp-browser (replaces Hunter).
 # Included from cmake/dependencies.cmake.
+# A017: PeerId + wire only — no lsquic / c-ares / hat-trie.
 
 include(Progress)
 
@@ -65,7 +66,7 @@ endif()
 
 set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager for qdrvm libs" FORCE)
 
-# --- zlib (before lsquic) ---
+# --- zlib (curl / FreeType reuse) ---
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(zlib)
 if(TARGET zlib)
@@ -85,13 +86,14 @@ if(NOT TARGET ZLIB::ZLIB)
   endif()
 endif()
 
-# --- BoringSSL (before curl on Linux and before lsquic) ---
+# --- BoringSSL (curl TLS on Linux + PeerId SHA) ---
 pp_browser_add_vendored_boringssl()
 
-# --- Boost ---
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(boost)
+# --- standalone Asio (pp-node StatusHttpServer) ---
+pp_libp2p_add_vendored(asio)
+if(NOT TARGET Asio::asio)
+  message(FATAL_ERROR "Asio::asio target not found")
+endif()
 
 # --- fmt ---
 set(FMT_DOC OFF CACHE BOOL "" FORCE)
@@ -100,38 +102,18 @@ set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(fmt)
 pp_libp2p_alias(fmt fmt::fmt)
 
-# --- yaml-cpp ---
+# --- yaml-cpp (soralog) ---
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(yaml-cpp)
 pp_libp2p_alias(yaml-cpp yaml-cpp::yaml-cpp)
 
-# --- c-ares ---
-set(CARES_STATIC ON CACHE BOOL "" FORCE)
-set(CARES_SHARED OFF CACHE BOOL "" FORCE)
-set(CARES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(CARES_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(c-ares)
-if(NOT TARGET c-ares::cares)
-  if(TARGET c-ares::cares_static)
-    add_library(c-ares::cares ALIAS c-ares::cares_static)
-  elseif(TARGET cares)
-    add_library(c-ares::cares ALIAS cares)
-  else()
-    message(FATAL_ERROR "c-ares target not found")
-  endif()
+# --- standalone Outcome (before qtils) ---
+pp_libp2p_add_vendored(outcome)
+if(NOT TARGET Outcome::outcome)
+  message(FATAL_ERROR "Outcome::outcome target not found")
 endif()
-
-# --- libsecp256k1 ---
-set(SECP256K1_ENABLE_MODULE_ECDH OFF CACHE BOOL "" FORCE)
-set(SECP256K1_ENABLE_MODULE_RECOVERY ON CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_BENCHMARK OFF CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SECP256K1_BUILD_EXHAUSTIVE_TESTS OFF CACHE BOOL "" FORCE)
-set(SECP256K1_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(libsecp256k1)
-pp_libp2p_alias(secp256k1 libsecp256k1::secp256k1)
 
 # --- qtils ---
 set(QTILS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -147,90 +129,5 @@ set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
 set(CMAKE_CXX_STANDARD 20)
 pp_libp2p_add_vendored(soralog)
 pp_libp2p_alias(soralog soralog::soralog)
-
-# --- tsl_hat_trie ---
-pp_libp2p_add_vendored(tsl_hat_trie)
-if(NOT TARGET tsl::tsl_hat_trie)
-  if(TARGET tsl::hat_trie)
-    add_library(tsl::tsl_hat_trie ALIAS tsl_hat_trie)
-  elseif(TARGET tsl_hat_trie)
-    add_library(tsl::tsl_hat_trie ALIAS tsl_hat_trie)
-  else()
-    message(FATAL_ERROR "tsl_hat_trie target not found")
-  endif()
-endif()
-
-# --- Boost.DI ---
-set(BOOST_DI_OPT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(BOOST_DI_OPT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(boost_di)
-if(NOT TARGET Boost::Boost.DI)
-  if(TARGET Boost.DI)
-    add_library(Boost::Boost.DI ALIAS Boost.DI)
-  else()
-    message(FATAL_ERROR "Boost.DI target not found")
-  endif()
-endif()
-
-# --- lsquic ---
-set(HUNTER_ENABLED OFF CACHE BOOL "" FORCE)
-set(LSQUIC_BIN OFF CACHE BOOL "" FORCE)
-set(LSQUIC_TESTS OFF CACHE BOOL "" FORCE)
-set(LSQUIC_SHARED_LIB OFF CACHE BOOL "" FORCE)
-set(BORINGSSL_LIB_ssl ssl)
-set(BORINGSSL_LIB_crypto crypto)
-set(BORINGSSL_INCLUDE "${PP_LIBP2P_THIRD_PARTY}/boringssl/include")
-set(ZLIB_INCLUDE "${PP_LIBP2P_THIRD_PARTY}/zlib")
-set(ZLIB_INCLUDE_DIR "${ZLIB_INCLUDE}" CACHE PATH "" FORCE)
-set(ZLIB_BINARY_INCLUDE "${CMAKE_BINARY_DIR}/third_party/zlib")
-set(ZLIB_LIB ZLIB::ZLIB)
-# lsquic's install(EXPORT) pulls in zlib/OpenSSL deps we never ship; skip its
-# install rules (vendored, EXCLUDE_FROM_ALL — we only link it in-tree).
-set(_pp_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
-set(CMAKE_SKIP_INSTALL_RULES ON)
-pp_libp2p_add_vendored(lsquic)
-set(CMAKE_SKIP_INSTALL_RULES "${_pp_prev_skip_install_rules}")
-unset(_pp_prev_skip_install_rules)
-if(TARGET lsquic)
-  target_include_directories(lsquic PUBLIC
-    "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/include>"
-  )
-  if(WIN32)
-    target_include_directories(lsquic PUBLIC
-      "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/wincompat>"
-    )
-  endif()
-  if(NOT HUNTER_ENABLED)
-    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
-  endif()
-endif()
-if(NOT TARGET lsquic::lsquic)
-  if(TARGET lsquic)
-    add_library(lsquic::lsquic ALIAS lsquic)
-  else()
-    message(FATAL_ERROR "lsquic target not found")
-  endif()
-endif()
-
-function(pp_libp2p_add_vendored_googletest)
-  if(TARGET GTest::gmock_main)
-    return()
-  endif()
-  pp_libp2p_require_vendored(googletest)
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  set(gmock_force_shared_crt ON CACHE BOOL "" FORCE)
-  set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
-  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-  set(gtest_build_tests OFF CACHE BOOL "" FORCE)
-  set(gtest_build_samples OFF CACHE BOOL "" FORCE)
-  add_subdirectory(
-    "${PP_LIBP2P_THIRD_PARTY}/googletest"
-    "${CMAKE_BINARY_DIR}/third_party/googletest"
-    EXCLUDE_FROM_ALL)
-endfunction()
-
-if(PP_BROWSER_LIBP2P_TESTING OR PP_BROWSER_LIBP2P_COVERAGE)
-  pp_libp2p_add_vendored_googletest()
-endif()
 
 pp_configure_status("libp2p third_party dependencies ready")

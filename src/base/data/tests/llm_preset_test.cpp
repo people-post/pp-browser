@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 TEST(LlmPresetTest, DefaultModelForKnownPresets) {
-  EXPECT_EQ(pbr::DefaultModelForPreset("brief"), "grok-4-1-fast-reasoning");
+  EXPECT_EQ(pbr::DefaultModelForPreset("brief"), "xai");
   EXPECT_EQ(pbr::DefaultModelForPreset("cloud"), "gpt-4o-mini");
   EXPECT_EQ(pbr::DefaultModelForPreset("ollama"), "llama3.2");
   EXPECT_TRUE(pbr::DefaultModelForPreset("custom").empty());
@@ -15,7 +15,7 @@ TEST(LlmPresetTest, NormalizeReplacesPresetNameAsModel) {
   config.llm.model = "brief";
   config.llm.api_key = "should-clear";
   pbr::NormalizeLlmConfig(config);
-  EXPECT_EQ(config.llm.model, "grok-4-1-fast-reasoning");
+  EXPECT_EQ(config.llm.model, "xai");
   EXPECT_EQ(config.llm.base_url, "https://www.brief.global/api/llm/v1");
   EXPECT_TRUE(config.llm.api_key.empty());
   EXPECT_TRUE(config.llm.require_api_key);

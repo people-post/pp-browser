@@ -8,15 +8,27 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <stdexcept>
 
 namespace pbr {
 namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
 
 struct InboxTestEnv {
   explicit InboxTestEnv(const std::string& suffix) {
     data_dir = std::filesystem::temp_directory_path() / ("pp_browser_inbox_" + suffix);
     std::filesystem::remove_all(data_dir);
     store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    if (!store->SetDek(TestDek())) {
+      throw std::runtime_error("Failed to set test DEK");
+    }
     contacts = std::make_unique<ContactsStore>(data_dir.string());
     shadows = std::make_unique<DirectoryShadowCache>(directory);
     labels = std::make_unique<PeerDisplayResolver>(*contacts, *shadows);

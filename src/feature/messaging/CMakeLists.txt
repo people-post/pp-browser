@@ -1,6 +1,9 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
+    AttachmentDownloadService.cpp
     CallMediaKeyStore.cpp
+    AmpCircuitHopReach.cpp
+    AmpMediaRelayClient.cpp
     CallLibp2pMediaBridge.cpp
     CallLifecycle.cpp
     CallInboundHandlers.cpp
@@ -14,8 +17,9 @@ pp_browser_add_feature_library(pp_feature_messaging
     GroupInviteGate.cpp
     GroupMembershipService.cpp
     InboxController.cpp
-    Libp2pChatHistoryService.cpp
-    Libp2pDirectChatService.cpp
+    AmpDirectChatService.cpp
+    AmpChatHistoryService.cpp
+    AmpChatBlobService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
     MobileEphemeralListenGate.cpp
@@ -42,12 +46,11 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_feature_ai
     pp_base_crypto
     pp_base_media
+    pp_base_mesh_link
     pp_base_p2p
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime
-    p2p
-    nlohmann_json::nlohmann_json
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

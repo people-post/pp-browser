@@ -3,6 +3,7 @@
 #include "base/platform/desktop/LocalNotifierImpl.h"
 
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include <TargetConditionals.h>
 

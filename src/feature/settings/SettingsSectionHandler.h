@@ -4,6 +4,7 @@
 #include "base/data/SessionStore.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsUiState.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

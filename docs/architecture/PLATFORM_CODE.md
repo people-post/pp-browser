@@ -47,7 +47,7 @@ Hard rules:
 | `base/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
 | `base/p2p/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
 | `base/p2p/ReachabilityNetIf_*.cpp` | Interface address enumeration |
-| `base/render/platform/GlBackend.h` | GLES vs desktop GL selection |
+| `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
 | `base/render/platform/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
 
 ## User-facing OS tips (i18n)
@@ -85,7 +85,7 @@ Allowed paths for OS preprocessor branches:
 - Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/base/media/` and `src/base/p2p/`
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
-- `src/lib/rmlui/` (upstream; not product policy)
+- `pp-cpp-ui rmlui/` (upstream; not product policy)
 - `src/lib/libp2p/` (upstream; not product policy)
 
 **Not allowed:** `src/feature/`, `src/app/` (except tests), `src/base/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
@@ -95,6 +95,6 @@ Allowed paths for OS preprocessor branches:
 1. If it is a path, notification, credential, or OS tip → extend or add an `I*` interface implementation under `base/platform/`.
 2. If it is process threading / lifecycle / scheduling → `base/runtime/` (`AppRuntime`, `AppLifecycle`).
 3. If it is a syscall used by many modules (file sync, subprocess) → add to `base/platform/os/`. Civil time → `common/CivilTime` (re-exported as `pbr::os::`).
-4. If it is GL/GLES or SDL window backend → `base/render/platform/`.
+4. If it is GL/GLES or SDL window backend → pp-cpp-ui `backend/` (shared) or `base/render/` (product-only).
 5. If it is a fat backend used by one module (codec, camera, audio session, raw sockets, net-if) → colocated `*_Win32.cpp` / `*_Android.cpp` / … behind a portable header in that module. Wire with CMake source-selection.
 6. Wire registration in `PlatformServices::Register()` for mobile overrides of `I*` facades; desktop defaults stay in interface singletons.

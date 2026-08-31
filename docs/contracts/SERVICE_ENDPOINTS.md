@@ -69,14 +69,44 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search people. **`q=`** matches **nickname**, **`relay:`** id, and **Account ID** (including prefix on `account:…`). Hits: top-level **`account_id`** when bound; `ids[]` lists **`account` primary**, then `relay_user` / each `peer_id`; **`endpoints[]`** (`peer_id`, `multiaddrs[]`, `updated_at` Unix ms); `signing_public_key_b64`, `kem_public_key_b64`, `nickname`, optional `initiation_floor`. No top-level `peer_id` / `multiaddrs` ([M017](../../projects/multi-device-account/DECISIONS.md#m017--directory-endpoints-per-device-no-last-write-wins)) |
-| `GET /v1/users/by-account/:account_id` | **Person** lookup by Account ID (`signing_public_key_b64`, `kem_public_key_b64`, `account_id`, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `initiation_floor`) |
-| `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same key fields; **`account_id` required** when bound) |
+| `GET /v1/search?q=` | Search **people** only (`entity_kind` person / missing). Matches nickname, `relay:`, Account ID. Hits include `endpoints[]`, keys, optional `entity_kind`. **Excludes** `mesh_node` ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)) |
+| `GET /v1/mesh/nodes` | List non-expired **`mesh_node`** infra listings: `account_id`, `relay_user_id`, `nickname`, `endpoints[]`, `capabilities` (`circuit_relay` / `media_relay`), `expires_at`, keys |
+| `GET /v1/users/by-account/:account_id` | Lookup by Account ID (any kind): keys, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `entity_kind` / `capabilities` |
+| `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same fields; **`account_id` required** when bound) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
-| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, this-device `peer_id`, `multiaddrs`) |
-| `POST /v1/register/finish` | Finish/renew registration (same this-device reachability fields; **upserts** that Peer ID into `endpoints[]`; unsigned advisory; echoes **`account_id`**) |
+| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
+| `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes; echoes **`account_id`** |
+
+**Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
+
+## HTTP relay blobs (icons + chat attachments)
+
+Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://www.brief.global/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). Server never inspects ciphertext for chat files (`application/octet-stream`).
+
+Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlobSignPayload` — domain + u8 version=`1`, then length-prefixed UTF-8 / BE integers matching www `SignatureVerifier`.
+
+| Domain | Signed fields |
+|--------|-----------------|
+| `pp-browser:relay-blob-presign-v1` | `relay_user_id`, `content_type`, `byte_length` (u64), `purpose`, `timestamp` (i64) |
+| `pp-browser:relay-blob-retain-v1` | `relay_user_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-delete-v1` | `relay_user_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-list-v1` | `relay_user_id`, `status_filter` (empty if none), `timestamp` |
+| `pp-browser:relay-profile-icon-v1` | `relay_user_id`, `url`, `blob_id`, `kind`, `timestamp` (empty strings when unused) |
+
+| HTTP | Purpose |
+|------|---------|
+| `POST /v1/blobs/presign` | Mint `blob_id`, `upload_url`, `public_url`, `tier`, `pending_expires_at` |
+| `PUT {upload_url}` | Client → S3 (binary body; `Content-Type` / length must match presign) |
+| `POST /v1/blobs/retain` | Mark retained after successful PUT |
+| `POST /v1/blobs/delete` | Free quota / remove object (local chat history untouched) |
+| `POST /v1/blobs/list` | Inventory + usage (quota UX) |
+| `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
+
+Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h; retained GC ~90d (skip current profile icon). Presign **429** → client confirm → delete oldest remote ([R009](../../projects/relay-blob-upload/DECISIONS.md#r009--sender-always-retains-quota-pop-is-relay-only-with-confirm)).
+
+Chat attachment **file bytes** prefer peer-direct `/pp-browser/chat-blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
 
 ## Client compatibility discovery
 
@@ -143,17 +173,23 @@ Default assistant preset uses OpenAI-compatible completions at:
 
 | Requirement | Detail |
 |-------------|--------|
-| Auth | `Authorization: Bearer <brf_llm_…>` issued on directory registration finish |
-| Issue | Opaque key returned once in `register/finish` as `llm_api_key`; stored hashed on `RelayUser` |
-| Rotate | `POST /api/llm/v1/keys/rotate` with current Bearer; returns new `llm_api_key` once |
-| Limits | Global 300 req/min (`llm:global`); per-user 30 req/min (`llm:user:{id}`). Env: `BRF_WWW_LLM_GLOBAL_RPM`, `BRF_WWW_LLM_USER_RPM` |
-| Errors | `401` invalid key, `403` registration expired (`code: not_registered`), `429` (`global_rate_limit` / `user_rate_limit`), `400` if `stream: true` |
+| Auth | `Authorization: Bearer <brf_llm_…>` (registration) **or** `Bearer <brf_guest_…>` (free tier) |
+| Guest mint | `POST /api/llm/v1/guest/start` — no Bearer; returns `{ llm_api_key, expires_at, guest: true }` once |
+| Issue (registered) | Opaque key returned once in `register/finish` as `llm_api_key`; stored hashed on `RelayUser` |
+| Rotate | `POST /api/llm/v1/keys/rotate` with registered Bearer only; guest → `403 guest_rotate_unsupported` (remint via `/guest/start`) |
+| Limits | Global 300 req/min (`llm:global`); registered 30/min (`llm:user:{id}`); guest 10/min + 50/day (`llm:guest:…`). Mint 5/IP/hour. Env: `BRF_WWW_LLM_*` |
+| Errors | `401` invalid key, `403` registration/guest expired, `429` (`global_rate_limit` / `user_rate_limit` / `guest_rate_limit` / `guest_daily_limit` / `guest_mint_rate_limit`), `400` if `stream: true` |
 
-Upstream is user-ai `POST /v1/chat/completions` (stateless; www→user-ai uses service token). pp-browser stores the plaintext key in profile `identity.enc` (`brief_llm_api_key`) and sends standard Bearer auth when preset is `brief`.
+Upstream is AI harness `POST /v1/chat/completions` (stateless; www→harness uses `X-Harness-Token`). pp-browser stores:
 
-Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; user-ai maps them to the configured provider (xAI or openai-compatible).
+- Registered key in `identity.enc` as `brief_llm_api_key`
+- Guest key as `brief_llm_guest_api_key` (auto-minted when preset is Brief and registered key is empty)
 
-Lost key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active.
+Overlay prefers registered over guest. Soft banner for free tier; register for higher limits.
+
+Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; the harness maps them to the configured provider.
+
+Lost registered key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active. Guests remint via `/guest/start` (app caches until expiry / register).
 
 ## libp2p (deferred)
 

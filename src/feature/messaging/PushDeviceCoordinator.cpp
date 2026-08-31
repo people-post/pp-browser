@@ -3,6 +3,7 @@
 #include "base/net/IPushDeviceClient.h"
 #include "base/platform/IPushDeviceRegistrar.h"
 #include "feature/messaging/MessagingHub.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

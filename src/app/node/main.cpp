@@ -1,10 +1,11 @@
 #include "app/node/NodeBootstrap.h"
-#include "app/node/NodeEnvOverlay.h"
+#include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/platform/PlatformLogDefaults.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "base/p2p/Reachability.h"
@@ -35,13 +36,11 @@ void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0 << " [options]\n"
       << "\n"
-      << "Headless Brief mesh node (N011). Always Node; fail-loud listen by default (N016).\n"
+      << "Headless Brief mesh node (N011). Always Node.\n"
       << "Precedence: CLI flags → environment → config file → defaults.\n"
       << "\n"
       << "Options:\n"
       << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG)\n"
-      << "  --listen <multiaddr>  Override libp2p listen (or PP_NODE_LISTEN)\n"
-      << "  --listen-fallback     Allow desktop-style port fallback (or PP_NODE_LISTEN_FALLBACK)\n"
       << "  --status              Print reachability JSON and exit (nr ops)\n"
       << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
       << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
@@ -50,12 +49,14 @@ void PrintUsage(const char* argv0) {
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
+      << "  --sandbox             Use sandbox backend (www-en.qa.peoplepost.org)\n"
       << "  --debug               Verbose logging\n"
       << "  --help                Show this help\n"
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
-      << "  PP_NODE_DATA_DIR, PP_NODE_LISTEN, PP_NODE_BOOTSTRAP_PEERS,\n"
+      << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
       << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
+      << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
       << "\n"
       << "Live status HTTP (long-running mode), e.g.:\n"
@@ -84,17 +85,15 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
-  if (boot.mesh && boot.mesh->Runtime()) {
-    snap.listen_multiaddr = boot.mesh->Runtime()->BoundListenMultiaddr();
-    if (boot.mesh->Host()) {
-      if (auto peer = boot.mesh->Host()->LocalPeerIdBase58()) {
-        snap.peer_id = *peer;
-      }
-    }
-  }
-  snap.circuit_relay = boot.mesh && boot.mesh->CircuitRelay() && boot.mesh->CircuitRelay()->IsStarted();
-  snap.media_relay = boot.mesh && boot.mesh->MediaRelay() && boot.mesh->MediaRelay()->IsStarted();
   if (boot.mesh) {
+    snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
+    if (boot.mesh->Amp()) {
+      snap.peer_id = boot.mesh->Amp()->LocalPeerId();
+    }
+    snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
+                         boot.mesh->AmpCircuitTunnel()->ServeInbound();
+    snap.media_relay = boot.mesh->AmpMediaRelayCoord() && boot.mesh->AmpMediaRelayCoord()->IsStarted() &&
+                       boot.mesh->AmpMediaRelayCoord()->ServeInbound();
     snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
   }
   return snap;
@@ -107,11 +106,6 @@ int main(int argc, char** argv) {
   std::string pin;
   // Env defaults; CLI overwrites below (CLI → env → file).
   std::string profile_override = EnvOrEmpty("PP_NODE_PROFILE");
-  std::string listen_override; // CLI only; PP_NODE_LISTEN applied in Bootstrap
-  bool listen_fallback = false;
-  if (auto from_env = pbr::ParsePpNodeBoolEnv(EnvOrEmpty("PP_NODE_LISTEN_FALLBACK"))) {
-    listen_fallback = *from_env;
-  }
   bool print_status = false;
   std::string status_addr_spec =
       std::string(pbr::kDefaultStatusHttpBindHost) + ":" + std::to_string(pbr::kDefaultStatusHttpBindPort);
@@ -127,8 +121,8 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
-    } else if (std::strcmp(argv[i], "--listen-fallback") == 0) {
-      listen_fallback = true;
+    } else if (std::strcmp(argv[i], "--sandbox") == 0) {
+      // Handled by ResolveSandboxModeFromLaunch below.
     } else if (std::strcmp(argv[i], "--status") == 0) {
       print_status = true;
     } else if (std::strcmp(argv[i], "--status-addr") == 0 && i + 1 < argc) {
@@ -139,8 +133,6 @@ int main(int argc, char** argv) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[++i];
-    } else if (std::strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
-      listen_override = argv[++i];
     } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       ++i; // Config::Load reads --config from argv
     } else {
@@ -150,9 +142,15 @@ int main(int argc, char** argv) {
     }
   }
 
+  pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
+
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::DefaultRootLogLevel(debug_mode));
   pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
+  if (pbr::SandboxMode()) {
+    root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()
+                 << ", product dir " << pbr::ProductDirBasename();
+  }
 
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
@@ -162,8 +160,6 @@ int main(int argc, char** argv) {
   options.argv = argv;
   options.pin = pin;
   options.profile_override = profile_override;
-  options.listen_override = listen_override;
-  options.listen_fallback = listen_fallback;
 
   auto boot = pbr::BootstrapPpNode(options);
   if (!boot) {
@@ -172,9 +168,7 @@ int main(int argc, char** argv) {
   }
 
   if (print_status) {
-    const std::string bound = boot->mesh->BoundListenMultiaddr();
-    const bool try_upnp = !pbr::ShouldSkipUpnpForListen(bound);
-    boot->mesh->Reachability().RunProbeBlocking(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
+    boot->mesh->RunReachabilityProbeBlocking(/*try_upnp_first=*/false);
     std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
     ShutdownNode(*boot);
     return 0;
@@ -199,22 +193,30 @@ int main(int argc, char** argv) {
   }
 
   auto schedule_probe = [&]() {
-    if (boot->mesh && boot->mesh->Runtime() && boot->mesh->DialBack()) {
-      const bool try_upnp = !pbr::ShouldSkipUpnpForListen(boot->mesh->BoundListenMultiaddr());
-      boot->mesh->Reachability().StartProbe(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
-    }
+    boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false);
   };
   schedule_probe();
 
+  // Publish/renew mesh_node listing when advertise multiaddrs configured (N027).
+  if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+    root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+  }
+
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
   auto last_probe = std::chrono::steady_clock::now();
+  auto last_mesh_publish = std::chrono::steady_clock::now();
   while (!g_stop.load()) {
     boot->mesh->Tick();
-    // Refresh reachability snapshot periodically for /status (non-blocking probe).
     const auto now = std::chrono::steady_clock::now();
     if (now - last_probe > std::chrono::seconds(60)) {
       last_probe = now;
       schedule_probe();
+    }
+    if (now - last_mesh_publish > std::chrono::hours(12)) {
+      last_mesh_publish = now;
+      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+        root.warning << "mesh directory renew failed: " << published.error().message;
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }

@@ -19,6 +19,12 @@ inline constexpr uint8_t kVaultFileVersion = 1;
 inline constexpr const char* kHkdfSalt = "pp-browser-msg-v1";
 inline constexpr const char* kAutoKeyHkdfInfoPrefix = "auto-key-v1|channel:";
 
+/** HKDF salt for org pp-node deterministic identity (PP_NODE_IDENTITY_SEED). */
+inline constexpr const char* kNodeIdentityHkdfSalt = "pp-node-identity-v1";
+inline constexpr const char* kNodeIdentityMlDsaDeviceInfo = "pp-node/ml-dsa-device/v1";
+inline constexpr const char* kNodeIdentityMlDsaAccountInfo = "pp-node/ml-dsa-account/v1";
+inline constexpr const char* kNodeIdentityMlKemAccountInfo = "pp-node/ml-kem-account/v1";
+
 inline constexpr size_t kReplayWindowSize = 32;
 inline constexpr uint32_t kMaxRetiredPskEpochs = 8;
 

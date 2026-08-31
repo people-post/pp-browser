@@ -43,7 +43,6 @@ Requires:
   ANDROID_SDK_ROOT (or ANDROID_HOME)
   ANDROID_NDK_HOME
   JDK 17+
-  Perl (lsquic codegen, same as desktop)
 EOF
 }
 

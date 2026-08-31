@@ -7,6 +7,7 @@
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
 #include "base/data/SessionStore.h"
+#include "base/net/ClientCompat.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingHub.h"
@@ -14,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include "common/PbrCompat.h"
 
 class FontEngineInterfaceHarfBuzz;
 
@@ -71,6 +73,7 @@ private:
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;
+  std::optional<ClientCompatSupport> support_discovery_;
   std::unique_ptr<BadgeAggregator> badges_;
   std::unique_ptr<InputCoordinator> input_;
   std::unique_ptr<FlowCoordinator> flow_;

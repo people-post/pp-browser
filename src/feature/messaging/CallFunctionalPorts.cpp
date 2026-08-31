@@ -16,6 +16,7 @@ CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, MessagingHub
   ports.find_contact_by_identity = [&hub](const std::string& identity, const ContactIdKind kind) {
     return hub.Contacts().FindByIdentity(identity, kind);
   };
+  ports.identity_icon_local_path = [&hub](const std::string& identity) { return hub.IdentityIconLocalPath(identity); };
   ports.local_relay_identity = [&hub]() -> std::optional<std::string> {
     if (auto identity = hub.Identity().Get()) {
       if (!identity->account_id.empty()) {

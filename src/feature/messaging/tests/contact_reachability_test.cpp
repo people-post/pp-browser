@@ -16,23 +16,22 @@ Contact MakePeerOnlyContact(const std::string& peer_id) {
 
 } // namespace
 
-TEST(ContactReachabilityTest, PeerIdOnlyNotReachableWithoutStack) {
+TEST(ContactReachabilityTest, PeerIdOnlyNotReachableWithoutMultiaddr) {
   const Contact c = MakePeerOnlyContact("12D3KooWTest");
-  EXPECT_FALSE(IsContactReachableForMessaging(c, nullptr, true));
-  EXPECT_FALSE(IsContactStackDialable(c, nullptr));
+  EXPECT_FALSE(IsContactReachableForMessaging(c, true));
 }
 
 TEST(ContactReachabilityTest, RelayContactReachableWhenRelayConfigured) {
   Contact c;
   c.ids.push_back({ContactIdKind::RelayUser, "relay:alice", true});
-  EXPECT_TRUE(IsContactReachableForMessaging(c, nullptr, true));
-  EXPECT_FALSE(IsContactReachableForMessaging(c, nullptr, false));
+  EXPECT_TRUE(IsContactReachableForMessaging(c, true));
+  EXPECT_FALSE(IsContactReachableForMessaging(c, false));
 }
 
 TEST(ContactReachabilityTest, PastedMultiaddrReachable) {
   Contact c = MakePeerOnlyContact("12D3KooWTest");
-  c.multiaddrs.push_back("/ip4/192.168.1.2/tcp/1234/p2p/12D3KooWTest");
-  EXPECT_TRUE(IsContactReachableForMessaging(c, nullptr, false));
+  c.multiaddrs.push_back("/ip4/192.168.1.2/udp/1234/adp/1.0.0/p2p/12D3KooWTest");
+  EXPECT_TRUE(IsContactReachableForMessaging(c, false));
 }
 
 } // namespace pbr

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Sync with pbr::kProductBundleName in src/base/runtime/ProductBranding.h
+PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
 # Remember whether the caller set IOS_PLATFORM before our default (used by resolve_ios_platform).
 if [[ -n "${IOS_PLATFORM+x}" ]]; then
@@ -23,8 +25,10 @@ Commands:
   install           cmake --install into INSTALL_PREFIX (default: install-ios/)
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
-  run-sim           Boot a simulator if needed, install Frame.app, and launch
+  run-sim           Boot a simulator if needed, install PP.app, and launch
   run-device         Sign (if configured) and install+launch on a connected iPhone
+  ipa               Release device build + install + export TestFlight IPA
+  upload-ipa        Upload dist-ios/pp-browser.ipa (or path) to App Store Connect
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
 
@@ -32,8 +36,9 @@ Environment:
   IOS_PLATFORM              simulator (default) or device
   CMAKE_BUILD_TYPE          Debug (default) or Release
   INSTALL_PREFIX            Output prefix for cmake --install
-  PP_BROWSER_VERSION        Passed to CMake (e.g. 0.1.0)
-  PP_BROWSER_RELEASE_VERSION  Full version string (e.g. 0.1.0-rc1)
+  PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
+  PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
+  PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -43,7 +48,6 @@ Requires (macOS only):
   Xcode matching the device iOS major (iOS 26.x → Xcode 26.x)
   CMake 3.24+
   Ninja (recommended)
-  Perl (lsquic codegen)
 
 Signing (device / TestFlight): see packaging/ios/signing.env.example and scripts/ios_sign.sh
 Docs: docs/ops/IOS_BUILD.md
@@ -151,7 +155,7 @@ cmd_install() {
   resolve_ios_platform
   echo "==> Installing iOS (${IOS_PLATFORM}) from $(build_dir)"
   cmake --install "$(build_dir)" --config "${BUILD_TYPE}"
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ -d "$app" ]]; then
     echo "==> Installed ${app}"
   else
@@ -200,7 +204,7 @@ else:
 
 cmd_run_sim() {
   require_macos
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
     echo "error: ${app} not found — run './scripts/ios_build.sh sim' first" >&2
     exit 1
@@ -246,9 +250,9 @@ for devices in data.get('devices', {}).values():
 
   echo "==> Installing on simulator ${udid}"
   xcrun simctl install "$udid" "$app"
-  echo "==> Terminating any running Frame instance"
+  echo "==> Terminating any running ${PRODUCT_BUNDLE_NAME} instance"
   xcrun simctl terminate "$udid" dev.pp-browser.ios 2>/dev/null || true
-  echo "==> Launching Frame (--debug)"
+  echo "==> Launching ${PRODUCT_BUNDLE_NAME} (--debug)"
   xcrun simctl launch "$udid" dev.pp-browser.ios --debug
   echo "==> Debug log path:"
   echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name pp-browser-debug.log -exec cat {} \\;"
@@ -276,9 +280,20 @@ raise SystemExit(1)
 "
 }
 
+physical_device_connected() {
+  local want="$1"
+  xcrun xctrace list devices 2>/dev/null | grep -F "$want" >/dev/null
+}
+
+coredevice_sees_udid() {
+  local want="$1"
+  # CoreDevice lists UDID in Hostname (…coredevice.local) and/or Identifier column.
+  xcrun devicectl list devices 2>/dev/null | grep -F "$want" >/dev/null
+}
+
 cmd_run_device() {
   require_macos
-  local app="${INSTALL_PREFIX}/Frame.app"
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
     echo "error: ${app} not found — run './scripts/ios_build.sh device' first" >&2
     exit 1
@@ -299,7 +314,19 @@ cmd_run_device() {
   fi
 
   local udid="${IOS_DEVICE_UDID:-}"
-  if [[ -z "$udid" ]]; then
+  if [[ -n "$udid" ]] && ! physical_device_connected "$udid"; then
+    echo "warning: preferred IOS_DEVICE_UDID ${udid} is not connected" >&2
+    echo "hint: plug it in, or update packaging/ios/signing.env; connected:" >&2
+    xcrun xctrace list devices 2>/dev/null | grep -v Simulator | grep -E 'iPhone|iPad' >&2 || true
+    local fallback=""
+    if fallback="$(pick_physical_device_udid)"; then
+      echo "warning: falling back to connected device ${fallback}" >&2
+      udid="$fallback"
+    else
+      echo "error: no connected physical iPhone/iPad found" >&2
+      exit 1
+    fi
+  elif [[ -z "$udid" ]]; then
     if ! udid="$(pick_physical_device_udid)"; then
       echo "error: no connected physical iPhone/iPad found" >&2
       echo "hint: unlock the phone, trust this Mac, then: xcrun xctrace list devices" >&2
@@ -310,12 +337,17 @@ cmd_run_device() {
   local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
   echo "==> Installing on device ${udid}"
 
-  # Prefer ios-deploy for older devices (iOS ≤17); CoreDevice/devicectl often
-  # only sees newer phones. Fall back to devicectl when ios-deploy is absent.
-  if command -v ios-deploy >/dev/null 2>&1; then
-    ios-deploy --id "$udid" --bundle "$app" --justlaunch
-  elif xcrun devicectl device install app --device "$udid" "$app" 2>/dev/null; then
+  # Newer phones (iOS 17+) pair via CoreDevice — prefer devicectl there.
+  # ios-deploy is better for older USB devices that CoreDevice may not see.
+  if coredevice_sees_udid "$udid"; then
+    if ! xcrun devicectl device install app --device "$udid" "$app"; then
+      echo "error: devicectl install failed for ${udid}" >&2
+      echo "hint: if you saw 'developer disk image could not be mounted', this Mac's Xcode is older than the phone's iOS — update Xcode (and macOS if required), or plug in an older test phone and set IOS_DEVICE_UDID in packaging/ios/signing.env" >&2
+      exit 1
+    fi
     xcrun devicectl device process launch --device "$udid" --terminate-existing "$bundle_id" || true
+  elif command -v ios-deploy >/dev/null 2>&1; then
+    ios-deploy --id "$udid" --bundle "$app" --justlaunch
   else
     echo "error: could not install — need ios-deploy (brew install ios-deploy) or a CoreDevice-paired phone" >&2
     exit 1
@@ -325,6 +357,76 @@ cmd_run_device() {
 
 cmd_clean() {
   rm -rf "${ROOT}/build-ios-simulator" "${ROOT}/build-ios-device" "${ROOT}/build-ios-xcode"
+}
+
+load_signing_env() {
+  local signing_env="${ROOT}/packaging/ios/signing.env"
+  if [[ -f "$signing_env" ]]; then
+    # shellcheck disable=SC1090
+    set -a
+    # shellcheck disable=SC1091
+    source "$signing_env"
+    set +a
+  fi
+}
+
+# Release device .app → distribution-signed IPA under dist-ios/ (TestFlight prep).
+cmd_ipa() {
+  require_macos
+  load_signing_env
+
+  if [[ -z "${IOS_EXPORT_METHOD:-}" ]]; then
+    IOS_EXPORT_METHOD=app-store
+  fi
+  if [[ "${IOS_EXPORT_METHOD}" != "app-store" && "${IOS_EXPORT_METHOD}" != "ad-hoc" ]]; then
+    echo "error: ipa expects IOS_EXPORT_METHOD=app-store (or ad-hoc), got ${IOS_EXPORT_METHOD}" >&2
+    echo "hint: set distribution vars in packaging/ios/signing.env — see signing.env.example" >&2
+    exit 1
+  fi
+  if [[ -z "${IOS_DISTRIBUTION_SIGNING_IDENTITY:-}" ]]; then
+    echo "error: IOS_DISTRIBUTION_SIGNING_IDENTITY required for IPA export" >&2
+    exit 1
+  fi
+  if [[ -z "${IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH:-}" ]]; then
+    echo "error: IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH required for IPA export" >&2
+    exit 1
+  fi
+
+  BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
+  CMAKE_BUILD_TYPE="${BUILD_TYPE}"
+  export IOS_EXPORT_METHOD
+  export PP_BROWSER_VERSION="${PP_BROWSER_VERSION:-0.1.0}"
+  if [[ -z "${PP_BROWSER_BUILD_NUMBER:-}" ]]; then
+    # Unique-enough default so a first upload is not stuck on literal 0.1.0 forever.
+    PP_BROWSER_BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+    export PP_BROWSER_BUILD_NUMBER
+    echo "==> PP_BROWSER_BUILD_NUMBER unset — using ${PP_BROWSER_BUILD_NUMBER}"
+  fi
+
+  IOS_PLATFORM=device
+  IOS_PLATFORM_EXPLICIT=1
+  configure_ios
+  cmd_build
+  cmd_install
+
+  local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
+  echo "==> Exporting IPA (${IOS_EXPORT_METHOD})"
+  "${ROOT}/scripts/ios_sign.sh" export-ipa "$app"
+  echo "==> Next: ./scripts/ios_build.sh upload-ipa"
+  echo "    or open dist-ios/ in Transporter"
+  echo "    then App Store Connect → build → export compliance → Internal Testing"
+}
+
+cmd_upload_ipa() {
+  require_macos
+  load_signing_env
+  local ipa="${1:-${ROOT}/dist-ios/pp-browser.ipa}"
+  if [[ ! -f "$ipa" ]]; then
+    echo "error: IPA not found: ${ipa}" >&2
+    echo "hint: run ./scripts/ios_build.sh ipa first" >&2
+    exit 1
+  fi
+  "${ROOT}/scripts/ios_sign.sh" upload-ipa "$ipa"
 }
 
 main() {
@@ -365,6 +467,13 @@ main() {
       ;;
     run-device)
       cmd_run_device
+      ;;
+    ipa)
+      cmd_ipa
+      ;;
+    upload-ipa)
+      shift
+      cmd_upload_ipa "${1:-}"
       ;;
     xcode)
       IOS_PLATFORM=simulator

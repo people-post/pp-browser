@@ -46,6 +46,10 @@ struct CallMediaEngineHealth {
   uint64_t tx_audio_frames = 0;
   int64_t last_rx_audio_ms = 0;
   int64_t last_tx_audio_ms = 0;
+  uint64_t rx_video_frames = 0;
+  uint64_t tx_video_frames = 0;
+  int64_t last_rx_video_ms = 0;
+  int64_t video_target_bps = 0;
   size_t stream_count = 0;
   float local_level = 0.f;
   float remote_level = 0.f;

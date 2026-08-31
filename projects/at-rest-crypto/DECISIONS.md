@@ -7,11 +7,12 @@
 **Rationale:** PIN change re-wraps DEK without re-encrypting all payloads; matches agreed plan.  
 **Alternatives:** PIN-as-direct-file-key; opt-in PIN; OS-keychain-only.
 
-## A002 — Secrets-first scope (identity + PSK; not transcripts)
+## A002 — Secrets-first scope (identity + PSK + transcripts)
 
 **Date:** 2026-07-11  
-**Decision:** Encrypt `identity.enc` and PSK columns / retired PSK blobs in `profile.db`. Leave `thread.db` plaintext (chat-storage D048 remains). No SQLCipher in this project.  
-**Rationale:** Highest leverage against disk theft of keys; transcript encryption is a larger product/ops change.  
+**Updated:** 2026-08-19 — transcript bodies/previews/memory encrypted (chat-storage **D102**).  
+**Decision:** Encrypt `identity.enc`, PSK columns / retired PSK blobs in `profile.db`, and transcript content columns (`content_enc`, `preview_enc`, `value_enc`) under the profile DEK. No SQLCipher. Transcript metadata (timestamps, titles, sync watermarks) stays plaintext.  
+**Rationale:** Highest leverage against disk theft of keys and message text; avoids full-DB encryption ops.  
 **Alternatives:** Full DB encryption; encrypt all JSON stores.
 
 ## A003 — Atomic whole-file writes

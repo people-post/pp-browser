@@ -1,15 +1,20 @@
 #pragma once
 
 #include "common/Error.h"
+#include "base/crypto/IDekConsumer.h"
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
+
+using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
 struct RelayPollResult {
   std::vector<RelayEnvelope> messages;
@@ -33,12 +38,57 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** D060 peer-direct history — libp2p `/pp-browser/chat-history/1.0.0`. */
+/** D060 peer-direct history — `/pp-browser/chat-history/1.0.0`. */
+inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/1.0.0";
+
 class IChatHistoryPeerClient {
 public:
   virtual ~IChatHistoryPeerClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
+};
+
+/** R019 peer-direct attachment blobs — `/pp-browser/chat-blob/1.0.0`. */
+inline constexpr const char* kChatBlobProtocolId = "/pp-browser/chat-blob/1.0.0";
+
+class IChatBlobPeerClient {
+public:
+  virtual ~IChatBlobPeerClient() = default;
+  virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
+  virtual Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) = 0;
+  virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
+};
+
+/** Product blob entry (Amp or libp2p) — DEK + profile wiring for MessagingHub. */
+class IChatBlobPeerService : public IChatBlobPeerClient, public IDekConsumer {
+public:
+  ~IChatBlobPeerService() override = default;
+  virtual void SetProfileDataDir(std::string profile_data_dir) = 0;
+  virtual void SetProfileId(std::string profile_id) = 0;
+};
+
+struct MeshCapabilitiesAd {
+  bool circuit_relay = false;
+  bool media_relay = false;
+};
+
+/** Optional register/finish extras (N027 mesh_node publish). */
+struct RegistrationPublishOpts {
+  /** Empty → omit (server defaults person). Values: person | mesh_node. */
+  std::string entity_kind;
+  bool has_capabilities = false;
+  MeshCapabilitiesAd capabilities;
+};
+
+struct MeshNodeHit {
+  std::string relay_user_id;
+  std::optional<std::string> account_id;
+  std::optional<std::string> nickname;
+  std::vector<DirectoryEndpoint> endpoints;
+  MeshCapabilitiesAd capabilities;
+  std::string expires_at;
+  std::optional<std::string> signing_public_key_b64;
+  std::optional<std::string> kem_public_key_b64;
 };
 
 class IDirectoryClient {
@@ -47,6 +97,10 @@ public:
   virtual Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) = 0;
   virtual Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) = 0;
   virtual Roe<DirectoryHit> LookupByAccount(const std::string& account_id) = 0;
+  /** Infra / pp-node listings (N027). Default empty for mocks / older providers. */
+  virtual Roe<std::vector<MeshNodeHit>> ListMeshNodes() {
+    return std::vector<MeshNodeHit>{};
+  }
 };
 
 struct RegistrationResult {
@@ -76,7 +130,8 @@ public:
                                                          const std::string& signature_alg = "ml-dsa-65",
                                                          const std::string& kem_public_key_b64 = "",
                                                          const std::string& peer_id = "",
-                                                         const std::vector<std::string>& multiaddrs = {}) = 0;
+                                                         const std::vector<std::string>& multiaddrs = {},
+                                                         const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge,
                                                      const std::string& public_key_b64, const std::string& nickname,
                                                      const std::string& signature, int64_t timestamp,
@@ -84,7 +139,8 @@ public:
                                                      const std::string& kem_public_key_b64 = "",
                                                      const std::string& peer_id = "",
                                                      const std::vector<std::string>& multiaddrs = {},
-                                                     int64_t initiation_floor = 0) = 0;
+                                                     int64_t initiation_floor = 0,
+                                                     const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& relay_user_id) = 0;
 };

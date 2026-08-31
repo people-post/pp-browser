@@ -1,7 +1,9 @@
 #include "base/net/ServiceClientFactory.h"
 
+#include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -25,6 +27,7 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
 
   if (!config.registration.base_url.empty()) {
     clients.registration = std::make_unique<HttpRegistrationClient>(config.registration.base_url);
+    clients.blob = std::make_unique<HttpBlobClient>(config.registration.base_url);
   } else {
     logging::getLogger("ServiceClientFactory").warning
         << "registration.base_url is empty; registration client not created";

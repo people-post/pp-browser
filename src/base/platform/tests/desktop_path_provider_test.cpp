@@ -1,4 +1,5 @@
 #include "base/platform/DesktopPathProvider.h"
+#include "base/platform/DeploymentProfile.h"
 
 #include <gtest/gtest.h>
 
@@ -117,6 +118,15 @@ TEST(DesktopPathProviderTest, ExpandsTildeUnderHome) {
   ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
   pbr::DesktopPathProvider provider;
   ExpectPathEq(provider.DataDir("~/custom-data"), "/tmp/pp-browser-test-home/custom-data");
+}
+
+TEST(DesktopPathProviderTest, SandboxUsesIsolatedProductDir) {
+  pbr::SetSandboxMode(true);
+  ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
+  ScopedEnv xdg("XDG_DATA_HOME", "/tmp/pp-browser-xdg-data");
+  pbr::DesktopPathProvider provider;
+  ExpectPathEq(provider.DataDir(""), "/tmp/pp-browser-xdg-data/pp-browser-sandbox");
+  pbr::SetSandboxMode(false);
 }
 
 #endif

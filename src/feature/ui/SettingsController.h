@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;
@@ -78,6 +79,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
+  void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
   void OpenNetworkSettings();
   /** Refresh reachability Connection card via SettingsCommands ports. */
@@ -100,7 +103,7 @@ private:
     Rml::String registration_base_url;
     Rml::String node_enabled = "on";
     bool show_node_toggle = true;
-    Rml::String libp2p_listen_multiaddr;
+    Rml::String amp_listen_multiaddr;
     Rml::String libp2p_status_message;
     Rml::String reachability_status_label;
     Rml::String reachability_summary;
@@ -123,6 +126,12 @@ private:
     Rml::String profile_register_label = "Register on network";
     bool profile_show_register = true;
     bool profile_show_rotate = false;
+    Rml::String profile_icon_src;
+    bool profile_has_icon = false;
+    bool profile_icon_uploading = false;
+    bool profile_show_clear_icon = false;
+    Rml::String profile_avatar_letter = "?";
+    int profile_avatar_tone = 0;
     Rml::String auto_renew_registration = "auto";
     Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;
@@ -137,6 +146,9 @@ private:
     Rml::String data_dir;
     Rml::String profile_dir;
     Rml::String profile_size_label;
+    Rml::String attachment_cache_size_label;
+    Rml::String attachment_download_policy = "smart";
+    Rml::String attachment_download_policy_label;
     Rml::String pin_protection_status;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
@@ -149,6 +161,9 @@ private:
     bool tool_permissions_has_saved = false;
     Rml::String app_name;
     Rml::String app_version;
+    bool support_visible = false;
+    Rml::String support_display_name;
+    Rml::String support_subtitle;
   };
 
   static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -159,6 +174,12 @@ private:
   static void OnChooseThemeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                       const Rml::VariantList& args);
+  static void DrainPendingAttachmentMediaCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                  const Rml::VariantList& args);
+  static void ClearDownloadedAttachmentsCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                 const Rml::VariantList& args);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -177,6 +198,8 @@ private:
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnCopyProfileIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnPickProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnClearProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnShareProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -185,6 +208,7 @@ private:
   static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenSupportChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -194,6 +218,7 @@ private:
   void ReloadFromDisk();
   void SyncBindingsFromSession();
   void ApplyReachability();
+  void ApplySupportDiscovery();
   void ApplySectionAttention();
   bool ComputeNetworkAttention() const;
   SessionStore& Store();
@@ -219,7 +244,10 @@ private:
   void OnRegisterProfile();
   void OnRotateBriefLlmKey();
   void OnCopyProfileId();
+  void OnPickProfileIcon();
+  void OnClearProfileIcon();
   void OnShareProfile();
+  void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChangePin();
@@ -235,6 +263,11 @@ private:
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(Rml::Event& ev);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
+  void OnChooseAttachmentDownloadPolicy(Rml::Event& ev);
+  void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
+  void OnDrainPendingAttachmentMedia();
+  void OnClearDownloadedAttachments();
+  void PerformClearDownloadedAttachments();
 
   ShellChromeSnapshot ChromeSnapshot() const;
 

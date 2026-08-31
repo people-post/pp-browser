@@ -48,6 +48,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // model flush keep those in sync.
   // Mode / minimized corner change the markup tree → Remount (V031).
   if (synced.in_call_show_speaker != next.in_call_show_speaker ||
+      synced.in_call_show_camera != next.in_call_show_camera ||
       synced.in_call_show_invite != next.in_call_show_invite ||
       synced.in_call_show_retry != next.in_call_show_retry ||
       synced.in_call_show_roster != next.in_call_show_roster ||

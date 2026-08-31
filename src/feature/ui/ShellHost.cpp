@@ -190,6 +190,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_show_invite", &host.state_.call_in_progress.show_invite);
     ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
     ctor.Bind("call_in_progress_show_speaker", &host.state_.call_in_progress.show_speaker);
+    ctor.Bind("call_in_progress_show_camera", &host.state_.call_in_progress.show_camera);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
     ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
@@ -203,9 +204,15 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_debug_subtitle", &host.state_.call_in_progress.debug_subtitle);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
+      roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
       roster_handle.RegisterMember("audio_muted", &CallRosterParticipantState::audio_muted);
       roster_handle.RegisterMember("video_enabled", &CallRosterParticipantState::video_enabled);
       roster_handle.RegisterMember("is_local", &CallRosterParticipantState::is_local);
+      roster_handle.RegisterMember("has_remote_video", &CallRosterParticipantState::has_remote_video);
+      roster_handle.RegisterMember("has_avatar", &CallRosterParticipantState::has_avatar);
+      roster_handle.RegisterMember("avatar_src", &CallRosterParticipantState::avatar_src);
+      roster_handle.RegisterMember("avatar_letter", &CallRosterParticipantState::avatar_letter);
+      roster_handle.RegisterMember("avatar_tone", &CallRosterParticipantState::avatar_tone);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
@@ -897,6 +904,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_invite");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_retry");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_speaker");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_camera");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_bars");
@@ -1969,7 +1977,7 @@ std::string ShellHost::SerializeCallInProgress() const {
     out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
            "crop-to-content=\"true\"></svg>";
     out << "</button>";
-    out << "<button class=\"shell-call-camera\" type=\"button\" "
+    out << "<button class=\"shell-call-camera\" type=\"button\" data-if=\"call_in_progress_show_camera\" "
            "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
     out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
            "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
@@ -2045,8 +2053,29 @@ std::string ShellHost::SerializeCallInProgress() const {
     out << "</div></div>";
     out << "<div class=\"shell-call-immersive-roster\">";
     out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-peer-card\">";
-    out << "<div class=\"shell-call-peer-avatar\"></div>";
+    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" "
+           "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
+    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"peer\" data-attr-stream=\"p.stream_id\" "
+           "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
+    out << "<div class=\"shell-call-peer-avatar\" "
+           "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
+           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
+           "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
+           "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
+           "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
+           "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
+           "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
+           "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
+           "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
+           "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
+           "<p class=\"avatar-letter\" data-rml=\"p.avatar_letter\"></p></div>";
+    out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
+           "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
+           "data-attr-src=\"p.avatar_src\"/>";
     out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"p.name\"></p>";
+    out << "<p class=\"text-xs shell-call-peer-stall\" "
+           "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
+           "data-rml=\"call_in_progress_remote_placeholder\"></p>";
     out << "<div class=\"shell-call-peer-badges row\">";
     out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
            "crop-to-content=\"true\"></svg>";
@@ -2092,12 +2121,6 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "</div>";
   append_quality_chip(out, "");
   out << "<div class=\"shell-call-bar-actions row\">";
-  out << "<button class=\"shell-call-minimize\" type=\"button\" data-event-click=\"call_minimize()\">";
-  out << "<svg src=\"../icons/chevron-up.svg\" width=\"18\" height=\"18\"></svg>";
-  out << "</button>";
-  out << "<button class=\"shell-call-immersive-btn\" type=\"button\" data-event-click=\"call_immersive()\">";
-  out << "<svg src=\"../icons/group.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
   append_core_actions(out);
   out << "</div></div>";
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";

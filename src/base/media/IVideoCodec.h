@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -43,6 +44,8 @@ public:
   virtual std::string BackendName() const = 0;
   virtual bool HasEncoder() const = 0;
   virtual bool HasDecoder() const = 0;
+  /** True when this host can open an encoder (before ConfigureEncoder). */
+  virtual bool EncoderSupported() const { return true; }
 
   /** Target encode size/fps (a3 default ~640×360 @ 15–24). */
   virtual Roe<void> ConfigureEncoder(int width, int height, int fps) = 0;
@@ -51,6 +54,9 @@ public:
   virtual Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) = 0;
   /** Input: Annex-B access unit (possibly multiple NALs). */
   virtual Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) = 0;
+
+  /** Optional; no-op when the backend cannot reconfigure mid-stream. */
+  virtual void SetTargetBitrate(int64_t bps) { (void)bps; }
 
   virtual void ResetEncoder() = 0;
   virtual void ResetDecoder() = 0;

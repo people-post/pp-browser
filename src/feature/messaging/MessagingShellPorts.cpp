@@ -3,10 +3,10 @@
 #include "base/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
-#include "base/p2p/CircuitRelayService.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/AmpMediaRelayCoordinator.h"
+#include "base/p2p/CircuitTunnelCoordinator.h"
 #include "base/p2p/MeshHost.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -185,17 +185,11 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
   if (!mesh) {
     return stats;
   }
-  if (CircuitRelayService* circuit = mesh->CircuitRelay()) {
-    stats.circuit_serving = circuit->IsStarted();
-    if (stats.circuit_serving) {
-      stats.circuit = circuit->RuntimeStats();
-    }
+  if (CircuitTunnelCoordinator* amp_circuit = mesh->AmpCircuitTunnel()) {
+    stats.circuit_serving = amp_circuit->IsStarted() && amp_circuit->ServeInbound();
   }
-  if (MediaRelayService* media = mesh->MediaRelay()) {
-    stats.media_serving = media->IsStarted();
-    if (stats.media_serving) {
-      stats.media = media->RuntimeStats();
-    }
+  if (AmpMediaRelayCoordinator* amp_media = mesh->AmpMediaRelayCoord()) {
+    stats.media_serving = amp_media->IsStarted() && amp_media->ServeInbound();
   }
   return stats;
 }
@@ -333,8 +327,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
   ports.statusbar_cluster = [deps]() -> StatusbarClusterSnapshot {
     MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
-    Libp2pHost* host = mesh ? mesh->Host() : nullptr;
-    const bool running = host && host->IsRunning();
+    const bool running = mesh && mesh->IsRunning();
     const bool has_error = deps.last_libp2p_error && !deps.last_libp2p_error().empty();
     const ReachabilityStatus status = mesh ? mesh->Reachability().Snapshot().status : ReachabilityStatus::Unknown;
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
@@ -345,8 +338,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
   ports.statusbar_popover = [deps]() -> StatusbarPopoverSnapshot {
     MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
-    Libp2pHost* host = mesh ? mesh->Host() : nullptr;
-    const bool running = host && host->IsRunning();
+    const bool running = mesh && mesh->IsRunning();
     const ReachabilitySnapshot reach = mesh ? mesh->Reachability().Snapshot() : ReachabilitySnapshot{};
     const std::string last_error = deps.last_libp2p_error ? deps.last_libp2p_error() : std::string{};
     const bool help = deps.help_network_enabled && deps.help_network_enabled();

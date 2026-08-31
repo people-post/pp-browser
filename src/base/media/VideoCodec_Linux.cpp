@@ -19,6 +19,7 @@
 #include <va/va.h>
 #include <va/va_drm.h>
 #include <va/va_enc_h264.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -1019,6 +1020,7 @@ public:
   std::string BackendName() const override { return "vaapi"; }
   bool HasEncoder() const override { return enc_ready_; }
   bool HasDecoder() const override { return decoder_configured_; }
+  bool EncoderSupported() const override { return caps_.has_encode; }
 
   Roe<void> ConfigureEncoder(int width, int height, int fps) override;
   Roe<void> ConfigureDecoder() override;

@@ -3,10 +3,11 @@
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/ConfigJson.h"
 #include "base/data/SchemaVersion.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -45,16 +46,20 @@ Roe<MachinePreferences> UserPreferences::LoadMachine(const std::string& data_dir
     return Error("Failed to open machine preferences: " + path);
   }
 
-  const nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse machine preferences: " + path);
   }
 
-  if (auto checked = SchemaVersion::Validate(root, MachinePreferences::kSchemaVersion, "machine.json"); !checked) {
+  if (auto checked = SchemaVersion::Validate(*root, MachinePreferences::kSchemaVersion, "machine.json");
+      !checked) {
     return checked.error();
   }
 
-  return root.get<MachinePreferences>();
+  MachinePreferences prefs;
+  MachinePrefsFromObject(*root, prefs);
+  return prefs;
 }
 
 Roe<void> UserPreferences::SaveMachine(const std::string& data_dir, const MachinePreferences& prefs) {
@@ -62,7 +67,7 @@ Roe<void> UserPreferences::SaveMachine(const std::string& data_dir, const Machin
   std::error_code ec;
   std::filesystem::create_directories(data_dir, ec);
 
-  return AtomicFileWrite::Write(path, MachinePrefsToJson(prefs).dump(2));
+  return AtomicFileWrite::Write(path, DumpJson(MachinePrefsToObject(prefs), 2));
 }
 
 Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_data_dir) {
@@ -80,16 +85,20 @@ Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_
     return Error("Failed to open profile preferences: " + path);
   }
 
-  const nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-  if (root.is_discarded()) {
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse profile preferences: " + path);
   }
 
-  if (auto checked = SchemaVersion::Validate(root, ProfilePreferences::kSchemaVersion, "preferences.json"); !checked) {
+  if (auto checked = SchemaVersion::Validate(*root, ProfilePreferences::kSchemaVersion, "preferences.json");
+      !checked) {
     return checked.error();
   }
 
-  return root.get<ProfilePreferences>();
+  ProfilePreferences prefs;
+  ProfilePrefsFromObject(*root, prefs);
+  return prefs;
 }
 
 Roe<void> UserPreferences::SaveProfile(const std::string& profile_data_dir, const ProfilePreferences& prefs) {
@@ -97,7 +106,7 @@ Roe<void> UserPreferences::SaveProfile(const std::string& profile_data_dir, cons
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
 
-  return AtomicFileWrite::Write(path, ProfilePrefsToJson(prefs).dump(2));
+  return AtomicFileWrite::Write(path, DumpJson(ProfilePrefsToObject(prefs), 2));
 }
 
 } // namespace pbr

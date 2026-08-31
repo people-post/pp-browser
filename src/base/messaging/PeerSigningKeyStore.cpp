@@ -1,4 +1,5 @@
 #include "base/messaging/PeerSigningKeyStore.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

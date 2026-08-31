@@ -4,22 +4,26 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/HybridKem.h"
+#include "base/crypto/IdentitySeedDeriver.h"
 #include "base/crypto/MlDsa.h"
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
 #include "base/p2p/PeerIdUtil.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <optional>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
+Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
+                              const ByteVector* seeded_coins = nullptr) {
   const bool have_both = !identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty();
   if (have_both) {
     auto pk = Base64Decode(identity.kem_public_key_b64);
@@ -31,7 +35,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
   }
   // First create (or size mismatch): mint account KEM. Link-device Import replaces these
   // with the shared account secret (M015) after LoadOrCreate.
-  auto generated = HybridKem::GenerateKeyPair();
+  Roe<HybridKemKeyPair> generated =
+      seeded_coins ? HybridKem::GenerateKeyPairFromSeed(*seeded_coins) : HybridKem::GenerateKeyPair();
   if (!generated) {
     return generated.error();
   }
@@ -41,7 +46,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
   return {};
 }
 
-Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
+Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
+                                 const ByteVector* seeded_seed = nullptr) {
   const bool have_both =
       !identity.account_signing_public_key_b64.empty() && !identity.account_signing_private_key_b64.empty();
   if (have_both) {
@@ -59,7 +65,8 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
       return {};
     }
   }
-  auto generated = MlDsa::GenerateKeyPair();
+  Roe<MlDsaKeyPair> generated =
+      seeded_seed ? MlDsa::GenerateKeyPairFromSeed(*seeded_seed) : MlDsa::GenerateKeyPair();
   if (!generated) {
     return generated.error();
   }
@@ -71,6 +78,41 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag) {
   }
   identity.account_id = *account_id;
   dirty_flag = true;
+  return {};
+}
+
+bool ConstantTimeEqualB64(const std::string& a, const std::string& b) {
+  auto da = Base64Decode(a);
+  auto db = Base64Decode(b);
+  if (!da || !db || da->size() != db->size()) {
+    return false;
+  }
+  return sodium_memcmp(da->data(), db->data(), da->size()) == 0;
+}
+
+Roe<void> FailClosedIfSeedMismatch(const LocalIdentity& identity, const DerivedNodeIdentitySeeds& seeds) {
+  auto device = MlDsa::GenerateKeyPairFromSeed(seeds.device_ml_dsa_seed);
+  if (!device) {
+    return device.error();
+  }
+  auto account = MlDsa::GenerateKeyPairFromSeed(seeds.account_ml_dsa_seed);
+  if (!account) {
+    return account.error();
+  }
+  auto kem = HybridKem::GenerateKeyPairFromSeed(seeds.account_ml_kem_coins);
+  if (!kem) {
+    return kem.error();
+  }
+  const std::string expect_device_pk = Base64Encode(device->public_key);
+  const std::string expect_account_pk = Base64Encode(account->public_key);
+  const std::string expect_kem_pk = Base64Encode(kem->public_key);
+  if (!ConstantTimeEqualB64(identity.public_key_b64, expect_device_pk) ||
+      !ConstantTimeEqualB64(identity.account_signing_public_key_b64, expect_account_pk) ||
+      !ConstantTimeEqualB64(identity.kem_public_key_b64, expect_kem_pk)) {
+    return Error(
+        "PP_NODE_IDENTITY_SEED does not match existing identity.enc (fail-closed); "
+        "use the seed that minted this profile, or wipe the volume");
+  }
   return {};
 }
 
@@ -87,65 +129,71 @@ Roe<void> DerivePeerId(LocalIdentity& identity) {
   return {};
 }
 
-LocalIdentity IdentityFromJson(const nlohmann::json& root) {
+LocalIdentity IdentityFromJson(const Object& root) {
   LocalIdentity identity;
-  if (root.contains("public_key_b64") && root["public_key_b64"].is_string()) {
-    identity.public_key_b64 = root["public_key_b64"].get<std::string>();
+  if (auto v = root.getString("public_key_b64")) {
+    identity.public_key_b64 = *v;
   }
-  if (root.contains("private_key_b64") && root["private_key_b64"].is_string()) {
-    identity.private_key_b64 = root["private_key_b64"].get<std::string>();
+  if (auto v = root.getString("private_key_b64")) {
+    identity.private_key_b64 = *v;
   }
-  if (root.contains("account_signing_public_key_b64") && root["account_signing_public_key_b64"].is_string()) {
-    identity.account_signing_public_key_b64 = root["account_signing_public_key_b64"].get<std::string>();
+  if (auto v = root.getString("account_signing_public_key_b64")) {
+    identity.account_signing_public_key_b64 = *v;
   }
-  if (root.contains("account_signing_private_key_b64") && root["account_signing_private_key_b64"].is_string()) {
-    identity.account_signing_private_key_b64 = root["account_signing_private_key_b64"].get<std::string>();
+  if (auto v = root.getString("account_signing_private_key_b64")) {
+    identity.account_signing_private_key_b64 = *v;
   }
-  if (root.contains("account_id") && root["account_id"].is_string()) {
-    identity.account_id = root["account_id"].get<std::string>();
+  if (auto v = root.getString("account_id")) {
+    identity.account_id = *v;
   }
-  if (root.contains("nickname") && root["nickname"].is_string()) {
-    identity.nickname = root["nickname"].get<std::string>();
+  if (auto v = root.getString("nickname")) {
+    identity.nickname = *v;
   }
-  if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
-    identity.relay_user_id = root["relay_user_id"].get<std::string>();
+  if (auto v = root.getString("relay_user_id")) {
+    identity.relay_user_id = *v;
   }
-  if (root.contains("brief_llm_api_key") && root["brief_llm_api_key"].is_string()) {
-    identity.brief_llm_api_key = root["brief_llm_api_key"].get<std::string>();
+  if (auto v = root.getString("brief_llm_api_key")) {
+    identity.brief_llm_api_key = *v;
   }
-  if (root.contains("registered") && root["registered"].is_boolean()) {
-    identity.registered = root["registered"].get<bool>();
+  if (auto v = root.getString("brief_llm_guest_api_key")) {
+    identity.brief_llm_guest_api_key = *v;
   }
-  if (root.contains("registration_expires_at") && root["registration_expires_at"].is_string()) {
-    identity.registration_expires_at = root["registration_expires_at"].get<std::string>();
+  if (auto v = root.getIf<bool>("registered")) {
+    identity.registered = *v;
   }
-  if (root.contains("kem_public_key_b64") && root["kem_public_key_b64"].is_string()) {
-    identity.kem_public_key_b64 = root["kem_public_key_b64"].get<std::string>();
+  if (auto v = root.getString("registration_expires_at")) {
+    identity.registration_expires_at = *v;
   }
-  if (root.contains("kem_private_key_b64") && root["kem_private_key_b64"].is_string()) {
-    identity.kem_private_key_b64 = root["kem_private_key_b64"].get<std::string>();
+  if (auto v = root.getString("kem_public_key_b64")) {
+    identity.kem_public_key_b64 = *v;
   }
-  if (root.contains("initiation_floor") && root["initiation_floor"].is_number_integer()) {
-    identity.initiation_floor = root["initiation_floor"].get<int64_t>();
+  if (auto v = root.getString("kem_private_key_b64")) {
+    identity.kem_private_key_b64 = *v;
+  }
+  if (auto v = root.getIf<int64_t>("initiation_floor")) {
+    identity.initiation_floor = *v;
   }
   return identity;
 }
 
-nlohmann::json IdentityToJson(const LocalIdentity& identity) {
-  return {{"schema_version", IdentityStore::kSchemaVersion},
-          {"public_key_b64", identity.public_key_b64},
-          {"private_key_b64", identity.private_key_b64},
-          {"account_signing_public_key_b64", identity.account_signing_public_key_b64},
-          {"account_signing_private_key_b64", identity.account_signing_private_key_b64},
-          {"account_id", identity.account_id},
-          {"kem_public_key_b64", identity.kem_public_key_b64},
-          {"kem_private_key_b64", identity.kem_private_key_b64},
-          {"nickname", identity.nickname},
-          {"relay_user_id", identity.relay_user_id},
-          {"brief_llm_api_key", identity.brief_llm_api_key},
-          {"registered", identity.registered},
-          {"registration_expires_at", identity.registration_expires_at},
-          {"initiation_floor", identity.initiation_floor}};
+Object IdentityToJson(const LocalIdentity& identity) {
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  root.set("public_key_b64", identity.public_key_b64);
+  root.set("private_key_b64", identity.private_key_b64);
+  root.set("account_signing_public_key_b64", identity.account_signing_public_key_b64);
+  root.set("account_signing_private_key_b64", identity.account_signing_private_key_b64);
+  root.set("account_id", identity.account_id);
+  root.set("kem_public_key_b64", identity.kem_public_key_b64);
+  root.set("kem_private_key_b64", identity.kem_private_key_b64);
+  root.set("nickname", identity.nickname);
+  root.set("relay_user_id", identity.relay_user_id);
+  root.set("brief_llm_api_key", identity.brief_llm_api_key);
+  root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key);
+  root.set("registered", identity.registered);
+  root.set("registration_expires_at", identity.registration_expires_at);
+  root.set("initiation_floor", identity.initiation_floor);
+  return root;
 }
 
 } // namespace
@@ -159,6 +207,18 @@ IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
       profile_id_ = "default";
     }
   }
+}
+
+Roe<void> IdentityStore::SetIdentitySeed(ByteVector master_seed) {
+  if (master_seed.size() < 32) {
+    return Error("identity seed must be at least 32 bytes");
+  }
+  std::lock_guard lock(mutex_);
+  if (!identity_seed_.empty()) {
+    sodium_memzero(identity_seed_.data(), identity_seed_.size());
+  }
+  identity_seed_ = std::move(master_seed);
+  return {};
 }
 
 Roe<void> IdentityStore::SetDek(ByteVector dek) {
@@ -223,7 +283,16 @@ Roe<void> IdentityStore::EnsureLoaded() const {
 
   std::ifstream in(StorePath(), std::ios::binary);
   if (!in) {
-    auto keys = MlDsa::GenerateKeyPair();
+    std::optional<DerivedNodeIdentitySeeds> derived;
+    if (!identity_seed_.empty()) {
+      auto seeds = DeriveNodeIdentitySeeds(identity_seed_);
+      if (!seeds) {
+        return seeds.error();
+      }
+      derived = std::move(*seeds);
+    }
+    Roe<MlDsaKeyPair> keys =
+        derived ? MlDsa::GenerateKeyPairFromSeed(derived->device_ml_dsa_seed) : MlDsa::GenerateKeyPair();
     if (!keys) {
       return keys.error();
     }
@@ -233,15 +302,18 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.nickname = "user";
     identity_.relay_user_id.clear();
     identity_.brief_llm_api_key.clear();
+    identity_.brief_llm_guest_api_key.clear();
     identity_.registered = false;
     identity_.registration_expires_at.clear();
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
-    if (auto kem = EnsureHybridKemKeys(identity_, dirty_); !kem) {
+    const ByteVector* kem_coins = derived ? &derived->account_ml_kem_coins : nullptr;
+    const ByteVector* account_seed = derived ? &derived->account_ml_dsa_seed : nullptr;
+    if (auto kem = EnsureHybridKemKeys(identity_, dirty_, kem_coins); !kem) {
       return kem.error();
     }
-    if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
+    if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_, account_seed); !account) {
       return account.error();
     }
     loaded_ = true;
@@ -255,19 +327,25 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   if (!plaintext) {
     return plaintext.error();
   }
-  const nlohmann::json root =
-      nlohmann::json::parse(plaintext->begin(), plaintext->end(), nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
+  const std::string text(plaintext->begin(), plaintext->end());
+  auto root = TryParseObject(text);
+  if (!root) {
     return Error("Failed to parse decrypted identity");
   }
 
   int version = 0;
-  if (root.contains("schema_version")) {
-    if (!root["schema_version"].is_number_integer()) {
+  if (root->contains("schema_version")) {
+    auto version_opt = root->getIf<int64_t>("schema_version");
+    if (!version_opt) {
+      if (auto as_u = root->getNonNegInt("schema_version")) {
+        version_opt = static_cast<int64_t>(*as_u);
+      }
+    }
+    if (!version_opt) {
       return Error("Invalid schema_version in identity.enc");
     }
-    version = root["schema_version"].get<int>();
-    if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "identity.enc"); !checked) {
+    version = static_cast<int>(*version_opt);
+    if (auto checked = SchemaVersion::Validate(*root, kSchemaVersion, "identity.enc"); !checked) {
       return checked.error();
     }
   }
@@ -277,7 +355,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
         "(libp2p-pq-transport hard cut)");
   }
 
-  identity_ = IdentityFromJson(root);
+  identity_ = IdentityFromJson(*root);
   auto private_key = Base64Decode(identity_.private_key_b64);
   if (!private_key) {
     return private_key.error();
@@ -298,6 +376,15 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
     return account.error();
   }
+  if (!identity_seed_.empty()) {
+    auto seeds = DeriveNodeIdentitySeeds(identity_seed_);
+    if (!seeds) {
+      return seeds.error();
+    }
+    if (auto matched = FailClosedIfSeedMismatch(identity_, *seeds); !matched) {
+      return matched.error();
+    }
+  }
   loaded_ = true;
   return {};
 }
@@ -306,7 +393,7 @@ Roe<void> IdentityStore::Save() const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
-  const std::string json = IdentityToJson(identity_).dump(2);
+  const std::string json = DumpJson(IdentityToJson(identity_), 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto ciphertext = FileCipher::Encrypt(dek_, plaintext, aad);

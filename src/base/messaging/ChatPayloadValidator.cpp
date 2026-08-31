@@ -3,6 +3,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/MessagingLimits.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -15,6 +16,8 @@ bool IsSupportedContentType(const ChatContentType type) {
   case ChatContentType::Annotation:
   case ChatContentType::ContactCard:
   case ChatContentType::CryptoTx:
+  case ChatContentType::Attachment:
+  case ChatContentType::Unsupported:
     return true;
   }
   return false;
@@ -44,6 +47,10 @@ Roe<ThreadMessage> ChatPayloadValidator::DecodeValidated(const std::vector<uint8
       }
     } else if (message.content_type == ChatContentType::CryptoTx) {
       if (auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json); !fields) {
+        return fields.error();
+      }
+    } else if (message.content_type == ChatContentType::Attachment) {
+      if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json); !fields) {
         return fields.error();
       }
     }

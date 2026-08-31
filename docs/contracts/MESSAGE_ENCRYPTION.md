@@ -28,7 +28,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 | Relay forges envelope (wrong sender) | Ed25519 verify + pinned peer signing key |
 | Network replay of captured E2E blob | `sender_seq` in AAD + ingest rules |
 
-Not protected in v1: traffic metadata, classical Ed25519 break. Local disk: identity + PSK protected by PIN/DEK vault ([AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md)); `thread.db` transcripts remain plaintext (D048).
+Not protected in v1: traffic metadata, classical Ed25519 break. Local disk: identity, PSK, and transcript bodies/previews/memory under the PIN/DEK vault ([AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), chat-storage **D102**); transcript metadata (timestamps, delivery, titles) stays plaintext.
 
 ## Algorithms
 

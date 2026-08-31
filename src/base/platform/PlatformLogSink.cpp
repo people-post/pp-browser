@@ -1,6 +1,8 @@
 #include "base/platform/PlatformLogSink.h"
 
+#include "base/runtime/ProductBranding.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #include <cstdio>
 #include <iostream>
@@ -65,8 +67,8 @@ void WriteIosLog(logging::Level level, const std::string& message) {
     os_type = OS_LOG_TYPE_ERROR;
     break;
   }
-  os_log_with_type(OS_LOG_DEFAULT, os_type, "[Frame] %{public}s", message.c_str());
-  std::fprintf(stderr, "[Frame][%s] %s\n", tag, message.c_str());
+  os_log_with_type(OS_LOG_DEFAULT, os_type, "[%{public}s] %{public}s", kProductLogTag, message.c_str());
+  std::fprintf(stderr, "[%s][%s] %s\n", kProductLogTag, tag, message.c_str());
   std::lock_guard<std::mutex> lock(g_file_mu);
   if (g_log_file) {
     std::fprintf(g_log_file, "[%s] %s\n", tag, message.c_str());
@@ -100,7 +102,7 @@ public:
       priority = ANDROID_LOG_FATAL;
       break;
     }
-    __android_log_write(priority, "pp-browser", message.c_str());
+    __android_log_write(priority, kProductLogTag, message.c_str());
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
     WriteIosLog(level, message);
 #else

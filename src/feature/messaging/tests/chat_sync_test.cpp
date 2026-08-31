@@ -52,7 +52,7 @@ public:
         receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
         sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 

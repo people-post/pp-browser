@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;
@@ -14,7 +15,7 @@ class Context;
 
 namespace pbr {
 
-using ToolExecutor = std::function<nlohmann::json(const std::string& tool, const nlohmann::json& params)>;
+using ToolExecutor = std::function<Value(const std::string& tool, const Object& params)>;
 
 class ActionRouter : public Module {
 public:

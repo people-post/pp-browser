@@ -1,6 +1,9 @@
 #include "base/ai/mcp/SchemaAdapter.h"
 
+#include "common/ValueJson.h"
+
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -8,26 +11,31 @@ std::string SchemaAdapter::ToolsToPromptContext(const std::vector<McpTool>& tool
   std::ostringstream out;
   for (const auto& tool : tools) {
     out << "- " << tool.name << ": " << tool.description << "\n";
-    out << "  inputSchema: " << tool.input_schema.dump() << "\n";
+    out << "  inputSchema: " << DumpJson(tool.input_schema) << "\n";
   }
   return out.str();
 }
 
-Roe<nlohmann::json> SchemaAdapter::ToolResultToRows(const nlohmann::json& tool_result) {
-  if (!tool_result.contains("content")) {
-    return nlohmann::json::array();
+Roe<Value> SchemaAdapter::ToolResultToRows(const Object& tool_result) {
+  const Array* content = tool_result.getArray("content");
+  if (!content) {
+    return ArrayValue({});
   }
-  for (const auto& block : tool_result["content"]) {
-    if (block.value("type", "") == "text") {
-      const auto text = block.value("text", "[]");
-      auto rows = nlohmann::json::parse(text, nullptr, false);
-      if (rows.is_discarded()) {
+  for (const Value& block_value : content->elements) {
+    const Object* block = asObject(block_value);
+    if (!block) {
+      continue;
+    }
+    if (block->getString("type").value_or("") == "text") {
+      const std::string text = block->getString("text").value_or("[]");
+      auto rows = ParseValue(text);
+      if (!rows) {
         return Error("Failed to parse tool result text as JSON");
       }
-      return rows;
+      return *rows;
     }
   }
-  return nlohmann::json::array();
+  return ArrayValue({});
 }
 
 std::string SchemaAdapter::RiskClass(const McpTool& tool) {

@@ -1,6 +1,7 @@
 #include "base/messaging/CallTypes.h"
 
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -112,6 +113,8 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_sfu_attach_failed";
   case CallControlType::CallHopRefuse:
     return "call_hop_refuse";
+  case CallControlType::CallVideoRefresh:
+    return "call_video_refresh";
   }
   return "call_invite";
 }
@@ -155,6 +158,9 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_hop_refuse") {
     return CallControlType::CallHopRefuse;
+  }
+  if (value == "call_video_refresh") {
+    return CallControlType::CallVideoRefresh;
   }
   return std::nullopt;
 }

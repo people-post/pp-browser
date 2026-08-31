@@ -3,12 +3,16 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/people/ProfileIdentityView.h"
 #include "base/data/SessionStore.h"
+#include "base/net/BlobQuotaUtil.h"
+#include "base/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -25,6 +29,13 @@ struct RegisterIdentityArgs {
 struct SettingsCommands {
   std::function<ProfileIdentityView()> load_profile_identity;
   std::function<Roe<void>(const std::string& nickname)> save_profile_nickname;
+  std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
+  std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
+  std::function<Roe<void>()> clear_profile_icon;
+  std::function<Roe<BlobQuotaRecoveryPlan>()> plan_relay_quota_recovery;
+  std::function<Roe<void>()> free_oldest_relay_blob_slot;
+  std::function<void()> drain_pending_attachment_media;
+  std::function<Roe<void>()> clear_downloaded_attachments;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;
@@ -45,6 +56,8 @@ struct SettingsCommands {
   /** Messaging status without holding MessagingHub*. */
   std::function<bool()> messaging_ready;
   std::function<std::string()> last_libp2p_error;
+  /** Runtime Amp listen multiaddr (empty when mesh is down). */
+  std::function<std::string()> amp_listen_multiaddr;
   std::function<SettingsReachabilityView()> load_reachability;
   /** Refresh Me / Network attention dots after reachability nudge ack. */
   std::function<void()> refresh_nav_badges;
@@ -54,6 +67,11 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& current_pin, const std::string& new_pin)> change_pin;
   /** Copy a time-limited link-device payload (account keys + shared DEK + public PSKs). */
   std::function<Roe<std::string>()> export_link_device;
+
+  /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
+  std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
+  /** Ensure PP Support contact + open Direct e2e_public chat. */
+  std::function<Roe<void>()> open_support_chat;
 };
 
 } // namespace pbr

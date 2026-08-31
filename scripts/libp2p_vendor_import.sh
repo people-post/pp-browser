@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
-# Populate third_party/ with cpp-libp2p dependencies (Hunter-pinned versions).
+# Populate third_party/ with PeerId/wire deps for the in-tree libp2p fork (A017).
 # Safe to re-run when bumping versions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.libp2p_vendor_import_tmp"
-PATCHES="${ROOT}/cmake/patches/libp2p"
 
 # name|url|archive_type (git or tarball)
 declare -A LIBP2P_REPOS=(
   [boringssl]="https://github.com/qdrvm/boringssl/archive/refs/tags/qdrvm1.zip|tarball"
-  [boost]="https://archives.boost.io/release/1.87.0/source/boost_1_87_0.tar.gz|tarball"
-  [lsquic]="https://github.com/qdrvm/lsquic/archive/refs/tags/v4.0.9-qdrvm-1.zip|tarball"
-  [libsecp256k1]="https://github.com/qdrvm/libsecp256k1/archive/refs/tags/0.5.1.zip|tarball"
-  [c-ares]="https://github.com/hunter-packages/c-ares/archive/v1.14.0-p0.tar.gz|tarball"
   [fmt]="https://github.com/fmtlib/fmt/archive/refs/tags/10.1.1.tar.gz|tarball"
   [yaml-cpp]="https://github.com/hunter-packages/yaml-cpp/archive/v0.6.2-0f9a586-p1.zip|tarball"
   [soralog]="https://github.com/qdrvm/soralog/archive/refs/tags/v0.2.5.tar.gz|tarball"
   [qtils]="https://github.com/qdrvm/qtils/archive/refs/tags/v0.1.1.tar.gz|tarball"
-  [tsl_hat_trie]="https://github.com/masterjedy/hat-trie/archive/4fdfc75e75276185eed4b748ea09671601101b8e.tar.gz|tarball"
-  [boost_di]="https://github.com/qdrvm/boost-di/archive/d5de6c9840c7fc2e44bf37134b4a14b88151ecc4.zip|tarball"
   [zlib]="https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz|tarball"
   [googletest]="https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz|tarball"
 )
@@ -59,37 +52,12 @@ import_tarball() {
   rm -rf "${work}"
 }
 
-apply_lsquic_patches() {
-  local dest="${THIRD_PARTY}/lsquic"
-  if [[ ! -d "${PATCHES}/lsquic" ]]; then
-    return 0
-  fi
-  echo "    applying lsquic patches"
-  for patch in "${PATCHES}/lsquic"/*.patch; do
-    [[ -f "${patch}" ]] || continue
-    # qdrvm 4.0.9-qdrvm-1 already ships lsquic_conn_ssl; applying again duplicates symbols.
-    if [[ "$(basename "${patch}")" == "lsquic_conn_ssl.patch" ]]; then
-      echo "      skipping $(basename "${patch}") (upstream already includes changes)"
-      continue
-    fi
-    echo "      $(basename "${patch}")"
-    patch -p1 -d "${dest}" < "${patch}" || {
-      echo "warning: patch $(basename "${patch}") may already be applied" >&2
-    }
-  done
-}
-
 mkdir -p "${THIRD_PARTY}" "${TMP}"
 json_entries=()
 
 for name in "${!LIBP2P_REPOS[@]}"; do
   IFS='|' read -r url _kind <<< "${LIBP2P_REPOS[$name]}"
   import_tarball "${name}" "${url}"
-
-  if [[ "${name}" == "lsquic" ]]; then
-    apply_lsquic_patches
-  fi
-
   json_entries+=("${name}|${url}")
 done
 

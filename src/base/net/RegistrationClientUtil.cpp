@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <ctime>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -129,6 +130,7 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   }
   if (!result.llm_api_key.empty()) {
     identity.brief_llm_api_key = result.llm_api_key;
+    identity.brief_llm_guest_api_key.clear();
   }
   if (!result.expires_at.empty()) {
     identity.registration_expires_at = result.expires_at;
@@ -144,7 +146,8 @@ void MarkRegistrationExpired(LocalIdentity& identity) {
 
 Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
                                                        const std::string& nickname,
-                                                       const std::vector<std::string>& multiaddrs) {
+                                                       const std::vector<std::string>& multiaddrs,
+                                                       const RegistrationPublishOpts& publish) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
@@ -157,7 +160,7 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   }
 
   auto start = registration.StartRegistration(loaded->account_signing_public_key_b64, nickname, "ml-dsa-65",
-                                              loaded->kem_public_key_b64, loaded->peer_id, multiaddrs);
+                                              loaded->kem_public_key_b64, loaded->peer_id, multiaddrs, publish);
   if (!start) {
     return start.error();
   }
@@ -176,18 +179,19 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
 
   return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
                                          *signature, timestamp, start->signature_alg, loaded->kem_public_key_b64,
-                                         loaded->peer_id, multiaddrs, loaded->initiation_floor);
+                                         loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
-                                                const std::vector<std::string>& multiaddrs) {
+                                                const std::vector<std::string>& multiaddrs,
+                                                const RegistrationPublishOpts& publish) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
 
-  auto result = FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs);
+  auto result = FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
   if (!result) {
     return result.error();
   }

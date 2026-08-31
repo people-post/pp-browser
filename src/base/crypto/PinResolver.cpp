@@ -3,6 +3,7 @@
 #include "base/error/AppError.h"
 
 #include <cstdlib>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

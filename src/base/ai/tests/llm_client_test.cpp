@@ -30,7 +30,7 @@ TEST(LlmClientTest, ParsesToolCallsAndContentResponses) {
   EXPECT_EQ(tool_result->finish_reason, "tool_calls");
   ASSERT_EQ(tool_result->tool_calls.size(), 1u);
   EXPECT_EQ(tool_result->tool_calls[0].name, "web_search");
-  EXPECT_EQ(tool_result->tool_calls[0].arguments["query"], "latest news");
+  EXPECT_EQ(tool_result->tool_calls[0].arguments.getString("query"), std::optional<std::string>("latest news"));
 
   const std::string content_response = R"({
     "choices": [{

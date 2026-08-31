@@ -8,6 +8,7 @@
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ThreadTypes.h"
+#include "base/people/AvatarGlyph.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ContextMenuHost.h"
@@ -33,6 +34,7 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -163,6 +165,24 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     row.subtitle = contact.server_nickname.c_str();
   }
   row.trust = TrustLevelToString(contact.trust).c_str();
+  if (ports.contact_icon_local_path) {
+    const std::string path = ports.contact_icon_local_path(contact);
+    if (!path.empty()) {
+      row.has_icon = true;
+      row.icon_src = path.c_str();
+    }
+  }
+  {
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? "New contact" : title, stable);
+    row.avatar_letter = glyph.letter.c_str();
+    row.avatar_tone = glyph.tone;
+  }
+  if (ports.ensure_contact_icon_cached && contact.remote.icon && !contact.remote.icon->url.empty()) {
+    ports.ensure_contact_icon_cached(contact);
+  }
   if (ports.snapshot && ports.snapshot().initialized && ports.sum_unread_for_contact) {
     row.unread_count = ports.sum_unread_for_contact(contact.id);
     row.unread_display = FormatBadgeCount(row.unread_count).c_str();
@@ -187,6 +207,24 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
+  if (ports.contact_icon_local_path) {
+    const std::string path = ports.contact_icon_local_path(contact);
+    if (!path.empty()) {
+      detail.has_icon = true;
+      detail.icon_src = path.c_str();
+    }
+  }
+  {
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? "New contact" : title, stable);
+    detail.avatar_letter = glyph.letter.c_str();
+    detail.avatar_tone = glyph.tone;
+  }
+  if (ports.ensure_contact_icon_cached && contact.remote.icon && !contact.remote.icon->url.empty()) {
+    ports.ensure_contact_icon_cached(contact);
+  }
   if (contact.remote.fetched_at > 0) {
     detail.remote_updated = "From directory";
   } else {
@@ -262,10 +300,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
           "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
       return;
     }
-    if (contact.multiaddrs.empty() && ports.sessions &&
-        IsContactStackDialable(contact, ports.sessions())) {
-      detail.message_hint = "Direct link via address book (no pasted multiaddr).";
-    } else if (contact.multiaddrs.empty()) {
+    if (contact.multiaddrs.empty()) {
       detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
     } else {
       detail.message_hint = "";
@@ -399,6 +434,10 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       list_handle.RegisterMember("trust", &ContactListRow::trust);
       list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
       list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
+      list_handle.RegisterMember("has_icon", &ContactListRow::has_icon);
+      list_handle.RegisterMember("icon_src", &ContactListRow::icon_src);
+      list_handle.RegisterMember("avatar_letter", &ContactListRow::avatar_letter);
+      list_handle.RegisterMember("avatar_tone", &ContactListRow::avatar_tone);
     }
     if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
       identity_handle.RegisterMember("label", &ContactIdentityRow::label);
@@ -435,6 +474,10 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
       detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
       detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
+      detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
+      detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
+      detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
+      detail_handle.RegisterMember("avatar_tone", &ContactDetail::avatar_tone);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
     }

@@ -4,95 +4,21 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if (NOT PACKAGE_MANAGER STREQUAL "hunter")
-  function(hunter_add_package)
-  endfunction()
-endif ()
-
+# A017: vendored PeerId/wire deps only (no Hunter / Host / QUIC).
 macro(pp_libp2p_require_target target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Vendored libp2p dependency target missing: ${target}")
   endif()
 endmacro()
 
-if (PACKAGE_MANAGER STREQUAL "vendored")
-  pp_libp2p_require_target(Boost::filesystem)
-  pp_libp2p_require_target(Boost::random)
-  pp_libp2p_require_target(Boost::boost)
-  pp_libp2p_require_target(OpenSSL::Crypto)
-  pp_libp2p_require_target(OpenSSL::SSL)
-  pp_libp2p_require_target(libsecp256k1::secp256k1)
-  pp_libp2p_require_target(lsquic::lsquic)
-  pp_libp2p_require_target(qtils::qtils)
-  find_package(Threads REQUIRED)
-  pp_libp2p_require_target(c-ares::cares)
-  pp_libp2p_require_target(fmt::fmt)
-  pp_libp2p_require_target(yaml-cpp::yaml-cpp)
-  pp_libp2p_require_target(soralog::soralog)
-  pp_libp2p_require_target(tsl::tsl_hat_trie)
-  pp_libp2p_require_target(Boost::Boost.DI)
-  if (SQLITE_ENABLED)
-    pp_libp2p_require_target(SQLiteModernCpp::SQLiteModernCpp)
-  endif()
-  pp_libp2p_require_target(ZLIB::ZLIB)
-  if (TESTING OR COVERAGE)
-    pp_libp2p_require_target(GTest::gmock_main)
-  endif()
-  return()
+if(NOT PACKAGE_MANAGER STREQUAL "vendored")
+  message(FATAL_ERROR "libp2p fork requires PACKAGE_MANAGER=vendored (A017)")
 endif()
 
-if (TESTING)
-  # https://docs.hunter.sh/en/latest/packages/pkg/GTest.html
-  hunter_add_package(GTest)
-  find_package(GTest CONFIG REQUIRED)
-endif()
-
-if (PACKAGE_MANAGER STREQUAL "hunter")
-  hunter_add_package(Boost COMPONENTS random filesystem program_options)
-  find_package(Boost CONFIG REQUIRED filesystem random program_options)
-else ()
-  find_package(Boost CONFIG REQUIRED filesystem random beast program_options)
-endif ()
-
-# https://www.openssl.org/
-hunter_add_package(BoringSSL)
-find_package(OpenSSL CONFIG REQUIRED)
-
-hunter_add_package(libsecp256k1)
-find_package(libsecp256k1 CONFIG REQUIRED)
-
-hunter_add_package(lsquic)
-find_package(lsquic CONFIG REQUIRED)
-
-hunter_add_package(qtils)
-find_package(qtils CONFIG REQUIRED)
-
-find_package(Threads)
-
-hunter_add_package(c-ares)
-find_package(c-ares CONFIG REQUIRED)
-
-hunter_add_package(fmt)
-find_package(fmt CONFIG REQUIRED)
-
-hunter_add_package(yaml-cpp)
-find_package(yaml-cpp CONFIG REQUIRED)
-
-hunter_add_package(soralog)
-find_package(soralog CONFIG REQUIRED)
-
-# https://github.com/masterjedy/hat-trie
-hunter_add_package(tsl_hat_trie)
-find_package(tsl_hat_trie CONFIG REQUIRED)
-
-# https://github.com/masterjedy/di
-hunter_add_package(Boost.DI)
-find_package(Boost.DI CONFIG REQUIRED)
-
-if (SQLITE_ENABLED)
-  # https://github.com/qdrvm/libp2p-sqlite-modern-cpp/tree/hunter
-  hunter_add_package(SQLiteModernCpp)
-  find_package(SQLiteModernCpp CONFIG REQUIRED)
-endif ()
-
-find_package(ZLIB REQUIRED)
+pp_libp2p_require_target(OpenSSL::Crypto)
+pp_libp2p_require_target(OpenSSL::SSL)
+pp_libp2p_require_target(qtils::qtils)
+find_package(Threads REQUIRED)
+pp_libp2p_require_target(fmt::fmt)
+pp_libp2p_require_target(yaml-cpp::yaml-cpp)
+pp_libp2p_require_target(soralog::soralog)

@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <chrono>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -62,42 +63,28 @@ bool IsVirtualLanIfaceName(const std::string& ifname);
 std::string IpHostFromMultiaddrPrefix(const std::string& multiaddr);
 
 /**
- * Build dial-back probe targets for reachability (nr / nu).
- * Uses interface IPs, optional UPnP external IP, global IPv6, and bound listen port.
+ * Build Amp dial-back probe targets (D8): public IPv4 + UPnP external + bound listen as ADP MAs.
+ * (ADP multiaddrs are IPv4-only today.)
  */
-std::vector<std::string> BuildReachabilityProbeTargets(const std::string& bound_listen_multiaddr,
-                                                       const std::string& local_peer_id,
-                                                       const std::vector<std::string>& global_ipv6_addrs,
-                                                       const std::string& upnp_external_ip);
+std::vector<std::string> BuildAmpReachabilityProbeTargets(const std::string& amp_listen_multiaddr,
+                                                          const std::string& local_peer_id,
+                                                          const std::string& upnp_external_ip);
 
-/**
- * Build dialable multiaddrs to advertise via Identify for this Node (media-hop L2).
- * Merges bound listen, UPnP external, global IPv6, public interfaces, and dial-back-confirmed addr.
- */
-std::vector<std::string> BuildAdvertisedListenSet(const ReachabilitySignals& signals,
-                                                  const std::string& bound_listen_multiaddr,
-                                                  const std::string& local_peer_id,
-                                                  const std::vector<std::string>& global_ipv6_addrs);
-
-/** Enumerate usable global IPv6 addresses on local interfaces. */
-std::vector<std::string> EnumerateGlobalIpv6Addresses();
-
-/** Append `/ip6/<global>/tcp/<port>` listen candidates (nu). */
-void AppendIpv6ListenCandidates(std::vector<std::string>& candidates, int tcp_port);
+/** UDP port from `/udp/<n>` in a multiaddr, if present. */
+std::optional<int> UdpPortFromMultiaddr(const std::string& multiaddr);
 
 /** True when listen IP is public — org pp-node seeds skip UPnP (N013). */
 bool ShouldSkipUpnpForListen(const std::string& bound_listen_multiaddr);
 
-/** Append global IPv6 listen candidates for the same TCP port (nu). */
-void AppendIpv6ListenCandidatesForPreferred(const std::string& preferred_multiaddr,
-                                            std::vector<std::string>& candidates);
-
 /**
- * LAN private IPv4 listen addrs for mobile call-scoped publish (N025).
- * Skips reachability probe; enumerates carrier-up non-loopback private IPs.
- * Filters virtual NICs (virbr/docker/…) and libvirt default 192.168.122.0/24.
+ * LAN private IPv4 ADP multiaddrs for Amp PreferLocal / invite advertise (D10).
+ * Expands a (possibly wildcard) Amp listen MA across dialable LAN interface IPs.
+ * If no LAN IPs, returns the input multiaddr when it already has a concrete host.
  */
-std::vector<std::string> BuildMobileCallScopedAdvertisedAddrs(const std::string& bound_listen_multiaddr,
-                                                              const std::string& local_peer_id);
+std::vector<std::string> BuildAmpLanAdvertisedAddrs(const std::string& amp_listen_multiaddr,
+                                                    const std::string& local_peer_id);
+
+/** Dialable LAN IPv4 host strings (same filters as call-scoped advertise). */
+std::vector<std::string> EnumerateDialableLanIpv4Hosts();
 
 } // namespace pbr

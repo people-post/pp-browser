@@ -7,11 +7,12 @@
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–**N026** in [DECISIONS.md](DECISIONS.md) (N026 = media-relay attach SM — **s3a+s3b code**) |
+| ADRs | N001–**N027** in [DECISIONS.md](DECISIONS.md) (N027 = mesh directory) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
-| **np** | Headless `pp-node` + shared `MeshHost` (`NodeRuntime` + dial-back + circuit/media relay + reachability) + dial-back protocol (see below) |
+| **np** | Headless `pp-node` + shared `MeshHost` + dial-back + circuit/media relay + reachability |
+| **N027** | Mesh directory `entity_kind` / pluggable providers / bootstrap→directory ([MESH_DIRECTORY.md](MESH_DIRECTORY.md)) — implementing |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
 | **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |

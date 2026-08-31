@@ -1,12 +1,15 @@
 #include "feature/messaging/MessagingFacade.h"
 
 #include "base/data/PricingTypes.h"
+#include "base/messaging/AttachmentCache.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/messaging/LinkDeviceCoordinator.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "common/Utilities.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -247,6 +250,10 @@ Roe<bool> MessagingFacade::CanLockPublicToThisDevice(const std::string& thread_i
   return hub_.P2p().CanLockPublicToThisDevice(thread_id);
 }
 
+void MessagingFacade::SetSupportAccountId(std::string account_id) {
+  hub_.P2p().SetSupportAccountId(std::move(account_id));
+}
+
 void MessagingFacade::RegisterContactDirectEndpoints(const Contact& contact) {
   hub_.P2p().RegisterContactDirectEndpoints(contact);
 }
@@ -394,6 +401,84 @@ Roe<void> MessagingFacade::SaveProfileNickname(const std::string& nickname) {
 }
 
 Roe<void> MessagingFacade::RegisterIdentity(const std::string& nickname) { return hub_.RegisterIdentity(nickname); }
+
+Roe<void> MessagingFacade::UploadProfileIconFromPath(const std::string& path) {
+  return hub_.UploadProfileIconFromPath(path);
+}
+
+Roe<void> MessagingFacade::ClearProfileIcon() { return hub_.ClearProfileIcon(); }
+
+Roe<BlobQuotaRecoveryPlan> MessagingFacade::PlanRelayQuotaRecovery() { return hub_.PlanRelayQuotaRecovery(); }
+
+Roe<void> MessagingFacade::FreeOldestRelayBlobSlot() { return hub_.FreeOldestRelayBlobSlot(); }
+
+void MessagingFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
+
+Roe<void> MessagingFacade::ClearDownloadedAttachments() { return hub_.ClearDownloadedAttachments(); }
+
+void MessagingFacade::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  hub_.RequestAttachmentDownload(thread_id, message_id);
+}
+
+Roe<ThreadMessage> MessagingFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  return hub_.SendAttachmentFromPath(thread_id, path);
+}
+
+void MessagingFacade::EnsureThreadAttachments(const std::string& thread_id) {
+  hub_.Attachments().EnsureThreadQueued(thread_id, hub_.Store());
+}
+
+void MessagingFacade::RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
+  hub_.Attachments().RetryDownload(thread_id, message_id, hub_.Store());
+}
+
+std::optional<std::string> MessagingFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
+                                                                          const std::string& message_id) {
+  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return std::nullopt;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
+      continue;
+    }
+    auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+    if (!fields) {
+      return std::nullopt;
+    }
+    if (auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, fields->content_hash, fields->mime,
+                                                            fields->filename)) {
+      if (!view->empty()) {
+        return *view;
+      }
+    }
+    const std::string path =
+        AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
+    if (path.empty()) {
+      return std::nullopt;
+    }
+    return path;
+  }
+  return std::nullopt;
+}
+
+bool MessagingFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
+                                                           const std::string& message_id) {
+  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return true;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
+      continue;
+    }
+    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
+      return AttachmentOpenNeedsConfirm(fields->mime);
+    }
+    return true;
+  }
+  return true;
+}
 
 Roe<void> MessagingFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
 

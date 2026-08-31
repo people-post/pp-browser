@@ -1,6 +1,5 @@
 #include "base/p2p/Reachability.h"
 
-#include <algorithm>
 #include <gtest/gtest.h>
 
 TEST(ReachabilityTest, PrivateIpv4Classification) {
@@ -27,15 +26,16 @@ TEST(ReachabilityTest, ClassifyReachabilitySignals) {
   EXPECT_EQ(pbr::ClassifyReachability(outbound), pbr::ReachabilityStatus::OutboundOnly);
 }
 
-TEST(ReachabilityTest, BuildProbeTargetsIncludesPeerId) {
-  const auto targets = pbr::BuildReachabilityProbeTargets("/ip4/0.0.0.0/tcp/18517", "12D3KooWTest", {}, "");
+TEST(ReachabilityTest, BuildAmpProbeTargetsIncludesPeerId) {
+  const auto targets =
+      pbr::BuildAmpReachabilityProbeTargets("/ip4/0.0.0.0/udp/18517/adp/1.0.0", "12D3KooWTest", "");
   ASSERT_FALSE(targets.empty());
   EXPECT_NE(targets.back().find("/p2p/12D3KooWTest"), std::string::npos);
 }
 
 TEST(ReachabilityTest, SkipUpnpForPublicListen) {
-  EXPECT_TRUE(pbr::ShouldSkipUpnpForListen("/ip4/203.0.113.10/tcp/443"));
-  EXPECT_FALSE(pbr::ShouldSkipUpnpForListen("/ip4/0.0.0.0/tcp/18517"));
+  EXPECT_TRUE(pbr::ShouldSkipUpnpForListen("/ip4/203.0.113.10/udp/443/adp/1.0.0"));
+  EXPECT_FALSE(pbr::ShouldSkipUpnpForListen("/ip4/0.0.0.0/udp/18517/adp/1.0.0"));
 }
 
 TEST(ReachabilityTest, UndialableLanAndVirtualIfaceHelpers) {
@@ -50,21 +50,18 @@ TEST(ReachabilityTest, UndialableLanAndVirtualIfaceHelpers) {
   EXPECT_FALSE(pbr::IsVirtualLanIfaceName("wlan0"));
 }
 
-TEST(ReachabilityTest, BuildAdvertisedListenSetFiltersWildcardAndPrioritizesDialBack) {
-  pbr::ReachabilitySignals signals;
-  signals.dial_back_ok = true;
-  signals.dial_back_dialed = "/ip4/203.0.113.44/tcp/18517/p2p/12D3KooWTest";
-  signals.upnp_mapped = true;
-  signals.upnp_external_ip = "203.0.113.44";
-  signals.listen_is_wildcard = true;
-
-  const auto advertised = pbr::BuildAdvertisedListenSet(signals, "/ip4/0.0.0.0/tcp/18517", "12D3KooWTest", {});
-  ASSERT_FALSE(advertised.empty());
-  EXPECT_EQ(advertised.front(), signals.dial_back_dialed);
-  for (const std::string& ma : advertised) {
-    EXPECT_EQ(ma.find("/ip4/0.0.0.0/"), std::string::npos);
+TEST(ReachabilityTest, BuildAmpLanAdvertisedAddrsExpandsWildcardOrKeepsConcrete) {
+  const auto concrete =
+      pbr::BuildAmpLanAdvertisedAddrs("/ip4/192.168.1.50/udp/19001/adp/1.0.0/p2p/12D3KooWTest", "12D3KooWTest");
+  // May be empty on hosts without dialable LAN ifaces; concrete host still returned when no iface list.
+  if (!concrete.empty()) {
+    EXPECT_NE(concrete.front().find("/udp/19001/adp/1.0.0/p2p/"), std::string::npos);
   }
-  EXPECT_NE(std::find(advertised.begin(), advertised.end(),
-                      "/ip4/203.0.113.44/tcp/18517/p2p/12D3KooWTest"),
-            advertised.end());
+
+  const auto wildcard =
+      pbr::BuildAmpLanAdvertisedAddrs("/ip4/0.0.0.0/udp/19001/adp/1.0.0/p2p/12D3KooWTest", "12D3KooWTest");
+  for (const std::string& ma : wildcard) {
+    EXPECT_EQ(ma.find("/ip4/0.0.0.0/"), std::string::npos);
+    EXPECT_NE(ma.find("/udp/19001/adp/1.0.0/p2p/12D3KooWTest"), std::string::npos);
+  }
 }

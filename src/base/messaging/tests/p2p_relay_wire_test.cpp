@@ -1,19 +1,35 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "base/crypto/CryptoUtil.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
+
+namespace {
+using namespace pbr;
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+} // namespace
 
 TEST(P2pRelayWireTest, RejectsLegacyThreadIdEnvelope) {
   using namespace pbr;
 
-  const nlohmann::json legacy = {{"thread_id", "t1"},
-                                 {"message_id", "m1"},
-                                 {"sender_relay_id", "relay:a"},
-                                 {"body", {{"text", "hi"}}},
-                                 {"timestamp", 1}};
+  const Object legacy = TryParseObject(R"({
+    "thread_id": "t1",
+    "message_id": "m1",
+    "sender_relay_id": "relay:a",
+    "body": {"text": "hi"},
+    "timestamp": 1
+  })").value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 }
 
@@ -84,6 +100,39 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   EXPECT_FALSE(restored.value().recipient_contact_id.has_value());
 }
 
+TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:aliceAccountId";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto wire = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(wire));
+  EXPECT_EQ(wire.value().sender_contact_id, "relay:alice123");
+  EXPECT_EQ(wire.value().recipient_contact_id, "relay:bob456");
+
+  auto blob = Base64Decode(wire.value().blob_b64);
+  ASSERT_TRUE(static_cast<bool>(blob));
+  const std::string serialized(blob->begin(), blob->end());
+  auto app = TryParseObject(serialized);
+  ASSERT_TRUE(app.has_value());
+  EXPECT_EQ(app->getString("sender_contact_id"), std::optional<std::string>("account:aliceAccountId"));
+  EXPECT_EQ(app->getString("sender_relay_id"), std::optional<std::string>("relay:alice123"));
+}
+
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 
@@ -91,6 +140,7 @@ TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
       std::filesystem::temp_directory_path() / "pp_browser_p2p_routing_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";

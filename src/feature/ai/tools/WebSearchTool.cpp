@@ -2,16 +2,18 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 #include "base/net/CurlSsl.h"
 #include "base/runtime/AppVersion.h"
 #include "base/runtime/ProductBranding.h"
 
 #include <curl/curl.h>
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <cstring>
 #include <regex>
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -191,40 +193,49 @@ std::string StripHtmlTags(std::string text) {
   return std::regex_replace(text, ws_re, " ");
 }
 
-nlohmann::json ParseDuckDuckGoInstantAnswer(const nlohmann::json& json) {
-  nlohmann::json results = nlohmann::json::array();
+Value ParseDuckDuckGoInstantAnswer(const Object& json) {
+  std::vector<Value> results;
   const auto push_result = [&results](const std::string& title, const std::string& snippet,
                                       const std::string& url_value) {
     if (title.empty() && snippet.empty()) {
       return;
     }
-    results.push_back({{"title", title}, {"snippet", snippet}, {"url", url_value}});
+    Object result;
+    result.set("title", title);
+    result.set("snippet", snippet);
+    result.set("url", url_value);
+    results.push_back(ObjectValue(std::move(result)));
   };
 
-  if (json.contains("AbstractText") && json["AbstractText"].is_string()) {
-    const std::string abstract_text = json["AbstractText"].get<std::string>();
-    if (!abstract_text.empty()) {
-      push_result(json.value("Heading", ""), abstract_text, json.value("AbstractURL", ""));
-    }
+  if (auto abstract_text = json.getString("AbstractText"); abstract_text && !abstract_text->empty()) {
+    push_result(json.getString("Heading").value_or(""), *abstract_text, json.getString("AbstractURL").value_or(""));
   }
 
-  if (json.contains("RelatedTopics") && json["RelatedTopics"].is_array()) {
-    for (const auto& topic : json["RelatedTopics"]) {
-      if (topic.contains("Text") && topic["Text"].is_string()) {
-        push_result(topic["Text"].get<std::string>(), "", topic.value("FirstURL", ""));
-      } else if (topic.contains("Topics") && topic["Topics"].is_array()) {
-        for (const auto& nested : topic["Topics"]) {
-          push_result(nested.value("Text", ""), "", nested.value("FirstURL", ""));
+  if (const Array* related = json.getArray("RelatedTopics")) {
+    for (const Value& topic_value : related->elements) {
+      const Object* topic = asObject(topic_value);
+      if (!topic) {
+        continue;
+      }
+      if (auto text_value = topic->getString("Text")) {
+        push_result(*text_value, "", topic->getString("FirstURL").value_or(""));
+      } else if (const Array* topics = topic->getArray("Topics")) {
+        for (const Value& nested_value : topics->elements) {
+          const Object* nested = asObject(nested_value);
+          if (!nested) {
+            continue;
+          }
+          push_result(nested->getString("Text").value_or(""), "", nested->getString("FirstURL").value_or(""));
         }
       }
     }
   }
 
-  return results;
+  return ArrayValue(std::move(results));
 }
 
-nlohmann::json ParseDuckDuckGoLiteHtml(const std::string& html) {
-  nlohmann::json results = nlohmann::json::array();
+Value ParseDuckDuckGoLiteHtml(const std::string& html) {
+  std::vector<Value> results;
 
   static const std::regex link_re(
       R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result-link['"][^>]*>([^<]*)</a>)");
@@ -243,14 +254,18 @@ nlohmann::json ParseDuckDuckGoLiteHtml(const std::string& html) {
       snippet = StripHtmlTags((*snippet_it)[1].str());
       ++snippet_it;
     }
-    results.push_back({{"title", title}, {"snippet", snippet}, {"url", url}});
+    Object result;
+    result.set("title", title);
+    result.set("snippet", snippet);
+    result.set("url", url);
+    results.push_back(ObjectValue(std::move(result)));
   }
 
-  return results;
+  return ArrayValue(std::move(results));
 }
 
-nlohmann::json ParseDuckDuckGoHtmlResults(const std::string& html) {
-  nlohmann::json results = nlohmann::json::array();
+Value ParseDuckDuckGoHtmlResults(const std::string& html) {
+  std::vector<Value> results;
 
   static const std::regex link_re(
       R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result__a['"][^>]*>([^<]*)</a>)");
@@ -269,10 +284,14 @@ nlohmann::json ParseDuckDuckGoHtmlResults(const std::string& html) {
       snippet = StripHtmlTags((*snippet_it)[1].str());
       ++snippet_it;
     }
-    results.push_back({{"title", title}, {"snippet", snippet}, {"url", url}});
+    Object result;
+    result.set("title", title);
+    result.set("snippet", snippet);
+    result.set("url", url);
+    results.push_back(ObjectValue(std::move(result)));
   }
 
-  return results;
+  return ArrayValue(std::move(results));
 }
 
 std::string DecodeBasicHtmlEntities(std::string text) {
@@ -310,8 +329,8 @@ std::string ExtractXmlTag(const std::string& xml, const std::string& tag) {
   return DecodeBasicHtmlEntities(xml.substr(content_start, end - content_start));
 }
 
-nlohmann::json ParseGoogleNewsRssXml(const std::string& xml) {
-  nlohmann::json results = nlohmann::json::array();
+Value ParseGoogleNewsRssXml(const std::string& xml) {
+  std::vector<Value> results;
 
   static const std::regex item_re(R"(<item>([\s\S]*?)</item>)");
   auto begin = std::sregex_iterator(xml.begin(), xml.end(), item_re);
@@ -327,10 +346,14 @@ nlohmann::json ParseGoogleNewsRssXml(const std::string& xml) {
     }
 
     std::string snippet = description.empty() ? title : description;
-    results.push_back({{"title", title}, {"snippet", snippet}, {"url", link}});
+    Object result;
+    result.set("title", title);
+    result.set("snippet", snippet);
+    result.set("url", link);
+    results.push_back(ObjectValue(std::move(result)));
   }
 
-  return results;
+  return ArrayValue(std::move(results));
 }
 
 Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
@@ -345,14 +368,18 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
     return body.error();
   }
 
-  nlohmann::json results = ParseGoogleNewsRssXml(*body);
-  if (results.empty()) {
+  Value results = ParseGoogleNewsRssXml(*body);
+  const Array* results_array = asArray(results);
+  if (!results_array || results_array->elements.empty()) {
     return Error("Google News RSS returned no items");
   }
 
-  logging::getLogger("WebSearchTool").info << "web_search (google news rss) returned " << results.size()
-                                           << " result(s)";
-  return nlohmann::json{{"results", results}, {"source", "google_news_rss"}}.dump();
+  logging::getLogger("WebSearchTool").info << "web_search (google news rss) returned "
+                                           << results_array->elements.size() << " result(s)";
+  Object out;
+  out.set("results", results);
+  out.set("source", "google_news_rss");
+  return DumpJson(out);
 }
 
 Roe<std::string> SearchDuckDuckGo(const std::string& query) {
@@ -366,14 +393,19 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
     return body.error();
   }
 
-  auto json = nlohmann::json::parse(*body, nullptr, false);
-  if (json.is_discarded()) {
+  auto json = TryParseObject(*body);
+  if (!json) {
     return Error("Failed to parse DuckDuckGo response");
   }
 
-  nlohmann::json results = ParseDuckDuckGoInstantAnswer(json);
+  Value results = ParseDuckDuckGoInstantAnswer(*json);
 
-  if (results.empty()) {
+  auto results_empty = [](const Value& value) {
+    const Array* arr = asArray(value);
+    return !arr || arr->elements.empty();
+  };
+
+  if (results_empty(results)) {
     logging::getLogger("WebSearchTool").debug << "Instant answer empty; trying DuckDuckGo lite POST";
     const std::string post_body = "q=" + UrlEncode(query);
     auto html = HttpPost("https://lite.duckduckgo.com/lite/", post_body);
@@ -382,7 +414,7 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
     }
   }
 
-  if (results.empty()) {
+  if (results_empty(results)) {
     logging::getLogger("WebSearchTool").debug << "Lite empty; trying DuckDuckGo HTML POST";
     const std::string post_body = "q=" + UrlEncode(query);
     auto html = HttpPost("https://html.duckduckgo.com/html/", post_body);
@@ -391,15 +423,19 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
     }
   }
 
-  if (results.empty()) {
+  if (results_empty(results)) {
     logging::getLogger("WebSearchTool").warning << "No search results for query: " << query;
-    return nlohmann::json{{"results", nlohmann::json::array()},
-                          {"message", "No results found. Try rephrasing the query."}}
-        .dump();
+    Object out;
+    out.set("results", ArrayValue({}));
+    out.set("message", "No results found. Try rephrasing the query.");
+    return DumpJson(out);
   }
 
-  logging::getLogger("WebSearchTool").info << "web_search returned " << results.size() << " result(s)";
-  return nlohmann::json{{"results", results}}.dump();
+  logging::getLogger("WebSearchTool").info << "web_search returned " << asArray(results)->elements.size()
+                                           << " result(s)";
+  Object out;
+  out.set("results", results);
+  return DumpJson(out);
 }
 
 Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& query) {
@@ -409,7 +445,10 @@ Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& que
     return Error("Tavily API key not configured");
   }
 
-  nlohmann::json body = {{"api_key", config.api_key}, {"query", query}, {"max_results", 5}};
+  Object body;
+  body.set("api_key", config.api_key);
+  body.set("query", query);
+  body.set("max_results", static_cast<int64_t>(5));
   std::string response;
   CURL* curl = curl_easy_init();
   if (!curl) {
@@ -419,7 +458,7 @@ Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& que
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  const std::string payload = body.dump();
+  const std::string payload = DumpJson(body);
 
   curl_easy_setopt(curl, CURLOPT_URL, "https://api.tavily.com/search");
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -436,20 +475,30 @@ Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& que
     return Error(std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
-  auto json = nlohmann::json::parse(response, nullptr, false);
-  if (json.is_discarded()) {
+  auto json = TryParseObject(response);
+  if (!json) {
     return Error("Failed to parse Tavily response");
   }
 
-  nlohmann::json results = nlohmann::json::array();
-  for (const auto& item : json.value("results", nlohmann::json::array())) {
-    results.push_back({{"title", item.value("title", "")},
-                       {"snippet", item.value("content", "")},
-                       {"url", item.value("url", "")}});
+  std::vector<Value> results;
+  if (const Array* items = json->getArray("results")) {
+    for (const Value& item_value : items->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
+        continue;
+      }
+      Object result;
+      result.set("title", item->getString("title").value_or(""));
+      result.set("snippet", item->getString("content").value_or(""));
+      result.set("url", item->getString("url").value_or(""));
+      results.push_back(ObjectValue(std::move(result)));
+    }
   }
 
   logging::getLogger("WebSearchTool").info << "web_search (tavily) returned " << results.size() << " result(s)";
-  return nlohmann::json{{"results", results}}.dump();
+  Object out;
+  out.set("results", ArrayValue(std::move(results)));
+  return DumpJson(out);
 }
 
 } // namespace
@@ -461,18 +510,20 @@ ToolDescriptor WebSearchTool::Make(const SearchConfig& config) {
       .description = "Search the web for up-to-date information. Returns numbered result lines "
                      "(title, snippet, url). Use for news, current events, prices, weather, and recent facts. "
                      "Call again with a refined query if the first results are incomplete or off-topic.",
-      .parameters = {{"type", "object"},
-                     {"properties", {{"query", {{"type", "string"}, {"description", "Concise search query"}}}}},
-                     {"required", nlohmann::json::array({"query"})}},
+      .parameters = TryParseObject(R"({
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Concise search query"}},
+        "required": ["query"]
+      })").value_or(Object{}),
   };
-  tool.execute = [config](const nlohmann::json& arguments) -> Roe<std::string> {
+  tool.execute = [config](const Object& arguments) -> Roe<std::string> {
     return Search(config, arguments);
   };
   return tool;
 }
 
-Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const nlohmann::json& arguments) {
-  const std::string query = arguments.value("query", "");
+Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const Object& arguments) {
+  const std::string query = arguments.getString("query").value_or(std::string{});
   if (query.empty()) {
     return Error("web_search requires a query");
   }
@@ -492,23 +543,23 @@ Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const nlohman
   return SearchDuckDuckGo(normalized_query);
 }
 
-nlohmann::json WebSearchTool::ParseDuckDuckGoInstantAnswerJson(const std::string& json_text) {
-  auto json = nlohmann::json::parse(json_text, nullptr, false);
-  if (json.is_discarded()) {
-    return nlohmann::json::array();
+Value WebSearchTool::ParseDuckDuckGoInstantAnswerJson(const std::string& json_text) {
+  auto json = TryParseObject(json_text);
+  if (!json) {
+    return ArrayValue({});
   }
-  return ParseDuckDuckGoInstantAnswer(json);
+  return ParseDuckDuckGoInstantAnswer(*json);
 }
 
-nlohmann::json WebSearchTool::ParseDuckDuckGoLiteHtmlResults(const std::string& html) {
+Value WebSearchTool::ParseDuckDuckGoLiteHtmlResults(const std::string& html) {
   return ParseDuckDuckGoLiteHtml(html);
 }
 
-nlohmann::json WebSearchTool::ParseDuckDuckGoHtmlPageResults(const std::string& html) {
+Value WebSearchTool::ParseDuckDuckGoHtmlPageResults(const std::string& html) {
   return ParseDuckDuckGoHtmlResults(html);
 }
 
-nlohmann::json WebSearchTool::ParseGoogleNewsRssItems(const std::string& xml) {
+Value WebSearchTool::ParseGoogleNewsRssItems(const std::string& xml) {
   return ParseGoogleNewsRssXml(xml);
 }
 

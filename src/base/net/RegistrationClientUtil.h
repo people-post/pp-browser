@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -27,12 +28,14 @@ void MarkRegistrationExpired(LocalIdentity& identity);
 
 Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
                                                        const std::string& nickname,
-                                                       const std::vector<std::string>& multiaddrs = {});
+                                                       const std::vector<std::string>& multiaddrs = {},
+                                                       const RegistrationPublishOpts& publish = {});
 
 /** Finish registration + Identity.Update with ApplyRegistrationResult. Returns applied identity. */
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
-                                                const std::vector<std::string>& multiaddrs = {});
+                                                const std::vector<std::string>& multiaddrs = {},
+                                                const RegistrationPublishOpts& publish = {});
 
 /**
  * If ShouldRenew and auto_renew_enabled, finish+persist registration.

@@ -76,7 +76,7 @@ CI refuses tags whose commit is not on `origin/main`.
 
 [`release.yml`](../.github/workflows/release.yml):
 
-- macOS (`macos-14`): `Frame.app`, optional sign/notarize, `.dmg`
+- macOS (`macos-14`): `PP.app`, optional sign/notarize, `.dmg`
 - Windows (`windows-2022`): NSIS `.exe`
 - Android (`ubuntu-24.04`): release APK
 
@@ -99,7 +99,7 @@ Optional dogfood: Actions → **release-pp-node** → **Run workflow** (builds a
 
 | Platform | File | Contents |
 |----------|------|----------|
-| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop `Frame.app` |
+| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop `PP.app` |
 | Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer |
 | Android | `pp-browser-<version>-android.apk` | Universal APK |
 
@@ -116,11 +116,11 @@ docker pull ghcr.io/people-post/pp-node:0.1.0
 docker run --rm -it \
   --cap-add=NET_BIND_SERVICE \
   -e PP_BROWSER_PIN=... \
-  -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443 \
+  -e PP_NODE_AMP_UDP_PORT=443 \
   -e PP_NODE_DATA_DIR=/var/lib/pp-node \
   -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
   -v pp-node-data:/var/lib/pp-node \
-  -p 443:443 \
+  -p 443:443/udp \
   -p 18518:18518 \
   ghcr.io/people-post/pp-node:0.1.0
 ```
@@ -135,7 +135,7 @@ See **[MACOS_SIGNING.md](MACOS_SIGNING.md)**.
 
 ### macOS
 
-1. Open the `.dmg` and drag **Frame** to Applications.
+1. Open the `.dmg` and drag **PP** to Applications.
 2. First launch may need Right-click → **Open**, or allow under **Privacy & Security**.
 
 ### Windows

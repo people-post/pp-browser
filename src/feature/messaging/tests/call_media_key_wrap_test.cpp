@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include "common/PbrCompat.h"
 
 namespace {
 

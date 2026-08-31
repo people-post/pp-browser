@@ -5,6 +5,32 @@
     </div>
 
     <div class="me-profile-card stack">
+      <div class="me-profile-avatar-row row">
+        <div class="me-profile-avatar-frame" data-event-click="pick_profile_icon()"
+             data-class-me-profile-avatar-frame--disabled="profile_icon_uploading"
+             data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+             data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+             data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+             data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+             data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+             data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+             data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+             data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+          <img class="me-profile-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+          <p class="avatar-letter" data-if="!profile_has_icon" data-rml="profile_avatar_letter"></p>
+        </div>
+        <button class="btn btn-secondary me-profile-avatar-btn" type="button"
+                data-event-click="pick_profile_icon()"
+                data-attrif-disabled="profile_icon_uploading">
+          {{i18n:settings.profile.change_photo}}
+        </button>
+        <button class="btn btn-secondary me-profile-avatar-btn" type="button"
+                data-if="profile_show_clear_icon"
+                data-event-click="clear_profile_icon()"
+                data-attrif-disabled="profile_icon_uploading">
+          {{i18n:settings.profile.remove_photo}}
+        </button>
+      </div>
       <label class="settings-field">
         <span class="settings-label">{{i18n:settings.nickname}}</span>
         <input class="field" type="text" data-value="profile_nickname" lang=""
@@ -28,6 +54,16 @@
                 data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
       </div>
       <p class="text muted" data-if="status != ''" data-rml="status"></p>
+    </div>
+
+    <div class="settings-list" data-if="support_visible">
+      <button class="settings-row" type="button" data-event-click="open_support_chat()">
+        <div class="settings-row-text stack">
+          <p class="settings-row-title" data-rml="support_display_name"></p>
+          <p class="settings-row-subtitle text muted" data-rml="support_subtitle"></p>
+        </div>
+        <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
+      </button>
     </div>
 
     <p class="settings-section-title me-preferences-label">{{i18n:settings.preferences}}</p>

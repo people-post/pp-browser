@@ -23,6 +23,7 @@ namespace libp2p::crypto {
       UNSPECIFIED = 100,
       RSA = 0,
       Ed25519 = 1,
+      /// Wire/interop only; crypto ops unsupported (libsecp256k1 removed).
       Secp256k1 = 2,
       ECDSA = 3,
       /// Provisional pp-browser wire code until multiformats assigns (P003).

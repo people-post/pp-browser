@@ -30,6 +30,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ShellBottomSheetGesture.cpp
     ShellCallChromeGesture.cpp
     ShellFeedback.cpp
+    BlobQuotaRecoveryFlow.cpp
     ShellHost.cpp
     ShellInterruption.cpp
     ShellLayout.cpp
@@ -39,8 +40,7 @@ pp_browser_add_feature_library(pp_feature_ui
     pp_feature_settings
     pp_feature_messaging
     pp_base_render
-    RmlUi::Core
-    nlohmann_json::nlohmann_json)
+    RmlUi::Core)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

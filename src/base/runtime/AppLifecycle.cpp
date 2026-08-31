@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -8,6 +8,7 @@
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
+#include "base/net/BlobQuotaUtil.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/IdentityTypes.h"
 #include "base/people/ProfileIdentityView.h"
@@ -26,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -117,6 +119,7 @@ public:
   Roe<void> LockPublicThreadToThisDevice(const std::string& thread_id);
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id);
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
+  void SetSupportAccountId(std::string account_id);
   void RegisterContactDirectEndpoints(const Contact& contact);
   void RegisterPeerSigningKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                               const std::string& source);
@@ -167,6 +170,19 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> ClearProfileIcon();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
+  Roe<void> FreeOldestRelayBlobSlot();
+  void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  void DrainPendingAttachmentMedia();
+  Roe<void> ClearDownloadedAttachments();
+  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  void EnsureThreadAttachments(const std::string& thread_id);
+  void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
+                                                           const std::string& message_id);
+  bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   Roe<void> RotateBriefLlmKey();
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);

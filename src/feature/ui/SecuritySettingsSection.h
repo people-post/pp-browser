@@ -4,6 +4,7 @@
 #include "feature/settings/SettingsSectionHandler.h"
 
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

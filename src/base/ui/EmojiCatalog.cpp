@@ -1,6 +1,6 @@
 #include "base/ui/EmojiCatalog.h"
 
-#include "common/EmojiKey.h"
+#include "base/messaging/EmojiKey.h"
 
 #include <algorithm>
 

@@ -7,6 +7,7 @@
 #include "common/Utilities.h"
 
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

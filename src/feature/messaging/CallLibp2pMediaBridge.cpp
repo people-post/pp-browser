@@ -2,12 +2,14 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/SfuAttachFanout.h"
+#include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -37,7 +39,7 @@ std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
 
 CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
-                                             CallMediaDirectService& direct, IDialRegistry* dial,
+                                             ICallMediaTransport& direct, IDialRegistry* dial,
                                              ICircuitHopReach* circuit_reach)
     : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial),
       circuit_reach_(circuit_reach) {
@@ -119,49 +121,8 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
         CommitDirectConnected(call_id);
       });
     };
-    cbs.on_audio = [this, call_id](const std::vector<uint8_t>& opus) {
-      AppRuntime::PostUI([this, call_id, opus]() {
-        if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
-          return;
-        }
-        // SoftMigrate → media_relay: stop feeding 1:1 into the SFU mixer (stream_id=0/1 zombies).
-        if (host_.P2pIsSfuAttached()) {
-          return;
-        }
-        uint32_t remote_stream = inbound_remote_stream_.load(std::memory_order_acquire);
-        if (remote_stream == 0) {
-          std::string account = media_peer_identity_;
-          const std::string deferred = inbound_deferred_peer_id_;
-          if (account.rfind("account:", 0) != 0 && !deferred.empty()) {
-            if (auto mapped = host_.P2pRelayIdentityForLibp2pPeerId(call_id, deferred);
-                mapped && mapped->has_value() && !mapped->value().empty()) {
-              account = mapped->value();
-              media_peer_identity_ = account;
-            }
-          }
-          if (account.rfind("account:", 0) == 0) {
-            remote_stream = PublisherStreamIdForIdentity(account);
-            inbound_remote_stream_.store(remote_stream, std::memory_order_release);
-            log().info << "Inbound call-media rebound stream_id=" << remote_stream
-                       << " account=" << account << " call_id=" << call_id;
-          } else {
-            // Still unknown — drop rather than PeerId-hash zombie (one-way audio until mapping).
-            const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (n == 1 || (n % 50) == 0) {
-              log().warning << "Inbound call-media drop: PeerId→relay unknown"
-                            << " peer_id=" << (deferred.empty() ? "(empty)" : deferred)
-                            << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
-                            << " call_id=" << call_id << " drops=" << n;
-            }
-            return;
-          }
-        }
-        CallMediaEngine::SfuPacket pkt;
-        pkt.stream_id = remote_stream;
-        pkt.channel_id = 0;
-        pkt.payload = opus;
-        media_.OnSfuPacket(pkt);
-      });
+    cbs.on_media = [this, call_id](uint8_t channel, const std::vector<uint8_t>& payload) {
+      DeliverInboundDirectMedia(call_id, channel, payload);
     };
     cbs.on_failed = [this, call_id](const std::string& reason) {
       AppRuntime::PostUI([this, call_id, reason]() {
@@ -222,6 +183,7 @@ void CallLibp2pMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
 
+
 void CallLibp2pMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (call_id.empty()) {
     return;
@@ -236,6 +198,50 @@ void CallLibp2pMediaBridge::CommitDirectConnected(const std::string& call_id) {
     lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
   }
   host_.P2pNotifyRingChanged();
+}
+
+void CallLibp2pMediaBridge::DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
+                                                      const std::vector<uint8_t>& payload) {
+  AppRuntime::PostUI([this, call_id, channel, payload]() {
+    if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
+      return;
+    }
+    if (host_.P2pIsSfuAttached()) {
+      return;
+    }
+    uint32_t remote_stream = inbound_remote_stream_.load(std::memory_order_acquire);
+    if (remote_stream == 0) {
+      std::string account = media_peer_identity_;
+      const std::string deferred = inbound_deferred_peer_id_;
+      if (account.rfind("account:", 0) != 0 && !deferred.empty()) {
+        if (auto mapped = host_.P2pRelayIdentityForLibp2pPeerId(call_id, deferred);
+            mapped && mapped->has_value() && !mapped->value().empty()) {
+          account = mapped->value();
+          media_peer_identity_ = account;
+        }
+      }
+      if (account.rfind("account:", 0) == 0) {
+        remote_stream = PublisherStreamIdForIdentity(account);
+        inbound_remote_stream_.store(remote_stream, std::memory_order_release);
+        log().info << "Inbound call-media rebound stream_id=" << remote_stream
+                   << " account=" << account << " call_id=" << call_id;
+      } else {
+        const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (n == 1 || (n % 50) == 0) {
+          log().warning << "Inbound call-media drop: PeerId→relay unknown"
+                        << " peer_id=" << (deferred.empty() ? "(empty)" : deferred)
+                        << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
+                        << " call_id=" << call_id << " drops=" << n;
+        }
+        return;
+      }
+    }
+    CallMediaEngine::SfuPacket pkt;
+    pkt.stream_id = remote_stream;
+    pkt.channel_id = channel;
+    pkt.payload = payload;
+    media_.OnSfuPacket(pkt);
+  });
 }
 
 bool CallLibp2pMediaBridge::IsLibp2pConnectFailed() const {
@@ -506,15 +512,16 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   const std::string captured_peer = peer_identity;
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
   if (auto started = media_.StartSfu(call_id, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
-        if (pkt.channel_id != 0) {
+        if (pkt.channel_id > kCallMediaChannelVideoLo) {
           return;
         }
         // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
         if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
           return;
         }
-        const uint32_t seq = audio_seq_.fetch_add(1) + 1;
-        (void)direct_.SendAudio(pkt.payload, seq, pkt.mark);
+        const uint32_t seq =
+            pkt.channel_id == 0 ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+        (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
       });
       !started) {
     return started;
@@ -546,9 +553,9 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       CommitDirectConnected(media_call_id_);
     });
   };
-  cbs.on_audio = [this, captured_call_id, remote_stream = PublisherStreamIdForIdentity(captured_peer)](
-                     const std::vector<uint8_t>& opus) {
-    AppRuntime::PostUI([this, captured_call_id, remote_stream, opus]() {
+  cbs.on_media = [this, captured_call_id, remote_stream = PublisherStreamIdForIdentity(captured_peer)](
+                     uint8_t channel, const std::vector<uint8_t>& payload) {
+    AppRuntime::PostUI([this, captured_call_id, remote_stream, channel, payload]() {
       if (!media_.IsActive() || media_.ActiveCallId() != captured_call_id) {
         return;
       }
@@ -557,8 +564,8 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       }
       CallMediaEngine::SfuPacket pkt;
       pkt.stream_id = remote_stream;
-      pkt.channel_id = 0;
-      pkt.payload = opus;
+      pkt.channel_id = channel;
+      pkt.payload = payload;
       media_.OnSfuPacket(pkt);
     });
   };
@@ -650,7 +657,9 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
           log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
           connect_worker_inflight_.store(false);
           // Inbound on_connected may have run before StartSfu — re-commit once capture is live.
-          AppRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
+          AppRuntime::PostUI([this, call_id = params.call_id]() {
+                CommitDirectConnected(call_id);
+          });
           return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -765,7 +774,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
           // Belt-and-suspenders if OnMediaKeyReady raced / was missed.
           if (pending_answerer_call_id_ == call_id) {
-            if (auto key = LoadActiveMediaKey(call_id); key) {
+            if (auto deferred_key = LoadActiveMediaKey(call_id); deferred_key) {
               log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
               OnMediaKeyReady(call_id);
               return;

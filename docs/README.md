@@ -22,6 +22,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
 | [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | `app → feature → base → common` |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
+| [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
 | [architecture/UI_FUNCTIONAL_BOUNDARY.md](architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state / config / actions / events; app-owned presenters |
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
@@ -47,6 +48,9 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |
 | [contracts/SERVICE_ENDPOINTS.md](contracts/SERVICE_ENDPOINTS.md) | HTTP relay / directory / registration | `/v1/…` surface |
+| [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
+| [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
+| [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3); ownership hierarchy [A027] | `channel_frame_version`, `protocol_id` |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 
@@ -57,7 +61,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ui/UI_DESIGN_SYSTEM.md](ui/UI_DESIGN_SYSTEM.md) | Tokens, components, theme |
-| [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (Frame), icon rationale, asset paths |
+| [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (PP), icon asset paths, naming rule |
 | [ui/WINDOW_SHELL.md](ui/WINDOW_SHELL.md) | Shell layout |
 | [ui/shell_layout_review.html](ui/shell_layout_review.html) | Static HTML mock — expanded vs compact pages (team UI review) |
 | [ui/WORKING_SET_PANEL.md](ui/WORKING_SET_PANEL.md) | Auxiliary pane |
@@ -73,8 +77,9 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
 | [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Tiered testing; `N-*` / `B-*` purposes; inventory; CI ladder |
 | [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
-| [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize Frame.app |
+| [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize PP.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |
+| [ops/APP_STORE_EXPORT_COMPLIANCE.md](ops/APP_STORE_EXPORT_COMPLIANCE.md) | App Store Connect encryption questionnaire + crypto inventory |
 | [ops/CONFIGURATION.md](ops/CONFIGURATION.md) | Config resolution, Me tab, presets, env vars |
 
 ---

@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>超级app：私密沟通+新中国联邦叙事的AI</title>
+    <style>
+      :root {
+        --fg: #111;
+        --muted: #555;
+        --bg: #fff;
+        --border: #e6e6e6;
+        --accent: #0b57d0;
+        --soft: #f5f8fc;
+        --teal: #1a7f7a;
+        --sky: #3a8fd0;
+        --warm: #c47a2c;
+        --violet: #6b5cad;
+        --green: #2f8f4e;
+      }
+      html, body { background: var(--bg); color: var(--fg); }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+        line-height: 1.7;
+        margin: 0;
+      }
+      main { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; }
+      header { border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 22px; }
+      h1 { font-size: 24px; margin: 0 0 10px; line-height: 1.35; }
+      .meta { color: var(--muted); font-size: 13px; }
+      h2 { font-size: 18px; margin: 26px 0 10px; }
+      h3 { font-size: 15px; margin: 18px 0 8px; }
+      p { margin: 0 0 10px; }
+      ul { margin: 8px 0 12px 20px; }
+      li { margin: 6px 0; }
+      .callout {
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--accent);
+        padding: 12px 14px;
+        margin: 14px 0;
+        background: #fbfcff;
+      }
+      table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+      th, td { border: 1px solid var(--border); padding: 8px 10px; vertical-align: top; }
+      th { background: #fafafa; text-align: left; }
+      .table-note { color: var(--muted); font-size: 13px; margin-top: 6px; }
+      .small { color: var(--muted); font-size: 13px; }
+      .hr { height: 1px; background: var(--border); margin: 22px 0; }
+
+      /* Component overview chart */
+      .chart-wrap {
+        margin: 16px 0 8px;
+        padding: 16px 14px 12px;
+        border: 1px solid var(--border);
+        background: var(--soft);
+        border-radius: 6px;
+      }
+      .chart-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 12px;
+        text-align: center;
+      }
+      .chart-user {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 10px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 8px 18px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1.5px solid var(--accent);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .arrow-down {
+        text-align: center;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.2;
+        margin: 2px 0 10px;
+      }
+      .modules {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+      .mod {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-top-width: 3px;
+        border-radius: 4px;
+        padding: 10px 8px;
+        text-align: center;
+        font-size: 12.5px;
+        line-height: 1.45;
+        min-height: 72px;
+      }
+      .mod strong { display: block; font-size: 13.5px; margin-bottom: 4px; }
+      .mod-a { border-top-color: var(--teal); }
+      .mod-b { border-top-color: var(--sky); }
+      .mod-c { border-top-color: var(--violet); }
+      .mod-d { border-top-color: var(--warm); }
+      .mod-e { border-top-color: var(--green); }
+      .chart-base {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 12.5px;
+        color: var(--muted);
+        padding: 8px;
+        background: #fff;
+        border: 1px dashed var(--border);
+        border-radius: 4px;
+      }
+      .flow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 14px 0;
+        font-size: 13.5px;
+      }
+      .flow .box {
+        background: #fff;
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        border-radius: 4px;
+      }
+      .flow .sep { color: var(--muted); }
+
+      @media (max-width: 720px) {
+        .modules { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media print {
+        main { max-width: 100%; padding: 14px 14px 24px; }
+        h2 { margin-top: 16px; }
+        .chart-wrap, .callout, table, .mod { break-inside: avoid; page-break-inside: avoid; }
+        table { font-size: 12px; }
+        th, td { padding: 5px 6px; }
+        body { font-size: 12.5px; line-height: 1.55; }
+        h1 { font-size: 20px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>超级app：私密沟通+新中国联邦叙事的AI</h1>
+        <p class="meta">产品设计概览 · 面向非技术读者 · 约 2–3 页</p>
+      </header>
+
+      <section>
+        <h2>一、一句话先说清楚</h2>
+        <div class="callout">
+          这是一款把<strong>私密沟通</strong>、<strong>点对点协作网络</strong>与<strong>原生 AI 助手</strong>合在同一壳层里的超级应用（产品名 <strong>PP</strong>）。
+          它不把用户锁在某一家中心平台的“大厅”里，而是让人与人、设备与设备在需要时直接相连；
+          AI 则像常驻向导，帮人浏览、办事、管理本地资产，并参与网络激励——目标是<strong>可自管、可协作、不过度依赖单一巨头</strong>的数字生活。
+        </div>
+        <ul>
+          <li><strong>私密沟通</strong>：聊天与通话尽量端到端，内容以本地为真，中心服务退居“递送与发现”辅助角色。</li>
+          <li><strong>节点互助</strong>：设备可自愿提供转发与容量——近处优先、远处备用、规则透明。</li>
+          <li><strong>AI 原生</strong>：界面以对话与意图为中心，而不是堆满菜单的传统浏览器或社交 App。</li>
+        </ul>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>二、整体组件一览（结构图）</h2>
+        <p>
+          对普通用户而言，不必关心底层协议。可以把整款应用理解成一层“壳”，上面挂着五个互相配合的能力模块，
+          底下再由<strong>本地数据保险箱</strong>与<strong>点对点网络</strong>托住。
+        </p>
+
+        <div class="chart-wrap">
+          <p class="chart-title">图 1 · 超级应用能力结构（高层次）</p>
+          <div class="chart-user"><span class="pill">你（对话 / 意图）</span></div>
+          <div class="arrow-down">↓</div>
+          <div class="modules">
+            <div class="mod mod-a">
+              <strong>私密沟通</strong>
+              去中心聊天<br />音视频通话
+            </div>
+            <div class="mod mod-b">
+              <strong>AI 原生壳</strong>
+              意图理解<br />为你生成界面
+            </div>
+            <div class="mod mod-c">
+              <strong>点对点协作</strong>
+              就近转发<br />节点互助
+            </div>
+            <div class="mod mod-d">
+              <strong>本地钱包</strong>
+              AI 协助管理<br />结算与凭证
+            </div>
+            <div class="mod mod-e">
+              <strong>激励与规则</strong>
+              定价调节稀缺<br />奖励贡献者
+            </div>
+          </div>
+          <div class="chart-base">
+            底座：设备本地加密存储 · 点对点直连（能直连则直连）· 必要时经可信中继递送
+          </div>
+        </div>
+        <p class="table-note">本图只表达“谁服务谁”，不涉及具体技术栈。五个模块对用户是一体体验：同一窗口、同一身份、同一套信誉与积分口径。</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>用户感知到什么</th>
+              <th>设计意图（一句话）</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>私密沟通</td>
+              <td>聊天、来电、留言、通讯录</td>
+              <td>把“说话”从平台大厅拿回私人空间</td>
+            </tr>
+            <tr>
+              <td>AI 原生壳</td>
+              <td>用自然语言办事、看内容</td>
+              <td>减少菜单；让网络“为你渲染”</td>
+            </tr>
+            <tr>
+              <td>点对点协作</td>
+              <td>通话更稳、离线也能送达</td>
+              <td>熟人与节点互助，而不是只靠一家机房</td>
+            </tr>
+            <tr>
+              <td>本地钱包</td>
+              <td>余额、支付确认、凭证</td>
+              <td>钥匙留在本地，AI 只协助、不代扣</td>
+            </tr>
+            <tr>
+              <td>激励与规则</td>
+              <td>开通会话费用、中继报价</td>
+              <td>用价格调节滥用与拥堵，奖励真实贡献</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>三、去中心化聊天与通话</h2>
+        <p>
+          传统即时通讯把所有消息与通话信令都汇入运营商或平台中心。本产品的取舍不同：
+          <strong>对话内容以你设备上的记录为准</strong>；网络侧优先尝试设备之间直接相连；
+          当对方不在线或网络不通时，才借助中继做“投递箱”式的暂存与转发。
+        </p>
+
+        <div class="flow">
+          <span class="box">你发起聊天 / 通话</span>
+          <span class="sep">→</span>
+          <span class="box">能直连？直达对方</span>
+          <span class="sep">→</span>
+          <span class="box">不能？经互助节点或服务中继</span>
+          <span class="sep">→</span>
+          <span class="box">对方设备解密阅读 / 接听</span>
+        </div>
+
+        <h3>1）聊天：私人会话，本地为真</h3>
+        <ul>
+          <li><strong>端到端私密</strong>：对话面向联系人加密，中继只负责递送，不“替你看懂”内容。</li>
+          <li><strong>本地记忆</strong>：历史记录主要保存在你的设备档案中；换机、多设备同步按账户策略扩展，而不是把人生聊天史永久托管给单一云厂商。</li>
+          <li><strong>与 AI 同窗但不混流</strong>：你可以在同一壳层里问 AI，但助手回复默认留在本地会话，不会误当成发给对方的消息。</li>
+        </ul>
+
+        <h3>2）通话：直连优先，就近接力</h3>
+        <ul>
+          <li><strong>一对一音视频</strong>走点对点媒体通道；局域网或可达网络上体验接近“面对面连线”。</li>
+          <li>当路径受阻时，可由<strong>联系人节点、家庭节点或组织种子节点</strong>提供媒体接力——像请邻居临时帮传一程，而不是默认把所有通话塞进一家全球 SFU（选择性转发单元）农场。</li>
+          <li>接力是<strong>按需、可报价、可拒绝</strong>的：先保证熟人圈与志愿节点的可用性，再逐步放开更公开的容量市场。</li>
+        </ul>
+
+        <div class="callout">
+          <strong>读者可记住的比喻</strong>：聊天像“加密信件 + 自家信箱”；通话像“尽量直拨，必要时请邻居帮忙转一声”。
+          平台可以帮忙找地址、暂存未送达的信，但不应成为唯一能打开信封的人。
+        </div>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>四、AI 原生浏览器（壳层）</h2>
+        <p>
+          产品标语可概括为：<em>网络，为你而渲染。</em>
+          这里的“浏览器”不是传统地址栏 + 网页标签的翻版，而是一个<strong>以 AI 为中心的交互壳</strong>：
+          你用意图说话，系统再把结果组织成可读、可点的界面。
+        </p>
+        <ul>
+          <li><strong>对话即操作台</strong>：找人、读内容、发起通话、调整设置，都可以先说出来，由助手规划再请你确认。</li>
+          <li><strong>界面可生成、可约束</strong>：助手可以拼出适合当前任务的面板与按钮，但仍遵守统一的视觉与安全边界——避免“随便画出一个危险按钮”。</li>
+          <li><strong>人机边界清晰</strong>：建议、确认、代执行、自主运行分档；涉及付费、外发消息、访问通讯录等敏感动作，默认需要你点头。</li>
+          <li><strong>同一壳层贯通多域</strong>：人、内容、应用、设备、身份都可被同一套意图模型触达——长期目标是“对任何事物都能说话办事”，而不是再装十个互不相通的小工具。</li>
+        </ul>
+        <p>
+          在这一设计里，AI 不是替平台审查所有人的总管，而是<strong>每个人设备上的私人助手与向导</strong>：
+          帮你理解规则、整理协作机会、把复杂网络翻译成日常语言——控制权仍在用户与其本地档案一侧。
+        </p>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>五、本地 AI 管理的钱包</h2>
+        <p>
+          点对点协作与稀缺资源（例如通话接力带宽）需要结算语言。产品把<strong>钱包放在本地</strong>，由 AI 协助管理，而不是把私钥交给云端托管方“代管一切”。
+        </p>
+        <ul>
+          <li><strong>钥匙在设备侧</strong>：账户凭证与支付材料以本地保险箱思路保管；可用 PIN 等门禁保护静态数据。云端可以协助目录与发现，但不等于持有你的支付权。</li>
+          <li><strong>AI 是管家，不是主人</strong>：助手可汇总余额、解释一笔报价为什么出现、提醒你即将超额，但实际扣费仍走明确确认（尤其在支付通道尚未完全打通的阶段，界面会诚实禁用“去支付”，避免假扣款）。</li>
+          <li><strong>统一积分口径</strong>：网络内先用统一的信用单位（展示名可为“积分 / Credits”）计量开通会话门槛与中继报价；日后可与链上结算衔接，而不强迫用户一开始就理解区块链术语。</li>
+          <li><strong>身份与钱包分开理解</strong>：能拨号的通信身份 ≠ 链上钱包地址；后者更适合用于检索、背书与结算锚点，避免“一个地址既打电话又当银行卡”的混用风险。</li>
+        </ul>
+        <p class="small">
+          现阶段重点是把“该收费时收费、该志愿时免费”的规则与界面门闩做对；完整支付轨道可分期上线，但用户心智应提前一致：本地持钥、AI 协助、确认后才动账。
+        </p>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>六、用定价模型调节生态、奖励参与者</h2>
+        <p>
+          去中心网络最怕两件事：被滥用刷爆，以及没人愿意贡献带宽与在线时间。
+          本产品的立场很明确：<strong>定价首先是调节器，不是以“赚最多钱”为成功标准</strong>。
+          价格用来分配稀缺、约束陌生人风险，并让真实贡献者得到回报。
+        </p>
+
+        <h3>1）两类价格，两种问题</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>机制</th>
+              <th>解决什么</th>
+              <th>用户侧感受</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>开通门槛（发起聊天 / 通话）</td>
+              <td>防骚扰、防刷开会话</td>
+              <td>对陌生人可能要先出价；熟人可设为零或豁免</td>
+            </tr>
+            <tr>
+              <td>中继 / 媒体接力报价</td>
+              <td>调节带宽与算力稀缺</td>
+              <td>志愿节点可免费；繁忙或公开节点可报价，你确认后再用</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="table-note">本表分类旨在说明：开通费管“人际关系入口”，接力费管“网络物理容量”——二者共用积分语言，但产品逻辑分开。</p>
+
+        <h3>2）谁得到奖励</h3>
+        <ul>
+          <li><strong>提供在线节点的人</strong>：开放部分能力（例如媒体接力）并被他人选用时，按报价获得积分或结算收益。</li>
+          <li><strong>志愿贡献者</strong>：费率可为零——社区信誉与互助本身值得鼓励；付费档位用于高峰与陌生人流量，避免志愿节点被耗尽。</li>
+          <li><strong>长期治理方向</strong>：用保证金、回执、防倾销与防垄断等规则，避免少数大节点靠低价掠夺生态——目标是<strong>可持续的网络供给</strong>，而不是新的中心化矿场。</li>
+        </ul>
+
+        <h3>3）规则如何落到日常</h3>
+        <p>
+          个人设备、家庭节点与组织种子在共享协议下协作：近处优先、圈层清晰、规则可讲清楚。
+          定价与奖励让这套设计落到日常——贡献带宽的人被看见、被补偿；滥发请求的人付出代价；
+          AI 则帮助普通人读懂报价与规则，而不要求人人成为运维专家。
+        </p>
+      </section>
+
+      <div class="hr"></div>
+
+      <section>
+        <h2>七、小结</h2>
+        <ol>
+          <li><strong>沟通回到私人侧</strong>——聊天与通话以本地与直连为优先，中心只做必要的递送与发现。</li>
+          <li><strong>AI 是壳层与向导</strong>——用意图驱动浏览与办事，钥匙与确认权仍在你手里。</li>
+          <li><strong>生态靠规则与激励运转</strong>——定价调节稀缺与滥用，奖励真正提供容量与在线服务的参与者。</li>
+        </ol>
+        <p class="small" style="margin-top:16px;">
+          本文为高层次产品设计说明，刻意省略协议名与实现细节。能力上线节奏分阶段推进；涉及支付的路径以实际可用通道为准，界面会区分“可志愿接受”与“暂不可支付”。
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,7 +1,8 @@
 #include "base/p2p/MediaRelayFrames.h"
-#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/MediaRelayTypes.h"
 
 #include <cstring>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

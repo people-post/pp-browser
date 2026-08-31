@@ -21,20 +21,20 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallStack.h"
+#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "base/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "base/net/BlobClient.h"
+#include "base/net/BlobQuotaUtil.h"
+#include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/DialBackService.h"
-#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/CircuitRelayTypes.h"
 #include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/MediaRelayService.h"
 #include "base/p2p/Reachability.h"
 #include "base/p2p/ReachabilityService.h"
 #include "base/p2p/MeshHost.h"
-#include "base/p2p/NodeRuntime.h"
-#include "base/p2p/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
 
 #include <cstdint>
@@ -43,6 +43,7 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -59,10 +60,9 @@ class SqlitePskSessionStore;
  * Ownership planes:
  * - **MessagingCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
- * - **MeshHost (`mesh_`):** shared with headless `pp-node` — NodeRuntime + dial-back +
- *   circuit/media relay + reachability (`base/p2p/MeshHost`).
- * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, libp2p media bridge,
- *   CallMediaDirect, dial/hop helpers.
+ * - **MeshHost (`mesh_`):** shared with headless `pp-node` — Amp stack + L4 + reachability.
+ * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, Amp media bridge,
+ *   dial/hop helpers.
  *
  * UI/tools talk through MessagingFacade / CallUiBackend / ports — not Hub accessors.
  * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
@@ -88,12 +88,14 @@ public:
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
 
-  /** Inbound group-invite policy projected from ProfilePreferences. */
+  /** Inbound group-invite + attachment download policy projected from ProfilePreferences. */
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
+    AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy;
+      return group_invite_policy == other.group_invite_policy &&
+             attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
   };
@@ -123,7 +125,7 @@ public:
 
   /**
    * Abort in-flight call-media Connect before joining the worker pool / destroying the hub.
-   * Safe to call multiple times; no-op if libp2p media is not up.
+   * Safe to call multiple times; no-op if media is not up.
    */
   void AbortCallMediaForShutdown();
 
@@ -132,10 +134,10 @@ public:
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsService& secrets);
 
-  /** libp2p / P2P stack ready after profile unlock + identity load. */
+  /** Amp / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
 
-  /** Requires ProfileSecretsService unlocked; loads identity and starts libp2p. */
+  /** Requires ProfileSecretsService unlocked; loads identity and starts Amp mesh. */
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
@@ -158,14 +160,12 @@ public:
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
+  IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
-  // Thin forward for internal call wiring; mesh UX should use Mesh()->Host().
-  Libp2pHost* Libp2p();
-  PeerSessionManager* Sessions() const;
-  /** Last libp2p start failure (empty if ok). For Network settings UX. */
+  /** Last mesh start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
   /** Desktop Node "Help the network" posture (node_enabled → Libp2pRole::Node). */
@@ -175,6 +175,20 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  Roe<void> UploadProfileIconFromPath(const std::string& path);
+  Roe<void> ClearProfileIcon();
+  Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery();
+  Roe<void> FreeOldestRelayBlobSlot();
+  void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
+  void DrainPendingAttachmentMedia();
+  Roe<void> ClearDownloadedAttachments();
+  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  AttachmentDownloadService& Attachments();
+  std::string ContactIconLocalPath(const Contact& contact);
+  std::string IdentityIconLocalPath(const std::string& identity);
+  void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
+  void EnsureContactIconCached(const Contact& contact);
+  void SetOnPeerIconsChanged(std::function<void()> callback);
   Roe<void> RotateBriefLlmKey();
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
@@ -187,28 +201,21 @@ public:
   void TryUpnpPortMapping();
   void TickReachabilityUx();
   void RefreshMeshCapabilities();
+  void WireAttachmentDownloads();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
 
   /**
-   * Shared libp2p mesh composition root (NodeRuntime + dial-back + relays +
-   * reachability). Mesh UX (status chrome, reachability, relay load) should read
-   * through here rather than the thin hub forwards below. Null before the stack
-   * is up; callers must degrade gracefully.
+   * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
+   * read through here. Null before the stack is up; callers must degrade gracefully.
    */
   MeshHost* Mesh() { return mesh_.get(); }
   const MeshHost* Mesh() const { return mesh_.get(); }
 
-  // Thin mesh forwards kept for internal call/lifecycle wiring; prefer Mesh()
-  // for mesh UX so the public hub surface stays narrow.
-  DialBackService* DialBack() { return mesh_ ? mesh_->DialBack() : nullptr; }
-  CircuitRelayService* CircuitRelay() { return mesh_ ? mesh_->CircuitRelay() : nullptr; }
-  MediaRelayService* MediaRelay() { return mesh_ ? mesh_->MediaRelay() : nullptr; }
-
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
-   * Registers hop endpoints as needed; returns first successful bridge.
+   * Registers hop endpoints as needed; returns first successful Amp bridge.
    */
   Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
                                                               const std::string& target_multiaddr,
@@ -219,7 +226,7 @@ public:
   void BindAgent(AgentSession& agent);
   PeerSigningKeyStore& SigningKeys();
 
-  /** Idle sweep / session policy tick (call from UI loop). */
+  /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is TickAmpMesh. */
   void TickLibp2p();
   /** Drop cold peer connections (Android background). */
   void SuspendLibp2pColdPeers();
@@ -228,7 +235,7 @@ public:
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
   void SetOnCallWake(std::function<void()> callback);
 
-  /** L4: PeerId-only OK when stack address book has a dial path (or relay / pasted ma). */
+  /** L4: PeerId-only OK when Amp address book has a dial path (or relay / pasted ma). */
   bool IsContactReachable(const Contact& contact) const;
 
 private:
@@ -237,10 +244,8 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
-  /** App-only mesh glue (CallMediaDirect / LAN mDNS / policies) after MeshHost start. */
+  /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
-  /** Shared libp2p mesh host (NodeRuntime + dial-back + relays + reachability). */
-  NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
@@ -249,6 +254,10 @@ private:
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
+  void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
+  void ScheduleContactIconFetch(const Contact& contact);
+  void NotifyPeerIconsChanged();
+
   void SyncMobileEphemeralListen();
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
@@ -256,6 +265,8 @@ private:
   void PrefetchPeerReachability(const std::string& identity);
   void StartCoordinatorTimers();
   void StopCoordinatorTimers();
+  /** Amp UDP drain — MeshHost::Tick / MeshRuntime::Drive (no libp2p io_context). */
+  void TickAmpMesh();
 
   std::string data_dir_;
   std::string profile_id_;
@@ -280,6 +291,8 @@ private:
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
+  std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
+  std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -287,11 +300,13 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpDirectoryClient> http_directory_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
+  std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
+  IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
@@ -308,11 +323,13 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::function<void()> on_peer_icons_changed_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
   uint64_t hub_policy_timer_id_ = 0;
+  uint64_t amp_mesh_pump_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;
   int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;

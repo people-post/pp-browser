@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-# Sign and notarize Frame.app / release DMG for macOS distribution.
+# Sign and notarize PP.app / release DMG for macOS distribution.
 #
 # Skips gracefully when signing credentials are not configured (unsigned release).
 # See packaging/macos/signing.env.example and docs/ops/RELEASE.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_ENTITLEMENTS="${ROOT}/packaging/macos/Frame.entitlements"
+# Sync with pbr::kProductBundleName / kProductSlug in src/base/runtime/ProductBranding.h
+PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
+PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"
+DEFAULT_ENTITLEMENTS="${ROOT}/packaging/macos/${PRODUCT_SLUG}.entitlements"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") <command> [path]
 
 Commands:
-  sign-app <Frame.app>       Code-sign the app bundle (hardened runtime)
+  sign-app <PP.app>       Code-sign the app bundle (hardened runtime)
   notarize <artifact>        Submit .app (zipped), .dmg, or .pkg to Apple notarization
   staple <artifact>          Staple notarization ticket onto artifact
-  release <Frame.app> <dmg>  sign-app → notarize dmg → staple (post-cpack convenience)
+  release <PP.app> <dmg>  sign-app → notarize dmg → staple (post-cpack convenience)
 
 Environment (certificate — set one of):
   APPLE_CERTIFICATE_BASE64     Base64 .p12 (CI / GitHub Actions)
@@ -33,15 +36,15 @@ Environment (notarization — App Store Connect API key):
   APPLE_NOTARY_P8_PATH           Path to AuthKey_*.p8 (local)
 
 Optional:
-  MACOS_ENTITLEMENTS             Default: packaging/macos/Frame.entitlements
+  MACOS_ENTITLEMENTS             Default: packaging/macos/pp-browser.entitlements
   MACOS_SKIP_SIGNING=1           Force skip (unsigned)
 
 Local example:
   source packaging/macos/signing.env
   cmake --install build --prefix install
-  $(basename "$0") sign-app install/Frame.app
+  $(basename "$0") sign-app install/${PRODUCT_BUNDLE_NAME}.app
   (cd build && cpack -G DragNDrop)
-  $(basename "$0") release install/Frame.app build/pp-browser-0.1.0-macos.dmg
+  $(basename "$0") release install/${PRODUCT_BUNDLE_NAME}.app build/pp-browser-0.1.0-macos.dmg
 EOF
 }
 
@@ -108,11 +111,18 @@ TEMP_P12=""
 TEMP_P8=""
 
 cleanup() {
-  if [[ -n "$KEYCHAIN_PATH" && -f "$KEYCHAIN_PATH" ]]; then
+  # Use if/fi (not `[[ … ]] && cmd`) so an empty path does not make the EXIT
+  # trap return non-zero under `set -e`.
+  if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
     security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
   fi
-  [[ -n "$TEMP_P12" && -f "$TEMP_P12" ]] && rm -f "$TEMP_P12"
-  [[ -n "$TEMP_P8" && -f "$TEMP_P8" ]] && rm -f "$TEMP_P8"
+  if [[ -n "${TEMP_P12:-}" && -f "$TEMP_P12" ]]; then
+    rm -f "$TEMP_P12"
+  fi
+  if [[ -n "${TEMP_P8:-}" && -f "$TEMP_P8" ]]; then
+    rm -f "$TEMP_P8"
+  fi
+  return 0
 }
 trap cleanup EXIT
 

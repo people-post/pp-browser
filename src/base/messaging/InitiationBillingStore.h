@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

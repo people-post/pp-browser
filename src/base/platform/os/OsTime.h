@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/CivilTime.h"
+#include "common/PbrCompat.h"
 
 namespace pbr::os {
 

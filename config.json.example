@@ -3,7 +3,7 @@
   "llm": {
     "preset": "brief",
     "base_url": "https://www.brief.global/api/llm/v1",
-    "model": "grok-4-1-fast-reasoning",
+    "model": "xai",
     "require_api_key": false
   },
   "_llm_cloud_example": {
@@ -39,15 +39,11 @@
   },
   "libp2p": {
     "node_enabled": true,
-    "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
+    "mesh_enabled": true,
+    "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
-    ],
-    "max_connections": 32,
-    "max_concurrent_dials": 4,
-    "dial_timeout_ms": 15000,
-    "idle_ttl_ms": 120000,
-    "dial_failure_backoff_ms": 30000
+      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
+    ]
   },
   "search": {
     "provider": "duckduckgo"

@@ -96,6 +96,7 @@ Drives periodic policy (not UI frame ticks):
 
 - Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `MessagingHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
+- Amp mesh pump: `MeshHost::Tick` / `MeshRuntime::Drive` (~5ms) while Amp is up — required for call-media / SFU / chat (no libp2p `io_context`)
 - Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
 Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** coordinator message.
@@ -156,7 +157,7 @@ Integration services under `src/base/p2p/` use three executor classes via `Libp2
 | **Data** | `Libp2pHost::Post` / stream async (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media duplex **and** call-media hello/ack |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `Libp2pExecutorLimits`.
+Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `amp::AmpChannelLimits` (legacy alias `Libp2pExecutorLimits`).
 
 ---
 
@@ -177,7 +178,6 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Item | Location | Notes |
 |------|----------|-------|
-| c-ares DNS TXT | `src/lib/libp2p/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
 | Call ringtone playback | `src/base/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
@@ -188,8 +188,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Library | Model | Policy |
 |---------|-------|--------|
-| boost::asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
-| c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
+| asio (`pp-node` status HTTP) | `io_context` | Status server only (not mesh) |
 | libcurl | Sync on caller | Pool only |
 | SQLite | Caller + mutex | Pool for long writes |
 | SDL3 | Internal audio/camera | Unchanged |

@@ -2,7 +2,7 @@
 
 **Tier:** ops
 
-How to connect an **Apple Developer Program** account to pp-browser / **Frame** for signed, notarized macOS releases. User-visible product is **Frame** (`Frame.app`); signing / reverse-DNS ID is **`dev.pp-browser.app`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
+How to connect an **Apple Developer Program** account to pp-browser / **PP** for signed, notarized macOS releases. User-visible product is **PP** (`PP.app`); signing / reverse-DNS ID is **`dev.pp-browser.app`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
 
 **Related:** [RELEASE.md](RELEASE.md) (tagging and artifacts), [BUILD.md](BUILD.md), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md), [PLATFORMS.md](../architecture/PLATFORMS.md).
 
@@ -12,10 +12,10 @@ How to connect an **Apple Developer Program** account to pp-browser / **Frame** 
 
 | What | Value in this repo |
 |------|-------------------|
-| macOS app bundle | `Frame.app` |
+| macOS app bundle | `PP.app` |
 | Bundle ID | `dev.pp-browser.app` ([`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
-| Release artifact | `pp-browser-<version>-macos.dmg` (CPack DragNDrop; volume name Frame) |
-| Entitlements | [`packaging/macos/Frame.entitlements`](../../packaging/macos/Frame.entitlements) |
+| Release artifact | `pp-browser-<version>-macos.dmg` (CPack DragNDrop; volume name PP) |
+| Entitlements | [`packaging/macos/pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) |
 | Signing script | [`scripts/macos_sign_and_notarize.sh`](../../scripts/macos_sign_and_notarize.sh) |
 | Local env template | [`packaging/macos/signing.env.example`](../../packaging/macos/signing.env.example) |
 | CI workflow | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) |
@@ -105,7 +105,7 @@ On tag push, the **macos** job in [`release.yml`](../../.github/workflows/releas
 
 ```mermaid
 flowchart LR
-  A[cmake --install] --> B[sign-app Frame.app]
+  A[cmake --install] --> B[sign-app PP.app]
   B --> C[cpack → .dmg]
   C --> D[notarytool submit]
   D --> E[stapler staple]
@@ -114,10 +114,10 @@ flowchart LR
 
 | Step | Script command | When skipped |
 |------|----------------|--------------|
-| After install | `./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/Frame.app"` | No `APPLE_CERTIFICATE_BASE64` |
+| After install | `./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/PP.app"` | No `APPLE_CERTIFICATE_BASE64` |
 | After cpack | `notarize` + `staple` on the `.dmg` | No `APPLE_NOTARY_*` secrets |
 
-Signing uses **hardened runtime** and [`Frame.entitlements`](../../packaging/macos/Frame.entitlements) (network client/server for Brief API and libp2p).
+Signing uses **hardened runtime** and [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) (network client/server for Brief API and libp2p).
 
 ---
 
@@ -143,7 +143,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 cmake --install build --prefix install
 
-./scripts/macos_sign_and_notarize.sh sign-app install/Frame.app
+./scripts/macos_sign_and_notarize.sh sign-app install/PP.app
 
 (cd build && cpack -G DragNDrop)
 dmg="$(find build -maxdepth 2 -name '*.dmg' -print -quit)"
@@ -156,10 +156,10 @@ dmg="$(find build -maxdepth 2 -name '*.dmg' -print -quit)"
 
 ```bash
 spctl -a -t open -vv "$dmg"
-codesign --verify --deep --strict --verbose=2 install/Frame.app
+codesign --verify --deep --strict --verbose=2 install/PP.app
 ```
 
-Open the DMG, drag Frame to Applications, launch without right-click → Open.
+Open the DMG, drag PP to Applications, launch without right-click → Open.
 
 ### Script commands
 
@@ -167,12 +167,12 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 ./scripts/macos_sign_and_notarize.sh --help
 
 # Individual steps:
-./scripts/macos_sign_and_notarize.sh sign-app   <Frame.app>
-./scripts/macos_sign_and_notarize.sh notarize   <Frame.app|file.dmg>
-./scripts/macos_sign_and_notarize.sh staple     <Frame.app|file.dmg>
+./scripts/macos_sign_and_notarize.sh sign-app   <PP.app>
+./scripts/macos_sign_and_notarize.sh notarize   <PP.app|file.dmg>
+./scripts/macos_sign_and_notarize.sh staple     <PP.app|file.dmg>
 
 # Convenience (after cpack, when dmg path is known):
-./scripts/macos_sign_and_notarize.sh release install/Frame.app build/pp-browser-0.1.0-macos.dmg
+./scripts/macos_sign_and_notarize.sh release install/PP.app build/pp-browser-0.1.0-macos.dmg
 ```
 
 ---
@@ -181,7 +181,7 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 
 | Symptom | Likely fix |
 |---------|------------|
-| Notarization rejected — missing entitlement | Add key to [`Frame.entitlements`](../../packaging/macos/Frame.entitlements); check log with `xcrun notarytool log <submission-id> --key ...` |
+| Notarization rejected — missing entitlement | Add key to [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements); check log with `xcrun notarytool log <submission-id> --key ...` |
 | `errSecInternalComponent` in CI | Ensure `APPLE_CERTIFICATE_BASE64` decodes cleanly; re-export `.p12`; check keychain import in script |
 | Wrong identity | Match `APPLE_SIGNING_IDENTITY` exactly to `security find-identity -v -p codesigning` |
 | CI still unsigned | Confirm all seven secrets are set; unsigned path logs `warning: macOS signing credentials not configured` |
@@ -193,7 +193,7 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 
 | Item | Notes |
 |------|-------|
-| **`.icns` icon** | Packaged build uses `app-icon.png`; `.icns` improves dock quality ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)) |
+| **`.icns` icon** | Packaged build uses `app-icon.png`; `.icns` improves dock quality |
 | **Intel / universal binary** | Current GHA `macos-14` is Apple Silicon only |
 | **Mac App Store** | Different cert, sandbox, review — not covered here |
 | **iOS** | Separate bundle id, provisioning profiles, Keychain — see [IOS_BUILD.md](IOS_BUILD.md) |

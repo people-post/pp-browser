@@ -1,8 +1,9 @@
 #include "base/ui/ChatFormHelper.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -22,11 +23,15 @@ std::string ApplySubmitTemplate(const std::string& template_str,
 
 std::string BuildFormSubmissionPayload(const std::string& form_id,
                                        const std::map<std::string, std::string>& values) {
-  nlohmann::json payload;
-  payload["type"] = "form_submission";
-  payload["form_id"] = form_id;
-  payload["values"] = values;
-  return payload.dump();
+  Object values_obj;
+  for (const auto& [key, value] : values) {
+    values_obj.set(key, value);
+  }
+  Object payload;
+  payload.set("type", "form_submission");
+  payload.set("form_id", form_id);
+  payload.set("values", values_obj);
+  return DumpJson(payload);
 }
 
 std::optional<std::string> ExtractFormId(const std::string& rml) {

@@ -2,12 +2,20 @@
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
+
+std::string ControlPayload(const std::string& control_type, const std::string& detail) {
+  Object payload;
+  payload.set("control_type", control_type);
+  payload.set("detail", detail);
+  return DumpJson(payload);
+}
 
 TEST(GroupMembershipCodecTest, InviteRoundTrip) {
   GroupInvitePayload payload;
@@ -63,16 +71,14 @@ TEST(GroupMembershipCodecTest, DecodeInviteResponseFromMessage) {
   ASSERT_TRUE(detail);
   ThreadMessage message;
   message.content_type = ChatContentType::System;
-  message.payload_json =
-      nlohmann::json({{"control_type", "group_invite_accept"}, {"detail", *detail}}).dump();
+  message.payload_json = ControlPayload("group_invite_accept", *detail);
   auto decoded = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   ASSERT_TRUE(decoded);
   EXPECT_EQ(decoded->invite_nonce, "nonce-xyz");
   EXPECT_EQ(decoded->group_id, "group:abc");
   EXPECT_EQ(decoded->control_type, GroupMembershipControlType::GroupInviteAccept);
 
-  message.payload_json =
-      nlohmann::json({{"control_type", "group_invite_decline"}, {"detail", *detail}}).dump();
+  message.payload_json = ControlPayload("group_invite_decline", *detail);
   auto declined = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   ASSERT_TRUE(declined);
   EXPECT_EQ(declined->control_type, GroupMembershipControlType::GroupInviteDecline);
@@ -90,8 +96,7 @@ TEST(GroupMembershipCodecTest, OwnerTransferredLeavePreviousRoundTrip) {
 
   ThreadMessage message;
   message.content_type = ChatContentType::System;
-  message.payload_json =
-      nlohmann::json({{"control_type", "owner_transferred"}, {"detail", *encoded}}).dump();
+  message.payload_json = ControlPayload("owner_transferred", *encoded);
   auto from_message = GroupMembershipCodec::DecodeOwnerTransferredFromMessage(message);
   ASSERT_TRUE(from_message);
   EXPECT_TRUE(from_message->leave_previous);
@@ -102,8 +107,7 @@ TEST(GroupMembershipCodecTest, DecodeMemberLeftAndRemoved) {
   ASSERT_TRUE(left_detail);
   ThreadMessage left_msg;
   left_msg.content_type = ChatContentType::System;
-  left_msg.payload_json =
-      nlohmann::json({{"control_type", "member_left"}, {"detail", *left_detail}}).dump();
+  left_msg.payload_json = ControlPayload("member_left", *left_detail);
   auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(left_msg);
   ASSERT_TRUE(left);
   EXPECT_EQ(left->member_identity, "relay:bob");
@@ -113,8 +117,7 @@ TEST(GroupMembershipCodecTest, DecodeMemberLeftAndRemoved) {
   ASSERT_TRUE(removed_detail);
   ThreadMessage removed_msg;
   removed_msg.content_type = ChatContentType::System;
-  removed_msg.payload_json =
-      nlohmann::json({{"control_type", "member_removed"}, {"detail", *removed_detail}}).dump();
+  removed_msg.payload_json = ControlPayload("member_removed", *removed_detail);
   auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(removed_msg);
   ASSERT_TRUE(removed);
   EXPECT_EQ(removed->member_identity, "relay:carol");
@@ -129,9 +132,9 @@ TEST(GroupMembershipCodecTest, OwnerUnreachableActionsAndResolution) {
 
   ThreadMessage message;
   message.content_type = ChatContentType::System;
-  message.payload_json = nlohmann::json({{"control_type", "group_owner_unreachable"},
-                                         {"detail", nlohmann::json({{"group_id", "group:g"}}).dump()}})
-                             .dump();
+  Object detail;
+  detail.set("group_id", "group:g");
+  message.payload_json = ControlPayload("group_owner_unreachable", DumpJson(detail));
   message.chat_actions = actions;
   EXPECT_TRUE(GroupMembershipCodec::IsOwnerUnreachableAdvisory(message));
   EXPECT_FALSE(GroupMembershipCodec::IsOwnerUnreachableResolved(message));
@@ -150,8 +153,7 @@ TEST(GroupMembershipCodecTest, ApplyInviteResolutionClearsActions) {
   ThreadMessage message;
   message.content_type = ChatContentType::System;
   message.text = "Group invitation: Hike";
-  message.payload_json =
-      nlohmann::json({{"control_type", "group_invite"}, {"detail", *detail}}).dump();
+  message.payload_json = ControlPayload("group_invite", *detail);
   message.chat_actions = GroupMembershipCodec::BuildInviteChatActions(invite);
   ASSERT_EQ(message.chat_actions.size(), 3u);
 

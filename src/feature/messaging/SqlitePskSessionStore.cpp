@@ -7,9 +7,11 @@
 #include "base/crypto/PskFingerprint.h"
 #include "base/error/AppError.h"
 
-#include <nlohmann/json.hpp>
 #include <sodium.h>
 #include <sqlite3.h>
+
+#include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -28,15 +30,23 @@ std::vector<RetiredPskEntry> ParseRetiredPsks(const char* json_text) {
   if (json_text == nullptr) {
     return retired_psks;
   }
-  const nlohmann::json retired = nlohmann::json::parse(json_text, nullptr, false);
-  if (!retired.is_array()) {
+  auto parsed = ParseValue(std::string(json_text));
+  if (!parsed) {
     return retired_psks;
   }
-  for (const auto& item : retired) {
+  const Array* retired = asArray(*parsed);
+  if (!retired) {
+    return retired_psks;
+  }
+  for (const Value& item_value : retired->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
+      continue;
+    }
     RetiredPskEntry entry;
-    entry.epoch = item.value("epoch", 0u);
-    entry.master_psk_b64 = item.value("master_psk_b64", std::string{});
-    entry.retired_at = item.value("retired_at", static_cast<int64_t>(0));
+    entry.epoch = static_cast<uint32_t>(item->getNonNegInt("epoch").value_or(0));
+    entry.master_psk_b64 = item->getString("master_psk_b64").value_or(std::string{});
+    entry.retired_at = item->getIf<int64_t>("retired_at").value_or(0);
     retired_psks.push_back(std::move(entry));
   }
   return retired_psks;
@@ -357,12 +367,17 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   if (!db) {
     return db.error();
   }
-  nlohmann::json retired = nlohmann::json::array();
+  std::vector<Value> retired_elements;
+  retired_elements.reserve(to_save.retired_psks.size());
   for (const RetiredPskEntry& entry : to_save.retired_psks) {
-    retired.push_back(
-        {{"epoch", entry.epoch}, {"master_psk_b64", entry.master_psk_b64}, {"retired_at", entry.retired_at}});
+    Object item;
+    item.setJsonUInt("epoch", entry.epoch);
+    item.set("master_psk_b64", entry.master_psk_b64);
+    item.set("retired_at", entry.retired_at);
+    retired_elements.push_back(ObjectValue(std::move(item)));
   }
-  const std::string retired_json = retired.empty() ? "[]" : retired.dump();
+  const std::string retired_json =
+      retired_elements.empty() ? "[]" : DumpJson(ArrayValue(std::move(retired_elements)));
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "

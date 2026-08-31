@@ -35,9 +35,10 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V004 — Shared call media key (not group N-ciphertext)
 
 **Date:** 2026-07-28  
-**Decision:** All joined call participants share **one** media key per epoch. Key **wrap** to each peer uses existing **pairwise** E2E channels. Do **not** use group-chat N ciphertexts (G008/D095) for RTP/media frames.  
-**Rationale:** Realtime fan-out cost; SFU sees one ciphertext class; chat pairwise remains for confidentiality of key distribution.  
-**Alternatives:** Per-recipient media encrypt (rejected — efficiency); MLS sender keys for v1 (deferred).
+**Updated:** 2026-08-18 — **V034** video_lo uses this same rule (one seal per AU; hop copies ciphertext).  
+**Decision:** All joined call participants share **one** media key per epoch — **not** one key per subscriber. Key **wrap** to each peer uses existing **pairwise** E2E channels. Do **not** use group-chat N ciphertexts (G008/D095) for media frames. Publisher AEAD-seals each audio or video AU **once**; the hop fans out that ciphertext.  
+**Rationale:** Realtime uplink cost — per-target encrypt would multiply video bytes by N−1. SFU stays blind (one ciphertext class). Chat pairwise remains for confidentiality of key distribution.  
+**Alternatives:** Per-recipient media encrypt (rejected — N× uplink); MLS sender keys for v1 (deferred).
 
 ---
 
@@ -660,16 +661,18 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 | Mode | Gesture | Result |
 |------|---------|--------|
-| **Expanded** | Swipe **down** on call chrome (not on a button) | → Immersive |
-| **Expanded** | Swipe **up** on call chrome (not on a button) | → Minimized |
+| **Expanded** | **Tap** non-button call chrome (bar / stage) | → Immersive |
+| **Expanded** | **Tap** outside call chrome (not on modal overlays) | → Minimized |
 | **Immersive** | Swipe / pull **down** on non-button chrome, **or** pull **down** starting in the people list when `scrollTop == 0` | → Expanded |
 | **Minimized** | **Tap** chip | Restore last Expanded/Immersive |
 | **Minimized** | **Drag** chip | Reposition; snap to corner |
 | **Minimized** | Swipe | **None** (avoids fighting drag) |
 
+**Hit-test model (Expanded):** the mount layer is `pointer-events: none` except the visible bar/stage; taps outside chrome reach the shell and dismiss to Minimized (click is consumed — chat controls underneath do not activate). Tap on chrome (not buttons) enters Immersive.
+
 **Hit-test model (Immersive):** button → control; scroll region (when not at top / not pulling down) → scroll; everything else → mode swipe. Same idea as `ShellBottomSheetGesture` (ignore buttons; scroll-at-top handoff).
 
-**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Visible controls always mirror gestures (collapse / people / minimize). Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
+**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Immersive keeps visible expand control mirroring pull-down dismiss. Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
 
 **Rationale:** Multitasking needs a true minimize; group voice needs everyone visible — Expanded cannot honestly show 8–16 peers. Three jobs beat three decorative sizes. Pull-down to leave Immersive matches list overscroll-at-top and reuses sheet gesture patterns.
 
@@ -723,5 +726,32 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of MessagingHub; SM-ifying chat/dial-back.
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
+
+---
+
+## V034 — Video on libp2p (video_lo; E2E; same streams)
+
+**Date:** 2026-08-18  
+**Status:** Accepted (**implementing**)  
+**Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
+
+| Topic | Rule |
+|-------|------|
+| **Codec** | H264 Constrained Baseline Annex-B via `IVideoCodec` (~640×360 desktop / ~360×640 mobile after orientation @ ~20 fps). |
+| **Layer** | **video_lo only.** `allow_video_hi` stays false; simulcast / `video_hi` is a later horizon. |
+| **1:1** | Same `/pp-browser/call-media/1.0.0` duplex as audio. Frame **v2**: `ver=2 \| seq \| mark \| channel \| nonce \| ct`. Channel `0` = Opus, `1` = H264 AU. Decrypt **v1** bodies as channel 0 (voice interop). Cap **128 KiB** (no NAL fragmentation in this slice). |
+| **E2E / uplink** | **One key per call epoch** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)), not per subscriber. Publisher AEAD-seals each AU **once**; hop copies that ciphertext to subscribers. Per-target encrypt is rejected — it would multiply video uplink by N−1. AAD `stream_id` + channel is replay binding, not a per-peer key. |
+| **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. Same shared-key AEAD on **all** channels as audio. |
+| **Hop queues** | Never shed `ReliableOrdered` (audio) to enqueue `LatestLossy` (video). Drop stale video first. |
+| **Camera** | Off on join ([V009](#v009--any-group-member-may-start-camera-off-by-default-on-join)). Adaptation `camera_user_wants` follows `IsCameraEnabled()`. Missing encoder/decoder must not tear down voice ([V019](#v019--unified-call-media-shape-voicevideo-entry-only)). |
+| **IDR** | Encoder `force_keyframe` on start / SoftMigrate send-swap / inbound `call_video_refresh`. Periodic IDR remains a backstop. |
+| **Group UI** | Expanded: one remote stage + local PiP. Immersive: per-peer tiles (cap concurrent HW decoders, e.g. 4). |
+| **Non-goals** | `video_hi`, screen share, recording, CallKit, libdatachannel, Linux soft-codec, N021 header change. |
+
+**Updates:** [V026](#v026--libp2p-only-call-media-http--libp2p-networking) “video deferred” — video_lo is now in scope after voice-on-libp2p. [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) single-layer mapping unchanged.
+
+**Rationale:** Voice path, hop framing, and camera stack already exist. The gap is encrypted send/receive + hop audio-priority queues + per-stream decode — not a second media stack. Group video stays **one seal per AU** so camera uplink stays a single stream regardless of roster size.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); [PHASES.md](PHASES.md) **lv** (libp2p video).
 
 ---

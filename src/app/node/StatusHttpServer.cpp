@@ -2,20 +2,21 @@
 
 #include "common/Logger.h"
 
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/write.hpp>
-#include <boost/system/error_code.hpp>
+#include <asio/io_context.hpp>
+#include <asio/ip/tcp.hpp>
+#include <asio/write.hpp>
 
 #include <array>
 #include <atomic>
 #include <memory>
+#include <system_error>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
 
-using tcp = boost::asio::ip::tcp;
+using tcp = asio::ip::tcp;
 constexpr size_t kMaxRequestBytes = 16 * 1024;
 
 void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig auth,
@@ -36,17 +37,17 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
     void ReadMore() {
       auto self = shared_from_this();
       socket->async_read_some(
-          boost::asio::buffer(*chunk),
-          [self](const boost::system::error_code& rec, std::size_t n) {
+          asio::buffer(*chunk),
+          [self](const std::error_code& rec, std::size_t n) {
             if (rec || n == 0) {
-              boost::system::error_code ignored;
+              std::error_code ignored;
               self->socket->shutdown(tcp::socket::shutdown_both, ignored);
               self->socket->close(ignored);
               return;
             }
             self->buf->append(self->chunk->data(), n);
             if (self->buf->size() > kMaxRequestBytes) {
-              boost::system::error_code ignored;
+              std::error_code ignored;
               self->socket->close(ignored);
               return;
             }
@@ -62,10 +63,10 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
                 response.body.clear();
               }
               auto out = std::make_shared<std::string>(FormatStatusHttpResponse(response));
-              boost::asio::async_write(
-                  *self->socket, boost::asio::buffer(*out),
-                  [self, out](const boost::system::error_code&, std::size_t) {
-                    boost::system::error_code ignored;
+              asio::async_write(
+                  *self->socket, asio::buffer(*out),
+                  [self, out](const std::error_code&, std::size_t) {
+                    std::error_code ignored;
                     self->socket->shutdown(tcp::socket::shutdown_both, ignored);
                     self->socket->close(ignored);
                   });
@@ -88,7 +89,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
 } // namespace
 
 struct StatusHttpServer::Impl {
-  boost::asio::io_context io;
+  asio::io_context io;
   std::unique_ptr<tcp::acceptor> acceptor;
   StatusHttpAuthConfig auth;
   SnapshotFn snapshot;
@@ -100,13 +101,13 @@ struct StatusHttpServer::Impl {
       return;
     }
     auto socket = std::make_shared<tcp::socket>(io);
-    acceptor->async_accept(*socket, [this, socket](const boost::system::error_code& ec) {
+    acceptor->async_accept(*socket, [this, socket](const std::error_code& ec) {
       if (stopping.load()) {
         return;
       }
       if (!ec) {
         HandleConnection(socket, auth, snapshot);
-      } else if (ec != boost::asio::error::operation_aborted) {
+      } else if (ec != asio::error::operation_aborted) {
         logging::getLogger("pp-node").warning << "status HTTP accept: " << ec.message();
       }
       ScheduleAccept();
@@ -140,8 +141,8 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
   impl->auth = std::move(auth);
   impl->snapshot = std::move(snapshot);
 
-  boost::system::error_code ec;
-  const auto address = boost::asio::ip::make_address(bind.host, ec);
+  std::error_code ec;
+  const auto address = asio::ip::make_address(bind.host, ec);
   if (ec) {
     return Error("invalid status HTTP bind host: " + bind.host);
   }
@@ -152,11 +153,14 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
     return Error("status HTTP open failed: " + ec.message());
   }
   impl->acceptor->set_option(tcp::acceptor::reuse_address(true), ec);
+  if (ec) {
+    return Error("status HTTP set_option failed: " + ec.message());
+  }
   impl->acceptor->bind(endpoint, ec);
   if (ec) {
     return Error("status HTTP bind failed: " + ec.message());
   }
-  impl->acceptor->listen(boost::asio::socket_base::max_listen_connections, ec);
+  impl->acceptor->listen(asio::socket_base::max_listen_connections, ec);
   if (ec) {
     return Error("status HTTP listen failed: " + ec.message());
   }
@@ -188,7 +192,7 @@ void StatusHttpServer::Stop() {
     return;
   }
   impl_->stopping.store(true);
-  boost::system::error_code ec;
+  std::error_code ec;
   if (impl_->acceptor) {
     impl_->acceptor->close(ec);
   }

@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

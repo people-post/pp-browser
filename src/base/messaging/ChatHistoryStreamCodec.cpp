@@ -3,6 +3,7 @@
 #include "base/messaging/MessagingLimits.h"
 
 #include <cstring>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

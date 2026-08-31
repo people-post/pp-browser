@@ -9,6 +9,7 @@
 
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/SystemInterface.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -81,6 +82,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.thread_is_public = false;
   view_.thread_is_group = false;
   view_.compose_disabled = false;
+  view_.show_attach_button = false;
   view_.show_thread_actions = false;
   view_.show_call_actions = false;
   view_.show_forget_memory = false;
@@ -153,6 +155,7 @@ void ChatThreadChrome::Update() {
     view_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
     view_.show_call_actions =
         (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_;
+    view_.show_attach_button = view_.show_call_actions && thread->kind != ThreadKind::Ai;
     view_.show_thread_actions = true;
     view_.show_forget_memory = thread->kind == ThreadKind::Ai;
     view_.show_sync_with_peer = false;
@@ -305,6 +308,7 @@ void ChatThreadChrome::Update() {
     view_.thread_is_public = false;
     view_.thread_is_group = false;
     view_.compose_disabled = false;
+    view_.show_attach_button = false;
     view_.show_thread_actions = false;
     view_.show_peer_sheet = false;
     view_.show_call_actions = false;

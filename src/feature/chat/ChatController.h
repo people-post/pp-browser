@@ -35,6 +35,7 @@
 #include <functional>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;
@@ -155,6 +156,10 @@ private:
     bool thread_is_public = false;
     bool thread_is_group = false;
     bool compose_disabled = false;
+    bool composer_input_disabled = false;
+    bool show_attach_button = false;
+    bool attachment_uploading = false;
+    Rml::String attachment_draft_name;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -203,6 +208,10 @@ private:
   static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReactionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenEmojiInsertCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void AttachFileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DownloadAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RetryAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -211,8 +220,7 @@ private:
   static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartVoiceCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartVideoCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void StartCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenPeerSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -258,6 +266,12 @@ private:
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
   void OpenEmojiInsertMenu(Rml::Event* ev);
+  void OnAttachFile();
+  void StartAttachmentUpload(const std::string& path);
+  void OpenAttachment(const std::string& message_id);
+  void DownloadAttachment(const std::string& message_id);
+  void RetryAttachmentDownload(const std::string& message_id);
+  void SyncComposerInputState();
   void OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position);
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
@@ -283,6 +297,8 @@ private:
   void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
+  /** Mint/cache free-tier Brief guest Bearer when registered key is missing. */
+  void EnsureBriefGuestLlmKey();
   /** Show/clear LLM setup banners once identity is readable (after unlock). */
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
@@ -341,6 +357,9 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
+  /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
+  bool brief_guest_mint_attempted_ = false;
+  std::string brief_guest_mint_user_hint_;
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;
   ChatThreadChrome chrome_;

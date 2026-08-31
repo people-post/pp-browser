@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -35,7 +36,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 12;
+  static constexpr int kSchemaVersion = 13;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -55,6 +56,8 @@ struct ProfilePreferences {
   bool call_diagnostics = false;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
+  /** R021 — attachment download: smart | always_auto | on_demand */
+  std::string attachment_download_policy = "smart";
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */

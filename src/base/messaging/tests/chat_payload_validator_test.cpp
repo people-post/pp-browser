@@ -4,19 +4,43 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
-TEST(ChatPayloadValidatorTest, RejectsUnknownContentType) {
+namespace {
+using namespace pbr;
+
+Object MakeObject(std::initializer_list<std::pair<const char*, Value>> fields) {
+  Object object;
+  for (const auto& [key, value] : fields) {
+    object.set(key, value);
+  }
+  return object;
+}
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+} // namespace
+
+TEST(ChatPayloadValidatorTest, AcceptsUnknownContentTypeAsUnsupported) {
   using namespace pbr;
 
-  auto bytes = ChatPayloadCodec::EncodeText("nope");
+  auto bytes = ChatPayloadCodec::EncodeText("future");
   ASSERT_TRUE(static_cast<bool>(bytes));
   ASSERT_GT(bytes->size(), 1u);
   (*bytes)[1] = 99;
-  EXPECT_FALSE(static_cast<bool>(ChatPayloadValidator::DecodeValidated(*bytes)));
+  auto message = ChatPayloadValidator::DecodeValidated(*bytes);
+  ASSERT_TRUE(static_cast<bool>(message));
+  EXPECT_EQ(message->content_type, ChatContentType::Unsupported);
+  EXPECT_EQ(message->text, "future");
 }
 
 TEST(ChatPayloadValidatorTest, RejectsOversizeOutboundText) {
@@ -55,34 +79,48 @@ TEST(ChatPayloadValidatorTest, SanitizesInboundPresentationFields) {
 TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
   using namespace pbr;
 
-  const nlohmann::json public_relay = {
-      {"envelope_version", 1},
-      {"message_id", "m1"},
-      {"sender_relay_id", "relay:a"},
-      {"sender_contact_id", "relay:a"},
-      {"route", {{"kind", "direct"}, {"channel", "public_relay"}}},
-      {"body", {{"e2e", {{"payload_b64", "aGk="}}}}},
-      {"timestamp", 1}};
+  Object public_route = MakeObject({{"kind", Value("direct")}, {"channel", Value("public_relay")}});
+  Object public_body;
+  {
+    Object e2e;
+    e2e.set("payload_b64", "aGk=");
+    public_body.set("e2e", e2e);
+  }
+  const Object public_relay = MakeObject({{"envelope_version", Value(int64_t{1})},
+                                          {"message_id", Value("m1")},
+                                          {"sender_relay_id", Value("relay:a")},
+                                          {"sender_contact_id", Value("relay:a")},
+                                          {"route", ObjectValue(std::move(public_route))},
+                                          {"body", ObjectValue(std::move(public_body))},
+                                          {"timestamp", Value(int64_t{1})}});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(public_relay)));
 
-  const nlohmann::json content_b64 = {
-      {"envelope_version", 1},
-      {"message_id", "m2"},
-      {"sender_relay_id", "relay:a"},
-      {"sender_contact_id", "relay:a"},
-      {"route", {{"kind", "direct"}, {"channel", "e2e"}}},
-      {"body", {{"content_b64", "aGk="}}},
-      {"timestamp", 1}};
+  Object content_route = MakeObject({{"kind", Value("direct")}, {"channel", Value("e2e")}});
+  Object content_body = MakeObject({{"content_b64", Value("aGk=")}});
+  const Object content_b64 = MakeObject({{"envelope_version", Value(int64_t{1})},
+                                         {"message_id", Value("m2")},
+                                         {"sender_relay_id", Value("relay:a")},
+                                         {"sender_contact_id", Value("relay:a")},
+                                         {"route", ObjectValue(std::move(content_route))},
+                                         {"body", ObjectValue(std::move(content_body))},
+                                         {"timestamp", Value(int64_t{1})}});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(content_b64)));
 
-  const nlohmann::json remote_rml = {
-      {"envelope_version", 1},
-      {"message_id", "m3"},
-      {"sender_relay_id", "relay:a"},
-      {"sender_contact_id", "relay:a"},
-      {"route", {{"kind", "direct"}, {"channel", "e2e"}}},
-      {"body", {{"e2e", {{"payload_b64", "aGk="}}}, {"content_rml", "<div>x</div>"}}},
-      {"timestamp", 1}};
+  Object remote_route = MakeObject({{"kind", Value("direct")}, {"channel", Value("e2e")}});
+  Object remote_body;
+  {
+    Object e2e;
+    e2e.set("payload_b64", "aGk=");
+    remote_body.set("e2e", e2e);
+    remote_body.set("content_rml", "<div>x</div>");
+  }
+  const Object remote_rml = MakeObject({{"envelope_version", Value(int64_t{1})},
+                                        {"message_id", Value("m3")},
+                                        {"sender_relay_id", Value("relay:a")},
+                                        {"sender_contact_id", Value("relay:a")},
+                                        {"route", ObjectValue(std::move(remote_route))},
+                                        {"body", ObjectValue(std::move(remote_body))},
+                                        {"timestamp", Value(int64_t{1})}});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(remote_rml)));
 }
 
@@ -93,6 +131,7 @@ TEST(ChatPayloadValidatorTest, TransportColumnRoundTrip) {
       std::filesystem::temp_directory_path() / "pp_browser_transport_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
+  ASSERT_TRUE(store.SetDek(TestDek()));
 
   Thread thread;
   thread.id = "thread-transport";

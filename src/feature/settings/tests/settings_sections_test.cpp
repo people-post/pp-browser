@@ -53,7 +53,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   network_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.relay_base_url, "https://relay.example");
   EXPECT_EQ(state.node_enabled, "on");
-  EXPECT_FALSE(state.libp2p_listen_multiaddr.empty());
+  EXPECT_TRUE(state.amp_listen_multiaddr.empty());
   EXPECT_TRUE(network_section.IsPersisted(state, bootstrap));
 
   state.node_enabled = "off";
@@ -78,7 +78,8 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   EXPECT_EQ(state.data_dir, "/tmp/data");
   EXPECT_FALSE(state.profile_size_label.empty());
   EXPECT_NE(state.profile_size_label.find("Profile uses ~"), std::string::npos);
-  EXPECT_FALSE(storage_section.IsWritable());
+  EXPECT_FALSE(state.attachment_cache_size_label.empty());
+  EXPECT_TRUE(storage_section.IsWritable());
 
   pbr::AboutSettingsSection about_section;
   about_section.SyncFromSession(bootstrap, state);

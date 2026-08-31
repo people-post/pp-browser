@@ -3,6 +3,7 @@
 #include "common/SequencedTaskRunner.h"
 
 #include <mutex>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

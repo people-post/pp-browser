@@ -5,6 +5,7 @@
 #include "common/Utilities.h"
 
 #include <sqlite3.h>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

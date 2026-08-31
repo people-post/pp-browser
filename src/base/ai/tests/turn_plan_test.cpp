@@ -1,7 +1,7 @@
 #include "base/ai/TurnPlan.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
 #include <string>
 #include <vector>
@@ -14,8 +14,9 @@ TEST(TurnPlanTest, ParsesAndValidatesKnownTools) {
     "synthesis_hints": "Answer first."
   })";
 
-  const auto doc = nlohmann::json::parse(json);
-  auto plan = pbr::ParseTurnPlanJson(doc, pbr::TurnPlanSource::Planner);
+  const auto doc = pbr::TryParseObject(json);
+  ASSERT_TRUE(doc.has_value());
+  auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
   ASSERT_TRUE(static_cast<bool>(plan));
   EXPECT_EQ(plan->response_goal, pbr::ResponseGoal::AnswerQuestion);
   ASSERT_EQ(plan->tools.size(), 1u);
@@ -26,7 +27,7 @@ TEST(TurnPlanTest, ParsesAndValidatesKnownTools) {
   auto validated = pbr::ValidateTurnPlan(*plan, allowed);
   EXPECT_TRUE(static_cast<bool>(validated));
 
-  plan->tools.push_back({.name = "unknown_tool", .arguments = nlohmann::json::object()});
+  plan->tools.push_back({.name = "unknown_tool", .arguments = {}});
   auto rejected = pbr::ValidateTurnPlan(*plan, allowed);
   EXPECT_FALSE(static_cast<bool>(rejected));
 }
@@ -53,7 +54,9 @@ TEST(TurnPlanTest, HandlesNullSynthesisHints) {
     "synthesis_hints": null
   })";
 
-  auto plan = pbr::ParseTurnPlanJson(nlohmann::json::parse(null_hints), pbr::TurnPlanSource::Planner);
+  auto doc = pbr::TryParseObject(null_hints);
+  ASSERT_TRUE(doc.has_value());
+  auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
   ASSERT_TRUE(static_cast<bool>(plan));
   ASSERT_EQ(plan->tools.size(), 1u);
   EXPECT_EQ(plan->tools[0].name, "list_conversations");

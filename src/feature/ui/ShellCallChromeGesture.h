@@ -18,9 +18,9 @@ class ElementDocument;
 namespace pbr {
 
 /**
- * Vertical mode gestures + minimized chip drag for call chrome (V031).
+ * Call chrome gestures (V031).
  *
- * Expanded: swipe down → Immersive, swipe up → Minimized (non-button chrome).
+ * Expanded: tap non-button chrome → Immersive; tap outside chrome → Minimized.
  * Immersive: pull down on non-button chrome, or pull down in roster at scroll top → Expanded.
  * Minimized: tap → restore; drag → move / corner snap. No swipe-to-mode.
  */
@@ -43,6 +43,7 @@ public:
 
 private:
   bool ShouldIgnoreTarget(Rml::Element* target) const;
+  bool ShouldIgnoreOutsideDismiss(Rml::Element* target) const;
   bool IsUnderRoot(Rml::Element* target) const;
   bool IsScrollRegion(Rml::Element* target) const;
   bool ScrollAncestorsAtTop(Rml::Element* target) const;
@@ -55,7 +56,9 @@ private:
   void SetRootOffsetY(float dy_dp, bool animate);
   void SetChipOffset(float dx_dp, float dy_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
+  void SetOutsideTapCapture(bool enabled);
   void SetClickSuppress(bool enabled);
+  void UpdateDocumentClickCapture();
   void SetDismissOwnsTopOverscroll(bool owns);
   float PixelDeltaToDp(int delta_px) const;
   int SnapCornerFromChipCenter() const;
@@ -70,6 +73,8 @@ private:
   ShellGestureAxisLock* axis_lock_ = nullptr;
   bool attached_ = false;
   bool document_drag_capture_ = false;
+  bool document_click_capture_ = false;
+  bool outside_tap_capture_ = false;
   bool click_suppress_listener_ = false;
   bool suppress_click_ = false;
   bool tracking_ = false;

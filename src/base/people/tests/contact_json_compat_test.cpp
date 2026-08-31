@@ -1,20 +1,29 @@
 #include "base/people/ContactJson.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include "common/PbrCompat.h"
 
 namespace {
 
 using namespace pbr;
 
+Object MustParseObject(const std::string& json_utf8) {
+  auto parsed = TryParseObject(json_utf8);
+  EXPECT_TRUE(parsed.has_value()) << json_utf8;
+  return parsed.value_or(Object{});
+}
+
 TEST(ContactJsonCompat, ParsesLegacyFlatContactFields) {
-  const nlohmann::json json = {{"id", "c1"},
-                               {"display_name", "Alice"},
-                               {"nickname", "alice"},
-                               {"relay_user_id", "relay:alice123"},
-                               {"peer_id", "12D3KooWPeer"},
-                               {"multiaddr", "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer"},
-                               {"trust", "friendly"}};
+  const Object json = MustParseObject(R"({
+    "id": "c1",
+    "display_name": "Alice",
+    "nickname": "alice",
+    "relay_user_id": "relay:alice123",
+    "peer_id": "12D3KooWPeer",
+    "multiaddr": "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer",
+    "trust": "friendly"
+  })");
 
   const Contact contact = ContactFromJson(json);
   EXPECT_EQ(contact.id, "c1");
@@ -53,17 +62,20 @@ TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
   ASSERT_EQ(again.remote.ids.size(), 1u);
   EXPECT_EQ(again.remote.multiaddrs.size(), 1u);
   EXPECT_EQ(again.display_name, "Local Alice");
-  const nlohmann::json dumped = ContactToJson(again);
-  EXPECT_TRUE(dumped.contains("overrides"));
-  EXPECT_TRUE(dumped["overrides"].is_object());
-  EXPECT_TRUE(dumped["overrides"].empty());
+  const Object dumped = ContactToJson(again);
+  ASSERT_TRUE(dumped.contains("overrides"));
+  const Object* overrides = dumped.getObject("overrides");
+  ASSERT_NE(overrides, nullptr);
+  EXPECT_TRUE(overrides->empty());
 }
 
 TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
-  const nlohmann::json json = {{"relay_user_id", "relay:demon"},
-                               {"nickname", "demon"},
-                               {"signing_public_key_b64", "sigkey"},
-                               {"kem_public_key_b64", "kemkey"}};
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:demon",
+    "nickname": "demon",
+    "signing_public_key_b64": "sigkey",
+    "kem_public_key_b64": "kemkey"
+  })");
 
   const DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.hit_id, "relay:demon");
@@ -103,14 +115,17 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
 }
 
 TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
-  const nlohmann::json json = {{"relay_user_id", "relay:y"},
-                               {"nickname", "y"},
-                               {"peer_id", "12D3Legacy"},
-                               {"multiaddrs", nlohmann::json::array({"/ip4/9.9.9.9/tcp/1"})},
-                               {"endpoints", nlohmann::json::array({nlohmann::json{
-                                   {"peer_id", "12D3New"},
-                                   {"multiaddrs", nlohmann::json::array({"/ip4/1.1.1.1/tcp/1"})},
-                                   {"updated_at", 5}}})}};
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:y",
+    "nickname": "y",
+    "peer_id": "12D3Legacy",
+    "multiaddrs": ["/ip4/9.9.9.9/tcp/1"],
+    "endpoints": [{
+      "peer_id": "12D3New",
+      "multiaddrs": ["/ip4/1.1.1.1/tcp/1"],
+      "updated_at": 5
+    }]
+  })");
   const DirectoryHit hit = DirectoryHitFromJson(json);
   ASSERT_EQ(hit.endpoints.size(), 1u);
   EXPECT_EQ(hit.endpoints[0].peer_id, "12D3New");
@@ -126,9 +141,43 @@ TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
 }
 
 TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
-  const nlohmann::json json = {{"relay_user_id", "relay:y"}, {"nickname", "y"}};
+  const Object json = MustParseObject(R"({"relay_user_id":"relay:y","nickname":"y"})");
   const DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.initiation_floor, 0);
+}
+
+TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:alice",
+    "nickname": "alice",
+    "icon": {
+      "url": "https://cdn.example/icon.jpg",
+      "blob_id": "blob-1",
+      "kind": "image/jpeg"
+    }
+  })");
+
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  ASSERT_TRUE(hit.icon.has_value());
+  EXPECT_EQ(hit.icon->url, "https://cdn.example/icon.jpg");
+  EXPECT_EQ(hit.icon->blob_id, "blob-1");
+  EXPECT_EQ(hit.icon->kind, "image/jpeg");
+
+  Contact contact;
+  contact.id = "c-icon";
+  contact.remote.nickname = hit.nickname;
+  contact.remote.ids = hit.ids;
+  contact.remote.icon = hit.icon;
+  SyncContactMirrors(contact);
+
+  const Contact again = ContactFromJson(ContactToJson(contact));
+  ASSERT_TRUE(again.remote.icon.has_value());
+  EXPECT_EQ(again.remote.icon->url, hit.icon->url);
+  EXPECT_EQ(again.remote.icon->blob_id, hit.icon->blob_id);
+
+  const DirectoryHit hit_again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  ASSERT_TRUE(hit_again.icon.has_value());
+  EXPECT_EQ(hit_again.icon->url, hit.icon->url);
 }
 
 } // namespace

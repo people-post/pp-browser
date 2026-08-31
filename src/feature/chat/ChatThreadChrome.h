@@ -35,6 +35,7 @@ public:
     bool& thread_is_public;
     bool& thread_is_group;
     bool& compose_disabled;
+    bool& show_attach_button;
     bool& show_thread_actions;
     bool& show_peer_sheet;
     bool& show_call_actions;

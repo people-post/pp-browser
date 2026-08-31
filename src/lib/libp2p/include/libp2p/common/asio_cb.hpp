@@ -10,7 +10,7 @@
 
 namespace libp2p {
   inline auto toAsioCbSize(std::function<void(outcome::result<size_t>)> cb) {
-    return [cb{std::move(cb)}](boost::system::error_code ec, size_t n) {
+    return [cb{std::move(cb)}](std::error_code ec, size_t n) {
       if (ec) {
         cb(ec);
       } else {

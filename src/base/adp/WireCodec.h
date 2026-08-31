@@ -1,0 +1,22 @@
+#pragma once
+
+#include "base/adp/Types.h"
+
+#include "common/Error.h"
+#include "common/PbrCompat.h"
+
+#include <span>
+#include <vector>
+
+namespace pbr::adp {
+
+class WireCodec {
+public:
+  static Roe<std::vector<uint8_t>> Encode(const WirePacket& pkt);
+  static Roe<WirePacket> Decode(std::span<const uint8_t> datagram);
+
+  /** Bytes covered by HMAC (everything except the trailing tag). */
+  static std::span<const uint8_t> MacInput(std::span<const uint8_t> datagram);
+};
+
+} // namespace pbr::adp

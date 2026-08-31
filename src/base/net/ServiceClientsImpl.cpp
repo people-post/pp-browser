@@ -6,20 +6,48 @@
 #include "base/crypto/MlDsa.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "common/ValueJson.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
+#include "base/net/HttpBlobClient.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
 #include "base/people/ContactJson.h"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
 #include <mutex>
+#include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
+
+std::string TruncateForLog(const std::string& text, const size_t max_chars) {
+  if (text.size() <= max_chars) {
+    return text;
+  }
+  return text.substr(0, max_chars) + "...";
+}
+
+Error RelayHttpStatusError(const char* action, long status_code, const std::string& body) {
+  std::string detail = std::string("Relay ") + action + " failed with status " + std::to_string(status_code);
+  std::string api_message;
+  if (auto json = TryParseObject(body)) {
+    if (auto err = json->getString("error")) {
+      api_message = *err;
+    } else if (auto message = json->getString("message")) {
+      api_message = *message;
+    }
+  }
+  if (!api_message.empty()) {
+    detail += ": " + api_message;
+  } else if (!body.empty()) {
+    detail += " body=" + TruncateForLog(body, 200);
+  }
+  logging::getLogger("HttpRelayClient").warning << detail;
+  return Error(detail);
+}
 
 std::optional<std::string> MockPeerKemPublicKeyB64() {
   static std::once_flag once;
@@ -40,6 +68,50 @@ std::optional<std::string> MockPeerKemPublicKeyB64() {
 }
 
 } // namespace
+
+Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*relay_user_id*/,
+                                                 const std::string& /*content_type*/, const uint64_t byte_length,
+                                                 const BlobPurpose /*purpose*/) {
+  ++presign_call_count_;
+  if (presign_error_) {
+    return presign_error_.value();
+  }
+  BlobPresignResult result;
+  result.blob_id = "mock-blob-" + std::to_string(next_blob_id_++);
+  result.upload_url = "https://mock.example/upload/" + result.blob_id;
+  result.public_url = "https://mock.example/public/" + result.blob_id;
+  result.tier = byte_length <= 4u * 1024u * 1024u ? BlobTier::Small : BlobTier::Large;
+  result.pending_expires_at = "2099-01-01T00:00:00.000Z";
+  return result;
+}
+
+Roe<void> MockBlobClient::Retain(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+  retained_blob_ids_.push_back(blob_id);
+  return Roe<void>{};
+}
+
+Roe<void> MockBlobClient::Delete(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+  deleted_blob_ids_.push_back(blob_id);
+  return Roe<void>{};
+}
+
+Roe<BlobListResult> MockBlobClient::List(const std::string& /*relay_user_id*/, const std::string& /*status_filter*/) {
+  if (list_result_) {
+    return *list_result_;
+  }
+  return BlobListResult{};
+}
+
+Roe<void> MockBlobClient::SetProfileIcon(const std::string& /*relay_user_id*/, const std::string& /*url*/,
+                                         const std::string& /*blob_id*/, const std::string& /*kind*/) {
+  return Roe<void>{};
+}
+
+Roe<void> MockBlobClient::PutUpload(const std::string& /*upload_url*/, const std::string& /*content_type*/,
+                                    const std::string& body) {
+  uploaded_bodies_.push_back(body);
+  return Roe<void>{};
+}
 
 Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::string& query) {
   DirectoryHit alice;
@@ -299,7 +371,8 @@ Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std
                                                                        const std::string& signature_alg,
                                                                        const std::string& /*kem_public_key_b64*/,
                                                                        const std::string& /*peer_id*/,
-                                                                       const std::vector<std::string>& /*multiaddrs*/) {
+                                                                       const std::vector<std::string>& /*multiaddrs*/,
+                                                                       const RegistrationPublishOpts& /*publish*/) {
   return RegistrationStartResult{.challenge = "mock-challenge", .signature_alg = signature_alg,
                                  .expires_at = "2099-01-01T00:00:00.000Z"};
 }
@@ -313,7 +386,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& /*kem_public_key_b64*/,
                                                                    const std::string& /*peer_id*/,
                                                                    const std::vector<std::string>& /*multiaddrs*/,
-                                                                   int64_t initiation_floor) {
+                                                                   int64_t initiation_floor,
+                                                                   const RegistrationPublishOpts& /*publish*/) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
                             .message = "Registered as " + nickname,
@@ -362,7 +436,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   record->signature = *signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response = HttpClient::Post(url, RelayWireSendRecordToJson(*record).dump(),
+  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(*record)),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
@@ -371,7 +445,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
     return Error("Relay rate limit exceeded");
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay send failed with status " + std::to_string(response.value().status_code));
+    return RelayHttpStatusError("send", response.value().status_code, response.value().body);
   }
   return {};
 }
@@ -391,35 +465,40 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
     return signature.error();
   }
 
-  const nlohmann::json body = {{"requester_contact_id", requester_contact_id},
-                               {"cursor", cursor},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("requester_contact_id", requester_contact_id);
+  body.set("cursor", cursor);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/poll";
-  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay poll failed with status " + std::to_string(response.value().status_code));
+    return RelayHttpStatusError("poll", response.value().status_code, response.value().body);
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
     return Error("Invalid relay inbox JSON");
   }
 
   RelayPollResult result;
-  if (root.contains("next_cursor") && root["next_cursor"].is_string()) {
-    result.next_cursor = root["next_cursor"].get<std::string>();
+  if (auto next_cursor = root->getString("next_cursor")) {
+    result.next_cursor = *next_cursor;
   }
-  if (root.contains("server_time") && root["server_time"].is_number_integer()) {
-    result.server_time_ms = root["server_time"].get<int64_t>();
+  if (auto server_time = root->getIf<int64_t>("server_time")) {
+    result.server_time_ms = *server_time;
   }
-  if (root.contains("messages") && root["messages"].is_array()) {
-    for (const auto& item : root["messages"]) {
-      if (item.contains("blob_b64")) {
-        auto inbound = ParseRelayInboundRecord(item);
+  if (const Array* messages = root->getArray("messages")) {
+    for (const Value& item_value : messages->elements) {
+      const Object* item = asObject(item_value);
+      if (!item) {
+        continue;
+      }
+      if (item->contains("blob_b64")) {
+        auto inbound = ParseRelayInboundRecord(*item);
         if (!inbound) {
           continue;
         }
@@ -431,7 +510,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
           result.messages.push_back(*envelope);
         }
       } else {
-        auto envelope = ParseRelayEnvelope(item);
+        auto envelope = ParseRelayEnvelope(*item);
         if (envelope) {
           if (result.server_time_ms) {
             envelope->relay_server_time_ms = result.server_time_ms;
@@ -462,12 +541,13 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_co
     return signature.error();
   }
 
-  const nlohmann::json body = {{"requester_contact_id", requester_contact_id},
-                               {"cursor", cursor},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("requester_contact_id", requester_contact_id);
+  body.set("cursor", cursor);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/ack";
-  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -475,13 +555,13 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_co
     return Error("Relay ack failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
     return Error("Invalid relay ack JSON");
   }
   RelayDeleteResult result;
-  if (root.contains("deleted") && root["deleted"].is_number_integer()) {
-    result.deleted = root["deleted"].get<int64_t>();
+  if (auto deleted = root->getIf<int64_t>("deleted")) {
+    result.deleted = *deleted;
   }
   return result;
 }
@@ -505,12 +585,13 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return signature.error();
   }
 
-  const nlohmann::json body = {{"requester_contact_id", requester_contact_id},
-                               {"before_created_at", before_created_at},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("requester_contact_id", requester_contact_id);
+  body.set("before_created_at", before_created_at);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/clear";
-  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -518,13 +599,13 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return Error("Relay clear failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
     return Error("Invalid relay clear JSON");
   }
   RelayDeleteResult result;
-  if (root.contains("deleted") && root["deleted"].is_number_integer()) {
-    result.deleted = root["deleted"].get<int64_t>();
+  if (auto deleted = root->getIf<int64_t>("deleted")) {
+    result.deleted = *deleted;
   }
   return result;
 }
@@ -533,9 +614,6 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
-  const std::string stream_id =
-      BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
-                                 request.session_epoch);
   const int64_t timestamp = util::NowUnixMs();
   const auto sign_bytes = BuildRelayApiStreamHistorySignBytes(request, timestamp);
   if (sign_bytes.empty()) {
@@ -546,22 +624,12 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
     return signature.error();
   }
 
-  nlohmann::json body = {{"requester_contact_id", request.requester_identity_value},
-                         {"sender_contact_id", request.peer_identity_value},
-                         {"stream_id", stream_id},
-                         {"limit", request.limit},
-                         {"order", request.order},
-                         {"timestamp", timestamp},
-                         {"signature", *signature}};
-  if (request.min_sender_seq) {
-    body["min_index_key"] = *request.min_sender_seq;
-  }
-  if (request.max_sender_seq) {
-    body["max_index_key"] = *request.max_sender_seq;
-  }
+  Object body = ChatHistoryRequestToStreamHistoryJson(request);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
 
   const std::string url = base_url_ + "/v1/streams/messages/query";
-  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -569,11 +637,11 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
     return Error("Relay history fetch failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded()) {
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
     return Error("Invalid relay history JSON");
   }
-  auto parsed = ChatHistoryResponseFromJson(root);
+  auto parsed = ChatHistoryResponseFromJson(*root);
   if (!parsed) {
     return parsed.error();
   }
@@ -610,14 +678,15 @@ Roe<void> HttpPushDeviceClient::PostDevice(const char* path, const RelayApiOp op
   if (!signature) {
     return signature.error();
   }
-  const nlohmann::json body = {{"relay_user_id", registration.relay_user_id},
-                               {"platform", registration.platform},
-                               {"device_id", registration.device_id},
-                               {"push_token", registration.push_token},
-                               {"timestamp", timestamp},
-                               {"signature", *signature}};
+  Object body;
+  body.set("relay_user_id", registration.relay_user_id);
+  body.set("platform", registration.platform);
+  body.set("device_id", registration.device_id);
+  body.set("push_token", registration.push_token);
+  body.set("timestamp", timestamp);
+  body.set("signature", *signature);
   const std::string url = base_url_ + path;
-  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -650,14 +719,19 @@ Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::stri
     return Error("Directory search failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("hits") || !root["hits"].is_array()) {
+  auto root = TryParseObject(response.value().body);
+  const Array* hits_arr = root ? root->getArray("hits") : nullptr;
+  if (!hits_arr) {
     return Error("Invalid directory search JSON");
   }
 
   std::vector<DirectoryHit> hits;
-  for (const auto& item : root["hits"]) {
-    hits.push_back(DirectoryHitFromJson(item));
+  for (const Value& item_value : hits_arr->elements) {
+    const Object* item = asObject(item_value);
+    if (!item) {
+      continue;
+    }
+    hits.push_back(DirectoryHitFromJson(*item));
   }
   return hits;
 }
@@ -678,11 +752,11 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_
     return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("relay_user_id")) {
+  auto root = TryParseObject(response.value().body);
+  if (!root || !root->contains("relay_user_id")) {
     return Error("Invalid relay user lookup JSON");
   }
-  return DirectoryHitFromJson(root);
+  return DirectoryHitFromJson(*root);
 }
 
 namespace {
@@ -706,6 +780,18 @@ std::string EncodePathSegment(const std::string& value) {
   return out;
 }
 
+void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& publish) {
+  if (!publish.entity_kind.empty()) {
+    body.set("entity_kind", publish.entity_kind);
+  }
+  if (publish.has_capabilities) {
+    Object caps;
+    caps.set("circuit_relay", publish.capabilities.circuit_relay);
+    caps.set("media_relay", publish.capabilities.media_relay);
+    body.set("capabilities", std::move(caps));
+  }
+}
+
 } // namespace
 
 Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
@@ -727,11 +813,98 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& accoun
     return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("relay_user_id")) {
+  auto root = TryParseObject(response.value().body);
+  if (!root || !root->contains("relay_user_id")) {
     return Error("Invalid account lookup JSON");
   }
-  return DirectoryHitFromJson(root);
+  return DirectoryHitFromJson(*root);
+}
+
+Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
+  if (base_url_.empty()) {
+    return Error("Directory base_url not configured");
+  }
+  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Mesh nodes list failed with status " + std::to_string(response.value().status_code));
+  }
+  auto root = TryParseObject(response.value().body);
+  if (!root) {
+    return Error("Invalid mesh nodes JSON");
+  }
+  const Array* nodes = root->getArray("nodes");
+  if (!nodes) {
+    return Error("Invalid mesh nodes JSON (missing nodes)");
+  }
+  std::vector<MeshNodeHit> out;
+  out.reserve(nodes->elements.size());
+  for (const Value& item : nodes->elements) {
+    const Object* obj = asObject(item);
+    if (!obj) {
+      continue;
+    }
+    MeshNodeHit hit;
+    if (auto relay = obj->getString("relay_user_id")) {
+      hit.relay_user_id = *relay;
+    }
+    if (hit.relay_user_id.empty()) {
+      continue;
+    }
+    if (auto account = obj->getString("account_id")) {
+      hit.account_id = *account;
+    }
+    if (auto nick = obj->getString("nickname")) {
+      hit.nickname = *nick;
+    }
+    if (auto expires = obj->getString("expires_at")) {
+      hit.expires_at = *expires;
+    }
+    if (auto pk = obj->getString("signing_public_key_b64")) {
+      hit.signing_public_key_b64 = *pk;
+    }
+    if (auto kem = obj->getString("kem_public_key_b64")) {
+      hit.kem_public_key_b64 = *kem;
+    }
+    if (const Object* caps = obj->getObject("capabilities")) {
+      if (auto circuit = caps->getIf<bool>("circuit_relay")) {
+        hit.capabilities.circuit_relay = *circuit;
+      }
+      if (auto media = caps->getIf<bool>("media_relay")) {
+        hit.capabilities.media_relay = *media;
+      }
+    }
+    if (const Array* endpoints = obj->getArray("endpoints")) {
+      for (const Value& ep_val : endpoints->elements) {
+        const Object* ep = asObject(ep_val);
+        if (!ep) {
+          continue;
+        }
+        DirectoryEndpoint row;
+        if (auto peer = ep->getString("peer_id")) {
+          row.peer_id = *peer;
+        }
+        if (row.peer_id.empty()) {
+          continue;
+        }
+        if (auto updated = ep->getIf<int64_t>("updated_at")) {
+          row.updated_at = *updated;
+        }
+        if (const Array* mas = ep->getArray("multiaddrs")) {
+          for (const Value& ma : mas->elements) {
+            if (auto s = asString(ma)) {
+              row.multiaddrs.push_back(*s);
+            }
+          }
+        }
+        hit.endpoints.push_back(std::move(row));
+      }
+    }
+    out.push_back(std::move(hit));
+  }
+  return out;
 }
 
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
@@ -741,22 +914,32 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
                                                                      const std::string& signature_alg,
                                                                      const std::string& kem_public_key_b64,
                                                                      const std::string& peer_id,
-                                                                     const std::vector<std::string>& multiaddrs) {
+                                                                     const std::vector<std::string>& multiaddrs,
+                                                                     const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
-  nlohmann::json body = {{"public_key", public_key_b64}, {"nickname", nickname},
-                         {"signature_alg", signature_alg}, {"kem_public_key_b64", kem_public_key_b64}};
+  Object body;
+  body.set("public_key", public_key_b64);
+  body.set("nickname", nickname);
+  body.set("signature_alg", signature_alg);
+  body.set("kem_public_key_b64", kem_public_key_b64);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
   if (!peer_id.empty()) {
-    body["peer_id"] = peer_id;
+    body.set("peer_id", peer_id);
   }
   if (!multiaddrs.empty()) {
-    body["multiaddrs"] = multiaddrs;
+    std::vector<Value> addrs;
+    addrs.reserve(multiaddrs.size());
+    for (const std::string& ma : multiaddrs) {
+      addrs.push_back(Value(ma));
+    }
+    body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
-  const auto response = HttpClient::Post(base_url_ + "/v1/register/start", body.dump(),
+  ApplyRegistrationPublishOpts(body, publish);
+  const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
@@ -765,20 +948,21 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
     return Error("Registration start failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
-  if (root.is_discarded() || !root.contains("challenge") || !root["challenge"].is_string()) {
+  auto root = TryParseObject(response.value().body);
+  auto challenge = root ? root->getString("challenge") : std::nullopt;
+  if (!challenge) {
     return Error("Invalid registration start JSON");
   }
 
   RegistrationStartResult result;
-  result.challenge = root["challenge"].get<std::string>();
-  if (root.contains("signature_alg") && root["signature_alg"].is_string()) {
-    result.signature_alg = root["signature_alg"].get<std::string>();
+  result.challenge = *challenge;
+  if (auto alg = root->getString("signature_alg")) {
+    result.signature_alg = *alg;
   } else {
     result.signature_alg = signature_alg;
   }
-  if (root.contains("expires_at") && root["expires_at"].is_string()) {
-    result.expires_at = root["expires_at"].get<std::string>();
+  if (auto expires = root->getString("expires_at")) {
+    result.expires_at = *expires;
   }
   return result;
 }
@@ -792,28 +976,36 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& kem_public_key_b64,
                                                                    const std::string& peer_id,
                                                                    const std::vector<std::string>& multiaddrs,
-                                                                   int64_t initiation_floor) {
+                                                                   int64_t initiation_floor,
+                                                                   const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
-  nlohmann::json body = {{"challenge", challenge},
-                         {"public_key", public_key_b64},
-                         {"nickname", nickname},
-                         {"signature", signature},
-                         {"timestamp", timestamp},
-                         {"signature_alg", signature_alg},
-                         {"kem_public_key_b64", kem_public_key_b64},
-                         {"initiation_floor", initiation_floor}};
+  Object body;
+  body.set("challenge", challenge);
+  body.set("public_key", public_key_b64);
+  body.set("nickname", nickname);
+  body.set("signature", signature);
+  body.set("timestamp", timestamp);
+  body.set("signature_alg", signature_alg);
+  body.set("kem_public_key_b64", kem_public_key_b64);
+  body.set("initiation_floor", initiation_floor);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
   if (!peer_id.empty()) {
-    body["peer_id"] = peer_id;
+    body.set("peer_id", peer_id);
   }
   if (!multiaddrs.empty()) {
-    body["multiaddrs"] = multiaddrs;
+    std::vector<Value> addrs;
+    addrs.reserve(multiaddrs.size());
+    for (const std::string& ma : multiaddrs) {
+      addrs.push_back(Value(ma));
+    }
+    body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
-  const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", body.dump(),
+  ApplyRegistrationPublishOpts(body, publish);
+  const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
                                          {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
@@ -822,26 +1014,26 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     return Error("Registration finish failed with status " + std::to_string(response.value().status_code));
   }
 
-  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
+  auto root = TryParseObject(response.value().body);
   RegistrationResult result{.success = true};
-  if (!root.is_discarded()) {
-    if (root.contains("success") && root["success"].is_boolean()) {
-      result.success = root["success"].get<bool>();
+  if (root) {
+    if (auto success = root->getIf<bool>("success")) {
+      result.success = *success;
     }
-    if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
-      result.relay_user_id = root["relay_user_id"].get<std::string>();
+    if (auto relay_user_id = root->getString("relay_user_id")) {
+      result.relay_user_id = *relay_user_id;
     }
-    if (root.contains("message") && root["message"].is_string()) {
-      result.message = root["message"].get<std::string>();
+    if (auto message = root->getString("message")) {
+      result.message = *message;
     }
-    if (root.contains("llm_api_key") && root["llm_api_key"].is_string()) {
-      result.llm_api_key = root["llm_api_key"].get<std::string>();
+    if (auto llm_api_key = root->getString("llm_api_key")) {
+      result.llm_api_key = *llm_api_key;
     }
-    if (root.contains("expires_at") && root["expires_at"].is_string()) {
-      result.expires_at = root["expires_at"].get<std::string>();
+    if (auto expires_at = root->getString("expires_at")) {
+      result.expires_at = *expires_at;
     }
-    if (root.contains("initiation_floor") && root["initiation_floor"].is_number_integer()) {
-      result.initiation_floor = root["initiation_floor"].get<int64_t>();
+    if (auto floor = root->getIf<int64_t>("initiation_floor")) {
+      result.initiation_floor = *floor;
       result.initiation_floor_present = true;
     }
   }
@@ -854,12 +1046,13 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
-  const nlohmann::json body = {{"relay_user_id", relay_user_id},
-                               {"nickname", new_nickname},
-                               {"timestamp", timestamp},
-                               {"signature", signature}};
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("nickname", new_nickname);
+  body.set("timestamp", timestamp);
+  body.set("signature", signature);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/profile/nickname", body.dump(), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }

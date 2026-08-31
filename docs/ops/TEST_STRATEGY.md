@@ -29,6 +29,8 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 **Agents:** follow this when adding GoogleTest suites that touch SQLite or on-disk profile data.
 
+Same **parent-only destroy** idea as [OWNERSHIP.md](../architecture/OWNERSHIP.md): the fixture owns stores; destroy them before wiping the temp dir (child filesystem cleanup must not outrank the store owner).
+
 ### Temp data dirs + Windows file locks
 
 On **Windows**, SQLite keeps `profile.db` (and WAL sidecars) locked until every open connection is closed. Calling `std::filesystem::remove_all(temp_dir)` while a store is still in scope throws:

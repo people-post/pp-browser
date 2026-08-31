@@ -4,6 +4,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

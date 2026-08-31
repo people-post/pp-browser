@@ -1,7 +1,8 @@
-# iOS .app bundle metadata and asset staging for Frame (pp-browser).
+# iOS .app bundle metadata and asset staging (pp-browser repo, PP product name).
 
 set(PP_BROWSER_IOS_BUNDLE_ID "dev.pp-browser.ios" CACHE STRING "iOS CFBundleIdentifier")
-set(PP_BROWSER_IOS_BUNDLE_NAME "Frame" CACHE STRING "iOS CFBundleDisplayName / bundle folder")
+set(PP_BROWSER_IOS_BUNDLE_NAME "${PP_BROWSER_PRODUCT_NAME}" CACHE STRING
+  "iOS CFBundleDisplayName / bundle folder (kProductBundleName)")
 # Prefer the value set before project() in the top-level CMakeLists (required for Ninja).
 if(NOT PP_BROWSER_IOS_DEPLOYMENT_TARGET)
   set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING
@@ -36,7 +37,7 @@ function(pp_browser_configure_ios_app target)
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "YOUR_TEAM_ID"
     XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
-    XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER "Frame iOS Development"
+    XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER "pp-browser iOS Development"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "${PP_BROWSER_IOS_DEPLOYMENT_TARGET}"
     XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"

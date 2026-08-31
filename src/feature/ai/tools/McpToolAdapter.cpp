@@ -2,8 +2,10 @@
 
 #include "base/ai/LlmClient.h"
 #include "base/ai/mcp/SchemaAdapter.h"
+#include "common/ValueJson.h"
 
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -66,12 +68,12 @@ std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const M
         .risk = risk,
         .mutating = risk != "read",
     };
-    descriptor.execute = [&client, name = mcp_tool.name](const nlohmann::json& arguments) -> Roe<std::string> {
+    descriptor.execute = [&client, name = mcp_tool.name](const Object& arguments) -> Roe<std::string> {
       auto result = client.CallTool(name, arguments);
       if (!result) {
         return result.error();
       }
-      return result->dump();
+      return DumpJson(*result);
     };
     out.push_back(std::move(descriptor));
   }

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
@@ -216,6 +217,8 @@ bool PeoplePickerController::RegisterModel(Rml::Context* context) {
     ctor.Bind("cta_label", &controller.cta_label_);
     ctor.Bind("cta_enabled", &controller.cta_enabled_);
     ctor.Bind("empty_hint", &controller.empty_hint_);
+    ctor.Bind("show_call_video_option", &controller.show_call_video_option_);
+    ctor.Bind("call_video_allowed", &controller.call_video_allowed_);
     ctor.BindEventCallback("toggle_contact", &PeoplePickerController::ToggleContactCallback);
     ctor.BindEventCallback("on_search_changed", &PeoplePickerController::OnSearchChangedCallback);
     ctor.BindEventCallback("confirm_picker", &PeoplePickerController::ConfirmCallback);
@@ -238,7 +241,7 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
   Open(PeoplePickerMode::FromDm, {locked_contact_id});
 }
 
-void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, const bool video) {
+void PeoplePickerController::OpenForGroupCall(const std::string& thread_id) {
   if (!MessagingInitialized() || !picker_ports_.get_thread) {
     UserFeedback::Fail("Messaging not ready");
     return;
@@ -252,14 +255,14 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
   mode_ = PeoplePickerMode::GroupCall;
   call_thread_id_ = thread_id;
   call_id_.clear();
-  call_video_ = video;
+  call_video_allowed_ = false;
+  show_call_video_option_ = true;
   locked_ids_.clear();
   selected_ids_.clear();
   identity_for_contact_.clear();
   search_query_ = "";
   step_ = kStepSelect;
-  title_ = call_video_ ? Tr("people_picker.title_group_video_call").c_str()
-                       : Tr("people_picker.title_group_voice_call").c_str();
+  title_ = Tr("people_picker.title_group_call").c_str();
   empty_hint_ = Tr("people_picker.empty_group_call").c_str();
   SyncGroupCallRows();
   for (PickerRow& row : rows_) {
@@ -284,7 +287,8 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   mode_ = PeoplePickerMode::CallAddGuest;
   call_thread_id_.clear();
   call_id_ = call_id;
-  call_video_ = false;
+  call_video_allowed_ = false;
+  show_call_video_option_ = false;
   locked_ids_.clear();
   selected_ids_.clear();
   identity_for_contact_.clear();
@@ -313,7 +317,8 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 
   call_thread_id_.clear();
   call_id_.clear();
-  call_video_ = false;
+  call_video_allowed_ = false;
+  show_call_video_option_ = false;
   identity_for_contact_.clear();
   mode_ = mode;
   locked_ids_ = std::move(locked_ids);
@@ -383,7 +388,8 @@ void PeoplePickerController::ResetState() {
   pending_member_ids_.clear();
   call_thread_id_.clear();
   call_id_.clear();
-  call_video_ = false;
+  call_video_allowed_ = false;
+  show_call_video_option_ = false;
   identity_for_contact_.clear();
   search_query_ = "";
   step_ = kStepSelect;
@@ -620,8 +626,7 @@ void PeoplePickerController::UpdateCta() {
     if (mode_ == PeoplePickerMode::CallAddGuest) {
       cta_label_ = Tr("people_picker.cta_invite_to_call").c_str();
     } else {
-      cta_label_ = call_video_ ? Tr("people_picker.cta_start_video_call").c_str()
-                               : Tr("people_picker.cta_start_voice_call").c_str();
+      cta_label_ = Tr("people_picker.cta_start_call").c_str();
     }
     break;
   case PeoplePickerCta::Disabled:
@@ -849,7 +854,7 @@ void PeoplePickerController::OnStartCall() {
   // Close()/ResetState clears call_* fields — capture before dismissing the picker.
   const PeoplePickerMode mode = mode_;
   const std::string call_thread_id = call_thread_id_;
-  const bool call_video = call_video_;
+  const bool call_video_allowed = call_video_allowed_;
   Close();
   NotifySurfaceChanged();
   if (mode == PeoplePickerMode::CallAddGuest) {
@@ -860,7 +865,7 @@ void PeoplePickerController::OnStartCall() {
   }
   if (mode == PeoplePickerMode::GroupCall) {
     if (call_actions_.start_with_invitees) {
-      (void)call_actions_.start_with_invitees(call_thread_id, call_video, identities);
+      (void)call_actions_.start_with_invitees(call_thread_id, call_video_allowed, identities);
     }
   }
 }

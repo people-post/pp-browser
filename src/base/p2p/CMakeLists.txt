@@ -1,38 +1,42 @@
-# Product libp2p glue (base layer). Fork lives in src/lib/libp2p.
+# PeerId derivation (retained libp2p PeerId + ML-DSA wire). Separate from product MeshHost
+# so mesh/link tests can use real PeerIds without linking pp_base_p2p (SRC_LAYOUT: mesh ↛ p2p).
 
 include(pp_lib_paths)
-include(PpBrowserWarnings)
+
+pp_browser_add_base_library(pp_base_peer_id
+  SOURCES
+    PeerIdUtil.cpp
+  PUBLIC_LIBS
+    pp_base_crypto
+    p2p_peer_id
+    p2p_wire
+    pp_common)
+
+target_include_directories(pp_base_peer_id PUBLIC ${PP_LIB_LIBP2P_INCLUDE})
+
+# Product Amp mesh glue (base layer). Libp2p Host/Yamux/Noise L4 retired from product (A017/D10).
 
 set(PP_BASE_P2P_SOURCES
-  Libp2pHost.cpp
-  PeerAddressBook.cpp
-  CircuitBridgeTarget.cpp
-  IdentifyIntegrationService.cpp
-  AdvertisedAddrPublisher.cpp
-  PeerSessionManager.cpp
-  PeerIdUtil.cpp
-  NodeRuntime.cpp
   MeshHost.cpp
-  DialBackService.cpp
-  StreamJsonFrame.cpp
-  StreamFrameIo.cpp
-  Libp2pScheduler.cpp
+  LengthPrefixedCodec.cpp
   Reachability.cpp
   ReachabilityService.cpp
   NatTraversal.cpp
-  CircuitRelayService.cpp
-  CircuitRelayRuntime.cpp
-  MediaRelayService.cpp
-  MediaRelayHostInbound.cpp
-  MediaRelayClientAttach.cpp
   MediaRelayFrames.cpp
   MediaRelayAttachSm.cpp
   MediaRelayLogic.cpp
   LanMdnsDiscovery.cpp
-  CallMediaDirectService.cpp
-  CallMediaSession.cpp
+  CallMediaLegCoordinator.cpp
+  CallMediaAmpTransport.cpp
+  CallMediaBundleLogic.cpp
   CallMediaSessionLogic.cpp
   CallMediaFrameCrypto.cpp
+  AmpCircuitHopRegistry.cpp
+  CircuitBundleLogic.cpp
+  CircuitTunnelCoordinator.cpp
+  MediaRelayBundleLogic.cpp
+  AmpMediaRelayCoordinator.cpp
+  AmpDialBackService.cpp
 )
 
 if(WIN32)
@@ -45,19 +49,18 @@ else()
     ReachabilityNetIf_Posix.cpp)
 endif()
 
-add_library(pp_base_p2p STATIC ${PP_BASE_P2P_SOURCES})
-target_include_directories(pp_base_p2p PUBLIC
-  ${CMAKE_SOURCE_DIR}/src
-  ${PP_LIB_LIBP2P_INCLUDE})
-target_link_libraries(pp_base_p2p PUBLIC
-  pp_common
-  pp_base_data
-  pp_base_crypto
-  p2p
-  p2p_identify
-  p2p_peer_id
-  p2p_wire
-  nlohmann_json::nlohmann_json)
+pp_browser_add_base_library(pp_base_p2p
+  SOURCES
+    ${PP_BASE_P2P_SOURCES}
+  PUBLIC_LIBS
+    pp_base_data
+    pp_base_crypto
+    pp_base_adp
+    pp_base_mesh_link
+    pp_base_peer_id
+    pp_base_runtime_core
+    pp_common)
+
 if(WIN32)
   target_link_libraries(pp_base_p2p PUBLIC ws2_32 iphlpapi)
 endif()
@@ -68,7 +71,6 @@ if(TARGET miniupnpc-static)
     ${CMAKE_SOURCE_DIR}/third_party/miniupnpc/include
     ${CMAKE_BINARY_DIR}/third_party/miniupnpc)
 endif()
-pp_browser_apply_warnings(pp_base_p2p)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

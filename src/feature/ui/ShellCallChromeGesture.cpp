@@ -58,6 +58,8 @@ void ShellCallChromeGesture::Attach(Rml::Element* root, Rml::Context* context, C
   attached_ = true;
   if (mode_ == CallChromeMode::Minimized) {
     SetChipOffset(0.f, 0.f, false);
+  } else if (mode_ == CallChromeMode::Expanded) {
+    SetOutsideTapCapture(true);
   } else {
     SetRootOffsetY(0.f, false);
   }
@@ -66,6 +68,7 @@ void ShellCallChromeGesture::Attach(Rml::Element* root, Rml::Context* context, C
 void ShellCallChromeGesture::Detach() {
   Abort();
   SetClickSuppress(false);
+  SetOutsideTapCapture(false);
   SetDismissOwnsTopOverscroll(false);
   if (attached_ && root_) {
     root_->RemoveEventListener(Rml::EventId::Mousedown, this);
@@ -98,8 +101,12 @@ void ShellCallChromeGesture::SetDocumentDragCapture(bool enabled) {
   document_drag_capture_ = enabled;
 }
 
-void ShellCallChromeGesture::SetClickSuppress(bool enabled) {
-  if (!document_ || click_suppress_listener_ == enabled) {
+void ShellCallChromeGesture::UpdateDocumentClickCapture() {
+  if (!document_) {
+    return;
+  }
+  const bool enabled = outside_tap_capture_ || click_suppress_listener_;
+  if (document_click_capture_ == enabled) {
     return;
   }
   if (enabled) {
@@ -107,7 +114,23 @@ void ShellCallChromeGesture::SetClickSuppress(bool enabled) {
   } else {
     document_->RemoveEventListener(Rml::EventId::Click, this, true);
   }
+  document_click_capture_ = enabled;
+}
+
+void ShellCallChromeGesture::SetOutsideTapCapture(bool enabled) {
+  if (outside_tap_capture_ == enabled) {
+    return;
+  }
+  outside_tap_capture_ = enabled;
+  UpdateDocumentClickCapture();
+}
+
+void ShellCallChromeGesture::SetClickSuppress(bool enabled) {
+  if (click_suppress_listener_ == enabled) {
+    return;
+  }
   click_suppress_listener_ = enabled;
+  UpdateDocumentClickCapture();
 }
 
 float ShellCallChromeGesture::PixelDeltaToDp(int delta_px) const {
@@ -131,6 +154,23 @@ bool ShellCallChromeGesture::ShouldIgnoreTarget(Rml::Element* target) const {
       return true;
     }
     if (node->IsClassSet("btn") || node->IsClassSet("shell-close-btn")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(Rml::Element* target) const {
+  if (!target) {
+    return true;
+  }
+  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+    const Rml::String& id = node->GetId();
+    if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
+      return true;
+    }
+    if (node->IsClassSet("shell-overlay-chrome-mount") || node->IsClassSet("shell-account-sheet-scrim") ||
+        node->IsClassSet("shell-sheet-scrim") || node->IsClassSet("shell-scrim")) {
       return true;
     }
   }
@@ -304,7 +344,7 @@ void ShellCallChromeGesture::AbortArm(bool unlock_axis) {
   arm_target_ = nullptr;
   if (mode_ == CallChromeMode::Minimized) {
     SetChipOffset(0.f, 0.f, true);
-  } else {
+  } else if (mode_ == CallChromeMode::Immersive) {
     SetRootOffsetY(0.f, true);
   }
   if (unlock_axis && axis_lock_ &&
@@ -335,6 +375,17 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, Rml::Event& /*event*
       root_->SetClass("shell-call-chrome--dragging", true);
     }
     SetChipOffset(PixelDeltaToDp(dx_px), PixelDeltaToDp(dy_px), false);
+    return;
+  }
+
+  if (mode_ == CallChromeMode::Expanded) {
+    const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
+                                    PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
+    if (!dragging_ && dist_dp > kTapSlopDp) {
+      dragging_ = true;
+      suppress_click_ = true;
+      SetClickSuppress(true);
+    }
     return;
   }
 
@@ -370,22 +421,7 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, Rml::Event& /*event*
     const float dy_dp = std::max(0.f, PixelDeltaToDp(dy_px));
     SetRootOffsetY(dy_dp, false);
     PinScrollAncestorsAtTop();
-    return;
   }
-
-  // Expanded: up → minimize, down → immersive.
-  if (!dragging_) {
-    if (std::abs(dy_px) <= kDragDeadzonePx) {
-      return;
-    }
-    dragging_ = true;
-    suppress_click_ = true;
-    SetClickSuppress(true);
-    root_->SetClass("shell-call-chrome--dragging", true);
-  }
-  const float dy_dp = PixelDeltaToDp(dy_px);
-  // Visual: pull down peels content; push up lifts bar.
-  SetRootOffsetY(std::clamp(dy_dp, -80.f, 80.f), false);
 }
 
 void ShellCallChromeGesture::EndDrag() {
@@ -393,10 +429,8 @@ void ShellCallChromeGesture::EndDrag() {
     return;
   }
   const bool was_dragging = dragging_;
-  const int dx_px = drag_last_x_px_ - drag_start_x_px_;
   const int dy_px = drag_last_y_px_ - drag_start_y_px_;
   const float dy_dp = PixelDeltaToDp(dy_px);
-  const float dx_dp = PixelDeltaToDp(dx_px);
 
   tracking_ = false;
   dragging_ = false;
@@ -438,18 +472,11 @@ void ShellCallChromeGesture::EndDrag() {
     return;
   }
 
-  // Expanded
-  SetRootOffsetY(0.f, true);
+  // Expanded: tap chrome → Immersive.
   unlock();
-  if (!was_dragging) {
-    return;
-  }
-  if (dy_dp >= kModeThresholdDp && callbacks_.on_immersive) {
+  if (!was_dragging && callbacks_.on_immersive) {
     callbacks_.on_immersive();
-  } else if (dy_dp <= -kModeThresholdDp && callbacks_.on_minimize) {
-    callbacks_.on_minimize();
   }
-  (void)dx_dp;
 }
 
 void ShellCallChromeGesture::ProcessEvent(Rml::Event& event) {
@@ -491,6 +518,17 @@ void ShellCallChromeGesture::ProcessEvent(Rml::Event& event) {
     }
     break;
   case Rml::EventId::Click:
+    if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
+      Rml::Element* target = event.GetTargetElement();
+      if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
+        if (callbacks_.on_minimize) {
+          callbacks_.on_minimize();
+        }
+        event.StopPropagation();
+        event.StopImmediatePropagation();
+        return;
+      }
+    }
     if (suppress_click_) {
       event.StopPropagation();
       event.StopImmediatePropagation();

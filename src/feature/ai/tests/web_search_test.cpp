@@ -1,8 +1,21 @@
 #include "feature/ai/tools/WebSearchTool.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
 #include <string>
+
+namespace {
+
+const pbr::Array* AsResults(const pbr::Value& value) {
+  return pbr::asArray(value);
+}
+
+const pbr::Object* AtObject(const pbr::Array& arr, size_t index) {
+  return pbr::asObject(arr.elements[index]);
+}
+
+} // namespace
 
 TEST(WebSearchToolTest, ParsesInstantAnswerJson) {
   const std::string instant = R"({
@@ -15,9 +28,13 @@ TEST(WebSearchToolTest, ParsesInstantAnswerJson) {
   })";
 
   auto instant_results = pbr::WebSearchTool::ParseDuckDuckGoInstantAnswerJson(instant);
-  ASSERT_EQ(instant_results.size(), 2u);
-  EXPECT_EQ(instant_results[0]["title"], "Example Topic");
-  EXPECT_EQ(instant_results[0]["snippet"], "Example abstract.");
+  const pbr::Array* results = AsResults(instant_results);
+  ASSERT_NE(results, nullptr);
+  ASSERT_EQ(results->elements.size(), 2u);
+  const pbr::Object* first = AtObject(*results, 0);
+  ASSERT_NE(first, nullptr);
+  EXPECT_EQ(first->getString("title"), std::optional<std::string>("Example Topic"));
+  EXPECT_EQ(first->getString("snippet"), std::optional<std::string>("Example abstract."));
 }
 
 TEST(WebSearchToolTest, ParsesLiteHtmlResults) {
@@ -29,10 +46,16 @@ TEST(WebSearchToolTest, ParsesLiteHtmlResults) {
   )";
 
   auto html_results = pbr::WebSearchTool::ParseDuckDuckGoLiteHtmlResults(html);
-  ASSERT_EQ(html_results.size(), 2u);
-  EXPECT_EQ(html_results[0]["title"], "First Result");
-  EXPECT_EQ(html_results[0]["snippet"], "First snippet text");
-  EXPECT_EQ(html_results[1]["url"], "https://example.com/b");
+  const pbr::Array* results = AsResults(html_results);
+  ASSERT_NE(results, nullptr);
+  ASSERT_EQ(results->elements.size(), 2u);
+  const pbr::Object* first = AtObject(*results, 0);
+  const pbr::Object* second = AtObject(*results, 1);
+  ASSERT_NE(first, nullptr);
+  ASSERT_NE(second, nullptr);
+  EXPECT_EQ(first->getString("title"), std::optional<std::string>("First Result"));
+  EXPECT_EQ(first->getString("snippet"), std::optional<std::string>("First snippet text"));
+  EXPECT_EQ(second->getString("url"), std::optional<std::string>("https://example.com/b"));
 }
 
 TEST(WebSearchToolTest, ParsesGoogleNewsRssItems) {
@@ -54,7 +77,11 @@ TEST(WebSearchToolTest, ParsesGoogleNewsRssItems) {
     </channel></rss>)";
 
   auto rss_results = pbr::WebSearchTool::ParseGoogleNewsRssItems(rss);
-  ASSERT_EQ(rss_results.size(), 2u);
-  EXPECT_EQ(rss_results[0]["title"], "Story One - Example News");
-  EXPECT_EQ(rss_results[0]["snippet"], "First story summary.");
+  const pbr::Array* results = AsResults(rss_results);
+  ASSERT_NE(results, nullptr);
+  ASSERT_EQ(results->elements.size(), 2u);
+  const pbr::Object* first = AtObject(*results, 0);
+  ASSERT_NE(first, nullptr);
+  EXPECT_EQ(first->getString("title"), std::optional<std::string>("Story One - Example News"));
+  EXPECT_EQ(first->getString("snippet"), std::optional<std::string>("First story summary."));
 }

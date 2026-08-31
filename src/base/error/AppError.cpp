@@ -1,6 +1,7 @@
 #include "base/error/AppError.h"
 
 #include "base/i18n/LocalizationService.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -24,6 +25,10 @@ Error AppError::Storage(Err::Storage code, const std::string& detail) {
   return Error::Make(static_cast<int32_t>(ErrorCategory::Storage), static_cast<int32_t>(code), detail);
 }
 
+Error AppError::Blob(Err::Blob code, const std::string& detail) {
+  return Error::Make(static_cast<int32_t>(ErrorCategory::Blob), static_cast<int32_t>(code), detail);
+}
+
 Error AppError::Internal(const std::string& detail) {
   return Error::Make(static_cast<int32_t>(ErrorCategory::Internal),
                      static_cast<int32_t>(Err::Internal::Generic), detail);
@@ -45,6 +50,8 @@ const char* AppError::CategoryName(ErrorCategory category) {
     return "Config";
   case ErrorCategory::Storage:
     return "Storage";
+  case ErrorCategory::Blob:
+    return "Blob";
   case ErrorCategory::Internal:
     return "Internal";
   case ErrorCategory::Unknown:
@@ -111,6 +118,16 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Storage::Generic:
     default:
       return Tr("errors.storage.failed");
+    }
+  case ErrorCategory::Blob:
+    switch (static_cast<Err::Blob>(code)) {
+    case Err::Blob::QuotaExceeded:
+      return Tr("errors.blob.quota_exceeded");
+    case Err::Blob::NothingToDelete:
+      return Tr("errors.blob.quota_nothing_to_delete");
+    case Err::Blob::Generic:
+    default:
+      return Tr("errors.blob.failed");
     }
   case ErrorCategory::Internal:
     return Tr("errors.internal");

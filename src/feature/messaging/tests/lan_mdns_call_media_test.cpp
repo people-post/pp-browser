@@ -1,6 +1,6 @@
+#include "base/p2p/AmpCircuitHopRegistry.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 
@@ -27,6 +27,19 @@ TEST(LanMdnsDiscoveryTest, BuildMultiaddrFromDiscoveredPeer) {
   EXPECT_EQ(*ma, "/ip4/192.168.1.42/tcp/18517/p2p/QmTestPeer");
 }
 
+TEST(LanMdnsDiscoveryTest, BuildAdpMultiaddrFromDiscoveredPeer) {
+  LanMdnsDiscoveredPeer peer;
+  peer.peer_id_base58 = "QmTestPeer";
+  peer.host_ip = "192.168.1.42";
+  peer.tcp_port = 18517;
+  peer.amp_udp_port = 19001;
+  auto ma = LanMdnsDiscovery::BuildAdpMultiaddr(peer);
+  ASSERT_TRUE(ma);
+  EXPECT_EQ(*ma, "/ip4/192.168.1.42/udp/19001/adp/1.0.0/p2p/QmTestPeer");
+  peer.amp_udp_port = 0;
+  EXPECT_FALSE(LanMdnsDiscovery::BuildAdpMultiaddr(peer).has_value());
+}
+
 TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
   ByteVector key(32, 0x11);
   const std::string call_id = "call-abc";
@@ -40,11 +53,11 @@ TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
   EXPECT_EQ(*decrypted, opus);
 }
 
-TEST(PeerSessionManagerCircuitTest, CircuitHopKeyIncludesProtocol) {
-  EXPECT_EQ(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"),
+TEST(AmpCircuitHopRegistryTest, KeyIncludesProtocol) {
+  EXPECT_EQ(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"),
             "QmA\x1f/pp-browser/call-media/1.0.0");
-  EXPECT_NE(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/media-relay/1.0.0"),
-            PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"));
+  EXPECT_NE(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/media-relay/1.0.0"),
+            AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"));
 }
 
 } // namespace

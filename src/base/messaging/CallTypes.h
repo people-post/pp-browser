@@ -55,6 +55,8 @@ enum class CallControlType {
   CallSfuAttachFailed,
   /** Owner → guest: cannot place guest on a shared hop; leave with friendly copy (V029). */
   CallHopRefuse,
+  /** Receiver asks publisher for an IDR (V034). */
+  CallVideoRefresh,
 };
 
 struct CallParticipantMedia {
@@ -67,6 +69,8 @@ struct CallSession {
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  /** Initiator policy: participants may publish video when true (V035). */
+  bool video_allowed = false;
   CallSessionState state = CallSessionState::Ringing;
   int64_t created_at = 0;
   std::optional<int64_t> ended_at;
@@ -89,6 +93,7 @@ struct PendingCallInvite {
   std::string inviter_identity;
   std::string invitee_identity;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
@@ -127,6 +132,7 @@ struct CallInviteDetail {
   std::string inviter_identity;
   std::string invitee_identity;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
@@ -211,6 +217,7 @@ struct CallEndedDetail {
 struct CallStartedDetail {
   std::string call_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
+  bool video_allowed = false;
 };
 
 struct CallSdpDetail {
@@ -257,6 +264,13 @@ struct CallHopRefuseDetail {
   std::string reason;
   /** User-facing sentence (already localized by sender). */
   std::string message;
+};
+
+/** Receiver asks publisher for an IDR (V034). */
+struct CallVideoRefreshDetail {
+  std::string call_id;
+  /** Publisher identity whose video_lo should keyframe. Empty = local publisher. */
+  std::string identity;
 };
 
 std::string GenerateCallId();

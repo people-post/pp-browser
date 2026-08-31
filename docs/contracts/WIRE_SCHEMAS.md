@@ -17,7 +17,7 @@
 
 ## pp Binary Wire Profile (D088)
 
-All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E blob tail) use this profile. **Do not** use bare `nlohmann::json::dump()` or ad hoc length widths on wire paths.
+All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E blob tail) use this profile. **Do not** use bare JSON `DumpJson` text or ad hoc length widths on wire paths.
 
 | Type | Encoding |
 |------|----------|
@@ -48,7 +48,7 @@ Forward-compat policy for older clients vs newer peers/APIs: [COMPATIBILITY.md](
 |-------|------|
 | **`RelayEnvelope`** (application blob) | **Ignore** unknown top-level keys on ingest after required fields parse. Required keys must be present. Do not fail on forward-compatible extensions. |
 | **`RelayWireRecord`** (HTTP relay) | **Reject** unknown top-level keys. Relay is format-blind — only routing + `blob_b64`. |
-| **`ChatPayload` (binary)** | **Reject** unknown `content_type` on **relay ingest** (D030/D050) today; target soft-skip / placeholder per [COMPATIBILITY.md](COMPATIBILITY.md). **Reject** unknown tail fields for known types in v1. |
+| **`ChatPayload` (binary)** | **Soft-skip** unknown `content_type` after decrypt (R018); **reject** malformed tails for known types in v1. |
 | **`ChatHistoryRequest` / `ChatHistoryResponse`** | **Reject** unknown top-level keys (server/client negotiated API). |
 | **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. **Normative byte layout:** [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) (E014). |
 
@@ -206,8 +206,9 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `annotation` | `2` |
 | `contact_card` | `3` |
 | `crypto_tx` | `4` |
+| `attachment` | `5` |
 
-**Rules:** reject unknown `content_type` on relay ingest (D050). Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
+**Rules:** unknown `content_type` after successful decrypt → **soft-skip** placeholder (R018 / [COMPATIBILITY.md](COMPATIBILITY.md)); reject malformed tails for known types. Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
 ### Type tails (inline, v1)
 
@@ -250,6 +251,21 @@ AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b6
 | `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
 
 Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+
+**`content_type = attachment` (relay blob upload a1):**
+
+| Field | Encoding |
+|-------|----------|
+| `sub_version` | `u8` = **`1`** |
+| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob |
+| `mime` | **LenUtf8** — logical type (e.g. `image/png`) |
+| `filename` | **LenUtf8** — original filename |
+| `byte_length` | `u64` BE — plaintext size |
+| `content_hash` | **LenBytes** — BLAKE2b-256 of plaintext (32 bytes) |
+| `content_key` | **LenBytes** — 32-byte AEAD key for file ciphertext |
+| `blob_nonce` | **LenBytes** — 24-byte XChaCha20-Poly1305 nonce |
+
+Top-level `text` is display fallback (usually `filename`). File bytes are AEAD-encrypted separately and uploaded as `application/octet-stream` (R006). See [relay blob DESIGN](../../projects/relay-blob-upload/DESIGN.md).
 
 Rich types: further sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
 

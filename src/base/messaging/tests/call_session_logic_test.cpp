@@ -75,6 +75,18 @@ TEST(CallSessionLogicTest, CanAcceptJoinRespectsCap) {
   EXPECT_FALSE(CallSessionLogic::CanAcceptJoin(16, 16));
 }
 
+TEST(CallSessionLogicTest, HonorInboundVideoRefreshOnlyJoinedOnActiveCall) {
+  const std::string call = "call:1";
+  const std::string local = "account:me";
+  const std::string peer = "account:peer";
+  EXPECT_TRUE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, call, true));
+  EXPECT_TRUE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, "", peer, local, call, true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, call, false));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, peer, local, "call:other", true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, "account:other", peer, local, call, true));
+  EXPECT_FALSE(CallSessionLogic::ShouldHonorInboundVideoRefresh(call, local, "", local, call, true));
+}
+
 TEST(CallControlTypeTest, WireRoundTrip) {
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallInvite), "call_invite");
   EXPECT_EQ(CallControlTypeFromWire("call_join"), CallControlType::CallAccept);
@@ -93,6 +105,8 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach_failed"), CallControlType::CallSfuAttachFailed);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallHopRefuse), "call_hop_refuse");
   EXPECT_EQ(CallControlTypeFromWire("call_hop_refuse"), CallControlType::CallHopRefuse);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallVideoRefresh), "call_video_refresh");
+  EXPECT_EQ(CallControlTypeFromWire("call_video_refresh"), CallControlType::CallVideoRefresh);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
@@ -159,6 +173,23 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   EXPECT_FALSE(old_invite->caps.present);
   EXPECT_FALSE(old_invite->caps.media_relay);
   EXPECT_EQ(old_invite->offer_amount_minor, 0);
+  EXPECT_FALSE(old_invite->video_allowed);
+
+  auto legacy_video = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:y","inviter_identity":"a","invitee_identity":"b","media_mode":"video"})");
+  ASSERT_TRUE(legacy_video);
+  EXPECT_TRUE(legacy_video->video_allowed);
+
+  CallInviteDetail invite_video;
+  invite_video.call_id = "call:z";
+  invite_video.inviter_identity = "a";
+  invite_video.invitee_identity = "b";
+  invite_video.video_allowed = true;
+  auto encoded_video = CallControlCodec::EncodeInvite(invite_video);
+  ASSERT_TRUE(encoded_video);
+  auto decoded_video = CallControlCodec::DecodeInvite(*encoded_video);
+  ASSERT_TRUE(decoded_video);
+  EXPECT_TRUE(decoded_video->video_allowed);
 }
 
 TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
@@ -189,6 +220,32 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   EXPECT_EQ(decoded_accept->charge_decision, "take_all");
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
+
+TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
+  CallVideoRefreshDetail detail;
+  detail.call_id = "call:vid";
+  detail.identity = "account:pub";
+  auto encoded = CallControlCodec::EncodeVideoRefresh(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeVideoRefresh(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->identity, detail.identity);
+  EXPECT_FALSE(CallControlCodec::DecodeVideoRefresh(R"({"identity":"account:pub"})"));
+}
+
+TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
+  CallInviteDetail voice;
+  voice.media_mode = CallMediaMode::Voice;
+  voice.video_allowed = false;
+  EXPECT_FALSE(CallSessionLogic::VideoAllowedFromInvite(voice));
+
+  CallInviteDetail allowed;
+  allowed.media_mode = CallMediaMode::Voice;
+  allowed.video_allowed = true;
+  EXPECT_TRUE(CallSessionLogic::VideoAllowedFromInvite(allowed));
+}
+
 
 } // namespace
 } // namespace pbr

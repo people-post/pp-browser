@@ -19,8 +19,17 @@
            class="contacts-row"
            data-class-contacts-row--active="contact.id == selected.id && selected.id != ''"
            data-event-click="select_contact(contact.id)">
-        <div class="contacts-row-icon">
-          <svg src="../icons/contacts.svg" width="14" height="14" crop-to-content="true"></svg>
+        <div class="contacts-row-avatar-frame"
+             data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
+             data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
+             data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
+             data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
+             data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
+             data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
+             data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
+             data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
+          <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
+          <p class="avatar-letter" data-if="!contact.has_icon" data-rml="contact.avatar_letter"></p>
         </div>
         <div class="contacts-row-body">
           <div class="contacts-row-title-line row">

@@ -54,6 +54,9 @@ public:
 
   static CallAdaptationDecision Evaluate(const CallAdaptationInput& in);
 
+  /** Relay quote want_up_bps from session video policy (blind bytes — V022). */
+  static int64_t QuoteWantUpBps(bool video_allowed);
+
   /** Map path_pressure 0..1 → Opus target within [kMinAudioBps, comfort]. */
   static int64_t AudioBpsForPressure(double path_pressure, int64_t comfort_bps = kComfortAudioBps);
 

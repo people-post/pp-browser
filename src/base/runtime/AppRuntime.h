@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/runtime/CoordinatorThread.h"
-#include "common/WorkerDispatch.h"
+#include "base/runtime/WorkerDispatch.h"
 #include "common/WorkerPool.h"
 
 #include <chrono>
@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

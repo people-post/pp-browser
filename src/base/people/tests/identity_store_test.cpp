@@ -4,12 +4,13 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/MlDsa.h"
 #include "base/p2p/PeerIdUtil.h"
+#include "common/ValueJson.h"
 
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 #include <sodium.h>
+#include "common/PbrCompat.h"
 
 namespace {
 
@@ -93,6 +94,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   identity.nickname = "alice";
   identity.relay_user_id = "relay:alice123";
   identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
+  identity.brief_llm_guest_api_key = "brf_guest_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
   identity.registration_expires_at = "2099-06-01T00:00:00.000Z";
   auto updated = store.Update(identity);
@@ -104,6 +106,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   ASSERT_TRUE(static_cast<bool>(loaded)) << loaded.error().message;
   EXPECT_EQ(loaded->relay_user_id, "relay:alice123");
   EXPECT_EQ(loaded->brief_llm_api_key, "brf_llm_testkeyABCDEFGHIJKLMNOP");
+  EXPECT_EQ(loaded->brief_llm_guest_api_key, "brf_guest_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
   EXPECT_EQ(loaded->registration_expires_at, "2099-06-01T00:00:00.000Z");
   EXPECT_FALSE(loaded->peer_id.empty());
@@ -121,15 +124,16 @@ TEST_F(IdentityStoreTest, RejectsLegacyEd25519DeviceKeys) {
   ByteVector fake_sk(32, 0x22);
 
   std::filesystem::create_directories(data_dir_);
-  const nlohmann::json legacy = {{"schema_version", 2},
-                                 {"public_key_b64", Base64Encode(fake_pk)},
-                                 {"private_key_b64", Base64Encode(fake_sk)},
-                                 {"nickname", "legacy"},
-                                 {"relay_user_id", ""},
-                                 {"brief_llm_api_key", ""},
-                                 {"registered", false},
-                                 {"registration_expires_at", ""}};
-  const std::string json = legacy.dump(2);
+  Object legacy;
+  legacy.set("schema_version", static_cast<int64_t>(2));
+  legacy.set("public_key_b64", Base64Encode(fake_pk));
+  legacy.set("private_key_b64", Base64Encode(fake_sk));
+  legacy.set("nickname", "legacy");
+  legacy.set("relay_user_id", "");
+  legacy.set("brief_llm_api_key", "");
+  legacy.set("registered", false);
+  legacy.set("registration_expires_at", "");
+  const std::string json = DumpJson(legacy, 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", "test-profile");
   auto ciphertext = FileCipher::Encrypt(dek, plaintext, aad);
@@ -160,10 +164,12 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionOnCreate) {
   ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   auto plain = FileCipher::Decrypt(dek, blob, aad);
   ASSERT_TRUE(static_cast<bool>(plain)) << plain.error().message;
-  const nlohmann::json root = nlohmann::json::parse(plain->begin(), plain->end(), nullptr, false);
-  ASSERT_FALSE(root.is_discarded());
-  ASSERT_TRUE(root.contains("schema_version"));
-  EXPECT_EQ(root["schema_version"].get<int>(), IdentityStore::kSchemaVersion);
+  const std::string text(plain->begin(), plain->end());
+  auto root = TryParseObject(text);
+  ASSERT_TRUE(static_cast<bool>(root));
+  ASSERT_TRUE(root->contains("schema_version"));
+  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)),
+            IdentityStore::kSchemaVersion);
 }
 
 TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
@@ -172,12 +178,13 @@ TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   ASSERT_TRUE(static_cast<bool>(keys));
 
   std::filesystem::create_directories(data_dir_);
-  const nlohmann::json newer = {{"schema_version", IdentityStore::kSchemaVersion + 1},
-                                {"public_key_b64", Base64Encode(keys->public_key)},
-                                {"private_key_b64", Base64Encode(keys->secret_key)},
-                                {"nickname", "future"},
-                                {"registered", false}};
-  const std::string json = newer.dump(2);
+  Object newer;
+  newer.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion + 1));
+  newer.set("public_key_b64", Base64Encode(keys->public_key));
+  newer.set("private_key_b64", Base64Encode(keys->secret_key));
+  newer.set("nickname", "future");
+  newer.set("registered", false);
+  const std::string json = DumpJson(newer, 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", "test-profile");
   auto ciphertext = FileCipher::Encrypt(dek, plaintext, aad);
@@ -194,6 +201,48 @@ TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   auto identity = store.Get();
   ASSERT_FALSE(static_cast<bool>(identity));
   EXPECT_NE(identity.error().message.find("schema"), std::string::npos);
+}
+
+TEST_F(IdentityStoreTest, SeededMintIsDeterministicAndFailClosed) {
+  ByteVector seed(32, 0x55);
+  std::string peer_id;
+  std::string account_id;
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    ASSERT_TRUE(store.SetIdentitySeed(seed));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    peer_id = identity->peer_id;
+    account_id = identity->account_id;
+  }
+  {
+    IdentityStore reloaded(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+    ASSERT_TRUE(reloaded.SetIdentitySeed(seed));
+    auto identity = reloaded.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    EXPECT_EQ(identity->peer_id, peer_id);
+    EXPECT_EQ(identity->account_id, account_id);
+  }
+  {
+    IdentityStore mismatch(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(mismatch.SetDek(MakeTestDek()));
+    ByteVector other(32, 0x66);
+    ASSERT_TRUE(mismatch.SetIdentitySeed(other));
+    auto identity = mismatch.LoadOrCreate();
+    ASSERT_FALSE(static_cast<bool>(identity));
+    EXPECT_NE(identity.error().message.find("fail-closed"), std::string::npos);
+  }
+  // Wipe + same seed remints identical ids
+  std::filesystem::remove_all(data_dir_);
+  IdentityStore remint(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(remint.SetDek(MakeTestDek()));
+  ASSERT_TRUE(remint.SetIdentitySeed(seed));
+  auto again = remint.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
+  EXPECT_EQ(again->peer_id, peer_id);
+  EXPECT_EQ(again->account_id, account_id);
 }
 
 } // namespace

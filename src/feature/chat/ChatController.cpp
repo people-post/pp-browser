@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <filesystem>
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingFacade.h"
 #include "feature/ui/ShellSetupPorts.h"
@@ -13,6 +14,8 @@
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPushDeviceRegistrar.h"
+#include "base/platform/NativeFileDialog.h"
+#include "base/platform/PlatformOpenFile.h"
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/WorkingSetPolicy.h"
@@ -25,7 +28,8 @@
 #include "feature/chat/CalendarHelper.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "common/Utilities.h"
-#include "common/StartupTiming.h"
+#include "base/runtime/StartupTiming.h"
+#include "RmlUi_Backend.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/people/ContactJson.h"
@@ -39,7 +43,7 @@
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
-#include "common/EmojiKey.h"
+#include "base/messaging/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
@@ -49,10 +53,14 @@
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/ui/BlobQuotaRecoveryFlow.h"
 #include "base/p2p/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "base/error/AppError.h"
+#include "base/net/BriefGuestLlmClient.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
@@ -60,7 +68,7 @@
 #include <RmlUi/Core/SystemInterface.h>
 #include "feature/ui/SettingsController.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -75,6 +83,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -268,6 +277,7 @@ ChatController::ChatController()
                  .thread_is_public = chat_.thread_is_public,
                  .thread_is_group = chat_.thread_is_group,
                  .compose_disabled = chat_.compose_disabled,
+                 .show_attach_button = chat_.show_attach_button,
                  .show_thread_actions = chat_.show_thread_actions,
                  .show_peer_sheet = chat_.show_peer_sheet,
                  .show_call_actions = chat_.show_call_actions,
@@ -620,6 +630,35 @@ void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml
   Instance().OpenEmojiInsertMenu(&ev);
 }
 
+void ChatController::AttachFileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  Instance().OnAttachFile();
+}
+
+void ChatController::OpenAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().OpenAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatController::RetryAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().RetryAttachmentDownload(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatController::DownloadAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().DownloadAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
 void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
@@ -664,22 +703,24 @@ void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*
   Instance().OnOpenThreadActionsMenu(ev);
 }
 
-void ChatController::StartVoiceCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ChatController::StartCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                       const Rml::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_actions_.start_voice) {
-    self.call_actions_.start_voice(thread_id);
+  if (thread_id.empty()) {
+    return;
   }
-}
-
-void ChatController::StartVideoCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
-  ChatController& self = Instance();
-  const std::string thread_id = self.ActiveThreadId();
-  if (!thread_id.empty() && self.call_actions_.start_video) {
-    self.call_actions_.start_video(thread_id);
-  }
+  self.ShowConfirmWithCheckbox(
+      Tr("call.start.title"), Tr("call.start.message"), Tr("call.start.allow_video"), false,
+      [thread_id](const bool ok, const bool allow_video) {
+        if (!ok) {
+          return;
+        }
+        ChatController& inner = Instance();
+        if (inner.call_actions_.start_call) {
+          (void)inner.call_actions_.start_call(thread_id, allow_video);
+        }
+      });
 }
 
 void ChatController::OpenPeerSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
@@ -1087,6 +1128,7 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
+  SyncComposerInputState();
   if (badge_notify_.refresh) {
     badge_notify_.refresh();
   }
@@ -1234,6 +1276,113 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  SyncComposerInputState();
+}
+
+void ChatController::SyncComposerInputState() {
+  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading;
+}
+
+void ChatController::OnAttachFile() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShowOpenFileDialog(Backend::GetWindow(), [this, thread_id](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        return;
+      }
+      StartAttachmentUpload(std::move(paths.front()));
+    });
+  });
+}
+
+void ChatController::StartAttachmentUpload(const std::string& path) {
+  if (!facade_ || chat_.attachment_uploading) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  chat_.attachment_uploading = true;
+  chat_.attachment_draft_name = std::filesystem::path(path).filename().string().c_str();
+  chat_.status = Tr("chat.attachment.uploading").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+
+  AppRuntime::PostWorkerNormal([this, thread_id, path]() {
+    BlobQuotaRecoveryFlow::RunUpload<ThreadMessage>(
+        [this, thread_id, path]() { return facade_->SendAttachmentFromPath(thread_id, path); },
+        [this](Roe<ThreadMessage> sent) {
+          chat_.attachment_uploading = false;
+          chat_.attachment_draft_name = "";
+          chat_.status = "";
+          SyncComposerInputState();
+          DirtyChatChrome();
+          DirtyChatHeader();
+          if (!sent) {
+            UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+            return;
+          }
+          SyncDisplayFromThread();
+          scroller_.RequestScrollToLatest();
+          UpdateSidebarPreview(sent->text);
+        },
+        [this]() { return facade_->PlanRelayQuotaRecovery(); },
+        [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+  });
+}
+
+void ChatController::OpenAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+  if (!path) {
+    UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+    return;
+  }
+  const auto open_file = [path = *path]() {
+    if (!PlatformOpenFile(path)) {
+      UserFeedback::Fail(Tr("chat.attachment.open_failed"));
+    }
+  };
+  if (facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id)) {
+    ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
+                [open_file](const bool ok) {
+                  if (ok) {
+                    open_file();
+                  }
+                });
+    return;
+  }
+  open_file();
+}
+
+void ChatController::RetryAttachmentDownload(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  facade_->RetryAttachmentDownload(ActiveThreadId(), message_id);
+}
+
+void ChatController::DownloadAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  facade_->RequestAttachmentDownload(ActiveThreadId(), message_id);
 }
 
 void ChatController::UpdatePeerLinkChrome() {
@@ -1241,7 +1390,10 @@ void ChatController::UpdatePeerLinkChrome() {
 }
 
 void ChatController::ResetChatPanelState() {
+  chat_.attachment_uploading = false;
+  chat_.attachment_draft_name = "";
   chrome_.ResetPanelState();
+  SyncComposerInputState();
 }
 
 void ChatController::SyncDisplayFromThread() {
@@ -1253,6 +1405,9 @@ void ChatController::SyncDisplayFromThread() {
     return;
   }
   const std::string thread_id = ActiveThreadId();
+  if (facade_) {
+    facade_->EnsureThreadAttachments(thread_id);
+  }
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
 
   const std::string prev_tail_id =
@@ -1272,16 +1427,11 @@ void ChatController::SyncDisplayFromThread() {
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
   if (payload && !payload->empty()) {
-    const nlohmann::json action_json = nlohmann::json::parse(*payload, nullptr, false);
-    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
-        action_json["type"].get<std::string>() == "tool_permission") {
-      const std::string approval_id =
-          action_json.contains("approval_id") && action_json["approval_id"].is_string()
-              ? action_json["approval_id"].get<std::string>()
-              : "";
-      const std::string decision = action_json.contains("decision") && action_json["decision"].is_string()
-                                       ? action_json["decision"].get<std::string>()
-                                       : "";
+    auto action_json = TryParseObject(*payload);
+    auto action_type = action_json ? action_json->getString("type") : std::nullopt;
+    if (action_type && *action_type == "tool_permission") {
+      const std::string approval_id = action_json->getString("approval_id").value_or("");
+      const std::string decision = action_json->getString("decision").value_or("");
       if (!agent_ports_.resume_tool_permission) {
         ShowToast("Assistant is not ready for permission decisions.");
         return;
@@ -1292,8 +1442,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       }
       return;
     }
-    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
-        action_json["type"].get<std::string>() == "fork_group") {
+    if (action_type && *action_type == "fork_group") {
       const std::string confirmed_payload = *payload;
       ShowConfirm("Start a new group?",
           "This creates a new group with a fresh history. People who are still reachable can be invited again.",
@@ -2216,24 +2365,27 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
           thread_id.empty() ? ActiveThreadId() : thread_id;
       std::string relay_plain = raw_output;
       if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
-        try {
-          const nlohmann::json blocks_doc = nlohmann::json::parse(raw_output);
-          if (blocks_doc.contains("blocks") && blocks_doc["blocks"].is_array()) {
+        if (auto blocks_doc = TryParseObject(raw_output)) {
+          if (const Array* blocks = blocks_doc->getArray("blocks")) {
             std::string joined;
-            for (const auto& block : blocks_doc["blocks"]) {
-              if (block.value("type", "") == "paragraph" && block.contains("text") &&
-                  block["text"].is_string()) {
-                if (!joined.empty()) {
-                  joined += "\n";
+            for (const Value& block_value : blocks->elements) {
+              const Object* block = asObject(block_value);
+              if (!block) {
+                continue;
+              }
+              if (block->getString("type").value_or("") == "paragraph") {
+                if (auto text = block->getString("text")) {
+                  if (!joined.empty()) {
+                    joined += "\n";
+                  }
+                  joined += *text;
                 }
-                joined += block["text"].get<std::string>();
               }
             }
             if (!joined.empty()) {
               relay_plain = joined;
             }
           }
-        } catch (const std::exception&) {
         }
       }
       SendSharedAssistantRelay(active_thread, shared_ai_mode, relay_plain);
@@ -2328,25 +2480,42 @@ void ChatController::WithSecrets(std::function<void()> action) {
 void ChatController::RefreshLlmSetupBanner() {
   const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
-  constexpr const char* kRegisterBrief =
+  constexpr const char* kRegisterBriefHard =
       "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).";
+  constexpr const char* kGuestBriefSoft =
+      "Using Brief free tier — register in Me → Profile for higher limits.";
 
   if (!use_llm_) {
     UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
     return;
   }
   if (ResolvePreset(config) == "brief") {
-    std::string brief_key;
+    EnsureBriefGuestLlmKey();
+    std::string registered;
+    std::string guest;
     if (MessagingReady()) {
       if (auto identity = facade_->GetIdentity()) {
-        brief_key = identity->brief_llm_api_key;
+        registered = identity->brief_llm_api_key;
+        guest = identity->brief_llm_guest_api_key;
       }
     }
+    const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
     if (brief_key.empty()) {
-      UserFeedback::NeedsSetup(kRegisterBrief);
+      if (!brief_guest_mint_user_hint_.empty()) {
+        UserFeedback::NeedsSetup(brief_guest_mint_user_hint_);
+      } else {
+        UserFeedback::NeedsSetup(
+            "Brief free tier unavailable right now — try again later, or register in Me → Profile.");
+      }
       return;
     }
-    if (ChromeSnapshot().banner_message == kRegisterBrief) {
+    if (registered.empty() && !guest.empty()) {
+      UserFeedback::NeedsSetup(kGuestBriefSoft);
+      return;
+    }
+    const std::string& banner = ChromeSnapshot().banner_message;
+    if (banner == kRegisterBriefHard || banner == kGuestBriefSoft ||
+        banner.find("Brief free tier") != std::string::npos) {
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
       }
@@ -2355,6 +2524,44 @@ void ChatController::RefreshLlmSetupBanner() {
   }
   if (config.llm.require_api_key && config.llm.api_key.empty()) {
     UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
+  }
+}
+
+void ChatController::EnsureBriefGuestLlmKey() {
+  if (!MessagingReady() || !facade_) {
+    return;
+  }
+  auto identity = facade_->GetIdentity();
+  if (!identity) {
+    return;
+  }
+  if (!identity->brief_llm_api_key.empty() || !identity->brief_llm_guest_api_key.empty()) {
+    brief_guest_mint_user_hint_.clear();
+    return;
+  }
+  if (brief_guest_mint_attempted_) {
+    return;
+  }
+  brief_guest_mint_attempted_ = true;
+
+  std::string base_url = Store().Snapshot().config.llm.base_url;
+  if (ResolvePreset(Store().Snapshot().config) != "brief" || base_url.empty()) {
+    base_url = BriefLlmBaseUrl();
+  }
+  auto minted = MintBriefGuestLlmKey(base_url);
+  if (!minted) {
+    brief_guest_mint_user_hint_ = AppError::Display(minted.error());
+    if (brief_guest_mint_user_hint_.empty()) {
+      brief_guest_mint_user_hint_ =
+          "Brief free tier is temporarily unavailable — try again later.";
+    }
+    return;
+  }
+  brief_guest_mint_user_hint_.clear();
+  LocalIdentity updated = *identity;
+  updated.brief_llm_guest_api_key = minted->llm_api_key;
+  if (!facade_->UpdateLocalIdentity(updated)) {
+    brief_guest_mint_user_hint_ = "Couldn't save Brief free-tier key — try again later.";
   }
 }
 
@@ -2367,6 +2574,8 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  EnsureBriefGuestLlmKey();
+  RefreshLlmSetupBanner();
   if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {
     if (agent_ports_.set_thread_store) {
       agent_ports_.set_thread_store(store);
@@ -2551,6 +2760,10 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("thread_is_public", &controller.chat_.thread_is_public);
         ctor.Bind("thread_is_group", &controller.chat_.thread_is_group);
         ctor.Bind("compose_disabled", &controller.chat_.compose_disabled);
+        ctor.Bind("composer_input_disabled", &controller.chat_.composer_input_disabled);
+        ctor.Bind("show_attach_button", &controller.chat_.show_attach_button);
+        ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
+        ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
         ctor.Bind("show_peer_sheet", &controller.chat_.show_peer_sheet);
         ctor.Bind("show_call_actions", &controller.chat_.show_call_actions);
@@ -2576,6 +2789,10 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
         ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
+        ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
+        ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
+        ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
+        ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
@@ -2584,8 +2801,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
         ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
-        ctor.BindEventCallback("start_voice_call", &ChatController::StartVoiceCallCallback);
-        ctor.BindEventCallback("start_video_call", &ChatController::StartVideoCallCallback);
+        ctor.BindEventCallback("start_call", &ChatController::StartCallCallback);
         ctor.BindEventCallback("open_peer_sheet", &ChatController::OpenPeerSheetCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
@@ -2758,10 +2974,11 @@ void ChatController::Apply(const AgentConfig& config) {
   preset_probe.llm = runtime.llm;
   if (ResolvePreset(preset_probe) == "brief") {
     runtime.llm.require_api_key = true;
+    EnsureBriefGuestLlmKey();
     std::string brief_key;
     if (MessagingInitialized() && MessagingReady()) {
       if (auto identity = facade_->GetIdentity()) {
-        brief_key = identity->brief_llm_api_key;
+        brief_key = ResolveBriefLlmApiKey(identity->brief_llm_api_key, identity->brief_llm_guest_api_key);
       }
     }
     if (!brief_key.empty()) {

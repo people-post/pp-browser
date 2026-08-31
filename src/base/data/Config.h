@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -62,25 +63,35 @@ struct Libp2pPricingConfig {
 };
 
 struct Libp2pConfig {
-  /**
-   * Preferred listen multiaddr when role is Node (N003).
-   * May be rewritten after busy-port fallback (N016).
-   */
-  std::string listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
   /** Desktop opt-out of Node; ignored on mobile (always Client). */
   bool node_enabled = true;
-  /** Seed / bootstrap dial targets (must include /p2p/<PeerId>). */
+  /**
+   * Seed / bootstrap dial targets (must include /p2p/<PeerId>).
+   * L0 cold-start / emergency (N002); mesh services prefer directory (N027).
+   */
   std::vector<std::string> bootstrap_peers;
-  size_t max_connections = 48;
-  size_t max_concurrent_dials = 6;
-  int dial_timeout_ms = 8000;
-  int idle_ttl_ms = 180000;
-  int dial_failure_backoff_ms = 30000;
+  /**
+   * Public multiaddrs published to directory (N027). Never use 0.0.0.0.
+   * pp-node mesh_node renew uses these; GUI person register may use listen set.
+   */
+  std::vector<std::string> advertise_multiaddrs;
+  /**
+   * When true, register/renew as entity_kind=mesh_node with local capabilities.
+   * Default false (pp-browser). pp-node enables via env/config when advertising.
+   */
+  bool mesh_publish = false;
   /**
    * Prefer contacts then org seed for circuit/media hop pick (nf / N014).
    * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
    */
   bool prefer_contacts_for_routing = true;
+  /**
+   * Peer mesh on/off. When true, MeshHost hard-requires Amp UDP bind (D10).
+   * When false, peer mesh underlay stays off. Requires device ML-DSA keys.
+   */
+  bool mesh_enabled = true;
+  /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
+  int amp_udp_port = 0;
   Libp2pCapabilities capabilities;
   Libp2pPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;

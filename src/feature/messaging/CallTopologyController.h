@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -152,6 +153,7 @@ public:
   void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
 
   void RefreshAdaptation(const std::string& call_id);
+  void RefreshAdaptation(const std::string& call_id, bool camera_user_wants);
   /** Re-Subscribe hop streams for all currently Joined peers (late join / roster). */
   void SyncSfuSubscriptions(const std::string& call_id);
   uint32_t PublisherStreamIdForLocal() const;
@@ -167,6 +169,8 @@ private:
   /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
+  /** First subscribe: ask publisher for an IDR (V034). */
+  void MaybeRequestPublisherKeyframe(uint32_t stream_id);
   /** Learn publisher_stream_id from CallSfuAttach even when roster lacks that peer (dogfood). */
   void NoteRemotePublisherFromAttach(const CallSfuAttachDetail& attach);
   /** Fan-out our publisher stream so peers with incomplete Joined roster still subscribe. */
@@ -200,6 +204,7 @@ private:
   uint32_t local_publisher_stream_id_ = 0;
   /** Remote publisher streams learned from CallSfuAttach (roster may lag). */
   std::unordered_set<uint32_t> remote_publisher_stream_ids_;
+  std::unordered_set<uint32_t> video_refresh_sent_streams_;
   std::string sfu_attach_wait_call_id_;
   int64_t sfu_attach_wait_deadline_ms_ = 0;
   /** Last successful remote-hop attach (guest reattach after duplex death). */

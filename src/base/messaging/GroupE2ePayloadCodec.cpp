@@ -6,6 +6,7 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

@@ -6,7 +6,7 @@
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/ICallMediaTransport.h"
 
 #include "common/Module.h"
 
@@ -14,17 +14,18 @@
 #include <cstdint>
 #include <string>
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
 /**
- * 1:1 libp2p direct call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
- * with Opus frames over CallMediaDirectService (AEAD under call media key).
+ * 1:1 call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
+ * with Opus frames over ICallMediaTransport (libp2p or Amp; [A020]).
  */
 class CallLibp2pMediaBridge : public Module {
 public:
   CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, CallMediaDirectService& direct, IDialRegistry* dial,
+                        CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
                         ICircuitHopReach* circuit_reach);
 
   bool IsLibp2pConnectFailed() const;
@@ -83,12 +84,14 @@ private:
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
+  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
+                                 const std::vector<uint8_t>& payload);
 
   CallMediaHost& host_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;
-  CallMediaDirectService& direct_;
+  ICallMediaTransport& direct_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;

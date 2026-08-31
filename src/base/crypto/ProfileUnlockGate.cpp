@@ -1,10 +1,11 @@
 #include "base/crypto/ProfileUnlockGate.h"
 
 #include "base/crypto/PinDefaults.h"
-#include "common/StartupTiming.h"
+#include "base/runtime/StartupTiming.h"
 
 #include <stdexcept>
 #include <utility>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

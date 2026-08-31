@@ -43,7 +43,7 @@ $ProfilesJson = Join-Path $DataDir "profiles.json"
 Write-Host "data_dir: $DataDir"
 
 if (-not (Test-Path -LiteralPath $DataDir)) {
-  Write-Host "nothing to wipe — data dir missing"
+  Write-Host "nothing to wipe - data dir missing"
   exit 0
 }
 
@@ -60,7 +60,7 @@ if (-not [string]::IsNullOrWhiteSpace($Profile)) {
 }
 
 if ($targets.Count -eq 0) {
-  Write-Host "nothing to wipe — no profiles under $ProfilesDir"
+  Write-Host "nothing to wipe - no profiles under $ProfilesDir"
   exit 0
 }
 
@@ -74,7 +74,7 @@ foreach ($t in $targets) {
 }
 
 if ($DryRun -or -not $Yes) {
-  Write-Host "dry-run complete — re-run with -Yes to delete"
+  Write-Host "dry-run complete - re-run with -Yes to delete"
   exit 0
 }
 
@@ -85,4 +85,4 @@ foreach ($t in $targets) {
   }
 }
 
-Write-Host "wipe complete — restart pp-browser and re-register"
+Write-Host "wipe complete - restart pp-browser and re-register"

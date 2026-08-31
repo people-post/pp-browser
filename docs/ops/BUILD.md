@@ -12,7 +12,6 @@
 - Linux **video calls** (a3+, best-effort VA-API): `libva-dev` — soft link at configure time. Without it, `VideoCodec_Linux` builds the unavailable stub (voice still works). Runtime also needs a VA driver package (e.g. `mesa-va-drivers`, `intel-media-va-driver`, or vendor NVIDIA VA support) and a usable `/dev/dri/renderD*`.
 - **Windows / macOS voice:** no extra packages — SDL uses **WASAPI** / **CoreAudio**. Ensure OS mic privacy allows the app (Windows Settings → Privacy → Microphone; macOS TCC prompt / shipped apps need mic usage string when notarized).
 - **Android / iOS voice:** no Pulse/ALSA packages; SDL uses AAudio/OpenSL ES or CoreAudio via the SDK. **Permissions and audio session are still TODO** before claiming mobile voice — see [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
-- Perl (for lsquic code generation)
 
 Debian/Ubuntu one-liner:
 
@@ -42,11 +41,11 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, lsquic, and related packages.
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** under `src/lib/rmlui/`. libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
@@ -58,7 +57,7 @@ Chat/CJK fonts (Noto Sans CJK Regular + **Noto Color Emoji** CBDT, with monochro
 
 If libp2p dependency trees are missing, run `./scripts/libp2p_vendor_import.sh`.
 
-Codec sources under `third_party/sdl3_image/external/` are committed as **regular files** (not git submodules). If configure reports missing externals after clone, re-run `./scripts/vendor_import.sh` and ensure those directories contain source files, not empty gitlink placeholders.
+SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump `PP_CPP_UI_GIT_TAG` when updating them.
 
 ## Configure and build
 
@@ -72,42 +71,24 @@ First-party targets (`src/common`, `src/base`, `src/feature`, `src/app`, and ren
 Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
 
 ```bash
-rm -rf build/third_party/sdl3
+rm -rf build/_deps/pp_cpp_ui-build/third_party/sdl3
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
 ### Owned forks (RmlUi / libp2p)
 
-Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
 
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
 | `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
-| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
-| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
-| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
 
-Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
+Mobile builds default host tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
-### libp2p tests and coverage
+### libp2p fork (A017 PeerId only)
 
-By default, desktop builds enable in-tree libp2p unit tests (`PP_BROWSER_LIBP2P_TESTING=ON`). Examples are opt-in.
-
-```bash
-# Default: pp-browser + libp2p unit tests
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-ctest --test-dir build
-
-# libp2p examples
-cmake -B build -S . -DPP_BROWSER_LIBP2P_EXAMPLES=ON
-cmake --build build -j
-
-# libp2p coverage (requires gcovr)
-cmake -B build -S . -DPP_BROWSER_LIBP2P_COVERAGE=ON -DPP_BROWSER_LIBP2P_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target ctest_coverage_html
-```
+The in-tree libp2p fork retains PeerId + key wire only (`p2p_peer_id`, `p2p_wire`). Mesh underlay is Amp — see [adp](../../projects/adp/).
 
 ### Compiler cache (optional)
 
@@ -154,13 +135,13 @@ Or: `scripts/pp_node_package_linux.sh configure` (same flags). Linux build host 
 
 ```bash
 cmake --build build -j --target pp-node
-./build/src/app/node/pp-node --listen /ip4/0.0.0.0/tcp/18517 --pin "$PP_BROWSER_PIN"
+PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 ```
 
-- PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_LISTEN`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
-- Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` / `PP_NODE_LISTEN_FALLBACK=1` only for local dogfood.
+- PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_AMP_UDP_PORT`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
+- Amp UDP listen is controlled by `libp2p.amp_udp_port` / `PP_NODE_AMP_UDP_PORT` (0 = ephemeral; org seed should pin **443**).
 - Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
-- **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Separate from the libp2p listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
+- **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Separate from the Amp UDP listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
   ```bash
   curl -sS http://127.0.0.1:18518/healthz
   curl -sS http://127.0.0.1:18518/status
@@ -196,9 +177,20 @@ See [INPUT.md](../ui/INPUT.md) for behavior details.
 
 ### Brief LLM (default)
 
-First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `grok-4-1-fast-reasoning`). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
+First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `xai` — Brief provider id; upstream Grok version is configured on the Brief AI side). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
+
+### Sandbox backend (dogfood)
+
+Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.qa.peoplepost.org`) and keep profile data separate from production:
+
+```bash
+pp-browser --sandbox
+# or: PP_BROWSER_SANDBOX=1 pp-browser
+```
+
+Uses config/data under `pp-browser-sandbox` (e.g. `~/.config/pp-browser-sandbox`, `~/.local/share/pp-browser-sandbox` on Linux). Register a **new identity** on the sandbox — production relay IDs and Brief API keys do not carry over. Stale `www.brief.global` URLs in an existing sandbox config file are rewritten on load.
 
 ### Cloud LLM (optional)
 
@@ -244,14 +236,16 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- RmlUi fork unit tests (doctest) under [`src/lib/rmlui/Tests/`](../src/lib/rmlui/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- RmlUi fork unit tests (doctest) live in **pp-cpp-ui** and run there with `-DPP_UI_BUILD_TESTS=ON` (not in this repo’s ctest).
 - GoogleTest module suites under `src/.../tests/`.
 
 All suites are discovered through CTest. **Writing new tests:** temp SQLite dirs must use a gtest fixture and close stores before `remove_all` — Windows CI fails otherwise; see [TEST_STRATEGY.md § Unit test conventions](TEST_STRATEGY.md#unit-test-conventions).
 
-To run RmlUi fork tests:
+To run RmlUi fork tests (from the pp-cpp-ui checkout):
 
 ```bash
+cmake -S . -B build -DPP_UI_BUILD_TESTS=ON
+cmake --build build --target rmlui_unit_tests
 ctest --test-dir build -R rmlui_unit_tests --output-on-failure
 ctest --test-dir build -R ClickRouting --output-on-failure
 ```
@@ -270,7 +264,6 @@ Build a debug APK with the Gradle project under [`android/`](../android/). The n
 
 - Android SDK (API 35) and NDK r26+
 - JDK 17+
-- Perl (lsquic codegen — same as desktop)
 - Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
 
 Set environment variables:
@@ -304,13 +297,12 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for mobile lifecycle, navigatio
 
 ## iOS (local, macOS required)
 
-Build **Frame.app** for the iOS Simulator or device with CMake + Xcode. Signing placeholders mirror macOS ([`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)).
+Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing placeholders mirror macOS ([`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)).
 
 ### Prerequisites
 
 - macOS with Xcode 15+ and iOS SDK
 - CMake 3.24+, Ninja (recommended)
-- Perl (lsquic codegen — same as desktop)
 
 ### Build and run (simulator)
 
@@ -321,4 +313,4 @@ Build **Frame.app** for the iOS Simulator or device with CMake + Xcode. Signing 
 
 Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md).
 
-The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `Frame.app/assets/` automatically.
+The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.

@@ -1,10 +1,11 @@
 #include "base/ai/PromptBuilder.h"
 
-#include <nlohmann/json.hpp>
+#include "common/ValueJson.h"
 
 #include <cctype>
 #include <sstream>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -40,13 +41,10 @@ void AppendGoalRules(std::ostringstream& out, const ResponseGoal goal) {
   }
 }
 
-std::string ExtractArticleField(const nlohmann::json& article, const std::initializer_list<const char*> keys) {
+std::string ExtractArticleField(const Object& article, const std::initializer_list<const char*> keys) {
   for (const char* key : keys) {
-    if (article.contains(key) && article[key].is_string()) {
-      const std::string value = article[key].get<std::string>();
-      if (!value.empty()) {
-        return value;
-      }
+    if (auto value = article.getString(key); value && !value->empty()) {
+      return *value;
     }
   }
   return {};
@@ -253,19 +251,24 @@ std::string PromptBuilder::BuildOutputRepairPrompt(const TurnPlan& plan, const s
 }
 
 std::string PromptBuilder::FormatSearchResultsForLlm(const std::string& search_results_json) {
-  nlohmann::json doc = nlohmann::json::parse(search_results_json, nullptr, false);
-  if (doc.is_discarded() || !doc.contains("results") || !doc["results"].is_array()) {
+  auto doc = TryParseObject(search_results_json);
+  if (!doc) {
+    return search_results_json;
+  }
+  const Array* results = doc->getArray("results");
+  if (!results) {
     return search_results_json;
   }
 
   std::ostringstream out;
   int index = 1;
-  for (const auto& result : doc["results"]) {
-    if (!result.is_object()) {
+  for (const Value& result_value : results->elements) {
+    const Object* result = asObject(result_value);
+    if (!result) {
       continue;
     }
-    const std::string title = result.value("title", "");
-    const std::string snippet = result.value("snippet", "");
+    const std::string title = result->getString("title").value_or("");
+    const std::string snippet = result->getString("snippet").value_or("");
     if (title.empty() && snippet.empty()) {
       continue;
     }
@@ -300,36 +303,39 @@ bool PromptBuilder::IsMcpArticleFeedTool(const std::string& tool_name) {
 }
 
 std::string PromptBuilder::FormatMcpArticleResultsForLlm(const std::string& raw_result) {
-  const nlohmann::json doc = nlohmann::json::parse(raw_result, nullptr, false);
-  if (doc.is_discarded()) {
+  auto parsed = ParseValue(raw_result);
+  if (!parsed) {
     return raw_result;
   }
 
-  nlohmann::json articles = nlohmann::json::array();
-  if (doc.contains("articles") && doc["articles"].is_array()) {
-    articles = doc["articles"];
-  } else if (doc.is_array()) {
-    articles = doc;
-  } else if (doc.contains("items") && doc["items"].is_array()) {
-    articles = doc["items"];
+  const Array* articles = nullptr;
+  if (const Object* doc = asObject(*parsed)) {
+    if (const Array* nested = doc->getArray("articles")) {
+      articles = nested;
+    } else if (const Array* items = doc->getArray("items")) {
+      articles = items;
+    }
+  } else if (const Array* root = asArray(*parsed)) {
+    articles = root;
   }
 
-  if (articles.empty()) {
+  if (!articles || articles->elements.empty()) {
     return "Article feed results (map to long_list; do not echo this verbatim):\n(no rows)";
   }
 
   std::ostringstream out;
   out << "Article feed results (map to long_list; do not echo this verbatim):\n";
   int index = 1;
-  for (const auto& article : articles) {
-    if (!article.is_object()) {
+  for (const Value& article_value : articles->elements) {
+    const Object* article = asObject(article_value);
+    if (!article) {
       continue;
     }
-    const std::string title = ExtractArticleField(article, {"title", "headline", "name"});
+    const std::string title = ExtractArticleField(*article, {"title", "headline", "name"});
     const std::string subtitle =
-        ExtractArticleField(article, {"subtitle", "excerpt", "summary", "description", "snippet"});
-    const std::string meta = ExtractArticleField(article, {"meta", "date", "published_at", "source", "tag"});
-    const std::string id = ExtractArticleField(article, {"id", "article_id", "slug"});
+        ExtractArticleField(*article, {"subtitle", "excerpt", "summary", "description", "snippet"});
+    const std::string meta = ExtractArticleField(*article, {"meta", "date", "published_at", "source", "tag"});
+    const std::string id = ExtractArticleField(*article, {"id", "article_id", "slug"});
     if (title.empty() && subtitle.empty() && id.empty()) {
       continue;
     }

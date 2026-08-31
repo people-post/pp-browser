@@ -81,11 +81,13 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+include(ProductBranding)
 include(Platform)
 include(PpBrowserWarnings)
+include(PpCppCommon)
+include(PpCppCrypto)
 include(pp_lib_paths)
 include(pp_lib_libp2p)
-pp_browser_define_libp2p_options()
 
 if(PP_BROWSER_IS_MOBILE)
   set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)
@@ -95,6 +97,10 @@ endif()
 option(PP_BROWSER_BUILD_TESTS "Build host unit and integration tests" ${PP_BROWSER_BUILD_TESTS_DEFAULT})
 
 include(dependencies)
+# pp-cpp-ui after libp2p third_party so FreeType reuses parent zlib; provides SDL3.
+if(NOT PP_BROWSER_HEADLESS)
+  include(PpCppUi)
+endif()
 include(Progress)
 find_package(Threads REQUIRED)
 

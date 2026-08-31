@@ -29,9 +29,9 @@ struct SettingsUiState {
   std::string node_enabled = "on";
   /** True on desktop so Me → Network shows the help-the-network toggle. */
   bool show_node_toggle = true;
-  /** Actual or preferred listen multiaddr (read-only display). */
-  std::string libp2p_listen_multiaddr;
-  /** Last libp2p start error for Network UX (may be empty). */
+  /** Runtime Amp listen multiaddr (display-only; not persisted). */
+  std::string amp_listen_multiaddr;
+  /** Last mesh start error for Network UX (may be empty). */
   std::string libp2p_status_message;
   std::string reachability_status_label;
   std::string reachability_summary;
@@ -47,6 +47,8 @@ struct SettingsUiState {
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;
+  /** Account id for avatar tone seed; not shown in RML. */
+  std::string profile_account_id;
   std::string profile_public_key;
   std::string profile_registered = "no";
   std::string profile_registration_status = "not registered";
@@ -54,6 +56,12 @@ struct SettingsUiState {
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
   bool profile_show_rotate = false;
+  std::string profile_icon_src;
+  bool profile_has_icon = false;
+  bool profile_icon_uploading = false;
+  bool profile_show_clear_icon = false;
+  std::string profile_avatar_letter = "?";
+  int profile_avatar_tone = 0;
   /** UI switch value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
   /** UI switch value: "on" or "off" (P005). */
@@ -75,6 +83,10 @@ struct SettingsUiState {
   std::string data_dir;
   std::string profile_dir;
   std::string profile_size_label;
+  std::string attachment_cache_size_label;
+  /** R021 — smart | always_auto | on_demand */
+  std::string attachment_download_policy = "smart";
+  std::string attachment_download_policy_label;
   std::string pin_protection_status;
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */

@@ -1,6 +1,7 @@
 #include "base/ai/ToolRegistry.h"
 
 #include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -88,7 +89,7 @@ std::string ToolRegistry::SummaryForPrompt() const {
   return out.str();
 }
 
-Roe<std::string> ToolRegistry::Execute(const std::string& name, const nlohmann::json& arguments) const {
+Roe<std::string> ToolRegistry::Execute(const std::string& name, const Object& arguments) const {
   for (const ToolDescriptor& tool : tools_) {
     if (tool.definition.name == name) {
       return tool.execute(arguments);

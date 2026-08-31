@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace Rml {
 class Context;
@@ -70,8 +71,8 @@ public:
   /** From open DM: peer locked; create group when ≥1 extra selected. */
   void OpenFromDm(const std::string& locked_contact_id);
 
-  /** Group chat: pick members to invite to a new call. */
-  void OpenForGroupCall(const std::string& thread_id, bool video);
+  /** OpenForGroupCall: optional Allow video checkbox (default off). */
+  void OpenForGroupCall(const std::string& thread_id);
 
   /** Active call: invite additional contacts as guests. */
   void OpenForCallAddGuest(const std::string& call_id);
@@ -145,7 +146,8 @@ private:
   PeoplePickerSurfaceNotifyPorts surface_notify_;
   std::string call_thread_id_;
   std::string call_id_;
-  bool call_video_ = false;
+  bool call_video_allowed_ = false;
+  bool show_call_video_option_ = false;
   std::unordered_map<std::string, std::string> identity_for_contact_;
 
   static PeoplePickerController* installed_instance_;

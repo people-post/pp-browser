@@ -1,0 +1,4 @@
+Source: https://github.com/ned14/outcome
+Tag: v2.2.15
+File: single-header/outcome.hpp
+License: Apache-2.0 OR BSL-1.0

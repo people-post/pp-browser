@@ -6,11 +6,13 @@
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/net/ClientCompat.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
+#include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ProfileSettingsSection.h"
@@ -19,6 +21,7 @@
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/ui/BlobQuotaRecoveryFlow.h"
 #include "base/error/AppError.h"
 
 #include <RmlUi/Core/Context.h>
@@ -32,6 +35,7 @@
 
 #include <filesystem>
 #include <functional>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -222,7 +226,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
   ui_state_.node_enabled = bindings_.node_enabled.c_str();
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
-  ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
+  ui_state_.amp_listen_multiaddr = bindings_.amp_listen_multiaddr.c_str();
   ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
   ui_state_.reachability_status_label = bindings_.reachability_status_label.c_str();
   ui_state_.reachability_summary = bindings_.reachability_summary.c_str();
@@ -245,6 +249,12 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_register_label = bindings_.profile_register_label.c_str();
   ui_state_.profile_show_register = bindings_.profile_show_register;
   ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
+  ui_state_.profile_icon_src = bindings_.profile_icon_src.c_str();
+  ui_state_.profile_has_icon = bindings_.profile_has_icon;
+  ui_state_.profile_icon_uploading = bindings_.profile_icon_uploading;
+  ui_state_.profile_show_clear_icon = bindings_.profile_show_clear_icon;
+  ui_state_.profile_avatar_letter = bindings_.profile_avatar_letter.c_str();
+  ui_state_.profile_avatar_tone = bindings_.profile_avatar_tone;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
@@ -259,6 +269,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
+  ui_state_.attachment_download_policy = bindings_.attachment_download_policy.c_str();
+  ui_state_.attachment_download_policy_label = bindings_.attachment_download_policy_label.c_str();
   ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
   ui_state_.tool_permissions_has_saved = bindings_.tool_permissions_has_saved;
 
@@ -286,7 +298,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
   bindings_.node_enabled = ui_state_.node_enabled.c_str();
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
-  bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
+  bindings_.amp_listen_multiaddr = ui_state_.amp_listen_multiaddr.c_str();
   bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
   bindings_.reachability_status_label = ui_state_.reachability_status_label.c_str();
   bindings_.reachability_summary = ui_state_.reachability_summary.c_str();
@@ -309,6 +321,13 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
+  bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
+  bindings_.profile_has_icon = ui_state_.profile_has_icon;
+  bindings_.profile_icon_uploading = ui_state_.profile_icon_uploading;
+  bindings_.profile_show_clear_icon = ui_state_.profile_show_clear_icon;
+  RefreshProfileAvatarGlyph(ui_state_);
+  bindings_.profile_avatar_letter = ui_state_.profile_avatar_letter.c_str();
+  bindings_.profile_avatar_tone = ui_state_.profile_avatar_tone;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
@@ -323,6 +342,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
+  bindings_.attachment_cache_size_label = ui_state_.attachment_cache_size_label.c_str();
+  bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
+  bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
@@ -354,7 +376,13 @@ void SettingsController::SyncBindingsFromSession() {
   } else {
     ui_state_.libp2p_status_message.clear();
   }
+  if (commands_.amp_listen_multiaddr) {
+    ui_state_.amp_listen_multiaddr = commands_.amp_listen_multiaddr();
+  } else {
+    ui_state_.amp_listen_multiaddr.clear();
+  }
   ApplyReachability();
+  ApplySupportDiscovery();
   // Baseline for blur commit.
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
@@ -432,7 +460,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
     ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
-    ctor.Bind("libp2p_listen_multiaddr", &controller.bindings_.libp2p_listen_multiaddr);
+    ctor.Bind("amp_listen_multiaddr", &controller.bindings_.amp_listen_multiaddr);
     ctor.Bind("libp2p_status_message", &controller.bindings_.libp2p_status_message);
     ctor.Bind("reachability_status_label", &controller.bindings_.reachability_status_label);
     ctor.Bind("reachability_summary", &controller.bindings_.reachability_summary);
@@ -455,6 +483,12 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
+    ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
+    ctor.Bind("profile_has_icon", &controller.bindings_.profile_has_icon);
+    ctor.Bind("profile_icon_uploading", &controller.bindings_.profile_icon_uploading);
+    ctor.Bind("profile_show_clear_icon", &controller.bindings_.profile_show_clear_icon);
+    ctor.Bind("profile_avatar_letter", &controller.bindings_.profile_avatar_letter);
+    ctor.Bind("profile_avatar_tone", &controller.bindings_.profile_avatar_tone);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -469,6 +503,9 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
+    ctor.Bind("attachment_cache_size_label", &controller.bindings_.attachment_cache_size_label);
+    ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
+    ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
@@ -478,6 +515,9 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
+    ctor.Bind("support_visible", &controller.bindings_.support_visible);
+    ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
+    ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
     ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
     ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
@@ -485,11 +525,16 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("select_section", &SettingsController::SelectSectionCallback);
     ctor.BindEventCallback("back_to_list", &SettingsController::BackToListCallback);
     ctor.BindEventCallback("reset_section", &SettingsController::ResetSectionCallback);
+    ctor.BindEventCallback("open_support_chat", &SettingsController::OpenSupportChatCallback);
     ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
+    ctor.BindEventCallback("on_choose_attachment_download_policy",
+                           &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
+    ctor.BindEventCallback("drain_pending_attachment_media", &SettingsController::DrainPendingAttachmentMediaCallback);
+    ctor.BindEventCallback("clear_downloaded_attachments", &SettingsController::ClearDownloadedAttachmentsCallback);
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
@@ -508,6 +553,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
     ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
+    ctor.BindEventCallback("pick_profile_icon", &SettingsController::OnPickProfileIconCallback);
+    ctor.BindEventCallback("clear_profile_icon", &SettingsController::OnClearProfileIconCallback);
     ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
@@ -543,7 +590,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "registration_base_url");
   host.Dirty("settings", "node_enabled");
   host.Dirty("settings", "show_node_toggle");
-  host.Dirty("settings", "libp2p_listen_multiaddr");
+  host.Dirty("settings", "amp_listen_multiaddr");
   host.Dirty("settings", "libp2p_status_message");
   host.Dirty("settings", "reachability_status_label");
   host.Dirty("settings", "reachability_summary");
@@ -568,6 +615,12 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_register_label");
   host.Dirty("settings", "profile_show_register");
   host.Dirty("settings", "profile_show_rotate");
+  host.Dirty("settings", "profile_icon_src");
+  host.Dirty("settings", "profile_has_icon");
+  host.Dirty("settings", "profile_icon_uploading");
+  host.Dirty("settings", "profile_show_clear_icon");
+  host.Dirty("settings", "profile_avatar_letter");
+  host.Dirty("settings", "profile_avatar_tone");
   host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
@@ -582,6 +635,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
   host.Dirty("settings", "profile_size_label");
+  host.Dirty("settings", "attachment_cache_size_label");
+  host.Dirty("settings", "attachment_download_policy");
+  host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
@@ -591,6 +647,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
+  host.Dirty("settings", "support_visible");
+  host.Dirty("settings", "support_display_name");
+  host.Dirty("settings", "support_subtitle");
   host.Dirty("settings", "pin_change_old");
   host.Dirty("settings", "pin_change_new");
   host.Dirty("settings", "pin_change_confirm");
@@ -1331,15 +1390,144 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   DirtyAll();
 }
 
+void SettingsController::OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                                  const Rml::VariantList& /*args*/) {
+  Instance().OnChooseAttachmentDownloadPolicy(ev);
+}
+
+void SettingsController::OnChooseAttachmentDownloadPolicy(Rml::Event& ev) {
+  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+  const std::string current = bindings_.attachment_download_policy.empty()
+                                  ? "smart"
+                                  : std::string(bindings_.attachment_download_policy.c_str());
+
+  static const char* kPolicyIds[] = {"smart", "always_auto", "on_demand"};
+  std::vector<ContextMenuAction> actions;
+  actions.reserve(3);
+  for (const char* id : kPolicyIds) {
+    const std::string policy_id = id;
+    actions.push_back({.id = policy_id,
+                       .label = AttachmentDownloadPolicyDisplayLabel(policy_id),
+                       .enabled = {},
+                       .run =
+                           [this, policy_id]() {
+                             ApplyAttachmentDownloadPolicyChoice(policy_id);
+                           },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == policy_id});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& policy) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.attachment_download_policy = policy.c_str();
+  bindings_.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("storage");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::DrainPendingAttachmentMediaCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                             const Rml::VariantList& /*args*/) {
+  Instance().OnDrainPendingAttachmentMedia();
+}
+
+void SettingsController::OnDrainPendingAttachmentMedia() {
+  if (!commands_.drain_pending_attachment_media) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment downloads are not available"));
+    return;
+  }
+  commands_.drain_pending_attachment_media();
+  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
+}
+
+void SettingsController::ClearDownloadedAttachmentsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                             const Rml::VariantList& /*args*/) {
+  Instance().OnClearDownloadedAttachments();
+}
+
+void SettingsController::OnClearDownloadedAttachments() {
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(Tr("settings.storage.clear_attachments_confirm_title"),
+                               Tr("settings.storage.clear_attachments_confirm_message"),
+                               [this](const bool ok) {
+                                 if (!ok) {
+                                   return;
+                                 }
+                                 PerformClearDownloadedAttachments();
+                               },
+                               {});
+}
+
+void SettingsController::PerformClearDownloadedAttachments() {
+  if (!commands_.clear_downloaded_attachments) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment storage is not available"));
+    return;
+  }
+  if (auto cleared = commands_.clear_downloaded_attachments(); !cleared) {
+    ReportFailure(cleared.error());
+    return;
+  }
+  SyncBindingsFromSession();
+  DirtyAll();
+  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
+}
+
 void SettingsController::RefreshLocalizedChrome() {
   InitSections();
   SyncBindingsFromSession();
+  ApplySupportDiscovery();
   if (!selected_id_.empty()) {
     if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
       selected_title_ = handler->ListItem().title.c_str();
     }
   }
   DirtyAll();
+}
+
+void SettingsController::SyncSupportDiscovery() {
+  ApplySupportDiscovery();
+  DataModelHost::Instance().Dirty("settings", "support_visible");
+  DataModelHost::Instance().Dirty("settings", "support_display_name");
+  DataModelHost::Instance().Dirty("settings", "support_subtitle");
+}
+
+void SettingsController::ApplySupportDiscovery() {
+  bindings_.support_visible = false;
+  bindings_.support_display_name.clear();
+  bindings_.support_subtitle = Tr("support.entry.subtitle").c_str();
+  if (!commands_.load_support_discovery) {
+    return;
+  }
+  const std::optional<ClientCompatSupport> discovery = commands_.load_support_discovery();
+  if (!discovery || !discovery->enabled || discovery->account_id.empty()) {
+    return;
+  }
+  bindings_.support_visible = true;
+  bindings_.support_display_name =
+      discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
+}
+
+void SettingsController::OpenSupportChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                 const Rml::VariantList& /*args*/) {
+  Instance().OnOpenSupportChat();
+}
+
+void SettingsController::OnOpenSupportChat() {
+  if (!commands_.open_support_chat) {
+    ReportFailure("Support is not available");
+    return;
+  }
+  if (auto opened = commands_.open_support_chat(); !opened) {
+    ReportFailure(opened.error());
+  }
 }
 
 void SettingsController::OpenNetworkSettings() {
@@ -1600,6 +1788,16 @@ void SettingsController::OnCopyProfileIdCallback(Rml::DataModelHandle /*model*/,
   Instance().OnCopyProfileId();
 }
 
+void SettingsController::OnPickProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                   const Rml::VariantList& /*args*/) {
+  Instance().OnPickProfileIcon();
+}
+
+void SettingsController::OnClearProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnClearProfileIcon();
+}
+
 void SettingsController::OnShareProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                 const Rml::VariantList& /*args*/) {
   Instance().OnShareProfile();
@@ -1693,6 +1891,106 @@ void SettingsController::OnCopyProfileId() {
     system->SetClipboardText(bindings_.profile_peer_id);
   }
   UserFeedback::Ok("Peer ID copied");
+}
+
+void SettingsController::OnPickProfileIcon() {
+  if (bindings_.profile_icon_uploading) {
+    return;
+  }
+  if (!commands_.pick_profile_icon_image || !commands_.upload_profile_icon_file) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+    return;
+  }
+  // Open the native picker immediately (same pattern as chat attach_file). PIN/unlock runs only
+  // after the user chooses a file, so the vault gate cannot block the dialog from appearing.
+  commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
+          ReportFailure(Error(err).WithUser("Could not open file picker"));
+          SDL_ClearError();
+        }
+        return;
+      }
+      const std::string path = std::move(paths.front());
+      if (!unlock_ensure_.ensure_unlocked) {
+        ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+        return;
+      }
+      unlock_ensure_.ensure_unlocked([this, path = std::move(path)](const bool unlocked) mutable {
+        if (!unlocked) {
+          ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+          return;
+        }
+        if (!commands_.plan_relay_quota_recovery || !commands_.free_oldest_relay_blob_slot) {
+          ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+          return;
+        }
+        ui_state_.profile_icon_uploading = true;
+        PushUiStateToBindings();
+        DirtyAll(/*include_profile_nickname=*/false);
+        status_ = "Uploading profile photo…";
+        BlobQuotaRecoveryFlow::RunVoidUpload(
+            [this, path]() { return commands_.upload_profile_icon_file(path); },
+            [this](Roe<void> result) {
+              ui_state_.profile_icon_uploading = false;
+              if (!result) {
+                status_.clear();
+                SyncBindingsFromSession();
+                DirtyAll(/*include_profile_nickname=*/false);
+                ReportFailure(result.error());
+                return;
+              }
+              status_ = "Profile photo updated";
+              SyncBindingsFromSession();
+              DirtyAll(/*include_profile_nickname=*/false);
+              UserFeedback::Ok("Profile photo updated");
+            },
+            [this]() { return commands_.plan_relay_quota_recovery(); },
+            [this]() { return commands_.free_oldest_relay_blob_slot(); });
+      });
+    });
+  });
+}
+
+void SettingsController::OnClearProfileIcon() {
+  if (bindings_.profile_icon_uploading) {
+    return;
+  }
+  if (!commands_.clear_profile_icon) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+    return;
+  }
+  if (!unlock_ensure_.ensure_unlocked) {
+    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+    return;
+  }
+  unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to change profile icon"));
+      return;
+    }
+    ui_state_.profile_icon_uploading = true;
+    PushUiStateToBindings();
+    DirtyAll(/*include_profile_nickname=*/false);
+    AppRuntime::PostWorkerNormal([this]() {
+      Roe<void> result = commands_.clear_profile_icon();
+      AppRuntime::PostUI([this, result = std::move(result)]() mutable {
+        ui_state_.profile_icon_uploading = false;
+        if (!result) {
+          status_.clear();
+          SyncBindingsFromSession();
+          DirtyAll(/*include_profile_nickname=*/false);
+          ReportFailure(result.error());
+          return;
+        }
+        status_ = "Profile photo removed";
+        SyncBindingsFromSession();
+        DirtyAll(/*include_profile_nickname=*/false);
+        UserFeedback::Ok("Profile photo removed");
+      });
+    });
+  });
 }
 
 void SettingsController::OnShareProfile() {

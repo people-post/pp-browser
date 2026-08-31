@@ -8,6 +8,7 @@
 #if defined(__ANDROID__)
 #include <jni.h>
 #include <SDL3/SDL.h>
+#include "common/PbrCompat.h"
 #endif
 
 namespace pbr {
