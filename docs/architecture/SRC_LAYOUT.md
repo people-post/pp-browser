@@ -63,7 +63,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
 | `base/adp/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
 | `base/mesh/session/` | AMP L2 — MSH, Session AEAD, rekey (`pp_base_mesh_session`) |
-| `base/mesh/link/` | AMP link — `PeerLinkManager`, `MeshPump`, MSH-over-ADP (`pp_base_mesh_link`) |
+| `base/mesh/link/` | AMP link — `PeerLinkManager`, `MeshRuntime`, `AmpStack`, MSH-over-ADP (`pp_base_mesh_link`) |
 | `base/mesh/channel/` | AMP L3 — channel mux, fragmentation, `ChannelSession` (`pp_base_mesh_channel`; [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md)) |
 | `base/render/` | Product RmlUi host/overlays (`pp_base_render`); reusable SDL/GL in pp-cpp-ui `backend/` |
 | `base/net/` | HTTP client, service clients |
