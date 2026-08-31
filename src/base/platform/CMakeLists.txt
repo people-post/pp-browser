@@ -91,11 +91,14 @@ endif()
 
 # Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_base_error).
 # Desktop AssetIO is ifstream-only; no SDL.
+# CurlSsl (registration HTTP) calls ApplyPlatformCurlSsl — normally in the GUI
+# platform lib; headless only builds platform_core, so pull in the desktop no-op.
 if(PP_BROWSER_HEADLESS)
   list(APPEND _pp_platform_core_sources
     AssetIO.cpp
     IAssetLocator.cpp
     DesktopAssetLocator.cpp
+    os/OsTlsPlatformCurl_Default.cpp
   )
 endif()
 
