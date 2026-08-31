@@ -59,6 +59,11 @@ compile_commands.json
 *.swp
 .vendor_import_tmp/
 
+# Core dumps (may embed process memory / tokens)
+core
+core.*
+*.core
+
 # vcpkg
 vcpkg_installed/
 

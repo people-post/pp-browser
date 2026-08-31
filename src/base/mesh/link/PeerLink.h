@@ -35,6 +35,11 @@ public:
   PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
            std::shared_ptr<ChannelSession> carrier, MshIdentity local_identity, PeerLinkManager& owner);
 
+  ~PeerLink();
+
+  PeerLink(const PeerLink&) = delete;
+  PeerLink& operator=(const PeerLink&) = delete;
+
   void StartOutboundHandshake(CompleteCb on_established);
   void StartInboundHandshake(CompleteCb on_established);
 

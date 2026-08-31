@@ -107,6 +107,8 @@ if not peer:
 listen = s.get("listen") or ""
 if not listen:
     fail("missing listen")
+if "/udp/" not in listen or "/adp/" not in listen:
+    fail("listen is not Amp ADP (/udp/…/adp/…)")
 
 c = bool(s.get("circuit_relay"))
 m = bool(s.get("media_relay"))

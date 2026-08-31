@@ -66,9 +66,9 @@ PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/pp_node_image_smoke.sh
 ./scripts/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
 ```
 
-Asserts: `ok`/`host_running`, non-empty `peer_id` + `listen`, expected boolean caps. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.
+Asserts: `ok`/`host_running`, non-empty `peer_id` + Amp ADP `listen` (`/udp/…/adp/…`), expected boolean caps. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.
 
-Does **not** open libp2p streams.
+Does **not** open Amp sessions or relay channels.
 
 ## L1 — Relay probe
 
@@ -98,7 +98,7 @@ Shape (implemented):
 
 ```text
 hop:        pp-node container (docker-compose.relay-smoke.yml or docker-compose.yml)
-client-a/b: two Libp2pHost + MediaRelayService instances inside pp-node-probe --mode media-fanout
+client-a/b: two Amp stacks + MediaRelayService instances inside pp-node-probe --mode media-fanout
 ```
 
 Clients share the probe process; the hop is a separate process/network namespace — enough to catch packaging/admission/env issues that loopback gtests miss. Full three-container clients remain optional later.

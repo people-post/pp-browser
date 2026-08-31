@@ -146,7 +146,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|Libp2pDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.

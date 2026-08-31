@@ -55,6 +55,12 @@ public:
    */
   void ReleaseHandlers();
 
+  /**
+   * Detach from a mux that is already gone or about to be destroyed (PeerLink drop).
+   * Does not call into mux_ — only clears local state ([A027] / dangling mux safety).
+   */
+  void OrphanFromMux();
+
   uint32_t ChannelId() const { return channel_id_; }
   ChannelMux* Mux() { return mux_; }
   size_t OutboundBacklog() const { return outbound_.size() + (write_inflight_ ? 1 : 0); }

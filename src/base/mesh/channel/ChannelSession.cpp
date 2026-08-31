@@ -159,6 +159,16 @@ void ChannelSession::ReleaseHandlers() {
   mux->SetTerminalHandler(channel_id, {});
 }
 
+void ChannelSession::OrphanFromMux() {
+  on_frame_ = {};
+  on_closed_ = {};
+  mux_ = nullptr;
+  channel_id_ = 0;
+  closed_ = true;
+  outbound_.clear();
+  write_inflight_ = false;
+}
+
 void ChannelSession::Reset(const uint32_t code) {
   if (closed_ || !mux_) {
     return;
