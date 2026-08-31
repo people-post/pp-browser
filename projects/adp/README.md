@@ -18,7 +18,8 @@
 | [DESIGN.md](DESIGN.md) | L1 wire, API, I/O, delivery |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 | [PHASES.md](PHASES.md) | L1 phases + AMP migration D0–D9 |
-| [DECISIONS.md](DECISIONS.md) | ADRs A001–A020 |
+| [DECISIONS.md](DECISIONS.md) | ADRs A001–A024 |
+| [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) | Amp call-media over circuit — nested Session (A024) |
 
 ## Progress snapshot
 
@@ -31,7 +32,7 @@
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
-| D9 | MeshHost/CallStack cutover | **In progress** — chat/history/call-media + SoftMigrate media-relay + circuit NAT on Amp; call-media circuit Amp deferred |
+| D9 | MeshHost/CallStack cutover | **In progress** — SoftMigrate Amp done (5c); Amp call-media circuit = [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) before step 6 |
 
 ## Locked product decisions
 

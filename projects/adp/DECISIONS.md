@@ -165,3 +165,10 @@
 **Decision:** `MeshHost` may construct / attach an `amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. Amp start failure is **soft** (libp2p stays up; `AmpLastError()`). `MeshHost::Tick` pumps the Amp stack — product must call `mesh->Tick()` (not only `Runtime()->Tick()`). Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
 **Rationale:** Cutover needs a live UDP+MSH host object before flipping protocols; separate keys would fork identity; hard-failing Amp would take down production mesh during the parallel phase.  
 **Alternatives:** Separate Amp-only process; generate a second PeerId for AMP; hard-fail MeshHost::Start when Amp fails.
+
+## A024 — Amp call-media over circuit = nested Session
+
+**Date:** 2026-08-31  
+**Decision:** Amp 1:1 call-media over circuit uses a **nested end-to-end A↔B Session** (inner `Session` + `ChannelMux`) carried on the bridged `ChannelSession`. `CallMediaLegCoordinator` keeps the [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime) control+media bundle on that virtual link. **Rejected:** single-pipe call-media mode; dual protocol-specific circuit tunnels as the long-term shape. SoftMigrate media-relay may continue to adopt one opaque channel ([D9 step 5c](CURRENT_STATE.md)). See [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md).  
+**Rationale:** Preserves Reliable control vs BestEffort media, authenticates A to B (not relay R), aligns with [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blindness, and avoids a second call-media state machine. Opaque single-channel adopt works for media-relay because that L4 is already one pipe — not for the call-media bundle.  
+**Alternatives:** Tagged single-pipe hello+media on the splice; two parallel circuit channels (control + media) without inner Session.

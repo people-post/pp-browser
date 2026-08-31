@@ -127,7 +127,8 @@
 - **`AmpCircuitHopReach`** — `ICircuitHopReach` via `CircuitTunnelCoordinator::StartBridge` + registry Install
 - **`AmpMediaRelayCoordinator`** adopts circuit sessions for quote/attach (same pipe; do not close after quote)
 - **MeshHost** always Starts Amp circuit + media-relay coordinators when Amp is up; inbound hosting gated by `SetServeInbound(host_*)`
-- **Call-media Amp over circuit deferred** — Amp call-media uses multi-channel control/media; circuit tunnel is a single opaque splice (needs nested Session / A019 or a single-pipe mode)
+- **DATA-plane hardening** — Fanout snapshots under lock (libp2p `MediaRelayRuntime` pattern); sync `Detach` / `AbortInflight` (no `PostIo(raw Impl*)` past Stop); protocol-keyed hop readiness (`Find(peer, protocol)`, not `HasAny` for call-media)
+- **Call-media Amp over circuit** — design locked [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md); implementation not started
 
 ## Plan adjustments (2026-08-31)
 
@@ -141,13 +142,15 @@
 | **AMP dial-back is optional until Identify/TCP teardown** | Prefer ch0 addr ingest + existing libp2p DialBack during parallel phase |
 | **Chat+history flip together** | Shared Amp address book / reachability; blob stays libp2p |
 | **MeshRuntime IoTick must multiplex** | Multiple L4 coordinators share one Amp runtime; single `SetIoTick` overwrote peers |
-| **SoftMigrate stays libp2p until Amp fan-out** | Amp media-relay handshake-only; circuit Session ≠ SoftMigrate stream hop |
+| **Always Start Amp L4 coords; gate inbound with SetServeInbound** | SoftMigrate guests need outbound quote/attach/bridge without hosting |
+| **Amp call-media circuit = nested Session (A024)** | Multi-channel A021 bundle cannot adopt a single opaque splice; single-pipe mode rejected |
+| **Amp hop dialability is protocol-keyed** | `HasAny` must not short-circuit call-media when only media-relay hop exists |
 
 ## Next (implementation)
 
-1. **D9** — Amp call-media circuit adopt (nested Session or single-pipe call-media)
+1. **D9 / A024** — nested Session carrier + `CircuitPeerLink` + wire `CallMediaLegCoordinator` (see [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
 2. **D8 optional** — AMP dial-back when retiring libp2p Identify
-3. **D9** — delete dogfood headers + TCP call-media path; update NETWORKING / CALLS
+3. **D9 step 6–7** — only after Amp 1:1 circuit call-media works: stop Identify/TCP mesh listen; delete dogfood + TCP call-media; update NETWORKING / CALLS
 
 ### D9 cutover checklist
 
@@ -161,8 +164,9 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport`; dogfood gate **false** |
 | 5a | MeshHost owns Amp circuit + media-relay; multiplex IoTick; admission | **Done** |
 | 5b | SoftMigrate media-relay single entry via Amp | **Done** |
-| 5c | Amp circuit adopt for SoftMigrate NAT | **Done** — call-media circuit Amp still deferred |
-| 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
+| 5c | Amp circuit adopt for SoftMigrate NAT | **Done** — media-relay; call-media = A024 |
+| 5d | Amp call-media nested Session over circuit | **Next** — [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) |
+| 6 | Stop starting libp2p Identify / TCP listen for mesh | After 5d; keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 
 See [PHASES.md](PHASES.md) for full ordering.

@@ -100,8 +100,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — after TCP call-media path removed
 - [x] SoftMigrate media-relay single entry via `AmpMediaRelayClient` when Amp is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Amp circuit hop registry + SoftMigrate NAT reach (`AmpCircuitHopReach` / media-relay adopt)
-- [ ] Amp call-media circuit adopt (multi-channel vs single splice — follow-on)
-- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — after TCP call-media path removed
+- [ ] Amp call-media circuit — nested Session ([A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session), [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
 
 ### D7 — L4 port: circuit + media-relay
 
@@ -109,7 +108,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
 - [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 - [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
-- [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — deferred
+- [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — see [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
 
 ### D8 — Reachability
 
@@ -127,7 +126,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Call-media single transport entry via `CallMediaAmpTransport` / `CallMediaLegCoordinator` when Amp is up; `kCallMediaAdpOpusDogfood=false`
 - [x] Circuit / media-relay Amp ownership on MeshHost (step 5a) — hosting + admission
 - [x] SoftMigrate media-relay single entry (step 5b)
-- [x] Amp circuit adopt for SoftMigrate NAT (step 5c) — call-media circuit Amp deferred
+- [x] Amp circuit adopt for SoftMigrate NAT (step 5c) — call-media circuit Amp = A024 (not started)
 - [ ] See [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist) for steps 6–7
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path

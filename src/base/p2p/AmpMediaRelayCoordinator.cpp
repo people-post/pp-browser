@@ -254,35 +254,58 @@ struct AmpMediaRelayCoordinator::Impl {
     local_hop_peer_id_.clear();
   }
 
-  void Fanout(AmpHostSession& session, const std::string& from_peer, const MediaDataFrame& frame,
-              const std::vector<uint8_t>& body) {
+  /**
+   * Fan-out must not run while `mu` is held across callbacks / EnqueueOutbound.
+   * Snapshot participants under lock (same pattern as MediaRelayRuntime::Fanout).
+   */
+  void Fanout(const std::shared_ptr<AmpHostSession>& session, const std::string& from_peer,
+              const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
+    if (!session) {
+      return;
+    }
     const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
-    for (const auto& part : session.participants) {
+    std::vector<std::shared_ptr<AmpHostParticipant>> parts;
+    {
+      std::lock_guard lock(mu);
+      parts = session->participants;
+    }
+    for (const auto& part : parts) {
       if (!part || part->peer_id == from_peer) {
         continue;
       }
-      if (part->subscriptions.find(key) == part->subscriptions.end()) {
-        continue;
-      }
-      if (frame.channel_type == MediaChannelType::LatestLossy) {
-        auto it = part->last_lossy_seq.find(key);
-        if (ShouldDropStaleLossyFrame(it != part->last_lossy_seq.end(),
-                                      it != part->last_lossy_seq.end() ? it->second : 0, frame.seq,
-                                      frame.mark)) {
+      FrameHandler on_frame;
+      std::shared_ptr<amp::ChannelSession> channel;
+      {
+        std::lock_guard lock(mu);
+        if (part->subscriptions.find(key) == part->subscriptions.end()) {
           continue;
         }
-        part->last_lossy_seq[key] = frame.seq;
+        if (frame.channel_type == MediaChannelType::LatestLossy) {
+          auto it = part->last_lossy_seq.find(key);
+          if (ShouldDropStaleLossyFrame(it != part->last_lossy_seq.end(),
+                                        it != part->last_lossy_seq.end() ? it->second : 0, frame.seq,
+                                        frame.mark)) {
+            continue;
+          }
+          part->last_lossy_seq[key] = frame.seq;
+        }
+        if (part->local_on_frame) {
+          on_frame = part->local_on_frame;
+        } else {
+          channel = part->channel;
+        }
       }
-      if (part->local_on_frame) {
-        part->local_on_frame(frame);
+      if (on_frame) {
+        on_frame(frame);
         continue;
       }
-      if (part->channel) {
-        (void)part->channel->EnqueueOutbound(body);
+      if (channel) {
+        (void)channel->EnqueueOutbound(body);
       }
     }
   }
 
+  /** Requires `mu` held. */
   bool HandleHostParticipantControl(const std::shared_ptr<AmpHostSession>& session,
                                     const std::shared_ptr<AmpHostParticipant>& part, const Object& root) {
     const std::string op = root.getString("op").value_or("");
@@ -329,6 +352,7 @@ struct AmpMediaRelayCoordinator::Impl {
     return true;
   }
 
+  /** Must not be called with `mu` held (Fanout locks internally). */
   bool HandleHostParticipantFrame(const std::shared_ptr<AmpHostSession>& session,
                                   const std::shared_ptr<AmpHostParticipant>& part,
                                   const std::vector<uint8_t>& body) {
@@ -340,13 +364,14 @@ struct AmpMediaRelayCoordinator::Impl {
       if (!root) {
         return true;
       }
+      std::lock_guard lock(mu);
       return HandleHostParticipantControl(session, part, *root);
     }
     auto frame = DecodeMediaDataFrame(body);
     if (!frame) {
       return true;
     }
-    Fanout(*session, part->peer_id, *frame, body);
+    Fanout(session, part->peer_id, *frame, body);
     return true;
   }
 
@@ -357,18 +382,25 @@ struct AmpMediaRelayCoordinator::Impl {
     if (body[0] == '{') {
       return true; // subscribe ack / control
     }
-    if (!client_.reader_started || !client_.on_frame) {
-      return true;
-    }
     auto frame = DecodeMediaDataFrame(body);
     if (!frame) {
       return true;
     }
-    const uint64_t key = SubKey(frame->stream_id, frame->channel_id);
-    if (client_.subscriptions.find(key) == client_.subscriptions.end()) {
-      return true;
+    FrameHandler on_frame;
+    {
+      std::lock_guard lock(mu);
+      if (!client_.reader_started || !client_.on_frame) {
+        return true;
+      }
+      const uint64_t key = SubKey(frame->stream_id, frame->channel_id);
+      if (client_.subscriptions.find(key) == client_.subscriptions.end()) {
+        return true;
+      }
+      on_frame = client_.on_frame;
     }
-    client_.on_frame(*frame);
+    if (on_frame) {
+      on_frame(*frame);
+    }
     return true;
   }
 
@@ -423,6 +455,23 @@ struct AmpMediaRelayCoordinator::Impl {
       }
       return HandleHostParticipantFrame(session, part, *frame);
     });
+  }
+
+  /** Sync host cleanup under `mu` (no PostIo with raw this — Stop/Detach lifetime). */
+  void ClearHostsLocked() {
+    for (auto& [_, host] : hosts_by_call) {
+      if (!host) {
+        continue;
+      }
+      for (auto& part : host->participants) {
+        if (part && part->channel && !part->channel->IsClosed()) {
+          part->channel->CloseQuiet();
+        }
+      }
+      host->participants.clear();
+    }
+    hosts_by_call.clear();
+    quotes_by_id.clear();
   }
 
   void AdoptClientChannel(Session& session) {
@@ -802,18 +851,27 @@ struct AmpMediaRelayCoordinator::Impl {
                       return true;
                     }
                     if (frame->front() != '{') {
-                      std::lock_guard lock(mu);
-                      if (host_sm->phase != MediaRelayAttachPhase::Attached || host_sm->call_id.empty()) {
-                        return true;
-                      }
-                      auto host_it = hosts_by_call.find(host_sm->call_id);
-                      if (host_it == hosts_by_call.end()) {
-                        return true;
-                      }
-                      for (const auto& part : host_it->second->participants) {
-                        if (part && part->channel.get() == channel.get()) {
-                          return HandleHostParticipantFrame(host_it->second, part, *frame);
+                      std::shared_ptr<AmpHostSession> host;
+                      std::shared_ptr<AmpHostParticipant> part;
+                      {
+                        std::lock_guard lock(mu);
+                        if (host_sm->phase != MediaRelayAttachPhase::Attached || host_sm->call_id.empty()) {
+                          return true;
                         }
+                        auto host_it = hosts_by_call.find(host_sm->call_id);
+                        if (host_it == hosts_by_call.end()) {
+                          return true;
+                        }
+                        for (const auto& candidate : host_it->second->participants) {
+                          if (candidate && candidate->channel.get() == channel.get()) {
+                            host = host_it->second;
+                            part = candidate;
+                            break;
+                          }
+                        }
+                      }
+                      if (host && part) {
+                        return HandleHostParticipantFrame(host, part, *frame);
                       }
                       return true;
                     }
@@ -1027,19 +1085,45 @@ void AmpMediaRelayCoordinator::SetCircuitHopRegistry(AmpCircuitHopRegistry* hops
 }
 
 void AmpMediaRelayCoordinator::AbortInflight() {
-  impl_->PostIo([impl = impl_.get()] {
-    std::lock_guard lock(impl->mu);
-    impl->DetachClientLocked();
+  // Sync under lock — never PostIo(raw Impl*) that can outlive Stop/TearDown.
+  std::vector<QuoteFinished> quote_cbs;
+  std::vector<AttachFinished> attach_cbs;
+  {
+    std::lock_guard lock(impl_->mu);
+    impl_->DetachClientLocked();
+    impl_->ClearHostsLocked();
     std::vector<uint64_t> ids;
-    for (auto& [id, _] : impl->sessions) {
+    ids.reserve(impl_->sessions.size());
+    for (auto& [id, _] : impl_->sessions) {
       ids.push_back(id);
     }
     for (const auto id : ids) {
-      if (auto* session = impl->Find(MediaRelaySessionId{id})) {
-        impl->TearDown(*session, true, true, "media-relay aborted");
+      auto* session = impl_->Find(MediaRelaySessionId{id});
+      if (!session) {
+        continue;
       }
+      session->local_cancel = true;
+      session->phase = MediaRelayBundlePhase::Closing;
+      if (session->channel && !session->channel->IsClosed()) {
+        session->channel->CloseQuiet();
+      }
+      if (!session->finished) {
+        session->finished = true;
+        if (session->role == MediaRelayBundleRole::ClientQuote && session->on_quote) {
+          quote_cbs.push_back(std::move(session->on_quote));
+        } else if (session->role == MediaRelayBundleRole::ClientAttach && session->on_attach) {
+          attach_cbs.push_back(std::move(session->on_attach));
+        }
+      }
+      impl_->sessions.erase(id);
     }
-  });
+  }
+  for (auto& cb : quote_cbs) {
+    cb(Error("media-relay aborted"));
+  }
+  for (auto& cb : attach_cbs) {
+    cb(Error("media-relay aborted"));
+  }
 }
 
 MediaRelaySessionId AmpMediaRelayCoordinator::StartQuote(const std::string& hop_peer_key,
@@ -1265,16 +1349,15 @@ Roe<void> AmpMediaRelayCoordinator::SendFrame(const MediaDataFrame& frame) {
     }
   }
   if (session) {
-    impl_->Fanout(*session, from_peer, frame, body);
+    impl_->Fanout(session, from_peer, frame, body);
   }
   return {};
 }
 
 void AmpMediaRelayCoordinator::Detach() {
-  impl_->PostIo([impl = impl_.get()] {
-    std::lock_guard lock(impl->mu);
-    impl->DetachClientLocked();
-  });
+  // Mirror MediaRelayService::Detach — sync under lock; no deferred raw-this PostIo.
+  std::lock_guard lock(impl_->mu);
+  impl_->DetachClientLocked();
 }
 
 bool AmpMediaRelayCoordinator::IsAttached() const {
