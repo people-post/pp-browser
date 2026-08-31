@@ -1,8 +1,12 @@
 #include "base/mesh/link/PeerLinkManager.h"
 
+#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/mesh/channel/ChannelSession.h"
 #include "base/mesh/channel/Types.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/Types.h"
+
+#include <iterator>
 
 namespace pbr::amp {
 
@@ -139,6 +143,13 @@ bool PeerLinkManager::IsConnected(const std::string& peer_key) const {
 PeerLinkSnapshot PeerLinkManager::GetLinkSnapshot(const std::string& peer_key) const {
   PeerLinkSnapshot snap;
   snap.has_endpoint = endpoints_.contains(peer_key);
+  if (const auto* link = FindLink(peer_key); link && link->Phase() == PeerLinkPhase::Connected) {
+    snap.phase = PeerLinkPhase::Connected;
+    if (snap.has_endpoint) {
+      snap.multiaddr = endpoints_.at(peer_key).multiaddr;
+    }
+    return snap;
+  }
   if (!snap.has_endpoint) {
     snap.phase = PeerLinkPhase::Unavailable;
     return snap;
@@ -365,7 +376,10 @@ void PeerLinkManager::RekeyLink(const std::string& from_key, const std::string& 
   if (!node.mapped()->RemotePeerId().empty()) {
     peer_id_to_key_[node.mapped()->RemotePeerId()] = to_key;
   }
+  auto* link = node.mapped().get();
   links_.emplace(to_key, std::move(node.mapped()));
+  // Protocol handlers capture peer_key; refresh after rekey so FindLink succeeds.
+  ApplyProtocolHandlers(*link);
 }
 
 bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& inbound) {
@@ -396,7 +410,10 @@ void PeerLinkManager::OnLinkEstablished(PeerLink& link) {
     return;
   }
   ApplyProtocolHandlers(link);
-  StartCapabilityExchange(link);
+  // Nested carrier links skip ch0 — product reachability already established via outer mesh.
+  if (!link.IsCarrierBacked()) {
+    StartCapabilityExchange(link);
+  }
 }
 
 void PeerLinkManager::StartCapabilityExchange(PeerLink& link) {
@@ -508,13 +525,120 @@ void PeerLinkManager::Tick() {
   const int64_t now = endpoint_.GetClock().NowMs();
   std::vector<std::string> evict;
   for (auto& [key, link] : links_) {
-    if (!link->Connection().LooksAlive(now) && !link->IsWarm() && link->Phase() == PeerLinkPhase::Connected) {
+    if (link->IsCarrierBacked()) {
+      if (link->Carrier() && link->Carrier()->IsClosed() && link->Phase() == PeerLinkPhase::Connected) {
+        evict.push_back(key);
+      }
+      continue;
+    }
+    auto* conn = link->ConnectionOrNull();
+    if (conn && !conn->LooksAlive(now) && !link->IsWarm() && link->Phase() == PeerLinkPhase::Connected) {
       evict.push_back(key);
     }
   }
   for (const auto& key : evict) {
     links_.erase(key);
   }
+}
+
+void PeerLinkManager::EnableNestedCarrierAccept(const bool enable) {
+  nested_carrier_accept_ = enable;
+  if (enable) {
+    SetProtocolHandler(kAmpCircuitCarrierProtocolId,
+                       [this](PeerLink& link, const uint32_t channel_id) {
+                         HandleInboundCarrierChannel(link, channel_id);
+                       });
+  } else {
+    RemoveProtocolHandler(kAmpCircuitCarrierProtocolId);
+  }
+}
+
+void PeerLinkManager::EstablishNestedOverCarrier(const std::string& peer_key,
+                                                 std::shared_ptr<ChannelSession> carrier, const bool initiator,
+                                                 LinkCb on_complete) {
+  if (peer_key.empty() || !carrier) {
+    if (on_complete) {
+      on_complete(Error("amp link: nested carrier incomplete"));
+    }
+    return;
+  }
+  if (IsConnected(peer_key)) {
+    if (on_complete) {
+      on_complete(Roe<void>());
+    }
+    return;
+  }
+  if (auto* existing = FindLink(peer_key)) {
+    if (existing->Phase() == PeerLinkPhase::Handshaking) {
+      inflight_associations_[peer_key].push_back(std::move(on_complete));
+      return;
+    }
+  }
+
+  inflight_associations_[peer_key].push_back(std::move(on_complete));
+  auto link = std::make_unique<PeerLink>(peer_key, peer_key, initiator, std::move(carrier), local_identity_, *this);
+  if (initiator) {
+    link->StartOutboundHandshake([this, peer_key](Roe<void> result) { FinishNestedCarrier(peer_key, result); });
+  } else {
+    link->StartInboundHandshake([this, peer_key](Roe<void> result) { FinishNestedCarrier(peer_key, result); });
+  }
+  links_[peer_key] = std::move(link);
+}
+
+void PeerLinkManager::FinishNestedCarrier(const std::string& provisional_key, Roe<void> result) {
+  auto* link = FindLink(provisional_key);
+  if (result && link && !link->RemotePeerId().empty() && link->RemotePeerId() != provisional_key) {
+    // Prefer authenticated PeerId as the stable key when unused.
+    if (!links_.contains(link->RemotePeerId())) {
+      RekeyLink(provisional_key, link->RemotePeerId());
+      link = FindLink(link->RemotePeerId());
+    } else {
+      peer_id_to_key_[link->RemotePeerId()] = provisional_key;
+    }
+  }
+
+  const std::string notify_key = (link ? link->PeerKey() : provisional_key);
+  auto waiters = std::move(inflight_associations_[provisional_key]);
+  inflight_associations_.erase(provisional_key);
+  if (notify_key != provisional_key) {
+    auto extras = std::move(inflight_associations_[notify_key]);
+    inflight_associations_.erase(notify_key);
+    waiters.insert(waiters.end(), std::make_move_iterator(extras.begin()),
+                   std::make_move_iterator(extras.end()));
+  }
+  if (!result) {
+    last_error_[provisional_key] = result.error().message;
+    links_.erase(provisional_key);
+    if (notify_key != provisional_key) {
+      links_.erase(notify_key);
+    }
+  }
+  for (auto& cb : waiters) {
+    if (cb) {
+      cb(result);
+    }
+  }
+}
+
+void PeerLinkManager::HandleInboundCarrierChannel(PeerLink& via_link, const uint32_t channel_id) {
+  if (!nested_carrier_accept_ || !via_link.Mux()) {
+    return;
+  }
+  auto carrier = std::make_shared<ChannelSession>();
+  carrier->Bind(*via_link.Mux(), channel_id, CircuitCarrierChannelPolicy(),
+                [](Roe<std::vector<uint8_t>>) { return true; });
+
+  // Provisional key until nested MSH authenticates the far peer.
+  std::string provisional = "carrier:";
+  provisional += via_link.RemotePeerId().empty() ? via_link.PeerKey() : via_link.RemotePeerId();
+  provisional.push_back(':');
+  provisional += std::to_string(channel_id);
+  if (links_.contains(provisional)) {
+    provisional += ":";
+    provisional += std::to_string(links_.size());
+  }
+
+  EstablishNestedOverCarrier(provisional, std::move(carrier), false, {});
 }
 
 } // namespace pbr::amp

@@ -4,6 +4,7 @@
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/PeerLink.h"
+#include "base/mesh/link/Types.h"
 #include "common/ValueJson.h"
 
 #include <atomic>
@@ -17,6 +18,13 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
+  if (target_protocol == amp::kAmpCircuitCarrierProtocolId) {
+    return amp::CircuitCarrierChannelPolicy();
+  }
+  return amp::CircuitTunnelChannelPolicy();
+}
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -235,7 +243,7 @@ struct CircuitTunnelCoordinator::Impl {
     tunnel.near = std::make_shared<amp::ChannelSession>();
     const CircuitTunnelId id = tunnel.id;
     tunnel.near->Bind(
-        *link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
+        *link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
         [this, id](Roe<std::vector<uint8_t>> frame) {
           std::lock_guard lock(mu);
           auto* tunnel = Find(id);
@@ -325,7 +333,7 @@ struct CircuitTunnelCoordinator::Impl {
 
     // Must not hold mu across OpenChannel — callback may run synchronously.
     runtime->Links().OpenChannel(
-        relay_key, kCircuitRelayProtocolId, amp::CircuitTunnelChannelPolicy(),
+        relay_key, kCircuitRelayProtocolId, PolicyForCircuitTarget(tunnel.target.target_protocol),
         [this, id, relay_key, deadline, request_json](Roe<uint32_t> channel) mutable {
           amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
@@ -374,7 +382,7 @@ struct CircuitTunnelCoordinator::Impl {
 
   void ContinueServeAfterTargetOpen(Tunnel& tunnel, amp::PeerLink& target_link, const uint32_t channel_id) {
     tunnel.far = std::make_shared<amp::ChannelSession>();
-    tunnel.far->Bind(*target_link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
+    tunnel.far->Bind(*target_link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
                      [](Roe<std::vector<uint8_t>>) { return true; });
 
     Object response;
@@ -453,7 +461,7 @@ struct CircuitTunnelCoordinator::Impl {
         }
       }
       runtime->Links().OpenChannel(
-          target_key, target_protocol, amp::CircuitTunnelChannelPolicy(),
+          target_key, target_protocol, PolicyForCircuitTarget(target_protocol),
           [this, id, target_key, deadline](Roe<uint32_t> channel) {
             amp::PeerLink* link = nullptr;
             uint32_t channel_id = 0;

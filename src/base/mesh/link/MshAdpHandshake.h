@@ -28,7 +28,12 @@ public:
   using SendWire = std::function<Roe<void>(std::vector<uint8_t> adp_payload)>;
   using CompleteHandler = std::function<void(Roe<MshAdpEstablished>)>;
 
-  MshAdpHandshake(Role role, MshIdentity identity, SendWire send, CompleteHandler on_complete);
+  /**
+   * @param chunked_wire When true (ADP datagrams), MSH bodies are AmpAdpCarrier-chunked.
+   *        When false (ChannelSession / A024 nested carrier), each MSH is one EncodeMsh frame.
+   */
+  MshAdpHandshake(Role role, MshIdentity identity, SendWire send, CompleteHandler on_complete,
+                  bool chunked_wire = true);
 
   /** Begin handshake (initiator only). */
   Roe<void> Start();
@@ -55,6 +60,7 @@ private:
   MshIdentity identity_;
   SendWire send_;
   CompleteHandler on_complete_;
+  bool chunked_wire_ = true;
   bool complete_ = false;
   bool started_ = false;
 

@@ -3,6 +3,7 @@
 #include "base/adp/Connection.h"
 #include "base/mesh/channel/Capability.h"
 #include "base/mesh/channel/ChannelMux.h"
+#include "base/mesh/channel/ChannelSession.h"
 #include "base/mesh/link/MshAdpHandshake.h"
 #include "base/mesh/link/Types.h"
 #include "base/mesh/session/Session.h"
@@ -21,13 +22,18 @@ namespace pbr::amp {
 
 class PeerLinkManager;
 
-/** One ADP association + AMP session + channel mux to a remote peer. Io-thread affine. */
+/** One ADP association + AMP session + channel mux to a remote peer. Io-thread affine.
+ *  Carrier-backed links ([A024]) use a bridged ChannelSession instead of ADP Connection. */
 class PeerLink {
 public:
   using CompleteCb = std::function<void(Roe<void>)>;
 
   PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
            std::shared_ptr<adp::Connection> connection, MshIdentity local_identity, PeerLinkManager& owner);
+
+  /** Nested Session over circuit carrier (no ADP Connection). */
+  PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
+           std::shared_ptr<ChannelSession> carrier, MshIdentity local_identity, PeerLinkManager& owner);
 
   void StartOutboundHandshake(CompleteCb on_established);
   void StartInboundHandshake(CompleteCb on_established);
@@ -36,12 +42,14 @@ public:
 
   PeerLinkPhase Phase() const { return phase_; }
   bool IsOutbound() const { return outbound_; }
+  bool IsCarrierBacked() const { return carrier_ != nullptr; }
   const std::string& PeerKey() const { return peer_key_; }
   const std::string& RemotePeerId() const { return remote_peer_id_; }
   const ByteVector& RemoteIdentityPublicKey() const { return remote_identity_public_key_; }
-  adp::Connection& Connection() { return *connection_; }
+  adp::Connection* ConnectionOrNull() { return connection_.get(); }
   ChannelMux* Mux() { return mux_.get(); }
   Session* GetSession() { return session_.get(); }
+  ChannelSession* Carrier() { return carrier_.get(); }
 
   const CapabilityPayload* RemoteCapability() const {
     return remote_capability_ ? &*remote_capability_ : nullptr;
@@ -62,16 +70,21 @@ private:
   void MarkCapabilityOfferSent() { capability_offer_sent_ = true; }
 
   Roe<void> SendAdp(std::vector<uint8_t> payload, adp::QosClass qos);
+  Roe<void> SendCarrierWire(std::vector<uint8_t> payload);
   void OnHandshakeComplete(Roe<MshAdpEstablished> established);
   void FinishEstablishment(MshAdpEstablished established);
   void FailAssociation(const Error& error);
   void AttachMuxTransport();
+  void AttachCarrierFrameHandler();
+  void HandleCarrierFrame(std::span<const uint8_t> payload);
+  void StartHandshakeCommon(MshAdpHandshake::Role role, CompleteCb on_established);
 
   std::string peer_key_;
   std::string remote_peer_id_;
   ByteVector remote_identity_public_key_;
   bool outbound_;
   std::shared_ptr<adp::Connection> connection_;
+  std::shared_ptr<ChannelSession> carrier_;
   MshIdentity identity_;
   PeerLinkManager& owner_;
   PeerLinkPhase phase_ = PeerLinkPhase::Handshaking;

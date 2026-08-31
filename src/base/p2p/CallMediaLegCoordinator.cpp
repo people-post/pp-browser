@@ -911,10 +911,12 @@ CallMediaLegId CallMediaLegCoordinator::StartLeg(const CallMediaDirectConnectPar
     }
     return {};
   }
-  if (!runtime_.Links().GetLinkSnapshot(params.peer_key).has_endpoint) {
+  // Direct ADP endpoint or circuit-backed nested Session ([A024]) already Connected.
+  if (!runtime_.Links().GetLinkSnapshot(params.peer_key).has_endpoint &&
+      !runtime_.Links().IsConnected(params.peer_key)) {
     if (on_finished) {
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
-        on_finished(Error("amp call-media: peer endpoint not registered"));
+        on_finished(Error("amp call-media: peer not reachable (no endpoint or nested link)"));
       });
     }
     return {};

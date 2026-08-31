@@ -199,6 +199,16 @@ Channel policy: `CircuitTunnelChannelPolicy` (Reliable Control, not `read_once`)
 
 Runtime: **`CircuitTunnelCoordinator`** on `MeshRuntime` — non-blocking `StartBridge` + completion callback ([A022](../../projects/adp/DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)). L4 must not nest `Pump` / `IoPumpUntil`.
 
+### Nested Session carrier ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session))
+
+For Amp **call-media** over circuit, the bridged channel is **not** the product L4 pipe. Outer `target_protocol` is `/pp-browser/amp-circuit-carrier/1.0.0`. After splice:
+
+1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
+2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.
+3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime, large outbound queue) so media FRAG bursts are not stalled by ADP `reliable_window`.
+
+Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Session is call-media only. See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
+
 ## Three objects (do not collapse)
 
 | Object | Type |

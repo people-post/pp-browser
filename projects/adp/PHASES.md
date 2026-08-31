@@ -126,7 +126,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Call-media single transport entry via `CallMediaAmpTransport` / `CallMediaLegCoordinator` when Amp is up; `kCallMediaAdpOpusDogfood=false`
 - [x] Circuit / media-relay Amp ownership on MeshHost (step 5a) — hosting + admission
 - [x] SoftMigrate media-relay single entry (step 5b)
-- [x] Amp circuit adopt for SoftMigrate NAT (step 5c) — call-media circuit Amp = A024 (not started)
+- [x] Amp circuit adopt for SoftMigrate NAT (step 5c) — call-media = A024
+- [x] Amp call-media nested Session over circuit (step 5d / A024)
 - [ ] See [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist) for steps 6–7
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path

@@ -103,10 +103,19 @@ Roe<MshPayload> MshAdpHandshake::BuildLocalPayload(const KemState& kem, const By
   return payload;
 }
 
-MshAdpHandshake::MshAdpHandshake(const Role role, MshIdentity identity, SendWire send, CompleteHandler on_complete)
-    : role_(role), identity_(std::move(identity)), send_(std::move(send)), on_complete_(std::move(on_complete)) {}
+MshAdpHandshake::MshAdpHandshake(const Role role, MshIdentity identity, SendWire send, CompleteHandler on_complete,
+                                 const bool chunked_wire)
+    : role_(role), identity_(std::move(identity)), send_(std::move(send)), on_complete_(std::move(on_complete)),
+      chunked_wire_(chunked_wire) {}
 
 Roe<void> MshAdpHandshake::SendMessage(const MshMessageType type, const std::span<const uint8_t> body) {
+  if (!chunked_wire_) {
+    auto wire = AmpAdpCarrier::EncodeMsh(type, body);
+    if (!wire) {
+      return wire.error();
+    }
+    return send_(std::move(*wire));
+  }
   auto chunks = AmpAdpCarrier::EncodeMshChunked(type, body);
   if (!chunks) {
     return chunks.error();

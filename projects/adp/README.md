@@ -32,7 +32,7 @@
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
-| D9 | MeshHost/CallStack cutover | **In progress** — SoftMigrate Amp done (5c); Amp call-media circuit = [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) before step 6 |
+| D9 | MeshHost/CallStack cutover | **In progress** — 5d nested call-media circuit **done**; next step 6 Identify/TCP teardown |
 
 ## Locked product decisions
 

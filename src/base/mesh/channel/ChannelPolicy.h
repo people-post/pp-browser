@@ -95,6 +95,24 @@ inline ChannelPolicy CircuitTunnelChannelPolicy(
   return policy;
 }
 
+/**
+ * Outer splice for nested Session carrier ([A024]).
+ * BestEffort (Realtime) so inner media FRAG bursts are not capped by ADP reliable_window.
+ * Nested MSH is a few frames; MemoryDatagramIo tests are lossless. Dual QoS lanes later.
+ */
+inline ChannelPolicy CircuitCarrierChannelPolicy(
+    std::chrono::milliseconds read_timeout = std::chrono::milliseconds{8000}) {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::Realtime;
+  policy.drop = ChannelDropPolicy::Oldest;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxCallMediaOutboundFrames;
+  policy.write_preferred = true;
+  policy.read_once = false;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxCallMediaFrameBytes;
+  policy.read_timeout = read_timeout;
+  return policy;
+}
+
 /** Media-relay hop leg — BestEffort realtime fan-out (AMP-CHANNEL; D7b). */
 inline ChannelPolicy MediaRelayHopChannelPolicy() {
   ChannelPolicy policy;

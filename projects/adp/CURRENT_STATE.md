@@ -128,7 +128,17 @@
 - **`AmpMediaRelayCoordinator`** adopts circuit sessions for quote/attach (same pipe; do not close after quote)
 - **MeshHost** always Starts Amp circuit + media-relay coordinators when Amp is up; inbound hosting gated by `SetServeInbound(host_*)`
 - **DATA-plane hardening** — Fanout snapshots under lock (libp2p `MediaRelayRuntime` pattern); sync `Detach` / `AbortInflight` (no `PostIo(raw Impl*)` past Stop); protocol-keyed hop readiness (`Find(peer, protocol)`, not `HasAny` for call-media)
-- **Call-media Amp over circuit** — design locked [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md); implementation not started
+- **Call-media Amp over circuit** — design locked [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md); **implemented** (step 5d)
+
+## Landed (D9 step 5d — Amp call-media nested Session over circuit / A024)
+
+- **Carrier-neutral MSH** — `MshAdpHandshake` optional non-chunked wire; `PeerLink` carrier mode over bridged `ChannelSession`
+- **`kAmpCircuitCarrierProtocolId`** — outer splice target (not product L4); `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
+- **`PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept`** — install virtual PeerLink after inner MSH; `OpenChannel` works without ADP endpoint; rekey refreshes protocol handlers
+- **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
+- **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link
+- **MeshHost** enables nested carrier accept whenever Amp L4 is up
+- `pp_browser_p2p_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
 
 ## Plan adjustments (2026-08-31)
 
@@ -148,9 +158,9 @@
 
 ## Next (implementation)
 
-1. **D9 / A024** — nested Session carrier + `CircuitPeerLink` + wire `CallMediaLegCoordinator` (see [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
+1. **D9 step 6–7** — stop Identify/TCP mesh listen; delete dogfood + TCP call-media; update NETWORKING / CALLS (Amp 1:1 circuit call-media landed in 5d)
 2. **D8 optional** — AMP dial-back when retiring libp2p Identify
-3. **D9 step 6–7** — only after Amp 1:1 circuit call-media works: stop Identify/TCP mesh listen; delete dogfood + TCP call-media; update NETWORKING / CALLS
+3. **Blob Amp single entry** — still on libp2p; flip before full TCP teardown if required
 
 ### D9 cutover checklist
 
@@ -165,8 +175,8 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 5a | MeshHost owns Amp circuit + media-relay; multiplex IoTick; admission | **Done** |
 | 5b | SoftMigrate media-relay single entry via Amp | **Done** |
 | 5c | Amp circuit adopt for SoftMigrate NAT | **Done** — media-relay; call-media = A024 |
-| 5d | Amp call-media nested Session over circuit | **Next** — [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) |
-| 6 | Stop starting libp2p Identify / TCP listen for mesh | After 5d; keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
+| 5d | Amp call-media nested Session over circuit | **Done** — [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) / `AmpCircuitCallMediaComposeTest` |
+| 6 | Stop starting libp2p Identify / TCP listen for mesh | After Amp-native listen/dial book is enough; keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 
 See [PHASES.md](PHASES.md) for full ordering.

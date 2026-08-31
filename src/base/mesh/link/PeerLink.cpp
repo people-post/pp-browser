@@ -15,27 +15,93 @@ PeerLink::PeerLink(std::string peer_key, std::string remote_peer_id, const bool 
   });
 }
 
-void PeerLink::StartOutboundHandshake(CompleteCb on_established) {
+PeerLink::PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
+                   std::shared_ptr<ChannelSession> carrier, MshIdentity local_identity, PeerLinkManager& owner)
+    : peer_key_(std::move(peer_key)), remote_peer_id_(std::move(remote_peer_id)), outbound_(outbound),
+      carrier_(std::move(carrier)), identity_(std::move(local_identity)), owner_(owner) {
+  AttachCarrierFrameHandler();
+}
+
+void PeerLink::AttachCarrierFrameHandler() {
+  if (!carrier_) {
+    return;
+  }
+  carrier_->SetFrameHandler([this](Roe<std::vector<uint8_t>> frame) {
+    if (!frame) {
+      FailAssociation(frame.error());
+      return false;
+    }
+    HandleCarrierFrame(*frame);
+    return true;
+  });
+  carrier_->SetClosedCallback([this](const char* reason) {
+    if (phase_ == PeerLinkPhase::Connected) {
+      phase_ = PeerLinkPhase::Backoff;
+      return;
+    }
+    FailAssociation(Error(reason && reason[0] ? reason : "amp carrier closed"));
+  });
+}
+
+void PeerLink::StartHandshakeCommon(const MshAdpHandshake::Role role, CompleteCb on_established) {
   establish_cb_ = std::move(on_established);
   phase_ = PeerLinkPhase::Handshaking;
-  const auto role = MshAdpHandshake::Role::Initiator;
+  const bool chunked = !IsCarrierBacked();
   handshake_ = std::make_unique<MshAdpHandshake>(
       role, identity_,
-      [this](std::vector<uint8_t> payload) { return SendAdp(std::move(payload), adp::QosClass::Reliable); },
-      [this](Roe<MshAdpEstablished> established) { OnHandshakeComplete(std::move(established)); });
+      [this](std::vector<uint8_t> payload) {
+        if (IsCarrierBacked()) {
+          return SendCarrierWire(std::move(payload));
+        }
+        return SendAdp(std::move(payload), adp::QosClass::Reliable);
+      },
+      [this](Roe<MshAdpEstablished> established) { OnHandshakeComplete(std::move(established)); }, chunked);
+}
+
+void PeerLink::StartOutboundHandshake(CompleteCb on_established) {
+  StartHandshakeCommon(MshAdpHandshake::Role::Initiator, std::move(on_established));
   if (auto started = handshake_->Start(); !started) {
     FailAssociation(started.error());
   }
 }
 
 void PeerLink::StartInboundHandshake(CompleteCb on_established) {
-  establish_cb_ = std::move(on_established);
-  phase_ = PeerLinkPhase::Handshaking;
-  const auto role = MshAdpHandshake::Role::Responder;
-  handshake_ = std::make_unique<MshAdpHandshake>(
-      role, identity_,
-      [this](std::vector<uint8_t> payload) { return SendAdp(std::move(payload), adp::QosClass::Reliable); },
-      [this](Roe<MshAdpEstablished> established) { OnHandshakeComplete(std::move(established)); });
+  StartHandshakeCommon(MshAdpHandshake::Role::Responder, std::move(on_established));
+}
+
+void PeerLink::HandleCarrierFrame(const std::span<const uint8_t> payload) {
+  if (phase_ == PeerLinkPhase::Connected && mux_) {
+    auto kind = AmpAdpCarrier::DecodeKind(payload);
+    if (!kind || *kind != AmpAdpPayloadKind::Sealed) {
+      return;
+    }
+    auto header = AmpAdpCarrier::DecodeSealedHeader(payload);
+    if (!header) {
+      return;
+    }
+    auto body = AmpAdpCarrier::DecodeSealedBody(payload);
+    if (!body) {
+      return;
+    }
+    (void)mux_->OnSealedInbound(header->first, header->second, *body);
+    return;
+  }
+  if (!handshake_) {
+    return;
+  }
+  auto kind = AmpAdpCarrier::DecodeKind(payload);
+  if (!kind || *kind != AmpAdpPayloadKind::Msh) {
+    return;
+  }
+  auto msh_type = AmpAdpCarrier::DecodeMshType(payload);
+  if (!msh_type) {
+    return;
+  }
+  auto body = AmpAdpCarrier::DecodeMshBody(payload);
+  if (!body) {
+    return;
+  }
+  (void)handshake_->HandleMsh(*msh_type, *body);
 }
 
 void PeerLink::HandleAdpPayload(const std::span<const uint8_t> payload) {
@@ -145,6 +211,16 @@ Roe<void> PeerLink::SendAdp(std::vector<uint8_t> payload, const adp::QosClass qo
   return connection_->Send(qos, payload);
 }
 
+Roe<void> PeerLink::SendCarrierWire(std::vector<uint8_t> payload) {
+  if (!carrier_ || carrier_->IsClosed()) {
+    return Error("amp link: carrier closed");
+  }
+  if (!carrier_->EnqueueOutbound(std::move(payload))) {
+    return Error("amp link: carrier enqueue failed");
+  }
+  return Roe<void>();
+}
+
 void PeerLink::OnHandshakeComplete(Roe<MshAdpEstablished> established) {
   if (!established) {
     FailAssociation(established.error());
@@ -171,7 +247,9 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
     return;
   }
 
-  connection_->UpgradeBinder(session->AssocKey());
+  if (connection_) {
+    connection_->UpgradeBinder(session->AssocKey());
+  }
   session_ = std::make_unique<Session>(std::move(*session));
   mux_ = std::make_unique<ChannelMux>(*session_);
   AttachMuxTransport();
@@ -199,6 +277,10 @@ void PeerLink::AttachMuxTransport() {
                             std::vector<uint8_t> sealed) {
     auto wire = AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, sealed);
     if (!wire) {
+      return;
+    }
+    if (IsCarrierBacked()) {
+      (void)SendCarrierWire(std::move(*wire));
       return;
     }
     (void)SendAdp(std::move(*wire), qos);

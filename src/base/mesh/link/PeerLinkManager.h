@@ -51,6 +51,16 @@ public:
                    ChannelCb on_complete);
   void OpenChannelOnLink(PeerLink& link, const std::string& protocol_id, ChannelPolicy policy, ChannelCb on_complete);
 
+  /**
+   * [A024] Establish nested Session over a bridged ChannelSession and install as PeerLink.
+   * `peer_key` is the provisional dial key (usually remote PeerId); rekeyed to authenticated id.
+   */
+  void EstablishNestedOverCarrier(const std::string& peer_key, std::shared_ptr<ChannelSession> carrier,
+                                  bool initiator, LinkCb on_complete);
+
+  /** Accept inbound `/pp-browser/amp-circuit-carrier/1.0.0` opens as nested Session responders. */
+  void EnableNestedCarrierAccept(bool enable);
+
   /** L4 entry — applied to every link mux (existing + future). */
   void SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler);
   void RemoveProtocolHandler(const std::string& protocol_id);
@@ -87,6 +97,8 @@ private:
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
   void IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote);
   void FinishDial(const std::string& peer_key, Roe<void> result);
+  void FinishNestedCarrier(const std::string& provisional_key, Roe<void> result);
+  void HandleInboundCarrierChannel(PeerLink& via_link, uint32_t channel_id);
   std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
   /** Returns false if `inbound` was erased as a duplicate. */
   bool AdoptInboundOrDropDuplicate(PeerLink& inbound);
@@ -100,6 +112,7 @@ private:
   std::vector<std::string> local_listen_multiaddrs_;
   std::vector<std::string> advertised_protocols_;
   CapabilityHandler capability_handler_;
+  bool nested_carrier_accept_ = false;
 
   std::unordered_map<std::string, EndpointRecord> endpoints_;
   std::unordered_map<std::string, std::unique_ptr<PeerLink>> links_;
