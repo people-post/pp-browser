@@ -1,26 +1,33 @@
-# Current state — ADP
+# Current state — ADP / AMP
 
 **As of:** 2026-08-30
 
-## Landed
+## Landed (L1)
 
-- Project docs + ADRs A001–A011
+- Project docs + ADRs A001–A020
 - `src/base/adp/` → `pp_base_adp` (Asio-free)
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
 - `pp_browser_adp_test` (26 tests)
 - Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
-- **Slice 1 (Opus dogfood):** `CallMediaAdpPath` + HKDF `K_assoc`, call-media hello `adp_*` fields, bridge Opus→ADP gated by TEMP `CallMediaAdpDogfood.h` (`kCallMediaAdpOpusDogfood`), TCP fallback (A011)
 
-## Dogfood checklist (LAN)
+## Landed (stack spec — D0)
 
-1. Both peers build with `kCallMediaAdpOpusDogfood = true` (current default in that header).
-2. 1:1 call on same LAN (or one public side); confirm audio.
-3. Flip constexpr to `false` (or omit ADP hello) → Opus stays on TCP call-media only.
-4. When proven: delete `CallMediaAdpDogfood.h` and the gate checks — ADP Opus becomes default-on.
+- [STACK.md](STACK.md) — four-layer AMP model
+- [`docs/contracts/AMP-SESSION.md`](../../docs/contracts/AMP-SESSION.md) — L2 MSH + full AEAD
+- [`docs/contracts/AMP-CHANNEL.md`](../../docs/contracts/AMP-CHANNEL.md) — L3 mux, ch0, fragmentation
+- [PHASES.md](PHASES.md) — D1–D9 migration checklist
 
-## Next
+## Transitional (legacy TCP path)
 
-- Hole punch / dual-NAT
-- libp2p / MeshHost generic ADP transport
-- Video fragmentation over ADP
-- pp-ledger transport over ADP
+- **Opus side-path:** `CallMediaAdpPath` + TCP-hello `adp_*` + `CallMediaAdpDogfood.h` (A008–A011)
+- **Production mesh:** still TCP + Noise + Yamux via `Libp2pHost`
+- Delete transitional Opus path when **D6** ships
+
+## Next (implementation)
+
+1. **D1** — `src/base/mesh/session/` + MSH + `pp_browser_amp_session_test`
+2. **D2** — `src/base/mesh/channel/` + `ChannelSession` + ch0
+3. **D3** — L3 fragmentation
+4. **D4** — `PeerLinkManager` + `MeshPump`
+
+See [PHASES.md](PHASES.md) for full ordering.

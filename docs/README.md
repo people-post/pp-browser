@@ -48,6 +48,8 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |
 | [contracts/SERVICE_ENDPOINTS.md](contracts/SERVICE_ENDPOINTS.md) | HTTP relay / directory / registration | `/v1/…` surface |
 | [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
+| [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
+| [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3) | `channel_frame_version`, `protocol_id` |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 
