@@ -45,8 +45,14 @@
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
 - `pp_browser_amp_link_test` (3 tests, green)
 
+## Landed (L4 chat — D5)
+
+- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/chat/1.0.0` and `/pp-browser/chat-history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
+- `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
+
 ## Next (implementation)
 
-1. **D5** — port chat + history onto `ChannelSession`
+1. **D6** — port call-media onto ChannelSession
 
 See [PHASES.md](PHASES.md) for full ordering.

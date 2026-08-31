@@ -178,6 +178,50 @@ void PeerLinkManager::OpenChannel(const std::string& peer_key, const std::string
   });
 }
 
+void PeerLinkManager::SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler) {
+  protocol_handlers_[protocol_id] = std::move(handler);
+  for (auto& [_, link] : links_) {
+    ApplyProtocolHandlers(*link);
+  }
+}
+
+void PeerLinkManager::RemoveProtocolHandler(const std::string& protocol_id) {
+  protocol_handlers_.erase(protocol_id);
+  for (auto& [_, link] : links_) {
+    if (link->Mux()) {
+      link->Mux()->SetProtocolHandler(protocol_id, {});
+    }
+  }
+}
+
+void PeerLinkManager::ClearProtocolHandlers() {
+  protocol_handlers_.clear();
+  for (auto& [_, link] : links_) {
+    if (link->Mux()) {
+      link->Mux()->ClearProtocolHandlers();
+    }
+  }
+}
+
+void PeerLinkManager::ApplyProtocolHandlers(PeerLink& link) {
+  if (!link.Mux()) {
+    return;
+  }
+  const std::string peer_key = link.PeerKey();
+  link.Mux()->ClearProtocolHandlers();
+  for (const auto& [protocol_id, handler] : protocol_handlers_) {
+    link.Mux()->SetProtocolHandler(protocol_id, [this, peer_key, handler](const uint32_t channel_id,
+                                                                           const std::string&) {
+      if (!handler) {
+        return;
+      }
+      if (auto* live = FindLink(peer_key)) {
+        handler(*live, channel_id);
+      }
+    });
+  }
+}
+
 void PeerLinkManager::FinishDial(const std::string& peer_key, Roe<void> result) {
   if (concurrent_dials_ > 0) {
     --concurrent_dials_;
@@ -214,7 +258,7 @@ void PeerLinkManager::OnInboundConnection(std::shared_ptr<adp::Connection> conne
 }
 
 void PeerLinkManager::OnLinkEstablished(PeerLink& link) {
-  (void)link;
+  ApplyProtocolHandlers(link);
 }
 
 void PeerLinkManager::MarkWarm(const std::string& peer_key) {

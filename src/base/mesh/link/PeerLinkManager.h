@@ -24,6 +24,7 @@ class PeerLinkManager {
 public:
   using LinkCb = std::function<void(Roe<void>)>;
   using ChannelCb = std::function<void(Roe<uint32_t>)>;
+  using ProtocolHandler = std::function<void(PeerLink& link, uint32_t channel_id)>;
 
   PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
                   PeerLinkConfig config = {});
@@ -36,6 +37,11 @@ public:
   void EnsureAssociation(const std::string& peer_key, LinkCb on_complete);
   void OpenChannel(const std::string& peer_key, const std::string& protocol_id, ChannelPolicy policy,
                    ChannelCb on_complete);
+
+  /** L4 entry — applied to every link mux (existing + future). */
+  void SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler);
+  void RemoveProtocolHandler(const std::string& protocol_id);
+  void ClearProtocolHandlers();
 
   PeerLinkSnapshot GetLinkSnapshot(const std::string& peer_key) const;
   bool IsConnected(const std::string& peer_key) const;
@@ -61,6 +67,7 @@ private:
   void InstallAcceptHandler();
   void OnInboundConnection(std::shared_ptr<adp::Connection> connection);
   void OnLinkEstablished(PeerLink& link);
+  void ApplyProtocolHandlers(PeerLink& link);
   void FinishDial(const std::string& peer_key, Roe<void> result);
 
   adp::Endpoint& endpoint_;
@@ -70,6 +77,7 @@ private:
 
   std::unordered_map<std::string, EndpointRecord> endpoints_;
   std::unordered_map<std::string, std::unique_ptr<PeerLink>> links_;
+  std::unordered_map<std::string, ProtocolHandler> protocol_handlers_;
   std::unordered_map<std::string, std::vector<LinkCb>> inflight_associations_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> dial_failed_until_;
   std::unordered_map<std::string, std::string> last_error_;

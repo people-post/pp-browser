@@ -101,6 +101,16 @@ void ChannelMux::SetDataHandler(const uint32_t channel_id, DataHandler handler) 
   pending_handlers_[channel_id] = std::move(handler);
 }
 
+void ChannelMux::SetProtocolHandler(const std::string& protocol_id, InboundOpenHandler handler) {
+  if (handler) {
+    protocol_handlers_[protocol_id] = std::move(handler);
+  } else {
+    protocol_handlers_.erase(protocol_id);
+  }
+}
+
+void ChannelMux::ClearProtocolHandlers() { protocol_handlers_.clear(); }
+
 Roe<void> ChannelMux::DeliverPayload(ChannelRecord& channel, std::vector<uint8_t> payload) {
   if (channel.on_data) {
     channel.on_data(channel.id, std::move(payload));
@@ -130,7 +140,16 @@ Roe<void> ChannelMux::HandleOpen(ChannelFrame frame) {
   ack.header.channel_id = frame.header.channel_id;
   ack.header.channel_seq = 0;
   ack.open_ack_result = 0;
-  return SendFrame(ack, channels_.at(frame.header.channel_id));
+  auto sent = SendFrame(ack, channels_.at(frame.header.channel_id));
+  if (!sent) {
+    return sent;
+  }
+  if (const auto it = protocol_handlers_.find(frame.open.protocol_id); it != protocol_handlers_.end()) {
+    if (it->second) {
+      it->second(frame.header.channel_id, frame.open.protocol_id);
+    }
+  }
+  return Roe<void>();
 }
 
 Roe<void> ChannelMux::HandleOpenAck(ChannelFrame frame) {

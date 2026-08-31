@@ -100,6 +100,22 @@ TEST(ChannelMuxTest, CapabilityChannelZero) {
   EXPECT_EQ(decoded.protocols, offer.protocols);
 }
 
+TEST(ChannelMuxTest, InboundProtocolHandler) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  uint32_t opened_id = 0;
+  link.responder.mux.SetProtocolHandler("/pp-browser/chat/1.0.0", [&](const uint32_t channel_id, const std::string& pid) {
+    opened_id = channel_id;
+    EXPECT_EQ(pid, "/pp-browser/chat/1.0.0");
+  });
+
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+  EXPECT_EQ(opened_id, *ch);
+}
+
 TEST(ChannelSessionTest, ReadOnceClosesAfterFirstFrame) {
   auto link_result = test::AmpTestLink::Create();
   ASSERT_TRUE(static_cast<bool>(link_result));
