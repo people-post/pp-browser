@@ -92,10 +92,13 @@ private:
   std::unordered_map<uint32_t, ChannelRecord> channels_;
   std::unordered_map<uint32_t, DataHandler> pending_handlers_;
   std::unordered_map<uint32_t, TerminalHandler> pending_terminal_handlers_;
+  std::unordered_map<uint32_t, std::vector<uint8_t>> pending_open_data_;
   std::unordered_map<std::string, InboundOpenHandler> protocol_handlers_;
   uint32_t next_dynamic_id_ = 1;
   adp::QosClass last_send_qos_ = adp::QosClass::Reliable;
   uint64_t next_frag_msg_id_ = 1;
+
+  void FlushPendingOpenData(uint32_t channel_id);
 };
 
 } // namespace pbr::amp

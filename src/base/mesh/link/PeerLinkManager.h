@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/adp/Endpoint.h"
+#include "base/mesh/channel/Capability.h"
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/link/PeerLink.h"
 #include "base/mesh/link/Types.h"
@@ -25,12 +26,20 @@ public:
   using LinkCb = std::function<void(Roe<void>)>;
   using ChannelCb = std::function<void(Roe<uint32_t>)>;
   using ProtocolHandler = std::function<void(PeerLink& link, uint32_t channel_id)>;
+  /** Fired once per link when the remote capability payload is first decoded (ch0 / A016). */
+  using CapabilityHandler = std::function<void(PeerLink& link, const CapabilityPayload& remote)>;
 
   PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
                   PeerLinkConfig config = {});
 
   adp::Endpoint& GetEndpoint() { return endpoint_; }
   const std::string& LocalPeerId() const { return local_peer_id_; }
+
+  /** Local ch0 advertisement (Identify replacement on the AMP path). */
+  void SetLocalListenMultiaddrs(std::vector<std::string> multiaddrs);
+  void SetAdvertisedProtocols(std::vector<std::string> protocols);
+  void SetCapabilityHandler(CapabilityHandler handler);
+  CapabilityPayload LocalCapability() const;
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr);
 
@@ -71,9 +80,12 @@ private:
   void OnInboundConnection(std::shared_ptr<adp::Connection> connection);
   void OnLinkEstablished(PeerLink& link);
   void ApplyProtocolHandlers(PeerLink& link);
+  void StartCapabilityExchange(PeerLink& link);
+  void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
   void FinishDial(const std::string& peer_key, Roe<void> result);
   std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
-  void TryAdoptInboundLink(PeerLink& inbound);
+  /** Returns false if `inbound` was erased as a duplicate. */
+  bool AdoptInboundOrDropDuplicate(PeerLink& inbound);
   void RekeyLink(const std::string& from_key, const std::string& to_key);
   PeerLink* FindConnectedLinkForPeerId(const std::string& peer_id);
 
@@ -81,6 +93,9 @@ private:
   MshIdentity local_identity_;
   std::string local_peer_id_;
   PeerLinkConfig config_;
+  std::vector<std::string> local_listen_multiaddrs_;
+  std::vector<std::string> advertised_protocols_;
+  CapabilityHandler capability_handler_;
 
   std::unordered_map<std::string, EndpointRecord> endpoints_;
   std::unordered_map<std::string, std::unique_ptr<PeerLink>> links_;

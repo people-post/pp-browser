@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/adp/Connection.h"
+#include "base/mesh/channel/Capability.h"
 #include "base/mesh/channel/ChannelMux.h"
 #include "base/mesh/link/MshAdpHandshake.h"
 #include "base/mesh/link/Types.h"
@@ -42,6 +43,10 @@ public:
   ChannelMux* Mux() { return mux_.get(); }
   Session* GetSession() { return session_.get(); }
 
+  const CapabilityPayload* RemoteCapability() const {
+    return remote_capability_ ? &*remote_capability_ : nullptr;
+  }
+
   void MarkWarm();
   void ClearWarm();
   bool IsWarm() const { return warm_; }
@@ -50,6 +55,11 @@ private:
   friend class PeerLinkManager;
 
   void SetPeerKey(std::string peer_key) { peer_key_ = std::move(peer_key); }
+  void SetRemoteCapability(CapabilityPayload payload) { remote_capability_ = std::move(payload); }
+  bool CapabilityExchangeStarted() const { return capability_exchange_started_; }
+  void MarkCapabilityExchangeStarted() { capability_exchange_started_ = true; }
+  bool CapabilityOfferSent() const { return capability_offer_sent_; }
+  void MarkCapabilityOfferSent() { capability_offer_sent_ = true; }
 
   Roe<void> SendAdp(std::vector<uint8_t> payload, adp::QosClass qos);
   void OnHandshakeComplete(Roe<MshAdpEstablished> established);
@@ -66,6 +76,9 @@ private:
   PeerLinkManager& owner_;
   PeerLinkPhase phase_ = PeerLinkPhase::Handshaking;
   bool warm_ = false;
+  bool capability_exchange_started_ = false;
+  bool capability_offer_sent_ = false;
+  std::optional<CapabilityPayload> remote_capability_;
 
   std::unique_ptr<MshAdpHandshake> handshake_;
   std::unique_ptr<Session> session_;

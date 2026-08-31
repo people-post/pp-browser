@@ -93,14 +93,14 @@ Matches [STACK.md § Failure propagation](../../projects/adp/STACK.md#failure-pr
 
 Opened immediately after Session `Established`.
 
-**Requester sends (Transactional):**
+**Dialer (outbound link) opens channel 0** and sends a capability payload; **responder OpenAcks and replies** with its own payload on the same channel ([A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane)). Wired from `PeerLinkManager::OnLinkEstablished`.
+
+**Payload (Transactional / Control DATA):**
 
 - `local_peer_id`
 - `listen_multiaddrs[]`
-- `protocols[]` supported
-- `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions)
-
-**Responder sends OpenAck + capability payload.**
+- `protocols[]` supported (includes circuit / media-relay protocol ids when hosted)
+- `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions; v1 binary codec carries flags via `protocols[]` until an explicit flags field is added)
 
 Channel 0 may stay open (long-lived control) or close after exchange — implementation policy; default **long-lived, Reliable Control**.
 

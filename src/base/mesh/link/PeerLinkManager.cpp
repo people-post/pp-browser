@@ -1,5 +1,6 @@
 #include "base/mesh/link/PeerLinkManager.h"
 
+#include "base/mesh/channel/Types.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/Types.h"
 
@@ -11,6 +12,26 @@ PeerLinkManager::PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_iden
       config_(config) {
   endpoint_.SetAcceptKey(PreSessionPeerKey());
   InstallAcceptHandler();
+}
+
+void PeerLinkManager::SetLocalListenMultiaddrs(std::vector<std::string> multiaddrs) {
+  local_listen_multiaddrs_ = std::move(multiaddrs);
+}
+
+void PeerLinkManager::SetAdvertisedProtocols(std::vector<std::string> protocols) {
+  advertised_protocols_ = std::move(protocols);
+}
+
+void PeerLinkManager::SetCapabilityHandler(CapabilityHandler handler) {
+  capability_handler_ = std::move(handler);
+}
+
+CapabilityPayload PeerLinkManager::LocalCapability() const {
+  CapabilityPayload payload;
+  payload.local_peer_id = local_peer_id_;
+  payload.listen_multiaddrs = local_listen_multiaddrs_;
+  payload.protocols = advertised_protocols_;
+  return payload;
 }
 
 void PeerLinkManager::InstallAcceptHandler() {
@@ -332,31 +353,86 @@ void PeerLinkManager::RekeyLink(const std::string& from_key, const std::string& 
   links_.emplace(to_key, std::move(node.mapped()));
 }
 
-void PeerLinkManager::TryAdoptInboundLink(PeerLink& inbound) {
+bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& inbound) {
   if (inbound.IsOutbound() || inbound.RemotePeerId().empty()) {
-    return;
+    return true;
   }
   if (auto* existing = FindConnectedLinkForPeerId(inbound.RemotePeerId())) {
     if (existing != &inbound) {
       links_.erase(inbound.PeerKey());
-      return;
+      return false;
     }
   }
   for (const auto& [alias, rec] : endpoints_) {
     if (rec.peer_id == inbound.RemotePeerId() && !links_.contains(alias)) {
       RekeyLink(inbound.PeerKey(), alias);
-      return;
+      return true;
     }
   }
   peer_id_to_key_[inbound.RemotePeerId()] = inbound.PeerKey();
+  return true;
 }
 
 void PeerLinkManager::OnLinkEstablished(PeerLink& link) {
   if (!link.RemotePeerId().empty()) {
     peer_id_to_key_[link.RemotePeerId()] = link.PeerKey();
   }
-  TryAdoptInboundLink(link);
+  if (!AdoptInboundOrDropDuplicate(link)) {
+    return;
+  }
   ApplyProtocolHandlers(link);
+  StartCapabilityExchange(link);
+}
+
+void PeerLinkManager::StartCapabilityExchange(PeerLink& link) {
+  if (!link.Mux()) {
+    return;
+  }
+  const std::string peer_key = link.PeerKey();
+  link.Mux()->SetDataHandler(kCapabilityChannelId, [this, peer_key](uint32_t, std::vector<uint8_t> payload) {
+    OnCapabilityData(peer_key, std::move(payload));
+  });
+
+  if (link.CapabilityExchangeStarted()) {
+    return;
+  }
+  link.MarkCapabilityExchangeStarted();
+
+  // Responder completes MSH first; dialer opens ch0 after that so the inbound handler is armed.
+  if (!link.IsOutbound()) {
+    return;
+  }
+  link.MarkCapabilityOfferSent();
+  (void)ChannelMux::SendCapabilityOffer(*link.Mux(), LocalCapability());
+}
+
+void PeerLinkManager::OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload) {
+  auto* link = FindLink(peer_key);
+  if (!link || !link->Mux()) {
+    return;
+  }
+  auto decoded = CapabilityCodec::Decode(payload);
+  if (!decoded) {
+    return;
+  }
+
+  const bool first = link->RemoteCapability() == nullptr;
+  link->SetRemoteCapability(std::move(*decoded));
+
+  // Inbound peer replies once with local caps on the same ch0.
+  if (!link->CapabilityOfferSent()) {
+    link->MarkCapabilityOfferSent();
+    auto encoded = CapabilityCodec::Encode(LocalCapability());
+    if (encoded && link->Mux()->State(kCapabilityChannelId) == ChannelState::Open) {
+      (void)link->Mux()->SendData(kCapabilityChannelId, std::move(*encoded));
+    }
+  }
+
+  if (first && capability_handler_) {
+    if (const auto* remote = link->RemoteCapability()) {
+      capability_handler_(*link, *remote);
+    }
+  }
 }
 
 void PeerLinkManager::MarkWarm(const std::string& peer_key) {

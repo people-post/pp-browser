@@ -29,7 +29,9 @@
 | D0 | Stack constitution | **Done** |
 | D1–D6 | Session, channel, link, chat, call-media | **Done** (parallel stacks; product still libp2p) |
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
-| D7b–D9 | Media-relay AMP → reachability → cutover | **Next** — see [PHASES.md](PHASES.md) |
+| D7b | Media-relay AMP coordinator | **Done** |
+| D8 | ch0 capability exchange | **Partial** — exchange landed; dial-back/mDNS next |
+| D9 | MeshHost/CallStack cutover | **Next** — checklist in [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist) |
 
 ## Locked product decisions
 

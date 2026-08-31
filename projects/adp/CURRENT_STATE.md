@@ -76,9 +76,32 @@
 - `pp_browser_p2p_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
 - Fan-out SoftMigrate / MeshHost wire deferred
 
+## Landed (D8 ch0 — partial)
+
+- After MSH, dialer opens channel 0 (`/pp-browser/amp-capability/1.0.0`); peer replies with local caps
+- `PeerLinkManager::{SetLocalListenMultiaddrs,SetAdvertisedProtocols,SetCapabilityHandler}`
+- `PeerLink::RemoteCapability()` stores peer Identify replacement payload
+- `ChannelMux::SendCapabilityOffer` queues DATA until OpenAck (async ADP); `OpenOutbound` claims pending data handlers
+- `pp_browser_amp_link_test` — `CapabilityExchangeAfterAssociation`
+- Still open: listen policy, dial-back, mDNS on ADP multiaddrs; ingest remote listen addrs into address book
+
 ## Next (implementation)
 
-1. **D8** — reachability / ch0 caps on ADP multiaddrs
-2. **D9** — single cutover: wire AMP L4 into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood` / TCP-hello path
+1. **D8 remainder** — dial-back / mDNS / listen policy on ADP multiaddrs (optional before cutover)
+2. **D9** — single cutover (checklist below)
+
+### D9 cutover checklist
+
+Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol)). Flip one protocol family at a time behind MeshHost composition, then delete the libp2p path.
+
+| Step | Action | Notes |
+|------|--------|--------|
+| 1 | Own `MeshRuntime` (+ UDP listen) inside `MeshHost` / node bootstrap | Parallel construct first; no app traffic yet |
+| 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | Feeds Identify replacement |
+| 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | Already tested parallel |
+| 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | `CallStack.cpp` still includes dogfood |
+| 5 | Swap circuit + media-relay to AMP coordinators | SoftMigrate / MeshHost fan-out |
+| 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers |
+| 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 
 See [PHASES.md](PHASES.md) for full ordering.

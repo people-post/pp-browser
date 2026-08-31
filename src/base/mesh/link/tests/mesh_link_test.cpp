@@ -209,5 +209,65 @@ TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
   EXPECT_EQ(h.mgr_a().FindLinkByPeerId(h.peer_id_b), outbound);
 }
 
+TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
+  ASSERT_GE(sodium_init(), 0);
+  auto created = test::AmpMeshHarness::Create();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto harness = std::move(*created);
+  test::AmpMeshHarness& h = *harness;
+
+  h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
+  h.mgr_a().SetAdvertisedProtocols({"/pp-browser/chat/1.0.0", "/pp-browser/circuit-relay/1.0.0"});
+  h.mgr_b().SetLocalListenMultiaddrs({h.ma_b});
+  h.mgr_b().SetAdvertisedProtocols({"/pp-browser/chat/1.0.0", "/pp-browser/media-relay/1.0.0"});
+
+  int caps_a = 0;
+  int caps_b = 0;
+  CapabilityPayload seen_on_a;
+  CapabilityPayload seen_on_b;
+  h.mgr_a().SetCapabilityHandler([&](PeerLink&, const CapabilityPayload& remote) {
+    ++caps_a;
+    seen_on_a = remote;
+  });
+  h.mgr_b().SetCapabilityHandler([&](PeerLink&, const CapabilityPayload& remote) {
+    ++caps_b;
+    seen_on_b = remote;
+  });
+
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+  ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
+
+  bool associated = false;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.PumpUntil([&] {
+    return associated && caps_a > 0 && caps_b > 0 && h.mgr_a().FindLink("b") &&
+           h.mgr_a().FindLink("b")->RemoteCapability() && h.mgr_b().FindLink("a") &&
+           h.mgr_b().FindLink("a")->RemoteCapability();
+  });
+
+  ASSERT_TRUE(associated);
+  EXPECT_EQ(caps_a, 1);
+  EXPECT_EQ(caps_b, 1);
+
+  auto* outbound = h.mgr_a().FindLink("b");
+  ASSERT_NE(outbound, nullptr);
+  ASSERT_NE(outbound->RemoteCapability(), nullptr);
+  EXPECT_EQ(outbound->RemoteCapability()->local_peer_id, h.peer_id_b);
+  EXPECT_EQ(outbound->RemoteCapability()->listen_multiaddrs, std::vector<std::string>{h.ma_b});
+  EXPECT_EQ(outbound->RemoteCapability()->protocols,
+            (std::vector<std::string>{"/pp-browser/chat/1.0.0", "/pp-browser/media-relay/1.0.0"}));
+
+  auto* inbound = h.mgr_b().FindLink("a");
+  ASSERT_NE(inbound, nullptr);
+  ASSERT_NE(inbound->RemoteCapability(), nullptr);
+  EXPECT_EQ(inbound->RemoteCapability()->local_peer_id, h.peer_id_a);
+  EXPECT_EQ(inbound->RemoteCapability()->listen_multiaddrs, std::vector<std::string>{h.ma_a});
+  EXPECT_EQ(inbound->RemoteCapability()->protocols,
+            (std::vector<std::string>{"/pp-browser/chat/1.0.0", "/pp-browser/circuit-relay/1.0.0"}));
+
+  EXPECT_EQ(seen_on_a.local_peer_id, h.peer_id_b);
+  EXPECT_EQ(seen_on_b.local_peer_id, h.peer_id_a);
+}
+
 } // namespace
 } // namespace pbr::amp

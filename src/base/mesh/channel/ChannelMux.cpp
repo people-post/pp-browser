@@ -74,6 +74,14 @@ Roe<uint32_t> ChannelMux::OpenOutbound(const std::string& protocol_id, ChannelPo
   rec.state = ChannelState::Opening;
   rec.reassembly = MessageReassembly(rec.policy.max_message_bytes);
   channels_.emplace(id, std::move(rec));
+  if (auto it = pending_handlers_.find(id); it != pending_handlers_.end()) {
+    channels_.at(id).on_data = std::move(it->second);
+    pending_handlers_.erase(it);
+  }
+  if (auto it = pending_terminal_handlers_.find(id); it != pending_terminal_handlers_.end()) {
+    channels_.at(id).on_terminal = std::move(it->second);
+    pending_terminal_handlers_.erase(it);
+  }
 
   ChannelFrame frame;
   frame.header.frame_type = ChannelFrameType::Open;
@@ -178,10 +186,22 @@ Roe<void> ChannelMux::HandleOpenAck(ChannelFrame frame) {
   }
   if (frame.open_ack_result != 0) {
     channel->state = ChannelState::Closed;
+    pending_open_data_.erase(frame.header.channel_id);
     return Error("amp mux: open rejected");
   }
   channel->state = ChannelState::Open;
+  FlushPendingOpenData(frame.header.channel_id);
   return Roe<void>();
+}
+
+void ChannelMux::FlushPendingOpenData(const uint32_t channel_id) {
+  auto it = pending_open_data_.find(channel_id);
+  if (it == pending_open_data_.end()) {
+    return;
+  }
+  auto payload = std::move(it->second);
+  pending_open_data_.erase(it);
+  (void)SendData(channel_id, std::move(payload));
 }
 
 Roe<void> ChannelMux::DispatchFrame(ChannelFrame frame) {
@@ -347,14 +367,22 @@ Roe<void> ChannelMux::SendCapabilityOffer(ChannelMux& mux, const CapabilityPaylo
   if (!encoded) {
     return encoded.error();
   }
-  auto id = mux.OpenOutbound("/pp-browser/amp-capability/1.0.0", CapabilityChannelPolicy(), kCapabilityChannelId);
-  if (!id) {
-    return id.error();
+  if (!mux.ChannelById(kCapabilityChannelId)) {
+    auto id = mux.OpenOutbound("/pp-browser/amp-capability/1.0.0", CapabilityChannelPolicy(), kCapabilityChannelId);
+    if (!id) {
+      return id.error();
+    }
   }
-  if (mux.State(*id) != ChannelState::Open) {
-    return Error("amp mux: capability channel not open");
+  const auto state = mux.State(kCapabilityChannelId);
+  if (state == ChannelState::Open) {
+    return mux.SendData(kCapabilityChannelId, std::move(*encoded));
   }
-  return mux.SendData(*id, std::move(*encoded));
+  if (state == ChannelState::Opening) {
+    // Async ADP: OpenAck arrives on a later pump; queue DATA until then.
+    mux.pending_open_data_[kCapabilityChannelId] = std::move(*encoded);
+    return Roe<void>();
+  }
+  return Error("amp mux: capability channel not usable");
 }
 
 } // namespace pbr::amp
