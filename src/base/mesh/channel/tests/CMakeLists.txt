@@ -1,0 +1,1 @@
+pp_browser_add_base_folder_tests(pp_base_mesh_channel pp_browser_amp_channel_test)

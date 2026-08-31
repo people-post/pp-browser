@@ -1,4 +1,6 @@
-# ADP — design
+# ADP — design (L1 wire)
+
+**Scope:** L1 only. Full stack: [STACK.md](STACK.md). L2/L3 contracts: [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md).
 
 **Related ADRs:** [DECISIONS.md](DECISIONS.md). **Phases:** [PHASES.md](PHASES.md).
 
@@ -10,7 +12,7 @@
 | Replay | Per-direction per-QoS seq + replay window |
 | Stale / off-path delayed packets | Timestamp skew window |
 
-Confidentiality and authenticity of **content** are L2 (Noise / AEAD / call crypto). ADP does not replace them.
+Confidentiality and authenticity of **content** are L2+ (AMP Session AEAD, app E2E / call crypto). ADP L1 HMAC is sender-binding only ([A002](DECISIONS.md#a002--l1-hmac-binding-vs-l2-crypto)).
 
 ## Stack
 

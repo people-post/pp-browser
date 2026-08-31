@@ -1,0 +1,80 @@
+#pragma once
+
+#include "base/adp/Connection.h"
+#include "base/mesh/channel/ChannelMux.h"
+#include "base/mesh/link/MshAdpHandshake.h"
+#include "base/mesh/link/Types.h"
+#include "base/mesh/session/Session.h"
+
+#include "common/Error.h"
+#include "common/PbrCompat.h"
+
+#include <functional>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace pbr::amp {
+
+class PeerLinkManager;
+
+/** One ADP association + AMP session + channel mux to a remote peer. Io-thread affine. */
+class PeerLink {
+public:
+  using CompleteCb = std::function<void(Roe<void>)>;
+
+  PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
+           std::shared_ptr<adp::Connection> connection, MshIdentity local_identity, PeerLinkManager& owner);
+
+  void StartOutboundHandshake(CompleteCb on_established);
+  void StartInboundHandshake(CompleteCb on_established);
+
+  void HandleAdpPayload(std::span<const uint8_t> payload);
+
+  PeerLinkPhase Phase() const { return phase_; }
+  bool IsOutbound() const { return outbound_; }
+  const std::string& PeerKey() const { return peer_key_; }
+  const std::string& RemotePeerId() const { return remote_peer_id_; }
+  adp::Connection& Connection() { return *connection_; }
+  ChannelMux* Mux() { return mux_.get(); }
+  Session* GetSession() { return session_.get(); }
+
+  void MarkWarm();
+  void ClearWarm();
+  bool IsWarm() const { return warm_; }
+
+private:
+  friend class PeerLinkManager;
+
+  Roe<void> SendAdp(std::vector<uint8_t> payload, adp::QosClass qos);
+  void OnHandshakeComplete(Roe<MshAdpEstablished> established);
+  void FinishEstablishment(MshAdpEstablished established);
+  void FailAssociation(const Error& error);
+  void AttachMuxTransport();
+
+  std::string peer_key_;
+  std::string remote_peer_id_;
+  bool outbound_;
+  std::shared_ptr<adp::Connection> connection_;
+  MshIdentity identity_;
+  PeerLinkManager& owner_;
+  PeerLinkPhase phase_ = PeerLinkPhase::Handshaking;
+  bool warm_ = false;
+
+  std::unique_ptr<MshAdpHandshake> handshake_;
+  std::unique_ptr<Session> session_;
+  std::unique_ptr<ChannelMux> mux_;
+  ByteVector master_ikm_;
+  ByteVector transcript_hash_;
+  CompleteCb establish_cb_;
+
+  MshMessageType msh_chunk_type_{};
+  uint16_t msh_chunk_count_ = 0;
+  std::vector<std::vector<uint8_t>> msh_chunk_parts_;
+  Roe<std::optional<std::vector<uint8_t>>> PushMshChunk(MshMessageType type, uint16_t index, uint16_t count,
+                                                         std::span<const uint8_t> chunk);
+};
+
+} // namespace pbr::amp

@@ -40,6 +40,7 @@ public:
   bool IsClosed() const { return closed_; }
 
   void SetPeerEndpoint(IpEndpoint peer);
+  void UpgradeBinder(PeerKey key);
   IpEndpoint PeerEndpoint() const { return peer_; }
   AssocId Id() const { return id_; }
 

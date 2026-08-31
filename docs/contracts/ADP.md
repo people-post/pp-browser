@@ -2,6 +2,8 @@
 
 **Status:** Foundation (v1). Normative wire for `pp_base_adp`.
 
+**AMP stack (L2–L4):** [AMP-SESSION.md](AMP-SESSION.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [projects/adp/STACK.md](../../projects/adp/STACK.md).
+
 **Project notes:** [projects/adp/](../../projects/adp/)
 
 ## Role

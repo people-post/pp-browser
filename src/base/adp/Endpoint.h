@@ -4,6 +4,7 @@
 #include "base/adp/DatagramIo.h"
 #include "base/adp/Types.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -35,6 +36,8 @@ public:
 
   void SetAcceptKey(PeerKey key) { accept_key_ = key; }
   void SetAcceptEnabled(bool on) { accept_enabled_ = on; }
+  using AcceptHandler = std::function<void(std::shared_ptr<Connection>)>;
+  void SetAcceptHandler(AcceptHandler handler) { accept_handler_ = std::move(handler); }
 
 private:
   void HandleDatagram(const IpEndpoint& from, std::span<const uint8_t> datagram);
@@ -44,6 +47,7 @@ private:
   std::unordered_map<AssocId, std::shared_ptr<Connection>, AssocIdHash> conns_;
   std::optional<PeerKey> accept_key_;
   bool accept_enabled_ = false;
+  AcceptHandler accept_handler_;
 };
 
 } // namespace pbr::adp

@@ -97,6 +97,7 @@ void Endpoint::HandleDatagram(const IpEndpoint& from, std::span<const uint8_t> d
   if (!decoded) {
     return;
   }
+  const bool is_new = Find(id) == nullptr;
   // Skew check before creating an association.
   const int64_t now = clock_->NowMs();
   const uint32_t now_trunc = static_cast<uint32_t>(static_cast<uint64_t>(now) & 0xffffffffull);
@@ -108,6 +109,9 @@ void Endpoint::HandleDatagram(const IpEndpoint& from, std::span<const uint8_t> d
   auto accepted = AcceptOrCreate(id, *accept_key_, from);
   if (!accepted) {
     return;
+  }
+  if (is_new && accept_handler_) {
+    accept_handler_(*accepted);
   }
   (*accepted)->HandleAuthenticated(*decoded, from, now);
 }

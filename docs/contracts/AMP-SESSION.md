@@ -1,0 +1,146 @@
+# AMP Session — L2 normative contract
+
+**Status:** Foundation spec (2026-08-30). Normative for `base/mesh/session` (planned).  
+**Stack:** [STACK.md](../../projects/adp/STACK.md) · L1 [ADP.md](ADP.md) · L3 [AMP-CHANNEL.md](AMP-CHANNEL.md)  
+**Version axes:** `msh_version`, `session_epoch`
+
+## Role
+
+L2 **AMP Session** replaces Noise-on-TCP as the product mesh security layer:
+
+- Authenticate remote **PeerId** (ML-DSA-65)
+- Provide **forward secrecy** (ML-KEM-768 ephemeral exchange)
+- **Encrypt all L3+ payloads** (session profile **full** only)
+- Derive **K_assoc** for ADP L1 HMAC binding
+
+L4 application E2E (chat `payload_b64`, call-media AEAD) is unchanged and complementary.
+
+## Threat model
+
+| Adversary | Protected by |
+|-----------|--------------|
+| Impersonate PeerId | ML-DSA identity binding in MSH Finished |
+| Harvest-now-decrypt-later on session keys | ML-KEM ephemeral in MSH |
+| Inject / alter L3+ payloads | Session AEAD + AAD |
+| Replay across sessions | `session_epoch` in AAD; L1 seq per datagram |
+| Cross-channel confusion | `channel_id` in AAD |
+| UDP inject without membership | L1 HMAC with `K_assoc` from MSH |
+
+PQ bar aligns with [libp2p-pq-transport P001](../../projects/libp2p-pq-transport/DECISIONS.md#p001--full-pq-threat-bar-transport-secrecy--peeridauth) — transport semantics move from Noise-on-TCP to **MSH-on-ADP**.
+
+## Cryptographic profile (v1)
+
+| Item | Choice |
+|------|--------|
+| Handshake | **MSH v1** — message-native ordered Reliable ADP messages |
+| KEM | ML-KEM-768 (encaps/decaps on handshake tokens) |
+| Identity | ML-DSA-65 device key; PeerId = multihash of marshalled pubkey (KeyType wire `4`) |
+| Session AEAD | XChaCha20-Poly1305 (or ChaCha20-Poly1305 with unique nonce discipline) |
+| KDF | HKDF-SHA256 from handshake transcript hash |
+
+Semantic reference for KEM token order: [libp2p-pq-transport DESIGN](../projects/libp2p-pq-transport/DESIGN.md) (XXkem message order); MSH encodes the same semantics as **discrete messages**, not a byte pipe.
+
+## MSH v1 transcript (outline)
+
+Messages are sent on ADP **Reliable** before Session is established. Pre-session datagrams use a reserved **pre-session assoc** or cleartext handshake assoc id per implementation — must be documented in code with matching tests.
+
+| Step | Direction | Message | Purpose |
+|------|-----------|---------|---------|
+| 1 | I → R | `ClientHello` | `msh_version`, client ephemeral ML-KEM pk, nonce |
+| 2 | R → I | `ServerHello` | server ephemeral ML-KEM pk, nonce |
+| 3 | R → I | `ServerPayload` | KEM ct(s), ML-DSA identity + static binding signature |
+| 4 | I → R | `ClientPayload` | KEM ct(s), ML-DSA identity + static binding signature |
+| 5 | both | `Finished` | MAC over full transcript |
+
+**Identity binding payload** (unchanged semantics from P006):
+
+```text
+"noise-libp2p-static-key:" || static_mlkem_public_key (1184 B)
+```
+
+Signed with device ML-DSA-65 private key.
+
+**Finished** covers all prior messages in order; mismatch → fail closed.
+
+Exact field sizes and endianness are fixed in implementation + KAT tests (`pp_browser_amp_session_test`).
+
+## Key derivation
+
+From transcript hash `T = SHA-256(client_hello || … || finished)`:
+
+| Label | Length | Use |
+|-------|--------|-----|
+| `pp-amp-k-assoc-v1` | 32 B | ADP L1 HMAC (`K_assoc`) |
+| `pp-amp-k-session-v1` | 32 B | L2 AEAD (`K_session`) |
+| `pp-amp-k-client-v1` | 32 B | AEAD key initiator → responder |
+| `pp-amp-k-server-v1` | 32 B | AEAD key responder → initiator |
+
+**Never** use the same key material for HMAC and AEAD.
+
+On **rekey**, increment `session_epoch` and derive new **directional** keys (`k_send` / `k_recv`) with label `pp-amp-k-*-v1|epoch:<n>`. **`k_assoc` is stable** across rekey (L1 binder unchanged).
+
+## Session record
+
+| Field | Notes |
+|-------|-------|
+| `local_peer_id` / `remote_peer_id` | ML-DSA PeerIds |
+| `session_epoch` | Starts at 1; bumps on rekey |
+| `k_assoc` | Feeds ADP `Connection` |
+| `k_send` / `k_recv` | Directional AEAD keys |
+| `state` | `Handshaking` → `Established` → `Rekeying` → `Closed` |
+
+## Sealing L3 payloads
+
+```text
+wire = AEAD.Seal(
+  key = k_send,
+  nonce = f(session_epoch, channel_id, channel_seq, direction),
+  aad = session_epoch || channel_id || channel_seq || direction,
+  plaintext = L3_frame_bytes
+)
+```
+
+ADP carries `wire` as opaque payload (Reliable or BestEffort per channel policy).
+
+**Open** verifies AAD + decrypts; failure → drop datagram (count metric); do not propagate garbage to L3.
+
+## Rekey
+
+Triggers (policy, configurable):
+
+- Time bound (e.g. 24 h)
+- Data volume bound
+- Explicit `SessionRekey` control message on channel 0
+
+**Invariant:** channels stay open across rekey; only keys and `session_epoch` change. Peers must accept in-flight messages from previous epoch for a short grace window or fail closed — pick one in implementation and test (recommend **grace window ≤ 1 s**).
+
+## Path migrate interaction
+
+L1 `SetPeerEndpoint` does **not** reset Session. Session keys and `session_epoch` are keyed by `(local_peer_id, remote_peer_id, assoc_id)`, not UDP 4-tuple.
+
+## Rate limiting (pre-decrypt)
+
+Endpoint should drop obviously invalid pre-session garbage before expensive ML-KEM work. Per-source-IP and per-assoc counters — implementation detail; required for production UDP.
+
+## Session vs Association lifecycle
+
+| Event | Session |
+|-------|---------|
+| L1 path migrate | unchanged |
+| L1 assoc Close | Session → Closed |
+| MSH fail | no Session; assoc reset |
+| PeerId mismatch in Finished | fail closed |
+
+## Testing requirements
+
+| Suite | Coverage |
+|-------|----------|
+| KAT / vectors | Transcript hash, KDF labels, Finished MAC |
+| 2-peer MemoryIo | Full handshake, seal/open round-trip |
+| Rekey | epoch bump, grace window |
+| Downgrade | Tampered Finished rejected |
+| Migrate | Session survives `SetPeerEndpoint` |
+
+## Related ADRs
+
+[A013](../projects/adp/DECISIONS.md#a013--l2-full-session-only) · [A015](../projects/adp/DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript) · [A017](../projects/adp/DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)

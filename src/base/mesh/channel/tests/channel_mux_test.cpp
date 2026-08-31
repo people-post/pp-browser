@@ -1,0 +1,125 @@
+#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/mesh/channel/ChannelSession.h"
+#include "base/mesh/channel/tests/amp_test_link.h"
+
+#include <gtest/gtest.h>
+
+namespace pbr::amp {
+namespace {
+
+TEST(ChannelMuxTest, OpenAndDataRoundTrip) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  std::vector<uint8_t> received;
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+  EXPECT_EQ(link.initiator.mux.State(*ch), ChannelState::Open);
+
+  link.responder.mux.SetDataHandler(*ch, [&](uint32_t, std::vector<uint8_t> payload) {
+    received = std::move(payload);
+  });
+
+  const std::vector<uint8_t> msg = {'h', 'i'};
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch, msg)));
+  EXPECT_EQ(received, msg);
+}
+
+TEST(ChannelMuxTest, RealtimeUsesBestEffortQos) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/call-media/1.0.0", CallMediaChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch, {'o'})));
+  EXPECT_EQ(link.initiator.mux.LastSendQos(), adp::QosClass::BestEffort);
+}
+
+TEST(ChannelMuxTest, ResetDoesNotKillSiblingChannel) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  auto ch1 = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  auto ch2 = link.initiator.mux.OpenOutbound("/pp-browser/chat-history/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch1));
+  ASSERT_TRUE(static_cast<bool>(ch2));
+
+  std::vector<uint8_t> received;
+  link.responder.mux.SetDataHandler(*ch2, [&](uint32_t, std::vector<uint8_t> payload) {
+    received = std::move(payload);
+  });
+
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.ResetChannel(*ch1)));
+  EXPECT_EQ(link.initiator.mux.State(*ch1), ChannelState::Closed);
+  EXPECT_EQ(link.initiator.mux.State(*ch2), ChannelState::Open);
+
+  const std::vector<uint8_t> msg = {'o', 'k'};
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch2, msg)));
+  EXPECT_EQ(received, msg);
+}
+
+TEST(ChannelMuxTest, LargePayloadFragments) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat-blob/1.0.0", ChatBlobChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+
+  std::vector<uint8_t> received;
+  link.responder.mux.SetDataHandler(*ch, [&](uint32_t, std::vector<uint8_t> payload) {
+    received = std::move(payload);
+  });
+
+  std::vector<uint8_t> large(2500, 0xAB);
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch, large)));
+  EXPECT_EQ(received, large);
+}
+
+TEST(ChannelMuxTest, CapabilityChannelZero) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  CapabilityPayload offer;
+  offer.local_peer_id = "QmCap";
+  offer.protocols = {"/pp-browser/chat/1.0.0"};
+
+  CapabilityPayload decoded;
+  link.responder.mux.SetDataHandler(kCapabilityChannelId, [&](uint32_t, std::vector<uint8_t> payload) {
+    auto cap = CapabilityCodec::Decode(payload);
+    ASSERT_TRUE(static_cast<bool>(cap));
+    decoded = std::move(*cap);
+  });
+
+  ASSERT_TRUE(static_cast<bool>(ChannelMux::SendCapabilityOffer(link.initiator.mux, offer)));
+  EXPECT_EQ(decoded.local_peer_id, offer.local_peer_id);
+  EXPECT_EQ(decoded.protocols, offer.protocols);
+}
+
+TEST(ChannelSessionTest, ReadOnceClosesAfterFirstFrame) {
+  auto link_result = test::AmpTestLink::Create();
+  ASSERT_TRUE(static_cast<bool>(link_result));
+  auto& link = **link_result;
+
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat/1.0.0", ControlJsonChannelPolicy());
+  ASSERT_TRUE(static_cast<bool>(ch));
+
+  ChannelSession session;
+  int deliveries = 0;
+  session.Bind(link.responder.mux, *ch, ControlJsonChannelPolicy(), [&](Roe<std::vector<uint8_t>> body) {
+    EXPECT_TRUE(static_cast<bool>(body));
+    ++deliveries;
+    return false;
+  });
+
+  ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch, {'a'})));
+  EXPECT_EQ(deliveries, 1);
+  EXPECT_TRUE(session.IsClosed());
+}
+
+} // namespace
+} // namespace pbr::amp
