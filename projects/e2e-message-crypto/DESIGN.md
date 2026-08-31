@@ -54,7 +54,7 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 │   Ed25519Signer — relay envelope + registration               │
 ├─────────────────────────────────────────────────────────────┤
 │ Transport TLS (BoringSSL) — existing, unrelated to E2E body │
-│   curl HTTPS · libp2p TLS · lsquic                            │
+│   curl HTTPS · Amp mesh (ADP)                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 

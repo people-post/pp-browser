@@ -10,20 +10,8 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.5")
   cmake_policy(SET CMP0000 NEW)
 endif()
 
-if (PACKAGE_MANAGER)
-  if(NOT PACKAGE_MANAGER MATCHES "^(hunter|vcpkg|vendored)$")
-    message(FATAL_ERROR "PACKAGE_MANAGER must be set to 'hunter', 'vcpkg', 'vendored', or isn't set")
-  endif ()
-else ()
-  set(PACKAGE_MANAGER "hunter")
-  if (CMAKE_TOOLCHAIN_FILE)
-    get_filename_component(ACTUAL_NAME ${CMAKE_TOOLCHAIN_FILE} NAME)
-    if(ACTUAL_NAME STREQUAL "vcpkg.cmake")
-      message(STATUS "vcpkg will be used because vcpkg.cmake has found")
-      set(PACKAGE_MANAGER "vcpkg")
-    endif ()
-  endif ()
-endif ()
+# A017: PeerId + key wire only. Always use parent-provided vendored deps.
+set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager (vendored only)" FORCE)
 message(STATUS "Selected package manager: ${PACKAGE_MANAGER}")
 
 find_program(CCACHE_FOUND ccache)
@@ -45,14 +33,6 @@ endif()
 cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0135 NEW)
 
-if (PACKAGE_MANAGER STREQUAL "hunter")
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Hunter/init.cmake")
-    include("cmake/Hunter/init.cmake")
-  else()
-    message(FATAL_ERROR "Hunter init.cmake not found; use PACKAGE_MANAGER=vendored for pp-browser builds")
-  endif()
-endif ()
-
 project(libp2p VERSION 0.1.32 LANGUAGES C CXX)
 
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -65,28 +45,19 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(TESTING "Build tests" ON)
-option(EXAMPLES "Build examples" ON)
-option(CLANG_FORMAT "Enable clang-format target" ON)
+option(CLANG_FORMAT "Enable clang-format target" OFF)
 option(CLANG_TIDY "Enable clang-tidy checks during compilation" OFF)
-option(COVERAGE "Enable generation of coverage info" OFF)
 # sanitizers will be enabled only for libp2p, and will be disabled for dependencies
 option(ASAN "Enable address sanitizer" OFF)
 option(LSAN "Enable leak sanitizer" OFF)
 option(MSAN "Enable memory sanitizer" OFF)
 option(TSAN "Enable thread sanitizer" OFF)
 option(UBSAN "Enable UB sanitizer" OFF)
-option(EXPOSE_MOCKS "Make mocks header files visible for child projects" ON)
-option(METRICS_ENABLED "Enable libp2p metrics" OFF)
-option(SQLITE_ENABLED "Enable sqlite based libp2p storage" OFF)
 
 include(cmake/print.cmake)
 print("C flags: ${CMAKE_C_FLAGS}")
 print("CXX flags: ${CMAKE_CXX_FLAGS}")
 print("Using CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
-
-# the property is out of "if TESTING" scope due to addtest func is out too
-set_property(GLOBAL PROPERTY TEST_TARGETS)
 
 include(CheckCXXCompilerFlag)
 include(cmake/install.cmake)
@@ -94,14 +65,6 @@ include(cmake/libp2p_add_library.cmake)
 include(cmake/dependencies.cmake)
 include(cmake/functions.cmake)
 include(cmake/san.cmake)
-
-if (METRICS_ENABLED)
-  add_compile_definitions("LIBP2P_METRICS_ENABLED")
-endif ()
-
-if(SQLITE_ENABLED)
-  set(SQLITE_FIND_DEP "find_dependency(SQLiteModernCpp CONFIG REQUIRED)")
-endif()
 
 ## setup compilation flags
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "^(AppleClang|Clang|GNU)$")
@@ -135,7 +98,6 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "^(AppleClang|Clang|GNU)$")
   add_flag(-Werror-reorder)          # field '$1' will be initialized after field '$2'
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
   # using Visual Studio C++
-  # TODO(warchant): add flags https://github.com/lefticus/cppbestpractices/blob/master/02-Use_the_Tools_Available.md#msvc
 endif ()
 
 if (CLANG_TIDY)
@@ -153,18 +115,6 @@ include_directories(
 )
 
 add_subdirectory(src)
-
-# A017: Host/stream underlay, examples, and fork unit tests removed (PeerId + wire only).
-if(EXAMPLES)
-  message(WARNING "libp2p EXAMPLES requested but example/ was removed (A017 PeerId-only shrink)")
-endif()
-if(TESTING OR COVERAGE)
-  message(WARNING "libp2p TESTING/COVERAGE requested but test/ was removed (A017 PeerId-only shrink)")
-endif()
-
-if (COVERAGE)
-  include(cmake/coverage.cmake)
-endif ()
 
 if(LIBP2P_ENABLE_INSTALL)
 include(CMakePackageConfigHelpers)

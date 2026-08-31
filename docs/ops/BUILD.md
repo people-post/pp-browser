@@ -12,7 +12,6 @@
 - Linux **video calls** (a3+, best-effort VA-API): `libva-dev` — soft link at configure time. Without it, `VideoCodec_Linux` builds the unavailable stub (voice still works). Runtime also needs a VA driver package (e.g. `mesa-va-drivers`, `intel-media-va-driver`, or vendor NVIDIA VA support) and a usable `/dev/dri/renderD*`.
 - **Windows / macOS voice:** no extra packages — SDL uses **WASAPI** / **CoreAudio**. Ensure OS mic privacy allows the app (Windows Settings → Privacy → Microphone; macOS TCC prompt / shipped apps need mic usage string when notarized).
 - **Android / iOS voice:** no Pulse/ALSA packages; SDL uses AAudio/OpenSL ES or CoreAudio via the SDK. **Permissions and audio session are still TODO** before claiming mobile voice — see [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
-- Perl (for lsquic code generation)
 
 Debian/Ubuntu one-liner:
 
@@ -42,7 +41,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, and (for libp2p) BoringSSL, Boost, lsquic, and related packages. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -79,20 +78,17 @@ cmake --build build -j
 
 ### Owned forks (RmlUi / libp2p)
 
-Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
 
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
 | `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
-| `PP_BROWSER_LIBP2P_TESTING` | OFF | Deprecated (A017) — libp2p Host tests removed |
-| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | Deprecated (A017) — libp2p examples removed |
-| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | Deprecated (A017) — libp2p coverage removed |
 
 Mobile builds default host tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
 ### libp2p fork (A017 PeerId only)
 
-The in-tree libp2p fork no longer builds Host/TCP/Yamux/Noise or fork unit tests. Product links `p2p_peer_id` + `p2p_wire` only. Mesh underlay is Amp — see [adp](../../projects/adp/).
+The in-tree libp2p fork retains PeerId + key wire only (`p2p_peer_id`, `p2p_wire`). Mesh underlay is Amp — see [adp](../../projects/adp/).
 
 ### Compiler cache (optional)
 
@@ -268,7 +264,6 @@ Build a debug APK with the Gradle project under [`android/`](../android/). The n
 
 - Android SDK (API 35) and NDK r26+
 - JDK 17+
-- Perl (lsquic codegen — same as desktop)
 - Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
 
 Set environment variables:
@@ -308,7 +303,6 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 
 - macOS with Xcode 15+ and iOS SDK
 - CMake 3.24+, Ninja (recommended)
-- Perl (lsquic codegen — same as desktop)
 
 ### Build and run (simulator)
 

@@ -48,7 +48,6 @@ Requires (macOS only):
   Xcode matching the device iOS major (iOS 26.x → Xcode 26.x)
   CMake 3.24+
   Ninja (recommended)
-  Perl (lsquic codegen)
 
 Signing (device / TestFlight): see packaging/ios/signing.env.example and scripts/ios_sign.sh
 Docs: docs/ops/IOS_BUILD.md

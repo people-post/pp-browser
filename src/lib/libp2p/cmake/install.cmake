@@ -24,10 +24,4 @@ install(
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libp2p
     NAMESPACE p2p::
 )
-if(EXPOSE_MOCKS)
-  install(
-      DIRECTORY ${CMAKE_SOURCE_DIR}/test/mock/libp2p
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mock
-  )
-endif()
 endif()

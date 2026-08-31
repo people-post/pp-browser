@@ -26,15 +26,9 @@ See [`src/lib/libp2p/UPSTREAM.json`](../../src/lib/libp2p/UPSTREAM.json) for the
 
 Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-06-13), then A017-shrunk.
 
-## Build flags (pp-browser root CMake)
+## Product profile
 
-| Option | Default | Effect |
-|--------|---------|--------|
-| `PP_BROWSER_LIBP2P_TESTING` | OFF | **Deprecated (A017)** — fork unit tests removed |
-| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | **Deprecated (A017)** — examples removed |
-| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | **Deprecated (A017)** — coverage targets removed |
-
-Product profile ([`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake)): `PACKAGE_MANAGER=vendored`, clang-tidy/format off, no Host tree.
+[`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake): `PACKAGE_MANAGER=vendored`, clang-tidy/format off, no Host tree. No `PP_BROWSER_LIBP2P_*` knobs.
 
 ## Dependency management
 
@@ -44,7 +38,7 @@ Upstream used Hunter; pp-browser **removed Hunter** and vendors dependencies und
 - CMake wiring: [`cmake/libp2p_dependencies.cmake`](../cmake/libp2p_dependencies.cmake)
 - Versions recorded in [`third_party/UPSTREAM.json`](../../third_party/UPSTREAM.json) under `libp2p_dependencies`
 
-**PeerId-only link set:** BoringSSL (SHA), qtils, soralog, fmt, yaml-cpp, Outcome. **Dropped after A017:** lsquic, c-ares, tsl_hat_trie (Host/QUIC/DNS). Asio remains for `pp-node` StatusHttpServer (not libp2p Host).
+**PeerId-only link set:** BoringSSL (SHA), qtils, soralog, fmt, yaml-cpp, Outcome. Asio remains for `pp-node` StatusHttpServer (not libp2p Host). **Removed from `third_party/`:** lsquic, c-ares, tsl_hat_trie.
 
 ## What we keep vs drop
 

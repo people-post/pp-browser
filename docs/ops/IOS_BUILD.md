@@ -30,7 +30,6 @@ Until you fill in signing placeholders, **simulator builds work unsigned**; **de
 
 - macOS with **Xcode matching the device iOS major** (e.g. iPhone on **iOS 26.5** needs **Xcode 26.5+**; Xcode 26.5+ itself needs **macOS Tahoe 26.2+**)
 - **CMake 3.24+**, **Ninja** (recommended)
-- **Perl** (lsquic codegen — same as desktop/Android)
 - Vendored trees present (`./scripts/vendor_import.sh`, `./scripts/libp2p_vendor_import.sh` if needed)
 
 Install command-line tools if needed:
@@ -274,7 +273,7 @@ No iOS release workflow is wired yet — macOS release CI remains in [`.github/w
 | Assets | `PP.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
 | Paths | [`IosPathProvider`](../../src/base/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
 | MCP | HTTP URL only — no subprocess on mobile |
-| libp2p | Built and linked; host `protoc` bootstrapped on first cross-compile |
+| libp2p | PeerId + key wire only (A017); no Host/protoc bootstrap |
 | Keychain / APNs | Placeholder entitlements; implementation deferred |
 
 See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset behavior (mirror Android where applicable).
@@ -294,7 +293,6 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 | `altool` cannot find API key | Place `AuthKey_<KEY_ID>.p8` via `IOS_ASC_P8_PATH`, or upload with Transporter |
 | Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
 | Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `PP.app/assets/` |
-| `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |
 
 ---
 

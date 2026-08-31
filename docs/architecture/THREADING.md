@@ -177,7 +177,6 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Item | Location | Notes |
 |------|----------|-------|
-| c-ares DNS TXT | `src/lib/libp2p/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
 | Call ringtone playback | `src/base/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
@@ -188,8 +187,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Library | Model | Policy |
 |---------|-------|--------|
-| asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
-| c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
+| asio (`pp-node` status HTTP) | `io_context` | Status server only (not mesh) |
 | libcurl | Sync on caller | Pool only |
 | SQLite | Caller + mutex | Pool for long writes |
 | SDL3 | Internal audio/camera | Unchanged |

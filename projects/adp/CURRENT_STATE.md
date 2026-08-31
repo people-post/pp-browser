@@ -185,7 +185,7 @@
 
 - **Deleted** `src/lib/libp2p` Host/TCP/Yamux/Noise/QUIC/protocol/muxer/security/network/connection/storage + `test/` + `example/`
 - **Retained:** `p2p_peer_id`, `p2p_wire` (keys), multihash/multibase/SHA/log
-- **Deps dropped from product cmake:** lsquic, c-ares, tsl_hat_trie
+- **Deps removed from tree:** `third_party/{lsquic,c-ares,tsl_hat_trie}` + CMake knobs `PP_BROWSER_LIBP2P_*`
 - **Default Brief bootstrap** — ADP MA `/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooW…`
 - Product TCP L4 sources deleted earlier in A017 wave
 
