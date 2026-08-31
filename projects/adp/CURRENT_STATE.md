@@ -61,16 +61,17 @@
 - `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + 9× `CallMediaLeg*` cases
 - Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
 
-## Landed (L4 circuit — D7a)
+## Landed (L4 circuit — D7a / A022)
 
-- `ChannelBridge` — bidirectional ChannelSession DATA splice (`base/mesh/channel`)
-- `AmpCircuitRelayService` — `/pp-browser/circuit-relay/1.0.0` on `MeshRuntime` (parallel; production still libp2p)
-- Bridge JSON + admission parity with `CircuitRelayService`; v1 = hop Session DATA splice ([AMP-CHANNEL](../../docs/contracts/AMP-CHANNEL.md))
-- `pp_browser_p2p_test` — `AmpCircuitRelayServiceTest`
+- `CircuitBundleLogic` — pure admit / ack / close decisions
+- `CircuitTunnelCoordinator` — non-blocking `StartBridge` on `MeshRuntime` (callbacks + `PostToIo`; no nested `Pump`)
+- `ChannelBridge` — io-thread DATA splice armed after handshake
+- Bridge JSON + admission parity with libp2p circuit; parallel stack only ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 
 ## Next (implementation)
 
-1. **D7b** — `AmpMediaRelayService` (quote/attach) on ChannelSession
+1. **D7b** — `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` (A022 template)
 2. **D8** — reachability / ch0 caps on ADP multiaddrs
 3. **D9** — single cutover: wire AMP L4 into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood` / TCP-hello path
 

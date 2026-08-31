@@ -137,7 +137,7 @@ A ──Session──► R ──Session──► B
           └──── R forwards L3 frames opaque ────┘
 ```
 
-- **v1 (shipped D7a):** relay splices opaque **L4 DATA** on A↔R and R↔B Sessions (`ChannelBridge` / `AmpCircuitRelayService`) — parity with StreamBridge
+- **v1 (shipped D7a / [A022](DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)):** `CircuitTunnelCoordinator` splices opaque **L4 DATA** on A↔R and R↔B Sessions via `ChannelBridge` — message-oriented, non-blocking (not a sync `RequestBridge` port)
 - **Future:** nested A↔B Session so relay sees only L2 ciphertext (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind)
 - Target `protocol_id` in bridge JSON (replaces stream-bridge target protocol)
 

@@ -100,10 +100,10 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D7 — L4 port: circuit + media-relay
 
-- [x] **D7a** Channel tunnel v1 — `ChannelBridge` + `AmpCircuitRelayService` on `MeshRuntime` (DATA splice; bridge JSON parity with libp2p circuit)
+- [x] **D7a** Channel tunnel — `ChannelBridge` splice + **`CircuitTunnelCoordinator`** / `CircuitBundleLogic` on `MeshRuntime` ([A022](DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)); non-blocking `StartBridge` (no `IoPumpUntil`)
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
-- [x] `pp_browser_p2p_test` — `AmpCircuitRelayServiceTest` (forward, reverse, stranger refuse)
-- [ ] **D7b** `AmpMediaRelayService` — quote/attach/fan-out on ChannelSession
+- [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
+- [ ] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/attach/fan-out (same A022 template)
 - [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — deferred
 
 ### D8 — Reachability
