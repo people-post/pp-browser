@@ -2,6 +2,7 @@
 
 #include "base/media/CallAudioSession.h"
 #include "base/media/CallMediaPlayout.h"
+#include "base/media/CallRingtone.h"
 #include "base/media/CameraCaptureOrientation.h"
 #include "base/media/IVideoCodec.h"
 #include "base/media/VideoYuv.h"
@@ -389,6 +390,8 @@ struct CallMediaEngine::Impl {
 
   /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
   void CloseAudioDevicesLocked() {
+    // SDL_OpenAudioDeviceStream binds device+stream; DestroyAudioStream closes the device.
+    // Do not SDL_CloseAudioDevice afterward (double-free / tcache abort on Linux).
     if (capture_stream) {
       SDL_DestroyAudioStream(capture_stream);
       capture_stream = nullptr;
@@ -397,14 +400,8 @@ struct CallMediaEngine::Impl {
       SDL_DestroyAudioStream(playback_stream);
       playback_stream = nullptr;
     }
-    if (capture_device) {
-      SDL_CloseAudioDevice(capture_device);
-      capture_device = 0;
-    }
-    if (playback_device) {
-      SDL_CloseAudioDevice(playback_device);
-      playback_device = 0;
-    }
+    capture_device = 0;
+    playback_device = 0;
     capture_available = false;
   }
 
@@ -612,6 +609,10 @@ struct CallMediaEngine::Impl {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
+
+    // Accept stops ringtone async (UI must not join). Capture worker waits so we do not
+    // OpenAudioDeviceStream(DEFAULT_PLAYBACK) while ringtone is still DestroyAudioStream'ing.
+    CallRingtone::WaitUntilPlaybackDeviceReleased();
 
     CallAudioSession::ApplyCaptureAudioHints();
     CallAudioSession::ActivateForVoipCall();

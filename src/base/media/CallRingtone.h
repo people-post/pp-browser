@@ -22,6 +22,13 @@ public:
   /** Signal stop and join playback + any async joiner. Call on the UI thread before Backend::Shutdown. */
   void StopAndJoin();
   bool IsPlaying() const { return playing_.load(); }
+  /**
+   * True while an SDL playback stream from Start() may still be open.
+   * IsPlaying() clears on Stop() before DestroyAudioStream — call-media must wait on this.
+   */
+  static bool PlaybackDeviceHeld();
+  /** Spin-wait (non-UI) until PlaybackDeviceHeld() is false or timeout. */
+  static void WaitUntilPlaybackDeviceReleased(int timeout_ms = 2000);
 
 private:
   void RequestStop(bool wait);
