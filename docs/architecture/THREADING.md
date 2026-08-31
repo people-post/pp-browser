@@ -96,6 +96,7 @@ Drives periodic policy (not UI frame ticks):
 
 - Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `MessagingHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
+- Amp mesh pump: `MeshHost::Tick` / `MeshRuntime::Drive` (~5ms) while Amp is up — required for call-media / SFU / chat (no libp2p `io_context`)
 - Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
 Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** coordinator message.

@@ -68,8 +68,9 @@
 ### LAN dogfood checklist (call-media / A026)
 
 1. Accept → Connect ok → InCall with `rx_frames > 0`, no abort in the first seconds
-2. Leave without malloc / double-free
-3. Logs: one PeerLink alias for the remote during the call (no parallel long-lived `inbound:` + dial alias both Connected for call-media)
+2. SoftMigrate / SFU: `rx_frames` keep climbing (not stall with rising `rx_age_ms`) — Amp mesh pump ~5ms
+3. Leave without malloc / double-free
+4. Logs: one PeerLink alias for the remote during the call (no parallel long-lived `inbound:` + dial alias both Connected for call-media)
 
 ## Landed (L4 circuit — D7a / A022)
 
@@ -164,7 +165,7 @@
 |--------|-----|
 | **Do not block MeshHost Amp attach on AMP dial-back / mDNS** | Ownership is independent of reachability chrome; libp2p DialBack/Identify still cover probes until cutover |
 | **Shared device ML-DSA keys required for `mesh_enabled`** | One PeerId across stacks ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
-| **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0 |
+| **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0; product drives via MessagingHub Amp mesh pump (~5ms) + Connect/OpenChannel `io_pump` |
 | **Amp start is soft-fail** | **Superseded by D10** — Amp hard-require; no TCP underlay fallback |
 | **AMP dial-back is optional until Identify/TCP teardown** | **D10:** DialBack retired; Amp dial-back remains D8 follow-on |
 | **Chat+history flip together** | Shared Amp address book / reachability; blob stays libp2p |

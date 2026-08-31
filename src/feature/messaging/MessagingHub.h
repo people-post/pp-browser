@@ -226,7 +226,7 @@ public:
   void BindAgent(AgentSession& agent);
   PeerSigningKeyStore& SigningKeys();
 
-  /** Idle sweep / session policy tick (call from UI loop). */
+  /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is TickAmpMesh. */
   void TickLibp2p();
   /** Drop cold peer connections (Android background). */
   void SuspendLibp2pColdPeers();
@@ -265,6 +265,8 @@ private:
   void PrefetchPeerReachability(const std::string& identity);
   void StartCoordinatorTimers();
   void StopCoordinatorTimers();
+  /** Amp UDP drain — MeshHost::Tick / MeshRuntime::Drive (no libp2p io_context). */
+  void TickAmpMesh();
 
   std::string data_dir_;
   std::string profile_id_;
@@ -327,6 +329,7 @@ private:
   bool initialized_ = false;
   bool messaging_ready_ = false;
   uint64_t hub_policy_timer_id_ = 0;
+  uint64_t amp_mesh_pump_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;
   int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;

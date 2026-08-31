@@ -823,13 +823,18 @@ PeerSigningKeyStore& MessagingHub::SigningKeys() {
   return signing_key_store_;
 }
 
+void MessagingHub::TickAmpMesh() {
+  if (!messaging_ready_ || !mesh_) {
+    return;
+  }
+  mesh_->Tick();
+}
+
 void MessagingHub::TickLibp2p() {
   if (!messaging_ready_) {
     return;
   }
-  if (mesh_) {
-    mesh_->Tick();
-  }
+  // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
   if (p2p_) {
     p2p_->TickLibp2p();
   }
@@ -840,11 +845,17 @@ void MessagingHub::TickLibp2p() {
 
 namespace {
 
+/** Amp has no async reactor — product must Drive often enough for call-media / SFU / chat. */
+constexpr auto kAmpMeshPumpInterval = std::chrono::milliseconds(5);
 constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 
 } // namespace
 
 void MessagingHub::StartCoordinatorTimers() {
+  if (amp_mesh_pump_timer_id_ == 0 && mesh_) {
+    amp_mesh_pump_timer_id_ =
+        AppRuntime::ScheduleCoordinatorRepeating(kAmpMeshPumpInterval, [this]() { TickAmpMesh(); });
+  }
   if (hub_policy_timer_id_ == 0) {
     hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
       TickLibp2p();
@@ -869,6 +880,10 @@ void MessagingHub::StartCoordinatorTimers() {
 }
 
 void MessagingHub::StopCoordinatorTimers() {
+  if (amp_mesh_pump_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(amp_mesh_pump_timer_id_);
+    amp_mesh_pump_timer_id_ = 0;
+  }
   if (hub_policy_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;
