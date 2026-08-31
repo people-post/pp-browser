@@ -46,8 +46,10 @@
 #include "base/p2p/CallMediaDirectService.h"
 #include "base/p2p/IdentifyIntegrationService.h"
 #include "base/p2p/LanMdnsDiscovery.h"
+#include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/MediaRelayService.h"
 #include "base/people/MeshHopPolicy.h"
+#include "base/mesh/link/AdpMultiaddr.h"
 #include "base/p2p/NatTraversal.h"
 #include "base/p2p/Reachability.h"
 #include "base/runtime/StartupTiming.h"
@@ -306,7 +308,8 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   }
   if (mesh_cfg.enable_amp_stack) {
     if (mesh_->Amp()) {
-      log().info << "amp stack parallel listen=" << mesh_->AmpListenMultiaddr() << " (no L4 traffic yet)";
+      log().info << "amp stack listen=" << mesh_->AmpListenMultiaddr()
+                 << " (chat/history cutover at messaging stack build)";
     } else {
       log().warning << "amp stack enable failed (libp2p continues): " << mesh_->AmpLastError();
     }
@@ -364,6 +367,14 @@ void MessagingHub::PublishNodeAdvertisedAddrs() {
   PublishAdvertisedListenSet(*Runtime()->Host(), *Runtime()->Identify(),
                              mesh_->Reachability().Snapshot(), Runtime()->BoundListenMultiaddr(), peer_id,
                              publish);
+  // Also advertise AMP UDP listen so peers learn ADP MAs over Identify (D9 chat dial).
+  if (mesh_ && !mesh_->AmpListenMultiaddr().empty() && Runtime()->Identify()->IsStarted()) {
+    const std::string amp_ma = mesh_->AmpListenMultiaddr();
+    IdentifyIntegrationService* identify = Runtime()->Identify();
+    Runtime()->Host()->Post([amp_ma, identify]() {
+      (void)identify->PublishSelfAdvertisedAddrs({amp_ma});
+    });
+  }
 }
 
 void MessagingHub::PublishMobileCallScopedAddrs() {
@@ -573,7 +584,13 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
       host_ips.push_back(ip);
     }
   }
-  lan_mdns_->SetAdvertisement(peer_id, *port, host_ips);
+  int amp_udp = 0;
+  if (mesh_ && !mesh_->AmpListenMultiaddr().empty()) {
+    if (auto parsed = amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
+      amp_udp = static_cast<int>(parsed->endpoint.port);
+    }
+  }
+  lan_mdns_->SetAdvertisement(peer_id, *port, host_ips, amp_udp);
 }
 
 void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
@@ -604,6 +621,10 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
     sessions->ClearDialBackoff(peer.peer_id_base58);
     if (p2p_) {
       p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
+      if (auto adp = LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
+        log().info << "LAN mDNS amp dial peer=" << peer.peer_id_base58 << " ma=" << *adp;
+        p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
+      }
     }
     // Call-media dials peer_key=account:… while mDNS only knows the libp2p PeerId. Alias on IO
     // here — do not wait for UI RegisterContactEndpoints (moto dogfood: undialable despite LAN ma).
@@ -623,6 +644,9 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
           sessions->ClearDialBackoff(target.peer_identity_value);
           if (p2p_) {
             p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+            if (auto adp = LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
+              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp);
+            }
           }
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
                         << " dial_key=" << target.peer_identity_value;
@@ -964,10 +988,27 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                   << " (direct P2P unavailable; relay messaging may still work)";
   }
 
+  amp::PeerLinkManager* amp_links = nullptr;
+  std::function<void()> amp_pump;
+  std::function<void(std::function<void()>)> amp_worker;
+  if (mesh_ && mesh_->Amp()) {
+    amp_links = &mesh_->Amp()->Links();
+    amp_pump = [this]() {
+      if (mesh_) {
+        mesh_->Tick();
+      }
+    };
+    if (Libp2pHost* host = Libp2p()) {
+      amp_worker = [host](std::function<void()> task) {
+        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
+      };
+    }
+  }
+
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
-                                                Sessions());
+                                                Sessions(), amp_links, std::move(amp_pump), std::move(amp_worker));
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
   WireAttachmentDownloads();

@@ -30,8 +30,8 @@
 | D1–D6 | Session, channel, link, chat, call-media | **Done** (parallel stacks; product still libp2p) |
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
-| D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back/mDNS deferred (not blocking D9) |
-| D9 | MeshHost/CallStack cutover | **In progress** — product Amp parallel on; L4 flip (chat) next |
+| D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
+| D9 | MeshHost/CallStack cutover | **In progress** — chat/history on Amp; call-media next |
 
 ## Locked product decisions
 

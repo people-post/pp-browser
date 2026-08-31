@@ -14,7 +14,7 @@ namespace pbr {
 
 /**
  * `/pp-browser/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
- * Parallel stack for migration — production still uses Libp2pDirectChatService ([A020]).
+ * Product single-entry when MeshHost Amp is attached ([A020]/ libp2p path remains for tests/fallback.
  */
 class AmpDirectChatService : public IDirectMessageClient {
 public:

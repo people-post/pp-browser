@@ -2,6 +2,8 @@
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/AttachmentDownloadService.h"
+#include "feature/messaging/AmpChatHistoryService.h"
+#include "feature/messaging/AmpDirectChatService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -32,8 +34,10 @@
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateTypes.h"
+#include "base/mesh/link/AdpMultiaddr.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
+#include "base/p2p/Libp2pWorker.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -111,25 +115,51 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
-                                         Libp2pHost* libp2p_host, PeerSessionManager* peer_sessions)
+                                         Libp2pHost* libp2p_host, PeerSessionManager* peer_sessions,
+                                         amp::PeerLinkManager* amp_links, std::function<void()> amp_io_pump,
+                                         std::function<void(std::function<void()>)> amp_worker_post)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), libp2p_host_(libp2p_host),
-      peer_sessions_(peer_sessions), epoch_coordinator_(store), psk_coordinator_(store, psk_store),
-      public_lock_(store, psk_store) {
+      peer_sessions_(peer_sessions), amp_links_(amp_links), epoch_coordinator_(store),
+      psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
+  // Blob stays on libp2p while chat/history may flip to Amp ([A020] single entry per family).
   if (libp2p_host_ && peer_sessions_) {
-    peer_history_ =
-        std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
-    peer_history_->Start();
     peer_blob_ = std::make_unique<Libp2pChatBlobService>(*libp2p_host_, *peer_sessions_, store_, identity_);
     peer_blob_->Start();
-    direct_chat_ = std::make_unique<Libp2pDirectChatService>(*libp2p_host_, *peer_sessions_);
-    direct_chat_->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
-    direct_chat_->Start();
+  }
+  if (amp_links_) {
+    auto worker = amp_worker_post;
+    if (!worker && libp2p_host_) {
+      worker = [host = libp2p_host_](std::function<void()> task) {
+        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
+      };
+    }
+    auto history = std::make_unique<AmpChatHistoryService>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
+                                                           worker);
+    history->Start();
+    peer_history_ = std::move(history);
+
+    auto chat = std::make_unique<AmpDirectChatService>(*amp_links_, amp_io_pump, worker);
+    chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
+    chat->Start();
+    direct_chat_ = std::move(chat);
+    log().info << "direct chat/history transport=amp";
+  } else if (libp2p_host_ && peer_sessions_) {
+    auto history =
+        std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
+    history->Start();
+    peer_history_ = std::move(history);
+
+    auto chat = std::make_unique<Libp2pDirectChatService>(*libp2p_host_, *peer_sessions_);
+    chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
+    chat->Start();
+    direct_chat_ = std::move(chat);
+    log().info << "direct chat/history transport=libp2p";
   }
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());
@@ -235,10 +265,18 @@ void P2pMessagingService::PersistRelayCursor(const std::string& relay_user_id) {
 
 void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  if (peer_sessions_) {
+  const bool is_adp = static_cast<bool>(amp::ParseAdpMultiaddr(multiaddr));
+  if (amp_links_ && is_adp) {
+    (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
+  }
+  if (peer_sessions_ && !is_adp) {
     (void)peer_sessions_->RegisterEndpoint(peer_relay_user_id, multiaddr);
-  } else if (peer_history_) {
-    peer_history_->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
+  } else if (!amp_links_ && !peer_sessions_) {
+    if (auto* lib_history = dynamic_cast<Libp2pChatHistoryService*>(peer_history_.get())) {
+      lib_history->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
+    } else if (auto* amp_history = dynamic_cast<AmpChatHistoryService*>(peer_history_.get())) {
+      amp_history->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
+    }
   }
 }
 
@@ -264,14 +302,21 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
       register_ma(target.peer_identity_value, ma);
     }
   }
-  if (peer_sessions_ == nullptr) {
-    return;
-  }
   for (const std::string& peer_id : PeerIdsFromContact(contact)) {
-    if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
-      register_ma(peer_id, *ma);
-      if (target.peer_identity_value != peer_id) {
-        register_ma(target.peer_identity_value, *ma);
+    if (peer_sessions_) {
+      if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
+        register_ma(peer_id, *ma);
+        if (target.peer_identity_value != peer_id) {
+          register_ma(target.peer_identity_value, *ma);
+        }
+      }
+    }
+    if (amp_links_) {
+      if (auto ma = amp_links_->PreferredMultiaddr(peer_id)) {
+        register_ma(peer_id, *ma);
+        if (target.peer_identity_value != peer_id) {
+          register_ma(target.peer_identity_value, *ma);
+        }
       }
     }
   }

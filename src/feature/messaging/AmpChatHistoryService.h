@@ -15,7 +15,7 @@
 
 namespace pbr {
 
-/** D060 peer-direct history over AMP ChannelSession ([A020] parallel stack). */
+/** D060 peer-direct history over AMP ChannelSession — product single-entry when Amp is attached ([A020]). */
 class AmpChatHistoryService : public IChatHistoryPeerClient {
 public:
   using IoPump = std::function<void()>;

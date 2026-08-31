@@ -13,13 +13,13 @@
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
+#include "base/mesh/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
 #include "base/p2p/Libp2pHost.h"
 #include "base/p2p/PeerSessionManager.h"
@@ -54,12 +54,18 @@ struct ThreadPeerLinkView {
 
 class P2pMessagingService : public Module {
 public:
+  /**
+   * When `amp_links` is non-null, chat + history use Amp as the single transport entry ([A020]/
+   * blob/call stay on libp2p via `libp2p_host` / `peer_sessions`.
+   */
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
-                                         GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                                         Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr);
+                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                      GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                      Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr,
+                      amp::PeerLinkManager* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                      std::function<void(std::function<void()>)> amp_worker_post = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -204,10 +210,11 @@ private:
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;
+  amp::PeerLinkManager* amp_links_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
-  std::unique_ptr<Libp2pChatHistoryService> peer_history_;
+  std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<Libp2pChatBlobService> peer_blob_;
-  std::unique_ptr<Libp2pDirectChatService> direct_chat_;
+  std::unique_ptr<IDirectMessageClient> direct_chat_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

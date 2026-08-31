@@ -117,8 +117,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 - [x] `AmpStack` composition helper (`Endpoint` + `MeshRuntime`)
 - [x] Attach `AmpStack` to `MeshHost` (parallel; `enable_amp_stack` / `AttachAmpStack`; [A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys))
-- [x] Enable Amp in product node/MessagingHub start (default on; soft-fail; still no L4 flip)
-- [ ] Single transport entry cutover — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
+- [x] Enable Amp in product node/MessagingHub start (default on; soft-fail)
+- [x] Chat + history single transport entry via Amp when `MeshHost::Amp()` is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- [ ] Call-media / circuit / media-relay cutover — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello Opus path

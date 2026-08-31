@@ -137,7 +137,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
   if (mesh_cfg.enable_amp_stack) {
     if (mesh->Amp()) {
-      log.info << "amp stack parallel listen=" << mesh->AmpListenMultiaddr() << " (no L4 traffic yet)";
+      log.info << "amp stack listen=" << mesh->AmpListenMultiaddr() << " (chat/history on Amp when product attaches)";
     } else {
       log.warning << "amp stack enable failed (libp2p continues): " << mesh->AmpLastError();
     }
