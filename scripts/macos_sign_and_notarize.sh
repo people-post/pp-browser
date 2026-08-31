@@ -187,6 +187,13 @@ cmd_sign_app() {
     echo "error: app bundle not found: ${app_path}" >&2
     exit 1
   fi
+  if [[ ! -f "${app_path}/Contents/Info.plist" ]]; then
+    echo "error: not a valid macOS app bundle (missing Contents/Info.plist): ${app_path}" >&2
+    echo "error: install tree under $(dirname "$app_path"):" >&2
+    ls -la "$(dirname "$app_path")" >&2 || true
+    find "$(dirname "$app_path")" -maxdepth 3 \( -name '*.app' -o -name Info.plist \) 2>/dev/null >&2 || true
+    exit 1
+  fi
 
   local entitlements="${MACOS_ENTITLEMENTS:-$DEFAULT_ENTITLEMENTS}"
   if [[ ! -f "$entitlements" ]]; then
