@@ -1,9 +1,15 @@
 #pragma once
 
 #include "base/adp/Types.h"
+#include "base/mesh/session/Types.h"
+
+#include "common/PbrCompat.h"
+
+#include <sodium.h>
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <string>
 
 namespace pbr::amp {
@@ -16,6 +22,9 @@ adp::PeerKey PreSessionPeerKey();
 
 /** Reserved assoc id for MSH handshake before K_assoc is derived. */
 adp::AssocId PreSessionAssocId();
+
+/** Stable hex fingerprint for an ML-DSA identity public key (link indexing). */
+std::string IdentityPublicKeyFingerprint(const ByteVector& identity_public_key);
 
 enum class PeerLinkPhase {
   Unavailable,
@@ -39,6 +48,8 @@ struct PeerLinkConfig {
   std::chrono::milliseconds dial_timeout{8000};
   std::chrono::milliseconds idle_ttl{180000};
   std::chrono::milliseconds dial_failure_backoff{30000};
+  /** When set, derives remote PeerId string from authenticated MSH identity key. */
+  std::function<std::string(const ByteVector& identity_public_key)> peer_id_from_identity;
 };
 
 } // namespace pbr::amp

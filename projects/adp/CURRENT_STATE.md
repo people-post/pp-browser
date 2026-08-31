@@ -41,9 +41,10 @@
 ## Landed (link layer — D4)
 
 - `src/base/mesh/link/` → `pp_base_mesh_link`
-- ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`
+- ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`, **`MeshRuntime`**
+- PeerId from MSH identity; inbound link adopt/rekey to registered alias
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
-- `pp_browser_amp_link_test` (3 tests, green)
+- `pp_browser_amp_link_test` (5 tests, green)
 
 ## Landed (L4 chat — D5)
 
@@ -51,16 +52,18 @@
 - `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
 - `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
 
-## Landed (L4 call-media — D6 partial)
+## Landed (L4 call-media — D6)
 
-- `AmpCallMediaDirectService` — `/pp-browser/call-media/1.0.0` with **split channels**: Reliable `RealtimeControl` hello + BestEffort `Realtime` AEAD media (parallel stack; production still libp2p)
+- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **channel bundle**: Reliable `RealtimeControl` hello + BestEffort `Realtime` AEAD media; non-blocking `StartLeg` on `MeshRuntime` (parallel stack; production still libp2p)
+- Dual-dial glare: higher base58 PeerId keeps outbound; lower yields and adopts inbound ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`)
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
-- `pp_browser_p2p_test` — 7× `AmpCallMediaDirectServiceTest` cases
-- Shared AMP test harness: `src/base/mesh/link/tests/mesh_test_harness.h`
+- `pp_browser_p2p_test` — 9× `CallMediaLeg*` cases (8 coordinator + 1 triple-host conflict)
+- Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
 
 ## Next (implementation)
 
-1. **D6** — glare/dual-dial gtests, retire `CallMediaAdpDogfood`
+1. **D9** — wire `CallMediaLegCoordinator` into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood`
 2. **D7** — circuit + media-relay on ChannelSession
 
 See [PHASES.md](PHASES.md) for full ordering.

@@ -5,8 +5,9 @@
 #include "base/adp/MemoryDatagramIo.h"
 #include "base/crypto/MlDsa.h"
 #include "base/mesh/link/AdpMultiaddr.h"
-#include "base/mesh/link/MeshPump.h"
-#include "base/mesh/link/PeerLinkManager.h"
+#include "base/mesh/link/MeshRuntime.h"
+#include "base/mesh/link/tests/mesh_harness_support.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include <functional>
 #include <memory>
@@ -26,12 +27,15 @@ struct AmpMeshHarness {
   adp::IpEndpoint addr_b;
   amp::MshIdentity alice;
   amp::MshIdentity bob;
-  std::unique_ptr<amp::PeerLinkManager> mgr_a;
-  std::unique_ptr<amp::PeerLinkManager> mgr_b;
-  std::unique_ptr<amp::MeshPump> pump_a;
-  std::unique_ptr<amp::MeshPump> pump_b;
+  std::unique_ptr<amp::MeshRuntime> runtime_a;
+  std::unique_ptr<amp::MeshRuntime> runtime_b;
+  std::string peer_id_a;
+  std::string peer_id_b;
   std::string ma_a;
   std::string ma_b;
+
+  amp::PeerLinkManager& mgr_a() { return runtime_a->Links(); }
+  amp::PeerLinkManager& mgr_b() { return runtime_b->Links(); }
 
   static Roe<std::unique_ptr<AmpMeshHarness>> Create() {
     auto harness = std::make_unique<AmpMeshHarness>();
@@ -55,13 +59,24 @@ struct AmpMeshHarness {
     harness->bob.ml_dsa_secret_key = std::move(bob_keys->secret_key);
     harness->bob.ml_dsa_public_key = std::move(bob_keys->public_key);
 
-    harness->mgr_a = std::make_unique<amp::PeerLinkManager>(*harness->ep_a, harness->alice, "QmAlice");
-    harness->mgr_b = std::make_unique<amp::PeerLinkManager>(*harness->ep_b, harness->bob, "QmBob");
-    harness->pump_a = std::make_unique<amp::MeshPump>(*harness->ep_a, *harness->mgr_a);
-    harness->pump_b = std::make_unique<amp::MeshPump>(*harness->ep_b, *harness->mgr_b);
+    auto alice_id = PeerIdFromMlDsaPublicKey(harness->alice.ml_dsa_public_key);
+    auto bob_id = PeerIdFromMlDsaPublicKey(harness->bob.ml_dsa_public_key);
+    if (!alice_id || !bob_id) {
+      return Error("amp mesh harness: peer id derivation failed");
+    }
+    harness->peer_id_a = *alice_id;
+    harness->peer_id_b = *bob_id;
 
-    auto ma_b = amp::FormatAdpMultiaddr(harness->addr_b, "QmBob");
-    auto ma_a = amp::FormatAdpMultiaddr(harness->addr_a, "QmAlice");
+    const auto link_config = AmpMeshTestLinkConfig();
+    harness->runtime_a = std::make_unique<amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a,
+                                                            link_config);
+    harness->runtime_b = std::make_unique<amp::MeshRuntime>(*harness->ep_b, harness->bob, harness->peer_id_b,
+                                                            link_config);
+    harness->runtime_a->Start();
+    harness->runtime_b->Start();
+
+    auto ma_b = amp::FormatAdpMultiaddr(harness->addr_b, harness->peer_id_b);
+    auto ma_a = amp::FormatAdpMultiaddr(harness->addr_a, harness->peer_id_a);
     if (!ma_b || !ma_a) {
       return Error("amp mesh harness: multiaddr format failed");
     }
@@ -71,10 +86,10 @@ struct AmpMeshHarness {
   }
 
   void PumpBoth() {
-    pump_a->Pump();
-    pump_b->Pump();
-    pump_a->Tick();
-    pump_b->Tick();
+    runtime_a->Pump();
+    runtime_b->Pump();
+    runtime_a->Tick();
+    runtime_b->Tick();
   }
 
   void PumpUntil(const std::function<bool()>& done, const size_t max_rounds = 500) {

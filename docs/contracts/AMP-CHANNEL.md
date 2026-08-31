@@ -148,12 +148,25 @@ Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameS
 | `/pp-browser/chat/1.0.0` | One DATA = `RelayEnvelope` JSON; ack DATA = `{"ok":true}` |
 | `/pp-browser/chat-history/1.0.0` | request JSON → response JSON |
 | `/pp-browser/chat-blob/1.0.0` | JSON meta → ciphertext or error JSON |
-| `/pp-browser/call-media/1.0.0` | Reliable hello + BestEffort media AEAD frames |
+| `/pp-browser/call-media/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
 | `/pp-browser/media-relay/1.0.0` | duplex realtime + control |
 | `/pp-browser/circuit-relay/1.0.0` | tunnel setup → forwarded L3 frames ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel)) |
 | `/pp-browser/dial-back/1.0.0` | short JSON |
 
 Decode rules: **exact consume** for binary L4; JSON unknown-field policy per [WIRE_SCHEMAS § Unknown-field](WIRE_SCHEMAS.md#unknown-field-policy-d073).
+
+## Call-media bundle
+
+One call attempt = **one control + one media channel pair** on an existing peer Session (not a byte stream).
+
+| Channel | Class | Role |
+|---------|-------|------|
+| Control | Reliable `RealtimeControl` | JSON hello / hello_ack on the wire |
+| Media | BestEffort `Realtime` | length-prefixed AEAD frames (same crypto as libp2p path) |
+
+**Glare (dual offerer dial):** when both peers `StartLeg` the same `call_id`, the **higher base58 PeerId** keeps its outbound control channel; the lower PeerId abandons outbound and adopts the peer's inbound hello. Rejected inbound controls receive `hello_ack` with `"error":"glare"`. Behavioral parity with libp2p `CallMediaSession` — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
+
+L4 runs on **`MeshRuntime`** io thread; inbound hello handlers may run on a worker lane but all wire ops bounce back via `PostToIo`.
 
 ## Circuit tunnel (outline)
 

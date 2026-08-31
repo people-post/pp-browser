@@ -37,11 +37,11 @@ protected:
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
-    ASSERT_TRUE(static_cast<bool>(harness_->mgr_a->RegisterEndpoint("b", harness_->ma_b)));
-    ASSERT_TRUE(static_cast<bool>(harness_->mgr_b->RegisterEndpoint("a", harness_->ma_a)));
+    ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b", harness_->ma_b)));
+    ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_chat_ = std::make_unique<AmpDirectChatService>(*harness_->mgr_a, [this] { harness_->PumpBoth(); });
-    b_chat_ = std::make_unique<AmpDirectChatService>(*harness_->mgr_b, [this] { harness_->PumpBoth(); });
+    a_chat_ = std::make_unique<AmpDirectChatService>(harness_->mgr_a(), [this] { harness_->PumpBoth(); });
+    b_chat_ = std::make_unique<AmpDirectChatService>(harness_->mgr_b(), [this] { harness_->PumpBoth(); });
     a_chat_->Start();
     b_chat_->Start();
   }

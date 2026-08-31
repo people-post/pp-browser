@@ -144,3 +144,10 @@
 **Decision:** Each L4 protocol uses one **`ChannelSession`** entry point. No scattered `if (amp) … else (libp2p)` in feature code during migration — parallel stacks only in tests until cutover.  
 **Rationale:** Prevents dual-stack ossification.  
 **Alternatives:** Per-protocol feature flags with dual paths in production.
+
+## A021 — Call-media = channel bundle on MeshRuntime
+
+**Date:** 2026-08-31  
+**Decision:** AMP call-media is a **control + media channel bundle** per call attempt on `MeshRuntime`, not a blocking libp2p-style stream adapter. L4 is non-blocking (`StartLeg` + completion callback); inbound hello runs on a worker lane with all mux/session ops posted back to the io thread. Dual-dial glare uses the same tie-break as libp2p: **higher base58 PeerId** keeps outbound; lower abandons outbound and adopts inbound.  
+**Rationale:** Removes IoPump blocking, `inbound:<hex>` link keys, and invisible remote CLOSE from the AMP path; matches libp2p golden behavior without API parity.  
+**Alternatives:** Port `CallMediaDirectService::Connect` blocking semantics to AMP; single combined control+media channel.

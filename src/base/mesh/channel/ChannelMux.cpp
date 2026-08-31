@@ -101,6 +101,20 @@ void ChannelMux::SetDataHandler(const uint32_t channel_id, DataHandler handler) 
   pending_handlers_[channel_id] = std::move(handler);
 }
 
+void ChannelMux::SetTerminalHandler(const uint32_t channel_id, TerminalHandler handler) {
+  if (auto* channel = ChannelById(channel_id)) {
+    channel->on_terminal = std::move(handler);
+    return;
+  }
+  pending_terminal_handlers_[channel_id] = std::move(handler);
+}
+
+void ChannelMux::NotifyTerminal(ChannelRecord& channel, const char* reason) {
+  if (channel.on_terminal) {
+    channel.on_terminal(channel.id, reason);
+  }
+}
+
 void ChannelMux::SetProtocolHandler(const std::string& protocol_id, InboundOpenHandler handler) {
   if (handler) {
     protocol_handlers_[protocol_id] = std::move(handler);
@@ -133,6 +147,11 @@ Roe<void> ChannelMux::HandleOpen(ChannelFrame frame) {
   if (auto it = pending_handlers_.find(frame.header.channel_id); it != pending_handlers_.end()) {
     channels_.at(frame.header.channel_id).on_data = std::move(it->second);
     pending_handlers_.erase(it);
+  }
+  if (auto it = pending_terminal_handlers_.find(frame.header.channel_id);
+      it != pending_terminal_handlers_.end()) {
+    channels_.at(frame.header.channel_id).on_terminal = std::move(it->second);
+    pending_terminal_handlers_.erase(it);
   }
 
   ChannelFrame ack;
@@ -179,11 +198,13 @@ Roe<void> ChannelMux::DispatchFrame(ChannelFrame frame) {
   case ChannelFrameType::Reset:
     if (channel) {
       channel->state = ChannelState::Closed;
+      NotifyTerminal(*channel, "peer_reset");
     }
     return Roe<void>();
   case ChannelFrameType::Close:
     if (channel) {
       channel->state = ChannelState::Closed;
+      NotifyTerminal(*channel, "peer_close");
     }
     return Roe<void>();
   case ChannelFrameType::Data:

@@ -37,6 +37,7 @@ public:
 private:
   void PumpWrite();
   void FailOutbound(const Error& error);
+  void NotifyRemoteTerminal(const char* reason);
 
   ChannelMux* mux_ = nullptr;
   uint32_t channel_id_ = 0;

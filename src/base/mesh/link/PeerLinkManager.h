@@ -37,6 +37,7 @@ public:
   void EnsureAssociation(const std::string& peer_key, LinkCb on_complete);
   void OpenChannel(const std::string& peer_key, const std::string& protocol_id, ChannelPolicy policy,
                    ChannelCb on_complete);
+  void OpenChannelOnLink(PeerLink& link, const std::string& protocol_id, ChannelPolicy policy, ChannelCb on_complete);
 
   /** L4 entry — applied to every link mux (existing + future). */
   void SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler);
@@ -51,6 +52,8 @@ public:
 
   PeerLink* FindLink(const std::string& peer_key);
   const PeerLink* FindLink(const std::string& peer_key) const;
+  PeerLink* FindLinkByPeerId(const std::string& peer_id);
+  const PeerLink* FindLinkByPeerId(const std::string& peer_id) const;
   PeerLink* FindConnectedInboundLink();
 
   void Tick();
@@ -69,6 +72,10 @@ private:
   void OnLinkEstablished(PeerLink& link);
   void ApplyProtocolHandlers(PeerLink& link);
   void FinishDial(const std::string& peer_key, Roe<void> result);
+  std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
+  void TryAdoptInboundLink(PeerLink& inbound);
+  void RekeyLink(const std::string& from_key, const std::string& to_key);
+  PeerLink* FindConnectedLinkForPeerId(const std::string& peer_id);
 
   adp::Endpoint& endpoint_;
   MshIdentity local_identity_;
@@ -78,6 +85,7 @@ private:
   std::unordered_map<std::string, EndpointRecord> endpoints_;
   std::unordered_map<std::string, std::unique_ptr<PeerLink>> links_;
   std::unordered_map<std::string, ProtocolHandler> protocol_handlers_;
+  std::unordered_map<std::string, std::string> peer_id_to_key_;
   std::unordered_map<std::string, std::vector<LinkCb>> inflight_associations_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> dial_failed_until_;
   std::unordered_map<std::string, std::string> last_error_;

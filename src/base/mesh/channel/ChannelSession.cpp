@@ -22,6 +22,9 @@ void ChannelSession::Bind(ChannelMux& mux, const uint32_t channel_id, ChannelPol
       Close();
     }
   });
+  mux.SetTerminalHandler(channel_id_, [this](uint32_t, const char* reason) {
+    NotifyRemoteTerminal(reason);
+  });
 }
 
 bool ChannelSession::EnqueueOutbound(std::vector<uint8_t> body) {
@@ -67,6 +70,16 @@ void ChannelSession::FailOutbound(const Error& error) {
   closed_ = true;
   if (on_closed_) {
     on_closed_("write_failed");
+  }
+}
+
+void ChannelSession::NotifyRemoteTerminal(const char* reason) {
+  if (closed_) {
+    return;
+  }
+  closed_ = true;
+  if (on_closed_) {
+    on_closed_(reason);
   }
 }
 

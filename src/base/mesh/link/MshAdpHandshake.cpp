@@ -334,6 +334,9 @@ Roe<void> MshAdpHandshake::MaybeComplete() {
   established.local_material = std::move(*material);
   established.master_ikm = master_ikm_;
   established.transcript_hash = std::move(*transcript_hash);
+  if (remote_payload_) {
+    established.remote_identity_public_key = remote_payload_->identity_public_key;
+  }
   complete_ = true;
   if (on_complete_) {
     on_complete_(established);

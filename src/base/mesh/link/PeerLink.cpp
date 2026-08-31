@@ -2,6 +2,7 @@
 
 #include "base/mesh/link/AmpAdpCarrier.h"
 #include "base/mesh/link/PeerLinkManager.h"
+#include "base/mesh/link/Types.h"
 
 namespace pbr::amp {
 
@@ -155,6 +156,14 @@ void PeerLink::OnHandshakeComplete(Roe<MshAdpEstablished> established) {
 void PeerLink::FinishEstablishment(MshAdpEstablished established) {
   master_ikm_ = std::move(established.master_ikm);
   transcript_hash_ = std::move(established.transcript_hash);
+  remote_identity_public_key_ = std::move(established.remote_identity_public_key);
+  if (!remote_identity_public_key_.empty()) {
+    if (auto derived = owner_.DeriveRemotePeerId(remote_identity_public_key_); !derived.empty()) {
+      remote_peer_id_ = std::move(derived);
+    } else if (remote_peer_id_.empty()) {
+      remote_peer_id_ = IdentityPublicKeyFingerprint(remote_identity_public_key_);
+    }
+  }
 
   auto session = Session::FromMaterial(established.local_material, master_ikm_, transcript_hash_);
   if (!session) {

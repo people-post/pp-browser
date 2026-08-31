@@ -17,6 +17,7 @@ struct MshAdpEstablished {
   SessionMaterial local_material;
   ByteVector master_ikm;
   ByteVector transcript_hash;
+  ByteVector remote_identity_public_key;
 };
 
 /** One-sided MSH v1 driver over ADP Reliable payloads. */

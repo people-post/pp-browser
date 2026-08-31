@@ -90,17 +90,42 @@ struct CallMediaLegCoordinator::Impl {
   bool offerer_glare = false;
 
   amp::PeerLink* active_link = nullptr;
+  std::shared_ptr<amp::ChannelSession> outbound_control_session;
   std::shared_ptr<amp::ChannelSession> control_session;
   std::shared_ptr<amp::ChannelSession> media_session;
+  bool ignore_control_close = false;
   std::atomic<bool> control_ready{false};
   std::atomic<bool> media_bound{false};
   Clock::time_point connect_deadline{};
 
-  void PostIo(std::function<void()> task) {
-    if (!runtime || !task) {
+  void MaybeFireConnectDeadline() {
+    if (connect_deadline.time_since_epoch().count() == 0) {
       return;
     }
-    runtime->PostToIo(std::move(task));
+    if (leg_finished_settled.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (Clock::now() < connect_deadline) {
+      return;
+    }
+    const CallMediaLegId leg_id = active_leg_id;
+    connect_deadline = {};
+    FailLeg(Error("amp call-media connect timed out"), /*remote_terminal=*/false);
+    TeardownLeg(leg_id, /*finish_with_abort=*/false);
+  }
+
+  void TickConnectDeadline() { MaybeFireConnectDeadline(); }
+
+  void PostIo(std::function<void()> task) {
+    if (!runtime) {
+      return;
+    }
+    runtime->PostToIo([this, task = std::move(task)]() mutable {
+      MaybeFireConnectDeadline();
+      if (task) {
+        task();
+      }
+    });
   }
 
   void ScheduleWhenChannelOpen(amp::PeerLink* link, const uint32_t channel_id, const Clock::time_point deadline,
@@ -126,21 +151,6 @@ struct CallMediaLegCoordinator::Impl {
     });
   }
 
-  void ScheduleConnectTimeout(const CallMediaLegId leg_id, const Clock::time_point deadline) {
-    PostIo([this, leg_id, deadline]() {
-      if (stopped.load(std::memory_order_acquire) || active_leg_id.value != leg_id.value ||
-          leg_finished_settled.load(std::memory_order_acquire)) {
-        return;
-      }
-      if (Clock::now() >= deadline) {
-        FailLeg(Error("amp call-media connect timed out"), /*remote_terminal=*/false);
-        TeardownLeg(leg_id, /*finish_with_abort=*/false);
-        return;
-      }
-      ScheduleConnectTimeout(leg_id, deadline);
-    });
-  }
-
   void ResetFieldsUnlocked() {
     active_link = nullptr;
     callbacks = {};
@@ -153,12 +163,27 @@ struct CallMediaLegCoordinator::Impl {
     local_cancel.store(false, std::memory_order_release);
     leg_finished = {};
     active_leg_id = {};
+    connect_deadline = {};
+    outbound_control_session.reset();
   }
 
   void ResetLocked() {
+    CloseControlQuiet(control_session);
+    CloseControlQuiet(outbound_control_session);
     control_session.reset();
+    outbound_control_session.reset();
+    CloseControlQuiet(media_session);
     media_session.reset();
     ResetFieldsUnlocked();
+  }
+
+  void CloseControlQuiet(const std::shared_ptr<amp::ChannelSession>& session) {
+    if (!session || session->IsClosed()) {
+      return;
+    }
+    ignore_control_close = true;
+    session->Close();
+    ignore_control_close = false;
   }
 
   void FinishLeg(Roe<void> result) {
@@ -208,18 +233,18 @@ struct CallMediaLegCoordinator::Impl {
   }
 
   void AbandonOutbound() {
-    std::shared_ptr<amp::ChannelSession> control;
+    std::shared_ptr<amp::ChannelSession> outbound;
     {
       std::lock_guard lock(mu);
       offerer_glare = false;
-      control_ready.store(false, std::memory_order_release);
-      control = std::move(control_session);
+      outbound = std::move(outbound_control_session);
+      if (control_session == outbound) {
+        control_session.reset();
+      }
       leg_phase.store(CallMediaLegPhase::Closed, std::memory_order_release);
       phase.store(CallMediaSessionPhase::Dialing, std::memory_order_release);
     }
-    if (control) {
-      control->Close();
-    }
+    CloseControlQuiet(outbound);
   }
 
   void FailLeg(Roe<void> result, const bool remote_terminal) {
@@ -247,26 +272,28 @@ struct CallMediaLegCoordinator::Impl {
     }
     const bool connect_pending = !leg_finished_settled.load(std::memory_order_acquire);
     local_cancel.store(true, std::memory_order_release);
+    if (connect_pending && finish_with_abort) {
+      FinishLeg(Error("call-media aborted"));
+    }
     std::shared_ptr<amp::ChannelSession> control;
+    std::shared_ptr<amp::ChannelSession> outbound_control;
     std::shared_ptr<amp::ChannelSession> media;
     {
       std::lock_guard lock(mu);
       control = std::move(control_session);
+      outbound_control = std::move(outbound_control_session);
       media = std::move(media_session);
       ResetFieldsUnlocked();
     }
-    if (control) {
-      control->Close();
-    }
-    if (media) {
-      media->Close();
-    }
-    if (connect_pending && finish_with_abort) {
-      FinishLeg(Error("call-media aborted"));
-    }
+    CloseControlQuiet(control);
+    CloseControlQuiet(outbound_control);
+    CloseControlQuiet(media);
   }
 
   void OnChannelClosed(const char* reason) {
+    if (ignore_control_close) {
+      return;
+    }
     CallMediaDirectCallbacks cbs;
     CallMediaSessionPhase session_phase = CallMediaSessionPhase::Idle;
     bool should_abandon_outbound = false;
@@ -363,6 +390,13 @@ struct CallMediaLegCoordinator::Impl {
         if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::HelloOutbound && offerer_glare &&
             LocalWinsGlareForLink(link)) {
           (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "glare")));
+          CloseControlQuiet(channel_session);
+          {
+            std::lock_guard lock(mu);
+            if (control_session == channel_session) {
+              control_session = outbound_control_session;
+            }
+          }
           return false;
         }
         if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::HelloOutbound &&
@@ -392,11 +426,11 @@ struct CallMediaLegCoordinator::Impl {
         handler = inbound;
       }
       if (!handler) {
-        PostIo([channel_session]() {
-          (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "no handler")));
-        });
-        FailLeg(Error("amp call-media: inbound rejected"), /*remote_terminal=*/false);
-        TeardownLeg({}, /*finish_with_abort=*/false);
+        (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "no handler")));
+        {
+          std::lock_guard lock(mu);
+          ResetFieldsUnlocked();
+        }
         return false;
       }
 
@@ -456,12 +490,19 @@ struct CallMediaLegCoordinator::Impl {
       const bool ok = parsed->getIf<bool>("ok").value_or(false);
       if (!ok) {
         bool yield_glare = false;
+        bool suppress_outbound_fail = false;
         {
           std::lock_guard lock(mu);
-          if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::HelloOutbound && offerer_glare &&
-              active_link && !LocalWinsGlareForLink(*active_link)) {
+          const auto session_phase = phase.load(std::memory_order_acquire);
+          if (session_phase == CallMediaSessionPhase::HelloInbound) {
+            suppress_outbound_fail = true;
+          } else if (session_phase == CallMediaSessionPhase::HelloOutbound && offerer_glare && active_link &&
+                     !LocalWinsGlareForLink(*active_link)) {
             yield_glare = true;
           }
+        }
+        if (suppress_outbound_fail) {
+          return true;
         }
         if (yield_glare) {
           AbandonOutbound();
@@ -515,7 +556,8 @@ struct CallMediaLegCoordinator::Impl {
     return true;
   }
 
-  void BindControlChannel(amp::PeerLink& link, const uint32_t channel_id, const Clock::time_point deadline) {
+  void BindControlChannel(amp::PeerLink& link, const uint32_t channel_id, const Clock::time_point deadline,
+                          const bool outbound) {
     {
       std::lock_guard lock(mu);
       if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::MediaReady) {
@@ -536,7 +578,10 @@ struct CallMediaLegCoordinator::Impl {
         },
         [this](const char* reason) { OnChannelClosed(reason); });
     std::lock_guard lock(mu);
-    control_session = std::move(channel_session);
+    control_session = channel_session;
+    if (outbound) {
+      outbound_control_session = std::move(channel_session);
+    }
   }
 
   void BindMediaChannel(amp::PeerLink& link, const uint32_t channel_id) {
@@ -574,7 +619,7 @@ struct CallMediaLegCoordinator::Impl {
                               ? connect_deadline
                               : Clock::now() + std::chrono::seconds(15);
     if (cls == amp::ChannelClass::RealtimeControl) {
-      BindControlChannel(link, channel_id, deadline);
+      BindControlChannel(link, channel_id, deadline, /*outbound=*/false);
       return;
     }
     if (cls == amp::ChannelClass::Realtime) {
@@ -584,7 +629,9 @@ struct CallMediaLegCoordinator::Impl {
 
   void BeginOutboundLeg(const CallMediaLegId leg_id, const CallMediaDirectConnectParams& params,
                         CallMediaDirectCallbacks callbacks, LegFinished on_finished, const int timeout_ms) {
-    TeardownLeg({}, /*finish_with_abort=*/true);
+    if (phase.load(std::memory_order_acquire) != CallMediaSessionPhase::Idle || active_leg_id.value != 0) {
+      TeardownLeg({}, /*finish_with_abort=*/true);
+    }
     const auto deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 15000);
     {
       std::lock_guard lock(mu);
@@ -600,55 +647,66 @@ struct CallMediaLegCoordinator::Impl {
       phase.store(CallMediaSessionPhase::HelloOutbound, std::memory_order_release);
     }
 
-    ScheduleConnectTimeout(leg_id, deadline);
-
     auto& links = runtime->Links();
     const std::string peer_key = params.peer_key;
-    links.OpenChannel(peer_key, kCallMediaDirectProtocolId, amp::CallMediaControlChannelPolicy(),
-                      [this, leg_id, peer_key, params, deadline](Roe<uint32_t> channel) mutable {
-                        if (!channel) {
-                          FailLeg(channel.error(), /*remote_terminal=*/false);
-                          TeardownLeg(leg_id, /*finish_with_abort=*/false);
-                          return;
-                        }
-                        auto* link = runtime->Links().FindLink(peer_key);
-                        if (!link) {
-                          FailLeg(Error("amp call-media: peer link missing"), /*remote_terminal=*/false);
-                          TeardownLeg(leg_id, /*finish_with_abort=*/false);
-                          return;
-                        }
-                        {
-                          std::lock_guard lock(mu);
-                          if (active_leg_id.value != leg_id.value) {
+    const auto open_control = std::make_shared<std::function<void(int)>>();
+    *open_control = [this, leg_id, peer_key, params, deadline, &links,
+                     open_control](const int retries) {
+      links.OpenChannel(peer_key, kCallMediaDirectProtocolId, amp::CallMediaControlChannelPolicy(),
+                        [this, leg_id, peer_key, params, deadline, retries,
+                         open_control](Roe<uint32_t> channel) mutable {
+                          if (!channel) {
+                            if (channel.error().message == "amp link: association not ready" && retries < 500 &&
+                                active_leg_id.value == leg_id.value &&
+                                !leg_finished_settled.load(std::memory_order_acquire)) {
+                              PostIo([open_control, retries]() { (*open_control)(retries + 1); });
+                              return;
+                            }
+                            FailLeg(channel.error(), /*remote_terminal=*/false);
+                            TeardownLeg(leg_id, /*finish_with_abort=*/false);
                             return;
                           }
-                          if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::HelloInbound &&
-                              params.offerer && !LocalWinsGlareForLink(*link)) {
+                          auto* link = runtime->Links().FindLink(peer_key);
+                          if (!link) {
+                            FailLeg(Error("amp call-media: peer link missing"), /*remote_terminal=*/false);
+                            TeardownLeg(leg_id, /*finish_with_abort=*/false);
                             return;
                           }
-                        }
-                        ScheduleWhenChannelOpen(link, *channel, deadline,
-                                                [this, leg_id, link, channel = *channel, params,
-                                                 deadline](const bool open) mutable {
-                                                  if (!open || active_leg_id.value != leg_id.value) {
-                                                    FailLeg(Error("amp call-media: channel open failed"),
-                                                            /*remote_terminal=*/false);
-                                                    TeardownLeg(leg_id, /*finish_with_abort=*/false);
-                                                    return;
-                                                  }
-                                                  BindControlChannel(*link, channel, deadline);
-                                                  std::shared_ptr<amp::ChannelSession> session;
-                                                  {
-                                                    std::lock_guard lock(mu);
-                                                    session = control_session;
-                                                  }
-                                                  if (!session || !session->EnqueueOutbound(Utf8Body(BuildHelloJson(params)))) {
-                                                    FailLeg(Error("amp call-media: hello write failed"),
-                                                            /*remote_terminal=*/false);
-                                                    TeardownLeg(leg_id, /*finish_with_abort=*/false);
-                                                  }
-                                                });
-                      });
+                          {
+                            std::lock_guard lock(mu);
+                            if (active_leg_id.value != leg_id.value) {
+                              return;
+                            }
+                            if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::HelloInbound &&
+                                params.offerer && !LocalWinsGlareForLink(*link)) {
+                              return;
+                            }
+                          }
+                          ScheduleWhenChannelOpen(link, *channel, deadline,
+                                                  [this, leg_id, link, channel = *channel, params,
+                                                   deadline](const bool open) mutable {
+                                                    if (!open || active_leg_id.value != leg_id.value) {
+                                                      FailLeg(Error("amp call-media: channel open failed"),
+                                                              /*remote_terminal=*/false);
+                                                      TeardownLeg(leg_id, /*finish_with_abort=*/false);
+                                                      return;
+                                                    }
+                                                    BindControlChannel(*link, channel, deadline, /*outbound=*/true);
+                                                    std::shared_ptr<amp::ChannelSession> session;
+                                                    {
+                                                      std::lock_guard lock(mu);
+                                                      session = control_session;
+                                                    }
+                                                    if (!session ||
+                                                        !session->EnqueueOutbound(Utf8Body(BuildHelloJson(params)))) {
+                                                      FailLeg(Error("amp call-media: hello write failed"),
+                                                              /*remote_terminal=*/false);
+                                                      TeardownLeg(leg_id, /*finish_with_abort=*/false);
+                                                    }
+                                                  });
+                        });
+    };
+    (*open_control)(0);
   }
 };
 
@@ -667,6 +725,7 @@ void CallMediaLegCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
+  runtime_.SetIoTick([impl = impl_.get()] { impl->TickConnectDeadline(); });
   runtime_.Links().SetProtocolHandler(kCallMediaDirectProtocolId,
                                       [impl = impl_.get()](amp::PeerLink& link, const uint32_t ch) {
                                         impl->HandleInboundChannel(link, ch);
@@ -676,6 +735,7 @@ void CallMediaLegCoordinator::Start() {
 void CallMediaLegCoordinator::Stop() {
   impl_->started.store(false, std::memory_order_release);
   impl_->stopped.store(true, std::memory_order_release);
+  runtime_.SetIoTick({});
   runtime_.Links().RemoveProtocolHandler(kCallMediaDirectProtocolId);
   impl_->PostIo([impl = impl_.get()] { impl->TeardownLeg({}, /*finish_with_abort=*/true); });
   ClearInboundHandler();
@@ -729,6 +789,7 @@ void CallMediaLegCoordinator::CancelLeg(const CallMediaLegId id) {
 
 void CallMediaLegCoordinator::DetachLeg(const CallMediaLegId id) {
   impl_->PostIo([impl = impl_.get(), id]() { impl->TeardownLeg(id, /*finish_with_abort=*/true); });
+  runtime_.Pump();
 }
 
 bool CallMediaLegCoordinator::IsLegActive(const CallMediaLegId id) const {
