@@ -5,6 +5,7 @@
 #include "base/messaging/CallSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "feature/messaging/AmpCircuitHopReach.h"
 #include "feature/messaging/AmpMediaRelayClient.h"
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 #include "feature/messaging/CallLifecycle.h"
@@ -129,7 +130,7 @@ private:
   CallSessionManager* libp2p_bridge_bound_sessions_ = nullptr;
   std::unique_ptr<IMediaRelayClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
-  std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
+  std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
   /** Exactly one of these is set when mesh is up ([A020] single call-media entry). */
   std::unique_ptr<CallMediaDirectService> call_media_direct_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;

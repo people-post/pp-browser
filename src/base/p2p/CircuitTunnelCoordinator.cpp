@@ -61,6 +61,7 @@ struct CircuitTunnelCoordinator::Impl {
   CircuitRelayAdmissionPolicy admission;
   std::atomic<bool> started{false};
   std::atomic<bool> stopped{true};
+  std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
   amp::MeshRuntime::IoTickId io_tick_id = 0;
 
@@ -390,7 +391,8 @@ struct CircuitTunnelCoordinator::Impl {
   void BeginServe(Tunnel& tunnel) {
     tunnel.phase = CircuitTunnelPhase::ServeDial;
     CircuitAdmitContext admit;
-    admit.service_started = started.load(std::memory_order_acquire);
+    admit.service_started = started.load(std::memory_order_acquire) &&
+                            serve_inbound.load(std::memory_order_acquire);
     admit.stopping = stopped.load(std::memory_order_acquire);
     admit.dialer_peer_id = tunnel.dialer_peer_id;
     admit.op = "bridge";
@@ -536,7 +538,8 @@ struct CircuitTunnelCoordinator::Impl {
                    {
                      std::lock_guard lock(mu);
                      CircuitAdmitContext admit;
-                     admit.service_started = started.load(std::memory_order_acquire);
+                     admit.service_started = started.load(std::memory_order_acquire) &&
+                                            serve_inbound.load(std::memory_order_acquire);
                      admit.stopping = stopped.load(std::memory_order_acquire);
                      admit.dialer_peer_id = remote;
                      admit.op = root.getString("op").value_or("");
@@ -623,6 +626,10 @@ bool CircuitTunnelCoordinator::IsStarted() const {
 void CircuitTunnelCoordinator::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
   std::lock_guard lock(impl_->mu);
   impl_->admission = std::move(policy);
+}
+
+void CircuitTunnelCoordinator::SetServeInbound(const bool serve) {
+  impl_->serve_inbound.store(serve, std::memory_order_release);
 }
 
 void CircuitTunnelCoordinator::AbortInflight() {

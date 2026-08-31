@@ -1,12 +1,14 @@
 #include "feature/messaging/CallStack.h"
 
 #include "base/data/Libp2pRole.h"
+#include "base/mesh/link/AdpMultiaddr.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/MeshHopPolicy.h"
+#include "base/p2p/AmpCircuitHopRegistry.h"
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -195,11 +197,22 @@ void CallStack::WireMediaRelayDeps() {
     dial_registry_->SetSessions(sessions);
   }
   dial_registry_->SetAmpLinks(use_amp_relay && m->Amp() ? &m->Amp()->Links() : nullptr);
-  if (sessions && config().libp2p.capabilities.circuit_relay) {
-    if (!circuit_hop_reach_) {
+  dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
+  const bool use_amp_circuit =
+      use_amp_relay && m->AmpCircuitTunnel() && m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
+  if (config().libp2p.capabilities.circuit_relay) {
+    if (use_amp_circuit) {
+      circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
+          *m->AmpCircuitTunnel(), *m->AmpCircuitHops(), m->Amp()->Links(), [m]() { m->Tick(); },
+          [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); });
+      log().info << "circuit-hop reach=amp";
+    } else if (sessions) {
       circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
           [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); },
           [this](const std::string& peer_key) { return TryEnsureCallMediaReachable(peer_key); });
+      log().info << "circuit-hop reach=libp2p";
+    } else {
+      circuit_hop_reach_.reset();
     }
   } else {
     circuit_hop_reach_.reset();
@@ -416,6 +429,9 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
     return relay_ids;
   }
   PeerSessionManager& sessions = *Runtime()->Sessions();
+  MeshHost* m = mesh();
+  amp::PeerLinkManager* amp_links = (m && m->Amp()) ? &m->Amp()->Links() : nullptr;
+  AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
   std::vector<Contact> contacts;
   if (deps_.contacts) {
     if (auto listed = deps_.contacts->List()) {
@@ -435,12 +451,21 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
     if (hop.multiaddr.empty()) {
       if (auto ma = sessions.PreferredPeerMultiaddr(hop.peer_id)) {
         (void)sessions.RegisterEndpoint(hop.peer_id, *ma);
+        if (amp_links && amp::ParseAdpMultiaddr(*ma)) {
+          (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
+        }
       }
     } else {
       (void)sessions.RegisterEndpoint(hop.peer_id, hop.multiaddr);
+      if (amp_links && amp::ParseAdpMultiaddr(hop.multiaddr)) {
+        (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+      }
     }
     sessions.ClearDialBackoff(hop.peer_id);
-    if (sessions.IsDialable(hop.peer_id)) {
+    const bool libp2p_ok = sessions.IsDialable(hop.peer_id);
+    const bool amp_ok = amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint;
+    const bool hop_ok = amp_hops && amp_hops->HasAny(hop.peer_id);
+    if (libp2p_ok || amp_ok || hop_ok) {
       relay_ids.push_back(hop.peer_id);
     }
   }

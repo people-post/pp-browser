@@ -60,10 +60,12 @@ MediaRelayQuote ParseQuoteResponse(const Object& root) {
 
 struct AmpMediaRelayCoordinator::Impl {
   amp::MeshRuntime* runtime = nullptr;
+  AmpCircuitHopRegistry* circuit_hops = nullptr;
   std::mutex mu;
   MediaRelayAdmissionPolicy admission;
   std::atomic<bool> started{false};
   std::atomic<bool> stopped{true};
+  std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
   amp::MeshRuntime::IoTickId io_tick_id = 0;
 
@@ -107,6 +109,7 @@ struct AmpMediaRelayCoordinator::Impl {
     std::string auth_stub;
     std::string session_token;
     std::shared_ptr<amp::ChannelSession> channel;
+    bool circuit_backed = false;
     MediaRelayAttachSm host_sm;
     QuoteFinished on_quote;
     AttachFinished on_attach;
@@ -440,6 +443,111 @@ struct AmpMediaRelayCoordinator::Impl {
     RebindClientMediaHandlers();
   }
 
+  void BindClientOnExistingSession(Session& session) {
+    if (!session.channel) {
+      return;
+    }
+    const MediaRelaySessionId id = session.id;
+    session.channel->SetFrameHandler([this, id](Roe<std::vector<uint8_t>> frame) {
+      std::lock_guard lock(mu);
+      auto* session = Find(id);
+      if (!session) {
+        return false;
+      }
+      if (!frame) {
+        TearDown(*session, false, false, "media-relay channel failed");
+        return false;
+      }
+      auto root = TryParseObject(BodyToJson(*frame));
+      if (!root) {
+        TearDown(*session, false, false, "invalid media-relay json");
+        return false;
+      }
+      if (session->role == MediaRelayBundleRole::ClientQuote &&
+          session->phase == MediaRelayBundlePhase::WaitQuote) {
+        const auto decision = DecideMediaRelayQuoteAck(
+            {.phase = session->phase, .ack_ok = root->getIf<bool>("ok").value_or(false)});
+        if (decision == MediaRelayQuoteAckDecision::IgnoreStale) {
+          return true;
+        }
+        if (decision == MediaRelayQuoteAckDecision::Fail) {
+          TearDown(*session, false, false, root->getString("error").value_or("quote failed"));
+          return false;
+        }
+        auto quote = ParseQuoteResponse(*root);
+        session->phase = MediaRelayBundlePhase::Closing;
+        FinishQuote(*session, std::move(quote));
+        if (session->channel && !session->circuit_backed) {
+          session->channel->CloseQuiet();
+          sessions.erase(id.value);
+          return false;
+        }
+        sessions.erase(id.value);
+        return true;
+      }
+      if (session->role == MediaRelayBundleRole::ClientAttach) {
+        if (session->phase == MediaRelayBundlePhase::WaitAccept) {
+          if (!root->getIf<bool>("ok").value_or(false)) {
+            TearDown(*session, false, false, root->getString("error").value_or("accept failed"));
+            return false;
+          }
+          session->session_token = root->getString("session_token").value_or("");
+          session->phase = MediaRelayBundlePhase::OutboundAttach;
+          Object attach_req;
+          attach_req.set("v", int64_t{1});
+          attach_req.set("op", "attach");
+          attach_req.set("session_token", session->session_token);
+          attach_req.set("call_id", session->call_id);
+          attach_req.set("auth", session->auth_stub);
+          if (!session->channel->EnqueueOutbound(JsonToBody(DumpJson(attach_req)))) {
+            TearDown(*session, false, false, "failed to send attach");
+            return false;
+          }
+          session->phase = MediaRelayBundlePhase::WaitAttachAck;
+          return true;
+        }
+        if (session->phase == MediaRelayBundlePhase::WaitAttachAck) {
+          const auto decision = DecideMediaRelayAttachAck(
+              {.phase = session->phase, .ack_ok = root->getIf<bool>("ok").value_or(false)});
+          if (decision == MediaRelayAttachAckDecision::IgnoreStale) {
+            return true;
+          }
+          if (decision == MediaRelayAttachAckDecision::Fail) {
+            TearDown(*session, false, false, root->getString("error").value_or("attach failed"));
+            return false;
+          }
+          session->phase = MediaRelayBundlePhase::Attached;
+          MediaRelayAttachResult out;
+          out.ok = true;
+          out.session_token = session->session_token;
+          FinishAttach(*session, std::move(out));
+          AdoptClientChannel(*session);
+          return true;
+        }
+      }
+      return true;
+    });
+  }
+
+  bool TryBeginOnCircuitHop(Session& session, const std::string& outbound_json,
+                            const MediaRelayBundlePhase wait_phase) {
+    if (!circuit_hops) {
+      return false;
+    }
+    auto hop = circuit_hops->Find(session.hop_peer_key, kMediaRelayProtocolId);
+    if (!hop || !hop->session) {
+      return false;
+    }
+    session.channel = hop->session;
+    session.circuit_backed = true;
+    BindClientOnExistingSession(session);
+    session.phase = wait_phase;
+    if (!session.channel->EnqueueOutbound(JsonToBody(outbound_json))) {
+      TearDown(session, false, false, "failed to send on circuit hop");
+    }
+    return true;
+  }
+
   void BindClientChannel(Session& session, amp::PeerLink& link, const uint32_t channel_id) {
     session.channel = std::make_shared<amp::ChannelSession>();
     const MediaRelaySessionId id = session.id;
@@ -474,11 +582,14 @@ struct AmpMediaRelayCoordinator::Impl {
             auto quote = ParseQuoteResponse(*root);
             session->phase = MediaRelayBundlePhase::Closing;
             FinishQuote(*session, std::move(quote));
-            if (session->channel) {
+            // Direct quote channels are one-shot; circuit hops must stay open for attach.
+            if (session->channel && !session->circuit_backed) {
               session->channel->CloseQuiet();
+              sessions.erase(id.value);
+              return false;
             }
             sessions.erase(id.value);
-            return false;
+            return true;
           }
           if (session->role == MediaRelayBundleRole::ClientAttach) {
             if (session->phase == MediaRelayBundlePhase::WaitAccept) {
@@ -541,9 +652,6 @@ struct AmpMediaRelayCoordinator::Impl {
 
   void BeginQuote(Session& session, const MediaRelayQuoteRequest& request) {
     session.phase = MediaRelayBundlePhase::OutboundQuote;
-    const MediaRelaySessionId id = session.id;
-    const std::string hop = session.hop_peer_key;
-    const auto deadline = session.deadline;
     Object req;
     req.set("v", int64_t{1});
     req.set("op", "quote");
@@ -552,6 +660,12 @@ struct AmpMediaRelayCoordinator::Impl {
     req.set("want_up_bps", request.want_up_bps);
     req.set("want_down_bps", request.want_down_bps);
     const std::string json = DumpJson(req);
+    if (TryBeginOnCircuitHop(session, json, MediaRelayBundlePhase::WaitQuote)) {
+      return;
+    }
+    const MediaRelaySessionId id = session.id;
+    const std::string hop = session.hop_peer_key;
+    const auto deadline = session.deadline;
 
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, amp::MediaRelayClientChannelPolicy(),
@@ -601,14 +715,17 @@ struct AmpMediaRelayCoordinator::Impl {
 
   void BeginAttach(Session& session) {
     session.phase = MediaRelayBundlePhase::OutboundAccept;
-    const MediaRelaySessionId id = session.id;
-    const std::string hop = session.hop_peer_key;
-    const auto deadline = session.deadline;
     Object accept_req;
     accept_req.set("v", int64_t{1});
     accept_req.set("op", "accept");
     accept_req.set("quote_id", session.quote_id);
     const std::string json = DumpJson(accept_req);
+    if (TryBeginOnCircuitHop(session, json, MediaRelayBundlePhase::WaitAccept)) {
+      return;
+    }
+    const MediaRelaySessionId id = session.id;
+    const std::string hop = session.hop_peer_key;
+    const auto deadline = session.deadline;
 
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, amp::MediaRelayClientChannelPolicy(),
@@ -708,7 +825,8 @@ struct AmpMediaRelayCoordinator::Impl {
                     const std::string op = root->getString("op").value_or("");
                     std::lock_guard lock(mu);
                     MediaRelayOpAdmitContext admit;
-                    admit.service_started = started.load(std::memory_order_acquire);
+                    admit.service_started = started.load(std::memory_order_acquire) &&
+                                           serve_inbound.load(std::memory_order_acquire);
                     admit.stopping = stopped.load(std::memory_order_acquire);
                     admit.dialer_peer_id = host_sm->remote;
                     admit.op = op;
@@ -899,6 +1017,15 @@ void AmpMediaRelayCoordinator::SetAdmissionPolicy(MediaRelayAdmissionPolicy poli
   impl_->admission = std::move(policy);
 }
 
+void AmpMediaRelayCoordinator::SetServeInbound(const bool serve) {
+  impl_->serve_inbound.store(serve, std::memory_order_release);
+}
+
+void AmpMediaRelayCoordinator::SetCircuitHopRegistry(AmpCircuitHopRegistry* hops) {
+  std::lock_guard lock(impl_->mu);
+  impl_->circuit_hops = hops;
+}
+
 void AmpMediaRelayCoordinator::AbortInflight() {
   impl_->PostIo([impl = impl_.get()] {
     std::lock_guard lock(impl->mu);
@@ -926,7 +1053,8 @@ MediaRelaySessionId AmpMediaRelayCoordinator::StartQuote(const std::string& hop_
     }
     return {};
   }
-  if (!runtime_.Links().GetLinkSnapshot(hop_peer_key).has_endpoint) {
+  if (!runtime_.Links().GetLinkSnapshot(hop_peer_key).has_endpoint &&
+      !(impl_->circuit_hops && impl_->circuit_hops->Find(hop_peer_key, kMediaRelayProtocolId))) {
     if (on_finished) {
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
         on_finished(Error("hop peer endpoint not registered"));
@@ -974,7 +1102,8 @@ MediaRelaySessionId AmpMediaRelayCoordinator::StartAttach(
     }
     return {};
   }
-  if (!runtime_.Links().GetLinkSnapshot(hop_peer_key).has_endpoint) {
+  if (!runtime_.Links().GetLinkSnapshot(hop_peer_key).has_endpoint &&
+      !(impl_->circuit_hops && impl_->circuit_hops->Find(hop_peer_key, kMediaRelayProtocolId))) {
     if (on_finished) {
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
         on_finished(Error("hop peer endpoint not registered"));

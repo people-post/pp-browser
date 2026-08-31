@@ -31,7 +31,7 @@
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
-| D9 | MeshHost/CallStack cutover | **In progress** — chat/history/call-media + SoftMigrate media-relay on Amp; circuit NAT still libp2p |
+| D9 | MeshHost/CallStack cutover | **In progress** — chat/history/call-media + SoftMigrate media-relay + circuit NAT on Amp; call-media circuit Amp deferred |
 
 ## Locked product decisions
 
