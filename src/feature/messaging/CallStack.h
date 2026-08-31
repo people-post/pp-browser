@@ -13,15 +13,8 @@
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "base/p2p/CallMediaAmpTransport.h"
-#include "base/p2p/CallMediaDirectService.h"
-#include "base/p2p/CircuitRelayService.h"
 #include "base/p2p/ICallMediaTransport.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/Libp2pWorker.h"
-#include "base/p2p/MediaRelayService.h"
 #include "base/p2p/MeshHost.h"
-#include "base/p2p/NodeRuntime.h"
-#include "base/p2p/PeerSessionManager.h"
 
 #include <functional>
 #include <memory>
@@ -41,10 +34,9 @@ class SqlitePskSessionStore;
  * Wave 3: call media / session / lifecycle stack extracted from MessagingHub.
  *
  * Owns the call-media unique_ptrs (CSM + media engine/keys/store + libp2p media bridge +
- * CallMediaDirect + media_relay client + dial registry + circuit hop reach + lifecycle) and the
- * call-scoped reachability helpers. The Hub owns `unique_ptr<CallStack>`, forwards
- * `Calls()`/`Lifecycle()`, and injects mesh/config/mDNS glue through CallStackDeps so this stack
- * stays free of NodeRuntime / reachability / admission-policy ownership.
+ * Amp call-media transport + media_relay client + dial registry + circuit hop reach + lifecycle)
+ * and the call-scoped reachability helpers. The Hub owns `unique_ptr<CallStack>`, forwards
+ * `Calls()`/`Lifecycle()`, and injects mesh/config/mDNS glue through CallStackDeps.
  *
  * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
  */
@@ -76,11 +68,11 @@ public:
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
   /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + relay deps. */
   void BuildSessions(const CallStackDeps& deps);
-  /** Phase B (mesh up): create/start call-media transport (Amp or libp2p) + WireMediaRelayDeps. */
+  /** Phase B (mesh up): create/start Amp call-media transport + WireMediaRelayDeps. */
   void OnMeshServicesStarted();
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
-  /** Teardown after mesh Stop: reset libp2p media bridge / call-media transport / dial registry. */
+  /** Teardown after mesh Stop: reset media bridge / call-media transport / dial registry. */
   void FinishMeshStop();
   /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
   void ResetSessions();
@@ -113,10 +105,6 @@ private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
 
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
-  NodeRuntime* Runtime() const;
-  PeerSessionManager* Sessions() const;
-  MediaRelayService* MediaRelay() const;
-  CircuitRelayService* CircuitRelay() const;
   const AppConfig& config() const;
 
   CallStackDeps deps_;
@@ -131,8 +119,6 @@ private:
   std::unique_ptr<IMediaRelayClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
-  /** Exactly one of these is set when mesh is up ([A020] single call-media entry). */
-  std::unique_ptr<CallMediaDirectService> call_media_direct_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   /** Lifecycle-driven N025 desire (mirrors old MessagingHub::ephemeral_listen_desired_). */
   bool ephemeral_listen_desired_ = false;

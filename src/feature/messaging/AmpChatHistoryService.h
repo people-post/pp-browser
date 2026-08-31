@@ -6,7 +6,6 @@
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
-#include "feature/messaging/Libp2pChatHistoryService.h"
 
 #include <functional>
 #include <memory>

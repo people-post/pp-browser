@@ -22,6 +22,5 @@ target_link_libraries(pp_feature INTERFACE
   ${PP_FEATURE_MODULE_LIBS}
   pp_base_render
   RmlUi::Core
-  p2p
   CURL::libcurl
   Threads::Threads)

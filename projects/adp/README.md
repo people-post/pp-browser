@@ -31,9 +31,10 @@
 | D1–D6 | Session, channel, link, chat, call-media | **Done** (parallel stacks; product still libp2p) |
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
-| D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
+| D8 | ch0 capability exchange + addr ingest | **Done** (dial-back + UPnP UDP chrome landed) |
 | D9 | MeshHost/CallStack cutover | **Done** through step 7 — Amp owns mesh when stack starts; Identify/TCP listen skipped; dogfood deleted |
 | D10 | Clean TCP mesh drop | **Done** — Amp hard-require; no product Host; LAN mDNS/PreferLocal Amp-only; TCP compose tests deleted |
+| A017 | libp2p shrink (PeerId only) | **In progress** — product unlinked from Host; tree delete next |
 
 ## Locked product decisions
 

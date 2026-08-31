@@ -1,35 +1,21 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
-#include "base/net/ServiceClients.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/PeerSessionManager.h"
-
-#include <atomic>
-#include <functional>
-#include <memory>
-#include <string>
+#include "feature/messaging/IDirectMessageClient.h"
 #include "common/PbrCompat.h"
+
+#include <memory>
 
 namespace pbr {
 
-inline constexpr const char* kDirectChatProtocolId = "/pp-browser/chat/1.0.0";
-
-/** Direct push of RelayEnvelope over libp2p. */
-class IDirectMessageClient {
-public:
-  virtual ~IDirectMessageClient() = default;
-  virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
-  virtual Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) = 0;
-};
+class Libp2pHost;
+class PeerSessionManager;
 
 /**
- * `/pp-browser/chat/1.0.0` — one short stream per message (length-prefixed JSON RelayEnvelope).
- * Inbound envelopes are delivered via OnInboundEnvelope.
+ * Legacy TCP direct-chat. Product path is AmpDirectChatService (D10/A017).
  */
 class Libp2pDirectChatService : public IDirectMessageClient {
 public:
-  using InboundHandler = std::function<void(RelayEnvelope envelope)>;
+  using InboundHandler = IDirectMessageClient::InboundHandler;
 
   Libp2pDirectChatService(Libp2pHost& host, PeerSessionManager& sessions);
   ~Libp2pDirectChatService() override;
@@ -39,9 +25,7 @@ public:
 
   void Start();
   void Stop();
-
   void SetInboundHandler(InboundHandler handler);
-
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 

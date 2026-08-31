@@ -79,7 +79,6 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_base_render
   pp_base_p2p
   RmlUi::Core
-  p2p
   CURL::libcurl
   Threads::Threads
 )

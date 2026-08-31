@@ -25,12 +25,12 @@ Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects
 
 **AMP** ([`projects/adp`](../../projects/adp/)) is the only product underlay when `enable_amp_stack` is on: UDP + MSH + channels; ch0 replaces Identify; Amp UDP accept is always on. MeshHost does **not** start TCP listen, Identify, DialBack, or libp2p circuit/media-relay hosting.
 
-**LAN keep:** mDNS TXT `amp_udp=`, PreferLocal / invite Amp multiaddrs (`BuildAmpLanAdvertisedAddrs`), contact/ch0 ADP addrs. **WAN inbound chrome** (dial-back / UPnP coach) deferred until Amp dial-back (D8) — Me→Network Inbound may stay Unknown.
+**LAN keep:** mDNS TXT `amp_udp=`, PreferLocal / invite Amp multiaddrs (`BuildAmpLanAdvertisedAddrs`), contact/ch0 ADP addrs. **WAN inbound chrome:** Amp dial-back (D8) + optional UPnP UDP; needs ADP bootstrap peers for seed dial.
 
-The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) remains for PeerId crypto (and idle TCP L4 sources pending deletion). Mesh work continues to deepen:
+The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still in-tree, but product binaries link **PeerId/crypto helpers only** (`p2p_peer_id`, `p2p_wire` — [A017](../../projects/adp/DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)). Idle Host/stream sources are unlinked pending delete. Mesh work continues to deepen:
 
 - Peer discovery and dialability (ch0 / mDNS `amp_udp`, contacts, bootstrap)
-- Reachability (Amp UDP accept, circuit nested Session, SoftMigrate; dial-back later)
+- Reachability (Amp UDP accept, circuit nested Session, SoftMigrate, Amp dial-back)
 - Routing and transmission (L3 channels, FRAG/QoS, budgets)
 - Price incentives (quotes, ceilings, volunteer → paid regulation)
 

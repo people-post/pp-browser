@@ -44,37 +44,41 @@ pp_browser_apply_warnings(pp-node)
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
-add_executable(pp-node-probe
-  probe/main.cpp
-)
-target_include_directories(pp-node-probe PRIVATE
-  ${CMAKE_SOURCE_DIR}/src
-)
-target_link_libraries(pp-node-probe PRIVATE
+# Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
+set(_pp_probe_libs
   pp_base_p2p
+  pp_base_mesh_link
+  pp_base_crypto
+  pp_base_adp
   pp_common
   Threads::Threads
+  sodium
 )
 if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp-node-probe PRIVATE OpenSSL::Crypto)
+  list(APPEND _pp_probe_libs OpenSSL::Crypto)
 endif()
-pp_browser_apply_warnings(pp-node-probe)
 
-add_executable(pp-call-probe
-  call_probe/main.cpp
-)
-target_include_directories(pp-call-probe PRIVATE
-  ${CMAKE_SOURCE_DIR}/src
-)
-target_link_libraries(pp-call-probe PRIVATE
-  pp_base_p2p
-  pp_common
-  Threads::Threads
-)
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp-call-probe PRIVATE OpenSSL::Crypto)
+add_executable(pp-node-probe probe/main.cpp)
+target_include_directories(pp-node-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp-node-probe PRIVATE ${_pp_probe_libs})
+pp_browser_apply_warnings(pp-node-probe)
+install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
+
+# call_probe needs AmpDirectChatService (--with-chat); skip in headless (no messaging).
+if(TARGET pp_feature_messaging OR TARGET pp_base_messaging)
+  add_executable(pp-call-probe call_probe/main.cpp)
+  target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  target_link_libraries(pp-call-probe PRIVATE ${_pp_probe_libs})
+  if(TARGET pp_feature_messaging)
+    target_link_libraries(pp-call-probe PRIVATE pp_feature_messaging)
+  else()
+    target_sources(pp-call-probe PRIVATE
+      ${CMAKE_SOURCE_DIR}/src/feature/messaging/AmpDirectChatService.cpp)
+    target_link_libraries(pp-call-probe PRIVATE pp_base_messaging)
+  endif()
+  pp_browser_apply_warnings(pp-call-probe)
+  install(TARGETS pp-call-probe RUNTIME DESTINATION bin)
 endif()
-pp_browser_apply_warnings(pp-call-probe)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test

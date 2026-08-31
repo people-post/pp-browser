@@ -17,9 +17,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     GroupInviteGate.cpp
     GroupMembershipService.cpp
     InboxController.cpp
-    Libp2pChatHistoryService.cpp
-    Libp2pChatBlobService.cpp
-    Libp2pDirectChatService.cpp
     AmpDirectChatService.cpp
     AmpChatHistoryService.cpp
     AmpChatBlobService.cpp
@@ -54,7 +51,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime
-    p2p
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

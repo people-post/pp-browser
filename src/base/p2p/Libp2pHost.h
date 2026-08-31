@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/p2p/Libp2pHostConfig.h"
 #include "common/Error.h"
 #include "common/WorkerPool.h"
 
@@ -33,16 +34,7 @@ class Multiaddress;
 
 namespace pbr {
 
-struct Libp2pHostConfig {
-  std::string listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
-  /** When false, start host for outbound dials only (Client role). */
-  bool listen_enabled = true;
-  /** Optional app device ML-DSA-65 identity (4032-byte private + 1952-byte public). When unset, host generates one. */
-  std::optional<std::vector<uint8_t>> device_ml_dsa_private_key;
-  std::optional<std::vector<uint8_t>> device_ml_dsa_public_key;
-};
-
-/** Shared libp2p Host (Yamux + Noise over TCP). Owned by MessagingHub. */
+/** Shared libp2p Host (Yamux + Noise over TCP). Legacy; product mesh is Amp (A017). */
 class Libp2pHost {
 public:
   Libp2pHost();

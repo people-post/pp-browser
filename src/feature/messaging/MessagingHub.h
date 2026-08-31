@@ -30,16 +30,11 @@
 #include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/DialBackService.h"
-#include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/CircuitRelayTypes.h"
 #include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/MediaRelayService.h"
 #include "base/p2p/Reachability.h"
 #include "base/p2p/ReachabilityService.h"
 #include "base/p2p/MeshHost.h"
-#include "base/p2p/NodeRuntime.h"
-#include "base/p2p/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
 
 #include <cstdint>
@@ -58,6 +53,9 @@ class ProfileSecretsService;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
+class Libp2pHost;
+class PeerSessionManager;
+class NodeRuntime;
 
 /**
  * App-only messaging composition root (also known as MessagingCore).
@@ -65,10 +63,9 @@ class SqlitePskSessionStore;
  * Ownership planes:
  * - **MessagingCore (this class):** stores, HTTP Brief clients, inbox/P2P/groups/router,
  *   LAN mDNS, policy timers, N025 ephemeral-listen *execution* glue.
- * - **MeshHost (`mesh_`):** shared with headless `pp-node` — NodeRuntime + dial-back +
- *   circuit/media relay + reachability (`base/p2p/MeshHost`).
- * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, libp2p media bridge,
- *   CallMediaDirect, dial/hop helpers.
+ * - **MeshHost (`mesh_`):** shared with headless `pp-node` — Amp stack + L4 + reachability.
+ * - **CallStack (`call_stack_`):** call media, CSM, lifecycle, Amp media bridge,
+ *   dial/hop helpers.
  *
  * UI/tools talk through MessagingFacade / CallUiBackend / ports — not Hub accessors.
  * Profile secrets + identity DEK registration remain injected (`BindSecrets`).
@@ -131,7 +128,7 @@ public:
 
   /**
    * Abort in-flight call-media Connect before joining the worker pool / destroying the hub.
-   * Safe to call multiple times; no-op if libp2p media is not up.
+   * Safe to call multiple times; no-op if media is not up.
    */
   void AbortCallMediaForShutdown();
 
@@ -140,10 +137,10 @@ public:
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsService& secrets);
 
-  /** libp2p / P2P stack ready after profile unlock + identity load. */
+  /** Amp / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
 
-  /** Requires ProfileSecretsService unlocked; loads identity and starts libp2p. */
+  /** Requires ProfileSecretsService unlocked; loads identity and starts Amp mesh. */
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
@@ -171,10 +168,11 @@ public:
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
-  // Thin forward for internal call wiring; mesh UX should use Mesh()->Host().
+  /** Always null after A017 (TCP Host retired). Prefer Mesh()->Amp(). */
   Libp2pHost* Libp2p();
+  /** Always null after A017. */
   PeerSessionManager* Sessions() const;
-  /** Last libp2p start failure (empty if ok). For Network settings UX. */
+  /** Last mesh start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
   /** Desktop Node "Help the network" posture (node_enabled → Libp2pRole::Node). */
@@ -216,23 +214,15 @@ public:
   void Apply(const NotificationPrefs& prefs);
 
   /**
-   * Shared libp2p mesh composition root (NodeRuntime + dial-back + relays +
-   * reachability). Mesh UX (status chrome, reachability, relay load) should read
-   * through here rather than the thin hub forwards below. Null before the stack
-   * is up; callers must degrade gracefully.
+   * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
+   * read through here. Null before the stack is up; callers must degrade gracefully.
    */
   MeshHost* Mesh() { return mesh_.get(); }
   const MeshHost* Mesh() const { return mesh_.get(); }
 
-  // Thin mesh forwards kept for internal call/lifecycle wiring; prefer Mesh()
-  // for mesh UX so the public hub surface stays narrow.
-  DialBackService* DialBack() { return mesh_ ? mesh_->DialBack() : nullptr; }
-  CircuitRelayService* CircuitRelay() { return mesh_ ? mesh_->CircuitRelay() : nullptr; }
-  MediaRelayService* MediaRelay() { return mesh_ ? mesh_->MediaRelay() : nullptr; }
-
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
-   * Registers hop endpoints as needed; returns first successful bridge.
+   * Registers hop endpoints as needed; returns first successful Amp bridge.
    */
   Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
                                                               const std::string& target_multiaddr,
@@ -252,7 +242,7 @@ public:
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
   void SetOnCallWake(std::function<void()> callback);
 
-  /** L4: PeerId-only OK when stack address book has a dial path (or relay / pasted ma). */
+  /** L4: PeerId-only OK when Amp address book has a dial path (or relay / pasted ma). */
   bool IsContactReachable(const Contact& contact) const;
 
 private:
@@ -261,9 +251,9 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
-  /** App-only mesh glue (CallMediaDirect / LAN mDNS / policies) after MeshHost start. */
+  /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
-  /** Shared libp2p mesh host (NodeRuntime + dial-back + relays + reachability). */
+  /** Always null after A017. */
   NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
   void PublishNodeAdvertisedAddrs();

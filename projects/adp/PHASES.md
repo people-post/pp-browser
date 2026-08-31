@@ -112,10 +112,11 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D8 — Reachability
 
-- [ ] Listen policy, mDNS on ADP multiaddrs (follow-on; not a MeshHost-Amp blocker)
-- [ ] AMP dial-back protocol (follow-on; libp2p `DialBackService` still production until D9 step 6)
 - [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane))
 - [x] Ingest remote ADP listen addrs under authenticated PeerId (`PreferredMultiaddr` / peer-id dial)
+- [x] AMP dial-back protocol (`AmpDialBackService` / `/pp-browser/dial-back/1.0.0`) + Me→Network / pp-node probe
+- [x] UPnP **UDP** mapping attempt during reachability probe (`TryUpnpUdpPortMapping`)
+- [ ] Listen policy polish / mDNS-only edge cases (follow-on)
 
 ### D9 — Retire legacy underlay
 
@@ -131,7 +132,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Amp chat-blob single entry (step 5e)
 - [x] Stop Identify / TCP mesh listen when Amp owns mesh (step 6)
 - [x] Delete dogfood + TCP-hello Opus; update NETWORKING / LIBP2P_STREAMS / CALLS (step 7)
-- [ ] Optional Amp dial-back (D8) for reachability chrome
+- [x] Amp dial-back (D8) for reachability chrome
 
 ### D10 — Clean TCP mesh drop
 
@@ -140,7 +141,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Product composition Amp-only (chat/history/blob/call-media/SoftMigrate); collapse libp2p L4 branches
 - [x] No product `Libp2pHost` / `PeerSessionManager` when Amp owns mesh; N025 TCP ephemeral retired (Amp accept + mDNS)
 - [x] Delete TCP-only compose/unit tests (Amp twins retained); DialBack/Identify chrome deferred
-- [ ] Further delete unused TCP L4 `.cpp` sources / full `src/lib/libp2p` transport shrink ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only))
+- [x] **A017 wave:** product/`pp_base_p2p` unlink Yamux/Noise Host (`p2p`); MeshHost Amp-only; PeerId via `p2p_peer_id`/`p2p_wire`; Host-only tests + probes skipped
+- [ ] Delete unused TCP L4 `.cpp` + shrink `src/lib/libp2p` transport tree ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only))
 
 ---
 

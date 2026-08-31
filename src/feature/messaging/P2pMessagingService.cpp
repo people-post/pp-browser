@@ -5,8 +5,6 @@
 #include "feature/messaging/AmpChatBlobService.h"
 #include "feature/messaging/AmpChatHistoryService.h"
 #include "feature/messaging/AmpDirectChatService.h"
-#include "feature/messaging/Libp2pChatHistoryService.h"
-#include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 
@@ -38,7 +36,6 @@
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
-#include "base/p2p/Libp2pWorker.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -116,14 +113,12 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
-                                         Libp2pHost* libp2p_host, PeerSessionManager* peer_sessions,
                                          amp::PeerLinkManager* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), libp2p_host_(libp2p_host),
-      peer_sessions_(peer_sessions), amp_links_(amp_links), epoch_coordinator_(store),
-      psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
+      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
+      epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
@@ -258,13 +253,8 @@ void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_rel
   const bool is_adp = static_cast<bool>(amp::ParseAdpMultiaddr(multiaddr));
   if (amp_links_ && is_adp) {
     (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
-  }
-  if (peer_sessions_ && !is_adp) {
-    (void)peer_sessions_->RegisterEndpoint(peer_relay_user_id, multiaddr);
-  } else if (!amp_links_ && !peer_sessions_) {
-    if (auto* lib_history = dynamic_cast<Libp2pChatHistoryService*>(peer_history_.get())) {
-      lib_history->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
-    } else if (auto* amp_history = dynamic_cast<AmpChatHistoryService*>(peer_history_.get())) {
+  } else if (amp_links_) {
+    if (auto* amp_history = dynamic_cast<AmpChatHistoryService*>(peer_history_.get())) {
       amp_history->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
     }
   }
@@ -293,14 +283,6 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
     }
   }
   for (const std::string& peer_id : PeerIdsFromContact(contact)) {
-    if (peer_sessions_) {
-      if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
-        register_ma(peer_id, *ma);
-        if (target.peer_identity_value != peer_id) {
-          register_ma(target.peer_identity_value, *ma);
-        }
-      }
-    }
     if (amp_links_) {
       if (auto ma = amp_links_->PreferredMultiaddr(peer_id)) {
         register_ma(peer_id, *ma);
@@ -426,13 +408,11 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
 }
 
 void P2pMessagingService::TickLibp2p() {
-  if (peer_sessions_) {
-    peer_sessions_->Tick();
-  }
+  // Amp mesh pump is MeshHost::Tick via MessagingHub; no PeerSessionManager.
 }
 
 void P2pMessagingService::WarmPeerForThread(const std::string& thread_id) {
-  if (!peer_sessions_) {
+  if (!amp_links_) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -450,13 +430,9 @@ void P2pMessagingService::WarmPeerForThread(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  peer_sessions_->ClearAllWarm();
-  if (!peer_sessions_->ResolvePeerInfo(peer)) {
-    return;
-  }
-  peer_sessions_->MarkWarm(peer);
-  if (peer_sessions_->IsDialable(peer)) {
-    peer_sessions_->EnsureConnection(peer);
+  amp_links_->MarkWarm(peer);
+  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
+    amp_links_->EnsureAssociation(peer, [](Roe<void>) {});
   }
 }
 
@@ -497,100 +473,76 @@ ThreadPeerLinkView P2pMessagingService::GetThreadPeerLink(const std::string& thr
     }
   }
 
-  if (!peer_sessions_ || peer.empty()) {
-    view.phase = PeerLinkPhase::Unavailable;
-    if (!peer.empty() && view.relay_available) {
-      view.status_label = "Via relay";
-    } else if (peer.empty()) {
-      view.status_label = "Can't connect";
-      view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
-      view.show_banner = true;
-    } else if (peer_sessions_->IsDialable(peer)) {
+  if (peer.empty()) {
+    view.phase = amp::PeerLinkPhase::Unavailable;
+    view.status_label = "Can't connect";
+    view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
+    view.show_banner = true;
+    return view;
+  }
+
+  if (amp_links_) {
+    const amp::PeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+    view.phase = snap.phase;
+    view.has_direct_endpoint = snap.has_endpoint;
+    view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
+    switch (snap.phase) {
+    case amp::PeerLinkPhase::Connected:
       view.status_label = "Direct";
-      view.has_direct_endpoint = true;
-      view.phase = PeerLinkPhase::Idle;
-    } else {
-      view.status_label = "Offline";
-      view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
+      break;
+    case amp::PeerLinkPhase::Dialing:
+    case amp::PeerLinkPhase::Handshaking:
+      view.status_label = "Connecting…";
+      view.banner_message = "Trying a direct link…";
       view.show_banner = true;
+      break;
+    case amp::PeerLinkPhase::Backoff:
+      view.status_label = view.backoff_seconds > 0
+                              ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
+                              : "Retrying soon";
+      view.banner_message = snap.detail.empty()
+                                ? "Peer didn't answer — they may be offline or the address may be wrong."
+                                : snap.detail;
+      if (view.relay_available) {
+        view.banner_message += " Messages can still go via relay.";
+      }
+      view.show_banner = true;
+      view.show_retry = true;
+      break;
+    case amp::PeerLinkPhase::Idle:
+      view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
+      break;
+    case amp::PeerLinkPhase::Unavailable:
+    default:
+      if (view.relay_available) {
+        view.status_label = "Via relay";
+      } else if (snap.has_endpoint) {
+        view.status_label = "Offline";
+        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
+        view.show_banner = true;
+      } else {
+        view.status_label = "Can't connect";
+        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
+        view.show_banner = true;
+      }
+      break;
     }
     return view;
   }
 
-  const PeerLinkSnapshot snap = peer_sessions_->GetLinkSnapshot(peer);
-  view.phase = snap.phase;
-  view.has_direct_endpoint = snap.has_endpoint;
-  view.backoff_seconds =
-      static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
-
-  switch (snap.phase) {
-  case PeerLinkPhase::Connected:
-    view.status_label = "Direct";
-    {
-      std::lock_guard lock(link_ux_mutex_);
-      if (relay_fallback_notice_thread_id_ == thread_id) {
-        relay_fallback_notice_thread_id_.clear();
-        relay_fallback_notice_text_.clear();
-      }
-    }
-    break;
-  case PeerLinkPhase::Dialing:
-    view.status_label = "Connecting…";
-    view.banner_message = "Trying a direct link…";
+  view.phase = amp::PeerLinkPhase::Unavailable;
+  if (view.relay_available) {
+    view.status_label = "Via relay";
+  } else {
+    view.status_label = "Offline";
+    view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
     view.show_banner = true;
-    break;
-  case PeerLinkPhase::Backoff: {
-    view.status_label = view.backoff_seconds > 0
-                            ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
-                            : "Retrying soon";
-    view.banner_message = PeerDialErrorUserCopy(snap.detail);
-    if (view.banner_message.empty()) {
-      view.banner_message = "Peer didn't answer — they may be offline or the address may be wrong.";
-    }
-    if (view.relay_available) {
-      view.banner_message += " Messages can still go via relay.";
-    }
-    view.show_banner = true;
-    view.show_retry = true;
-    break;
-  }
-  case PeerLinkPhase::Idle:
-    view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
-    break;
-  case PeerLinkPhase::Unavailable:
-  default:
-    if (!snap.host_running) {
-      view.status_label = "Direct off";
-      view.banner_message = "Direct messaging is off — check Me → Network.";
-      view.show_banner = true;
-    } else if (view.relay_available) {
-      view.status_label = "Via relay";
-    } else {
-      view.status_label = "Can't connect";
-      view.banner_message = PeerDialErrorUserCopy(snap.detail);
-      if (view.banner_message.empty()) {
-        view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
-      }
-      view.show_banner = true;
-    }
-    break;
-  }
-
-  {
-    std::lock_guard lock(link_ux_mutex_);
-    if (relay_fallback_notice_thread_id_ == thread_id && !relay_fallback_notice_text_.empty()) {
-      // Prefer a short connected/via-relay status; keep banner for the notice once.
-      if (snap.phase != PeerLinkPhase::Dialing && snap.phase != PeerLinkPhase::Backoff) {
-        view.banner_message = relay_fallback_notice_text_;
-        view.show_banner = true;
-      }
-    }
   }
   return view;
 }
 
 void P2pMessagingService::RetryPeerDial(const std::string& thread_id) {
-  if (!peer_sessions_) {
+  if (!amp_links_) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -608,10 +560,10 @@ void P2pMessagingService::RetryPeerDial(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  peer_sessions_->ClearDialBackoff(peer);
-  peer_sessions_->ClearAllWarm();
-  peer_sessions_->MarkWarm(peer);
-  peer_sessions_->EnsureConnection(peer);
+  amp_links_->MarkWarm(peer);
+  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
+    amp_links_->EnsureAssociation(peer, [](Roe<void>) {});
+  }
 }
 
 bool P2pMessagingService::IsE2ePrivateThread(const std::string& thread_id) const {
@@ -933,8 +885,37 @@ void P2pMessagingService::NotifyDeliveryIssue(const Thread& thread, const std::s
     return;
   }
   const bool rate_limited = error_message.find("rate limit") != std::string::npos;
-  std::string notice = PeerDialErrorUserCopy(error_message);
-  if (notice.empty()) {
+  std::string notice;
+  if (error_message.empty()) {
+    notice = error_message;
+  } else if (error_message.find("host not running") != std::string::npos) {
+    notice = "Direct messaging is off — check Me → Network.";
+  } else if (error_message.find("Empty peer endpoint") != std::string::npos ||
+             error_message.find("Invalid multiaddr") != std::string::npos ||
+             error_message.find("missing /p2p/") != std::string::npos ||
+             error_message.find("Invalid PeerId") != std::string::npos) {
+    notice = "Peer address looks wrong — edit the contact multiaddr.";
+  } else if (error_message.find("not registered") != std::string::npos ||
+             error_message.find("missing PeerInfo") != std::string::npos ||
+             error_message.find("Peer-direct endpoint") != std::string::npos) {
+    notice = "No usable peer address — add a dialable multiaddr on the contact.";
+  } else if (error_message.find("backoff") != std::string::npos) {
+    notice = "Waiting before retrying the peer connection.";
+  } else if (error_message.find("Too many concurrent") != std::string::npos) {
+    notice = "Busy connecting to other peers — try again shortly.";
+  } else if (error_message.find("dial failed") != std::string::npos ||
+             error_message.find("timed out") != std::string::npos ||
+             error_message.find("timeout") != std::string::npos) {
+    notice = "Peer didn't answer — they may be offline or the address may be wrong.";
+  } else if (error_message.find("stream open failed") != std::string::npos) {
+    notice = "Reached the peer but chat handshake failed.";
+  } else if (error_message.find("Failed to send") != std::string::npos ||
+             error_message.find("Failed to read") != std::string::npos ||
+             error_message.find("ack") != std::string::npos) {
+    notice = "Direct send didn't confirm — will use relay if available.";
+  } else if (error_message.find("Relay client not configured") != std::string::npos) {
+    notice = "Couldn't deliver — relay isn't configured.";
+  } else {
     notice = error_message;
   }
   if (rate_limited) {
@@ -1268,9 +1249,6 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     bool tried_direct = false;
     if (!prefer_relay && direct_chat_ && direct_chat_->IsPeerReachable(peer_relay_id)) {
       tried_direct = true;
-      if (peer_sessions_) {
-        peer_sessions_->MarkWarm(peer_relay_id);
-      }
       const auto direct = direct_chat_->SendEnvelope(peer_relay_id, envelope);
       if (direct) {
         ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
@@ -1618,9 +1596,6 @@ void P2pMessagingService::RetryFailedOutbound() {
       }
       if (item.envelope.recipient_contact_id && direct_chat_ &&
           direct_chat_->IsPeerReachable(*item.envelope.recipient_contact_id)) {
-        if (peer_sessions_) {
-          peer_sessions_->MarkWarm(*item.envelope.recipient_contact_id);
-        }
         if (direct_chat_->SendEnvelope(*item.envelope.recipient_contact_id, item.envelope)) {
           ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
           continue;

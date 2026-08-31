@@ -19,8 +19,9 @@
 
 ## Transitional (legacy TCP path)
 
-- **Deleted in D9/D10:** Opus TCP-hello dogfood; product TCP listen / Identify / DialBack; silent `Libp2pHost` when Amp owns mesh
-- Idle TCP L4 sources (`CallMediaDirectService`, `CircuitRelayService`, …) may remain linked for shared types until header split / A017 shrink
+- **Unlinked from product (A017 wave):** `pp_base_p2p` / messaging / `pp-browser` / `pp-node` no longer link the Yamux/Noise `p2p` Host library — PeerId via `p2p_peer_id` + `p2p_wire` only
+- **Idle sources remain on disk** (`Libp2pHost.cpp`, `PeerSessionManager.cpp`, DialBack/Circuit/MediaRelay TCP L4, Libp2p chat*) for eventual delete; Host-only unit tests deleted; **probes restored on Amp**
+- **Next A017:** delete unlinked `.cpp` + shrink `src/lib/libp2p` transport tree
 
 ## Landed (L2 — D1)
 
@@ -172,11 +173,19 @@
 - **pp-node / status:** Amp listen MA + Amp PeerId; dial-back probe deferred (reachability Unknown until D8)
 - **Tests:** deleted TCP compose/direct/dial-back suites; Amp twins + logic tests retained
 
+## Landed (D8 — Amp dial-back + reachability chrome)
+
+- **`AmpDialBackService`** — same JSON probe as TCP DialBack over Amp ChannelSession; MeshHost owns + advertises `/pp-browser/dial-back/1.0.0`
+- **`ReachabilityService`** restored — seed dial (ADP bootstrap) + dial-back + optional UPnP UDP; Me→Network / `pp-node --status` / startup probe
+- **`BuildAmpReachabilityProbeTargets`** — public IPv4 + UPnP external as ADP MAs
+- **Probes restored (Amp):** `pp-node-probe` (l1/fanout/cap/soak) + `pp-call-probe` (direct/hop/chat)
+- **Note:** dial-back seed requires ADP bootstrap multiaddrs (`/udp/…/adp/1.0.0/p2p/…`); TCP-only Brief seed leaves status Unknown
+
 ## Next (implementation)
 
-1. **Amp dial-back (D8)** — Me→Network Inbound / UPnP-style coach on ADP listen MAs
-2. **Delete idle TCP L4 sources** still linked for types (`DialBackService`, `CircuitRelayService` impl, `CallMediaDirectService`, Libp2p chat*) once headers are split
-3. **Vendored libp2p Host shrink** ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)) — PeerId/crypto only
+1. **Delete idle TCP L4 sources** still on disk (`DialBackService`, `CircuitRelayService`, `CallMediaDirectService`, Libp2p chat*, `Libp2pHost`/`NodeRuntime`/`PeerSessionManager`) — already **unlinked** from product (A017 wave)
+2. **Vendored libp2p Host tree shrink** ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)) — drop Yamux/Noise/TCP from `src/lib/libp2p` after source delete
+3. **Org ADP bootstrap** — ship Brief seed ADP MA (replace TCP-only default) so Inbound chrome classifies beyond Unknown
 
 ### D9 cutover checklist
 
@@ -186,5 +195,7 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 |------|--------|--------|
 | 1–7 | D9 Amp ownership + TCP listen retire | **Done** |
 | D10 | Hard-require Amp + drop silent Host + LAN Amp advertise | **Done** |
+| D8 | Amp dial-back + UPnP UDP + probes | **Done** |
+| A017 | Product unlink Yamux/Noise Host (`p2p`); PeerId-only link | **In progress** — product/tests build without Host; tree delete next |
 
 See [PHASES.md](PHASES.md) for full ordering.

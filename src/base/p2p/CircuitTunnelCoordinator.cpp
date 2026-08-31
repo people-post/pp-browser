@@ -82,8 +82,8 @@ struct CircuitTunnelCoordinator::Impl {
     std::string relay_peer_key;
     std::string dialer_peer_id;
     std::string resolved_multiaddr;
-    std::shared_ptr<amp::ChannelSession> near;   // client↔relay circuit channel
-    std::shared_ptr<amp::ChannelSession> far;    // relay↔target protocol channel
+    std::shared_ptr<amp::ChannelSession> near_session;   // client↔relay circuit channel
+    std::shared_ptr<amp::ChannelSession> far_session;    // relay↔target protocol channel
     std::shared_ptr<amp::ChannelBridge> bridge;
     FrameHandler on_payload;
     ClosedCallback on_closed;
@@ -183,11 +183,11 @@ struct CircuitTunnelCoordinator::Impl {
       auto bridge = std::move(tunnel.bridge);
       bridge->Stop();
     }
-    if (tunnel.near && !tunnel.near->IsClosed()) {
-      tunnel.near->CloseQuiet();
+    if (tunnel.near_session && !tunnel.near_session->IsClosed()) {
+      tunnel.near_session->CloseQuiet();
     }
-    if (tunnel.far && !tunnel.far->IsClosed()) {
-      tunnel.far->CloseQuiet();
+    if (tunnel.far_session && !tunnel.far_session->IsClosed()) {
+      tunnel.far_session->CloseQuiet();
     }
     if (!tunnel.finished) {
       if (suppress_notify || local_cancel) {
@@ -203,7 +203,7 @@ struct CircuitTunnelCoordinator::Impl {
   }
 
   void ArmBridge(Tunnel& tunnel) {
-    if (!tunnel.near || !tunnel.far) {
+    if (!tunnel.near_session || !tunnel.far_session) {
       TearDown(tunnel, false, false, "circuit-relay bridge missing sessions");
       return;
     }
@@ -211,7 +211,7 @@ struct CircuitTunnelCoordinator::Impl {
     tunnel.bridge = std::make_shared<amp::ChannelBridge>();
     const CircuitTunnelId id = tunnel.id;
     tunnel.bridge->Attach(
-        tunnel.near, tunnel.far, {}, [this, id]() {
+        tunnel.near_session, tunnel.far_session, {}, [this, id]() {
           PostIo([this, id]() {
             std::lock_guard lock(mu);
             if (auto* tunnel = Find(id)) {
@@ -234,15 +234,15 @@ struct CircuitTunnelCoordinator::Impl {
       CircuitTunnelBridgeResult ok;
       ok.ok = true;
       ok.resolved_multiaddr = tunnel.resolved_multiaddr;
-      ok.session = tunnel.near;
+      ok.session = tunnel.near_session;
       Finish(tunnel, std::move(ok));
     }
   }
 
   void BindClientNear(Tunnel& tunnel, amp::PeerLink& link, const uint32_t channel_id) {
-    tunnel.near = std::make_shared<amp::ChannelSession>();
+    tunnel.near_session = std::make_shared<amp::ChannelSession>();
     const CircuitTunnelId id = tunnel.id;
-    tunnel.near->Bind(
+    tunnel.near_session->Bind(
         *link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
         [this, id](Roe<std::vector<uint8_t>> frame) {
           std::lock_guard lock(mu);
@@ -272,14 +272,14 @@ struct CircuitTunnelCoordinator::Impl {
               return false;
             }
             tunnel->resolved_multiaddr = root->getString("resolved_multiaddr").value_or("");
-            // Client does not open far channel — relay splices. Treat near as both ends of local view:
-            // payload handler stays on near; bridge is armed only on relay. Client enters Bridging with
-            // near-only (no ChannelBridge locally).
+            // Client does not open far channel — relay splices. Treat near_session as both ends of local view:
+            // payload handler stays on near_session; bridge is armed only on relay. Client enters Bridging with
+            // near_session only (no ChannelBridge locally).
             tunnel->phase = CircuitTunnelPhase::Bridging;
             CircuitTunnelBridgeResult ok;
             ok.ok = true;
             ok.resolved_multiaddr = tunnel->resolved_multiaddr;
-            ok.session = tunnel->near;
+            ok.session = tunnel->near_session;
             Finish(*tunnel, std::move(ok));
             return true;
           }
@@ -372,7 +372,7 @@ struct CircuitTunnelCoordinator::Impl {
                                     }
                                     BindClientNear(*tunnel, *link, channel_id);
                                     tunnel->phase = CircuitTunnelPhase::WaitAck;
-                                    if (!tunnel->near->EnqueueOutbound(JsonToBody(request_json))) {
+                                    if (!tunnel->near_session->EnqueueOutbound(JsonToBody(request_json))) {
                                       TearDown(*tunnel, false, false,
                                                "failed to send circuit-relay bridge request");
                                     }
@@ -381,15 +381,15 @@ struct CircuitTunnelCoordinator::Impl {
   }
 
   void ContinueServeAfterTargetOpen(Tunnel& tunnel, amp::PeerLink& target_link, const uint32_t channel_id) {
-    tunnel.far = std::make_shared<amp::ChannelSession>();
-    tunnel.far->Bind(*target_link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
+    tunnel.far_session = std::make_shared<amp::ChannelSession>();
+    tunnel.far_session->Bind(*target_link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
                      [](Roe<std::vector<uint8_t>>) { return true; });
 
     Object response;
     response.set("v", int64_t{1});
     response.set("ok", true);
     response.set("resolved_multiaddr", tunnel.resolved_multiaddr);
-    if (!tunnel.near->EnqueueOutbound(JsonToBody(DumpJson(response)))) {
+    if (!tunnel.near_session->EnqueueOutbound(JsonToBody(DumpJson(response)))) {
       TearDown(tunnel, false, false, "failed to ack bridge");
       return;
     }
@@ -415,8 +415,8 @@ struct CircuitTunnelCoordinator::Impl {
       err.set("v", int64_t{1});
       err.set("ok", false);
       err.set("error", message);
-      if (tunnel.near) {
-        tunnel.near->EnqueueOutbound(JsonToBody(DumpJson(err)));
+      if (tunnel.near_session) {
+        tunnel.near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
       }
       TearDown(tunnel, false, false, message);
     };
@@ -453,8 +453,8 @@ struct CircuitTunnelCoordinator::Impl {
           err.set("v", int64_t{1});
           err.set("ok", false);
           err.set("error", assoc.error().message);
-          if (tunnel->near) {
-            tunnel->near->EnqueueOutbound(JsonToBody(DumpJson(err)));
+          if (tunnel->near_session) {
+            tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
           }
           TearDown(*tunnel, false, false, assoc.error().message);
           return;
@@ -476,8 +476,8 @@ struct CircuitTunnelCoordinator::Impl {
                 err.set("v", int64_t{1});
                 err.set("ok", false);
                 err.set("error", channel.error().message);
-                if (tunnel->near) {
-                  tunnel->near->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                if (tunnel->near_session) {
+                  tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
                 }
                 TearDown(*tunnel, false, false, channel.error().message);
                 return;
@@ -500,8 +500,8 @@ struct CircuitTunnelCoordinator::Impl {
                 err.set("v", int64_t{1});
                 err.set("ok", false);
                 err.set("error", "relay target stream timed out");
-                if (tunnel->near) {
-                  tunnel->near->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                if (tunnel->near_session) {
+                  tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
                 }
                 TearDown(*tunnel, false, false, "relay target stream timed out");
                 return;
@@ -521,11 +521,11 @@ struct CircuitTunnelCoordinator::Impl {
     if (stopped.load(std::memory_order_acquire) || !runtime || !link.Mux()) {
       return;
     }
-    auto near = std::make_shared<amp::ChannelSession>();
+    auto near_session = std::make_shared<amp::ChannelSession>();
     auto started_req = std::make_shared<std::atomic<bool>>(false);
     const std::string remote = link.RemotePeerId();
-    near->Bind(*link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
-               [this, near, started_req, remote](Roe<std::vector<uint8_t>> frame) {
+    near_session->Bind(*link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
+               [this, near_session, started_req, remote](Roe<std::vector<uint8_t>> frame) {
                  if (!frame || stopped.load(std::memory_order_acquire)) {
                    return false;
                  }
@@ -538,10 +538,10 @@ struct CircuitTunnelCoordinator::Impl {
                    err.set("v", int64_t{1});
                    err.set("ok", false);
                    err.set("error", "invalid circuit-relay json");
-                   near->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                   near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
                    return false;
                  }
-                 PostIo([this, near, remote, root = *root]() mutable {
+                 PostIo([this, near_session, remote, root = *root]() mutable {
                    CircuitTunnelId id{};
                    {
                      std::lock_guard lock(mu);
@@ -563,8 +563,8 @@ struct CircuitTunnelCoordinator::Impl {
                                             : (decision == CircuitAdmitDecision::RefuseBadOp
                                                    ? "unsupported op"
                                                    : "circuit-relay service not ready"));
-                       near->EnqueueOutbound(JsonToBody(DumpJson(err)));
-                       near->Close();
+                       near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                       near_session->Close();
                        return;
                      }
 
@@ -572,7 +572,7 @@ struct CircuitTunnelCoordinator::Impl {
                      tunnel->id = CircuitTunnelId{next_id.fetch_add(1, std::memory_order_relaxed)};
                      tunnel->role = CircuitTunnelRole::RelayServe;
                      tunnel->dialer_peer_id = remote;
-                     tunnel->near = near;
+                     tunnel->near_session = near_session;
                      tunnel->target.target_peer_id = root.getString("target_peer_id").value_or("");
                      tunnel->target.target_multiaddr = root.getString("target_multiaddr").value_or("");
                      tunnel->target.target_protocol = root.getString("target_protocol").value_or("");
@@ -743,7 +743,7 @@ bool CircuitTunnelCoordinator::IsTunnelActive(const CircuitTunnelId id) const {
 std::shared_ptr<amp::ChannelSession> CircuitTunnelCoordinator::Session(const CircuitTunnelId id) const {
   std::lock_guard lock(impl_->mu);
   if (const auto* tunnel = impl_->Find(id)) {
-    return tunnel->near;
+    return tunnel->near_session;
   }
   return nullptr;
 }

@@ -9,10 +9,10 @@
 #include "base/people/IdentityStore.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/p2p/AmpCircuitHopRegistry.h"
+#include "base/p2p/Reachability.h"
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "base/p2p/Reachability.h"
 
 #include <vector>
 #include "common/PbrCompat.h"
@@ -25,26 +25,6 @@ CallStack::CallStack() {
 
 CallStack::~CallStack() {
   Shutdown();
-}
-
-NodeRuntime* CallStack::Runtime() const {
-  MeshHost* m = mesh();
-  return m ? m->Runtime() : nullptr;
-}
-
-PeerSessionManager* CallStack::Sessions() const {
-  NodeRuntime* rt = Runtime();
-  return rt ? rt->Sessions() : nullptr;
-}
-
-MediaRelayService* CallStack::MediaRelay() const {
-  MeshHost* m = mesh();
-  return m ? m->MediaRelay() : nullptr;
-}
-
-CircuitRelayService* CallStack::CircuitRelay() const {
-  MeshHost* m = mesh();
-  return m ? m->CircuitRelay() : nullptr;
 }
 
 const AppConfig& CallStack::config() const {
@@ -93,12 +73,6 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     if (MeshHost* m = mesh(); m && m->Amp()) {
       return m->Amp()->LocalPeerId();
     }
-    if (!Runtime() || !Runtime()->Host()) {
-      return {};
-    }
-    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-      return *local;
-    }
     return {};
   });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
@@ -124,7 +98,6 @@ void CallStack::OnMeshServicesStarted() {
   if (!m || !m->IsRunning()) {
     return;
   }
-  call_media_direct_.reset();
   call_media_amp_.reset();
 
   if (!m->Amp()) {
@@ -143,12 +116,7 @@ void CallStack::OnMeshServicesStarted() {
   WireMediaRelayDeps();
 }
 
-ICallMediaTransport* CallStack::CallMediaTransport() {
-  if (call_media_amp_) {
-    return call_media_amp_.get();
-  }
-  return call_media_direct_.get();
-}
+ICallMediaTransport* CallStack::CallMediaTransport() { return call_media_amp_.get(); }
 
 bool CallStack::HasActiveLocalCall() {
   if (call_lifecycle_ && call_lifecycle_->WantEphemeralListen()) {
@@ -185,13 +153,10 @@ void CallStack::WireMediaRelayDeps() {
     media_relay_client_.reset();
     log().warning << "media-relay transport unavailable (Amp required)";
   }
-  PeerSessionManager* sessions = Runtime() ? Runtime()->Sessions() : nullptr;
-  // Keep dial registry + libp2p media bridge stable across N025 listen sync — recreating them
+  // Keep dial registry + media bridge stable across N025 listen sync — recreating them
   // mid-call drops pending answerer state and dangling dial pointers.
   if (!dial_registry_) {
-    dial_registry_ = std::make_unique<PeerSessionDialRegistry>(sessions);
-  } else {
-    dial_registry_->SetSessions(sessions);
+    dial_registry_ = std::make_unique<PeerSessionDialRegistry>();
   }
   dial_registry_->SetAmpLinks(use_amp_relay && m->Amp() ? &m->Amp()->Links() : nullptr);
   dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
@@ -224,8 +189,6 @@ void CallStack::WireMediaRelayDeps() {
                              m->AmpMediaRelayCoord()->IsStarted();
   if (m && !m->AmpListenMultiaddr().empty()) {
     deps.local_listen_multiaddr = m->AmpListenMultiaddr();
-  } else if (Runtime() && !Runtime()->BoundListenMultiaddr().empty()) {
-    deps.local_listen_multiaddr = Runtime()->BoundListenMultiaddr();
   } else {
     deps.local_listen_multiaddr = libp2p.listen_multiaddr;
   }
@@ -303,19 +266,14 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
 }
 
 void CallStack::FinishMeshStop() {
-  // Keep bridge + dial registry alive until the libp2p host joins its workers — inbound
-  // CallMediaKey wait and OpenStream completions may still touch them.
   call_libp2p_bridge_.reset();
   libp2p_bridge_bound_sessions_ = nullptr;
-  call_media_direct_.reset();
   call_media_amp_.reset();
   dial_registry_.reset();
 }
 
 void CallStack::AbortCallMediaForShutdown() {
   // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
-  // Old order waited 250ms then aborted circuit — WorkerPool::Shutdown joined a still-blocked
-  // Critical task and both peers looked hung until force-quit.
   if (MeshHost* m = mesh()) {
     m->AbortInflightCircuitRequests();
   }
@@ -343,43 +301,29 @@ void CallStack::AbortCallMediaForShutdown() {
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   MeshHost* m = mesh();
   const bool amp_up = m && m->Amp() && !m->AmpListenMultiaddr().empty();
-  if (!amp_up && !(Runtime() && Runtime()->IsRunning() && Runtime()->Host())) {
+  if (!amp_up) {
     return {};
   }
 
   const bool listening =
-      (Runtime() && Runtime()->EphemeralListenActive()) ||
-      ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node || amp_up;
+      ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node || amp_up || WantEphemeralListen();
   if (!listening) {
     return {};
   }
 
-  std::string peer_id;
-  if (amp_up) {
-    peer_id = m->Amp()->LocalPeerId();
-  } else if (Runtime()->Host()) {
-    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-      peer_id = *local;
-    }
-  }
+  const std::string peer_id = m->Amp()->LocalPeerId();
   if (peer_id.empty()) {
     return {};
   }
 
   std::vector<std::string> addrs;
-  const std::string bound = Runtime() ? Runtime()->BoundListenMultiaddr() : "";
-  if (!bound.empty()) {
-    addrs = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
-  }
-  if (amp_up) {
-    auto amp_lan = BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
-    if (!amp_lan.empty()) {
-      for (std::string& ma : amp_lan) {
-        addrs.push_back(std::move(ma));
-      }
-    } else {
-      addrs.push_back(m->AmpListenMultiaddr());
+  auto amp_lan = BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
+  if (!amp_lan.empty()) {
+    for (std::string& ma : amp_lan) {
+      addrs.push_back(std::move(ma));
     }
+  } else {
+    addrs.push_back(m->AmpListenMultiaddr());
   }
   return addrs;
 }
@@ -389,7 +333,6 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   if (identity.empty() || multiaddrs.empty()) {
     return;
   }
-  PeerSessionManager* sessions = Sessions();
   for (const std::string& ma : multiaddrs) {
     if (ma.empty()) {
       continue;
@@ -408,16 +351,12 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
         peer_id.resize(slash);
       }
     }
-    if (sessions) {
-      (void)sessions->RegisterEndpoint(identity, ma);
-      sessions->ClearDialBackoff(identity);
+    if (dial_registry_) {
+      (void)dial_registry_->RegisterEndpoint(identity, ma);
+      dial_registry_->ClearDialBackoff(identity);
       if (!peer_id.empty()) {
-        (void)sessions->UpsertBookEntry(peer_id, ma, PeerAddrSource::Manual);
-        (void)sessions->RegisterEndpoint(peer_id, ma);
-        sessions->ClearDialBackoff(peer_id);
-        if (peer_id != identity) {
-          (void)sessions->RegisterEndpoint(identity, ma);
-        }
+        (void)dial_registry_->RegisterEndpoint(peer_id, ma);
+        dial_registry_->ClearDialBackoff(peer_id);
         if (deps_.note_lan_mdns_peer_id) {
           deps_.note_lan_mdns_peer_id(peer_id);
         }
@@ -438,13 +377,12 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
 
 std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const {
   std::vector<std::string> relay_ids;
-  if (!Runtime() || !Runtime()->Sessions()) {
-    return relay_ids;
-  }
-  PeerSessionManager& sessions = *Runtime()->Sessions();
   MeshHost* m = mesh();
   amp::PeerLinkManager* amp_links = (m && m->Amp()) ? &m->Amp()->Links() : nullptr;
   AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
+  if (!amp_links && !amp_hops) {
+    return relay_ids;
+  }
   std::vector<Contact> contacts;
   if (deps_.contacts) {
     if (auto listed = deps_.contacts->List()) {
@@ -461,24 +399,16 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
-    if (hop.multiaddr.empty()) {
-      if (auto ma = sessions.PreferredPeerMultiaddr(hop.peer_id)) {
-        (void)sessions.RegisterEndpoint(hop.peer_id, *ma);
-        if (amp_links && amp::ParseAdpMultiaddr(*ma)) {
-          (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
-        }
-      }
-    } else {
-      (void)sessions.RegisterEndpoint(hop.peer_id, hop.multiaddr);
-      if (amp_links && amp::ParseAdpMultiaddr(hop.multiaddr)) {
-        (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    if (!hop.multiaddr.empty() && amp_links && amp::ParseAdpMultiaddr(hop.multiaddr)) {
+      (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    } else if (hop.multiaddr.empty() && amp_links) {
+      if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {
+        (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
       }
     }
-    sessions.ClearDialBackoff(hop.peer_id);
-    const bool libp2p_ok = sessions.IsDialable(hop.peer_id);
     const bool amp_ok = amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint;
     const bool hop_ok = amp_hops && amp_hops->HasAny(hop.peer_id);
-    if (libp2p_ok || amp_ok || hop_ok) {
+    if (amp_ok || hop_ok) {
       relay_ids.push_back(hop.peer_id);
     }
   }
@@ -486,23 +416,18 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
 }
 
 Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
-  if (!CircuitRelay() || !Runtime() || !Runtime()->Sessions()) {
-    return Error("circuit-relay not available");
+  if (!circuit_hop_reach_) {
+    return Error("Amp circuit reach required");
   }
   if (!config().libp2p.capabilities.circuit_relay) {
     return Error("circuit-relay disabled");
   }
-  PeerSessionManager& sessions = *Runtime()->Sessions();
-  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(hop_peer_id);
-  if (relay_ids.empty()) {
-    return Error("no dialable circuit relays");
-  }
-  return sessions.TryEnsureHopViaCircuit(hop_peer_id, *CircuitRelay(), relay_ids, kMediaRelayProtocolId, 8000);
+  return circuit_hop_reach_->TryEnsureHopReachable(hop_peer_id);
 }
 
 Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
-  if (!CircuitRelay() || !Runtime() || !Runtime()->Sessions()) {
-    return Error("circuit-relay not available");
+  if (!circuit_hop_reach_) {
+    return Error("Amp required");
   }
   if (!config().libp2p.capabilities.circuit_relay) {
     return Error("circuit-relay disabled");
@@ -510,61 +435,7 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
   if (peer_key.empty()) {
     return Error("missing call peer");
   }
-
-  PeerSessionManager& sessions = *Runtime()->Sessions();
-  std::string target = peer_key;
-  if (deps_.contacts) {
-    if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::Account)) {
-      if (hit->has_value()) {
-        const std::string peer_id = PeerIdFromContact(**hit);
-        if (!peer_id.empty()) {
-          target = peer_id;
-        }
-      }
-    }
-    if (target == peer_key) {
-      if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::RelayUser)) {
-        if (hit->has_value()) {
-          const std::string peer_id = PeerIdFromContact(**hit);
-          if (!peer_id.empty()) {
-            target = peer_id;
-          }
-        }
-      }
-    }
-    if (target == peer_key) {
-      if (auto hit = deps_.contacts->FindByIdentity(peer_key, ContactIdKind::PeerId)) {
-        if (hit->has_value()) {
-          const std::string peer_id = PeerIdFromContact(**hit);
-          if (!peer_id.empty()) {
-            target = peer_id;
-          }
-        }
-      }
-    }
-  }
-
-  if (sessions.IsDialable(peer_key) || sessions.IsDialable(target)) {
-    if (target != peer_key) {
-      if (auto ma = sessions.PreferredPeerMultiaddr(target)) {
-        (void)sessions.RegisterEndpoint(peer_key, *ma);
-      }
-    }
-    return {};
-  }
-
-  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(target);
-  if (relay_ids.empty()) {
-    return Error("no dialable circuit relays");
-  }
-  auto reached =
-      sessions.TryEnsureHopViaCircuit(target, *CircuitRelay(), relay_ids, kCallMediaDirectProtocolId, 8000);
-  if (reached && target != peer_key) {
-    if (auto ma = sessions.PreferredPeerMultiaddr(target)) {
-      (void)sessions.RegisterEndpoint(peer_key, *ma);
-    }
-  }
-  return reached;
+  return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
 }
 
 CallSessionManager* CallStack::Calls() {
@@ -618,7 +489,6 @@ void CallStack::Shutdown() {
   }
   call_libp2p_bridge_.reset();
   libp2p_bridge_bound_sessions_ = nullptr;
-  call_media_direct_.reset();
   call_media_amp_.reset();
   media_relay_client_.reset();
   dial_registry_.reset();

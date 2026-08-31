@@ -13,15 +13,14 @@
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/Libp2pDirectChatService.h"
+#include "feature/messaging/IDirectMessageClient.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/mesh/link/PeerLinkManager.h"
+#include "base/mesh/link/Types.h"
 #include "base/net/ServiceClients.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/PeerSessionManager.h"
 
 #include <atomic>
 #include <functional>
@@ -38,10 +37,12 @@ namespace pbr {
 class CallSessionManager;
 class GroupMembershipService;
 class AttachmentDownloadService;
+class IChatHistoryPeerClient;
+class IChatBlobPeerClient;
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
-  PeerLinkPhase phase = PeerLinkPhase::Unavailable;
+  amp::PeerLinkPhase phase = amp::PeerLinkPhase::Unavailable;
   std::string status_label;
   std::string banner_message;
   bool show_banner = false;
@@ -53,16 +54,12 @@ struct ThreadPeerLinkView {
 
 class P2pMessagingService : public Module {
 public:
-  /**
-   * When `amp_links` is non-null, chat + history use Amp as the single transport entry ([A020]/
-   * blob/call stay on libp2p via `libp2p_host` / `peer_sessions`.
-   */
+  /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr,
                       amp::PeerLinkManager* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {});
 
@@ -207,8 +204,6 @@ private:
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  Libp2pHost* libp2p_host_ = nullptr;
-  PeerSessionManager* peer_sessions_ = nullptr;
   amp::PeerLinkManager* amp_links_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;

@@ -96,10 +96,6 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
     }
     if (boot.mesh->Amp()) {
       snap.peer_id = boot.mesh->Amp()->LocalPeerId();
-    } else if (boot.mesh->Host()) {
-      if (auto peer = boot.mesh->Host()->LocalPeerIdBase58()) {
-        snap.peer_id = *peer;
-      }
     }
     snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
                          boot.mesh->AmpCircuitTunnel()->ServeInbound();
@@ -190,7 +186,7 @@ int main(int argc, char** argv) {
   }
 
   if (print_status) {
-    // D10: dial-back / UPnP probe deferred (Amp D8). Print current reachability snapshot.
+    boot->mesh->RunReachabilityProbeBlocking(/*try_upnp_first=*/false);
     std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
     ShutdownNode(*boot);
     return 0;
@@ -215,7 +211,7 @@ int main(int argc, char** argv) {
   }
 
   auto schedule_probe = [&]() {
-    // D10: Amp dial-back not yet ported — skip TCP DialBack reachability probe.
+    boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false);
   };
   schedule_probe();
 

@@ -8,8 +8,6 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
-#include "base/p2p/CircuitRelayService.h"
-#include "base/p2p/MediaRelayService.h"
 #include "base/p2p/Reachability.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -92,28 +90,17 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return loaded.error();
   }
 
-  NodeRuntimeConfig runtime_cfg;
-  runtime_cfg.host.listen_enabled = true;
-  runtime_cfg.host.listen_multiaddr = config->libp2p.listen_multiaddr;
-  if (auto priv = identity->GetDeviceMlDsaPrivateKey()) {
-    runtime_cfg.host.device_ml_dsa_private_key = *priv;
-  }
-  if (auto pub = identity->GetDeviceMlDsaPublicKey()) {
-    runtime_cfg.host.device_ml_dsa_public_key = *pub;
-  }
-  runtime_cfg.sessions = MakePeerSessionConfig(
-      config->libp2p.max_connections, config->libp2p.max_concurrent_dials, config->libp2p.dial_timeout_ms,
-      config->libp2p.idle_ttl_ms, config->libp2p.dial_failure_backoff_ms);
-  runtime_cfg.bootstrap_peers = config->libp2p.bootstrap_peers;
   AppRuntime::Initialize();
 
-  const ListenBusyPolicy busy =
-      options.listen_fallback ? ListenBusyPolicy::DesktopFallback : ListenBusyPolicy::FailLoud;
-  runtime_cfg.listen_candidates = BuildLibp2pListenCandidates(config->libp2p.listen_multiaddr, busy);
-  AppendIpv6ListenCandidatesForPreferred(config->libp2p.listen_multiaddr, runtime_cfg.listen_candidates);
-
   MeshHostConfig mesh_cfg;
-  mesh_cfg.runtime = std::move(runtime_cfg);
+  mesh_cfg.host.listen_enabled = true;
+  mesh_cfg.host.listen_multiaddr = config->libp2p.listen_multiaddr;
+  if (auto priv = identity->GetDeviceMlDsaPrivateKey()) {
+    mesh_cfg.host.device_ml_dsa_private_key = *priv;
+  }
+  if (auto pub = identity->GetDeviceMlDsaPublicKey()) {
+    mesh_cfg.host.device_ml_dsa_public_key = *pub;
+  }
   // Org seed: circuit / media_relay host inbound when enabled (N018).
   mesh_cfg.host_circuit_relay = config->libp2p.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = config->libp2p.capabilities.media_relay;
@@ -122,10 +109,11 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
   mesh_cfg.enable_amp_stack = config->libp2p.enable_amp_stack &&
-                              mesh_cfg.runtime.host.device_ml_dsa_private_key &&
-                              mesh_cfg.runtime.host.device_ml_dsa_public_key;
+                              mesh_cfg.host.device_ml_dsa_private_key &&
+                              mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
       config->libp2p.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->libp2p.amp_udp_port);
+  mesh_cfg.bootstrap_peers = config->libp2p.bootstrap_peers;
 
   auto mesh = std::make_unique<MeshHost>();
   if (auto started = mesh->Start(mesh_cfg); !started) {
@@ -169,10 +157,6 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   std::string peer_id;
   if (result.mesh->Amp()) {
     peer_id = result.mesh->Amp()->LocalPeerId();
-  } else if (result.mesh->Host()) {
-    if (auto local = result.mesh->Host()->LocalPeerIdBase58()) {
-      peer_id = *local;
-    }
   }
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
            << (peer_id.empty() ? std::string() : (" peer=" + peer_id))

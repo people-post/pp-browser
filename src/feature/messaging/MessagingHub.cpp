@@ -4,7 +4,6 @@
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/GroupMembershipService.h"
-#include "feature/messaging/MobileEphemeralListenGate.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -39,16 +38,11 @@
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
-#include "base/p2p/AdvertisedAddrPublisher.h"
 #include "base/p2p/CircuitBridgeTarget.h"
+#include "base/p2p/CircuitRelayTypes.h"
+#include "base/p2p/MediaRelayTypes.h"
 #include "base/p2p/CircuitTunnelCoordinator.h"
-#include "base/p2p/DialBackService.h"
-#include "base/p2p/CircuitRelayService.h"
-#include "base/p2p/CallMediaDirectService.h"
-#include "base/p2p/IdentifyIntegrationService.h"
 #include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/Libp2pWorker.h"
-#include "base/p2p/MediaRelayService.h"
 #include "base/p2p/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/mesh/link/AdpMultiaddr.h"
@@ -70,20 +64,6 @@
 namespace pbr {
 
 namespace {
-
-PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
-  PeerSessionConfig session = MakePeerSessionConfig(
-      config.libp2p.max_connections, config.libp2p.max_concurrent_dials, config.libp2p.dial_timeout_ms,
-      config.libp2p.idle_ttl_ms, config.libp2p.dial_failure_backoff_ms);
-  if (Platform::IsMobile()) {
-    session.max_connections = std::min(session.max_connections, size_t{16});
-    session.max_concurrent_dials = std::min(session.max_concurrent_dials, size_t{4});
-    if (session.idle_ttl > std::chrono::milliseconds(120000)) {
-      session.idle_ttl = std::chrono::milliseconds(120000);
-    }
-  }
-  return session;
-}
 
 std::string MaskBriefLlmApiKey(const std::string& key) {
   constexpr const char kPrefix[] = "brf_llm_";
@@ -114,23 +94,6 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
   view.show_rotate = (status == RegistrationStatus::Active || status == RegistrationStatus::ExpiringSoon) &&
                      !identity.brief_llm_api_key.empty();
   view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key);
-}
-
-MobileEphemeralListenInput BuildMobileEphemeralListenInput(bool messaging_ready, bool node_runtime_running,
-                                                           bool ephemeral_active, bool active_local_call) {
-  MobileEphemeralListenInput in;
-  in.is_mobile = Platform::IsMobile();
-  in.messaging_ready = messaging_ready;
-  in.node_runtime_running = node_runtime_running;
-  // Unknown must not flap-stop an active N025 listen (JNI/capability probe blips on Samsung).
-  const NetworkTransport transport = ActiveNetworkTransport();
-  // Treat Unknown as wifi for start too — Samsung JNI probes often report Unknown and
-  // previously blocked N025 listen (then AcceptInvite sat behind a dead listen desire).
-  in.on_wifi = transport == NetworkTransport::Wifi || transport == NetworkTransport::Unknown;
-  in.foreground = AppLifecycle::IsForeground();
-  in.active_local_call = active_local_call;
-  in.ephemeral_active = ephemeral_active;
-  return in;
 }
 
 } // namespace
@@ -260,25 +223,15 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   NormalizeLibp2pConfig(libp2p_cfg);
   const Libp2pRole role = ResolveLibp2pRole(libp2p_cfg);
 
-  NodeRuntimeConfig runtime;
-  runtime.host.listen_enabled = (role == Libp2pRole::Node);
-  runtime.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
+  MeshHostConfig mesh_cfg;
+  mesh_cfg.host.listen_enabled = (role == Libp2pRole::Node);
+  mesh_cfg.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
-    runtime.host.device_ml_dsa_private_key = *priv;
+    mesh_cfg.host.device_ml_dsa_private_key = *priv;
   }
   if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
-    runtime.host.device_ml_dsa_public_key = *pub;
+    mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  runtime.sessions = SessionConfigFromApp(config_);
-  runtime.bootstrap_peers = libp2p_cfg.bootstrap_peers;
-  if (runtime.host.listen_enabled) {
-    runtime.listen_candidates =
-        BuildLibp2pListenCandidates(libp2p_cfg.listen_multiaddr, ListenBusyPolicy::DesktopFallback);
-    AppendIpv6ListenCandidatesForPreferred(libp2p_cfg.listen_multiaddr, runtime.listen_candidates);
-  }
-
-  MeshHostConfig mesh_cfg;
-  mesh_cfg.runtime = runtime;
   mesh_cfg.host_circuit_relay = role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay;
   mesh_cfg.media_relay_budget = config_.libp2p.media_relay_budget;
@@ -296,10 +249,11 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
       on_reachability_updated_();
     }
   };
-  mesh_cfg.enable_amp_stack = libp2p_cfg.enable_amp_stack && runtime.host.device_ml_dsa_private_key &&
-                              runtime.host.device_ml_dsa_public_key;
+  mesh_cfg.enable_amp_stack = libp2p_cfg.enable_amp_stack && mesh_cfg.host.device_ml_dsa_private_key &&
+                              mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
       libp2p_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(libp2p_cfg.amp_udp_port);
+  mesh_cfg.bootstrap_peers = libp2p_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<MeshHost>();
   auto started = mesh_->Start(mesh_cfg);
@@ -335,208 +289,28 @@ void MessagingHub::StartMeshServices() {
 }
 
 void MessagingHub::PublishNodeAdvertisedAddrs() {
-  if (!Runtime() || !Runtime()->Host() || !Runtime()->Identify()) {
-    return;
-  }
-  const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
-  const bool publish = node && config_.libp2p.capabilities.media_relay;
-  if (!publish) {
-    return;
-  }
-  std::string peer_id;
-  if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-    peer_id = *local;
-  }
-  PublishAdvertisedListenSet(*Runtime()->Host(), *Runtime()->Identify(),
-                             mesh_->Reachability().Snapshot(), Runtime()->BoundListenMultiaddr(), peer_id,
-                             publish);
-  // Also advertise AMP UDP listen so peers learn ADP MAs over Identify (D9 chat dial).
-  if (mesh_ && !mesh_->AmpListenMultiaddr().empty() && Runtime()->Identify()->IsStarted()) {
-    const std::string amp_ma = mesh_->AmpListenMultiaddr();
-    IdentifyIntegrationService* identify = Runtime()->Identify();
-    Runtime()->Host()->Post([amp_ma, identify]() {
-      (void)identify->PublishSelfAdvertisedAddrs({amp_ma});
-    });
-  }
+  // A017: Identify/Host advertisement retired. Amp peers learn via mDNS / pasted ADP MAs.
 }
 
+
+
 void MessagingHub::PublishMobileCallScopedAddrs() {
-  if (!Runtime() || !Runtime()->EphemeralListenActive() || !Runtime()->Host() ||
-      !Runtime()->Identify()) {
-    return;
-  }
-  std::string peer_id;
-  if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-    peer_id = *local;
-  }
-  if (peer_id.empty()) {
-    return;
-  }
-  const std::vector<std::string> advertised =
-      BuildMobileCallScopedAdvertisedAddrs(Runtime()->BoundListenMultiaddr(), peer_id);
-  if (advertised.empty()) {
-    return;
-  }
-  IdentifyIntegrationService* identify = Runtime()->Identify();
-  Runtime()->Host()->Post([advertised, identify]() { (void)identify->PublishSelfAdvertisedAddrs(advertised); });
+  // A017: TCP ephemeral Identify publish retired; Amp listen is always advertised via mDNS.
 }
+
+
 
 void MessagingHub::SyncMobileEphemeralListen() {
   if (!Platform::IsMobile() || !messaging_ready_) {
     return;
   }
-  // D10: Amp UDP accept is always on — TCP ephemeral listen retired. Refresh mDNS for LAN.
+  // D10/A017: Amp UDP accept is always on — TCP ephemeral listen retired. Refresh mDNS for LAN.
   if (mesh_ && mesh_->Amp()) {
     SyncLanMdnsAdvertisement();
-    return;
   }
-  if (!Runtime()) {
-    return;
-  }
-
-  // Lifecycle owns whether we want listen; tick only executes start/stop.
-  const bool active_call = call_stack_ && call_stack_->WantEphemeralListen();
-  const MobileEphemeralListenInput gate = BuildMobileEphemeralListenInput(
-      messaging_ready_, Runtime()->IsRunning(), Runtime()->EphemeralListenActive(), active_call);
-
-  if (ShouldStartMobileEphemeralListen(gate)) {
-    if (mobile_ephemeral_start_inflight_ || mobile_ephemeral_stop_inflight_) {
-      // Watchdog: ListenOnAsync / IO completion can leave inflight stuck and block all retries.
-      constexpr int64_t kEphemeralStartWatchdogMs = 12000;
-      const int64_t started_at = mobile_ephemeral_start_inflight_at_ms_;
-      const int64_t now_ms = util::NowUnixMs();
-      if (mobile_ephemeral_start_inflight_ && started_at > 0 &&
-          now_ms - started_at > kEphemeralStartWatchdogMs) {
-        log().warning << "Mobile ephemeral listen inflight watchdog reset after "
-                      << (now_ms - started_at) << "ms";
-        mobile_ephemeral_start_inflight_ = false;
-        mobile_ephemeral_start_inflight_at_ms_ = 0;
-      } else {
-        log().info << "Mobile ephemeral listen start deferred (inflight start="
-                      << (mobile_ephemeral_start_inflight_ ? 1 : 0)
-                      << " stop=" << (mobile_ephemeral_stop_inflight_ ? 1 : 0) << ")";
-        return;
-      }
-    }
-    AppRuntime::ResumeBackgroundWork();
-    // StartEphemeralListenAsync only posts onto the libp2p io thread — do NOT queue it behind
-    // Browser IO Prefetch/RequestBridge (Samsung: AcceptInvite never reached IO enter).
-    if (!messaging_ready_ || !Runtime() || !Runtime()->Host()) {
-      return;
-    }
-    mobile_ephemeral_start_inflight_ = true;
-    mobile_ephemeral_start_inflight_at_ms_ = util::NowUnixMs();
-    log().info << "Mobile ephemeral listen begin (async N025)";
-    Runtime()->StartEphemeralListenAsync([this](Roe<void> started) {
-      // Libp2p io thread. Clear inflight on UI immediately — never wait for Browser IO Wire
-      // (Samsung: listen succeeded but "started" never logged while PollInbox held IO).
-      const std::string bound =
-          (started && Runtime()) ? Runtime()->BoundListenMultiaddr() : std::string{};
-      const std::string err = started ? std::string{} : started.error().message;
-      AppRuntime::PostUI([this, bound, err]() {
-        mobile_ephemeral_start_inflight_ = false;
-        mobile_ephemeral_start_inflight_at_ms_ = 0;
-        if (!err.empty()) {
-          if (err != mobile_ephemeral_last_start_error_) {
-            mobile_ephemeral_last_start_error_ = err;
-            log().warning << "Mobile ephemeral listen failed: " << mobile_ephemeral_last_start_error_;
-          }
-          return;
-        }
-        mobile_ephemeral_last_start_error_.clear();
-        log().info << "Mobile ephemeral listen started (N025) bound=" << bound;
-      });
-      if (!started) {
-        return;
-      }
-      // Wire / mDNS on a worker — must not sit behind PollInbox on Browser IO.
-      AppRuntime::PostWorkerCritical([this]() {
-        if (!messaging_ready_ || !Runtime()) {
-          return;
-        }
-        const NetworkTransport transport = ActiveNetworkTransport();
-        const bool on_wifi =
-            transport == NetworkTransport::Wifi || transport == NetworkTransport::Unknown;
-        const bool still_want =
-            (call_stack_ && call_stack_->WantEphemeralListen()) &&
-            AppLifecycle::IsForeground() && on_wifi;
-        if (!still_want) {
-          if (Runtime()->EphemeralListenActive()) {
-            Runtime()->StopEphemeralListenAsync([this]() {
-              AppRuntime::PostWorkerCritical([this]() {
-                if (messaging_ready_) {
-                  ApplyMeshAdmissionPolicies();
-                  call_stack_->WireMediaRelayDeps();
-                  SyncLanMdnsAdvertisement();
-                }
-              });
-            });
-          }
-          return;
-        }
-        ApplyMeshAdmissionPolicies();
-        call_stack_->WireMediaRelayDeps();
-        PublishMobileCallScopedAddrs();
-        SyncLanMdnsAdvertisement();
-        // V029/V030: phones must not host media_relay. Guest SoftMigrate only dials a Node;
-        // Start()/Stop() here raced Detach on the client attach stream (Android crash).
-      });
-    });
-    return;
-  }
-
-  if (!gate.ephemeral_active && gate.active_local_call && !mobile_ephemeral_start_inflight_) {
-    // Visible skip reason when ring/outbound wants listen but gate refuses (wifi/fg).
-    static std::string last_skip;
-    std::string skip = std::string("wifi=") + (gate.on_wifi ? "1" : "0") +
-                       " fg=" + (gate.foreground ? "1" : "0") +
-                       " ready=" + (gate.messaging_ready ? "1" : "0") +
-                       " node=" + (gate.node_runtime_running ? "1" : "0");
-    if (skip != last_skip) {
-      last_skip = skip;
-      log().info << "Mobile ephemeral listen not started (" << skip << ")";
-    }
-  }
-
-  if (ShouldStopMobileEphemeralListen(gate)) {
-    if (mobile_ephemeral_stop_inflight_ || mobile_ephemeral_start_inflight_) {
-      return;
-    }
-    // StopListening PostAndWaits on the libp2p io thread — never block the UI tick
-    // (Samsung: UI stuck in futex → Accept clicks never reach call_accept).
-    mobile_ephemeral_stop_inflight_ = true;
-    AppRuntime::PostWorkerNormal([this]() {
-      // Do not MediaRelay()->Stop() here — that Detach()s any in-flight guest SFU client.
-      auto finish = [this]() {
-        if (messaging_ready_) {
-          ApplyMeshAdmissionPolicies();
-          call_stack_->WireMediaRelayDeps();
-          SyncLanMdnsAdvertisement();
-        }
-        AppRuntime::PostUI([this]() {
-          mobile_ephemeral_stop_inflight_ = false;
-          mobile_ephemeral_last_start_error_.clear();
-          log().info << "Mobile ephemeral listen stopped";
-        });
-      };
-      if (Runtime() && Runtime()->EphemeralListenActive()) {
-        Runtime()->StopEphemeralListenAsync([finish = std::move(finish)]() mutable {
-          AppRuntime::PostWorkerNormal(std::move(finish));
-        });
-        return;
-      }
-      finish();
-    });
-    return;
-  }
-
-  if (!Runtime()->EphemeralListenActive()) {
-    return;
-  }
-
-  // V029: do not Start/Stop media_relay host on mobile for N≥3 — PreferLocal is durable Node only.
-  // Guest attach uses media_relay as a client without Start().
 }
+
+
 
 void MessagingHub::SyncLanMdnsAdvertisement() {
   if (!lan_mdns_ || !lan_mdns_->IsRunning()) {
@@ -544,59 +318,34 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
   }
 
   const bool amp_up = mesh_ && mesh_->Amp() && !mesh_->AmpListenMultiaddr().empty();
-  if (!amp_up && (!Runtime() || !Runtime()->Host())) {
+  if (!amp_up) {
     return;
   }
 
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
-  const bool node_listen =
-      role == Libp2pRole::Node && ((Runtime() && Runtime()->IsRunning()) || amp_up);
-  const bool ephemeral = Runtime() && Runtime()->EphemeralListenActive();
+  const bool node_listen = role == Libp2pRole::Node;
+  const bool ephemeral = Platform::IsMobile() && call_stack_ && call_stack_->WantEphemeralListen();
   if (!node_listen && !ephemeral) {
     lan_mdns_->SetAdvertisement({}, 0, {});
     return;
   }
 
-  std::string peer_id;
-  if (amp_up) {
-    peer_id = mesh_->Amp()->LocalPeerId();
-  } else if (Runtime()->Host()) {
-    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-      peer_id = *local;
-    }
-  }
-
+  const std::string peer_id = mesh_->Amp()->LocalPeerId();
   int amp_udp = 0;
-  if (amp_up) {
-    if (auto parsed = amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
-      amp_udp = static_cast<int>(parsed->endpoint.port);
-    }
+  if (auto parsed = amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
+    amp_udp = static_cast<int>(parsed->endpoint.port);
   }
-
-  const std::string bound = Runtime() ? Runtime()->BoundListenMultiaddr() : "";
-  const auto tcp_port = TcpPortFromMultiaddr(bound);
-  const int dns_port = (tcp_port && *tcp_port > 0) ? *tcp_port : amp_udp;
-  if (peer_id.empty() || dns_port <= 0) {
+  if (peer_id.empty() || amp_udp <= 0) {
     lan_mdns_->SetAdvertisement({}, 0, {});
     return;
   }
 
-  std::vector<std::string> host_ips;
-  if (!bound.empty() && tcp_port && *tcp_port > 0) {
-    for (const std::string& ma : BuildMobileCallScopedAdvertisedAddrs(bound, peer_id)) {
-      const std::string ip = IpHostFromMultiaddrPrefix(ma);
-      if (!ip.empty()) {
-        host_ips.push_back(ip);
-      }
-    }
-  } else {
-    host_ips = EnumerateDialableLanIpv4Hosts();
-  }
-  lan_mdns_->SetAdvertisement(peer_id, dns_port, host_ips, amp_udp);
+  // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
+  lan_mdns_->SetAdvertisement(peer_id, amp_udp, {});
 }
 
+
 void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
-  // mDNS thread — hop to Browser IO before touching sessions / host repos.
   AppRuntime::PostWorkerNormal([this, peer]() {
     if (peer.peer_id_base58.empty()) {
       return;
@@ -615,17 +364,11 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
       log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << probe_ma;
       return;
     }
-    PeerSessionManager* sessions = Sessions();
-    if (sessions == nullptr && !(p2p_ && adp)) {
+    if (!(p2p_ && (adp || ma))) {
       return;
     }
     log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58
                << " ma=" << (ma ? *ma : "") << " adp=" << (adp ? *adp : "");
-    if (sessions && ma) {
-      (void)sessions->UpsertBookEntry(peer.peer_id_base58, *ma, PeerAddrSource::Mdns);
-      (void)sessions->RegisterEndpoint(peer.peer_id_base58, *ma);
-      sessions->ClearDialBackoff(peer.peer_id_base58);
-    }
     if (p2p_) {
       if (ma) {
         p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
@@ -635,8 +378,6 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
         p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
       }
     }
-    // Call-media dials peer_key=account:… while mDNS only knows the libp2p PeerId. Alias on IO
-    // here — do not wait for UI RegisterContactEndpoints (moto dogfood: undialable despite LAN ma).
     if (contacts_) {
       if (auto listed = contacts_->List(); listed) {
         for (const Contact& contact : *listed) {
@@ -649,12 +390,12 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
               target.peer_identity_value == peer.peer_id_base58) {
             continue;
           }
-          (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
-          sessions->ClearDialBackoff(target.peer_identity_value);
           if (p2p_) {
-            p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
-            if (auto adp = LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
-              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp);
+            if (ma) {
+              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+            }
+            if (auto adp2 = LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
+              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp2);
             }
           }
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
@@ -662,16 +403,15 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
         }
       }
     }
-    // Do not RegisterContactEndpoints on every mDNS hit — that re-enters sessions/UI and can
-    // pile work in front of AcceptInvite. Alias above is enough for call-media dial keys.
   });
 }
+
 
 void MessagingHub::ApplyMeshAdmissionPolicies() {
   const bool prefer = config_.libp2p.prefer_contacts_for_routing;
   const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
-  const bool mobile_ephemeral =
-      Platform::IsMobile() && Runtime() && Runtime()->EphemeralListenActive();
+  // A017: Amp listen is always on; treat mobile in-call as link-scope hosting.
+  const bool mobile_ephemeral = Platform::IsMobile() && call_stack_ && call_stack_->WantEphemeralListen();
   std::unordered_set<std::string> contact_ids;
   if (contacts_) {
     if (auto listed = contacts_->List()) {
@@ -700,7 +440,6 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
   }
 
   RelayScopeMask serve_mask = ProviderServeScopeMask(reach_class, node);
-  // Org-style: if Node with no contacts loaded, do not refuse strangers.
   const bool force_limit_strangers =
       node && (reach_class == MeshReachabilityClass::OutboundOnly ||
                reach_class == MeshReachabilityClass::Blocked);
@@ -710,32 +449,12 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
     serve_mask |= static_cast<RelayScopeMask>(RelayScope::Public);
   }
 
-  if (CircuitRelay()) {
-    CircuitRelayAdmissionPolicy policy;
-    policy.prefer_contacts_only = limit_strangers;
-    policy.serve_scope_mask = serve_mask;
-    policy.contact_peer_ids = contact_ids;
-    CircuitRelay()->SetAdmissionPolicy(std::move(policy));
-  }
   if (mesh_ && mesh_->AmpCircuitTunnel()) {
     CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = limit_strangers;
     policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
     mesh_->AmpCircuitTunnel()->SetAdmissionPolicy(std::move(policy));
-  }
-  if (MediaRelay()) {
-    MediaRelayAdmissionPolicy policy;
-    if (mobile_ephemeral) {
-      policy.prefer_contacts_only = true;
-      policy.serve_scope_mask = kRelayScopeLinkSiteSocial;
-      policy.contact_peer_ids = contact_ids;
-    } else {
-      policy.prefer_contacts_only = limit_strangers;
-      policy.serve_scope_mask = serve_mask;
-      policy.contact_peer_ids = contact_ids;
-    }
-    MediaRelay()->SetAdmissionPolicy(std::move(policy));
   }
   if (mesh_ && mesh_->AmpMediaRelayCoord()) {
     MediaRelayAdmissionPolicy policy;
@@ -751,6 +470,7 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
     mesh_->AmpMediaRelayCoord()->SetAdmissionPolicy(std::move(policy));
   }
 }
+
 
 void MessagingHub::StopLibp2p() {
   mobile_ephemeral_start_inflight_ = false;
@@ -791,7 +511,6 @@ void MessagingHub::RegisterContactEndpoints() {
   if (!listed) {
     return;
   }
-  PeerSessionManager* sessions = Sessions();
   lan_mdns_contact_peer_ids_.clear();
   for (const Contact& contact : *listed) {
     p2p_->RegisterContactDirectEndpoints(contact);
@@ -806,38 +525,21 @@ void MessagingHub::RegisterContactEndpoints() {
     for (const std::string& peer_id : peer_ids) {
       lan_mdns_contact_peer_ids_.insert(peer_id);
     }
-    if (peer_ids.empty() || sessions == nullptr) {
-      continue;
-    }
-    for (const std::string& peer_id : peer_ids) {
-      if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
-        (void)sessions->RegisterEndpoint(peer_id, *ma);
-        sessions->ClearDialBackoff(peer_id);
-        p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
-        if (target.peer_identity_value != peer_id) {
-          (void)sessions->RegisterEndpoint(target.peer_identity_value, *ma);
-          sessions->ClearDialBackoff(target.peer_identity_value);
-          p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
-        }
-      }
-    }
   }
   ApplyMeshAdmissionPolicies();
 }
 
+
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
-  return IsContactReachableForMessaging(contact, Sessions(), relay_ != nullptr);
+  return IsContactReachableForMessaging(contact, nullptr, relay_ != nullptr);
 }
 
-void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
-  if (!messaging_ready_ || identity.empty() || !Runtime()) {
-    return;
-  }
-  PeerSessionManager* sessions = Runtime()->Sessions();
-  if (sessions == nullptr) {
-    return;
-  }
 
+void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
+  if (!messaging_ready_ || identity.empty() || !p2p_) {
+    return;
+  }
+  // A017: warm Amp endpoints only — no PeerSessionManager EnsureConnection.
   std::string peer_id;
   if (contacts_) {
     if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::Account)) {
@@ -863,22 +565,9 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
-
-  (void)sessions->ResolvePeerInfo(peer_id);
-  if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
-    (void)sessions->RegisterEndpoint(peer_id, *ma);
-    sessions->ClearDialBackoff(peer_id);
-    // Same alias as mDNS: call-media / Chat control use relay identity as dial key.
-    if (!identity.empty() && identity != peer_id) {
-      (void)sessions->RegisterEndpoint(identity, *ma);
-      sessions->ClearDialBackoff(identity);
-    }
-  }
-  // Register endpoints only — do NOT EnsureConnection here. Prefetch runs on CallInvite /
-  // CallAccept for both peers; opposite host.connect races the answerer-only call-media dial
-  // (dogfood: tablet→phone TCP ESTABLISHED with unread Recv-Q, no Noise/inbound hello).
-  // Circuit hops stay on the call-media Connect path (EnsurePeerReachableOnIo).
+  (void)peer_id;
 }
+
 
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
@@ -958,7 +647,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
+                                                *psk_store_, *group_roster_, group_invite_gate_.get());
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
   WireAttachmentDownloads();
@@ -1027,17 +716,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
         mesh_->Tick();
       }
     };
-    if (Libp2pHost* host = Libp2p()) {
-      amp_worker = [host](std::function<void()> task) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
-      };
-    }
+    amp_worker = [](std::function<void()> task) {
+      AppRuntime::PostWorkerNormal(std::move(task));
+    };
   }
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
-                                                Sessions(), amp_links, std::move(amp_pump), std::move(amp_worker));
+                                                *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links,
+                                                std::move(amp_pump), std::move(amp_worker));
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
   WireAttachmentDownloads();
@@ -1109,9 +796,6 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
   }
   if (actions_) {
     actions_->SetRegistrationClient(registration_);
-  }
-  if (PeerSessionManager* sessions = Sessions()) {
-    sessions->SetConfig(SessionConfigFromApp(config));
   }
   return {};
 }
@@ -1292,27 +976,21 @@ void MessagingHub::ScheduleContactIconFetch(const Contact& contact) {
 }
 
 void MessagingHub::RunReachabilityProbe(bool try_upnp) {
-  if (!mesh_ || !Runtime() || !DialBack()) {
+  if (!mesh_) {
     return;
   }
-  mesh_->Reachability().StartProbe(*Runtime(), *DialBack(), try_upnp);
+  mesh_->StartReachabilityProbe(try_upnp);
 }
 
 void MessagingHub::TryUpnpPortMapping() {
-  if (!Runtime()) {
+  if (!mesh_) {
     return;
   }
-  const std::string bound = Runtime()->BoundListenMultiaddr();
-  if (ShouldSkipUpnpForListen(bound)) {
-    return;
-  }
-  const auto port = TcpPortFromMultiaddr(bound);
-  if (!port) {
-    return;
-  }
-  (void)TryUpnpTcpPortMapping(*port);
-  RunReachabilityProbe(false);
+  // Amp listen uses UDP; mapping is attempted inside the reachability probe when try_upnp is set.
+  mesh_->StartReachabilityProbe(true);
 }
+
+
 
 ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
   ProfileIdentityView view;
@@ -1393,9 +1071,11 @@ Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
     }
   }
 
-  auto applied = FinishAndPersistRegistration(
-      Registration(), Identity(), identity->nickname,
-      Libp2p() ? Libp2p()->ListenMultiaddrs() : std::vector<std::string>{});
+  std::vector<std::string> listen_addrs;
+  if (mesh_ && !mesh_->AmpListenMultiaddr().empty()) {
+    listen_addrs.push_back(mesh_->AmpListenMultiaddr());
+  }
+  auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs);
   if (!applied) {
     return applied.error();
   }
@@ -1739,34 +1419,29 @@ void MessagingHub::TickReachabilityUx() {
 }
 
 void MessagingHub::RefreshMeshCapabilities() {
-  if (!messaging_ready_ || !mesh_ || !Runtime()) {
+  if (!messaging_ready_ || !mesh_) {
     return;
   }
   if (session_store_ && session_store_->IsInitialized()) {
     config_.libp2p = session_store_->Snapshot().config.libp2p;
   }
-  // MeshHost owns the relay services; re-apply hosting posture in place (Stop clears state,
-  // Start re-registers the protocol handler) instead of recreating the objects.
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
-  if (CircuitRelay()) {
-    CircuitRelay()->Stop();
-    if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
-      CircuitRelay()->Start();
-    }
+  // Amp L4 inbound hosting is gated via SetServeInbound (no TCP CircuitRelay/MediaRelay).
+  if (mesh_->AmpCircuitTunnel()) {
+    mesh_->AmpCircuitTunnel()->SetServeInbound(role == Libp2pRole::Node &&
+                                               config_.libp2p.capabilities.circuit_relay);
   }
   call_stack_->ResetRelayClients();
-  if (MediaRelay()) {
-    MediaRelay()->Stop();
-    MediaRelay()->SetBudget(config_.libp2p.media_relay_budget);
-    MediaRelay()->SetPricing(config_.libp2p.pricing.media_relay);
-    if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
-      MediaRelay()->Start();
-    }
+  if (mesh_->AmpMediaRelayCoord()) {
+    mesh_->AmpMediaRelayCoord()->SetServeInbound(role == Libp2pRole::Node &&
+                                                 config_.libp2p.capabilities.media_relay);
   }
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
 }
+
+
 
 void MessagingHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
@@ -1798,9 +1473,6 @@ void MessagingHub::Apply(const NetworkConfig& next) {
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
     }
-  }
-  if (PeerSessionManager* sessions = Sessions()) {
-    sessions->SetConfig(SessionConfigFromApp(config_));
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities();
@@ -1857,10 +1529,8 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
     return Error("missing circuit bridge target");
   }
   CircuitTunnelCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitTunnel() : nullptr;
-  if (!amp_circuit || !amp_circuit->IsStarted()) {
-    if (!CircuitRelay() || !Runtime() || !Runtime()->Sessions()) {
-      return Error("circuit-relay not available");
-    }
+  if (!amp_circuit || !amp_circuit->IsStarted() || !mesh_ || !mesh_->Amp()) {
+    return Error("Amp circuit-relay required");
   }
   std::vector<Contact> contacts;
   if (contacts_) {
@@ -1883,83 +1553,50 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   CircuitRelayBridgeResult last;
   last.error = "all hops failed";
 
-  if (amp_circuit && amp_circuit->IsStarted() && mesh_ && mesh_->Amp()) {
-    amp::PeerLinkManager& links = mesh_->Amp()->Links();
-    for (const MeshHopCandidate& hop : hops) {
-      const std::string key = hop.peer_id;
-      if (!target.target_peer_id.empty() && key == target.target_peer_id) {
-        continue;
-      }
-      if (!hop.multiaddr.empty()) {
-        (void)links.RegisterEndpoint(key, hop.multiaddr);
-      } else if (auto ma = links.PreferredMultiaddr(key)) {
-        (void)links.RegisterEndpoint(key, *ma);
-      }
-      if (!links.GetLinkSnapshot(key).has_endpoint) {
-        last.error = "hop not dialable: " + key;
-        continue;
-      }
-      SettledWait<CircuitTunnelBridgeResult> wait;
-      (void)amp_circuit->StartBridge(key, target, {}, {},
-                                     [wait](Roe<CircuitTunnelBridgeResult> result) {
-                                       wait.Finish(std::move(result));
-                                     },
-                                     timeout_ms);
-      auto bridged =
-          wait.Wait(std::chrono::milliseconds(timeout_ms + 500), Error("amp circuit bridge timed out"));
-      if (!bridged) {
-        last.error = bridged.error().message;
-        continue;
-      }
-      if (!bridged->ok) {
-        last.error = bridged->error.empty() ? "amp circuit bridge failed" : bridged->error;
-        continue;
-      }
-      CircuitRelayBridgeResult ok;
-      ok.ok = true;
-      ok.resolved_multiaddr = bridged->resolved_multiaddr;
-      return ok;
-    }
-    return last;
-  }
-
-  PeerSessionManager& sessions = *Runtime()->Sessions();
+  amp::PeerLinkManager& links = mesh_->Amp()->Links();
   for (const MeshHopCandidate& hop : hops) {
     const std::string key = hop.peer_id;
     if (!target.target_peer_id.empty() && key == target.target_peer_id) {
       continue;
     }
-    if (hop.multiaddr.empty()) {
-      if (auto ma = sessions.PreferredPeerMultiaddr(key)) {
-        (void)sessions.RegisterEndpoint(key, *ma);
-      }
-    } else {
-      (void)sessions.RegisterEndpoint(key, hop.multiaddr);
+    if (!hop.multiaddr.empty()) {
+      (void)links.RegisterEndpoint(key, hop.multiaddr);
+    } else if (auto ma = links.PreferredMultiaddr(key)) {
+      (void)links.RegisterEndpoint(key, *ma);
     }
-    sessions.ClearDialBackoff(key);
-    if (!sessions.IsDialable(key)) {
+    if (!links.GetLinkSnapshot(key).has_endpoint) {
       last.error = "hop not dialable: " + key;
       continue;
     }
-    auto bridged = CircuitRelay()->RequestBridge(key, target, timeout_ms);
+    SettledWait<CircuitTunnelBridgeResult> wait;
+    (void)amp_circuit->StartBridge(key, target, {}, {},
+                                   [wait](Roe<CircuitTunnelBridgeResult> result) {
+                                     wait.Finish(std::move(result));
+                                   },
+                                   timeout_ms);
+    auto bridged =
+        wait.Wait(std::chrono::milliseconds(timeout_ms + 500), Error("amp circuit bridge timed out"));
     if (!bridged) {
       last.error = bridged.error().message;
       continue;
     }
-    if (bridged->ok) {
-      return *bridged;
+    if (!bridged->ok) {
+      last.error = bridged->error.empty() ? "amp circuit bridge failed" : bridged->error;
+      continue;
     }
-    last = *bridged;
+    CircuitRelayBridgeResult ok;
+    ok.ok = true;
+    ok.resolved_multiaddr = bridged->resolved_multiaddr;
+    return ok;
   }
   return last;
 }
 
+
 void MessagingHub::SuspendLibp2pColdPeers() {
   SyncMobileEphemeralListen();
-  if (Runtime()) {
-    Runtime()->SuspendColdPeers();
-  }
 }
+
 
 void MessagingHub::Shutdown() {
   if (!initialized_) {
@@ -2143,11 +1780,13 @@ IClientCompatClient* MessagingHub::ClientCompat() {
 }
 
 Libp2pHost* MessagingHub::Libp2p() {
-  return Runtime() ? Runtime()->Host() : nullptr;
+  return nullptr;
 }
 
+
 PeerSessionManager* MessagingHub::Sessions() const {
-  return Runtime() ? Runtime()->Sessions() : nullptr;
+  return nullptr;
 }
+
 
 } // namespace pbr

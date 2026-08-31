@@ -1,6 +1,6 @@
+#include "base/p2p/AmpCircuitHopRegistry.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 
@@ -53,11 +53,11 @@ TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
   EXPECT_EQ(*decrypted, opus);
 }
 
-TEST(PeerSessionManagerCircuitTest, CircuitHopKeyIncludesProtocol) {
-  EXPECT_EQ(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"),
+TEST(AmpCircuitHopRegistryTest, KeyIncludesProtocol) {
+  EXPECT_EQ(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"),
             "QmA\x1f/pp-browser/call-media/1.0.0");
-  EXPECT_NE(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/media-relay/1.0.0"),
-            PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"));
+  EXPECT_NE(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/media-relay/1.0.0"),
+            AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"));
 }
 
 } // namespace

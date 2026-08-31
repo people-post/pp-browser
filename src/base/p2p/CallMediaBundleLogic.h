@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/ICallMediaTransport.h"
 
 #include <cstdint>
 

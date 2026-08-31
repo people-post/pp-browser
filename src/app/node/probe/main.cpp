@@ -1,28 +1,29 @@
-#include "base/p2p/CircuitRelayService.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/Libp2pWorker.h"
-#include "base/p2p/MediaRelayService.h"
-#include "base/p2p/PeerSessionManager.h"
-#include "base/p2p/StreamFrameIo.h"
+#include "base/adp/Clock.h"
+#include "base/adp/OsUdpDatagramIo.h"
+#include "base/adp/Types.h"
+#include "base/crypto/MlDsa.h"
+#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/mesh/channel/ChannelSession.h"
+#include "base/mesh/link/AdpMultiaddr.h"
+#include "base/mesh/link/AmpStack.h"
+#include "base/mesh/link/Types.h"
+#include "base/p2p/AmpMediaRelayCoordinator.h"
+#include "base/p2p/CircuitTunnelCoordinator.h"
+#include "base/p2p/MediaRelayTypes.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include "common/Logger.h"
 
-#include <libp2p/connection/stream.hpp>
-#include <libp2p/host/host.hpp>
-#include <libp2p/peer/protocol.hpp>
-
 #include <algorithm>
-#include <memory>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -32,8 +33,6 @@
 
 namespace {
 
-using libp2p::peer::ProtocolName;
-
 constexpr const char* kProbeBridgeProtocol = "/pp-browser/pp-node-probe-bridge/1.0.0";
 
 enum class ProbeMode { L1, MediaFanout, MediaCap, CircuitCap, MediaSoak };
@@ -41,12 +40,15 @@ enum class ProbeMode { L1, MediaFanout, MediaCap, CircuitCap, MediaSoak };
 void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0
-      << " --hop <multiaddr-with-p2p> [--mode l1|media-fanout|media-cap|circuit-cap|media-soak]\n"
+      << " --hop <adp-multiaddr-with-p2p> [--mode l1|media-fanout|media-cap|circuit-cap|media-soak]\n"
       << "       [--advertise-host <ip>] [--attachers N|N,N,...] [--sweep A:B:S]\n"
       << "       [--bridges M|M,M,...] [--duration SEC] [--churn N]\n"
       << "\n"
+      << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
+      << "Hop example: /ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/<PeerId>\n"
+      << "\n"
       << "Modes:\n"
-      << "  l1 (default)            media_relay RequestQuote + circuit_relay bridge payload\n"
+      << "  l1 (default)            Amp media-relay RequestQuote + Amp circuit StartBridge payload\n"
       << "  media-fanout (N-FANOUT) quote → AcceptAndAttach ×2 → subscribe → frame fan-out\n"
       << "  media-cap (N-CAP-MEDIA) attach N clients; print n attached success_rate p50_ms p95_ms\n"
       << "  circuit-cap (N-CAP-CIRCUIT) M concurrent bridges + payload; print circuit_curve\n"
@@ -126,12 +128,8 @@ std::optional<std::vector<int>> ParseIntList(const std::string& spec, int min_v,
   return out;
 }
 
-template <typename Result>
-Result RunOnWorker(pbr::Libp2pHost& host, std::function<Result()> work) {
-  std::promise<Result> promise;
-  auto future = promise.get_future();
-  pbr::PostLibp2pWorker(host, pbr::WorkerLane::Normal, [&] { promise.set_value(work()); });
-  return future.get();
+bool HasP2pSuffix(const std::string& ma) {
+  return ma.find("/p2p/") != std::string::npos;
 }
 
 std::string RewriteWildcardListenHost(std::string multiaddr) {
@@ -144,105 +142,193 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
   return multiaddr;
 }
 
-bool HasP2pSuffix(const std::string& ma) {
-  return ma.find("/p2p/") != std::string::npos;
+std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
+  const std::string from0 = "/ip4/0.0.0.0/";
+  const std::string from1 = "/ip4/127.0.0.1/";
+  const std::string to = "/ip4/" + host + "/";
+  auto pos = multiaddr.find(from0);
+  if (pos != std::string::npos) {
+    multiaddr.replace(pos, from0.size(), to);
+    return multiaddr;
+  }
+  pos = multiaddr.find(from1);
+  if (pos != std::string::npos && host != "127.0.0.1") {
+    multiaddr.replace(pos, from1.size(), to);
+  }
+  return multiaddr;
 }
 
-void SendUntilReceived(pbr::MediaRelayService& sender, pbr::MediaDataFrame frame, std::mutex& mu,
-                       std::condition_variable& cv, bool& got,
-                       const std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
-  const auto deadline = std::chrono::steady_clock::now() + timeout;
-  uint32_t seq = frame.seq == 0 ? 1 : frame.seq;
-  while (std::chrono::steady_clock::now() < deadline) {
-    {
-      std::lock_guard lock(mu);
-      if (got) {
-        return;
-      }
+pbr::amp::PeerLinkConfig MakeProbeLinkConfig() {
+  pbr::amp::PeerLinkConfig config;
+  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
+    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
+    if (!peer_id) {
+      return {};
     }
-    frame.seq = seq++;
-    if (!sender.SendFrame(frame)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
-      continue;
-    }
-    std::unique_lock lock(mu);
-    if (cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return got; })) {
-      return;
+    return *peer_id;
+  };
+  return config;
+}
+
+struct AmpPeer {
+  std::shared_ptr<pbr::adp::WallClock> clock;
+  std::unique_ptr<pbr::amp::AmpStack> stack;
+  std::string peer_id;
+  std::string listen_ma;
+
+  void Pump() {
+    if (stack) {
+      stack->Pump();
+      stack->Tick();
     }
   }
+
+  pbr::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
+  pbr::amp::PeerLinkManager& Links() { return stack->Links(); }
+};
+
+void PumpPeers(const std::vector<AmpPeer*>& peers) {
+  for (auto* p : peers) {
+    if (p) {
+      p->Pump();
+    }
+  }
+}
+
+template <typename Pred>
+bool PumpUntil(const std::vector<AmpPeer*>& peers, Pred&& done, const int timeout_ms) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (done()) {
+      return true;
+    }
+    PumpPeers(peers);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return done();
+}
+
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_ep,
+                                               const bool accept_inbound) {
+  auto keys = pbr::MlDsa::GenerateKeyPair();
+  if (!keys) {
+    return keys.error();
+  }
+  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  if (!peer_id) {
+    return peer_id.error();
+  }
+
+  auto bound = pbr::adp::OsUdpDatagramIo::Bind(bind_ep);
+  if (!bound) {
+    return bound.error();
+  }
+
+  auto peer = std::make_unique<AmpPeer>();
+  peer->clock = std::make_shared<pbr::adp::WallClock>();
+  peer->peer_id = *peer_id;
+
+  pbr::amp::MshIdentity identity;
+  identity.ml_dsa_secret_key = std::move(keys->secret_key);
+  identity.ml_dsa_public_key = std::move(keys->public_key);
+
+  pbr::amp::AmpStack::Config cfg;
+  cfg.identity = std::move(identity);
+  cfg.local_peer_id = peer->peer_id;
+  cfg.link_config = MakeProbeLinkConfig();
+
+  std::shared_ptr<pbr::adp::DatagramIo> io = std::move(*bound);
+  auto stack = pbr::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
+  if (!stack) {
+    return stack.error();
+  }
+  peer->stack = std::move(*stack);
+  peer->stack->Start();
+  peer->stack->GetEndpoint().SetAcceptEnabled(accept_inbound);
+
+  auto listen = pbr::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
+  if (!listen) {
+    return listen.error();
+  }
+  peer->listen_ma = *listen;
+  peer->Links().SetLocalListenMultiaddrs({peer->listen_ma});
+  return peer;
+}
+
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeLocalClient() {
+  return MakeAmpPeer(pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
+}
+
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAdvertisableTarget() {
+  return MakeAmpPeer(pbr::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
+}
+
+template <typename Result>
+struct AsyncWait {
+  std::atomic<bool> done{false};
+  pbr::Roe<Result> result = pbr::Error("pending");
+
+  std::function<void(pbr::Roe<Result>)> Fn() {
+    return [this](pbr::Roe<Result> r) {
+      result = std::move(r);
+      done.store(true, std::memory_order_release);
+    };
+  }
+
+  bool PumpUntilDone(const std::vector<AmpPeer*>& peers, const int timeout_ms = 10000) {
+    return PumpUntil(peers, [this] { return done.load(std::memory_order_acquire); }, timeout_ms);
+  }
+};
+
+void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vector<uint8_t>& payload) {
+  target.Links().SetProtocolHandler(
+      kProbeBridgeProtocol, [&](pbr::amp::PeerLink& link, const uint32_t channel_id) {
+        auto session = std::make_shared<pbr::amp::ChannelSession>();
+        session->Bind(*link.Mux(), channel_id, pbr::amp::CircuitTunnelChannelPolicy(),
+                      [&, session](pbr::Roe<std::vector<uint8_t>> frame) {
+                        if (!frame) {
+                          return false;
+                        }
+                        std::lock_guard lock(mu);
+                        payload = *frame;
+                        got = true;
+                        return true;
+                      });
+      });
 }
 
 int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
-  static std::atomic<int> port_base{47000};
-  const int client_port = port_base.fetch_add(1);
-  const int target_port = port_base.fetch_add(1);
-
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
-
-  pbr::Libp2pHost client_host;
-  pbr::Libp2pHost target_host;
-  {
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_port);
-    if (auto started = client_host.Start(cfg); !started) {
-      std::cerr << "error: client host start: " << started.error().message << "\n";
-      return 1;
-    }
-  }
-  {
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/0.0.0.0/tcp/" + std::to_string(target_port);
-    if (auto started = target_host.Start(cfg); !started) {
-      std::cerr << "error: target host start: " << started.error().message << "\n";
-      return 1;
-    }
-  }
-
-  auto client_sessions = std::make_unique<pbr::PeerSessionManager>(client_host, sessions_cfg);
-  auto client_circuit = std::make_unique<pbr::CircuitRelayService>(client_host, *client_sessions);
-  auto client_media = std::make_unique<pbr::MediaRelayService>(client_host, *client_sessions);
-  client_circuit->Start();
-
-  auto target_id = target_host.LocalPeerIdBase58();
-  if (!target_id) {
-    std::cerr << "error: target peer id unavailable\n";
+  auto client = MakeLocalClient();
+  if (!client) {
+    std::cerr << "error: client amp start: " << client.error().message << "\n";
     return 1;
   }
-  const std::string target_ma =
-      "/ip4/" + advertise_host + "/tcp/" + std::to_string(target_port) + "/p2p/" + *target_id;
+  auto target = MakeAdvertisableTarget();
+  if (!target) {
+    std::cerr << "error: target amp start: " << target.error().message << "\n";
+    return 1;
+  }
+
+  std::string target_ma = RewriteListenHost((*target)->listen_ma, advertise_host);
 
   std::mutex target_mu;
-  std::condition_variable target_cv;
   bool target_got = false;
   std::vector<uint8_t> target_payload;
+  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload);
 
-  target_host.GetHost().setProtocolHandler(
-      {ProtocolName{kProbeBridgeProtocol}},
-      [&](libp2p::StreamAndProtocol stream_in) {
-        auto stream = std::move(stream_in.stream);
-        target_host.Post([&, stream = std::move(stream)]() mutable {
-          auto reader = std::make_shared<pbr::AsyncLengthPrefixedReader>();
-          reader->Start(
-              stream,
-              [&](pbr::Roe<std::vector<uint8_t>> frame) {
-                if (!frame) {
-                  return;
-                }
-                std::lock_guard lock(target_mu);
-                target_payload = *frame;
-                target_got = true;
-                target_cv.notify_one();
-              },
-              [] { return false; });
-        });
-      });
-
-  if (auto reg = client_sessions->RegisterEndpoint("hop", hop_ma); !reg) {
+  if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
+
+  auto media = std::make_unique<pbr::AmpMediaRelayCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  media->Start();
+  media->SetServeInbound(false);
+  circuit->Start();
+  circuit->SetServeInbound(false);
+
+  const std::vector<AmpPeer*> pumps = {client->get(), target->get()};
 
   std::cout << "pp-node L1 probe hop=" << hop_ma << "\n";
   std::cout << "pp-node L1 probe target advertise=" << target_ma << "\n";
@@ -251,107 +337,109 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
     pbr::MediaRelayQuoteRequest qreq;
     qreq.call_id = "pp-node-probe";
     qreq.participants = 1;
-    auto quote = client_media->RequestQuote("hop", qreq, 8000);
-    if (!quote) {
-      std::cerr << "error: media_relay quote: " << quote.error().message << "\n";
+    AsyncWait<pbr::MediaRelayQuote> wait;
+    if (!media->StartQuote("hop", qreq, wait.Fn(), 8000)) {
+      std::cerr << "error: media_relay quote start failed\n";
       return 1;
     }
-    if (!quote->ok) {
-      std::cerr << "error: media_relay quote rejected: " << quote->error << "\n";
+    if (!wait.PumpUntilDone(pumps) || !wait.result) {
+      std::cerr << "error: media_relay quote: "
+                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
       return 1;
     }
-    std::cout << "ok  media_relay RequestQuote quote_id=" << quote->quote_id
-              << " pricing=" << quote->pricing_mode << "\n";
+    if (!wait.result->ok) {
+      std::cerr << "error: media_relay quote rejected: " << wait.result->error << "\n";
+      return 1;
+    }
+    std::cout << "ok  media_relay RequestQuote quote_id=" << wait.result->quote_id
+              << " pricing=" << wait.result->pricing_mode << "\n";
   }
 
   {
-    pbr::CircuitBridgeTarget target;
-    target.target_multiaddr = target_ma;
-    target.target_protocol = kProbeBridgeProtocol;
-    auto bridged = client_circuit->RequestBridge("hop", target, 10000);
-    if (!bridged) {
-      std::cerr << "error: circuit_relay bridge: " << bridged.error().message << "\n";
+    pbr::CircuitBridgeTarget bridge_target;
+    bridge_target.target_peer_id = (*target)->peer_id;
+    bridge_target.target_multiaddr = target_ma;
+    bridge_target.target_protocol = kProbeBridgeProtocol;
+
+    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
+    if (!tunnel_id) {
+      std::cerr << "error: circuit_relay bridge start failed\n";
       return 1;
     }
-    if (!bridged->ok || !bridged->stream) {
-      std::cerr << "error: circuit_relay bridge rejected: " << bridged->error << "\n";
+    if (!wait.PumpUntilDone(pumps, 12000) || !wait.result) {
+      std::cerr << "error: circuit_relay bridge: "
+                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
       return 1;
     }
+    if (!wait.result->ok || !wait.result->session) {
+      std::cerr << "error: circuit_relay bridge rejected: " << wait.result->error << "\n";
+      return 1;
+    }
+
     const std::vector<uint8_t> payload = {'p', 'r', 'o', 'b', 'e'};
-    auto write = RunOnWorker<pbr::Roe<void>>(client_host, [&] {
-      return pbr::BlockingWriteLengthPrefixedFrame(bridged->stream, payload);
-    });
-    if (!write) {
-      std::cerr << "error: circuit bridge write: " << write.error().message << "\n";
+    if (!wait.result->session->EnqueueOutbound(payload)) {
+      std::cerr << "error: circuit bridge write failed\n";
+      return 1;
+    }
+    if (!PumpUntil(
+            pumps,
+            [&] {
+              std::lock_guard lock(target_mu);
+              return target_got;
+            },
+            8000)) {
+      std::cerr << "error: circuit bridge payload not received by local target\n";
       return 1;
     }
     {
-      std::unique_lock lock(target_mu);
-      if (!target_cv.wait_for(lock, std::chrono::seconds(5), [&] { return target_got; })) {
-        std::cerr << "error: circuit bridge payload not received by local target\n";
-        return 1;
-      }
+      std::lock_guard lock(target_mu);
       if (target_payload != payload) {
         std::cerr << "error: circuit bridge payload mismatch\n";
         return 1;
       }
     }
-    std::cout << "ok  circuit_relay RequestBridge + payload\n";
+    std::cout << "ok  circuit_relay StartBridge + payload\n";
   }
 
-  client_media.reset();
-  client_circuit.reset();
-  client_sessions.reset();
-  client_host.Stop();
-  target_host.Stop();
+  media->Stop();
+  circuit->Stop();
+  (*client)->stack->Stop();
+  (*target)->stack->Stop();
 
   std::cout << "pp-node L1 probe PASSED\n";
   return 0;
 }
 
-/** N-FANOUT: two client hosts in this process against a live (often container) hop. */
 int RunMediaFanout(const std::string& hop_ma) {
-  static std::atomic<int> port_base{48000};
-  const int a_port = port_base.fetch_add(1);
-  const int b_port = port_base.fetch_add(1);
-
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
-
-  pbr::Libp2pHost a_host;
-  pbr::Libp2pHost b_host;
-  {
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(a_port);
-    if (auto started = a_host.Start(cfg); !started) {
-      std::cerr << "error: client-a host start: " << started.error().message << "\n";
-      return 1;
-    }
+  auto a = MakeLocalClient();
+  if (!a) {
+    std::cerr << "error: client-a amp start: " << a.error().message << "\n";
+    return 1;
   }
-  {
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(b_port);
-    if (auto started = b_host.Start(cfg); !started) {
-      std::cerr << "error: client-b host start: " << started.error().message << "\n";
-      return 1;
-    }
+  auto b = MakeLocalClient();
+  if (!b) {
+    std::cerr << "error: client-b amp start: " << b.error().message << "\n";
+    return 1;
   }
 
-  auto a_sessions = std::make_unique<pbr::PeerSessionManager>(a_host, sessions_cfg);
-  auto b_sessions = std::make_unique<pbr::PeerSessionManager>(b_host, sessions_cfg);
-  auto a_relay = std::make_unique<pbr::MediaRelayService>(a_host, *a_sessions);
-  auto b_relay = std::make_unique<pbr::MediaRelayService>(b_host, *b_sessions);
-
-  if (auto reg = a_sessions->RegisterEndpoint("hop", hop_ma); !reg) {
+  if (auto reg = (*a)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: client-a register hop: " << reg.error().message << "\n";
     return 1;
   }
-  if (auto reg = b_sessions->RegisterEndpoint("hop", hop_ma); !reg) {
+  if (auto reg = (*b)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: client-b register hop: " << reg.error().message << "\n";
     return 1;
   }
 
+  auto a_relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*a)->Runtime());
+  auto b_relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*b)->Runtime());
+  a_relay->Start();
+  b_relay->Start();
+  a_relay->SetServeInbound(false);
+  b_relay->SetServeInbound(false);
+
+  const std::vector<AmpPeer*> pumps = {a->get(), b->get()};
   const std::string call_id = "pp-node-fanout";
   pbr::MediaRelayQuoteRequest qreq;
   qreq.call_id = call_id;
@@ -359,56 +447,52 @@ int RunMediaFanout(const std::string& hop_ma) {
 
   std::cout << "pp-node N-FANOUT probe hop=" << hop_ma << "\n";
 
-  auto qa = a_relay->RequestQuote("hop", qreq, 8000);
-  if (!qa) {
-    std::cerr << "error: client-a quote: " << qa.error().message << "\n";
+  AsyncWait<pbr::MediaRelayQuote> qa;
+  AsyncWait<pbr::MediaRelayQuote> qb;
+  if (!a_relay->StartQuote("hop", qreq, qa.Fn(), 8000) || !b_relay->StartQuote("hop", qreq, qb.Fn(), 8000)) {
+    std::cerr << "error: quote start failed\n";
     return 1;
   }
-  if (!qa->ok) {
-    std::cerr << "error: client-a quote rejected: " << qa->error << "\n";
+  if (!qa.PumpUntilDone(pumps) || !qa.result || !qa.result->ok) {
+    std::cerr << "error: client-a quote: "
+              << (qa.result ? qa.result->error : qa.result.error().message) << "\n";
     return 1;
   }
-  auto qb = b_relay->RequestQuote("hop", qreq, 8000);
-  if (!qb) {
-    std::cerr << "error: client-b quote: " << qb.error().message << "\n";
+  if (!qb.PumpUntilDone(pumps) || !qb.result || !qb.result->ok) {
+    std::cerr << "error: client-b quote: "
+              << (qb.result ? qb.result->error : qb.result.error().message) << "\n";
     return 1;
   }
-  if (!qb->ok) {
-    std::cerr << "error: client-b quote rejected: " << qb->error << "\n";
-    return 1;
-  }
-  std::cout << "ok  quotes a=" << qa->quote_id << " b=" << qb->quote_id << "\n";
+  std::cout << "ok  quotes a=" << qa.result->quote_id << " b=" << qb.result->quote_id << "\n";
 
-  std::mutex mu;
-  std::condition_variable cv;
-  bool got = false;
+  std::atomic<bool> got{false};
   pbr::MediaDataFrame received;
 
-  auto attach_a =
-      a_relay->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](pbr::MediaDataFrame) {}, 8000);
-  if (!attach_a) {
-    std::cerr << "error: client-a attach: " << attach_a.error().message << "\n";
+  AsyncWait<pbr::MediaRelayAttachResult> attach_a;
+  AsyncWait<pbr::MediaRelayAttachResult> attach_b;
+  if (!a_relay->StartAttach("hop", qa.result->quote_id, call_id, call_id, [](pbr::MediaDataFrame) {},
+                            attach_a.Fn(), 8000)) {
+    std::cerr << "error: client-a attach start failed\n";
     return 1;
   }
-  if (!attach_a->ok) {
-    std::cerr << "error: client-a attach rejected: " << attach_a->error << "\n";
+  if (!b_relay->StartAttach(
+          "hop", qb.result->quote_id, call_id, call_id,
+          [&](pbr::MediaDataFrame frame) {
+            received = std::move(frame);
+            got.store(true, std::memory_order_release);
+          },
+          attach_b.Fn(), 8000)) {
+    std::cerr << "error: client-b attach start failed\n";
     return 1;
   }
-  auto attach_b = b_relay->AcceptAndAttach(
-      "hop", qb->quote_id, call_id, call_id,
-      [&](pbr::MediaDataFrame frame) {
-        std::lock_guard lock(mu);
-        received = std::move(frame);
-        got = true;
-        cv.notify_one();
-      },
-      8000);
-  if (!attach_b) {
-    std::cerr << "error: client-b attach: " << attach_b.error().message << "\n";
+  if (!attach_a.PumpUntilDone(pumps) || !attach_a.result || !attach_a.result->ok) {
+    std::cerr << "error: client-a attach: "
+              << (attach_a.result ? attach_a.result->error : attach_a.result.error().message) << "\n";
     return 1;
   }
-  if (!attach_b->ok) {
-    std::cerr << "error: client-b attach rejected: " << attach_b->error << "\n";
+  if (!attach_b.PumpUntilDone(pumps) || !attach_b.result || !attach_b.result->ok) {
+    std::cerr << "error: client-b attach: "
+              << (attach_b.result ? attach_b.result->error : attach_b.result.error().message) << "\n";
     return 1;
   }
   std::cout << "ok  AcceptAndAttach ×2\n";
@@ -420,15 +504,24 @@ int RunMediaFanout(const std::string& hop_ma) {
     std::cerr << "error: client-b subscribe: " << sub.error().message << "\n";
     return 1;
   }
+  for (int i = 0; i < 40; ++i) {
+    PumpPeers(pumps);
+  }
 
   pbr::MediaDataFrame sent;
   sent.stream_id = 1;
   sent.channel_id = 0;
   sent.channel_type = pbr::MediaChannelType::LatestLossy;
-  sent.seq = 1;
   sent.payload = {'f', 'a', 'n', 'o', 'u', 't'};
-  SendUntilReceived(*a_relay, sent, mu, cv, got);
-  if (!got) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+  uint32_t seq = 1;
+  while (std::chrono::steady_clock::now() < deadline && !got.load(std::memory_order_acquire)) {
+    sent.seq = seq++;
+    (void)a_relay->SendFrame(sent);
+    PumpPeers(pumps);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  if (!got.load(std::memory_order_acquire)) {
     std::cerr << "error: fan-out frame not received by client-b\n";
     return 1;
   }
@@ -440,22 +533,18 @@ int RunMediaFanout(const std::string& hop_ma) {
 
   a_relay->Detach();
   b_relay->Detach();
-  a_relay.reset();
-  b_relay.reset();
-  a_sessions.reset();
-  b_sessions.reset();
-  a_host.Stop();
-  b_host.Stop();
+  a_relay->Stop();
+  b_relay->Stop();
+  (*a)->stack->Stop();
+  (*b)->stack->Stop();
 
   std::cout << "pp-node N-FANOUT probe PASSED\n";
   return 0;
 }
 
 struct CapClient {
-  pbr::Libp2pHost host;
-  std::unique_ptr<pbr::PeerSessionManager> sessions;
-  std::unique_ptr<pbr::MediaRelayService> relay;
-  int port = 0;
+  std::unique_ptr<AmpPeer> peer;
+  std::unique_ptr<pbr::AmpMediaRelayCoordinator> relay;
 };
 
 struct MediaCapResult {
@@ -475,23 +564,15 @@ void PrintCapCurve(const MediaCapResult& r) {
   std::cout.unsetf(std::ios::floatfield);
 }
 
-/**
- * N-CAP-MEDIA: attach N clients to a live hop; report success + attach latency.
- * Soft pass: all attachers succeed for N ≤ 8; larger N is informational unless hop dies.
- */
 MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
   MediaCapResult result;
   result.n = attachers;
-
-  static std::atomic<int> port_base{49000};
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
 
   const std::string call_id = "pp-node-cap-" + std::to_string(attachers);
   std::vector<std::unique_ptr<CapClient>> clients;
   clients.reserve(static_cast<size_t>(attachers));
   std::vector<double> attach_ms;
+  std::vector<AmpPeer*> pumps;
 
   std::cout << "pp-node N-CAP-MEDIA probe hop=" << hop_ma << " attachers=" << attachers << "\n";
 
@@ -499,11 +580,9 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
   int transport_fails = 0;
   for (int i = 0; i < attachers; ++i) {
     auto c = std::make_unique<CapClient>();
-    c->port = port_base.fetch_add(1);
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(c->port);
-    if (auto started = c->host.Start(cfg); !started) {
-      std::cerr << "error: client-" << i << " host start: " << started.error().message << "\n";
+    auto peer = MakeLocalClient();
+    if (!peer) {
+      std::cerr << "error: client-" << i << " amp start: " << peer.error().message << "\n";
       result.hop_died = true;
       result.attached = attached;
       result.success_rate = attachers > 0 ? (100.0 * attached / attachers) : 0.0;
@@ -512,9 +591,12 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
       PrintCapCurve(result);
       return result;
     }
-    c->sessions = std::make_unique<pbr::PeerSessionManager>(c->host, sessions_cfg);
-    c->relay = std::make_unique<pbr::MediaRelayService>(c->host, *c->sessions);
-    if (auto reg = c->sessions->RegisterEndpoint("hop", hop_ma); !reg) {
+    c->peer = std::move(*peer);
+    pumps.push_back(c->peer.get());
+    c->relay = std::make_unique<pbr::AmpMediaRelayCoordinator>(c->peer->Runtime());
+    c->relay->Start();
+    c->relay->SetServeInbound(false);
+    if (auto reg = c->peer->Links().RegisterEndpoint("hop", hop_ma); !reg) {
       std::cerr << "error: client-" << i << " register hop: " << reg.error().message << "\n";
       result.hop_died = true;
       result.attached = attached;
@@ -529,27 +611,43 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     pbr::MediaRelayQuoteRequest qreq;
     qreq.call_id = call_id;
     qreq.participants = attachers;
-    auto quote = c->relay->RequestQuote("hop", qreq, 8000);
-    if (!quote || !quote->ok) {
-      const std::string err = quote ? quote->error : quote.error().message;
+
+    AsyncWait<pbr::MediaRelayQuote> quote_wait;
+    if (!c->relay->StartQuote("hop", qreq, quote_wait.Fn(), 8000)) {
+      ++transport_fails;
+      clients.push_back(std::move(c));
+      continue;
+    }
+    if (!quote_wait.PumpUntilDone(pumps) || !quote_wait.result || !quote_wait.result->ok) {
+      const std::string err =
+          quote_wait.result ? quote_wait.result->error : quote_wait.result.error().message;
       std::cerr << "warn: client-" << i << " quote failed: " << err << "\n";
-      if (!quote) {
+      if (!quote_wait.result) {
         ++transport_fails;
       }
       clients.push_back(std::move(c));
       continue;
     }
-    auto attach = c->relay->AcceptAndAttach("hop", quote->quote_id, call_id, call_id,
-                                            [](pbr::MediaDataFrame) {}, 8000);
-    if (!attach || !attach->ok) {
+
+    AsyncWait<pbr::MediaRelayAttachResult> attach_wait;
+    if (!c->relay->StartAttach("hop", quote_wait.result->quote_id, call_id, call_id,
+                               [](pbr::MediaDataFrame) {}, attach_wait.Fn(), 8000)) {
+      ++transport_fails;
+      clients.push_back(std::move(c));
+      continue;
+    }
+    if (!attach_wait.PumpUntilDone(pumps) || !attach_wait.result || !attach_wait.result->ok) {
       std::cerr << "warn: client-" << i << " attach failed: "
-                << (attach ? attach->error : attach.error().message) << "\n";
-      if (!attach) {
+                << (attach_wait.result ? attach_wait.result->error
+                                       : attach_wait.result.error().message)
+                << "\n";
+      if (!attach_wait.result) {
         ++transport_fails;
       }
       clients.push_back(std::move(c));
       continue;
     }
+
     const auto dt = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0);
     attach_ms.push_back(dt.count());
     ++attached;
@@ -566,15 +664,11 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
   for (auto& c : clients) {
     if (c && c->relay) {
       c->relay->Detach();
+      c->relay->Stop();
     }
-  }
-  for (auto& c : clients) {
-    if (!c) {
-      continue;
+    if (c && c->peer && c->peer->stack) {
+      c->peer->stack->Stop();
     }
-    c->relay.reset();
-    c->sessions.reset();
-    c->host.Stop();
   }
   return result;
 }
@@ -605,12 +699,9 @@ int RunMediaCap(const std::string& hop_ma, const std::vector<int>& ns) {
 }
 
 struct CircuitTarget {
-  pbr::Libp2pHost host;
-  int port = 0;
-  std::string peer_id;
+  std::unique_ptr<AmpPeer> peer;
   std::string advertise_ma;
   std::mutex mu;
-  std::condition_variable cv;
   bool got = false;
   std::vector<uint8_t> payload;
 };
@@ -623,106 +714,79 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
     return 2;
   }
 
-  static std::atomic<int> port_base{50000};
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
-
   std::cout << "pp-node N-CAP-CIRCUIT probe hop=" << hop_ma << " bridges=" << bridges << "\n";
 
-  pbr::Libp2pHost client_host;
-  {
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(port_base.fetch_add(1));
-    if (auto started = client_host.Start(cfg); !started) {
-      std::cerr << "error: circuit-cap client host start: " << started.error().message << "\n";
-      return 1;
-    }
+  auto client = MakeLocalClient();
+  if (!client) {
+    std::cerr << "error: circuit-cap client amp start: " << client.error().message << "\n";
+    return 1;
   }
-  auto client_sessions = std::make_unique<pbr::PeerSessionManager>(client_host, sessions_cfg);
-  auto client_circuit = std::make_unique<pbr::CircuitRelayService>(client_host, *client_sessions);
-  client_circuit->Start();
-  if (auto reg = client_sessions->RegisterEndpoint("hop", hop_ma); !reg) {
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  circuit->Start();
+  circuit->SetServeInbound(false);
+  if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
 
   std::vector<std::unique_ptr<CircuitTarget>> targets;
   targets.reserve(static_cast<size_t>(bridges));
+  std::vector<AmpPeer*> pumps = {client->get()};
+
   for (int i = 0; i < bridges; ++i) {
     auto t = std::make_unique<CircuitTarget>();
-    t->port = port_base.fetch_add(1);
-    pbr::Libp2pHostConfig cfg;
-    cfg.listen_multiaddr = "/ip4/0.0.0.0/tcp/" + std::to_string(t->port);
-    if (auto started = t->host.Start(cfg); !started) {
-      std::cerr << "error: target-" << i << " host start: " << started.error().message << "\n";
+    auto peer = MakeAdvertisableTarget();
+    if (!peer) {
+      std::cerr << "error: target-" << i << " amp start: " << peer.error().message << "\n";
       std::cout << "circuit_curve m=" << bridges << " ok=0 success_rate=0\n";
       return 1;
     }
-    auto id = t->host.LocalPeerIdBase58();
-    if (!id) {
-      std::cerr << "error: target-" << i << " peer id unavailable\n";
-      return 1;
-    }
-    t->peer_id = *id;
-    t->advertise_ma = "/ip4/" + advertise_host + "/tcp/" + std::to_string(t->port) + "/p2p/" + *id;
-    auto* raw = t.get();
-    t->host.GetHost().setProtocolHandler(
-        {ProtocolName{kProbeBridgeProtocol}},
-        [raw](libp2p::StreamAndProtocol stream_in) {
-          auto stream = std::move(stream_in.stream);
-          raw->host.Post([raw, stream = std::move(stream)]() mutable {
-            auto reader = std::make_shared<pbr::AsyncLengthPrefixedReader>();
-            reader->Start(
-                stream,
-                [raw](pbr::Roe<std::vector<uint8_t>> frame) {
-                  if (!frame) {
-                    return;
-                  }
-                  std::lock_guard lock(raw->mu);
-                  raw->payload = *frame;
-                  raw->got = true;
-                  raw->cv.notify_one();
-                },
-                [] { return false; });
-          });
-        });
+    t->peer = std::move(*peer);
+    t->advertise_ma = RewriteListenHost(t->peer->listen_ma, advertise_host);
+    ArmProbeBridgeTarget(*t->peer, t->mu, t->got, t->payload);
+    pumps.push_back(t->peer.get());
     targets.push_back(std::move(t));
   }
 
   int ok = 0;
-  std::vector<std::shared_ptr<libp2p::connection::Stream>> live;
   for (int i = 0; i < bridges; ++i) {
-    pbr::CircuitBridgeTarget target;
-    target.target_multiaddr = targets[static_cast<size_t>(i)]->advertise_ma;
-    target.target_protocol = kProbeBridgeProtocol;
-    auto bridged = client_circuit->RequestBridge("hop", target, 10000);
-    if (!bridged || !bridged->ok || !bridged->stream) {
+    pbr::CircuitBridgeTarget bridge_target;
+    bridge_target.target_peer_id = targets[static_cast<size_t>(i)]->peer->peer_id;
+    bridge_target.target_multiaddr = targets[static_cast<size_t>(i)]->advertise_ma;
+    bridge_target.target_protocol = kProbeBridgeProtocol;
+
+    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
+    if (!tunnel_id || !wait.PumpUntilDone(pumps, 12000) || !wait.result || !wait.result->ok ||
+        !wait.result->session) {
       std::cerr << "warn: bridge-" << i << " failed: "
-                << (bridged ? bridged->error : bridged.error().message) << "\n";
+                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
       continue;
     }
+
     const std::vector<uint8_t> payload = {'c', 'a', 'p', static_cast<uint8_t>('0' + (i % 10))};
-    auto write = RunOnWorker<pbr::Roe<void>>(client_host, [&] {
-      return pbr::BlockingWriteLengthPrefixedFrame(bridged->stream, payload);
-    });
-    if (!write) {
-      std::cerr << "warn: bridge-" << i << " write: " << write.error().message << "\n";
+    if (!wait.result->session->EnqueueOutbound(payload)) {
+      std::cerr << "warn: bridge-" << i << " write failed\n";
       continue;
     }
     auto& tgt = *targets[static_cast<size_t>(i)];
+    if (!PumpUntil(
+            pumps,
+            [&] {
+              std::lock_guard lock(tgt.mu);
+              return tgt.got;
+            },
+            8000)) {
+      std::cerr << "warn: bridge-" << i << " payload not received\n";
+      continue;
+    }
     {
-      std::unique_lock lock(tgt.mu);
-      if (!tgt.cv.wait_for(lock, std::chrono::seconds(5), [&] { return tgt.got; })) {
-        std::cerr << "warn: bridge-" << i << " payload not received\n";
-        continue;
-      }
+      std::lock_guard lock(tgt.mu);
       if (tgt.payload != payload) {
         std::cerr << "warn: bridge-" << i << " payload mismatch\n";
         continue;
       }
     }
-    live.push_back(bridged->stream);
     ++ok;
   }
 
@@ -732,12 +796,12 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
   std::cout << "circuit_curve m=" << bridges << " ok=" << ok << " success_rate=" << rate << "\n";
   std::cout.unsetf(std::ios::floatfield);
 
-  live.clear();
-  client_circuit.reset();
-  client_sessions.reset();
-  client_host.Stop();
+  circuit->Stop();
+  (*client)->stack->Stop();
   for (auto& t : targets) {
-    t->host.Stop();
+    if (t && t->peer && t->peer->stack) {
+      t->peer->stack->Stop();
+    }
   }
   return 0;
 }
@@ -904,7 +968,12 @@ int main(int argc, char** argv) {
     }
   }
   if (hop_ma.empty() || !HasP2pSuffix(hop_ma)) {
-    std::cerr << "error: --hop multiaddr with /p2p/<PeerId> required\n";
+    std::cerr << "error: --hop Amp multiaddr with /p2p/<PeerId> required\n";
+    PrintUsage(argv[0]);
+    return 2;
+  }
+  if (hop_ma.find("/adp/") == std::string::npos) {
+    std::cerr << "error: --hop must be an Amp ADP multiaddr (.../udp/.../adp/1.0.0/p2p/...)\n";
     PrintUsage(argv[0]);
     return 2;
   }

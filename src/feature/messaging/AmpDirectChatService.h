@@ -3,7 +3,7 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
-#include "feature/messaging/Libp2pDirectChatService.h"
+#include "feature/messaging/IDirectMessageClient.h"
 
 #include <functional>
 #include <memory>
@@ -18,7 +18,7 @@ namespace pbr {
  */
 class AmpDirectChatService : public IDirectMessageClient {
 public:
-  using InboundHandler = Libp2pDirectChatService::InboundHandler;
+  using InboundHandler = IDirectMessageClient::InboundHandler;
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 

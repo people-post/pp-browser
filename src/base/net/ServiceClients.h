@@ -38,7 +38,9 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** D060 peer-direct history — libp2p `/pp-browser/chat-history/1.0.0`. */
+/** D060 peer-direct history — `/pp-browser/chat-history/1.0.0`. */
+inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/1.0.0";
+
 class IChatHistoryPeerClient {
 public:
   virtual ~IChatHistoryPeerClient() = default;

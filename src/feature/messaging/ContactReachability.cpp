@@ -2,19 +2,15 @@
 
 #include "base/people/ContactIdentity.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/p2p/PeerSessionManager.h"
 
 namespace pbr {
 
-bool IsContactStackDialable(const Contact& contact, const PeerSessionManager* sessions) {
-  if (sessions == nullptr) {
-    return false;
-  }
-  const std::string peer_id = PeerIdFromContact(contact);
-  if (peer_id.empty()) {
-    return false;
-  }
-  return sessions->IsDialable(peer_id);
+class PeerSessionManager;
+
+bool IsContactStackDialable(const Contact& contact, const PeerSessionManager* /*sessions*/) {
+  // A017: TCP PeerSessionManager dialability retired; Amp reach uses multiaddrs / mDNS / hops.
+  (void)contact;
+  return false;
 }
 
 bool IsContactReachableForMessaging(const Contact& contact, const PeerSessionManager* sessions,

@@ -5,18 +5,17 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/PeerSessionManager.h"
+#include "common/PbrCompat.h"
 
 #include <memory>
 #include <string>
-#include "common/PbrCompat.h"
 
 namespace pbr {
 
-inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/1.0.0";
+class Libp2pHost;
+class PeerSessionManager;
 
-/** D060 libp2p peer-direct history — responder + requester over `/pp-browser/chat-history/1.0.0`. */
+/** Legacy TCP chat-history. Product path is AmpChatHistoryService (D10/A017). */
 class Libp2pChatHistoryService : public IChatHistoryPeerClient {
 public:
   Libp2pChatHistoryService(Libp2pHost& host, PeerSessionManager& sessions, IThreadStore& store,
@@ -26,13 +25,9 @@ public:
   Libp2pChatHistoryService(const Libp2pChatHistoryService&) = delete;
   Libp2pChatHistoryService& operator=(const Libp2pChatHistoryService&) = delete;
 
-  /** Register protocol handler on the shared host. */
   void Start();
   void Stop();
-
-  /** Map relay communicating identity → dialable multiaddr (must include `/p2p/`). */
   void RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
-
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
