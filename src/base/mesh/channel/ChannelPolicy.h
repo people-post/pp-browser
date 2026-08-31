@@ -79,4 +79,44 @@ inline ChannelPolicy CapabilityChannelPolicy() {
   return policy;
 }
 
+/**
+ * `/pp-browser/circuit-relay/1.0.0` tunnel: JSON bridge handshake then opaque DATA splice.
+ * Reliable; not read_once (stays open for forward).
+ */
+inline ChannelPolicy CircuitTunnelChannelPolicy(
+    std::chrono::milliseconds read_timeout = std::chrono::milliseconds{8000}) {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::Control;
+  policy.drop = ChannelDropPolicy::Never;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.read_once = false;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes;
+  policy.read_timeout = read_timeout;
+  return policy;
+}
+
+/** Media-relay hop leg — BestEffort realtime fan-out (AMP-CHANNEL; D7b). */
+inline ChannelPolicy MediaRelayHopChannelPolicy() {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::Realtime;
+  policy.drop = ChannelDropPolicy::Oldest;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxCallMediaOutboundFrames;
+  policy.write_preferred = true;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxCallMediaFrameBytes;
+  return policy;
+}
+
+/** Media-relay client attach leg — Reliable control + attach JSON. */
+inline ChannelPolicy MediaRelayClientChannelPolicy(
+    std::chrono::milliseconds read_timeout = std::chrono::milliseconds{8000}) {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::RealtimeControl;
+  policy.drop = ChannelDropPolicy::Never;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.read_once = false;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes;
+  policy.read_timeout = read_timeout;
+  return policy;
+}
+
 } // namespace pbr::amp

@@ -168,17 +168,34 @@ One call attempt = **`call_id`-keyed control + media channel pair** on an existi
 
 Admit rules are pure (`CallMediaBundleLogic`); L4 runs on **`MeshRuntime`** io thread.
 
-## Circuit tunnel (outline)
+## Circuit tunnel (v1)
 
-Relay opens paired tunnel channels to A and B. **Opaque L3 frames** (post-L2 ciphertext on each leg) forwarded by relay without decrypt.
+Relay hosts `/pp-browser/circuit-relay/1.0.0`. After a JSON bridge handshake, the relay **splices opaque L4 DATA bodies** between the client circuit channel and a channel opened to the target on `target_protocol` (parity with today’s `StreamBridge`). Each hop still has its own AMP Session (A↔R, R↔B); the relay does not terminate an A↔B Session. Nested end-to-end Session through the tunnel ([A019] blind L2 ciphertext) remains a future refinement.
 
-Tunnel OPEN includes:
+### Bridge request (first DATA on circuit channel)
 
-- `target_protocol_id`
-- `target_peer_id`
-- relay scope / quote refs (product fields)
+```json
+{
+  "v": 1,
+  "op": "bridge",
+  "timeout_ms": 8000,
+  "target_peer_id": "<base58>",
+  "target_multiaddr": "/ip4/.../udp/.../adp/1.0.0/p2p/...",
+  "target_protocol": "/pp-browser/call-media/1.0.0"
+}
+```
 
-Full wire in [p2p-mesh RELAY_SCOPE](../../projects/p2p-mesh/RELAY_SCOPE.md) — updated when tunnel ships.
+`target_multiaddr` and/or `target_peer_id` required. `target_protocol` defaults to the circuit protocol id when omitted.
+
+### Bridge result (second DATA, before splice)
+
+```json
+{ "v": 1, "ok": true, "resolved_multiaddr": "..." }
+```
+
+or `{ "v": 1, "ok": false, "error": "..." }`. On success, further DATA bodies are forwarded bidirectionally until either channel closes.
+
+Channel policy: `CircuitTunnelChannelPolicy` (Reliable Control, not `read_once`). Admission uses the same contact/scope rules as libp2p circuit ([RELAY_SCOPE](../../projects/p2p-mesh/RELAY_SCOPE.md)).
 
 ## Three objects (do not collapse)
 

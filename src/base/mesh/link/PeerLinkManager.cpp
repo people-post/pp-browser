@@ -107,6 +107,7 @@ PeerLinkSnapshot PeerLinkManager::GetLinkSnapshot(const std::string& peer_key) c
     snap.phase = PeerLinkPhase::Unavailable;
     return snap;
   }
+  snap.multiaddr = endpoints_.at(peer_key).multiaddr;
   if (const auto* link = FindLink(peer_key)) {
     snap.phase = link->Phase();
   } else if (const auto it = dial_failed_until_.find(peer_key); it != dial_failed_until_.end()) {

@@ -27,7 +27,9 @@
 | 0–3 | ADP L1 foundation | **Done** |
 | 4 | Opus TCP side-path (transitional) | Code landed; superseded by AMP D6 |
 | D0 | Stack constitution | **Done** |
-| D1–D9 | AMP implementation | **Next** — see [PHASES.md](PHASES.md) |
+| D1–D6 | Session, channel, link, chat, call-media | **Done** (parallel stacks; product still libp2p) |
+| D7a | Circuit tunnel AMP | **Done** |
+| D7b–D9 | Media-relay AMP → reachability → cutover | **Next** — see [PHASES.md](PHASES.md) |
 
 ## Locked product decisions
 

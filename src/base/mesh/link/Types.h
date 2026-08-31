@@ -40,6 +40,7 @@ struct PeerLinkSnapshot {
   std::chrono::milliseconds backoff_remaining{0};
   std::string detail;
   bool has_endpoint = false;
+  std::string multiaddr;
 };
 
 struct PeerLinkConfig {

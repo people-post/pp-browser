@@ -27,6 +27,14 @@ void ChannelSession::Bind(ChannelMux& mux, const uint32_t channel_id, ChannelPol
   });
 }
 
+void ChannelSession::SetFrameHandler(FrameHandler on_frame) {
+  on_frame_ = std::move(on_frame);
+}
+
+void ChannelSession::SetClosedCallback(ClosedCallback on_closed) {
+  on_closed_ = std::move(on_closed);
+}
+
 bool ChannelSession::EnqueueOutbound(std::vector<uint8_t> body) {
   if (closed_ || !mux_) {
     return false;

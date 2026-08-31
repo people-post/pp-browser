@@ -100,9 +100,11 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D7 — L4 port: circuit + media-relay
 
-- [ ] Channel tunnel model ([A019](DECISIONS.md#a019--circuit-relay--channel-tunnel))
-- [ ] `MediaRelayRuntime` on ChannelSession
-- [ ] Relay scope + quote fields in tunnel OPEN
+- [x] **D7a** Channel tunnel v1 — `ChannelBridge` + `AmpCircuitRelayService` on `MeshRuntime` (DATA splice; bridge JSON parity with libp2p circuit)
+- [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
+- [x] `pp_browser_p2p_test` — `AmpCircuitRelayServiceTest` (forward, reverse, stranger refuse)
+- [ ] **D7b** `AmpMediaRelayService` — quote/attach/fan-out on ChannelSession
+- [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — deferred
 
 ### D8 — Reachability
 

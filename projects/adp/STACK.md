@@ -137,9 +137,9 @@ A ──Session──► R ──Session──► B
           └──── R forwards L3 frames opaque ────┘
 ```
 
-- Relay sees L2 ciphertext (blind relay preserved)
-- Target `protocol_id` in tunnel OPEN (replaces stream-bridge target protocol)
-- Spec before implementation; after direct chat + call-media on AMP
+- **v1 (shipped D7a):** relay splices opaque **L4 DATA** on A↔R and R↔B Sessions (`ChannelBridge` / `AmpCircuitRelayService`) — parity with StreamBridge
+- **Future:** nested A↔B Session so relay sees only L2 ciphertext (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind)
+- Target `protocol_id` in bridge JSON (replaces stream-bridge target protocol)
 
 ## Addressing
 

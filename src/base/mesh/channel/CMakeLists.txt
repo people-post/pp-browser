@@ -1,6 +1,7 @@
 pp_browser_add_base_library(pp_base_mesh_channel
   SOURCES
     Capability.cpp
+    ChannelBridge.cpp
     ChannelMux.cpp
     ChannelSession.cpp
     ChannelWire.cpp

@@ -25,6 +25,11 @@ public:
   void Bind(ChannelMux& mux, uint32_t channel_id, ChannelPolicy policy, FrameHandler on_frame,
             ClosedCallback on_closed = {});
 
+  /** Replace the DATA handler after Bind (e.g. circuit tunnel: JSON handshake → forward). */
+  void SetFrameHandler(FrameHandler on_frame);
+  /** Replace the terminal/close callback after Bind. */
+  void SetClosedCallback(ClosedCallback on_closed);
+
   /** Queue an L4 payload. Returns false if session closed or queue full (drop policy applied). */
   bool EnqueueOutbound(std::vector<uint8_t> body);
 
@@ -34,6 +39,7 @@ public:
   void Reset(uint32_t code = 1);
 
   uint32_t ChannelId() const { return channel_id_; }
+  ChannelMux* Mux() { return mux_; }
   size_t OutboundBacklog() const { return outbound_.size() + (write_inflight_ ? 1 : 0); }
   bool IsClosed() const { return closed_; }
 
