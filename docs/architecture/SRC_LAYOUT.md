@@ -29,7 +29,7 @@ app → feature → base → lib → common
 | Path | Role |
 |------|------|
 | *(RmlUi)* | Hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`); paths via `PP_LIB_RMLUI_*` |
-| `lib/libp2p/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
+| `lib/libp2p/` | Hard-fork PeerId + key wire only (A017; Host/TCP/Yamux/Noise deleted) |
 | `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
 
 Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake), [`src/lib/pp_lib_rmlui.cmake`](../../src/lib/pp_lib_rmlui.cmake), [`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake) (`PP_LIB_RMLUI_*`, `PP_LIB_LIBP2P_*`).

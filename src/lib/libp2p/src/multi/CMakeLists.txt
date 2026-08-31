@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-add_subdirectory(converters)
 add_subdirectory(multibase_codec)
 
 libp2p_add_library(p2p_uvarint
@@ -14,30 +13,9 @@ target_link_libraries(p2p_uvarint
     p2p_logger
     )
 
-
 libp2p_add_library(p2p_multihash
     multihash.cpp
     )
 target_link_libraries(p2p_multihash
     p2p_varint_prefix_reader
-    )
-
-
-libp2p_add_library(p2p_multiaddress
-    multiaddress.cpp
-    )
-target_link_libraries(p2p_multiaddress
-    p2p_converters
-    )
-
-libp2p_add_library(p2p_cid
-    content_identifier.cpp
-    content_identifier_codec.cpp
-    )
-
-target_link_libraries(p2p_cid
-    p2p_multihash
-    p2p_sha
-    p2p_uvarint
-    p2p_multibase_codec
     )

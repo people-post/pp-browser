@@ -109,22 +109,9 @@ set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(yaml-cpp)
 pp_libp2p_alias(yaml-cpp yaml-cpp::yaml-cpp)
 
-# --- c-ares ---
-set(CARES_STATIC ON CACHE BOOL "" FORCE)
-set(CARES_SHARED OFF CACHE BOOL "" FORCE)
-set(CARES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(CARES_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(c-ares)
-if(NOT TARGET c-ares::cares)
-  if(TARGET c-ares::cares_static)
-    add_library(c-ares::cares ALIAS c-ares::cares_static)
-  elseif(TARGET cares)
-    add_library(c-ares::cares ALIAS cares)
-  else()
-    message(FATAL_ERROR "c-ares target not found")
-  endif()
-endif()
-
+# --- c-ares / tsl_hat_trie / lsquic ---
+# A017: Host/QUIC/DNS underlay removed from libp2p fork (PeerId + wire only).
+# Keep Asio for pp-node StatusHttpServer; zlib/BoringSSL still used by curl.
 
 # --- standalone Outcome (before qtils) ---
 pp_libp2p_add_vendored(outcome)
@@ -146,59 +133,6 @@ set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
 set(CMAKE_CXX_STANDARD 20)
 pp_libp2p_add_vendored(soralog)
 pp_libp2p_alias(soralog soralog::soralog)
-
-# --- tsl_hat_trie ---
-pp_libp2p_add_vendored(tsl_hat_trie)
-if(NOT TARGET tsl::tsl_hat_trie)
-  if(TARGET tsl::hat_trie)
-    add_library(tsl::tsl_hat_trie ALIAS tsl_hat_trie)
-  elseif(TARGET tsl_hat_trie)
-    add_library(tsl::tsl_hat_trie ALIAS tsl_hat_trie)
-  else()
-    message(FATAL_ERROR "tsl_hat_trie target not found")
-  endif()
-endif()
-
-
-# --- lsquic ---
-set(HUNTER_ENABLED OFF CACHE BOOL "" FORCE)
-set(LSQUIC_BIN OFF CACHE BOOL "" FORCE)
-set(LSQUIC_TESTS OFF CACHE BOOL "" FORCE)
-set(LSQUIC_SHARED_LIB OFF CACHE BOOL "" FORCE)
-set(BORINGSSL_LIB_ssl ssl)
-set(BORINGSSL_LIB_crypto crypto)
-set(BORINGSSL_INCLUDE "${PP_LIBP2P_THIRD_PARTY}/boringssl/include")
-set(ZLIB_INCLUDE "${PP_LIBP2P_THIRD_PARTY}/zlib")
-set(ZLIB_INCLUDE_DIR "${ZLIB_INCLUDE}" CACHE PATH "" FORCE)
-set(ZLIB_BINARY_INCLUDE "${CMAKE_BINARY_DIR}/third_party/zlib")
-set(ZLIB_LIB ZLIB::ZLIB)
-# lsquic's install(EXPORT) pulls in zlib/OpenSSL deps we never ship; skip its
-# install rules (vendored, EXCLUDE_FROM_ALL — we only link it in-tree).
-set(_pp_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
-set(CMAKE_SKIP_INSTALL_RULES ON)
-pp_libp2p_add_vendored(lsquic)
-set(CMAKE_SKIP_INSTALL_RULES "${_pp_prev_skip_install_rules}")
-unset(_pp_prev_skip_install_rules)
-if(TARGET lsquic)
-  target_include_directories(lsquic PUBLIC
-    "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/include>"
-  )
-  if(WIN32)
-    target_include_directories(lsquic PUBLIC
-      "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/wincompat>"
-    )
-  endif()
-  if(NOT HUNTER_ENABLED)
-    target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
-  endif()
-endif()
-if(NOT TARGET lsquic::lsquic)
-  if(TARGET lsquic)
-    add_library(lsquic::lsquic ALIAS lsquic)
-  else()
-    message(FATAL_ERROR "lsquic target not found")
-  endif()
-endif()
 
 function(pp_libp2p_add_vendored_googletest)
   if(TARGET GTest::gmock_main)

@@ -141,8 +141,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Product composition Amp-only (chat/history/blob/call-media/SoftMigrate); collapse libp2p L4 branches
 - [x] No product `Libp2pHost` / `PeerSessionManager` when Amp owns mesh; N025 TCP ephemeral retired (Amp accept + mDNS)
 - [x] Delete TCP-only compose/unit tests (Amp twins retained); DialBack/Identify chrome deferred
-- [x] **A017 wave:** delete idle TCP L4 sources; MeshHost Amp-only API; ADP Brief bootstrap; libp2p Host tree CMake-gated (default OFF)
-- [ ] Physical delete unused `src/lib/libp2p` Host/TCP/Yamux/Noise sources ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only))
+- [x] **A017 wave:** delete idle TCP L4 sources; MeshHost Amp-only API; ADP Brief bootstrap; **physical delete** libp2p Host/TCP/Yamux/Noise (+ fork tests/examples); PeerId + `keys_wire` only
 
 ---
 

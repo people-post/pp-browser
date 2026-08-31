@@ -8,11 +8,11 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — product window host in `src/base/render/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
-- **Hard-forked libp2p** — P2P networking in `src/lib/libp2p/`
-- **Third-party libs** — curl and libp2p deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
+- **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
+- **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
 - **Five-layer source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
-See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + libp2p; call media on libp2p — V026). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
+See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
 ## RmlUi is maintained in pp-cpp-ui
 
@@ -30,14 +30,12 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 | User-agent baseline styles | `rmlui/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 | List markers (workaround) | `rmlui/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md) |
 
-## libp2p is maintained in-tree
+## libp2p is maintained in-tree (PeerId only)
 
-We **own and modify** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
+We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [`src/base/adp/`](src/base/adp/) + [`src/base/mesh/`](src/base/mesh/) + [`src/base/p2p/`](src/base/p2p/).
 
-- Edit libp2p directly when protocol or transport changes are needed.
-- Document fork-specific changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
-- App-specific glue lives in [`src/base/p2p/`](src/base/p2p/) (not in the fork proper).
-- Import/update libp2p deps with `./scripts/libp2p_vendor_import.sh`.
+- Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
+- Import/update remaining deps with `./scripts/libp2p_vendor_import.sh`.
 
 ## UI generation constraints
 

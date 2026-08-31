@@ -9,12 +9,3 @@ libp2p_add_library(p2p_byteutil
     )
 target_link_libraries(p2p_byteutil
     )
-
-libp2p_add_library(p2p_literals
-    literals.cpp
-    )
-target_link_libraries(p2p_literals
-    p2p_peer_id
-    p2p_multihash
-    p2p_multiaddress
-    )

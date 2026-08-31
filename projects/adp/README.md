@@ -34,7 +34,7 @@
 | D8 | ch0 capability exchange + addr ingest | **Done** (dial-back + UPnP UDP chrome landed) |
 | D9 | MeshHost/CallStack cutover | **Done** through step 7 — Amp owns mesh when stack starts; Identify/TCP listen skipped; dogfood deleted |
 | D10 | Clean TCP mesh drop | **Done** — Amp hard-require; no product Host; LAN mDNS/PreferLocal Amp-only; TCP compose tests deleted |
-| A017 | libp2p shrink (PeerId only) | **Mostly done** — TCP L4 deleted; Host CMake-gated; source purge next |
+| A017 | libp2p shrink (PeerId only) | **Done** — Host/TCP/Yamux/Noise purged; PeerId + wire retained |
 
 ## Locked product decisions
 

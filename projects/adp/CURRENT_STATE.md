@@ -19,9 +19,9 @@
 
 ## Transitional (legacy TCP path)
 
-- **Deleted (A017):** product TCP L4 sources (`Libp2pHost`, DialBack, CircuitRelay, MediaRelayService, CallMediaDirect, Libp2p chat*, StreamFrameIo, …)
-- **libp2p Host tree:** CMake skips Host/TCP/Yamux/Noise unless `PP_BROWSER_LIBP2P_TESTING`; physical source purge still open
-- **Next A017:** delete unused files under `src/lib/libp2p` transport/host/muxer/security
+- **Deleted (A017):** product TCP L4 sources + vendored libp2p Host/TCP/Yamux/Noise/QUIC/protocol trees
+- **Retained in `src/lib/libp2p`:** PeerId + `keys_wire` (+ multihash/SHA/log) for ML-DSA identity
+- **Next:** D8 listen-policy polish; org seed `amp_udp_port=443` deploy
 
 ## Landed (L2 — D1)
 
@@ -181,20 +181,18 @@
 - **Probes restored (Amp):** `pp-node-probe` (l1/fanout/cap/soak) + `pp-call-probe` (direct/hop/chat)
 - **Note:** dial-back seed uses ADP bootstrap (`/udp/…/adp/1.0.0/p2p/…`); default Brief seed is UDP **443** (org must pin `amp_udp_port`)
 
-## Landed (A017 — delete idle TCP L4 + PeerId-only libp2p configure)
+## Landed (A017 — physical libp2p Host purge)
 
-- **Deleted** unlinked TCP L4 sources: `Libp2pHost` / `NodeRuntime` / `PeerSessionManager` / DialBack / CircuitRelay / MediaRelayService / CallMediaDirect / StreamFrameIo / Identify / Libp2p chat*
-- **MeshHost / MessagingHub** — removed null TCP stubs; Amp-only API surface
-- **Contact reachability** — multiaddr / relay only (no PeerSessionManager address book)
-- **Default Brief bootstrap** — ADP MA `/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooW…` (org `pp-node` pins `amp_udp_port=443` / `PP_NODE_AMP_UDP_PORT`)
-- **libp2p CMake** — Host/TCP/Yamux/Noise/protocol tree configured only when `PP_BROWSER_LIBP2P_TESTING` (default **OFF**); product builds PeerId + wire only
-- Still open: physical delete of unused `src/lib/libp2p` Host/transport sources; D8 listen-policy polish
+- **Deleted** `src/lib/libp2p` Host/TCP/Yamux/Noise/QUIC/protocol/muxer/security/network/connection/storage + `test/` + `example/`
+- **Retained:** `p2p_peer_id`, `p2p_wire` (keys), multihash/multibase/SHA/log
+- **Deps dropped from product cmake:** lsquic, c-ares, tsl_hat_trie
+- **Default Brief bootstrap** — ADP MA `/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooW…`
+- Product TCP L4 sources deleted earlier in A017 wave
 
 ## Next (implementation)
 
-1. **Physical delete** unused `src/lib/libp2p` Host/Yamux/Noise/TCP source trees (CMake already skips them for product)
-2. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)
-3. **Org seed deploy** — ship `pp-node` with `PP_NODE_AMP_UDP_PORT=443` so default ADP bootstrap dials succeed
+1. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)
+2. **Org seed deploy** — ship `pp-node` with `PP_NODE_AMP_UDP_PORT=443` so default ADP bootstrap dials succeed
 
 ### D9 cutover checklist
 
@@ -205,6 +203,6 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 1–7 | D9 Amp ownership + TCP listen retire | **Done** |
 | D10 | Hard-require Amp + drop silent Host + LAN Amp advertise | **Done** |
 | D8 | Amp dial-back + UPnP UDP + probes | **Done** |
-| A017 | Delete idle TCP L4 + PeerId-only libp2p configure | **Done** (source tree purge next) |
+| A017 | Delete idle TCP L4 + purge libp2p Host tree | **Done** |
 
 See [PHASES.md](PHASES.md) for full ordering.

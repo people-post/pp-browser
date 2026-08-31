@@ -84,30 +84,15 @@ Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`,
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
 | `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
-| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
-| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
-| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
+| `PP_BROWSER_LIBP2P_TESTING` | OFF | Deprecated (A017) — libp2p Host tests removed |
+| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | Deprecated (A017) — libp2p examples removed |
+| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | Deprecated (A017) — libp2p coverage removed |
 
-Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
+Mobile builds default host tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
-### libp2p tests and coverage
+### libp2p fork (A017 PeerId only)
 
-By default, desktop builds enable in-tree libp2p unit tests (`PP_BROWSER_LIBP2P_TESTING=ON`). Examples are opt-in.
-
-```bash
-# Default: pp-browser + libp2p unit tests
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-ctest --test-dir build
-
-# libp2p examples
-cmake -B build -S . -DPP_BROWSER_LIBP2P_EXAMPLES=ON
-cmake --build build -j
-
-# libp2p coverage (requires gcovr)
-cmake -B build -S . -DPP_BROWSER_LIBP2P_COVERAGE=ON -DPP_BROWSER_LIBP2P_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target ctest_coverage_html
-```
+The in-tree libp2p fork no longer builds Host/TCP/Yamux/Noise or fork unit tests. Product links `p2p_peer_id` + `p2p_wire` only. Mesh underlay is Amp — see [adp](../../projects/adp/).
 
 ### Compiler cache (optional)
 

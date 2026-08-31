@@ -154,15 +154,12 @@ include_directories(
 
 add_subdirectory(src)
 
+# A017: Host/stream underlay, examples, and fork unit tests removed (PeerId + wire only).
 if(EXAMPLES)
-  add_subdirectory(example)
+  message(WARNING "libp2p EXAMPLES requested but example/ was removed (A017 PeerId-only shrink)")
 endif()
 if(TESTING OR COVERAGE)
-  if (PACKAGE_MANAGER STREQUAL "vcpkg")
-    list(APPEND VCPKG_MANIFEST_FEATURES libp2p-tests)
-  endif()
-  enable_testing()
-  add_subdirectory(test)
+  message(WARNING "libp2p TESTING/COVERAGE requested but test/ was removed (A017 PeerId-only shrink)")
 endif()
 
 if (COVERAGE)
