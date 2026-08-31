@@ -708,6 +708,13 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
     policy.contact_peer_ids = contact_ids;
     CircuitRelay()->SetAdmissionPolicy(std::move(policy));
   }
+  if (mesh_ && mesh_->AmpCircuitTunnel()) {
+    CircuitRelayAdmissionPolicy policy;
+    policy.prefer_contacts_only = limit_strangers;
+    policy.serve_scope_mask = serve_mask;
+    policy.contact_peer_ids = contact_ids;
+    mesh_->AmpCircuitTunnel()->SetAdmissionPolicy(std::move(policy));
+  }
   if (MediaRelay()) {
     MediaRelayAdmissionPolicy policy;
     if (mobile_ephemeral) {
@@ -720,6 +727,19 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
       policy.contact_peer_ids = contact_ids;
     }
     MediaRelay()->SetAdmissionPolicy(std::move(policy));
+  }
+  if (mesh_ && mesh_->AmpMediaRelayCoord()) {
+    MediaRelayAdmissionPolicy policy;
+    if (mobile_ephemeral) {
+      policy.prefer_contacts_only = true;
+      policy.serve_scope_mask = kRelayScopeLinkSiteSocial;
+      policy.contact_peer_ids = contact_ids;
+    } else {
+      policy.prefer_contacts_only = limit_strangers;
+      policy.serve_scope_mask = serve_mask;
+      policy.contact_peer_ids = contact_ids;
+    }
+    mesh_->AmpMediaRelayCoord()->SetAdmissionPolicy(std::move(policy));
   }
 }
 

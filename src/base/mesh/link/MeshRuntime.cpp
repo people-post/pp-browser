@@ -12,13 +12,24 @@ void MeshRuntime::Start() { started_ = true; }
 void MeshRuntime::Stop() {
   started_ = false;
   io_queue_.clear();
-  io_tick_ = {};
+  io_ticks_.clear();
 }
 
 void MeshRuntime::Pump() {
   pumping_ = true;
-  if (io_tick_) {
-    io_tick_();
+  // Copy ids so a tick may RemoveIoTick without invalidating iteration.
+  std::vector<IoTickId> ids;
+  ids.reserve(io_ticks_.size());
+  for (const auto& entry : io_ticks_) {
+    ids.push_back(entry.id);
+  }
+  for (const IoTickId id : ids) {
+    for (const auto& entry : io_ticks_) {
+      if (entry.id == id && entry.tick) {
+        entry.tick();
+        break;
+      }
+    }
   }
   for (size_t budget = 0; budget < 32 && !io_queue_.empty(); ++budget) {
     auto task = std::move(io_queue_.front());
@@ -38,6 +49,30 @@ void MeshRuntime::PostToIo(IoTask task) {
     return;
   }
   io_queue_.push_back(std::move(task));
+}
+
+MeshRuntime::IoTickId MeshRuntime::AddIoTick(IoTask tick) {
+  if (!tick) {
+    return 0;
+  }
+  const IoTickId id = next_io_tick_id_++;
+  if (next_io_tick_id_ == 0) {
+    next_io_tick_id_ = 1;
+  }
+  io_ticks_.push_back(IoTickEntry{id, std::move(tick)});
+  return id;
+}
+
+void MeshRuntime::RemoveIoTick(const IoTickId id) {
+  if (id == 0) {
+    return;
+  }
+  for (auto it = io_ticks_.begin(); it != io_ticks_.end(); ++it) {
+    if (it->id == id) {
+      io_ticks_.erase(it);
+      return;
+    }
+  }
 }
 
 } // namespace pbr::amp

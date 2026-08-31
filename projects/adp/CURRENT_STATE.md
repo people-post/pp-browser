@@ -107,6 +107,13 @@
 - `kCallMediaAdpOpusDogfood` set **false** (legacy TCP-hello Opus side-path idle; delete with D9 step 7)
 - PreferLocal advertise list includes Amp listen multiaddr when present
 
+## Landed (D9 step 5a — Amp circuit/media-relay ownership)
+
+- `MeshRuntime::AddIoTick` / `RemoveIoTick` — multiplex L4 deadline hooks on one Amp runtime (call-media + circuit + media-relay)
+- `MeshHost` owns `CircuitTunnelCoordinator` + `AmpMediaRelayCoordinator` when Amp is up; `Start()` mirrors `host_circuit_relay` / `host_media_relay`
+- `MessagingHub::ApplyMeshAdmissionPolicies` mirrors admission onto Amp coordinators
+- **SoftMigrate stays on libp2p** (`MediaRelayService` / `CircuitRelayService`) — Amp media-relay still quote/attach-only (no Subscribe/SendFrame/local hop); Amp circuit returns `ChannelSession`, not a stream for SoftMigrate fan-out
+
 ## Plan adjustments (2026-08-31)
 
 | Change | Why |
@@ -118,10 +125,12 @@
 | **Keep L4 flip order: chat → call-media → circuit/media-relay** | Unchanged; SoftMigrate fan-out stays after circuit/media AMP is the single entry |
 | **AMP dial-back is optional until Identify/TCP teardown** | Prefer ch0 addr ingest + existing libp2p DialBack during parallel phase |
 | **Chat+history flip together** | Shared Amp address book / reachability; blob stays libp2p |
+| **MeshRuntime IoTick must multiplex** | Multiple L4 coordinators share one Amp runtime; single `SetIoTick` overwrote peers |
+| **SoftMigrate stays libp2p until Amp fan-out** | Amp media-relay handshake-only; circuit Session ≠ SoftMigrate stream hop |
 
 ## Next (implementation)
 
-1. **D9** — circuit/media-relay product SoftMigrate
+1. **D9 step 5b** — Amp SoftMigrate fan-out (Subscribe/SendFrame/local hop) + call-media adopt bridged Session
 2. **D8 optional** — AMP dial-back when retiring libp2p Identify
 3. **D9** — delete dogfood headers + TCP call-media path; update NETWORKING / CALLS
 
@@ -135,7 +144,8 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | **Done** — `ApplyAmpAdvertisement`; ingest on PeerLinkManager |
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | **Done** — MessagingHub composition; mDNS `amp_udp` + Identify Amp MA |
 | 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport`; dogfood gate **false** |
-| 5 | Swap circuit + media-relay to AMP coordinators | SoftMigrate / MeshHost fan-out |
+| 5a | MeshHost owns Amp circuit + media-relay; multiplex IoTick; admission | **Done** — SoftMigrate still libp2p |
+| 5b | SoftMigrate / call-media circuit single entry via Amp | Needs Amp fan-out + adopt Session |
 | 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 

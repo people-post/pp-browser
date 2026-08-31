@@ -112,6 +112,7 @@ struct CallMediaLegCoordinator::Impl {
   std::atomic<bool> stopped{false};
   std::atomic<bool> started{false};
   std::atomic<uint64_t> next_leg_id{1};
+  amp::MeshRuntime::IoTickId io_tick_id = 0;
 
   /** call_id → bundle */
   std::unordered_map<std::string, std::unique_ptr<Bundle>> bundles;
@@ -854,7 +855,7 @@ void CallMediaLegCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  runtime_.SetIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
   runtime_.Links().SetProtocolHandler(kCallMediaDirectProtocolId,
                                       [impl = impl_.get()](amp::PeerLink& link, const uint32_t ch) {
                                         impl->HandleInboundChannel(link, ch);
@@ -864,7 +865,8 @@ void CallMediaLegCoordinator::Start() {
 void CallMediaLegCoordinator::Stop() {
   impl_->started.store(false, std::memory_order_release);
   impl_->stopped.store(true, std::memory_order_release);
-  runtime_.SetIoTick({});
+  runtime_.RemoveIoTick(impl_->io_tick_id);
+  impl_->io_tick_id = 0;
   runtime_.Links().RemoveProtocolHandler(kCallMediaDirectProtocolId);
   impl_->PostIo([impl = impl_.get()] {
     std::lock_guard lock(impl->mu);

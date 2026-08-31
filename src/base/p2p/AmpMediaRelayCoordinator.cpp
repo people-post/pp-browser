@@ -60,6 +60,7 @@ struct AmpMediaRelayCoordinator::Impl {
   std::atomic<bool> started{false};
   std::atomic<bool> stopped{true};
   std::atomic<uint64_t> next_id{1};
+  amp::MeshRuntime::IoTickId io_tick_id = 0;
 
   struct PendingQuote {
     MediaRelayQuote quote;
@@ -592,7 +593,7 @@ void AmpMediaRelayCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  runtime_.SetIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
   runtime_.Links().SetProtocolHandler(kMediaRelayProtocolId,
                                       [impl = impl_.get()](amp::PeerLink& link, const uint32_t ch) {
                                         impl->HandleInboundChannel(link, ch);
@@ -602,7 +603,8 @@ void AmpMediaRelayCoordinator::Start() {
 void AmpMediaRelayCoordinator::Stop() {
   impl_->started.store(false, std::memory_order_release);
   impl_->stopped.store(true, std::memory_order_release);
-  runtime_.SetIoTick({});
+  runtime_.RemoveIoTick(impl_->io_tick_id);
+  impl_->io_tick_id = 0;
   runtime_.Links().RemoveProtocolHandler(kMediaRelayProtocolId);
   AbortInflight();
 }

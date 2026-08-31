@@ -5,9 +5,11 @@
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/mesh/session/Types.h"
 
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace pbr::amp {
 
@@ -18,6 +20,8 @@ namespace pbr::amp {
 class MeshRuntime {
 public:
   using IoTask = std::function<void()>;
+  /** Opaque id from AddIoTick; 0 is never assigned. */
+  using IoTickId = uint64_t;
 
   MeshRuntime(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
               PeerLinkConfig config = {});
@@ -37,15 +41,25 @@ public:
   /** Queue work for the next Pump(); one queued task runs per Pump() before ADP I/O. */
   void PostToIo(IoTask task);
 
-  /** Optional hook invoked at the start of each Pump() (e.g. connect deadlines). */
-  void SetIoTick(IoTask tick) { io_tick_ = std::move(tick); }
+  /**
+   * Register a Pump()-start hook (e.g. L4 connect deadlines). Multiple L4 coordinators
+   * on one runtime must each AddIoTick — a single slot would overwrite peers.
+   */
+  IoTickId AddIoTick(IoTask tick);
+  void RemoveIoTick(IoTickId id);
 
 private:
+  struct IoTickEntry {
+    IoTickId id = 0;
+    IoTask tick;
+  };
+
   adp::Endpoint& endpoint_;
   PeerLinkManager links_;
   MeshPump pump_;
   std::deque<IoTask> io_queue_;
-  IoTask io_tick_;
+  std::vector<IoTickEntry> io_ticks_;
+  IoTickId next_io_tick_id_ = 1;
   bool started_ = false;
   bool pumping_ = false;
 };
