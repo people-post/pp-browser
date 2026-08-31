@@ -10,7 +10,6 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace pbr::test {
@@ -82,22 +81,6 @@ struct AmpMeshHarness {
     for (size_t i = 0; i < max_rounds && !done(); ++i) {
       PumpBoth();
     }
-  }
-
-  Roe<void> ConnectPeers(const std::string& a_peer_key, const std::string& b_peer_key) {
-    if (!mgr_a->RegisterEndpoint(b_peer_key, ma_b)) {
-      return mgr_a->RegisterEndpoint(b_peer_key, ma_b).error();
-    }
-    if (!mgr_b->RegisterEndpoint(a_peer_key, ma_a)) {
-      return mgr_b->RegisterEndpoint(a_peer_key, ma_a).error();
-    }
-    bool associated = false;
-    mgr_a->EnsureAssociation(b_peer_key, [&](Roe<void> result) { associated = static_cast<bool>(result); });
-    PumpUntil([&] { return associated && mgr_b->FindConnectedInboundLink() != nullptr; });
-    if (!associated) {
-      return Error("amp mesh harness: association failed");
-    }
-    return Roe<void>();
   }
 };
 

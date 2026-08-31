@@ -47,6 +47,18 @@ inline ChannelPolicy CallMediaChannelPolicy() {
   return policy;
 }
 
+/** Reliable hello/teardown leg for `/pp-browser/call-media/1.0.0` (AMP-CHANNEL). */
+inline ChannelPolicy CallMediaControlChannelPolicy() {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::RealtimeControl;
+  policy.drop = ChannelDropPolicy::Never;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.read_once = false;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes;
+  policy.read_timeout = std::chrono::milliseconds{8000};
+  return policy;
+}
+
 inline ChannelPolicy ChatBlobChannelPolicy(bool read_once = false) {
   ChannelPolicy policy;
   policy.cls = ChannelClass::Bulk;

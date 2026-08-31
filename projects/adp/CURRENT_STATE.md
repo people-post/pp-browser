@@ -51,8 +51,15 @@
 - `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
 - `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
 
+## Landed (L4 call-media — D6 partial)
+
+- `AmpCallMediaDirectService` — `/pp-browser/call-media/1.0.0` hello + encrypted media on one Realtime `ChannelSession` (parallel stack; production still libp2p)
+- `pp_browser_p2p_test` — `AmpCallMediaDirectServiceTest.HelloAndEncryptedAudioRoundTrip`
+- Shared AMP test harness: `src/base/mesh/link/tests/mesh_test_harness.h`
+
 ## Next (implementation)
 
-1. **D6** — port call-media onto ChannelSession
+1. **D6** — split hello/media channels, port remaining call-media gtests, retire `CallMediaAdpDogfood`
+2. **D7** — circuit + media-relay on ChannelSession
 
 See [PHASES.md](PHASES.md) for full ordering.

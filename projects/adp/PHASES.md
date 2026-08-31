@@ -88,9 +88,13 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D6 — L4 port: call-media
 
-- [ ] Reliable hello + BestEffort media channels
+- [x] `AmpCallMediaDirectService` — hello + AEAD Opus over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- [x] `CallMediaControlChannelPolicy` factory (for follow-up split hello leg)
+- [x] `AmpCallMediaDirectServiceTest.HelloAndEncryptedAudioRoundTrip`
+- [x] Shared `mesh_test_harness.h` for AMP L4 tests
+- [ ] Split Reliable hello + BestEffort media onto separate channels (normative AMP-CHANNEL)
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
-- [ ] Port `CallMediaAdp*` tests to AMP path
+- [ ] Port remaining `CallMediaDirectService` gtests + `CallMediaAdp*` tests
 
 ### D7 — L4 port: circuit + media-relay
 
