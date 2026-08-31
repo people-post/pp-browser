@@ -90,6 +90,9 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
   call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
+    if (MeshHost* m = mesh(); m && m->Amp()) {
+      return m->Amp()->LocalPeerId();
+    }
     if (!Runtime() || !Runtime()->Host()) {
       return {};
     }
@@ -104,10 +107,8 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     caps.present = true;
     // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
     caps.media_relay = ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node &&
-                       config().libp2p.capabilities.media_relay &&
-                       ((mesh() && mesh()->Amp() && mesh()->AmpMediaRelayCoord() &&
-                         mesh()->AmpMediaRelayCoord()->IsStarted()) ||
-                        (MediaRelay() && MediaRelay()->IsStarted()));
+                       config().libp2p.capabilities.media_relay && mesh() && mesh()->Amp() &&
+                       mesh()->AmpMediaRelayCoord() && mesh()->AmpMediaRelayCoord()->IsStarted();
     return caps;
   });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -119,30 +120,26 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
 }
 
 void CallStack::OnMeshServicesStarted() {
-  if (!Runtime() || !Runtime()->IsRunning()) {
+  MeshHost* m = mesh();
+  if (!m || !m->IsRunning()) {
     return;
   }
   call_media_direct_.reset();
   call_media_amp_.reset();
 
-  MeshHost* m = mesh();
-  if (m && m->Amp()) {
-    auto pump = [m]() { m->Tick(); };
-    CallMediaAmpTransport::WorkerPost worker;
-    if (Libp2pHost* host = Runtime()->Host()) {
-      worker = [host](std::function<void()> task) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
-      };
-    }
-    call_media_amp_ = std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump),
-                                                              std::move(worker));
-    call_media_amp_->Start();
-    log().info << "call-media transport=amp";
-  } else if (Runtime()->Host() && Runtime()->Sessions()) {
-    call_media_direct_ = std::make_unique<CallMediaDirectService>(*Runtime()->Host(), *Runtime()->Sessions());
-    call_media_direct_->Start();
-    log().info << "call-media transport=libp2p";
+  if (!m->Amp()) {
+    log().warning << "call-media transport unavailable (Amp required)";
+    WireMediaRelayDeps();
+    return;
   }
+  auto pump = [m]() { m->Tick(); };
+  CallMediaAmpTransport::WorkerPost worker = [](std::function<void()> task) {
+    AppRuntime::PostWorkerNormal(std::move(task));
+  };
+  call_media_amp_ =
+      std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump), std::move(worker));
+  call_media_amp_->Start();
+  log().info << "call-media transport=amp";
   WireMediaRelayDeps();
 }
 
@@ -185,8 +182,8 @@ void CallStack::WireMediaRelayDeps() {
         *m->AmpMediaRelayCoord(), [m]() { m->Tick(); }, m->Amp()->LocalPeerId());
     log().info << "media-relay transport=amp";
   } else {
-    media_relay_client_ = std::make_unique<MediaRelayServiceClient>(MediaRelay());
-    log().info << "media-relay transport=libp2p";
+    media_relay_client_.reset();
+    log().warning << "media-relay transport unavailable (Amp required)";
   }
   PeerSessionManager* sessions = Runtime() ? Runtime()->Sessions() : nullptr;
   // Keep dial registry + libp2p media bridge stable across N025 listen sync — recreating them
@@ -206,11 +203,6 @@ void CallStack::WireMediaRelayDeps() {
           *m->AmpCircuitTunnel(), *m->AmpCircuitHops(), m->Amp()->Links(), [m]() { m->Tick(); },
           [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); });
       log().info << "circuit-hop reach=amp";
-    } else if (sessions) {
-      circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
-          [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); },
-          [this](const std::string& peer_key) { return TryEnsureCallMediaReachable(peer_key); });
-      log().info << "circuit-hop reach=libp2p";
     } else {
       circuit_hop_reach_.reset();
     }
@@ -228,10 +220,11 @@ void CallStack::WireMediaRelayDeps() {
   // PreferLocal = durable Node hosting only. Mobile ephemeral Start() must not SoftMigrate-self
   // into the SFU hop (V028 / dogfood: Android hop crash → peer Connection reset).
   deps.prefer_local_as_hop = ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node &&
-                             libp2p.capabilities.media_relay &&
-                             ((use_amp_relay && m->AmpMediaRelayCoord()->IsStarted()) ||
-                              (!use_amp_relay && MediaRelay() && MediaRelay()->IsStarted()));
-  if (Runtime() && !Runtime()->BoundListenMultiaddr().empty()) {
+                             libp2p.capabilities.media_relay && use_amp_relay &&
+                             m->AmpMediaRelayCoord()->IsStarted();
+  if (m && !m->AmpListenMultiaddr().empty()) {
+    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+  } else if (Runtime() && !Runtime()->BoundListenMultiaddr().empty()) {
     deps.local_listen_multiaddr = Runtime()->BoundListenMultiaddr();
   } else {
     deps.local_listen_multiaddr = libp2p.listen_multiaddr;
@@ -267,7 +260,7 @@ void CallStack::WireMediaRelayDeps() {
       EnsureCallLifecycleBound();
       call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
       log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
-                 << " transport=" << (call_media_amp_ ? "amp" : "libp2p") << ")";
+                 << " transport=amp)";
     } else {
       call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
       if (call_lifecycle_) {
@@ -348,25 +341,45 @@ void CallStack::AbortCallMediaForShutdown() {
 }
 
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
-  if (!Runtime() || !Runtime()->Host() || !Runtime()->IsRunning()) {
+  MeshHost* m = mesh();
+  const bool amp_up = m && m->Amp() && !m->AmpListenMultiaddr().empty();
+  if (!amp_up && !(Runtime() && Runtime()->IsRunning() && Runtime()->Host())) {
     return {};
   }
+
   const bool listening =
-      Runtime()->EphemeralListenActive() || ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node;
+      (Runtime() && Runtime()->EphemeralListenActive()) ||
+      ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node || amp_up;
   if (!listening) {
     return {};
   }
+
   std::string peer_id;
-  if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
-    peer_id = *local;
+  if (amp_up) {
+    peer_id = m->Amp()->LocalPeerId();
+  } else if (Runtime()->Host()) {
+    if (auto local = Runtime()->Host()->LocalPeerIdBase58()) {
+      peer_id = *local;
+    }
   }
-  const std::string bound = Runtime()->BoundListenMultiaddr();
-  if (peer_id.empty() || bound.empty()) {
+  if (peer_id.empty()) {
     return {};
   }
-  std::vector<std::string> addrs = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
-  if (MeshHost* m = mesh(); m && !m->AmpListenMultiaddr().empty()) {
-    addrs.push_back(m->AmpListenMultiaddr());
+
+  std::vector<std::string> addrs;
+  const std::string bound = Runtime() ? Runtime()->BoundListenMultiaddr() : "";
+  if (!bound.empty()) {
+    addrs = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+  }
+  if (amp_up) {
+    auto amp_lan = BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
+    if (!amp_lan.empty()) {
+      for (std::string& ma : amp_lan) {
+        addrs.push_back(std::move(ma));
+      }
+    } else {
+      addrs.push_back(m->AmpListenMultiaddr());
+    }
   }
   return addrs;
 }

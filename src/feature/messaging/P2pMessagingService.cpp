@@ -128,13 +128,11 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
-  // Blob + chat/history: Amp single entry when Amp links present ([A020]).
+  // Blob + chat/history: Amp single entry ([A020] / D10).
   if (amp_links_) {
     auto worker = amp_worker_post;
-    if (!worker && libp2p_host_) {
-      worker = [host = libp2p_host_](std::function<void()> task) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
-      };
+    if (!worker) {
+      worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
     }
     auto blob = std::make_unique<AmpChatBlobService>(*amp_links_, amp_io_pump, store_, identity_, worker);
     blob->Start();
@@ -150,21 +148,8 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     chat->Start();
     direct_chat_ = std::move(chat);
     log().info << "direct chat/history/blob transport=amp";
-  } else if (libp2p_host_ && peer_sessions_) {
-    auto blob = std::make_unique<Libp2pChatBlobService>(*libp2p_host_, *peer_sessions_, store_, identity_);
-    blob->Start();
-    peer_blob_ = std::move(blob);
-
-    auto history =
-        std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
-    history->Start();
-    peer_history_ = std::move(history);
-
-    auto chat = std::make_unique<Libp2pDirectChatService>(*libp2p_host_, *peer_sessions_);
-    chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
-    chat->Start();
-    direct_chat_ = std::move(chat);
-    log().info << "direct chat/history/blob transport=libp2p";
+  } else {
+    log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());

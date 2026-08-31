@@ -1079,6 +1079,10 @@ void AmpMediaRelayCoordinator::SetServeInbound(const bool serve) {
   impl_->serve_inbound.store(serve, std::memory_order_release);
 }
 
+bool AmpMediaRelayCoordinator::ServeInbound() const {
+  return impl_->serve_inbound.load(std::memory_order_acquire);
+}
+
 void AmpMediaRelayCoordinator::SetCircuitHopRegistry(AmpCircuitHopRegistry* hops) {
   std::lock_guard lock(impl_->mu);
   impl_->circuit_hops = hops;

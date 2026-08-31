@@ -129,21 +129,27 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
 
   auto mesh = std::make_unique<MeshHost>();
   if (auto started = mesh->Start(mesh_cfg); !started) {
-    log.error << "libp2p listen failed: "
+    log.error << "mesh start failed: "
               << (mesh->LastError().empty() ? started.error().message : mesh->LastError());
     AppRuntime::Shutdown();
     secrets->UnregisterDekConsumer(identity.get());
     return started.error();
   }
   if (mesh_cfg.enable_amp_stack) {
-    if (mesh->Amp()) {
-      log.info << "amp stack listen=" << mesh->AmpListenMultiaddr() << " (chat/history on Amp when product attaches)";
-    } else {
-      log.warning << "amp stack enable failed (libp2p continues): " << mesh->AmpLastError();
+    if (!mesh->Amp()) {
+      log.error << "amp stack failed: " << mesh->AmpLastError();
+      AppRuntime::Shutdown();
+      secrets->UnregisterDekConsumer(identity.get());
+      return Error(mesh->AmpLastError().empty() ? "amp stack failed" : mesh->AmpLastError());
     }
+    log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
+  } else {
+    log.warning << "amp stack disabled (enable_amp_stack=false); peer mesh underlay off";
   }
 
-  if (!mesh->BoundListenMultiaddr().empty()) {
+  if (!mesh->AmpListenMultiaddr().empty()) {
+    config->libp2p.listen_multiaddr = mesh->AmpListenMultiaddr();
+  } else if (!mesh->BoundListenMultiaddr().empty()) {
     config->libp2p.listen_multiaddr = mesh->BoundListenMultiaddr();
   }
 
@@ -160,10 +166,17 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.identity = std::move(identity);
   result.mesh = std::move(mesh);
 
-  auto peer_id = result.mesh->Host()->LocalPeerIdBase58();
+  std::string peer_id;
+  if (result.mesh->Amp()) {
+    peer_id = result.mesh->Amp()->LocalPeerId();
+  } else if (result.mesh->Host()) {
+    if (auto local = result.mesh->Host()->LocalPeerIdBase58()) {
+      peer_id = *local;
+    }
+  }
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
-           << (peer_id ? (" peer=" + *peer_id) : std::string())
-           << " dial-back=" << kDialBackProtocolId
+           << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
+           << " underlay=amp"
            << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off")
            << " media-relay=" << (result.config.libp2p.capabilities.media_relay ? "on" : "off");
   return result;

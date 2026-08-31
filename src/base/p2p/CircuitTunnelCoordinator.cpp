@@ -640,6 +640,10 @@ void CircuitTunnelCoordinator::SetServeInbound(const bool serve) {
   impl_->serve_inbound.store(serve, std::memory_order_release);
 }
 
+bool CircuitTunnelCoordinator::ServeInbound() const {
+  return impl_->serve_inbound.load(std::memory_order_acquire);
+}
+
 void CircuitTunnelCoordinator::AbortInflight() {
   impl_->PostIo([impl = impl_.get()] {
     std::lock_guard lock(impl->mu);

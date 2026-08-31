@@ -186,13 +186,17 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
   if (!mesh) {
     return stats;
   }
-  if (CircuitRelayService* circuit = mesh->CircuitRelay()) {
+  if (CircuitTunnelCoordinator* amp_circuit = mesh->AmpCircuitTunnel()) {
+    stats.circuit_serving = amp_circuit->IsStarted() && amp_circuit->ServeInbound();
+  } else if (CircuitRelayService* circuit = mesh->CircuitRelay()) {
     stats.circuit_serving = circuit->IsStarted();
     if (stats.circuit_serving) {
       stats.circuit = circuit->RuntimeStats();
     }
   }
-  if (MediaRelayService* media = mesh->MediaRelay()) {
+  if (AmpMediaRelayCoordinator* amp_media = mesh->AmpMediaRelayCoord()) {
+    stats.media_serving = amp_media->IsStarted() && amp_media->ServeInbound();
+  } else if (MediaRelayService* media = mesh->MediaRelay()) {
     stats.media_serving = media->IsStarted();
     if (stats.media_serving) {
       stats.media = media->RuntimeStats();

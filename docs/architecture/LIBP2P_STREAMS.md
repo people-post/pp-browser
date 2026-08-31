@@ -1,12 +1,13 @@
 # Libp2p stream framing & failure handling
 
-**Tier:** architecture
+**Tier:** architecture  
+**Status:** **Legacy** — product peer underlay is **AMP** ([NETWORKING.md](NETWORKING.md), [projects/adp](../../projects/adp/) D10). This document remains for residual `StreamFrameIo` / fork notes and archived TCP+Noise+Yamux behavior.
 
-How pp-browser exchanges bytes on libp2p streams: stack layers, on-wire shapes, protocol exchanges, and how shorter / longer / hung frames are handled. Normative **application** payloads remain in [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md) and [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Product messaging flow: [P2P_MESSAGING.md](P2P_MESSAGING.md). Fork notes: [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md).
+How pp-browser historically exchanged bytes on libp2p streams: stack layers, on-wire shapes, protocol exchanges, and how shorter / longer / hung frames are handled. Normative **application** payloads remain in [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md) and [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Product messaging flow: [P2P_MESSAGING.md](P2P_MESSAGING.md). Fork notes: [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md).
 
-## Production host stack
+## Production host stack (retired underlay)
 
-`Libp2pHost` builds an ExplicitHost with **TCP + Noise (`/noise-mlkem768/1.0.0`) + Yamux** only (QUIC exists in the fork but is not wired on the live path).
+`Libp2pHost` historically built an ExplicitHost with **TCP + Noise (`/noise-mlkem768/1.0.0`) + Yamux**. Product mesh no longer starts this stack when Amp is enabled (D10).
 
 ```
 TCP

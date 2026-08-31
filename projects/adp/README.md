@@ -33,6 +33,7 @@
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
 | D9 | MeshHost/CallStack cutover | **Done** through step 7 — Amp owns mesh when stack starts; Identify/TCP listen skipped; dogfood deleted |
+| D10 | Clean TCP mesh drop | **Done** — Amp hard-require; no product Host; LAN mDNS/PreferLocal Amp-only; TCP compose tests deleted |
 
 ## Locked product decisions
 

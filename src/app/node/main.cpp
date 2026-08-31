@@ -88,17 +88,23 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
-  if (boot.mesh && boot.mesh->Runtime()) {
-    snap.listen_multiaddr = boot.mesh->Runtime()->BoundListenMultiaddr();
-    if (boot.mesh->Host()) {
+  if (boot.mesh) {
+    if (!boot.mesh->AmpListenMultiaddr().empty()) {
+      snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
+    } else {
+      snap.listen_multiaddr = boot.mesh->BoundListenMultiaddr();
+    }
+    if (boot.mesh->Amp()) {
+      snap.peer_id = boot.mesh->Amp()->LocalPeerId();
+    } else if (boot.mesh->Host()) {
       if (auto peer = boot.mesh->Host()->LocalPeerIdBase58()) {
         snap.peer_id = *peer;
       }
     }
-  }
-  snap.circuit_relay = boot.mesh && boot.mesh->CircuitRelay() && boot.mesh->CircuitRelay()->IsStarted();
-  snap.media_relay = boot.mesh && boot.mesh->MediaRelay() && boot.mesh->MediaRelay()->IsStarted();
-  if (boot.mesh) {
+    snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
+                         boot.mesh->AmpCircuitTunnel()->ServeInbound();
+    snap.media_relay = boot.mesh->AmpMediaRelayCoord() && boot.mesh->AmpMediaRelayCoord()->IsStarted() &&
+                       boot.mesh->AmpMediaRelayCoord()->ServeInbound();
     snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
   }
   return snap;
@@ -184,9 +190,7 @@ int main(int argc, char** argv) {
   }
 
   if (print_status) {
-    const std::string bound = boot->mesh->BoundListenMultiaddr();
-    const bool try_upnp = !pbr::ShouldSkipUpnpForListen(bound);
-    boot->mesh->Reachability().RunProbeBlocking(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
+    // D10: dial-back / UPnP probe deferred (Amp D8). Print current reachability snapshot.
     std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
     ShutdownNode(*boot);
     return 0;
@@ -211,10 +215,7 @@ int main(int argc, char** argv) {
   }
 
   auto schedule_probe = [&]() {
-    if (boot->mesh && boot->mesh->Runtime() && boot->mesh->DialBack()) {
-      const bool try_upnp = !pbr::ShouldSkipUpnpForListen(boot->mesh->BoundListenMultiaddr());
-      boot->mesh->Reachability().StartProbe(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
-    }
+    // D10: Amp dial-back not yet ported — skip TCP DialBack reachability probe.
   };
   schedule_probe();
 
