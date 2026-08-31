@@ -33,6 +33,7 @@ public:
   MeshRuntime& Runtime() { return *runtime_; }
   PeerLinkManager& Links() { return runtime_->Links(); }
   const std::string& LocalPeerId() const { return local_peer_id_; }
+  adp::IpEndpoint LocalEndpoint() const { return io_->LocalEndpoint(); }
 
   void Start();
   void Stop();
