@@ -51,8 +51,11 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
   if(NOT EXISTS "${_macos_info_plist}")
     message(FATAL_ERROR "Missing macOS Info.plist: ${_macos_info_plist}")
   endif()
+  # OUTPUT_NAME must match CFBundleExecutable / on-disk PP.app (not target name pp-browser).
+  # Without it, install creates pp-browser.app plus an assets-only PP.app that codesign rejects.
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES
     MACOSX_BUNDLE TRUE
+    OUTPUT_NAME "${PP_BROWSER_PRODUCT_NAME}"
     MACOSX_BUNDLE_INFO_PLIST "${_macos_info_plist}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
     MACOSX_BUNDLE_BUNDLE_NAME "${PP_BROWSER_PRODUCT_NAME}"
