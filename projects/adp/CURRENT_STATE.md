@@ -100,6 +100,13 @@
 - ADP endpoints registered from contacts, ch0 ingest, Identify Amp listen push, and LAN mDNS TXT `amp_udp=`
 - Without an ADP multiaddr, direct chat falls back to relay (TCP-only contacts)
 
+## Landed (D9 step 4 — call-media single entry)
+
+- **`ICallMediaTransport`** — shared product entry; `CallMediaDirectService` (libp2p) or **`CallMediaAmpTransport`** → `CallMediaLegCoordinator` (Amp)
+- `CallStack::OnMeshServicesStarted` picks Amp when `MeshHost::Amp()` is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- `kCallMediaAdpOpusDogfood` set **false** (legacy TCP-hello Opus side-path idle; delete with D9 step 7)
+- PreferLocal advertise list includes Amp listen multiaddr when present
+
 ## Plan adjustments (2026-08-31)
 
 | Change | Why |
@@ -114,9 +121,9 @@
 
 ## Next (implementation)
 
-1. **D9** — call-media → `CallMediaLegCoordinator`; retire dogfood
-2. **D9** — circuit/media-relay product SoftMigrate
-3. **D8 optional** — AMP dial-back when retiring libp2p Identify
+1. **D9** — circuit/media-relay product SoftMigrate
+2. **D8 optional** — AMP dial-back when retiring libp2p Identify
+3. **D9** — delete dogfood headers + TCP call-media path; update NETWORKING / CALLS
 
 ### D9 cutover checklist
 
@@ -127,7 +134,7 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 1 | Own `AmpStack` inside `MeshHost` (parallel) | **Done** — product `enable_amp_stack` default true ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
 | 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | **Done** — `ApplyAmpAdvertisement`; ingest on PeerLinkManager |
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | **Done** — MessagingHub composition; mDNS `amp_udp` + Identify Amp MA |
-| 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | `CallStack.cpp` still includes dogfood |
+| 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport`; dogfood gate **false** |
 | 5 | Swap circuit + media-relay to AMP coordinators | SoftMigrate / MeshHost fan-out |
 | 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |

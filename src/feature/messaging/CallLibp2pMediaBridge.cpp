@@ -41,7 +41,7 @@ std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
 
 CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
-                                             CallMediaDirectService& direct, IDialRegistry* dial,
+                                             ICallMediaTransport& direct, IDialRegistry* dial,
                                              ICircuitHopReach* circuit_reach)
     : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial),
       circuit_reach_(circuit_reach) {

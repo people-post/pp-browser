@@ -954,6 +954,24 @@ bool CallMediaLegCoordinator::IsLegActive(const CallMediaLegId id) const {
   return bundle && CallMediaBundlePhaseIsActive(bundle->phase);
 }
 
+bool CallMediaLegCoordinator::IsActive() const {
+  std::lock_guard lock(impl_->mu);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle && CallMediaBundlePhaseIsActive(bundle->phase);
+}
+
+CallMediaLegId CallMediaLegCoordinator::PrimaryLegId() const {
+  std::lock_guard lock(impl_->mu);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle ? bundle->leg_id : CallMediaLegId{};
+}
+
+CallMediaDirectConnectParams CallMediaLegCoordinator::ActiveParams() const {
+  std::lock_guard lock(impl_->mu);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle ? bundle->params : CallMediaDirectConnectParams{};
+}
+
 CallMediaLegPhase CallMediaLegCoordinator::LegPhase(const CallMediaLegId id) const {
   if (!id) {
     return CallMediaLegPhase::Closed;

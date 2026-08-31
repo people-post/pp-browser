@@ -10,9 +10,12 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
+#include "base/p2p/CallMediaAmpTransport.h"
 #include "base/p2p/CallMediaDirectService.h"
 #include "base/p2p/CircuitRelayService.h"
+#include "base/p2p/ICallMediaTransport.h"
 #include "base/p2p/Libp2pHost.h"
+#include "base/p2p/Libp2pWorker.h"
 #include "base/p2p/MediaRelayService.h"
 #include "base/p2p/MeshHost.h"
 #include "base/p2p/NodeRuntime.h"
@@ -71,11 +74,11 @@ public:
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
   /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + relay deps. */
   void BuildSessions(const CallStackDeps& deps);
-  /** Phase B (mesh up): create/start CallMediaDirect + WireMediaRelayDeps. */
+  /** Phase B (mesh up): create/start call-media transport (Amp or libp2p) + WireMediaRelayDeps. */
   void OnMeshServicesStarted();
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
-  /** Teardown after mesh Stop: reset libp2p media bridge / CallMediaDirect / dial registry. */
+  /** Teardown after mesh Stop: reset libp2p media bridge / call-media transport / dial registry. */
   void FinishMeshStop();
   /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
   void ResetSessions();
@@ -126,9 +129,13 @@ private:
   std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
+  /** Exactly one of these is set when mesh is up ([A020] single call-media entry). */
   std::unique_ptr<CallMediaDirectService> call_media_direct_;
+  std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   /** Lifecycle-driven N025 desire (mirrors old MessagingHub::ephemeral_listen_desired_). */
   bool ephemeral_listen_desired_ = false;
+
+  ICallMediaTransport* CallMediaTransport();
 };
 
 } // namespace pbr

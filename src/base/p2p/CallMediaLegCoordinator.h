@@ -2,7 +2,7 @@
 
 #include "base/mesh/link/MeshRuntime.h"
 #include "base/p2p/CallMediaBundleLogic.h"
-#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/ICallMediaTransport.h"
 
 #include <atomic>
 #include <cstdint>
@@ -16,7 +16,7 @@ namespace pbr {
 /**
  * Non-blocking `/pp-browser/call-media/1.0.0` over AMP channel bundles on MeshRuntime.
  * One call attempt = call_id-keyed control+media bundle ([A021]).
- * Parallel stack for migration — production still uses CallMediaDirectService ([A020]).
+ * Product uses CallMediaAmpTransport as the single entry when MeshHost Amp is up ([A020]).
  */
 class CallMediaLegCoordinator {
 public:
@@ -42,8 +42,13 @@ public:
 
   void CancelLeg(CallMediaLegId id);
   void DetachLeg(CallMediaLegId id);
+  /** Detach primary/active bundle (empty id → PrimaryBundle). */
+  void Detach() { DetachLeg({}); }
 
   bool IsLegActive(CallMediaLegId id) const;
+  bool IsActive() const;
+  CallMediaLegId PrimaryLegId() const;
+  CallMediaDirectConnectParams ActiveParams() const;
   CallMediaLegPhase LegPhase(CallMediaLegId id) const;
   /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;

@@ -7,7 +7,6 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/p2p/CallMediaAdpDogfood.h"
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -119,9 +118,35 @@ void CallStack::OnMeshServicesStarted() {
   if (!Runtime() || !Runtime()->IsRunning()) {
     return;
   }
-  call_media_direct_ = std::make_unique<CallMediaDirectService>(*Runtime()->Host(), *Runtime()->Sessions());
-  call_media_direct_->Start();
+  call_media_direct_.reset();
+  call_media_amp_.reset();
+
+  MeshHost* m = mesh();
+  if (m && m->Amp()) {
+    auto pump = [m]() { m->Tick(); };
+    CallMediaAmpTransport::WorkerPost worker;
+    if (Libp2pHost* host = Runtime()->Host()) {
+      worker = [host](std::function<void()> task) {
+        PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
+      };
+    }
+    call_media_amp_ = std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump),
+                                                              std::move(worker));
+    call_media_amp_->Start();
+    log().info << "call-media transport=amp";
+  } else if (Runtime()->Host() && Runtime()->Sessions()) {
+    call_media_direct_ = std::make_unique<CallMediaDirectService>(*Runtime()->Host(), *Runtime()->Sessions());
+    call_media_direct_->Start();
+    log().info << "call-media transport=libp2p";
+  }
   WireMediaRelayDeps();
+}
+
+ICallMediaTransport* CallStack::CallMediaTransport() {
+  if (call_media_amp_) {
+    return call_media_amp_.get();
+  }
+  return call_media_direct_.get();
 }
 
 bool CallStack::HasActiveLocalCall() {
@@ -202,20 +227,20 @@ void CallStack::WireMediaRelayDeps() {
   }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
 
-  if (call_media_direct_ && dial_registry_) {
+  if (ICallMediaTransport* transport = CallMediaTransport(); transport && dial_registry_) {
     // Rebuild when CallSessionManager was replaced (BuildMessagingStack) — bridge holds a host&
     // into that object. Keep the same bridge across N025 listen sync on the same manager.
     const bool sessions_changed = (libp2p_bridge_bound_sessions_ != call_sessions_.get());
     if (!call_libp2p_bridge_ || sessions_changed) {
       call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(
           call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
-          *call_media_direct_, dial_registry_.get(), circuit_hop_reach_.get());
+          *transport, dial_registry_.get(), circuit_hop_reach_.get());
       call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
       libp2p_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
       log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
-                 << " adp_opus_dogfood=" << (kCallMediaAdpOpusDogfood ? 1 : 0) << ")";
+                 << " transport=" << (call_media_amp_ ? "amp" : "libp2p") << ")";
     } else {
       call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
       if (call_lifecycle_) {
@@ -250,9 +275,9 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
   if (abort_inflight_circuit) {
     abort_inflight_circuit();
   }
-  if (call_media_direct_) {
-    call_media_direct_->ClearInboundHandler();
-    call_media_direct_->Stop();
+  if (ICallMediaTransport* transport = CallMediaTransport()) {
+    transport->ClearInboundHandler();
+    transport->Stop();
   }
   media_relay_client_.reset();
 }
@@ -263,6 +288,7 @@ void CallStack::FinishMeshStop() {
   call_libp2p_bridge_.reset();
   libp2p_bridge_bound_sessions_ = nullptr;
   call_media_direct_.reset();
+  call_media_amp_.reset();
   dial_registry_.reset();
 }
 
@@ -289,8 +315,8 @@ void CallStack::AbortCallMediaForShutdown() {
     // LeaveCall already bumps connect_generation_; wait for the worker to observe abort.
     call_libp2p_bridge_->PrepareForTeardown(2000);
   }
-  if (call_media_direct_) {
-    call_media_direct_->Detach();
+  if (ICallMediaTransport* transport = CallMediaTransport()) {
+    transport->Detach();
   }
 }
 
@@ -311,7 +337,11 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   if (peer_id.empty() || bound.empty()) {
     return {};
   }
-  return BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+  std::vector<std::string> addrs = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+  if (MeshHost* m = mesh(); m && !m->AmpListenMultiaddr().empty()) {
+    addrs.push_back(m->AmpListenMultiaddr());
+  }
+  return addrs;
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
@@ -537,6 +567,7 @@ void CallStack::Shutdown() {
   call_libp2p_bridge_.reset();
   libp2p_bridge_bound_sessions_ = nullptr;
   call_media_direct_.reset();
+  call_media_amp_.reset();
   media_relay_client_.reset();
   dial_registry_.reset();
   circuit_hop_reach_.reset();

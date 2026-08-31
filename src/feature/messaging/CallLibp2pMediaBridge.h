@@ -6,7 +6,7 @@
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "base/p2p/CallMediaDirectService.h"
+#include "base/p2p/ICallMediaTransport.h"
 #include "base/p2p/CallMediaAdpPath.h"
 
 #include "common/Module.h"
@@ -20,13 +20,13 @@
 namespace pbr {
 
 /**
- * 1:1 libp2p direct call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
- * with Opus frames over CallMediaDirectService (AEAD under call media key).
+ * 1:1 call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
+ * with Opus frames over ICallMediaTransport (libp2p or Amp; [A020]).
  */
 class CallLibp2pMediaBridge : public Module {
 public:
   CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, CallMediaDirectService& direct, IDialRegistry* dial,
+                        CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
                         ICircuitHopReach* circuit_reach);
 
   bool IsLibp2pConnectFailed() const;
@@ -97,7 +97,7 @@ private:
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;
-  CallMediaDirectService& direct_;
+  ICallMediaTransport& direct_;
   CallMediaAdpPath adp_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;

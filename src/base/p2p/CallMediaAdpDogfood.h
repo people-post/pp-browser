@@ -3,10 +3,10 @@
 namespace pbr {
 
 /**
- * TEMP dogfood gate for 1:1 Opus-over-ADP (A008/A011).
- * Flip to enable LAN testing without config/settings. When Opus-over-ADP is proven,
- * delete this header and the `kCallMediaAdpOpusDogfood` checks — path becomes default-on.
+ * TEMP dogfood gate for legacy 1:1 Opus-over-ADP side-path (A008/A011).
+ * Disabled: product call-media uses Amp CallMediaLegCoordinator when MeshHost Amp is up ([A020]).
+ * Delete this header with CallMediaAdpPath once TCP call-media is fully retired (D9 step 7).
  */
-inline constexpr bool kCallMediaAdpOpusDogfood = true;
+inline constexpr bool kCallMediaAdpOpusDogfood = false;
 
 } // namespace pbr

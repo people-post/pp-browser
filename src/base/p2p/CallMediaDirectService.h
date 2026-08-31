@@ -1,76 +1,13 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "common/Error.h"
+#include "base/p2p/ICallMediaTransport.h"
 #include "base/p2p/Libp2pHost.h"
 #include "base/p2p/PeerSessionManager.h"
 
-#include <cstdint>
-#include <functional>
 #include <memory>
-#include <string>
-#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
-
-inline constexpr const char* kCallMediaDirectProtocolId = "/pp-browser/call-media/1.0.0";
-
-/** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
-enum class CallMediaSessionPhase {
-  Idle = 0,
-  Dialing,
-  HelloOutbound,
-  HelloInbound,
-  Adopting,
-  MediaReady,
-  Detaching,
-};
-
-enum class CallMediaSessionEvent {
-  ConnectRequested = 0,
-  OpenStreamOk,
-  OpenStreamFail,
-  InboundStream,
-  HelloOk,
-  HelloFail,
-  AdoptWon,
-  AdoptLost,
-  DuplexStarted,
-  DuplexEof,
-  DuplexError,
-  DetachRequested,
-  ConnectTimeout,
-  HandlerCleared,
-  ConnectSuperseded,
-};
-
-const char* CallMediaSessionPhaseName(CallMediaSessionPhase phase);
-const char* CallMediaSessionEventName(CallMediaSessionEvent ev);
-
-struct CallMediaDirectConnectParams {
-  std::string peer_key;
-  std::string call_id;
-  uint32_t media_epoch = 1;
-  ByteVector media_key;
-  bool offerer = true;
-  /** A010: local ADP listen offer (empty port = omit from hello). */
-  uint16_t adp_port = 0;
-  std::string adp_ip;
-  std::string adp_assoc_hex;
-  /** Filled from peer hello/ack when present. */
-  uint16_t peer_adp_port = 0;
-  std::string peer_adp_ip;
-  std::string peer_adp_assoc_hex;
-};
-
-struct CallMediaDirectCallbacks {
-  std::function<void()> on_connected;
-  std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
-  /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
-  std::function<void(uint8_t channel, const std::vector<uint8_t>& payload)> on_media;
-  std::function<void(const std::string& error)> on_failed;
-};
 
 class CallMediaSession;
 
@@ -78,42 +15,44 @@ class CallMediaSession;
  * 1:1 libp2p call-media transport (m1 / V026).
  * Audio/video payloads are AEAD-encrypted under the shared call media key before send.
  * Session legality is an explicit phase machine (V033 / SESSION_MACHINES.md).
+ * Implements ICallMediaTransport for composition with Amp ([A020]).
  */
-class CallMediaDirectService {
+class CallMediaDirectService : public ICallMediaTransport {
 public:
   CallMediaDirectService(Libp2pHost& host, PeerSessionManager& sessions);
-  ~CallMediaDirectService();
+  ~CallMediaDirectService() override;
 
   CallMediaDirectService(const CallMediaDirectService&) = delete;
   CallMediaDirectService& operator=(const CallMediaDirectService&) = delete;
 
-  void Start();
-  void Stop();
+  void Start() override;
+  void Stop() override;
   bool IsStarted() const { return started_; }
 
   /** Register handler for inbound streams (answerer / offerer reverse-dial). */
   void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler);
+      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override;
   /** Drop handler so late protocol deliveries cannot touch a destroyed bridge. */
-  void ClearInboundHandler();
+  void ClearInboundHandler() override;
 
   /** Active outbound/inbound session (adopted stream). */
-  bool IsActive() const;
+  bool IsActive() const override;
   /** Negotiated connect params (includes peer ADP hello fields when present). */
-  CallMediaDirectConnectParams ActiveParams() const;
+  CallMediaDirectConnectParams ActiveParams() const override;
   /** Diagnostics: current transport session phase. */
-  CallMediaSessionPhase Phase() const;
+  CallMediaSessionPhase Phase() const override;
   /** Close stream / unblock Connect; does not clear inbound handler (retry uses Detach). */
-  void Detach();
+  void Detach() override;
 
   /** Client: dial peer and run hello handshake; starts async IO-thread pump. */
   Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms = 15000);
+                    int timeout_ms = 15000) override;
 
   /** Encrypt and enqueue Opus frame; IO thread owns stream write (non-blocking). */
-  Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
+  Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) override;
   /** Encrypt and enqueue a media frame (`channel` 0=Opus, 1=H264 video_lo). */
-  Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0);
+  Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
+                      uint8_t mark = 0) override;
 
 private:
   std::shared_ptr<CallMediaSession> session_;
