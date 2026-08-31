@@ -44,6 +44,9 @@ std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
 } // namespace
 
 struct AmpChatHistoryService::Impl {
+  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPskSessionStore& psk_store_in)
+      : store(store_in), identity(identity_in), psk_store(psk_store_in) {}
+
   IThreadStore& store;
   IdentityStore& identity;
   IPskSessionStore& psk_store;
