@@ -35,7 +35,8 @@
 - `src/base/mesh/channel/` → `pp_base_mesh_channel`
 - L3 wire codec, `ChannelMux`, `ChannelSession`, channel 0 capability plane
 - FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
-- `pp_browser_amp_channel_test` (11 tests, green)
+- D3 fragmentation edge tests (reorder, loss, dup, timeout)
+- `pp_browser_amp_channel_test` (14 tests, green)
 
 ## Landed (link layer — D4)
 
@@ -46,7 +47,6 @@
 
 ## Next (implementation)
 
-1. **D3** — fragmentation edge-case tests (loss, reorder, timeout)
-2. **D5** — port chat + history onto `ChannelSession`
+1. **D5** — port chat + history onto `ChannelSession`
 
 See [PHASES.md](PHASES.md) for full ordering.

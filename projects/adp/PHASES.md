@@ -63,12 +63,12 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Channel 0 capability plane
 - [x] QoS map (channel class → ADP Reliable/BE)
 - [x] `ChannelSession` (replaces `DuplexFrameSession` API shape)
-- [x] `pp_browser_amp_channel_test` (11 tests, green)
+- [x] `pp_browser_amp_channel_test` (14 tests, green)
 
 ### D3 — L3 fragmentation
 
 - [x] Reliable FRAG reassembly (256 KiB control max)
-- [ ] Loss / reorder / dup / timeout tests (dup covered; loss/reorder/timeout next)
+- [x] Loss / reorder / dup / timeout tests (`message_reassembly_test.cpp`)
 
 ### D4 — PeerLinkManager
 
