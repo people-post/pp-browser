@@ -12,7 +12,7 @@ STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 PROBE_BIN="${PP_CALL_PROBE_BIN:-${ROOT}/build/src/app/node/pp-call-probe}"
 CYCLES="${PP_CALL_PROBE_CYCLES:-2}"
 READY_FILE="${PP_CALL_HOP_MSG_READY_FILE:-/tmp/pp-call-hop-msg.ready}"
-LISTEN="${PP_CALL_HOP_MSG_LISTEN:-/ip4/0.0.0.0/tcp/47140}"
+LISTEN="${PP_CALL_HOP_MSG_LISTEN:-/ip4/0.0.0.0/udp/47140/adp/1.0.0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

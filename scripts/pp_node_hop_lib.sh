@@ -32,6 +32,8 @@ peer = s.get("peer_id") or ""
 listen = s.get("listen") or ""
 if not peer or not listen:
     raise SystemExit("missing peer_id or listen in /status")
+if "/udp/" not in listen or "/adp/" not in listen:
+    raise SystemExit(f"listen is not Amp ADP (/udp/…/adp/…): {listen}")
 listen = listen.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/")
 listen = listen.replace("/ip6/::/", "/ip6/::1/")
 if "/p2p/" in listen:
