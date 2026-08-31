@@ -402,7 +402,7 @@ Roe<AmpCircuitRelayBridgeResult> AmpCircuitRelayService::RequestBridge(
                                          return false;
                                        }
                                        AmpCircuitRelayBridgeResult result;
-                                       result.ok = root->getBool("ok").value_or(false);
+                                       result.ok = root->getIf<bool>("ok").value_or(false);
                                        result.error = root->getString("error").value_or("");
                                        result.resolved_multiaddr =
                                            root->getString("resolved_multiaddr").value_or("");
