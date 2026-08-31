@@ -23,11 +23,17 @@
 - **Production mesh:** still TCP + Noise + Yamux via `Libp2pHost`
 - Delete transitional Opus path when **D6** ships
 
+## Landed (L2 — D1)
+
+- `src/base/mesh/session/` → `pp_base_mesh_session`
+- MSH v1 handshake (ML-KEM + ML-DSA identity bind), session key derivation
+- `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
+- `pp_browser_amp_session_test` (8 tests, green)
+
 ## Next (implementation)
 
-1. **D1** — `src/base/mesh/session/` + MSH + `pp_browser_amp_session_test`
-2. **D2** — `src/base/mesh/channel/` + `ChannelSession` + ch0
-3. **D3** — L3 fragmentation
-4. **D4** — `PeerLinkManager` + `MeshPump`
+1. **D2** — `src/base/mesh/channel/` + `ChannelSession` + ch0
+2. **D3** — L3 fragmentation
+3. **D4** — `PeerLinkManager` + `MeshPump`
 
 See [PHASES.md](PHASES.md) for full ordering.

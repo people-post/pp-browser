@@ -77,7 +77,7 @@ From transcript hash `T = SHA-256(client_hello || … || finished)`:
 
 **Never** use the same key material for HMAC and AEAD.
 
-On **rekey**, increment `session_epoch` and derive new keys with label `pp-amp-k-*-v1|epoch:<n>`.
+On **rekey**, increment `session_epoch` and derive new **directional** keys (`k_send` / `k_recv`) with label `pp-amp-k-*-v1|epoch:<n>`. **`k_assoc` is stable** across rekey (L1 binder unchanged).
 
 ## Session record
 

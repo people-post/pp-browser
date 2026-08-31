@@ -9,6 +9,7 @@ add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
 add_subdirectory(adp)
+add_subdirectory(mesh)
 add_subdirectory(p2p)
 add_subdirectory(people)
 
@@ -34,6 +35,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_i18n
   pp_base_crypto
   pp_base_adp
+  pp_base_mesh_session
   pp_base_p2p
   pp_base_people
   pp_base_messaging

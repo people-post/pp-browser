@@ -62,7 +62,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
 | `base/adp/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
-| `base/mesh/session/` | **(planned)** AMP L2 — MSH, Session AEAD, rekey ([AMP-SESSION.md](../contracts/AMP-SESSION.md)) |
+| `base/mesh/session/` | AMP L2 — MSH, Session AEAD, rekey (`pp_base_mesh_session`) |
 | `base/mesh/channel/` | **(planned)** AMP L3 — channel mux, fragmentation, `ChannelSession` ([AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md)) |
 | `base/render/` | Product RmlUi host/overlays (`pp_base_render`); reusable SDL/GL in pp-cpp-ui `backend/` |
 | `base/net/` | HTTP client, service clients |

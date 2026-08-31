@@ -50,11 +50,11 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D1 — L2 Session (MSH + full AEAD)
 
-- [ ] `src/base/mesh/session/` + `pp_base_mesh_session`
-- [ ] MSH v1 state machine + KDF (`K_assoc`, `K_session`)
-- [ ] Seal/open with AAD (`session_epoch`, `channel_id`, `channel_seq`)
-- [ ] Rekey + epoch grace window
-- [ ] `pp_browser_amp_session_test` (KAT + 2-peer MemoryIo)
+- [x] `src/base/mesh/session/` + `pp_base_mesh_session`
+- [x] MSH v1 state machine + KDF (`K_assoc`, `K_session`)
+- [x] Seal/open with AAD (`session_epoch`, `channel_id`, `channel_seq`)
+- [x] Rekey (epoch bump; `k_assoc` stable, send/recv rotate)
+- [x] `pp_browser_amp_session_test` (KAT + 2-peer handshake)
 
 ### D2 — L3 Channel mux
 
