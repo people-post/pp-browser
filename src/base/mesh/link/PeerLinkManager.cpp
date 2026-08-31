@@ -18,6 +18,17 @@ PeerLinkManager::PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_iden
   InstallAcceptHandler();
 }
 
+PeerLinkManager::~PeerLinkManager() {
+  // Nested carriers Bind to an outer link's Mux ([A024]). Unbind while every Mux still
+  // exists — unordered_map destroy order is arbitrary and ~ChannelSession would UAF.
+  for (auto& [_, link] : links_) {
+    if (link && link->Carrier()) {
+      link->Carrier()->ReleaseHandlers();
+    }
+  }
+  links_.clear();
+}
+
 void PeerLinkManager::SetLocalListenMultiaddrs(std::vector<std::string> multiaddrs) {
   local_listen_multiaddrs_ = std::move(multiaddrs);
 }
@@ -154,8 +165,22 @@ void PeerLinkManager::DropLink(const std::string& peer_key) {
   if (!link) {
     return;
   }
-  if (link->Mux()) {
-    link->Mux()->ClearProtocolHandlers();
+  if (link->Carrier()) {
+    // Nested link: unbind from outer Mux while that Mux is still alive.
+    link->Carrier()->ReleaseHandlers();
+  }
+  ChannelMux* dying_mux = link->Mux();
+  if (dying_mux) {
+    // Other nested carriers may still point at this Mux — orphan before it dies.
+    for (auto& [_, other] : links_) {
+      if (!other || other.get() == link) {
+        continue;
+      }
+      if (other->Carrier() && other->Carrier()->Mux() == dying_mux) {
+        other->Carrier()->OrphanFromMux();
+      }
+    }
+    dying_mux->ClearProtocolHandlers();
   }
   const std::string remote = link->RemotePeerId();
   links_.erase(peer_key);

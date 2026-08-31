@@ -22,6 +22,15 @@ PeerLink::PeerLink(std::string peer_key, std::string remote_peer_id, const bool 
   AttachCarrierFrameHandler();
 }
 
+PeerLink::~PeerLink() {
+  // Carrier is Bound to an outer Mux ([A024]). Orphan without touching mux_ — map destroy
+  // order may have already freed that Mux (Windows SEH / SIGFPE on dead unordered_map).
+  if (carrier_) {
+    carrier_->OrphanFromMux();
+    carrier_.reset();
+  }
+}
+
 void PeerLink::AttachCarrierFrameHandler() {
   if (!carrier_) {
     return;

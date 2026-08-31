@@ -31,6 +31,10 @@ public:
 
   PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
                   PeerLinkConfig config = {});
+  ~PeerLinkManager();
+
+  PeerLinkManager(const PeerLinkManager&) = delete;
+  PeerLinkManager& operator=(const PeerLinkManager&) = delete;
 
   adp::Endpoint& GetEndpoint() { return endpoint_; }
   const std::string& LocalPeerId() const { return local_peer_id_; }
