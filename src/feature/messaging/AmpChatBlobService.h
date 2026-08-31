@@ -3,13 +3,13 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
+#include "base/mesh/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/PeerSessionManager.h"
 #include "base/people/IdentityStore.h"
 
 #include "common/Error.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,14 +17,20 @@
 
 namespace pbr {
 
-/** R019 libp2p peer-direct attachment blobs — responder + requester over `/pp-browser/chat-blob/1.0.0`. */
-class Libp2pChatBlobService : public IChatBlobPeerService {
+/**
+ * `/pp-browser/chat-blob/1.0.0` over AMP ChannelSession ([A020] single entry when Amp is attached).
+ */
+class AmpChatBlobService : public IChatBlobPeerService {
 public:
-  Libp2pChatBlobService(Libp2pHost& host, PeerSessionManager& sessions, IThreadStore& store, IdentityStore& identity);
-  ~Libp2pChatBlobService() override;
+  using IoPump = std::function<void()>;
+  using WorkerPost = std::function<void(std::function<void()>)>;
 
-  Libp2pChatBlobService(const Libp2pChatBlobService&) = delete;
-  Libp2pChatBlobService& operator=(const Libp2pChatBlobService&) = delete;
+  AmpChatBlobService(amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
+                     WorkerPost post_worker = {});
+  ~AmpChatBlobService() override;
+
+  AmpChatBlobService(const AmpChatBlobService&) = delete;
+  AmpChatBlobService& operator=(const AmpChatBlobService&) = delete;
 
   void SetProfileDataDir(std::string profile_data_dir) override;
   void SetProfileId(std::string profile_id) override;
@@ -41,8 +47,9 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  Libp2pHost& host_;
-  PeerSessionManager& sessions_;
+  amp::PeerLinkManager& links_;
+  IoPump io_pump_;
+  WorkerPost post_worker_;
   bool started_ = false;
 };
 

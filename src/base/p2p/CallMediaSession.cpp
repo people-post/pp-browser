@@ -459,14 +459,6 @@ void CallMediaSession::WriteInboundAckAndFinish(std::shared_ptr<Stream> s, CallM
   if (!ok && error) {
     ack.set("error", error);
   }
-  if (ok && params.adp_port != 0 && !params.adp_assoc_hex.empty()) {
-    ack.setJsonUInt("adp_v", 1);
-    ack.setJsonUInt("adp_port", params.adp_port);
-    ack.set("adp_assoc", params.adp_assoc_hex);
-    if (!params.adp_ip.empty()) {
-      ack.set("adp_ip", params.adp_ip);
-    }
-  }
   auto self = shared_from_this();
   AsyncWriteStreamJson(
       s, DumpJson(ack),
@@ -601,12 +593,6 @@ void CallMediaSession::HandleInbound(libp2p::StreamAndProtocol stream_in) {
         if (auto peer = stream->remotePeerId()) {
           params.peer_key = peer.value().toBase58();
         }
-        if (hello->getNonNegInt("adp_v").value_or(0) == 1) {
-          params.peer_adp_port =
-              static_cast<uint16_t>(hello->getNonNegInt("adp_port").value_or(0));
-          params.peer_adp_ip = hello->getString("adp_ip").value_or("");
-          params.peer_adp_assoc_hex = hello->getString("adp_assoc").value_or("");
-        }
 
         std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler;
         {
@@ -732,17 +718,6 @@ void CallMediaSession::BeginOutboundHello(std::shared_ptr<Stream> stream,
   hello_obj.set("call_id", params.call_id);
   hello_obj.setJsonUInt("media_epoch", params.media_epoch);
   hello_obj.set("role", role);
-  // Answerer may advertise port/ip before learning offerer-minted assoc (A010).
-  if (params.adp_port != 0) {
-    hello_obj.setJsonUInt("adp_v", 1);
-    hello_obj.setJsonUInt("adp_port", params.adp_port);
-    if (!params.adp_assoc_hex.empty()) {
-      hello_obj.set("adp_assoc", params.adp_assoc_hex);
-    }
-    if (!params.adp_ip.empty()) {
-      hello_obj.set("adp_ip", params.adp_ip);
-    }
-  }
   const std::string hello = DumpJson(hello_obj);
   auto self = shared_from_this();
   AsyncWriteStreamJson(
@@ -860,11 +835,6 @@ void CallMediaSession::OnHelloAck(std::shared_ptr<Stream> stream, CallMediaDirec
     }
     ResetQuiet(stream);
     return;
-  }
-  if (ack->getNonNegInt("adp_v").value_or(0) == 1) {
-    params.peer_adp_port = static_cast<uint16_t>(ack->getNonNegInt("adp_port").value_or(0));
-    params.peer_adp_ip = ack->getString("adp_ip").value_or("");
-    params.peer_adp_assoc_hex = ack->getString("adp_assoc").value_or("");
   }
 
   CallMediaDirectCallbacks adopted_cbs;

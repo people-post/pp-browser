@@ -72,13 +72,13 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 
 | Protocol | Service | Exchange |
 |----------|---------|----------|
-| `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` | One short stream per message: write `RelayEnvelope` JSON → read `{"ok":true}` ack (`DuplexFrameSession` + `ControlJsonIoPolicy`) |
-| `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON (same pipe; SQLite `Serve` on worker) |
-| `/pp-browser/chat-blob/1.0.0` | `Libp2pChatBlobService` | Write `ChatBlobRequest` JSON → read ciphertext **or** JSON error ack (fetch); push: JSON request → ciphertext frame → JSON ack |
-| dial-back / circuit-relay | same JSON framing family | Control frames; blocking JSON still used for handshake / `StreamBridge` |
-| media-relay / call-media | `DuplexFrameSession` | Ongoing length-prefixed frames; **no** per-frame read timeout by default |
+| `/pp-browser/chat/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
+| `/pp-browser/chat-history/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
+| `/pp-browser/chat-blob/1.0.0` | Amp `AmpChatBlobService` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
+| dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
+| media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |
 
-Chat/history **frame R/W** runs on the host `io_context`. Parse / `ChatHistoryResponder::Serve` / inbound envelope delivery run on `PostLibp2pWorker` (Normal lane).
+When `enable_amp_stack` succeeds, `MeshHost` skips libp2p Identify + TCP mesh listen (D9 step 6). Amp framing: [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md).
 
 ## Application payload (inside the JSON frame)
 

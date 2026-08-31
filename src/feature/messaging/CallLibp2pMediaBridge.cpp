@@ -2,8 +2,6 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/SfuAttachFanout.h"
-#include "base/p2p/CallMediaAdpDogfood.h"
-#include "base/p2p/CallMediaAdpKey.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
@@ -114,15 +112,12 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
                  << " account=" << params.peer_key;
     }
-    // Local offerer mints when remote hello role is answerer (A010).
-    MaybeFillLocalAdpOffer(params, /*offerer_mints_assoc=*/!params.offerer);
     const std::string call_id = params.call_id;
     inbound_deferred_peer_id_ =
         (inbound_peer_id.rfind("account:", 0) == 0) ? std::string{} : inbound_peer_id;
     cbs.on_connected = [this, call_id]() {
       AppRuntime::PostUI([this, call_id]() {
         log().info << "Inbound call-media connected call_id=" << call_id;
-        MaybeActivateAdp(direct_.ActiveParams());
         CommitDirectConnected(call_id);
       });
     };
@@ -188,87 +183,6 @@ void CallLibp2pMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
 
-void CallLibp2pMediaBridge::MaybeFillLocalAdpOffer(CallMediaDirectConnectParams& params,
-                                                   const bool offerer_mints_assoc) {
-  if (!kCallMediaAdpOpusDogfood) {
-    return;
-  }
-  auto offer = adp_.BindLocal(offerer_mints_assoc);
-  if (!offer) {
-    log().warning << "ADP BindLocal failed: " << offer.error().message << " — Opus stays on TCP";
-    return;
-  }
-  // Answerer: adopt offerer-minted assoc from peer hello before ack.
-  if (!offerer_mints_assoc && !params.peer_adp_assoc_hex.empty()) {
-    if (auto assoc = AssocIdFromHex(params.peer_adp_assoc_hex); assoc) {
-      adp_.SetLocalAssoc(*assoc);
-      offer->assoc = *assoc;
-    }
-  }
-  params.adp_port = offer->port;
-  params.adp_ip = offer->ipv4;
-  bool assoc_zero = true;
-  for (uint8_t b : offer->assoc.bytes) {
-    if (b != 0) {
-      assoc_zero = false;
-      break;
-    }
-  }
-  if (!assoc_zero) {
-    params.adp_assoc_hex = AssocIdToHex(offer->assoc);
-  } else {
-    params.adp_assoc_hex.clear();
-  }
-}
-
-void CallLibp2pMediaBridge::MaybeActivateAdp(const CallMediaDirectConnectParams& params) {
-  if (!kCallMediaAdpOpusDogfood) {
-    return;
-  }
-  if (params.peer_adp_port == 0 || params.peer_adp_ip.empty()) {
-    return;
-  }
-  if (params.media_key.empty() || params.call_id.empty()) {
-    return;
-  }
-  CallMediaAdpHelloOffer remote;
-  remote.port = params.peer_adp_port;
-  remote.ipv4 = params.peer_adp_ip;
-  if (!params.peer_adp_assoc_hex.empty()) {
-    if (auto assoc = AssocIdFromHex(params.peer_adp_assoc_hex); assoc) {
-      remote.assoc = *assoc;
-      // Ensure local assoc matches offerer mint when we learned it late (answerer after ack).
-      if (adp_.LocalOffer().port != 0) {
-        adp_.SetLocalAssoc(*assoc);
-      }
-    } else {
-      log().warning << "ADP peer assoc hex invalid — Opus stays on TCP";
-      return;
-    }
-  } else if (params.adp_assoc_hex.empty()) {
-    return;
-  } else if (auto assoc = AssocIdFromHex(params.adp_assoc_hex); assoc) {
-    remote.assoc = *assoc;
-  } else {
-    return;
-  }
-  const std::string call_id = params.call_id;
-  auto activated =
-      adp_.Activate(params.media_key, params.call_id, params.media_epoch, remote,
-                    [this, call_id](uint8_t channel, const std::vector<uint8_t>& payload) {
-                      DeliverInboundDirectMedia(call_id, channel, payload);
-                    });
-  if (!activated) {
-    log().warning << "ADP Activate failed: " << activated.error().message << " — Opus stays on TCP";
-    return;
-  }
-  log().info << "ADP Opus path active call_id=" << call_id << " peer=" << params.peer_adp_ip << ":"
-             << params.peer_adp_port;
-}
-
-void CallLibp2pMediaBridge::StopAdpPath() {
-  adp_.Stop();
-}
 
 void CallLibp2pMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (call_id.empty()) {
@@ -344,9 +258,6 @@ void CallLibp2pMediaBridge::ClearLibp2pConnectFailed() {
 }
 
 void CallLibp2pMediaBridge::PollLibp2pConnectHealth() {
-  if (kCallMediaAdpOpusDogfood && adp_.LocalOffer().port != 0) {
-    adp_.Pump();
-  }
   if (libp2p_connect_failed_ || host_.P2pIsAwaitingSfuRecovery() || !media_.IsActive() || !media_.IsSfuMode()) {
     return;
   }
@@ -610,14 +521,6 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
         }
         const uint32_t seq =
             pkt.channel_id == 0 ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
-        if (pkt.channel_id == 0 && adp_.IsActive()) {
-          if (adp_.SendOpus(pkt.payload, seq, pkt.mark)) {
-            return;
-          }
-          // A011: fall back to TCP stream Opus if ADP send fails.
-        } else if (kCallMediaAdpOpusDogfood && adp_.LocalOffer().port != 0) {
-          adp_.Pump();
-        }
         (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
       });
       !started) {
@@ -632,7 +535,6 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   if (keep_inbound) {
     log().info << "Media started with existing inbound stream call_id=" << call_id
                   << " role=" << (offerer ? "offerer" : "answerer");
-    MaybeActivateAdp(direct_.ActiveParams());
     CommitDirectConnected(call_id);
     return {};
   }
@@ -643,13 +545,11 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   params.media_epoch = media_epoch;
   params.media_key = media_key;
   params.offerer = offerer;
-  MaybeFillLocalAdpOffer(params, /*offerer_mints_assoc=*/offerer);
 
   CallMediaDirectCallbacks cbs;
   cbs.on_connected = [this]() {
     AppRuntime::PostUI([this]() {
       log().info << "Call-media connected call_id=" << media_call_id_;
-      MaybeActivateAdp(direct_.ActiveParams());
       CommitDirectConnected(media_call_id_);
     });
   };
@@ -758,8 +658,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
           connect_worker_inflight_.store(false);
           // Inbound on_connected may have run before StartSfu — re-commit once capture is live.
           AppRuntime::PostUI([this, call_id = params.call_id]() {
-            MaybeActivateAdp(direct_.ActiveParams());
-            CommitDirectConnected(call_id);
+                CommitDirectConnected(call_id);
           });
           return;
         }
@@ -954,7 +853,6 @@ void CallLibp2pMediaBridge::StopLibp2pMedia(const std::string& call_id) {
     dial_->AbortInflightDial(peer);
     dial_->ClearCallMediaCircuitHop(peer);
   }
-  StopAdpPath();
   direct_.Detach();
   media_peer_identity_.clear();
   media_call_id_.clear();
@@ -982,7 +880,6 @@ void CallLibp2pMediaBridge::ReleaseDirectTransport() {
     dial_->AbortInflightDial(peer);
     dial_->ClearCallMediaCircuitHop(peer);
   }
-  StopAdpPath();
   direct_.Detach();
   media_peer_identity_.clear();
   inbound_deferred_peer_id_.clear();
@@ -1025,7 +922,6 @@ void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {
     dial_->AbortInflightDial(peer);
     dial_->ClearCallMediaCircuitHop(peer);
   }
-  StopAdpPath();
   direct_.Detach();
   media_peer_identity_.clear();
   media_call_id_.clear();

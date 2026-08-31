@@ -128,11 +128,11 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] SoftMigrate media-relay single entry (step 5b)
 - [x] Amp circuit adopt for SoftMigrate NAT (step 5c) — call-media = A024
 - [x] Amp call-media nested Session over circuit (step 5d / A024)
-- [ ] See [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist) for steps 6–7
-- [ ] Remove TCP/Yamux/Noise wire from product host
-- [ ] Remove libp2p `Host::newStream` from app path
-- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello Opus path
-- [ ] Update NETWORKING / LIBP2P_STREAMS / CALLS docs
+- [x] Amp chat-blob single entry (step 5e)
+- [x] Stop Identify / TCP mesh listen when Amp owns mesh (step 6)
+- [x] Delete dogfood + TCP-hello Opus; update NETWORKING / LIBP2P_STREAMS / CALLS (step 7)
+- [ ] Optional Amp dial-back (D8) for reachability chrome
+- [ ] Further libp2p Host shrink when Amp is hard-required
 
 ---
 

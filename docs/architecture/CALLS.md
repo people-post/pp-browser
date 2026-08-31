@@ -2,7 +2,7 @@
 
 **Tier:** architecture
 
-**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + libp2p only**. Call media → **libp2p** ([V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)). Wire-compat `call_sdp` / `call_ice` are ignored inbound; product does not send them.
+**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + peer mesh**. Call media → **AMP** when `MeshHost` Amp stack is up ([projects/adp](../../projects/adp/)); libp2p retained for crypto/PeerId and fallback. Wire-compat `call_sdp` / `call_ice` are ignored inbound; product does not send them.
 
 **Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallLibp2pMediaBridge`.
 
@@ -29,8 +29,7 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallLibp2pMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
-| **CallMediaDirectService** | 1:1 `/pp-browser/call-media/1.0.0` — hello, AEAD Opus/H264 frames; capture enqueues, **host IO thread** owns Yamux R/W |
-| **CallMediaAdpPath** | Optional **Opus-only** BestEffort side-path over ADP UDP (TEMP `CallMediaAdpDogfood.h`); hello advertises `adp_*`; falls back to stream Opus ([projects/adp](../../projects/adp/)) |
+| **ICallMediaTransport** | 1:1 `/pp-browser/call-media/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` when `MeshHost::Amp()` is up; else libp2p `CallMediaDirectService` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) |
 | **MessagingHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
 
 ```mermaid

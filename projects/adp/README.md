@@ -32,7 +32,7 @@
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back deferred (not blocking D9); LAN mDNS advertises `amp_udp` |
-| D9 | MeshHost/CallStack cutover | **In progress** — 5d nested call-media circuit **done**; next step 6 Identify/TCP teardown |
+| D9 | MeshHost/CallStack cutover | **Done** through step 7 — Amp owns mesh when stack starts; Identify/TCP listen skipped; dogfood deleted |
 
 ## Locked product decisions
 

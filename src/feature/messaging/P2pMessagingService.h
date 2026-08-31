@@ -13,7 +13,6 @@
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/Libp2pChatBlobService.h"
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
@@ -104,9 +103,9 @@ public:
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentDownloadService* downloads);
-  /** R019 peer-direct attachment blobs (null when libp2p unavailable). */
+  /** R019 peer-direct attachment blobs (null when mesh unavailable). */
   IChatBlobPeerClient* PeerBlobClient() const;
-  Libp2pChatBlobService* PeerBlobService() const;
+  IChatBlobPeerService* PeerBlobService() const;
   void SetOnMessagesChanged(std::function<void()> callback);
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
@@ -213,7 +212,7 @@ private:
   amp::PeerLinkManager* amp_links_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
-  std::unique_ptr<Libp2pChatBlobService> peer_blob_;
+  std::unique_ptr<IChatBlobPeerService> peer_blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;

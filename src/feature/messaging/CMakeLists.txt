@@ -22,6 +22,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     Libp2pDirectChatService.cpp
     AmpDirectChatService.cpp
     AmpChatHistoryService.cpp
+    AmpChatBlobService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
     MobileEphemeralListenGate.cpp

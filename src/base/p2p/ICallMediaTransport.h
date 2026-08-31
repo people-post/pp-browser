@@ -51,14 +51,6 @@ struct CallMediaDirectConnectParams {
   uint32_t media_epoch = 1;
   ByteVector media_key;
   bool offerer = true;
-  /** A010: local ADP listen offer (empty port = omit from hello). */
-  uint16_t adp_port = 0;
-  std::string adp_ip;
-  std::string adp_assoc_hex;
-  /** Filled from peer hello/ack when present. */
-  uint16_t peer_adp_port = 0;
-  std::string peer_adp_ip;
-  std::string peer_adp_assoc_hex;
 };
 
 struct CallMediaDirectCallbacks {

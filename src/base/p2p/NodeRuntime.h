@@ -27,6 +27,8 @@ struct NodeRuntimeConfig {
    * Empty → use host.listen_multiaddr only (fail-loud single attempt).
    */
   std::vector<std::string> listen_candidates;
+  /** D9 step 6: skip Identify when Amp owns the mesh underlay. */
+  bool skip_identify = false;
 };
 
 class NodeRuntime {

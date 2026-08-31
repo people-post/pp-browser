@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "base/crypto/IDekConsumer.h"
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
 
@@ -45,13 +46,23 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** R019 peer-direct attachment blobs — libp2p `/pp-browser/chat-blob/1.0.0`. */
+/** R019 peer-direct attachment blobs — `/pp-browser/chat-blob/1.0.0`. */
+inline constexpr const char* kChatBlobProtocolId = "/pp-browser/chat-blob/1.0.0";
+
 class IChatBlobPeerClient {
 public:
   virtual ~IChatBlobPeerClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) = 0;
   virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
+};
+
+/** Product blob entry (Amp or libp2p) — DEK + profile wiring for MessagingHub. */
+class IChatBlobPeerService : public IChatBlobPeerClient, public IDekConsumer {
+public:
+  ~IChatBlobPeerService() override = default;
+  virtual void SetProfileDataDir(std::string profile_data_dir) = 0;
+  virtual void SetProfileId(std::string profile_id) = 0;
 };
 
 struct MeshCapabilitiesAd {

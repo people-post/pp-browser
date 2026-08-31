@@ -2,6 +2,7 @@
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/AttachmentDownloadService.h"
+#include "feature/messaging/AmpChatBlobService.h"
 #include "feature/messaging/AmpChatHistoryService.h"
 #include "feature/messaging/AmpDirectChatService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
@@ -127,11 +128,7 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
-  // Blob stays on libp2p while chat/history may flip to Amp ([A020] single entry per family).
-  if (libp2p_host_ && peer_sessions_) {
-    peer_blob_ = std::make_unique<Libp2pChatBlobService>(*libp2p_host_, *peer_sessions_, store_, identity_);
-    peer_blob_->Start();
-  }
+  // Blob + chat/history: Amp single entry when Amp links present ([A020]).
   if (amp_links_) {
     auto worker = amp_worker_post;
     if (!worker && libp2p_host_) {
@@ -139,6 +136,10 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
         PostLibp2pWorker(*host, WorkerLane::Normal, std::move(task));
       };
     }
+    auto blob = std::make_unique<AmpChatBlobService>(*amp_links_, amp_io_pump, store_, identity_, worker);
+    blob->Start();
+    peer_blob_ = std::move(blob);
+
     auto history = std::make_unique<AmpChatHistoryService>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
                                                            worker);
     history->Start();
@@ -148,8 +149,12 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     chat->Start();
     direct_chat_ = std::move(chat);
-    log().info << "direct chat/history transport=amp";
+    log().info << "direct chat/history/blob transport=amp";
   } else if (libp2p_host_ && peer_sessions_) {
+    auto blob = std::make_unique<Libp2pChatBlobService>(*libp2p_host_, *peer_sessions_, store_, identity_);
+    blob->Start();
+    peer_blob_ = std::move(blob);
+
     auto history =
         std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
     history->Start();
@@ -159,7 +164,7 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     chat->Start();
     direct_chat_ = std::move(chat);
-    log().info << "direct chat/history transport=libp2p";
+    log().info << "direct chat/history/blob transport=libp2p";
   }
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());
@@ -242,7 +247,7 @@ IChatBlobPeerClient* P2pMessagingService::PeerBlobClient() const {
   return peer_blob_.get();
 }
 
-Libp2pChatBlobService* P2pMessagingService::PeerBlobService() const {
+IChatBlobPeerService* P2pMessagingService::PeerBlobService() const {
   return peer_blob_.get();
 }
 

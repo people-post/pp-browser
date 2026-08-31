@@ -140,6 +140,14 @@
 - **MeshHost** enables nested carrier accept whenever Amp L4 is up
 - `pp_browser_p2p_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
 
+## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
+
+- **`AmpChatBlobService`** — `/pp-browser/chat-blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
+- **Amp UDP accept** always enabled (decoupled from TCP `listen_enabled`)
+- **When Amp starts:** MeshHost forces `listen_enabled=false`, `skip_identify=true`; skips DialBack + libp2p circuit/media-relay hosting (Amp L4 coords own those)
+- **Deleted** transitional TCP-hello Opus dogfood: `CallMediaAdpDogfood.h`, `CallMediaAdpPath`, `CallMediaAdpKey`, hello `adp_*` fields
+- Docs: NETWORKING / CALLS / LIBP2P_STREAMS / AMP-CHANNEL updated for Amp-primary mesh
+
 ## Plan adjustments (2026-08-31)
 
 | Change | Why |
@@ -158,9 +166,9 @@
 
 ## Next (implementation)
 
-1. **D9 step 6–7** — stop Identify/TCP mesh listen; delete dogfood + TCP call-media; update NETWORKING / CALLS (Amp 1:1 circuit call-media landed in 5d)
-2. **D8 optional** — AMP dial-back when retiring libp2p Identify
-3. **Blob Amp single entry** — still on libp2p; flip before full TCP teardown if required
+1. **Amp dial-back (D8 optional)** — replace TCP DialBack chrome when still needed for Me→Network
+2. **N025 ephemeral listen** — revisit call-scoped Amp accept (TCP ephemeral idle when Amp owns mesh)
+3. **Libp2p Host shrink** — further delete unused TCP Host paths / SoftMigrate leftovers when Amp is required
 
 ### D9 cutover checklist
 
@@ -171,12 +179,13 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 1 | Own `AmpStack` inside `MeshHost` (parallel) | **Done** — product `enable_amp_stack` default true ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
 | 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | **Done** — `ApplyAmpAdvertisement`; ingest on PeerLinkManager |
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | **Done** — MessagingHub composition; mDNS `amp_udp` + Identify Amp MA |
-| 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport`; dogfood gate **false** |
+| 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport` |
 | 5a | MeshHost owns Amp circuit + media-relay; multiplex IoTick; admission | **Done** |
 | 5b | SoftMigrate media-relay single entry via Amp | **Done** |
 | 5c | Amp circuit adopt for SoftMigrate NAT | **Done** — media-relay; call-media = A024 |
-| 5d | Amp call-media nested Session over circuit | **Done** — [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) / `AmpCircuitCallMediaComposeTest` |
-| 6 | Stop starting libp2p Identify / TCP listen for mesh | After Amp-native listen/dial book is enough; keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
-| 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
+| 5d | Amp call-media nested Session over circuit | **Done** — [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) |
+| 5e | Amp chat-blob single entry | **Done** — `AmpChatBlobService` |
+| 6 | Stop starting libp2p Identify / TCP listen for mesh | **Done** — when Amp starts: `listen_enabled=false`, `skip_identify`, no DialBack/libp2p relay hosting; Amp UDP accept always on |
+| 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | **Done** |
 
 See [PHASES.md](PHASES.md) for full ordering.

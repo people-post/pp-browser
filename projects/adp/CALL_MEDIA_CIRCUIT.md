@@ -50,4 +50,4 @@ v1 uses a **BestEffort** outer splice so large media FRAG bursts are not capped 
 |------|--------------------|
 | SoftMigrate media-relay NAT | **Done** (5c) — single-channel adopt |
 | 1:1 call-media NAT | **Done** (5d) — nested Session |
-| Step 6 Identify/TCP teardown | Needs Amp-native listen/dial book completeness (blob still libp2p) |
+| Step 6 Identify/TCP teardown | **Done** when Amp starts (blob Amp + Amp accept) |

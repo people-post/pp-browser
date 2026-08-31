@@ -3,14 +3,14 @@
 **Tier:** architecture  
 **Status:** Product north star (2026-07-31)
 
-pp-browser uses **two network stacks**. Agents must not introduce a third realtime stack (e.g. WebRTC/libdatachannel) as the product path.
+pp-browser uses **HTTP** plus a **peer mesh**. Product peer mesh migrates to **AMP** (UDP + Session/Channel) under [`projects/adp`](../../projects/adp/); vendored libp2p shrinks toward PeerId/crypto helpers ([A017](../../projects/adp/DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)). Agents must not introduce a third realtime stack (e.g. WebRTC/libdatachannel) as the product path.
 
 ## Planes
 
 | Plane | Preferred role |
 |-------|----------------|
 | **HTTP** | Contact **org backends** when reachable: Brief APIs, relay store/history, client-compat, quotes/billing UX, settlement orchestration |
-| **libp2p** | **Peer data exchange**: messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Also reach backends / mesh peers when HTTP is blocked or unavailable |
+| **Peer mesh (AMP)** | **Peer data exchange** when `MeshHost` Amp is up: messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Libp2p TCP/Identify only as soft-fail fallback if Amp bind fails |
 
 ## Settlement (pricing)
 
@@ -21,26 +21,28 @@ pp-browser uses **two network stacks**. Agents must not introduce a third realti
 
 Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects/p2p-mesh/) N019–N020). Backend/chain are how those obligations **settle**, not a second media path.
 
-## Libp2p investment
+## Libp2p / Amp investment
 
-The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is a product surface, not a thin dependency. Mesh work continues to deepen:
+**AMP** ([`projects/adp`](../../projects/adp/)) is the product underlay when `libp2p.enable_amp_stack` succeeds: UDP + MSH + channels; ch0 replaces Identify; Amp accept is independent of TCP listen. D9 step 6: MeshHost skips Identify + TCP mesh listen + DialBack/libp2p relay hosting when Amp owns the mesh.
 
-- Peer discovery and dialability (peerstore / Identify, contacts, bootstrap, later directory/DHT)
-- Reachability (listen, UPnP, dial-back, circuit → PeerId-friendly paths)
-- Routing and transmission (streams, framing/QoS, budgets)
+The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) remains for PeerId crypto and transitional fallback. Mesh work continues to deepen:
+
+- Peer discovery and dialability (ch0 / mDNS `amp_udp`, contacts, bootstrap; Identify retired on Amp path)
+- Reachability (Amp UDP accept, circuit nested Session, SoftMigrate)
+- Routing and transmission (L3 channels, FRAG/QoS, budgets)
 - Price incentives (quotes, ceilings, volunteer → paid regulation)
 
-**Hop reachability** is implemented **inside** that stack ([media-hop-reachability](../../projects/media-hop-reachability/) — program + consume; [H001](../../projects/media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-libp2p) / [H007](../../projects/media-hop-reachability/DECISIONS.md#h007--no-app-layer-hop-candidate-exchange-as-product-path)). SoftMigrate must not grow a parallel NAT toolkit.
+**Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)). SoftMigrate must not grow a parallel NAT toolkit.
 
 **Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (shared) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
 
-`MeshHost` ([`src/base/p2p/`](../../src/base/p2p/)) is the **shared mesh composition root** — `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths. Mesh UX reads through `MeshHost` (via `MessagingHub::Mesh()`), not ad-hoc hub forwards.
+`MeshHost` ([`src/base/p2p/`](../../src/base/p2p/)) is the **shared mesh composition root** — Amp stack + L4 coordinators when enabled; otherwise `NodeRuntime` + dial-back + circuit/media relay + reachability — converging the `MessagingHub` and headless `pp-node` start paths.
 
-See [p2p-mesh](../../projects/p2p-mesh/) (N022+).
+See [p2p-mesh](../../projects/p2p-mesh/) (N022+) and [adp](../../projects/adp/).
 
 ## Calls
 
-Call **media** product path is **libp2p-only** (voice-first): direct peer streams and/or blind `media_relay`. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Product ADR: [V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking). Code map: [CALLS.md](CALLS.md).
+Call **media** product path is **AMP** when Amp is up (voice-first): direct PeerLink channels and/or circuit nested Session + SoftMigrate `media_relay`. Libp2p call-media remains only if Amp fails to start. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Code map: [CALLS.md](CALLS.md) · Amp: [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 
 ## Related
 
