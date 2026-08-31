@@ -34,6 +34,21 @@ CapabilityPayload PeerLinkManager::LocalCapability() const {
   return payload;
 }
 
+std::optional<std::string> PeerLinkManager::PreferredMultiaddr(const std::string& peer_id) const {
+  if (peer_id.empty()) {
+    return std::nullopt;
+  }
+  if (const auto it = endpoints_.find(peer_id); it != endpoints_.end()) {
+    return it->second.multiaddr;
+  }
+  for (const auto& [_, rec] : endpoints_) {
+    if (rec.peer_id == peer_id && !rec.multiaddr.empty()) {
+      return rec.multiaddr;
+    }
+  }
+  return std::nullopt;
+}
+
 void PeerLinkManager::InstallAcceptHandler() {
   endpoint_.SetAcceptHandler([this](std::shared_ptr<adp::Connection> connection) {
     OnInboundConnection(std::move(connection));
@@ -417,7 +432,7 @@ void PeerLinkManager::OnCapabilityData(const std::string& peer_key, std::vector<
   }
 
   const bool first = link->RemoteCapability() == nullptr;
-  link->SetRemoteCapability(std::move(*decoded));
+  link->SetRemoteCapability(*decoded);
 
   // Inbound peer replies once with local caps on the same ch0.
   if (!link->CapabilityOfferSent()) {
@@ -428,10 +443,52 @@ void PeerLinkManager::OnCapabilityData(const std::string& peer_key, std::vector<
     }
   }
 
-  if (first && capability_handler_) {
-    if (const auto* remote = link->RemoteCapability()) {
-      capability_handler_(*link, *remote);
+  if (first) {
+    IngestRemoteCapabilityAddrs(*link, *decoded);
+    if (capability_handler_) {
+      if (const auto* remote = link->RemoteCapability()) {
+        capability_handler_(*link, *remote);
+      }
     }
+  }
+}
+
+void PeerLinkManager::IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote) {
+  // Trust MSH-authenticated PeerId over self-asserted capability peer id.
+  const std::string peer_id = !link.RemotePeerId().empty() ? link.RemotePeerId() : remote.local_peer_id;
+  if (peer_id.empty()) {
+    return;
+  }
+  if (!remote.local_peer_id.empty() && remote.local_peer_id != peer_id) {
+    // Spoofed identify peer id — still ingest addrs that match the authenticated id.
+  }
+
+  for (const auto& ma : remote.listen_multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    auto parsed = ParseAdpMultiaddr(ma);
+    if (!parsed) {
+      continue;
+    }
+    if (!parsed->peer_id.empty() && parsed->peer_id != peer_id) {
+      continue;
+    }
+
+    EndpointRecord rec;
+    rec.multiaddr = ma;
+    rec.endpoint = parsed->endpoint;
+    rec.peer_id = peer_id;
+    endpoints_[peer_id] = rec;
+
+    // Refresh dial aliases that already target this PeerId.
+    for (auto& [alias, existing] : endpoints_) {
+      if (alias != peer_id && existing.peer_id == peer_id) {
+        existing.multiaddr = ma;
+        existing.endpoint = parsed->endpoint;
+      }
+    }
+    break; // first valid ADP listen addr is preferred for now
   }
 }
 

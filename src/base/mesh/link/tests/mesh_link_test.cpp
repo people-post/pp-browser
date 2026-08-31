@@ -4,14 +4,17 @@
 #include "base/crypto/MlDsa.h"
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/link/AdpMultiaddr.h"
+#include "base/mesh/link/AmpStack.h"
 #include "base/mesh/link/MeshPump.h"
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/mesh/link/tests/mesh_test_harness.h"
+#include "base/p2p/PeerIdUtil.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -267,6 +270,112 @@ TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
 
   EXPECT_EQ(seen_on_a.local_peer_id, h.peer_id_b);
   EXPECT_EQ(seen_on_b.local_peer_id, h.peer_id_a);
+}
+
+TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
+  ASSERT_GE(sodium_init(), 0);
+  auto created = test::AmpMeshHarness::Create();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto harness = std::move(*created);
+  test::AmpMeshHarness& h = *harness;
+
+  // Only A knows how to dial B initially; B learns A's listen addr from ch0.
+  h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
+  h.mgr_b().SetLocalListenMultiaddrs({h.ma_b});
+  h.ep_a->SetAcceptEnabled(true);
+
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+  // Intentionally do not RegisterEndpoint(peer_id_a) on B before caps.
+
+  bool associated = false;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.PumpUntil([&] {
+    return associated && h.mgr_b().PreferredMultiaddr(h.peer_id_a).has_value() &&
+           h.mgr_a().PreferredMultiaddr(h.peer_id_b).has_value();
+  });
+  ASSERT_TRUE(associated);
+
+  auto learned_a = h.mgr_b().PreferredMultiaddr(h.peer_id_a);
+  ASSERT_TRUE(learned_a.has_value());
+  EXPECT_EQ(*learned_a, h.ma_a);
+
+  auto learned_b = h.mgr_a().PreferredMultiaddr(h.peer_id_b);
+  ASSERT_TRUE(learned_b.has_value());
+  EXPECT_EQ(*learned_b, h.ma_b);
+
+  // B can now EnsureAssociation by authenticated PeerId without a prior alias registration.
+  bool b_assoc = false;
+  std::string b_err;
+  h.mgr_b().EnsureAssociation(h.peer_id_a, [&](Roe<void> result) {
+    b_assoc = static_cast<bool>(result);
+    if (!result) {
+      b_err = result.error().message;
+    }
+  });
+  h.PumpUntil([&] { return b_assoc || !b_err.empty(); });
+  // Already connected via inbound adopt/rekey — EnsureAssociation should succeed immediately.
+  EXPECT_TRUE(b_assoc) << b_err;
+  EXPECT_TRUE(h.mgr_b().IsConnected(h.peer_id_a));
+}
+
+TEST(AmpStackTest, CreateAndAssociateViaStacks) {
+  ASSERT_GE(sodium_init(), 0);
+
+  auto clock = std::make_shared<adp::VirtualClock>(1'000'000);
+  auto hub = adp::MemoryDatagramIo::MakeHub();
+  const auto addr_a = adp::IpEndpoint::V4(10, 0, 0, 1, 1000);
+  const auto addr_b = adp::IpEndpoint::V4(10, 0, 0, 2, 2000);
+  auto io_a = std::make_shared<adp::MemoryDatagramIo>(hub, addr_a);
+  auto io_b = std::make_shared<adp::MemoryDatagramIo>(hub, addr_b);
+
+  auto alice_keys = MlDsa::GenerateKeyPair();
+  auto bob_keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(static_cast<bool>(alice_keys));
+  ASSERT_TRUE(static_cast<bool>(bob_keys));
+
+  MshIdentity alice;
+  alice.ml_dsa_secret_key = std::move(alice_keys->secret_key);
+  alice.ml_dsa_public_key = std::move(alice_keys->public_key);
+  MshIdentity bob;
+  bob.ml_dsa_secret_key = std::move(bob_keys->secret_key);
+  bob.ml_dsa_public_key = std::move(bob_keys->public_key);
+
+  auto peer_a = PeerIdFromMlDsaPublicKey(alice.ml_dsa_public_key);
+  auto peer_b = PeerIdFromMlDsaPublicKey(bob.ml_dsa_public_key);
+  ASSERT_TRUE(static_cast<bool>(peer_a));
+  ASSERT_TRUE(static_cast<bool>(peer_b));
+
+  AmpStack::Config cfg_a;
+  cfg_a.identity = alice;
+  cfg_a.local_peer_id = *peer_a;
+  cfg_a.link_config = test::AmpMeshTestLinkConfig();
+  AmpStack::Config cfg_b;
+  cfg_b.identity = bob;
+  cfg_b.local_peer_id = *peer_b;
+  cfg_b.link_config = test::AmpMeshTestLinkConfig();
+
+  auto stack_a = AmpStack::Create(io_a, clock, cfg_a);
+  auto stack_b = AmpStack::Create(io_b, clock, cfg_b);
+  ASSERT_TRUE(static_cast<bool>(stack_a));
+  ASSERT_TRUE(static_cast<bool>(stack_b));
+  (*stack_a)->Start();
+  (*stack_b)->Start();
+  (*stack_b)->GetEndpoint().SetAcceptEnabled(true);
+
+  auto ma_b = FormatAdpMultiaddr(addr_b, *peer_b);
+  ASSERT_TRUE(static_cast<bool>(ma_b));
+  ASSERT_TRUE(static_cast<bool>((*stack_a)->Links().RegisterEndpoint("b", *ma_b)));
+
+  bool associated = false;
+  (*stack_a)->Links().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  for (size_t i = 0; i < 500 && !associated; ++i) {
+    (*stack_a)->Pump();
+    (*stack_b)->Pump();
+    (*stack_a)->Tick();
+    (*stack_b)->Tick();
+  }
+  EXPECT_TRUE(associated);
+  EXPECT_TRUE((*stack_a)->Links().IsConnected("b"));
 }
 
 } // namespace

@@ -41,6 +41,9 @@ public:
   void SetCapabilityHandler(CapabilityHandler handler);
   CapabilityPayload LocalCapability() const;
 
+  /** Preferred ADP listen multiaddr learned for a PeerId (ch0 / RegisterEndpoint). */
+  std::optional<std::string> PreferredMultiaddr(const std::string& peer_id) const;
+
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr);
 
   void EnsureAssociation(const std::string& peer_key, LinkCb on_complete);
@@ -82,6 +85,7 @@ private:
   void ApplyProtocolHandlers(PeerLink& link);
   void StartCapabilityExchange(PeerLink& link);
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
+  void IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote);
   void FinishDial(const std::string& peer_key, Roe<void> result);
   std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
   /** Returns false if `inbound` was erased as a duplicate. */

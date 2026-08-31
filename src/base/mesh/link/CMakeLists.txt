@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_mesh_link
     AmpAdpCarrier.cpp
     MeshPump.cpp
     MeshRuntime.cpp
+    AmpStack.cpp
     MshAdpHandshake.cpp
     PeerLink.cpp
     PeerLinkManager.cpp

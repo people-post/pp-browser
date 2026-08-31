@@ -108,12 +108,16 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D8 — Reachability
 
-- [ ] Listen policy, dial-back, mDNS on ADP multiaddrs (follow-on)
+- [ ] Listen policy, mDNS on ADP multiaddrs (follow-on)
+- [ ] AMP dial-back protocol (follow-on; libp2p `DialBackService` still production)
 - [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane)) — dialer opens ch0; mutual PeerId / listen addrs / protocols; `SetCapabilityHandler`
+- [x] Ingest remote ADP listen addrs under authenticated PeerId (`PreferredMultiaddr` / peer-id dial)
 
 ### D9 — Retire legacy underlay
 
-- [ ] Single transport entry in `MeshHost` / `CallStack` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol)) — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
+- [x] `AmpStack` composition helper (`Endpoint` + `MeshRuntime`)
+- [ ] Attach `AmpStack` to `MeshHost` (parallel; no traffic) — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
+- [ ] Single transport entry in `MeshHost` / `CallStack` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello Opus path

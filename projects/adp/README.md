@@ -30,8 +30,8 @@
 | D1–D6 | Session, channel, link, chat, call-media | **Done** (parallel stacks; product still libp2p) |
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
-| D8 | ch0 capability exchange | **Partial** — exchange landed; dial-back/mDNS next |
-| D9 | MeshHost/CallStack cutover | **Next** — checklist in [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist) |
+| D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back/mDNS next |
+| D9 | MeshHost/CallStack cutover | **Started** — `AmpStack` helper; MeshHost attach next |
 
 ## Locked product decisions
 

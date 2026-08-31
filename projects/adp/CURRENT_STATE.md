@@ -79,16 +79,23 @@
 ## Landed (D8 ch0 — partial)
 
 - After MSH, dialer opens channel 0 (`/pp-browser/amp-capability/1.0.0`); peer replies with local caps
-- `PeerLinkManager::{SetLocalListenMultiaddrs,SetAdvertisedProtocols,SetCapabilityHandler}`
+- `PeerLinkManager::{SetLocalListenMultiaddrs,SetAdvertisedProtocols,SetCapabilityHandler,PreferredMultiaddr}`
 - `PeerLink::RemoteCapability()` stores peer Identify replacement payload
+- **Ingest:** first valid ADP listen multiaddr from remote caps upserted under authenticated PeerId (aliases refreshed)
 - `ChannelMux::SendCapabilityOffer` queues DATA until OpenAck (async ADP); `OpenOutbound` claims pending data handlers
-- `pp_browser_amp_link_test` — `CapabilityExchangeAfterAssociation`
-- Still open: listen policy, dial-back, mDNS on ADP multiaddrs; ingest remote listen addrs into address book
+- `pp_browser_amp_link_test` — `CapabilityExchangeAfterAssociation`, `CapabilityIngestEnablesPeerIdDial`
+- Still open: dial-back protocol on AMP, mDNS on ADP multiaddrs, listen policy
+
+## Landed (D9 building block)
+
+- `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer (composition helper for MeshHost cutover)
+- `AmpStackTest.CreateAndAssociateViaStacks`
+- Product `MeshHost` not yet holding AmpStack (no traffic flip)
 
 ## Next (implementation)
 
-1. **D8 remainder** — dial-back / mDNS / listen policy on ADP multiaddrs (optional before cutover)
-2. **D9** — single cutover (checklist below)
+1. **D8 remainder** — AMP dial-back / mDNS / listen policy
+2. **D9** — attach `AmpStack` to `MeshHost` (parallel), then cutover L4 per checklist below
 
 ### D9 cutover checklist
 
@@ -96,7 +103,7 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 
 | Step | Action | Notes |
 |------|--------|--------|
-| 1 | Own `MeshRuntime` (+ UDP listen) inside `MeshHost` / node bootstrap | Parallel construct first; no app traffic yet |
+| 1 | Own `AmpStack` / `MeshRuntime` (+ UDP listen) inside `MeshHost` / node bootstrap | `AmpStack` landed; MeshHost attach next; no app traffic yet |
 | 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | Feeds Identify replacement |
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | Already tested parallel |
 | 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | `CallStack.cpp` still includes dogfood |
