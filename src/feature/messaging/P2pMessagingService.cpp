@@ -1291,8 +1291,13 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
                     peer_relay_id, critical_lane = options.critical_lane]() mutable {
     bool tried_direct = false;
-    // critical_lane still tries Amp first when the peer is dialable (non-contact LAN accept / leave).
-    if (direct_chat_ && !amp_peer_key.empty() && direct_chat_->IsPeerReachable(amp_peer_key)) {
+    // Call-control (critical_lane): Amp chat Open+ack-per-message races SoftMigrate/media and
+    // burns up to ~4s before Brief — noisy WARNINGs for 10–20s while signaling still works via
+    // relay. Prefer Brief when a relay route is known; Amp remains for Amp-only peers.
+    const bool try_amp = direct_chat_ && !amp_peer_key.empty() &&
+                         direct_chat_->IsPeerReachable(amp_peer_key) &&
+                         !(critical_lane && peer_relay_id.has_value());
+    if (try_amp) {
       tried_direct = true;
       const auto direct = direct_chat_->SendEnvelope(amp_peer_key, envelope);
       if (direct) {
