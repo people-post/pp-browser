@@ -1,0 +1,95 @@
+#include "base/mesh/channel/ChannelSession.h"
+
+namespace pbr::amp {
+
+void ChannelSession::Bind(ChannelMux& mux, const uint32_t channel_id, ChannelPolicy policy, FrameHandler on_frame,
+                          ClosedCallback on_closed) {
+  mux_ = &mux;
+  channel_id_ = channel_id;
+  policy_ = std::move(policy);
+  on_frame_ = std::move(on_frame);
+  on_closed_ = std::move(on_closed);
+  closed_ = false;
+  outbound_.clear();
+  write_inflight_ = false;
+
+  mux.SetDataHandler(channel_id_, [this](uint32_t, std::vector<uint8_t> payload) {
+    if (closed_ || !on_frame_) {
+      return;
+    }
+    const bool keep_open = on_frame_(std::move(payload));
+    if (!keep_open || (policy_.read_once && !closed_)) {
+      Close();
+    }
+  });
+}
+
+bool ChannelSession::EnqueueOutbound(std::vector<uint8_t> body) {
+  if (closed_ || !mux_) {
+    return false;
+  }
+  if (policy_.max_outbound_frames > 0 && outbound_.size() >= policy_.max_outbound_frames) {
+    if (policy_.drop == ChannelDropPolicy::Never) {
+      return false;
+    }
+    if (policy_.drop == ChannelDropPolicy::Oldest && !outbound_.empty()) {
+      outbound_.pop_front();
+      if (policy_.on_outbound_drop) {
+        policy_.on_outbound_drop();
+      }
+    }
+  }
+  outbound_.push_back(std::move(body));
+  PumpWrite();
+  return true;
+}
+
+void ChannelSession::PumpWrite() {
+  if (write_inflight_ || closed_ || !mux_ || outbound_.empty()) {
+    return;
+  }
+  write_inflight_ = true;
+  auto body = std::move(outbound_.front());
+  outbound_.pop_front();
+  auto sent = mux_->SendData(channel_id_, std::move(body));
+  write_inflight_ = false;
+  if (!sent) {
+    FailOutbound(sent.error());
+    return;
+  }
+  if (!outbound_.empty()) {
+    PumpWrite();
+  }
+}
+
+void ChannelSession::FailOutbound(const Error& error) {
+  (void)error;
+  closed_ = true;
+  if (on_closed_) {
+    on_closed_("write_failed");
+  }
+}
+
+void ChannelSession::Close() {
+  if (closed_ || !mux_) {
+    return;
+  }
+  closed_ = true;
+  (void)mux_->CloseChannel(channel_id_);
+  if (on_closed_) {
+    on_closed_("close");
+  }
+}
+
+void ChannelSession::Reset(const uint32_t code) {
+  if (closed_ || !mux_) {
+    return;
+  }
+  closed_ = true;
+  (void)mux_->ResetChannel(channel_id_, code);
+  if (on_closed_) {
+    on_closed_("reset");
+  }
+}
+
+} // namespace pbr::amp

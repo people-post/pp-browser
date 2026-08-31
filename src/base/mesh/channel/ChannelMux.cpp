@@ -1,0 +1,320 @@
+#include "base/mesh/channel/ChannelMux.h"
+
+#include "base/mesh/channel/Capability.h"
+
+namespace pbr::amp {
+
+namespace {
+
+inline constexpr size_t kMaxSingleDataBytes = 900;
+
+int64_t DefaultNowMs() { return 0; }
+
+} // namespace
+
+ChannelMux::ChannelMux(Session& session) : session_(session), now_ms_(DefaultNowMs) {}
+
+void ChannelMux::SetPeerSession(Session* peer_session) { peer_session_ = peer_session; }
+
+void ChannelMux::SetTransport(TransportSend send) { transport_ = std::move(send); }
+
+void ChannelMux::SetClock(std::function<int64_t()> now_ms) { now_ms_ = std::move(now_ms); }
+
+ChannelMux::ChannelRecord* ChannelMux::ChannelById(const uint32_t channel_id) {
+  auto it = channels_.find(channel_id);
+  if (it == channels_.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+const ChannelMux::ChannelRecord* ChannelMux::ChannelById(const uint32_t channel_id) const {
+  auto it = channels_.find(channel_id);
+  if (it == channels_.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+Roe<void> ChannelMux::SendFrame(const ChannelFrame& frame, ChannelRecord& channel) {
+  if (!transport_) {
+    return Error("amp mux: no transport");
+  }
+  auto wire = ChannelWire::Encode(frame);
+  if (!wire) {
+    return wire.error();
+  }
+  last_send_qos_ = QosForClass(channel.policy.cls);
+  auto sealed = session_.Seal(frame.header.channel_id, frame.header.channel_seq, *wire);
+  if (!sealed) {
+    return sealed.error();
+  }
+  transport_(frame.header.channel_id, frame.header.channel_seq, last_send_qos_, std::move(*sealed));
+  return Roe<void>();
+}
+
+Roe<uint32_t> ChannelMux::OpenOutbound(const std::string& protocol_id, ChannelPolicy policy,
+                                       std::optional<uint32_t> fixed_id) {
+  uint32_t id = 0;
+  if (fixed_id.has_value()) {
+    id = *fixed_id;
+    if (channels_.contains(id)) {
+      return Error("amp mux: channel id in use");
+    }
+  } else {
+    id = next_dynamic_id_++;
+    if (id == kIllegalChannelId) {
+      id = next_dynamic_id_++;
+    }
+  }
+  ChannelRecord rec;
+  rec.id = id;
+  rec.protocol_id = protocol_id;
+  rec.policy = std::move(policy);
+  rec.state = ChannelState::Opening;
+  rec.reassembly = MessageReassembly(rec.policy.max_message_bytes);
+  channels_.emplace(id, std::move(rec));
+
+  ChannelFrame frame;
+  frame.header.frame_type = ChannelFrameType::Open;
+  frame.header.channel_id = id;
+  frame.header.channel_seq = 0;
+  frame.open.protocol_id = protocol_id;
+  frame.open.channel_class = channels_.at(id).policy.cls;
+
+  auto* channel = ChannelById(id);
+  if (!channel) {
+    return Error("amp mux: channel missing after insert");
+  }
+  auto sent = SendFrame(frame, *channel);
+  if (!sent) {
+    return sent.error();
+  }
+  return id;
+}
+
+void ChannelMux::SetDataHandler(const uint32_t channel_id, DataHandler handler) {
+  if (auto* channel = ChannelById(channel_id)) {
+    channel->on_data = std::move(handler);
+    return;
+  }
+  pending_handlers_[channel_id] = std::move(handler);
+}
+
+Roe<void> ChannelMux::DeliverPayload(ChannelRecord& channel, std::vector<uint8_t> payload) {
+  if (channel.on_data) {
+    channel.on_data(channel.id, std::move(payload));
+    return Roe<void>();
+  }
+  return Roe<void>();
+}
+
+Roe<void> ChannelMux::HandleOpen(ChannelFrame frame) {
+  if (channels_.contains(frame.header.channel_id)) {
+    return Error("amp mux: duplicate open");
+  }
+  ChannelRecord rec;
+  rec.id = frame.header.channel_id;
+  rec.protocol_id = frame.open.protocol_id;
+  rec.policy.cls = frame.open.channel_class;
+  rec.reassembly = MessageReassembly(rec.policy.max_message_bytes);
+  rec.state = ChannelState::Open;
+  channels_.emplace(rec.id, std::move(rec));
+  if (auto it = pending_handlers_.find(frame.header.channel_id); it != pending_handlers_.end()) {
+    channels_.at(frame.header.channel_id).on_data = std::move(it->second);
+    pending_handlers_.erase(it);
+  }
+
+  ChannelFrame ack;
+  ack.header.frame_type = ChannelFrameType::OpenAck;
+  ack.header.channel_id = frame.header.channel_id;
+  ack.header.channel_seq = 0;
+  ack.open_ack_result = 0;
+  return SendFrame(ack, channels_.at(frame.header.channel_id));
+}
+
+Roe<void> ChannelMux::HandleOpenAck(ChannelFrame frame) {
+  auto* channel = ChannelById(frame.header.channel_id);
+  if (!channel) {
+    return Error("amp mux: open ack for unknown channel");
+  }
+  if (frame.open_ack_result != 0) {
+    channel->state = ChannelState::Closed;
+    return Error("amp mux: open rejected");
+  }
+  channel->state = ChannelState::Open;
+  return Roe<void>();
+}
+
+Roe<void> ChannelMux::DispatchFrame(ChannelFrame frame) {
+  auto* channel = ChannelById(frame.header.channel_id);
+  if (!channel && frame.header.frame_type != ChannelFrameType::Open) {
+    return Error("amp mux: unknown channel");
+  }
+
+  switch (frame.header.frame_type) {
+  case ChannelFrameType::Open:
+    return HandleOpen(std::move(frame));
+  case ChannelFrameType::OpenAck:
+    return HandleOpenAck(std::move(frame));
+  case ChannelFrameType::Reset:
+    if (channel) {
+      channel->state = ChannelState::Closed;
+    }
+    return Roe<void>();
+  case ChannelFrameType::Close:
+    if (channel) {
+      channel->state = ChannelState::Closed;
+    }
+    return Roe<void>();
+  case ChannelFrameType::Data:
+    if (!channel || channel->state != ChannelState::Open) {
+      return Error("amp mux: data on closed channel");
+    }
+    if (QosForClass(channel->policy.cls) == adp::QosClass::Reliable) {
+      if (frame.header.channel_seq != channel->rx_seq) {
+        return Error("amp mux: out of order seq");
+      }
+      channel->rx_seq += 1;
+    }
+    return DeliverPayload(*channel, std::move(frame.payload));
+  case ChannelFrameType::Frag: {
+    if (!channel || channel->state != ChannelState::Open) {
+      return Error("amp mux: frag on closed channel");
+    }
+    if (QosForClass(channel->policy.cls) == adp::QosClass::Reliable) {
+      if (frame.header.channel_seq != channel->rx_seq) {
+        return Error("amp mux: out of order frag seq");
+      }
+      channel->rx_seq += 1;
+    }
+    auto assembled = channel->reassembly.Push(frame.frag, now_ms_ ? now_ms_() : 0);
+    if (!assembled) {
+      return assembled.error();
+    }
+    if (!assembled->has_value()) {
+      return Roe<void>();
+    }
+    return DeliverPayload(*channel, std::move(**assembled));
+  }
+  default:
+    return Error("amp mux: unhandled frame type");
+  }
+}
+
+Roe<void> ChannelMux::OnSealedInbound(const uint32_t channel_id, const uint32_t channel_seq,
+                                      std::span<const uint8_t> sealed) {
+  auto opened = session_.Open(channel_id, channel_seq, sealed);
+  if (!opened) {
+    return opened.error();
+  }
+  auto frame = ChannelWire::Decode(*opened);
+  if (!frame) {
+    return frame.error();
+  }
+  if (frame->header.channel_id != channel_id) {
+    return Error("amp mux: channel id mismatch");
+  }
+  return DispatchFrame(std::move(*frame));
+}
+
+Roe<void> ChannelMux::SendData(const uint32_t channel_id, std::vector<uint8_t> payload) {
+  auto* channel = ChannelById(channel_id);
+  if (!channel || channel->state != ChannelState::Open) {
+    return Error("amp mux: send on closed channel");
+  }
+  if (payload.size() > channel->policy.max_message_bytes) {
+    return Error("amp mux: payload too large");
+  }
+
+  if (payload.size() <= kMaxSingleDataBytes) {
+    ChannelFrame frame;
+    frame.header.frame_type = ChannelFrameType::Data;
+    frame.header.channel_id = channel_id;
+    frame.header.channel_seq = channel->tx_seq++;
+    frame.payload = std::move(payload);
+    return SendFrame(frame, *channel);
+  }
+
+  const uint64_t msg_id = next_frag_msg_id_++;
+  const uint16_t frag_count =
+      static_cast<uint16_t>((payload.size() + kMaxSingleDataBytes - 1) / kMaxSingleDataBytes);
+  for (uint16_t i = 0; i < frag_count; ++i) {
+    const size_t offset = static_cast<size_t>(i) * kMaxSingleDataBytes;
+    const size_t chunk_len = std::min(kMaxSingleDataBytes, payload.size() - offset);
+    ChannelFrame frame;
+    frame.header.frame_type = ChannelFrameType::Frag;
+    frame.header.channel_id = channel_id;
+    frame.header.channel_seq = channel->tx_seq++;
+    frame.frag.msg_id = msg_id;
+    frame.frag.frag_index = i;
+    frame.frag.frag_count = frag_count;
+    frame.frag.total_len = static_cast<uint32_t>(payload.size());
+    frame.frag.chunk.assign(payload.begin() + static_cast<std::ptrdiff_t>(offset),
+                            payload.begin() + static_cast<std::ptrdiff_t>(offset + chunk_len));
+    auto sent = SendFrame(frame, *channel);
+    if (!sent) {
+      return sent.error();
+    }
+  }
+  return Roe<void>();
+}
+
+Roe<void> ChannelMux::ResetChannel(const uint32_t channel_id, const uint32_t code) {
+  auto* channel = ChannelById(channel_id);
+  if (!channel) {
+    return Error("amp mux: reset unknown channel");
+  }
+  ChannelFrame frame;
+  frame.header.frame_type = ChannelFrameType::Reset;
+  frame.header.channel_id = channel_id;
+  frame.header.channel_seq = channel->tx_seq++;
+  frame.reset_code = code;
+  channel->state = ChannelState::Closed;
+  return SendFrame(frame, *channel);
+}
+
+Roe<void> ChannelMux::CloseChannel(const uint32_t channel_id, std::string reason) {
+  auto* channel = ChannelById(channel_id);
+  if (!channel) {
+    return Error("amp mux: close unknown channel");
+  }
+  ChannelFrame frame;
+  frame.header.frame_type = ChannelFrameType::Close;
+  frame.header.channel_id = channel_id;
+  frame.header.channel_seq = channel->tx_seq++;
+  frame.payload.assign(reason.begin(), reason.end());
+  channel->state = ChannelState::Closing;
+  return SendFrame(frame, *channel);
+}
+
+ChannelState ChannelMux::State(const uint32_t channel_id) const {
+  if (const auto* ch = ChannelById(channel_id)) {
+    return ch->state;
+  }
+  return ChannelState::Closed;
+}
+
+ChannelClass ChannelMux::Class(const uint32_t channel_id) const {
+  if (const auto* ch = ChannelById(channel_id)) {
+    return ch->policy.cls;
+  }
+  return ChannelClass::Control;
+}
+
+Roe<void> ChannelMux::SendCapabilityOffer(ChannelMux& mux, const CapabilityPayload& offer) {
+  auto encoded = CapabilityCodec::Encode(offer);
+  if (!encoded) {
+    return encoded.error();
+  }
+  auto id = mux.OpenOutbound("/pp-browser/amp-capability/1.0.0", CapabilityChannelPolicy(), kCapabilityChannelId);
+  if (!id) {
+    return id.error();
+  }
+  if (mux.State(*id) != ChannelState::Open) {
+    return Error("amp mux: capability channel not open");
+  }
+  return mux.SendData(*id, std::move(*encoded));
+}
+
+} // namespace pbr::amp

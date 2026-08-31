@@ -1,6 +1,6 @@
 # Current state — ADP / AMP
 
-**As of:** 2026-08-30
+**As of:** 2026-08-31
 
 ## Landed (L1)
 
@@ -30,10 +30,16 @@
 - `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
 - `pp_browser_amp_session_test` (8 tests, green)
 
+## Landed (L3 — D2)
+
+- `src/base/mesh/channel/` → `pp_base_mesh_channel`
+- L3 wire codec, `ChannelMux`, `ChannelSession`, channel 0 capability plane
+- FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
+- `pp_browser_amp_channel_test` (11 tests, green)
+
 ## Next (implementation)
 
-1. **D2** — `src/base/mesh/channel/` + `ChannelSession` + ch0
-2. **D3** — L3 fragmentation
-3. **D4** — `PeerLinkManager` + `MeshPump`
+1. **D3** — fragmentation edge-case tests (loss, reorder, timeout)
+2. **D4** — `PeerLinkManager` + `MeshPump`
 
 See [PHASES.md](PHASES.md) for full ordering.

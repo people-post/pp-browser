@@ -58,17 +58,17 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D2 — L3 Channel mux
 
-- [ ] `src/base/mesh/channel/` + `pp_base_mesh_channel`
-- [ ] OPEN/ACK/DATA/CLOSE/RESET
-- [ ] Channel 0 capability plane
-- [ ] QoS map (channel class → ADP Reliable/BE)
-- [ ] `ChannelSession` (replaces `DuplexFrameSession` API shape)
-- [ ] `pp_browser_amp_channel_test`
+- [x] `src/base/mesh/channel/` + `pp_base_mesh_channel`
+- [x] OPEN/ACK/DATA/CLOSE/RESET
+- [x] Channel 0 capability plane
+- [x] QoS map (channel class → ADP Reliable/BE)
+- [x] `ChannelSession` (replaces `DuplexFrameSession` API shape)
+- [x] `pp_browser_amp_channel_test` (11 tests, green)
 
 ### D3 — L3 fragmentation
 
-- [ ] Reliable FRAG reassembly (256 KiB control max)
-- [ ] Loss / reorder / dup / timeout tests
+- [x] Reliable FRAG reassembly (256 KiB control max)
+- [ ] Loss / reorder / dup / timeout tests (dup covered; loss/reorder/timeout next)
 
 ### D4 — PeerLinkManager
 
