@@ -80,13 +80,17 @@ struct AmpCircuitRelayService::Impl {
     }
   }
 
-  void CancelBridgesLocked() {
-    for (auto& bridge : active_bridges) {
+  void CancelBridges() {
+    std::vector<std::shared_ptr<amp::ChannelBridge>> bridges;
+    {
+      std::lock_guard lock(mu);
+      bridges.swap(active_bridges);
+    }
+    for (auto& bridge : bridges) {
       if (bridge) {
         bridge->Stop();
       }
     }
-    active_bridges.clear();
   }
 
   void AbortInflightLocked() {
@@ -104,10 +108,15 @@ struct AmpCircuitRelayService::Impl {
     }
     auto client = std::make_shared<amp::ChannelSession>();
     auto self = this;
+    auto started = std::make_shared<std::atomic<bool>>(false);
     client->Bind(*link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
-                 [self, client, remote = link.RemotePeerId()](Roe<std::vector<uint8_t>> frame) {
+                 [self, client, started, remote = link.RemotePeerId()](Roe<std::vector<uint8_t>> frame) {
                    if (!frame || self->stopped.load(std::memory_order_acquire)) {
                      return false;
+                   }
+                   // Only the first DATA is the bridge request; ChannelBridge replaces handlers later.
+                   if (started->exchange(true, std::memory_order_acq_rel)) {
+                     return true;
                    }
                    auto root = TryParseObject(BodyToJson(*frame));
                    if (!root) {
@@ -118,8 +127,11 @@ struct AmpCircuitRelayService::Impl {
                      client->EnqueueOutbound(JsonToBody(DumpJson(err)));
                      return false;
                    }
-                   self->ServeBridgeRequest(remote, client, *root);
-                   return true; // stay open for tunnel forward (or Close from ServeBridge)
+                   // Do not ServeBridgeRequest (Attach/SetFrameHandler) inside this handler.
+                   self->runtime->PostToIo([self, client, remote, root = *root]() mutable {
+                     self->ServeBridgeRequest(remote, client, root);
+                   });
+                   return true;
                  });
   }
 
@@ -281,8 +293,7 @@ void AmpCircuitRelayService::Stop() {
   impl_->stopped.store(true, std::memory_order_release);
   AbortInflightRequests();
   runtime_.Links().RemoveProtocolHandler(kCircuitRelayProtocolId);
-  std::lock_guard lock(impl_->mu);
-  impl_->CancelBridgesLocked();
+  impl_->CancelBridges();
 }
 
 void AmpCircuitRelayService::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
@@ -388,40 +399,56 @@ Roe<AmpCircuitRelayBridgeResult> AmpCircuitRelayService::RequestBridge(
                                    return;
                                  }
 
+                                 // Shared state avoids SetFrameHandler-from-within-handler (destroys active lambda).
+                                 struct ClientTunnelState {
+                                   enum class Phase { WaitAck, Forward };
+                                   Phase phase = Phase::WaitAck;
+                                   FrameHandler on_payload;
+                                   ClosedCallback on_closed;
+                                 };
+                                 auto state = std::make_shared<ClientTunnelState>();
+                                 state->on_payload = std::move(on_payload);
+                                 state->on_closed = std::move(on_closed);
+
                                  session->Bind(
                                      *link->Mux(), *channel, amp::CircuitTunnelChannelPolicy(),
-                                     [finish, session, on_payload = std::move(on_payload),
-                                      on_closed = std::move(on_closed)](Roe<std::vector<uint8_t>> frame) mutable {
+                                     [finish, session, state](Roe<std::vector<uint8_t>> frame) {
                                        if (!frame) {
-                                         finish(Error("circuit-relay bridge failed"));
+                                         if (state->phase == ClientTunnelState::Phase::WaitAck) {
+                                           finish(Error("circuit-relay bridge failed"));
+                                         }
                                          return false;
                                        }
-                                       auto root = TryParseObject(BodyToJson(*frame));
-                                       if (!root) {
-                                         finish(Error("invalid circuit-relay ack"));
-                                         return false;
+                                       if (state->phase == ClientTunnelState::Phase::WaitAck) {
+                                         auto root = TryParseObject(BodyToJson(*frame));
+                                         if (!root) {
+                                           finish(Error("invalid circuit-relay ack"));
+                                           return false;
+                                         }
+                                         AmpCircuitRelayBridgeResult result;
+                                         result.ok = root->getIf<bool>("ok").value_or(false);
+                                         result.error = root->getString("error").value_or("");
+                                         result.resolved_multiaddr =
+                                             root->getString("resolved_multiaddr").value_or("");
+                                         if (!result.ok) {
+                                           finish(Error(result.error.empty() ? "circuit-relay bridge refused"
+                                                                             : result.error));
+                                           return false;
+                                         }
+                                         result.session = session;
+                                         state->phase = ClientTunnelState::Phase::Forward;
+                                         finish(std::move(result));
+                                         return true;
                                        }
-                                       AmpCircuitRelayBridgeResult result;
-                                       result.ok = root->getIf<bool>("ok").value_or(false);
-                                       result.error = root->getString("error").value_or("");
-                                       result.resolved_multiaddr =
-                                           root->getString("resolved_multiaddr").value_or("");
-                                       if (!result.ok) {
-                                         finish(Error(result.error.empty() ? "circuit-relay bridge refused"
-                                                                           : result.error));
-                                         return false;
+                                       if (state->on_payload) {
+                                         return state->on_payload(std::move(frame));
                                        }
-                                       result.session = session;
-                                       if (on_payload) {
-                                         session->SetFrameHandler(std::move(on_payload));
-                                       } else {
-                                         session->SetFrameHandler([](Roe<std::vector<uint8_t>>) { return true; });
-                                       }
-                                       if (on_closed) {
-                                         session->SetClosedCallback(std::move(on_closed));
-                                       }
-                                       finish(std::move(result));
                                        return true;
+                                     },
+                                     [state](const char* reason) {
+                                       if (state->on_closed) {
+                                         state->on_closed(reason);
+                                       }
                                      });
 
                                  if (!session->EnqueueOutbound(JsonToBody(DumpJson(request)))) {
