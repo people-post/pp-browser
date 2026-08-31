@@ -297,6 +297,8 @@ private:
   void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
+  /** Mint/cache free-tier Brief guest Bearer when registered key is missing. */
+  void EnsureBriefGuestLlmKey();
   /** Show/clear LLM setup banners once identity is readable (after unlock). */
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
@@ -355,6 +357,9 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
+  /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
+  bool brief_guest_mint_attempted_ = false;
+  std::string brief_guest_mint_user_hint_;
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;
   ChatThreadChrome chrome_;

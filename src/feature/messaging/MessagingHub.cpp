@@ -1627,6 +1627,7 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
 
   LocalIdentity updated = *identity;
   updated.brief_llm_api_key = new_key;
+  updated.brief_llm_guest_api_key.clear();
   if (auto saved = Identity().Update(updated); !saved) {
     return saved.error();
   }

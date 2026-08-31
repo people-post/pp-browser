@@ -39,6 +39,7 @@ TEST(RegistrationClientUtilTest, ClassifyActiveExpiringExpired) {
 
 TEST(RegistrationClientUtilTest, ApplyRegistrationResultPersistsFields) {
   LocalIdentity identity;
+  identity.brief_llm_guest_api_key = "brf_guest_old";
   RegistrationResult result{.success = true,
                             .relay_user_id = "relay:abc",
                             .message = "ok",
@@ -50,6 +51,7 @@ TEST(RegistrationClientUtilTest, ApplyRegistrationResultPersistsFields) {
   EXPECT_TRUE(identity.registered);
   EXPECT_EQ(identity.relay_user_id, "relay:abc");
   EXPECT_EQ(identity.brief_llm_api_key, "brf_llm_new");
+  EXPECT_TRUE(identity.brief_llm_guest_api_key.empty());
   EXPECT_EQ(identity.registration_expires_at, "2099-12-31T23:59:59.000Z");
   EXPECT_EQ(identity.initiation_floor, 99);
 }

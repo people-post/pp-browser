@@ -33,6 +33,11 @@ struct LocalIdentity {
   std::string relay_user_id;
   /** Brief LLM API key (plaintext in memory; persisted inside identity.enc). Empty until registered. */
   std::string brief_llm_api_key;
+  /**
+   * Free-tier guest Brief Bearer (`brf_guest_*`) minted without registration.
+   * Ignored when brief_llm_api_key is set. Cleared after successful register/finish.
+   */
+  std::string brief_llm_guest_api_key;
   bool registered = false;
   /** ISO-8601 expiry from register/finish; empty until registered or if server omitted it. */
   std::string registration_expires_at;

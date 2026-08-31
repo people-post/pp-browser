@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_net
     AttachmentClientUtil.cpp
     BlobClient.cpp
     BlobQuotaUtil.cpp
+    BriefGuestLlmClient.cpp
     ClientCompat.cpp
     CurlSsl.cpp
     HttpBlobClient.cpp

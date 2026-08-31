@@ -130,6 +130,7 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   }
   if (!result.llm_api_key.empty()) {
     identity.brief_llm_api_key = result.llm_api_key;
+    identity.brief_llm_guest_api_key.clear();
   }
   if (!result.expires_at.empty()) {
     identity.registration_expires_at = result.expires_at;

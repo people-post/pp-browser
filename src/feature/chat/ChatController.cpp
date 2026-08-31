@@ -58,6 +58,9 @@
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "base/error/AppError.h"
+#include "base/net/BriefGuestLlmClient.h"
+#include "base/platform/DeploymentProfile.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
@@ -2477,25 +2480,42 @@ void ChatController::WithSecrets(std::function<void()> action) {
 void ChatController::RefreshLlmSetupBanner() {
   const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
-  constexpr const char* kRegisterBrief =
+  constexpr const char* kRegisterBriefHard =
       "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).";
+  constexpr const char* kGuestBriefSoft =
+      "Using Brief free tier — register in Me → Profile for higher limits.";
 
   if (!use_llm_) {
     UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
     return;
   }
   if (ResolvePreset(config) == "brief") {
-    std::string brief_key;
+    EnsureBriefGuestLlmKey();
+    std::string registered;
+    std::string guest;
     if (MessagingReady()) {
       if (auto identity = facade_->GetIdentity()) {
-        brief_key = identity->brief_llm_api_key;
+        registered = identity->brief_llm_api_key;
+        guest = identity->brief_llm_guest_api_key;
       }
     }
+    const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
     if (brief_key.empty()) {
-      UserFeedback::NeedsSetup(kRegisterBrief);
+      if (!brief_guest_mint_user_hint_.empty()) {
+        UserFeedback::NeedsSetup(brief_guest_mint_user_hint_);
+      } else {
+        UserFeedback::NeedsSetup(
+            "Brief free tier unavailable right now — try again later, or register in Me → Profile.");
+      }
       return;
     }
-    if (ChromeSnapshot().banner_message == kRegisterBrief) {
+    if (registered.empty() && !guest.empty()) {
+      UserFeedback::NeedsSetup(kGuestBriefSoft);
+      return;
+    }
+    const std::string& banner = ChromeSnapshot().banner_message;
+    if (banner == kRegisterBriefHard || banner == kGuestBriefSoft ||
+        banner.find("Brief free tier") != std::string::npos) {
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
       }
@@ -2504,6 +2524,44 @@ void ChatController::RefreshLlmSetupBanner() {
   }
   if (config.llm.require_api_key && config.llm.api_key.empty()) {
     UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
+  }
+}
+
+void ChatController::EnsureBriefGuestLlmKey() {
+  if (!MessagingReady() || !facade_) {
+    return;
+  }
+  auto identity = facade_->GetIdentity();
+  if (!identity) {
+    return;
+  }
+  if (!identity->brief_llm_api_key.empty() || !identity->brief_llm_guest_api_key.empty()) {
+    brief_guest_mint_user_hint_.clear();
+    return;
+  }
+  if (brief_guest_mint_attempted_) {
+    return;
+  }
+  brief_guest_mint_attempted_ = true;
+
+  std::string base_url = Store().Snapshot().config.llm.base_url;
+  if (ResolvePreset(Store().Snapshot().config) != "brief" || base_url.empty()) {
+    base_url = BriefLlmBaseUrl();
+  }
+  auto minted = MintBriefGuestLlmKey(base_url);
+  if (!minted) {
+    brief_guest_mint_user_hint_ = AppError::Display(minted.error());
+    if (brief_guest_mint_user_hint_.empty()) {
+      brief_guest_mint_user_hint_ =
+          "Brief free tier is temporarily unavailable — try again later.";
+    }
+    return;
+  }
+  brief_guest_mint_user_hint_.clear();
+  LocalIdentity updated = *identity;
+  updated.brief_llm_guest_api_key = minted->llm_api_key;
+  if (!facade_->UpdateLocalIdentity(updated)) {
+    brief_guest_mint_user_hint_ = "Couldn't save Brief free-tier key — try again later.";
   }
 }
 
@@ -2516,6 +2574,8 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  EnsureBriefGuestLlmKey();
+  RefreshLlmSetupBanner();
   if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {
     if (agent_ports_.set_thread_store) {
       agent_ports_.set_thread_store(store);
@@ -2914,10 +2974,11 @@ void ChatController::Apply(const AgentConfig& config) {
   preset_probe.llm = runtime.llm;
   if (ResolvePreset(preset_probe) == "brief") {
     runtime.llm.require_api_key = true;
+    EnsureBriefGuestLlmKey();
     std::string brief_key;
     if (MessagingInitialized() && MessagingReady()) {
       if (auto identity = facade_->GetIdentity()) {
-        brief_key = identity->brief_llm_api_key;
+        brief_key = ResolveBriefLlmApiKey(identity->brief_llm_api_key, identity->brief_llm_guest_api_key);
       }
     }
     if (!brief_key.empty()) {
