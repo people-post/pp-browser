@@ -27,6 +27,11 @@ elseif(APPLE)
   set(CPACK_PACKAGE_FILE_NAME "${PP_BROWSER_PRODUCT_SLUG}-${PP_BROWSER_RELEASE_VERSION}-macos")
   set(CPACK_DMG_VOLUME_NAME "${PP_BROWSER_PRODUCT_NAME}")
   set(CPACK_DMG_FORMAT "UDZO")
+  # Package CMAKE_INSTALL_PREFIX as-is. A fresh DESTDIR install during cpack
+  # would rebuild PP.app without Developer ID signatures (notarization → Invalid).
+  # Release flow: cmake --install → sign-app → cpack.
+  set(CPACK_INSTALL_CMAKE_PROJECTS "")
+  set(CPACK_INSTALLED_DIRECTORIES "${CMAKE_INSTALL_PREFIX}" ".")
 endif()
 
 include(CPack)
