@@ -56,8 +56,8 @@
 
 - `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
 - Dual-dial glare (L4): higher base58 PeerId keeps outbound; lower yields and adopts inbound
-- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe
-- `AdoptClientChannel` must not touch `Session` after `sessions.erase` (UAF; surfaced once ChannelSession dtor clears mux_)
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe ([A027](DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
+- `AdoptClientChannel` must not touch `Session` after `sessions.erase` (parent-only destroy / no use-after-erase)
 - Bundle resolves `PeerLink` via `peer_key` at use sites (no long-lived raw link pointer)
 - SoftMigrate audio reopen gated to Android settle (`CaptureReopenSettleDelayMs() > 0`)
 - Connect timeout does not `Detach()` when inbound already `IsActive()`
@@ -203,6 +203,7 @@
 
 1. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)
 2. **Org seed deploy** — ship `pp-node` with `PP_NODE_AMP_UDP_PORT=443` so default ADP bootstrap dials succeed
+3. **A027 follow-on** — migrate L4 TearDown-from-`on_frame_` to signal → parent drop after dispatch (call-media / media-relay / circuit); see repo [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md)
 
 ### D9 cutover checklist
 

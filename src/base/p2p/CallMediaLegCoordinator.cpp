@@ -70,11 +70,11 @@ void RunWorker(const CallMediaLegCoordinator::WorkerPost& post_worker, std::func
   }
 }
 
+/** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
 void CloseQuietSlot(std::shared_ptr<amp::ChannelSession>& slot) {
   auto session = std::move(slot);
   if (session) {
     session->CloseQuiet();
-    // Break mux raw-`this` + shared_ptr cycles after CloseQuiet returns (not mid on_frame_).
     session->ReleaseHandlers();
   }
 }

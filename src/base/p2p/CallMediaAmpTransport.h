@@ -13,7 +13,8 @@ namespace pbr {
 
 /**
  * Blocking Connect facade over CallMediaLegCoordinator for CallLibp2pMediaBridge ([A020]/ [A021]).
- * Product Tick / `io_pump` must drive MeshRuntime while Connect waits.
+ * `io_pump` (MeshHost::Tick) may run on the Connect waiter while MessagingHub also ticks —
+ * MeshRuntime serializes Drive/PostToIo.
  */
 class CallMediaAmpTransport : public ICallMediaTransport {
 public:

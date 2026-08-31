@@ -474,6 +474,7 @@ struct AmpMediaRelayCoordinator::Impl {
     quotes_by_id.clear();
   }
 
+  /** Move channel to client_ then erase Session — never touch `session` after erase ([A027]). */
   void AdoptClientChannel(Session& session) {
     auto channel = std::move(session.channel);
     const std::string hop = session.hop_peer_key;

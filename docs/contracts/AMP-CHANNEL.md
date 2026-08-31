@@ -220,6 +220,32 @@ Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Sessi
 | **PeerLinkManager** | peer link — replaces dial + warm in `PeerSessionManager` |
 | **Domain session** | CallLifecycle, thread store, relay participant |
 
+## Ownership hierarchy ([A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
+
+Mesh specialization of the repo-wide **parent-only destroy** rule ([OWNERSHIP.md](../architecture/OWNERSHIP.md)). Only the **parent** may destroy a child. Children may **request** close; they must not drop the durable owner mid-dispatch.
+
+```text
+PeerLinkManager                 // owns PeerLink by key; elects/drops links (A026)
+  └── PeerLink                  // owns ChannelMux
+        └── ChannelMux          // owns channel records + handler slots
+              └── ChannelSession  // durable owner = L4 slot (bundle / relay Session / client_)
+                    └── on_frame_ / on_closed_   // non-owning; signal only
+```
+
+| Rule | Meaning |
+|------|---------|
+| **Single durable owner** | One clear `shared_ptr`/`unique_ptr` slot owns each `ChannelSession`. Extra `shared_ptr`s are **dispatch pins** only (Bind holds a lock for the current mux callback). |
+| **Request ≠ destroy** | `CloseQuiet`, `return false` from `on_frame_`, and `on_closed` reasons are requests. Parent decides TearDown / erase / unbind. |
+| **No destroy-from-callback** | Frame/terminal callbacks must not erase the owning map entry or `reset()` the owning slot in a way that can drop the last durable ref before the callback returns. Prefer flag / deferred drop after dispatch (or next io tick). |
+| **Parent unbinds** | `ReleaseHandlers` / `SetDataHandler({})` is a parent step after close. `~ChannelSession` unbind is a safety net only. |
+| **No use-after-erase** | Copy fields out, then `erase(id)` — never touch the erased object (`AdoptClientChannel` pattern). |
+| **Callbacks non-owning** | Bind captures `weak_ptr` (or parent id + lookup), not a strong cycle into the L4 parent. |
+| **PeerLink parent-only** | Manager drops loser links ([A026](../../projects/adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election)). L4 must not keep a long-lived raw `PeerLink*`; resolve via `peer_key`. |
+
+**Mux:** copy handlers before invoke so parent unbind mid-callback does not destroy the running `std::function`. Mux never owns `ChannelSession`.
+
+**Transitional:** some L4 paths still TearDown inside `on_frame_`; Bind’s dispatch pin makes that safe. Target shape remains signal → parent drop after dispatch.
+
 ## Threading
 
 `ChannelSession` is **io-thread affine**. Heavy work posts to worker pool ([THREADING.md](../architecture/THREADING.md)).
@@ -234,7 +260,8 @@ Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Sessi
 | ch0 | capability round-trip |
 | Policy | drop oldest, read_once, 8 s timeout |
 | Isolate | RESET does not kill sibling channel |
+| Ownership canaries | DualDial call-media (`CallMediaLeg*`); media-relay adopt + `Subscribe` after attach (`LocalHopFanoutRoundTrip`) |
 
 ## Related ADRs
 
-[A014](../../projects/adp/DECISIONS.md#a014--one-association-per-peer-pair) · [A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane) · [A018](../../projects/adp/DECISIONS.md#a018--fragmentation-at-l3-not-l1) · [A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel) · [A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)
+[A014](../../projects/adp/DECISIONS.md#a014--one-association-per-peer-pair) · [A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane) · [A018](../../projects/adp/DECISIONS.md#a018--fragmentation-at-l3-not-l1) · [A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel) · [A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) · [A026](../../projects/adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election) · [A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)

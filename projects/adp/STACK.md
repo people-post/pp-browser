@@ -88,7 +88,9 @@ Domain state (call roster, SQLite, jitter buffers) lives on L4 consumers — not
 | Assoc per call | Breaks warm-peer policy |
 | Keep both dual-dial links Connected | Two muxes → L4 TearDown / dangling `ChannelSession` |
 
-**Dual-dial:** both sides may dial briefly; mesh **elects** one Connected link (higher base58 PeerId’s outbound wins when both initiated; else keep already-Connected), then drops the loser. Call-media OPEN glare stays on that single mux ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime)).
+**Dual-dial:** both sides may dial briefly; mesh **elects** one Connected link (higher base58 PeerId’s outbound wins when both initiated; else keep already-Connected), then drops the loser **on Tick** (never `DropLink` the existing winner’s rival mid-`OnLinkEstablished` — UAF). Call-media OPEN glare stays on that single mux ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime)).
+
+**Ownership:** only the parent destroys a child (manager → link/mux → `ChannelSession` → callbacks signal only) — repo-wide [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md), mesh [A027](DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy), [AMP-CHANNEL § Ownership](../../docs/contracts/AMP-CHANNEL.md#ownership-hierarchy-a027).
 
 Media vs control separation uses **channels + QoS**, not separate UDP associations.
 
@@ -160,6 +162,8 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 | **Worker** | SQLite history serve, heavy decrypt/parse (unchanged from today) |
 
 L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
+
+**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickLibp2p` (coordinator) may both call Tick without racing PeerLink/Mux.
 
 ## Code layout (planned)
 

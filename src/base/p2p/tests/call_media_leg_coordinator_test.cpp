@@ -462,6 +462,7 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
 
   // Warm a single underlay (A→B), then alias it on B as "a". Mesh election ([A026]) keeps
   // one Connected PeerLink per PeerId; dual call-media opens share that mux (channel glare).
+  // Ownership canary ([A027]): TearDown/CloseQuiet under dual open must not UAF.
   std::atomic<bool> a_assoc{false};
   harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);

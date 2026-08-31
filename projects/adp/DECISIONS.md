@@ -186,3 +186,13 @@
 **Election:** Prefer the link whose local side is outbound **and** `LocalPeerId > RemotePeerId` (same base58 ordering as [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime) glare); otherwise keep the already-Connected link. Set `peer_id_to_key_` to the winner; clear protocol handlers on the loser then erase it before (or instead of) applying L4 handlers on a losing inbound. Call-media channel glare (A021) runs on the **elected** mux only.  
 **Rationale:** STACK’s one-association-per-peer invariant; dual live muxes made TearDown/CloseQuiet and raw `PeerLink*` handles UB under LAN dual-dial.  
 **Alternatives:** Answerer-only UDP (no offerer dial); keep-both forever with shared_ptr link handles (more complex, still doubles NAT/punch cost).
+
+## A027 — Parent-only destroy (L3/L4 ownership hierarchy)
+
+**Date:** 2026-08-31  
+**Decision:** Mesh/L3/L4 objects follow a **strict ownership tree**: only the parent may destroy (drop last durable owner / erase map entry / unbind mux handlers) a child. Children may **request** close (`CloseQuiet`, return `false` from `on_frame_`, `on_closed` signal); they must not be the party that drops the durable owner while a mux dispatch is still on the stack. **This specializes the repo-wide rule** in [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md). Normative mesh detail: [AMP-CHANNEL.md § Ownership hierarchy](../../docs/contracts/AMP-CHANNEL.md#ownership-hierarchy-a027).  
+**Tree:** `PeerLinkManager` → `PeerLink`/`ChannelMux` → `ChannelSession` (owned by L4 bundle/session slot) → frame callbacks (non-owning). Mux delivers; it does not own `ChannelSession`.  
+**Rules:** (1) one durable owner per `ChannelSession`; (2) no destroy-from-callback that can drop the last owner before dispatch returns; (3) parent unbinds (`ReleaseHandlers` / clear mux handlers) after close — dtor unbind is a safety net only; (4) never touch an object after its container erase; (5) Bind callbacks use `weak_ptr` (+ short-lived pin for the dispatch frame), not cycles into the L4 parent; (6) `PeerLink` drop is manager-only ([A026](DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election)); L4 resolves via `peer_key`.  
+**Transitional:** TearDown still runs from some L4 frame paths; `ChannelSession::Bind` pins `shared_ptr` for the dispatch so request-close does not UAF. Prefer migrating to “signal → parent drops after dispatch / next io tick.”  
+**Rationale:** Dual-dial TearDown-from-callback and media-relay `AdoptClientChannel` post-erase UAF showed child-driven destroy is the dual-dial/fanout crash class.  
+**Alternatives:** shared ownership everywhere; forbid any close from `on_frame_` (too rigid for glare/quote one-shot).

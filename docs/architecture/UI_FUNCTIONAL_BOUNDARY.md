@@ -202,7 +202,7 @@ struct MessagingActions {
 
 `Application` (`src/app/`) is the only place that:
 
-- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …)
+- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …) — parent-only destroy: [OWNERSHIP.md](OWNERSHIP.md)
 - Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `UnlockEnsurePorts`, `FlowCoordinatorPorts`, `BadgeNotifyPorts`, `PinGateActionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)

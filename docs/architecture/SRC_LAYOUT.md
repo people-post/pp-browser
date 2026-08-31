@@ -24,6 +24,8 @@ app → feature → base → lib → common
 
 `lib` and `common` may use `third_party`. No upward `#include` across layers.
 
+**Lifetimes** (who may destroy whom) are separate from include layers — see [OWNERSHIP.md](OWNERSHIP.md).
+
 ## Lib subtree (`src/lib/`)
 
 | Path | Role |

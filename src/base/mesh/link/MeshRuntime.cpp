@@ -7,15 +7,22 @@ MeshRuntime::MeshRuntime(adp::Endpoint& endpoint, MshIdentity local_identity, st
     : endpoint_(endpoint), links_(endpoint, std::move(local_identity), std::move(local_peer_id), std::move(config)),
       pump_(endpoint, links_) {}
 
-void MeshRuntime::Start() { started_ = true; }
+void MeshRuntime::Start() {
+  std::lock_guard lock(io_mu_);
+  started_ = true;
+}
 
 void MeshRuntime::Stop() {
+  std::lock_guard lock(io_mu_);
   started_ = false;
   io_queue_.clear();
   io_ticks_.clear();
 }
 
-void MeshRuntime::Pump() {
+void MeshRuntime::PumpLocked() {
+  if (pumping_) {
+    return;
+  }
   pumping_ = true;
   // Copy ids so a tick may RemoveIoTick without invalidating iteration.
   std::vector<IoTickId> ids;
@@ -42,12 +49,29 @@ void MeshRuntime::Pump() {
   pumping_ = false;
 }
 
-void MeshRuntime::Tick() { pump_.Tick(); }
+void MeshRuntime::TickLocked() { pump_.Tick(); }
+
+void MeshRuntime::Pump() {
+  std::lock_guard lock(io_mu_);
+  PumpLocked();
+}
+
+void MeshRuntime::Tick() {
+  std::lock_guard lock(io_mu_);
+  TickLocked();
+}
+
+void MeshRuntime::Drive() {
+  std::lock_guard lock(io_mu_);
+  PumpLocked();
+  TickLocked();
+}
 
 void MeshRuntime::PostToIo(IoTask task) {
   if (!task) {
     return;
   }
+  std::lock_guard lock(io_mu_);
   io_queue_.push_back(std::move(task));
 }
 
@@ -55,6 +79,7 @@ MeshRuntime::IoTickId MeshRuntime::AddIoTick(IoTask tick) {
   if (!tick) {
     return 0;
   }
+  std::lock_guard lock(io_mu_);
   const IoTickId id = next_io_tick_id_++;
   if (next_io_tick_id_ == 0) {
     next_io_tick_id_ = 1;
@@ -67,6 +92,7 @@ void MeshRuntime::RemoveIoTick(const IoTickId id) {
   if (id == 0) {
     return;
   }
+  std::lock_guard lock(io_mu_);
   for (auto it = io_ticks_.begin(); it != io_ticks_.end(); ++it) {
     if (it->id == id) {
       io_ticks_.erase(it);

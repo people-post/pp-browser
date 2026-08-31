@@ -16,7 +16,10 @@ namespace pbr::amp {
 
 /**
  * Single-channel L3 pipe (io-thread affine) — AMP counterpart to DuplexFrameSession.
- * Prefer `std::shared_ptr` ownership so Bind can keep the session alive across mux callbacks.
+ *
+ * Ownership (repo OWNERSHIP.md; mesh A027): durable owner is the L4 parent slot;
+ * prefer `std::shared_ptr` so Bind can pin across mux dispatch. Callbacks request
+ * close; parent destroys / unbinds.
  */
 class ChannelSession : public std::enable_shared_from_this<ChannelSession> {
 public:
@@ -46,8 +49,9 @@ public:
   void Reset(uint32_t code = 1);
 
   /**
-   * Drop Bind callbacks + mux handlers. Safe during an on_frame_ callback when the session is
-   * owned by shared_ptr (Bind holds a lock for the dispatch). Prefer after CloseQuiet.
+   * Drop Bind callbacks + mux handlers (parent unbind — [A027]).
+   * Safe during an on_frame_ callback when Bind holds a dispatch pin.
+   * Prefer after CloseQuiet from the owning L4 slot helper.
    */
   void ReleaseHandlers();
 

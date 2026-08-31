@@ -251,7 +251,13 @@ bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& candidate) {
     return false;
   }
 
-  DropLink(loser->PeerKey());
+  // Existing link loses: never DropLink here — may be mid-pump or still referenced by L4
+  // ChannelSession mux pointers ([A026]/A027]/OWNERSHIP). Clear handlers, demote, erase on Tick.
+  if (loser->Mux()) {
+    loser->Mux()->ClearProtocolHandlers();
+  }
+  loser->phase_ = PeerLinkPhase::Backoff;
+  ScheduleDropLink(loser->PeerKey());
   // Winner is the new candidate — prefer dial alias when free.
   if (!candidate.IsOutbound()) {
     for (const auto& [alias, rec] : endpoints_) {

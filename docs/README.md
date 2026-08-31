@@ -22,6 +22,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
 | [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | `app → feature → base → common` |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
+| [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
 | [architecture/UI_FUNCTIONAL_BOUNDARY.md](architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state / config / actions / events; app-owned presenters |
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
@@ -49,7 +50,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/SERVICE_ENDPOINTS.md](contracts/SERVICE_ENDPOINTS.md) | HTTP relay / directory / registration | `/v1/…` surface |
 | [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
 | [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
-| [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3) | `channel_frame_version`, `protocol_id` |
+| [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3); ownership hierarchy [A027] | `channel_frame_version`, `protocol_id` |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 

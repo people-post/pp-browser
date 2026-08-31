@@ -256,7 +256,7 @@ sequenceDiagram
 
 ## Layer ownership
 
-Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
+Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`. Object lifetimes follow [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy; UI affinity for SDL / ringtone teardown).
 
 | Concern | Layer | Today | Target |
 |---------|-------|-------|--------|

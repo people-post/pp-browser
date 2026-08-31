@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,9 @@ namespace pbr::amp {
 /**
  * Io-thread composer for Endpoint + PeerLinkManager + MeshPump.
  * L4 services must not touch ChannelSession/Mux off-thread except via PostToIo().
+ *
+ * Pump/Tick/Drive/PostToIo are serialized (recursive_mutex): product may pump from the
+ * coordinator Tick and from worker Connect wait loops without data races.
  */
 class MeshRuntime {
 public:
@@ -34,9 +38,11 @@ public:
   void Stop();
   bool IsStarted() const { return started_; }
 
-  /** ADP pump + link tick (io-thread entry). */
+  /** ADP pump + link tick + drain PostToIo (io entry). */
   void Pump();
   void Tick();
+  /** Pump then Tick under one lock — prefer for MeshHost product ticks. */
+  void Drive();
 
   /** Queue work for the next Pump(); one queued task runs per Pump() before ADP I/O. */
   void PostToIo(IoTask task);
@@ -49,6 +55,9 @@ public:
   void RemoveIoTick(IoTickId id);
 
 private:
+  void PumpLocked();
+  void TickLocked();
+
   struct IoTickEntry {
     IoTickId id = 0;
     IoTask tick;
@@ -62,6 +71,7 @@ private:
   IoTickId next_io_tick_id_ = 1;
   bool started_ = false;
   bool pumping_ = false;
+  mutable std::recursive_mutex io_mu_;
 };
 
 } // namespace pbr::amp
