@@ -94,6 +94,14 @@ void ChannelSession::Close() {
   }
 }
 
+void ChannelSession::CloseQuiet() {
+  if (closed_ || !mux_) {
+    return;
+  }
+  closed_ = true;
+  (void)mux_->CloseChannel(channel_id_);
+}
+
 void ChannelSession::Reset(const uint32_t code) {
   if (closed_ || !mux_) {
     return;

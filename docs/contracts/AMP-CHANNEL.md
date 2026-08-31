@@ -157,16 +157,16 @@ Decode rules: **exact consume** for binary L4; JSON unknown-field policy per [WI
 
 ## Call-media bundle
 
-One call attempt = **one control + one media channel pair** on an existing peer Session (not a byte stream).
+One call attempt = **`call_id`-keyed control + media channel pair** on an existing peer Session (not a byte stream).
 
-| Channel | Class | Role |
-|---------|-------|------|
-| Control | Reliable `RealtimeControl` | JSON hello / hello_ack on the wire |
+| Channel role | Class | Role |
+|--------------|-------|------|
+| Outbound / inbound control | Reliable `RealtimeControl` | JSON hello / hello_ack (provisional dual-dial may have both briefly) |
 | Media | BestEffort `Realtime` | length-prefixed AEAD frames (same crypto as libp2p path) |
 
-**Glare (dual offerer dial):** when both peers `StartLeg` the same `call_id`, the **higher base58 PeerId** keeps its outbound control channel; the lower PeerId abandons outbound and adopts the peer's inbound hello. Rejected inbound controls receive `hello_ack` with `"error":"glare"`. Behavioral parity with libp2p `CallMediaSession` — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
+**Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **higher base58 PeerId** keeps outbound control; the lower PeerId abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
 
-L4 runs on **`MeshRuntime`** io thread; inbound hello handlers may run on a worker lane but all wire ops bounce back via `PostToIo`.
+Admit rules are pure (`CallMediaBundleLogic`); L4 runs on **`MeshRuntime`** io thread.
 
 ## Circuit tunnel (outline)
 

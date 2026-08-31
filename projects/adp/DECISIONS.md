@@ -148,6 +148,6 @@
 ## A021 — Call-media = channel bundle on MeshRuntime
 
 **Date:** 2026-08-31  
-**Decision:** AMP call-media is a **control + media channel bundle** per call attempt on `MeshRuntime`, not a blocking libp2p-style stream adapter. L4 is non-blocking (`StartLeg` + completion callback); inbound hello runs on a worker lane with all mux/session ops posted back to the io thread. Dual-dial glare uses the same tie-break as libp2p: **higher base58 PeerId** keeps outbound; lower abandons outbound and adopts inbound.  
-**Rationale:** Removes IoPump blocking, `inbound:<hex>` link keys, and invisible remote CLOSE from the AMP path; matches libp2p golden behavior without API parity.  
-**Alternatives:** Port `CallMediaDirectService::Connect` blocking semantics to AMP; single combined control+media channel.
+**Decision:** AMP call-media is a **`call_id`-keyed control + media channel bundle** on `MeshRuntime`, not a blocking libp2p-style stream adapter. Bundle phase is AMP-native (`OutboundHello` / `InboundHello` / `AwaitingMedia` / `MediaReady`); glare and channel-close admit rules live in pure `CallMediaBundleLogic`. Channels are role-tagged (outbound control / inbound control / media); provisional closes use `CloseQuiet` / slot-first teardown so abandoned roles cannot fail the winning bundle. L4 is non-blocking (`StartLeg` + completion callback); inbound hello may run on a worker lane with wire ops posted back to the io thread. Dual-dial glare: **higher base58 PeerId** keeps outbound; lower abandons outbound and adopts inbound.  
+**Rationale:** Removes IoPump blocking, shared “active control” pointer races, and stream-era phase tables from the AMP path; matches libp2p golden behavior without API parity.  
+**Alternatives:** Port `CallMediaDirectService::Connect` blocking semantics to AMP; single combined control+media channel; keep `CallMediaSessionPhase` as the AMP source of truth.

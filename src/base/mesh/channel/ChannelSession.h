@@ -29,8 +29,11 @@ public:
   bool EnqueueOutbound(std::vector<uint8_t> body);
 
   void Close();
+  /** Close the mux channel without invoking `on_closed` (provisional / abandoned roles). */
+  void CloseQuiet();
   void Reset(uint32_t code = 1);
 
+  uint32_t ChannelId() const { return channel_id_; }
   size_t OutboundBacklog() const { return outbound_.size() + (write_inflight_ ? 1 : 0); }
   bool IsClosed() const { return closed_; }
 

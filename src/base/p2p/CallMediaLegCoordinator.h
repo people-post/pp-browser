@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/mesh/link/MeshRuntime.h"
+#include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/CallMediaDirectService.h"
 
 #include <atomic>
@@ -12,20 +13,9 @@
 
 namespace pbr {
 
-struct CallMediaLegId {
-  uint64_t value = 0;
-  explicit operator bool() const { return value != 0; }
-};
-
-enum class CallMediaLegPhase {
-  Closed = 0,
-  ControlHello,
-  AwaitingMedia,
-  MediaReady,
-};
-
 /**
  * Non-blocking `/pp-browser/call-media/1.0.0` over AMP channel bundles on MeshRuntime.
+ * One call attempt = call_id-keyed control+media bundle ([A021]).
  * Parallel stack for migration — production still uses CallMediaDirectService ([A020]).
  */
 class CallMediaLegCoordinator {
@@ -55,7 +45,9 @@ public:
 
   bool IsLegActive(CallMediaLegId id) const;
   CallMediaLegPhase LegPhase(CallMediaLegId id) const;
+  /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;
+  CallMediaBundlePhase BundlePhase(CallMediaLegId id) const;
 
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
                       uint8_t mark = 0);

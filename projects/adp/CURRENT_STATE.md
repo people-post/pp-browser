@@ -54,11 +54,11 @@
 
 ## Landed (L4 call-media — D6)
 
-- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **channel bundle**: Reliable `RealtimeControl` hello + BestEffort `Realtime` AEAD media; non-blocking `StartLeg` on `MeshRuntime` (parallel stack; production still libp2p)
-- Dual-dial glare: higher base58 PeerId keeps outbound; lower yields and adopts inbound ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
-- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`)
+- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
+- Dual-dial glare: higher base58 PeerId keeps outbound; lower yields and adopts inbound
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` for provisional roles
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
-- `pp_browser_p2p_test` — 9× `CallMediaLeg*` cases (8 coordinator + 1 triple-host conflict)
+- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + 9× `CallMediaLeg*` cases
 - Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
 
 ## Next (implementation)
