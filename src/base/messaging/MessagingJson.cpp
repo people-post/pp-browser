@@ -511,6 +511,9 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
 }
 
 Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope) {
+  if (envelope.sender_relay_id.empty()) {
+    return Error("Missing sender_relay_id for relay send");
+  }
   if (!envelope.recipient_contact_id || envelope.recipient_contact_id->empty()) {
     return Error("Missing recipient_contact_id for relay send");
   }
@@ -521,7 +524,9 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   const std::string serialized = DumpJson(RelayEnvelopeToApplicationJson(envelope));
   const ByteVector bytes(serialized.begin(), serialized.end());
   RelayWireSendRecord record;
-  record.sender_contact_id = envelope.sender_contact_id;
+  // HTTP routing / auth id is always the relay registration id (WIRE_SCHEMAS RelayWireRecord).
+  // Application blob keeps Account ID in envelope.sender_contact_id (D079).
+  record.sender_contact_id = envelope.sender_relay_id;
   record.recipient_contact_id = *envelope.recipient_contact_id;
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;

@@ -1,6 +1,7 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "base/crypto/CryptoUtil.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -97,6 +98,39 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   EXPECT_EQ(restored.value().stream_key, envelope.stream_key);
   EXPECT_EQ(restored.value().order_key, envelope.order_key);
   EXPECT_FALSE(restored.value().recipient_contact_id.has_value());
+}
+
+TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:aliceAccountId";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto wire = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(wire));
+  EXPECT_EQ(wire.value().sender_contact_id, "relay:alice123");
+  EXPECT_EQ(wire.value().recipient_contact_id, "relay:bob456");
+
+  auto blob = Base64Decode(wire.value().blob_b64);
+  ASSERT_TRUE(static_cast<bool>(blob));
+  const std::string serialized(blob->begin(), blob->end());
+  auto app = TryParseObject(serialized);
+  ASSERT_TRUE(app.has_value());
+  EXPECT_EQ(app->getString("sender_contact_id"), std::optional<std::string>("account:aliceAccountId"));
+  EXPECT_EQ(app->getString("sender_relay_id"), std::optional<std::string>("relay:alice123"));
 }
 
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {

@@ -16,11 +16,38 @@
 
 #include <algorithm>
 #include <mutex>
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
+
+std::string TruncateForLog(const std::string& text, const size_t max_chars) {
+  if (text.size() <= max_chars) {
+    return text;
+  }
+  return text.substr(0, max_chars) + "...";
+}
+
+Error RelayHttpStatusError(const char* action, long status_code, const std::string& body) {
+  std::string detail = std::string("Relay ") + action + " failed with status " + std::to_string(status_code);
+  std::string api_message;
+  if (auto json = TryParseObject(body)) {
+    if (auto err = json->getString("error")) {
+      api_message = *err;
+    } else if (auto message = json->getString("message")) {
+      api_message = *message;
+    }
+  }
+  if (!api_message.empty()) {
+    detail += ": " + api_message;
+  } else if (!body.empty()) {
+    detail += " body=" + TruncateForLog(body, 200);
+  }
+  logging::getLogger("HttpRelayClient").warning << detail;
+  return Error(detail);
+}
 
 std::optional<std::string> MockPeerKemPublicKeyB64() {
   static std::once_flag once;
@@ -418,7 +445,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
     return Error("Relay rate limit exceeded");
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay send failed with status " + std::to_string(response.value().status_code));
+    return RelayHttpStatusError("send", response.value().status_code, response.value().body);
   }
   return {};
 }
@@ -449,7 +476,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay poll failed with status " + std::to_string(response.value().status_code));
+    return RelayHttpStatusError("poll", response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);
