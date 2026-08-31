@@ -55,20 +55,39 @@ bool IsOllamaEndpoint(const std::string& base_url) {
   return base_url.find("11434") != std::string::npos || base_url.find("ollama") != std::string::npos;
 }
 
+void ReadOpenAiErrorObject(const Object& err_obj, std::string& api_message, std::string& api_code) {
+  if (auto message = err_obj.getString("message")) {
+    api_message = *message;
+  }
+  if (auto code = err_obj.getString("code")) {
+    api_code = *code;
+  }
+}
+
+void ReadOpenAiErrorField(const Value& err, std::string& api_message, std::string& api_code) {
+  if (const Object* err_obj = asObject(err)) {
+    ReadOpenAiErrorObject(*err_obj, api_message, api_code);
+  } else if (auto message = asString(err)) {
+    api_message = *message;
+  }
+}
+
 Error MapHttpError(long http_code, const std::string& response_body) {
   std::string api_message;
   std::string api_code;
   if (auto json = TryParseObject(response_body)) {
+    // OpenAI shape: {"error":{...}} — or FastAPI wrap: {"detail":{"error":{...}}}
     if (auto err_slot = json->fields().tryGet("error")) {
-      const Value& err = err_slot->get();
-      if (const Object* err_obj = asObject(err)) {
-        if (auto message = err_obj->getString("message")) {
+      ReadOpenAiErrorField(err_slot->get(), api_message, api_code);
+    } else if (auto detail_slot = json->fields().tryGet("detail")) {
+      const Value& detail = detail_slot->get();
+      if (const Object* detail_obj = asObject(detail)) {
+        if (auto nested = detail_obj->fields().tryGet("error")) {
+          ReadOpenAiErrorField(nested->get(), api_message, api_code);
+        } else if (auto message = detail_obj->getString("message")) {
           api_message = *message;
         }
-        if (auto code = err_obj->getString("code")) {
-          api_code = *code;
-        }
-      } else if (auto message = asString(err)) {
+      } else if (auto message = asString(detail)) {
         api_message = *message;
       }
     }
@@ -96,6 +115,23 @@ Error MapHttpError(long http_code, const std::string& response_body) {
     return AppError::Network(Err::Network::HttpError, detail).WithUser("LLM API error: " + api_message);
   }
   return AppError::Network(Err::Network::HttpError, detail);
+}
+
+std::string TruncateForLog(const std::string& text, const size_t max_chars) {
+  std::string out;
+  out.reserve(text.size() < max_chars ? text.size() : max_chars + 3);
+  for (const char c : text) {
+    if (out.size() >= max_chars) {
+      out += "...";
+      break;
+    }
+    if (c == '\n' || c == '\r' || c == '\t') {
+      out.push_back(' ');
+    } else {
+      out.push_back(c);
+    }
+  }
+  return out;
 }
 
 } // namespace
@@ -216,6 +252,8 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   if (http_code >= 400) {
+    log().error << "HTTP " << http_code << " (" << response.size() << " bytes) body="
+                << TruncateForLog(response, 500);
     return MapHttpError(http_code, response);
   }
 

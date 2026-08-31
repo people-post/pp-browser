@@ -70,7 +70,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   draft.llm_base_url = "https://www.brief.global/api/llm/v1";
   draft.llm_model = "brief";  // preset-name mistake → normalized to default
   const pbr::AppConfig brief_from_draft = pbr::ApplyLlmSettingsDraft(defaults, draft);
-  EXPECT_EQ(brief_from_draft.llm.model, "grok-4-1-fast-reasoning");
+  EXPECT_EQ(brief_from_draft.llm.model, "xai");
   EXPECT_TRUE(brief_from_draft.llm.api_key.empty());
 
   pbr::SettingsDraft custom_draft;

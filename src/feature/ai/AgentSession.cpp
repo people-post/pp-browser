@@ -147,6 +147,7 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::stri
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {
+  state->Log().error << "Agent error " << AppError::Log(err);
   PushError(state, AppError::Display(err));
 }
 

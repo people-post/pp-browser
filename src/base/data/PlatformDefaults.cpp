@@ -21,7 +21,7 @@ AppConfig BriefDefaults() {
   config.llm.base_url = BriefLlmBaseUrl();
   config.llm.model = ReadEnv("PP_BROWSER_LLM_MODEL");
   if (config.llm.model.empty()) {
-    config.llm.model = "grok-4-1-fast-reasoning";
+    config.llm.model = "xai";
   }
   config.llm.require_api_key = true;
   config.theme = "themes/base.rcss";

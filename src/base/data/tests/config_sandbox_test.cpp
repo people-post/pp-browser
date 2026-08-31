@@ -27,7 +27,7 @@ TEST(ConfigSandboxTest, LoadRewritesProductionBriefUrls) {
       "llm": {
         "preset": "brief",
         "base_url": "https://www.brief.global/api/llm/v1",
-        "model": "grok-4-1-fast-reasoning"
+        "model": "xai"
       },
       "relay": { "base_url": "https://www.brief.global/api/relay" },
       "directory": { "base_url": "https://www.brief.global/api/relay" },
