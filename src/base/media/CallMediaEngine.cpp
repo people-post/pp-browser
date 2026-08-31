@@ -1128,7 +1128,10 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     }
     // Android speaker / communication-mode route changes around SoftMigrate can leave the open
     // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
-    RequestAudioDeviceReopen();
+    // Desktop SoftMigrate send-swap must not close/reopen SDL (malloc/double-free on Leave).
+    if (CallAudioSession::CaptureReopenSettleDelayMs() > 0) {
+      RequestAudioDeviceReopen();
+    }
     RequestVideoKeyframe();
     return {};
   }

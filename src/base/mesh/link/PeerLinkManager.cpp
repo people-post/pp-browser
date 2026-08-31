@@ -117,6 +117,155 @@ PeerLink* PeerLinkManager::FindConnectedLinkForPeerId(const std::string& peer_id
   return nullptr;
 }
 
+PeerLink* PeerLinkManager::FindAnyConnectedLinkForRemotePeerId(const std::string& remote_peer_id) {
+  if (remote_peer_id.empty()) {
+    return nullptr;
+  }
+  for (auto& [_, link] : links_) {
+    if (link && link->Phase() == PeerLinkPhase::Connected && link->RemotePeerId() == remote_peer_id) {
+      return link.get();
+    }
+  }
+  return nullptr;
+}
+
+PeerLink* PeerLinkManager::ElectDualDialWinner(PeerLink& existing, PeerLink& candidate) const {
+  const std::string& remote = existing.RemotePeerId().empty() ? candidate.RemotePeerId() : existing.RemotePeerId();
+  const bool existing_keep_out = existing.IsOutbound() && !remote.empty() && local_peer_id_ > remote;
+  const bool cand_keep_out = candidate.IsOutbound() && !remote.empty() && local_peer_id_ > remote;
+  if (cand_keep_out && !existing_keep_out) {
+    return &candidate;
+  }
+  if (existing_keep_out) {
+    return &existing;
+  }
+  // Local does not win glare: prefer inbound over own outbound (A021 yield).
+  if (existing.IsOutbound() && !candidate.IsOutbound()) {
+    return &candidate;
+  }
+  if (candidate.IsOutbound() && !existing.IsOutbound()) {
+    return &existing;
+  }
+  return &existing;
+}
+
+void PeerLinkManager::DropLink(const std::string& peer_key) {
+  auto* link = FindLink(peer_key);
+  if (!link) {
+    return;
+  }
+  if (link->Mux()) {
+    link->Mux()->ClearProtocolHandlers();
+  }
+  const std::string remote = link->RemotePeerId();
+  links_.erase(peer_key);
+  if (!remote.empty()) {
+    if (auto it = peer_id_to_key_.find(remote); it != peer_id_to_key_.end() && it->second == peer_key) {
+      peer_id_to_key_.erase(it);
+    }
+  }
+}
+
+void PeerLinkManager::ScheduleDropLink(std::string peer_key) {
+  pending_drop_keys_.push_back(std::move(peer_key));
+}
+
+void PeerLinkManager::ScheduleAdoptDialAlias(std::string remote_peer_id, std::string dial_alias) {
+  if (remote_peer_id.empty() || dial_alias.empty()) {
+    return;
+  }
+  pending_alias_adopt_.emplace_back(std::move(remote_peer_id), std::move(dial_alias));
+}
+
+size_t PeerLinkManager::CountConnectedLinksForPeerId(const std::string& peer_id) const {
+  if (peer_id.empty()) {
+    return 0;
+  }
+  size_t n = 0;
+  for (const auto& [_, link] : links_) {
+    if (link && link->Phase() == PeerLinkPhase::Connected && link->RemotePeerId() == peer_id) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+bool PeerLinkManager::OnLinkEstablished(PeerLink& link) {
+  if (!AdoptInboundOrDropDuplicate(link)) {
+    if (link.Mux()) {
+      link.Mux()->ClearProtocolHandlers();
+    }
+    return false;
+  }
+  if (!link.RemotePeerId().empty()) {
+    peer_id_to_key_[link.RemotePeerId()] = link.PeerKey();
+  }
+  ApplyProtocolHandlers(link);
+  // Nested carrier links skip ch0 — product reachability already established via outer mesh.
+  if (!link.IsCarrierBacked()) {
+    StartCapabilityExchange(link);
+  }
+  return true;
+}
+
+bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& candidate) {
+  if (candidate.RemotePeerId().empty()) {
+    return true;
+  }
+  const std::string remote = candidate.RemotePeerId();
+
+  // Find another Connected link to the same PeerId (map may still point at candidate).
+  PeerLink* existing = nullptr;
+  for (auto& [key, link] : links_) {
+    if (!link || link.get() == &candidate || link->Phase() != PeerLinkPhase::Connected) {
+      continue;
+    }
+    if (link->RemotePeerId() == remote) {
+      existing = link.get();
+      break;
+    }
+  }
+
+  if (!existing) {
+    if (!candidate.IsOutbound()) {
+      for (const auto& [alias, rec] : endpoints_) {
+        if (rec.peer_id == remote && !links_.contains(alias)) {
+          RekeyLink(candidate.PeerKey(), alias);
+          peer_id_to_key_[remote] = alias;
+          return true;
+        }
+      }
+    }
+    peer_id_to_key_[remote] = candidate.PeerKey();
+    return true;
+  }
+
+  // Dual-dial ([A026]): elect one Session per PeerId — reject keep-both.
+  PeerLink* winner = ElectDualDialWinner(*existing, candidate);
+  PeerLink* loser = (winner == existing) ? &candidate : existing;
+  const std::string winner_key = winner->PeerKey();
+
+  if (loser == &candidate) {
+    // Do not erase `candidate` here — PeerLink is still on the stack ([A026]).
+    peer_id_to_key_[remote] = winner_key;
+    return false;
+  }
+
+  DropLink(loser->PeerKey());
+  // Winner is the new candidate — prefer dial alias when free.
+  if (!candidate.IsOutbound()) {
+    for (const auto& [alias, rec] : endpoints_) {
+      if (rec.peer_id == remote && !links_.contains(alias) && candidate.PeerKey() != alias) {
+        RekeyLink(candidate.PeerKey(), alias);
+        peer_id_to_key_[remote] = alias;
+        return true;
+      }
+    }
+  }
+  peer_id_to_key_[remote] = candidate.PeerKey();
+  return true;
+}
+
 std::string PeerLinkManager::DeriveRemotePeerId(const ByteVector& identity_public_key) const {
   if (config_.peer_id_from_identity) {
     return config_.peer_id_from_identity(identity_public_key);
@@ -336,7 +485,8 @@ void PeerLinkManager::FinishDial(const std::string& peer_key, Roe<void> result) 
   if (!result) {
     last_error_[peer_key] = result.error().message;
     dial_failed_until_[peer_key] = std::chrono::steady_clock::now() + config_.dial_failure_backoff;
-    links_.erase(peer_key);
+    // Defer erase — PeerLink may still be on the stack (handshake fail / dual-dial).
+    ScheduleDropLink(peer_key);
   } else {
     last_error_.erase(peer_key);
   }
@@ -365,8 +515,17 @@ void PeerLinkManager::OnInboundConnection(std::shared_ptr<adp::Connection> conne
 }
 
 void PeerLinkManager::RekeyLink(const std::string& from_key, const std::string& to_key) {
-  if (from_key == to_key || links_.contains(to_key)) {
+  if (from_key == to_key) {
     return;
+  }
+  if (links_.contains(to_key)) {
+    auto* occupant = FindLink(to_key);
+    // Dual-dial losers stay until Tick; displace non-Connected corpses so inbound can adopt alias.
+    if (occupant && occupant->Phase() != PeerLinkPhase::Connected) {
+      DropLink(to_key);
+    } else {
+      return;
+    }
   }
   auto node = links_.extract(from_key);
   if (node.empty()) {
@@ -380,43 +539,6 @@ void PeerLinkManager::RekeyLink(const std::string& from_key, const std::string& 
   links_.emplace(to_key, std::move(node.mapped()));
   // Protocol handlers capture peer_key; refresh after rekey so FindLink succeeds.
   ApplyProtocolHandlers(*link);
-}
-
-bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& inbound) {
-  if (inbound.IsOutbound() || inbound.RemotePeerId().empty()) {
-    return true;
-  }
-  if (auto* existing = FindConnectedLinkForPeerId(inbound.RemotePeerId())) {
-    if (existing != &inbound) {
-      // Dual-dial: keep both links. Erasing the inbound drops the peer's outbound call-media
-      // hello; erasing the outbound dangling-points live ChannelSessions. peer_id lookups keep
-      // preferring the existing (usually outbound) alias.
-      peer_id_to_key_[inbound.RemotePeerId()] = existing->PeerKey();
-      return true;
-    }
-  }
-  for (const auto& [alias, rec] : endpoints_) {
-    if (rec.peer_id == inbound.RemotePeerId() && !links_.contains(alias)) {
-      RekeyLink(inbound.PeerKey(), alias);
-      return true;
-    }
-  }
-  peer_id_to_key_[inbound.RemotePeerId()] = inbound.PeerKey();
-  return true;
-}
-
-void PeerLinkManager::OnLinkEstablished(PeerLink& link) {
-  if (!link.RemotePeerId().empty()) {
-    peer_id_to_key_[link.RemotePeerId()] = link.PeerKey();
-  }
-  if (!AdoptInboundOrDropDuplicate(link)) {
-    return;
-  }
-  ApplyProtocolHandlers(link);
-  // Nested carrier links skip ch0 — product reachability already established via outer mesh.
-  if (!link.IsCarrierBacked()) {
-    StartCapabilityExchange(link);
-  }
 }
 
 void PeerLinkManager::StartCapabilityExchange(PeerLink& link) {
@@ -525,6 +647,27 @@ void PeerLinkManager::ClearWarm(const std::string& peer_key) {
 }
 
 void PeerLinkManager::Tick() {
+  if (!pending_drop_keys_.empty()) {
+    auto pending = std::move(pending_drop_keys_);
+    pending_drop_keys_.clear();
+    for (const auto& key : pending) {
+      DropLink(key);
+    }
+  }
+  if (!pending_alias_adopt_.empty()) {
+    auto pending = std::move(pending_alias_adopt_);
+    pending_alias_adopt_.clear();
+    for (auto& [remote, alias] : pending) {
+      if (auto* winner = FindAnyConnectedLinkForRemotePeerId(remote)) {
+        if (winner->PeerKey() != alias) {
+          RekeyLink(winner->PeerKey(), alias);
+        } else {
+          peer_id_to_key_[remote] = alias;
+        }
+      }
+    }
+  }
+
   const int64_t now = endpoint_.GetClock().NowMs();
   std::vector<std::string> evict;
   for (auto& [key, link] : links_) {

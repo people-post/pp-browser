@@ -78,6 +78,9 @@ public:
   const PeerLink* FindLinkByPeerId(const std::string& peer_id) const;
   PeerLink* FindConnectedInboundLink();
 
+  /** Connected links whose RemotePeerId matches (for dual-dial / A026 tests). */
+  size_t CountConnectedLinksForPeerId(const std::string& peer_id) const;
+
   void Tick();
 
 private:
@@ -91,7 +94,9 @@ private:
 
   void InstallAcceptHandler();
   void OnInboundConnection(std::shared_ptr<adp::Connection> connection);
-  void OnLinkEstablished(PeerLink& link);
+  /** Returns false if `link` lost dual-dial election and must be torn down by the caller. */
+  bool OnLinkEstablished(PeerLink& link);
+  void ScheduleDropLink(std::string peer_key);
   void ApplyProtocolHandlers(PeerLink& link);
   void StartCapabilityExchange(PeerLink& link);
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
@@ -100,10 +105,17 @@ private:
   void FinishNestedCarrier(const std::string& provisional_key, Roe<void> result);
   void HandleInboundCarrierChannel(PeerLink& via_link, uint32_t channel_id);
   std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
-  /** Returns false if `inbound` was erased as a duplicate. */
+  /** Returns false if `link` was erased as the dual-dial loser ([A026]). */
   bool AdoptInboundOrDropDuplicate(PeerLink& inbound);
   void RekeyLink(const std::string& from_key, const std::string& to_key);
   PeerLink* FindConnectedLinkForPeerId(const std::string& peer_id);
+  /** Scan all Connected links for `remote_peer_id` (not only peer_id_to_key_). */
+  PeerLink* FindAnyConnectedLinkForRemotePeerId(const std::string& remote_peer_id);
+  /** A026: elect one of two Connected links to the same remote PeerId. */
+  PeerLink* ElectDualDialWinner(PeerLink& existing, PeerLink& candidate) const;
+  void DropLink(const std::string& peer_key);
+  /** After dual-dial loser outbound drops, rekey winner onto the dial alias. */
+  void ScheduleAdoptDialAlias(std::string remote_peer_id, std::string dial_alias);
 
   adp::Endpoint& endpoint_;
   MshIdentity local_identity_;
@@ -122,6 +134,9 @@ private:
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> dial_failed_until_;
   std::unordered_map<std::string, std::string> last_error_;
   size_t concurrent_dials_ = 0;
+  /** Erase after PeerLink stack unwinds (dual-dial loser must not destroy `this` mid-callback). */
+  std::vector<std::string> pending_drop_keys_;
+  std::vector<std::pair<std::string, std::string>> pending_alias_adopt_;
 };
 
 } // namespace pbr::amp

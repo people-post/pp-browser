@@ -475,12 +475,12 @@ struct AmpMediaRelayCoordinator::Impl {
   }
 
   void AdoptClientChannel(Session& session) {
-    auto channel = session.channel;
+    auto channel = std::move(session.channel);
     const std::string hop = session.hop_peer_key;
     const std::string call_id = session.call_id;
     FrameHandler on_frame = std::move(session.on_frame);
-    sessions.erase(session.id.value);
-    session.channel.reset();
+    const uint64_t id = session.id.value;
+    sessions.erase(id);
 
     DetachClientLocked();
     client_.channel = std::move(channel);

@@ -6,21 +6,28 @@
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 
-#include <atomic>
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <vector>
 
 namespace pbr::amp {
 
 /**
  * Single-channel L3 pipe (io-thread affine) — AMP counterpart to DuplexFrameSession.
+ * Prefer `std::shared_ptr` ownership so Bind can keep the session alive across mux callbacks.
  */
-class ChannelSession {
+class ChannelSession : public std::enable_shared_from_this<ChannelSession> {
 public:
   using FrameHandler = std::function<bool(Roe<std::vector<uint8_t>> body)>;
   using ClosedCallback = std::function<void(const char* reason)>;
+
+  ChannelSession() = default;
+  ~ChannelSession();
+
+  ChannelSession(const ChannelSession&) = delete;
+  ChannelSession& operator=(const ChannelSession&) = delete;
 
   void Bind(ChannelMux& mux, uint32_t channel_id, ChannelPolicy policy, FrameHandler on_frame,
             ClosedCallback on_closed = {});
@@ -38,6 +45,12 @@ public:
   void CloseQuiet();
   void Reset(uint32_t code = 1);
 
+  /**
+   * Drop Bind callbacks + mux handlers. Safe during an on_frame_ callback when the session is
+   * owned by shared_ptr (Bind holds a lock for the dispatch). Prefer after CloseQuiet.
+   */
+  void ReleaseHandlers();
+
   uint32_t ChannelId() const { return channel_id_; }
   ChannelMux* Mux() { return mux_; }
   size_t OutboundBacklog() const { return outbound_.size() + (write_inflight_ ? 1 : 0); }
@@ -47,6 +60,7 @@ private:
   void PumpWrite();
   void FailOutbound(const Error& error);
   void NotifyRemoteTerminal(const char* reason);
+  void InstallMuxHandlers();
 
   ChannelMux* mux_ = nullptr;
   uint32_t channel_id_ = 0;

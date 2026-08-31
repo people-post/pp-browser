@@ -2,7 +2,7 @@
 
 **Status:** Foundation spec (2026-08-30)  
 **Owner:** Hongwei + agents  
-**Related:** [ADP.md](../../docs/contracts/ADP.md) (L1), [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) (L2), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) (L3), [DECISIONS.md](DECISIONS.md) (A001–A020)
+**Related:** [ADP.md](../../docs/contracts/ADP.md) (L1), [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) (L2), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) (L3), [DECISIONS.md](DECISIONS.md) (A001–A026)
 
 ## Names
 
@@ -79,13 +79,16 @@ Domain state (call roster, SQLite, jitter buffers) lives on L4 consumers — not
 
 ## One association per peer pair (default)
 
-**One long-lived Association + one Session per remote PeerId**, many Channels on top.
+**One long-lived Association + one Session per remote PeerId**, many Channels on top ([A026](DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election)).
 
 | Anti-pattern | Why avoid |
 |--------------|-----------|
 | New assoc per chat message | Handshake + NAT churn |
 | Separate assocs for media vs control | Double punch / double bind |
 | Assoc per call | Breaks warm-peer policy |
+| Keep both dual-dial links Connected | Two muxes → L4 TearDown / dangling `ChannelSession` |
+
+**Dual-dial:** both sides may dial briefly; mesh **elects** one Connected link (higher base58 PeerId’s outbound wins when both initiated; else keep already-Connected), then drops the loser. Call-media OPEN glare stays on that single mux ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime)).
 
 Media vs control separation uses **channels + QoS**, not separate UDP associations.
 

@@ -123,8 +123,10 @@ void ChannelMux::SetTerminalHandler(const uint32_t channel_id, TerminalHandler h
 }
 
 void ChannelMux::NotifyTerminal(ChannelRecord& channel, const char* reason) {
+  // Copy before invoke: handlers may SetTerminalHandler({}) / destroy the session mid-callback.
   if (channel.on_terminal) {
-    channel.on_terminal(channel.id, reason);
+    auto handler = channel.on_terminal;
+    handler(channel.id, reason);
   }
 }
 
@@ -139,8 +141,10 @@ void ChannelMux::SetProtocolHandler(const std::string& protocol_id, InboundOpenH
 void ChannelMux::ClearProtocolHandlers() { protocol_handlers_.clear(); }
 
 Roe<void> ChannelMux::DeliverPayload(ChannelRecord& channel, std::vector<uint8_t> payload) {
+  // Copy before invoke: handlers may SetDataHandler({}) / TearDown mid-callback.
   if (channel.on_data) {
-    channel.on_data(channel.id, std::move(payload));
+    auto handler = channel.on_data;
+    handler(channel.id, std::move(payload));
     return Roe<void>();
   }
   return Roe<void>();

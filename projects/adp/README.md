@@ -18,7 +18,7 @@
 | [DESIGN.md](DESIGN.md) | L1 wire, API, I/O, delivery |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 | [PHASES.md](PHASES.md) | L1 phases + AMP migration D0–D9 |
-| [DECISIONS.md](DECISIONS.md) | ADRs A001–A024 |
+| [DECISIONS.md](DECISIONS.md) | ADRs A001–A026 |
 | [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) | Amp call-media over circuit — nested Session (A024) |
 
 ## Progress snapshot

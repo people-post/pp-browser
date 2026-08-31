@@ -55,11 +55,21 @@
 ## Landed (L4 call-media — D6)
 
 - `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
-- Dual-dial glare: higher base58 PeerId keeps outbound; lower yields and adopts inbound
-- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` for provisional roles
+- Dual-dial glare (L4): higher base58 PeerId keeps outbound; lower yields and adopts inbound
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe
+- `AdoptClientChannel` must not touch `Session` after `sessions.erase` (UAF; surfaced once ChannelSession dtor clears mux_)
+- Bundle resolves `PeerLink` via `peer_key` at use sites (no long-lived raw link pointer)
+- SoftMigrate audio reopen gated to Android settle (`CaptureReopenSettleDelayMs() > 0`)
+- Connect timeout does not `Detach()` when inbound already `IsActive()`
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
-- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + 9× `CallMediaLeg*` cases
+- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
 - Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
+
+### LAN dogfood checklist (call-media / A026)
+
+1. Accept → Connect ok → InCall with `rx_frames > 0`, no abort in the first seconds
+2. Leave without malloc / double-free
+3. Logs: one PeerLink alias for the remote during the call (no parallel long-lived `inbound:` + dial alias both Connected for call-media)
 
 ## Landed (L4 circuit — D7a / A022)
 

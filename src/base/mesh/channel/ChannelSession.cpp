@@ -2,6 +2,54 @@
 
 namespace pbr::amp {
 
+ChannelSession::~ChannelSession() {
+  ReleaseHandlers();
+}
+
+void ChannelSession::InstallMuxHandlers() {
+  if (!mux_) {
+    return;
+  }
+  if (auto pinned = weak_from_this().lock()) {
+    const std::weak_ptr<ChannelSession> weak = pinned;
+    (void)pinned;
+    mux_->SetDataHandler(channel_id_, [weak](uint32_t, std::vector<uint8_t> payload) {
+      auto session = weak.lock();
+      if (!session || session->closed_) {
+        return;
+      }
+      FrameHandler frame = session->on_frame_;
+      if (!frame) {
+        return;
+      }
+      const bool keep_open = frame(std::move(payload));
+      if (!session->closed_ && (!keep_open || session->policy_.read_once)) {
+        session->Close();
+      }
+    });
+    mux_->SetTerminalHandler(channel_id_, [weak](uint32_t, const char* reason) {
+      if (auto session = weak.lock()) {
+        session->NotifyRemoteTerminal(reason);
+      }
+    });
+    return;
+  }
+  // Stack / unique ownership (unit tests): raw this; caller must outlive mux callbacks.
+  mux_->SetDataHandler(channel_id_, [this](uint32_t, std::vector<uint8_t> payload) {
+    if (closed_ || !on_frame_) {
+      return;
+    }
+    FrameHandler frame = on_frame_;
+    const bool keep_open = frame(std::move(payload));
+    if (!closed_ && (!keep_open || policy_.read_once)) {
+      Close();
+    }
+  });
+  mux_->SetTerminalHandler(channel_id_, [this](uint32_t, const char* reason) {
+    NotifyRemoteTerminal(reason);
+  });
+}
+
 void ChannelSession::Bind(ChannelMux& mux, const uint32_t channel_id, ChannelPolicy policy, FrameHandler on_frame,
                           ClosedCallback on_closed) {
   mux_ = &mux;
@@ -12,19 +60,7 @@ void ChannelSession::Bind(ChannelMux& mux, const uint32_t channel_id, ChannelPol
   closed_ = false;
   outbound_.clear();
   write_inflight_ = false;
-
-  mux.SetDataHandler(channel_id_, [this](uint32_t, std::vector<uint8_t> payload) {
-    if (closed_ || !on_frame_) {
-      return;
-    }
-    const bool keep_open = on_frame_(std::move(payload));
-    if (!keep_open || (policy_.read_once && !closed_)) {
-      Close();
-    }
-  });
-  mux.SetTerminalHandler(channel_id_, [this](uint32_t, const char* reason) {
-    NotifyRemoteTerminal(reason);
-  });
+  InstallMuxHandlers();
 }
 
 void ChannelSession::SetFrameHandler(FrameHandler on_frame) {
@@ -108,6 +144,19 @@ void ChannelSession::CloseQuiet() {
   }
   closed_ = true;
   (void)mux_->CloseChannel(channel_id_);
+}
+
+void ChannelSession::ReleaseHandlers() {
+  on_frame_ = {};
+  on_closed_ = {};
+  if (!mux_) {
+    return;
+  }
+  ChannelMux* mux = mux_;
+  const uint32_t channel_id = channel_id_;
+  mux_ = nullptr;
+  mux->SetDataHandler(channel_id, {});
+  mux->SetTerminalHandler(channel_id, {});
 }
 
 void ChannelSession::Reset(const uint32_t code) {

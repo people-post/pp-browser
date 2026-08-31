@@ -145,7 +145,10 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
   }
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    Detach();
+    // Inbound may have already won while outbound Connect waited — do not tear it down.
+    if (!IsActive()) {
+      Detach();
+    }
     finish(Error("amp call-media connect timed out"));
   }
   return result_future.get();

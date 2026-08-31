@@ -255,7 +255,28 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
   AttachMuxTransport();
   handshake_.reset();
   phase_ = PeerLinkPhase::Connected;
-  owner_.OnLinkEstablished(*this);
+  if (!owner_.OnLinkEstablished(*this)) {
+    // Dual-dial loser ([A026]): tear down this link after stack unwinds. If another Connected
+    // Session to the same remote remains, association still succeeded for waiters.
+    phase_ = PeerLinkPhase::Backoff;
+    const std::string drop_key = peer_key_;
+    const std::string remote = remote_peer_id_;
+    const bool assoc_ok =
+        !remote.empty() && owner_.FindAnyConnectedLinkForRemotePeerId(remote) != nullptr;
+    owner_.ScheduleDropLink(drop_key);
+    if (assoc_ok && outbound_) {
+      owner_.ScheduleAdoptDialAlias(remote, drop_key);
+    }
+    if (establish_cb_) {
+      if (assoc_ok) {
+        establish_cb_(Roe<void>());
+      } else {
+        establish_cb_(Error("amp link: dual-dial election lost"));
+      }
+      establish_cb_ = nullptr;
+    }
+    return;
+  }
 
   if (establish_cb_) {
     establish_cb_(Roe<void>());

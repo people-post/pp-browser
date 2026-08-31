@@ -318,6 +318,74 @@ TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
   EXPECT_TRUE(h.mgr_b().IsConnected(h.peer_id_a));
 }
 
+TEST(MeshLinkTest, DualDialElectsOneConnectedLinkPerPeerId) {
+  ASSERT_GE(sodium_init(), 0);
+  auto created = test::AmpMeshHarness::Create();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto harness = std::move(*created);
+  test::AmpMeshHarness& h = *harness;
+
+  // Both peers accept so simultaneous A↔B dials can complete.
+  h.ep_a->SetAcceptEnabled(true);
+  h.ep_b->SetAcceptEnabled(true);
+
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+  ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
+
+  bool assoc_a = false;
+  bool assoc_b = false;
+  int done_a = 0;
+  int done_b = 0;
+  std::string err_a;
+  std::string err_b;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+    assoc_a = result.isOk();
+    if (!assoc_a) {
+      err_a = result.error().message;
+    }
+    ++done_a;
+  });
+  h.mgr_b().EnsureAssociation("a", [&](Roe<void> result) {
+    assoc_b = result.isOk();
+    if (!assoc_b) {
+      err_b = result.error().message;
+    }
+    ++done_b;
+  });
+
+  h.PumpUntil([&] {
+    return done_a > 0 && done_b > 0 && h.mgr_a().CountConnectedLinksForPeerId(h.peer_id_b) == 1 &&
+           h.mgr_b().CountConnectedLinksForPeerId(h.peer_id_a) == 1 &&
+           h.mgr_a().FindLinkByPeerId(h.peer_id_b) != nullptr &&
+           h.mgr_b().FindLinkByPeerId(h.peer_id_a) != nullptr;
+  });
+
+  EXPECT_EQ(done_a, 1);
+  EXPECT_EQ(done_b, 1);
+  EXPECT_TRUE(assoc_a) << err_a;
+  EXPECT_TRUE(assoc_b) << err_b;
+  EXPECT_EQ(h.mgr_a().CountConnectedLinksForPeerId(h.peer_id_b), 1u);
+  EXPECT_EQ(h.mgr_b().CountConnectedLinksForPeerId(h.peer_id_a), 1u);
+
+  auto* link_a = h.mgr_a().FindLinkByPeerId(h.peer_id_b);
+  auto* link_b = h.mgr_b().FindLinkByPeerId(h.peer_id_a);
+  ASSERT_NE(link_a, nullptr);
+  ASSERT_NE(link_b, nullptr);
+  EXPECT_EQ(link_a->Phase(), PeerLinkPhase::Connected);
+  EXPECT_EQ(link_b->Phase(), PeerLinkPhase::Connected);
+
+  // FindLinkByPeerId remains stable across extra pumps (alias may already be dial key).
+  for (int i = 0; i < 10; ++i) {
+    h.PumpBoth();
+  }
+  EXPECT_EQ(h.mgr_a().FindLinkByPeerId(h.peer_id_b), link_a);
+  EXPECT_EQ(h.mgr_b().FindLinkByPeerId(h.peer_id_a), link_b);
+  EXPECT_EQ(h.mgr_a().CountConnectedLinksForPeerId(h.peer_id_b), 1u);
+  EXPECT_EQ(h.mgr_b().CountConnectedLinksForPeerId(h.peer_id_a), 1u);
+  EXPECT_TRUE(h.mgr_a().IsConnected("b"));
+  EXPECT_TRUE(h.mgr_b().IsConnected("a"));
+}
+
 TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   ASSERT_GE(sodium_init(), 0);
 

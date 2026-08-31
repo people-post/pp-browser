@@ -178,3 +178,11 @@
 **Decision:** Before extracting `pp-cpp-amp`: (1) channel budgets live in `amp::AmpChannelLimits` under `base/mesh/channel/` (not `base/p2p`); (2) core AMP policy factories stay in `ChannelPolicy.h` (`ControlJson`, `Capability`, `CircuitCarrier`); product L4 factories move to `base/p2p/ProductChannelPolicies.h`; (3) `PeerIdFromMlDsaPublicKey` is its own CMake target `pp_base_peer_id` so mesh/link tests and people do not link `pp_base_p2p`. `Libp2pExecutorLimits` remains a deprecated alias of `AmpChannelLimits`.  
 **Rationale:** Removes the mesh→p2p include edge that blocked shared-lib extract; keeps product protocol sizes out of AMP core; PeerId encoding still needs retained libp2p wire but must not pull MeshHost.  
 **Alternatives:** Leave limits in p2p; move PeerId into `pp-cpp-crypto` immediately; keep all factories in `ChannelPolicy.h`.
+
+## A026 — One Session per PeerId under dual-dial (mesh election)
+
+**Date:** 2026-08-31  
+**Decision:** `PeerLinkManager` keeps **at most one Connected** non-carrier `PeerLink` (Association + Session) per remote PeerId. Simultaneous A↔B dials elect a winner then drop the loser; **rejected:** keep-both links (dogfood double-free / dangling `ChannelSession` mux pointers).  
+**Election:** Prefer the link whose local side is outbound **and** `LocalPeerId > RemotePeerId` (same base58 ordering as [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime) glare); otherwise keep the already-Connected link. Set `peer_id_to_key_` to the winner; clear protocol handlers on the loser then erase it before (or instead of) applying L4 handlers on a losing inbound. Call-media channel glare (A021) runs on the **elected** mux only.  
+**Rationale:** STACK’s one-association-per-peer invariant; dual live muxes made TearDown/CloseQuiet and raw `PeerLink*` handles UB under LAN dual-dial.  
+**Alternatives:** Answerer-only UDP (no offerer dial); keep-both forever with shared_ptr link handles (more complex, still doubles NAT/punch cost).

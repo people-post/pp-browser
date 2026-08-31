@@ -460,10 +460,8 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
     };
   });
 
-  // Warm a single underlay (A→B), then alias it on B as "a". Dual call-media opens on that
-  // link; channel-id glare is avoided because each peer opens on the same mux with distinct
-  // dynamic ids once capability ch0 is allocated. Simultaneous A←B dial is flaky under
-  // AdoptInboundOrDropDuplicate and is not required for call-media glare coverage.
+  // Warm a single underlay (A→B), then alias it on B as "a". Mesh election ([A026]) keeps
+  // one Connected PeerLink per PeerId; dual call-media opens share that mux (channel glare).
   std::atomic<bool> a_assoc{false};
   harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);
@@ -539,6 +537,81 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
   harness_->PumpBoth();
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::Idle);
+}
+
+/** Regression: after inbound wins MediaReady, a late/yielded outbound must not TearDown the bundle. */
+TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady) {
+  const std::string call_id = "call-yield-keep-inbound";
+  ByteVector media_key(32, 0x71);
+
+  std::mutex mu;
+  bool b_got_audio = false;
+  std::vector<uint8_t> b_received;
+
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
+      std::lock_guard lock(mu);
+      b_received = opus;
+      b_got_audio = true;
+    };
+  });
+
+  std::atomic<bool> a_assoc{false};
+  harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
+    a_assoc.store(static_cast<bool>(r), std::memory_order_release);
+  });
+  harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
+  ASSERT_TRUE(a_assoc.load(std::memory_order_acquire));
+  harness_->mgr_b().EnsureAssociation("a", {});
+  harness_->PumpUntil([&] { return harness_->mgr_b().IsConnected("a"); }, 2000);
+  ASSERT_TRUE(harness_->mgr_b().IsConnected("a"));
+
+  CallMediaDirectConnectParams a_params;
+  a_params.peer_key = "b";
+  a_params.call_id = call_id;
+  a_params.media_epoch = 1;
+  a_params.media_key = media_key;
+  a_params.offerer = true;
+
+  auto a_done = std::make_shared<LegCompletion>();
+  const CallMediaLegId a_leg = a_call_->StartLeg(a_params, {}, a_done->Fn(), 8000);
+  ASSERT_TRUE(a_leg);
+
+  harness_->PumpUntil(
+      [&] {
+        return a_done->finished.load(std::memory_order_acquire) &&
+               a_call_->Phase() == CallMediaSessionPhase::MediaReady &&
+               b_call_->Phase() == CallMediaSessionPhase::MediaReady;
+      },
+      20000);
+  ASSERT_TRUE(a_done->result) << a_done->result.error().message;
+  ASSERT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  ASSERT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Second StartLeg on the same call_id (simulates late dual-dial / Connect retry) must adopt
+  // the live inbound winner — not TearDown MediaReady when a yielded outbound open fails.
+  auto late = std::make_shared<LegCompletion>();
+  const CallMediaLegId late_leg = a_call_->StartLeg(a_params, {}, late->Fn(), 2000);
+  ASSERT_TRUE(late_leg);
+  harness_->PumpUntil([&] { return late->finished.load(std::memory_order_acquire); }, 5000);
+  ASSERT_TRUE(late->finished.load(std::memory_order_acquire));
+  EXPECT_TRUE(late->result) << late->result.error().message;
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_TRUE(a_call_->IsLegActive(late_leg));
+
+  const std::vector<uint8_t> opus = {0xc1, 0xc2};
+  ASSERT_TRUE(a_call_->SendAudio(late_leg, opus, 1, 0));
+  harness_->PumpUntil([&] { return b_got_audio; }, 1000);
+  EXPECT_EQ(b_received, opus);
+
+  a_call_->DetachLeg(late_leg);
+  b_call_->DetachLeg({});
+  harness_->PumpBoth();
 }
 
 /** B-CONFLICT: while A–B is MediaReady, C's inbound is rejected; after A leaves, C can connect. */
