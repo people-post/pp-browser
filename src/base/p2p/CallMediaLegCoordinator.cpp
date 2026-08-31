@@ -130,7 +130,25 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!runtime) {
       return true;
     }
-    return LocalWinsCallMediaGlare(runtime->Links().LocalPeerId(), link.RemotePeerId());
+    std::string remote = link.RemotePeerId();
+    // Inbound links often have an empty RemotePeerId until handshake/rekey. Prefer the
+    // dialed alias link (same peer_key after rekey, or StartLeg peer_key) so glare stays
+    // antisymmetric — empty remote previously made *both* sides RejectGlare.
+    if (remote.empty() && !link.PeerKey().empty()) {
+      if (const auto* known = runtime->Links().FindLink(link.PeerKey())) {
+        remote = known->RemotePeerId();
+      }
+    }
+    return LocalWinsCallMediaGlare(runtime->Links().LocalPeerId(), remote);
+  }
+
+  bool LocalWinsForBundle(const Bundle& bundle, const amp::PeerLink& fallback_link) const {
+    if (!bundle.params.peer_key.empty()) {
+      if (const auto* dial = runtime->Links().FindLink(bundle.params.peer_key)) {
+        return LocalWinsForLink(*dial);
+      }
+    }
+    return LocalWinsForLink(fallback_link);
   }
 
   bool OtherBundleBusy(const std::string& except_call_id) const {
@@ -572,7 +590,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       ctx.phase = target->phase;
       ctx.has_outbound_control = static_cast<bool>(target->outbound_control);
       ctx.offerer = target->offerer;
-      ctx.local_wins_glare = LocalWinsForLink(*link);
+      ctx.local_wins_glare = LocalWinsForBundle(*target, *link);
       ctx.other_bundle_busy = OtherBundleBusy(hello_call_id);
       const auto decision = DecideCallMediaInboundHello(ctx);
 
@@ -644,7 +662,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (!resolved) {
           return;
         }
-        if (bundle->offerer && LocalWinsForLink(*resolved) && bundle->outbound_control) {
+        if (bundle->offerer && LocalWinsForBundle(*bundle, *resolved) && bundle->outbound_control) {
           DropRole(*bundle, CallMediaChannelRole::InboundControl);
           bundle->phase = CallMediaBundlePhase::OutboundHello;
           return;
@@ -682,7 +700,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     ctx.ack_ok = ack.getIf<bool>("ok").value_or(false);
     ctx.from_outbound_control = role == CallMediaChannelRole::OutboundControl;
     ctx.offerer = bundle->offerer;
-    ctx.local_wins_glare = bundle->link ? LocalWinsForLink(*bundle->link) : true;
+    ctx.local_wins_glare = bundle->link ? LocalWinsForBundle(*bundle, *bundle->link) : true;
     switch (DecideCallMediaHelloAck(ctx)) {
     case CallMediaHelloAckDecision::IgnoreStale:
       return;
@@ -750,6 +768,37 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
+  /** Dual-dial: StartLeg arrived after inbound already claimed this call_id. */
+  bool AdoptOutboundIntoExisting(Bundle& existing, const CallMediaLegId leg_id,
+                                 CallMediaDirectCallbacks& callbacks, LegFinished& on_finished,
+                                 const int timeout_ms) {
+    const auto phase = existing.phase;
+    if (phase != CallMediaBundlePhase::InboundHello && phase != CallMediaBundlePhase::AwaitingMedia &&
+        phase != CallMediaBundlePhase::MediaReady) {
+      return false;
+    }
+    existing.leg_id = leg_id;
+    existing.deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 15000);
+    // Inbound worker may not have installed answer callbacks yet.
+    if (!existing.callbacks.on_audio && !existing.callbacks.on_media && !existing.callbacks.on_connected) {
+      existing.callbacks = std::move(callbacks);
+    }
+    if (existing.finished) {
+      // MediaReady (or failed) settled before dialer callback was attached.
+      LegFinished cb = std::move(on_finished);
+      if (cb) {
+        if (phase == CallMediaBundlePhase::MediaReady) {
+          cb({});
+        } else {
+          cb(Error("call-media aborted"));
+        }
+      }
+      return true;
+    }
+    existing.on_finished = std::move(on_finished);
+    return true;
+  }
+
   void BeginOutboundLeg(const CallMediaLegId leg_id, const CallMediaDirectConnectParams& params,
                         CallMediaDirectCallbacks callbacks, LegFinished on_finished, const int timeout_ms) {
     if (stopped.load(std::memory_order_acquire)) {
@@ -764,6 +813,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     {
       std::lock_guard lock(mu);
       if (auto* existing = FindByCallId(params.call_id)) {
+        if (AdoptOutboundIntoExisting(*existing, leg_id, callbacks, on_finished, timeout_ms)) {
+        return;
+      }
         TearDownBundle(*existing, true, false, "call-media aborted");
       }
       std::vector<std::string> others;
@@ -817,7 +869,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
               TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
               return;
             }
-            if (bundle->phase == CallMediaBundlePhase::InboundHello && params.offerer && !LocalWinsForLink(*link)) {
+            // Glare loser (or inbound-first admit) already left OutboundHello — abandon this open.
+            if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
+              if (link->Mux()) {
+                (void)link->Mux()->CloseChannel(*channel, "call-media glare yield");
+              }
               return;
             }
             lock.unlock();
@@ -832,8 +888,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                         TearDownBundle(*bundle, false, false, "amp call-media: channel open failed");
                                         return;
                                       }
-                                      if (bundle->phase == CallMediaBundlePhase::InboundHello && params.offerer &&
-                                          !LocalWinsForLink(*link)) {
+                                      if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
+                                        if (link && link->Mux()) {
+                                          (void)link->Mux()->CloseChannel(channel, "call-media glare yield");
+                                        }
                                         return;
                                       }
                                       BindControlChannel(*bundle, *link, channel, CallMediaChannelRole::OutboundControl);

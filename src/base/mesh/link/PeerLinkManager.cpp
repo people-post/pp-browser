@@ -388,8 +388,11 @@ bool PeerLinkManager::AdoptInboundOrDropDuplicate(PeerLink& inbound) {
   }
   if (auto* existing = FindConnectedLinkForPeerId(inbound.RemotePeerId())) {
     if (existing != &inbound) {
-      links_.erase(inbound.PeerKey());
-      return false;
+      // Dual-dial: keep both links. Erasing the inbound drops the peer's outbound call-media
+      // hello; erasing the outbound dangling-points live ChannelSessions. peer_id lookups keep
+      // preferring the existing (usually outbound) alias.
+      peer_id_to_key_[inbound.RemotePeerId()] = existing->PeerKey();
+      return true;
     }
   }
   for (const auto& [alias, rec] : endpoints_) {

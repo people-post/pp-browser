@@ -349,8 +349,8 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   opts.payload_json = DumpJson(payload);
   opts.generation = "system";
   opts.update_preview = false;
-  // Call-control must not block Browser IO on libp2p direct OpenStream/ack (MediaKey + Accept).
-  opts.prefer_relay = true;
+  // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
+  opts.critical_lane = true;
   auto sent = p2p_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();

@@ -32,10 +32,12 @@
 #include "base/messaging/EmojiKey.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
+#include "base/messaging/PeerBriefRoute.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
+#include "base/people/ContactIdentity.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -294,6 +296,34 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
   }
 }
 
+void P2pMessagingService::SetPeerRouteSources(DirectoryShadowCache* shadows, IDirectoryClient* directory) {
+  directory_shadows_ = shadows;
+  directory_ = directory;
+}
+
+void P2pMessagingService::NoteAccountRelayRoute(const std::string& account_id,
+                                                const std::string& relay_user_id) {
+  if (!IsAccountIdentityValue(account_id) || !IsRelayUserIdValue(relay_user_id)) {
+    return;
+  }
+  {
+    std::lock_guard lock(account_relay_mutex_);
+    account_to_relay_[account_id] = relay_user_id;
+  }
+  if (directory_shadows_) {
+    DirectoryHit hit;
+    hit.hit_id = relay_user_id;
+    hit.account_id = account_id;
+    hit.ids = {{ContactIdKind::Account, account_id, true},
+               {ContactIdKind::RelayUser, relay_user_id, false}};
+    directory_shadows_->Put(hit);
+  }
+}
+
+void P2pMessagingService::RememberRouteFromEnvelope(const RelayEnvelope& envelope) {
+  NoteAccountRelayRoute(envelope.sender_contact_id, envelope.sender_relay_id);
+}
+
 namespace {
 
 void MaybePublishMemberJoinedAfterIngest(GroupMembershipService* groups, const RelayReceiveOutcome& outcome) {
@@ -378,6 +408,7 @@ void P2pMessagingService::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& 
 }
 
 void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
+  RememberRouteFromEnvelope(envelope);
   auto identity = identity_.Get();
   if (!identity) {
     return;
@@ -832,36 +863,43 @@ void P2pMessagingService::RetryGapSync(const std::string& thread_id,
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {
-  // Communicating identity is Account ID; Brief delivery still needs relay: (M010).
-  auto relay_from_contact = [](const Contact& contact) -> std::optional<std::string> {
-    for (const ContactId& id : contact.ids) {
-      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
-        return id.value;
-      }
-    }
-    return std::nullopt;
-  };
-
-  if (!thread.participant_contact_ids.empty()) {
-    const auto contact = contacts_.Get(thread.participant_contact_ids.front());
-    if (contact && *contact) {
-      if (auto relay = relay_from_contact(**contact)) {
+  std::unordered_map<std::string, std::string> learned;
+  {
+    std::lock_guard lock(account_relay_mutex_);
+    learned = account_to_relay_;
+  }
+  if (auto from_local = ResolvePeerBriefRoute(thread, contacts_, learned)) {
+    return from_local;
+  }
+  if (directory_shadows_ && IsAccountIdentityValue(thread.peer_identity_value)) {
+    if (auto hit = directory_shadows_->Get(thread.peer_identity_value)) {
+      if (auto relay = RelayUserIdFromDirectoryHit(*hit)) {
         return relay;
       }
     }
   }
-
-  if (thread.peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) &&
-      !thread.peer_identity_value.empty()) {
-    auto by_account = contacts_.FindByIdentity(thread.peer_identity_value, ContactIdKind::Account);
-    if (by_account && by_account->has_value()) {
-      if (auto relay = relay_from_contact(**by_account)) {
-        return relay;
-      }
-    }
-  }
-
   return std::nullopt;
+}
+
+std::optional<std::string> P2pMessagingService::ResolvePeerRelayIdWithDirectory(const Thread& thread) {
+  if (auto resolved = ResolvePeerRelayId(thread)) {
+    return resolved;
+  }
+  if (!directory_ || !IsAccountIdentityValue(thread.peer_identity_value)) {
+    return std::nullopt;
+  }
+  auto hit = directory_->LookupByAccount(thread.peer_identity_value);
+  if (!hit) {
+    log().warning << "LookupByAccount for Brief route failed peer=" << thread.peer_identity_value
+                  << " err=" << hit.error().message;
+    return std::nullopt;
+  }
+  auto relay = RelayUserIdFromDirectoryHit(*hit);
+  if (!relay) {
+    return std::nullopt;
+  }
+  NoteAccountRelayRoute(thread.peer_identity_value, *relay);
+  return relay;
 }
 
 TrustLevel P2pMessagingService::ResolveThreadTrust(const Thread& thread) const {
@@ -1102,8 +1140,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return appended.error();
   }
 
-  auto peer_relay_id = ResolvePeerRelayId(**thread);
-  if (!peer_relay_id) {
+  auto peer_relay_id = ResolvePeerRelayIdWithDirectory(**thread);
+  const std::string amp_peer_key = (*thread)->peer_identity_value;
+  const bool amp_reachable =
+      direct_chat_ && !amp_peer_key.empty() && direct_chat_->IsPeerReachable(amp_peer_key);
+  if (!peer_relay_id && !amp_reachable) {
     appended->delivery = MessageDelivery::Failed;
     (void)store_.UpdateMessage(*appended);
     return Error("Direct thread missing peer relay id");
@@ -1223,9 +1264,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.sender_seq = *message.sender_seq;
   envelope.order_key = envelope.sender_seq;
   envelope.session_epoch = *message.session_epoch;
-  envelope.stream_key = BuildCanonicalRelayStreamKey(identity->relay_user_id, *peer_relay_id, (*thread)->channel,
-                                                     *message.session_epoch);
-  envelope.recipient_contact_id = *peer_relay_id;
+  // Brief recipient is relay:; Amp-only (no route yet) uses Account as party placeholder.
+  const std::string route_party = peer_relay_id ? *peer_relay_id : amp_peer_key;
+  envelope.stream_key =
+      BuildCanonicalRelayStreamKey(identity->relay_user_id, route_party, (*thread)->channel, *message.session_epoch);
+  envelope.recipient_contact_id = route_party;
   envelope.timestamp = message.timestamp;
 
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
@@ -1244,16 +1287,28 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
   }
 
-  auto send_work = [this, thread_id, envelope, message_id = message.id, peer_relay_id = *peer_relay_id,
-                    prefer_relay = options.prefer_relay]() mutable {
+  // Amp dial key is Account ID (invite listen multiaddrs / contact endpoints). Brief uses relay:.
+  auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
+                    peer_relay_id, critical_lane = options.critical_lane]() mutable {
     bool tried_direct = false;
-    if (!prefer_relay && direct_chat_ && direct_chat_->IsPeerReachable(peer_relay_id)) {
+    // critical_lane still tries Amp first when the peer is dialable (non-contact LAN accept / leave).
+    if (direct_chat_ && !amp_peer_key.empty() && direct_chat_->IsPeerReachable(amp_peer_key)) {
       tried_direct = true;
-      const auto direct = direct_chat_->SendEnvelope(peer_relay_id, envelope);
+      const auto direct = direct_chat_->SendEnvelope(amp_peer_key, envelope);
       if (direct) {
         ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
         return;
       }
+      if (critical_lane) {
+        log().warning << "Amp call-control send failed message_id=" << message_id
+                      << " peer=" << amp_peer_key << " err=" << direct.error().message
+                      << " (will try Brief if relay route known)";
+      }
+    }
+    if (!peer_relay_id) {
+      ApplySendResult(thread_id, message_id, false,
+                      tried_direct ? "libp2p dial failed" : "Direct thread missing peer relay id");
+      return;
     }
     if (!relay_) {
       ApplySendResult(thread_id, message_id, false,
@@ -1262,21 +1317,21 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     }
     const auto result = relay_->Send(envelope);
     if (!result) {
-      log().warning << "Relay Send failed message_id=" << message_id
-                    << " peer=" << peer_relay_id << " err=" << result.error().message;
+      log().warning << "Relay Send failed message_id=" << message_id << " peer=" << *peer_relay_id
+                    << " err=" << result.error().message;
       EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
                                     .attempt_count = 1});
       ApplySendResult(thread_id, message_id, false, result.error().message);
       return;
     }
-    if (prefer_relay) {
+    if (critical_lane) {
       log().info << "Relay Send ok (call-control) message_id=" << message_id
-                    << " peer=" << peer_relay_id;
+                 << " peer=" << *peer_relay_id;
     }
     ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
   };
-  if (options.prefer_relay) {
-    // Call-control (MediaKey/Accept) must not sit behind PollInbox on Browser IO.
+  if (options.critical_lane) {
+    // Call-control (MediaKey/Accept) must not sit behind PollInbox on Normal workers.
     AppRuntime::PostWorkerCritical(std::move(send_work));
   } else {
     AppRuntime::PostWorkerNormal( std::move(send_work));
@@ -1346,7 +1401,7 @@ Roe<void> P2pMessagingService::SendChargeRequired(const std::string& peer_identi
   opts.payload_json = DumpJson(payload);
   opts.generation = "system";
   opts.update_preview = false;
-  opts.prefer_relay = true;
+  opts.critical_lane = true;
   opts.sender_contact_id = identity->account_id;
 
   auto sent = SendUserMessage(thread->id, "Charge required", opts);
@@ -1738,6 +1793,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
+          RememberRouteFromEnvelope(envelope);
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           MaybePublishMemberJoinedAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);

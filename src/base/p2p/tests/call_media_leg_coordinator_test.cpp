@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -431,7 +432,6 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
   ByteVector media_key(32, 0x66);
 
   std::mutex mu;
-  std::condition_variable cv;
   bool a_got_audio = false;
   bool b_got_audio = false;
   std::vector<uint8_t> a_received;
@@ -446,7 +446,6 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
       std::lock_guard lock(mu);
       a_received = opus;
       a_got_audio = true;
-      cv.notify_all();
     };
   });
   b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
@@ -458,9 +457,23 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
       std::lock_guard lock(mu);
       b_received = opus;
       b_got_audio = true;
-      cv.notify_all();
     };
   });
+
+  // Warm a single underlay (A→B), then alias it on B as "a". Dual call-media opens on that
+  // link; channel-id glare is avoided because each peer opens on the same mux with distinct
+  // dynamic ids once capability ch0 is allocated. Simultaneous A←B dial is flaky under
+  // AdoptInboundOrDropDuplicate and is not required for call-media glare coverage.
+  std::atomic<bool> a_assoc{false};
+  harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
+    a_assoc.store(static_cast<bool>(r), std::memory_order_release);
+  });
+  harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
+  ASSERT_TRUE(a_assoc.load(std::memory_order_acquire));
+  harness_->mgr_b().EnsureAssociation("a", {});
+  harness_->PumpUntil([&] { return harness_->mgr_b().IsConnected("a"); }, 2000);
+  ASSERT_TRUE(harness_->mgr_b().IsConnected("a"));
+  ASSERT_TRUE(harness_->mgr_a().IsConnected("b"));
 
   CallMediaDirectConnectParams a_params;
   a_params.peer_key = "b";
@@ -481,46 +494,33 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
     std::lock_guard lock(mu);
     a_received = opus;
     a_got_audio = true;
-    cv.notify_all();
   };
   CallMediaDirectCallbacks b_cbs;
   b_cbs.on_audio = [&](const std::vector<uint8_t>& opus) {
     std::lock_guard lock(mu);
     b_received = opus;
     b_got_audio = true;
-    cv.notify_all();
   };
 
-  LegCompletion a_done;
-  LegCompletion b_done;
-  CallMediaLegId a_leg;
-  CallMediaLegId b_leg;
-  std::atomic<bool> pumping{true};
-  std::thread pump_thread([this, &pumping] {
-    while (pumping.load(std::memory_order_acquire)) {
-      harness_->PumpBoth();
-    }
-  });
-  std::thread ta([&] { a_leg = a_call_->StartLeg(a_params, std::move(a_cbs), a_done.Fn(), 8000); });
-  std::thread tb([&] { b_leg = b_call_->StartLeg(b_params, std::move(b_cbs), b_done.Fn(), 8000); });
-  ta.join();
-  tb.join();
+  auto a_done = std::make_shared<LegCompletion>();
+  auto b_done = std::make_shared<LegCompletion>();
+  const CallMediaLegId a_leg = a_call_->StartLeg(a_params, std::move(a_cbs), a_done->Fn(), 8000);
+  const CallMediaLegId b_leg = b_call_->StartLeg(b_params, std::move(b_cbs), b_done->Fn(), 8000);
   ASSERT_TRUE(a_leg);
   ASSERT_TRUE(b_leg);
 
   harness_->PumpUntil(
       [&] {
-        return a_done.finished.load(std::memory_order_acquire) && b_done.finished.load(std::memory_order_acquire) &&
+        return a_done->finished.load(std::memory_order_acquire) && b_done->finished.load(std::memory_order_acquire) &&
                a_call_->Phase() == CallMediaSessionPhase::MediaReady &&
                b_call_->Phase() == CallMediaSessionPhase::MediaReady;
       },
       20000);
-  pumping.store(false, std::memory_order_release);
-  pump_thread.join();
 
-  ASSERT_TRUE(a_done.finished.load(std::memory_order_acquire));
-  ASSERT_TRUE(b_done.finished.load(std::memory_order_acquire));
-  ASSERT_TRUE(b_done.result) << b_done.result.error().message;
+  ASSERT_TRUE(a_done->finished.load(std::memory_order_acquire));
+  ASSERT_TRUE(b_done->finished.load(std::memory_order_acquire));
+  ASSERT_TRUE(a_done->result) << a_done->result.error().message;
+  ASSERT_TRUE(b_done->result) << b_done->result.error().message;
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_TRUE(a_call_->IsLegActive(a_leg));

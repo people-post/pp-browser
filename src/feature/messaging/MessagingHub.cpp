@@ -537,6 +537,10 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (!messaging_ready_ || identity.empty() || !p2p_) {
     return;
   }
+  // Warm Brief route cache for Account→relay: (non-contact call accept / leave).
+  if (directory_shadows_ && IsAccountIdentityValue(identity)) {
+    directory_shadows_->EnsureLookup(identity);
+  }
   // A017: warm Amp endpoints only — no PeerSessionManager EnsureConnection.
   std::string peer_id;
   if (contacts_) {
@@ -648,6 +652,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  p2p_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
@@ -725,6 +730,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 std::move(amp_pump), std::move(amp_worker));
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  p2p_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);

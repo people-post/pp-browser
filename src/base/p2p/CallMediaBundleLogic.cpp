@@ -16,6 +16,10 @@ CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInbound
     if (ctx.offerer && ctx.local_wins_glare) {
       return CallMediaInboundHelloDecision::RejectGlare;
     }
+    // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
+    if (ctx.offerer && !ctx.local_wins_glare) {
+      return CallMediaInboundHelloDecision::AcceptAndYield;
+    }
     if (ctx.has_outbound_control) {
       return CallMediaInboundHelloDecision::AcceptAndYield;
     }
@@ -40,7 +44,9 @@ CallMediaHelloAckDecision DecideCallMediaHelloAck(const CallMediaHelloAckContext
   if (ctx.ack_ok) {
     return CallMediaHelloAckDecision::ProceedToMedia;
   }
-  if (ctx.phase == CallMediaBundlePhase::OutboundHello && ctx.offerer && !ctx.local_wins_glare) {
+  // Dual-dial: peer may RejectGlare our outbound even when identities were briefly unknown.
+  // Yield so inbound adopt can proceed instead of failing the leg.
+  if (ctx.phase == CallMediaBundlePhase::OutboundHello && ctx.offerer) {
     return CallMediaHelloAckDecision::YieldOutbound;
   }
   return CallMediaHelloAckDecision::Fail;

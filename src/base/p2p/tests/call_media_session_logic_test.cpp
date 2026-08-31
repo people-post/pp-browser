@@ -57,7 +57,9 @@ TEST(CallMediaSessionLogicTest, LocalWinsCallMediaGlareIsTotalOrder) {
   EXPECT_TRUE(LocalWinsCallMediaGlare("b", "a"));
   EXPECT_FALSE(LocalWinsCallMediaGlare("a", "b"));
   EXPECT_FALSE(LocalWinsCallMediaGlare("same", "same"));
-  EXPECT_TRUE(LocalWinsCallMediaGlare("peer", ""));
+  EXPECT_FALSE(LocalWinsCallMediaGlare("peer", ""));
+  EXPECT_FALSE(LocalWinsCallMediaGlare("", "peer"));
+  EXPECT_FALSE(LocalWinsCallMediaGlare("", ""));
 }
 
 } // namespace

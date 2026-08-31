@@ -37,6 +37,7 @@ pp_browser_add_base_library(pp_base_messaging
     JsonThreadStore.cpp
     MessagingJson.cpp
     PskRotateCodec.cpp
+    PeerBriefRoute.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
     PeopleDiscoveryBlocks.cpp

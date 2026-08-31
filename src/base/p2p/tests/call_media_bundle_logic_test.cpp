@@ -15,6 +15,15 @@ TEST(CallMediaBundleLogicTest, InboundHelloYieldsWhenOutboundLosesGlare) {
   EXPECT_EQ(DecideCallMediaInboundHello(ctx), CallMediaInboundHelloDecision::AcceptAndYield);
 }
 
+TEST(CallMediaBundleLogicTest, InboundHelloYieldsWhenLoserOutboundNotBoundYet) {
+  CallMediaInboundHelloContext ctx;
+  ctx.phase = CallMediaBundlePhase::OutboundHello;
+  ctx.has_outbound_control = false;
+  ctx.offerer = true;
+  ctx.local_wins_glare = false;
+  EXPECT_EQ(DecideCallMediaInboundHello(ctx), CallMediaInboundHelloDecision::AcceptAndYield);
+}
+
 TEST(CallMediaBundleLogicTest, InboundHelloRejectsGlareWhenOutboundWins) {
   CallMediaInboundHelloContext ctx;
   ctx.phase = CallMediaBundlePhase::OutboundHello;
@@ -50,6 +59,16 @@ TEST(CallMediaBundleLogicTest, HelloAckProceedsOnOutboundOk) {
   ctx.ack_ok = true;
   ctx.from_outbound_control = true;
   EXPECT_EQ(DecideCallMediaHelloAck(ctx), CallMediaHelloAckDecision::ProceedToMedia);
+}
+
+TEST(CallMediaBundleLogicTest, HelloAckYieldsOutboundOnOffererNack) {
+  CallMediaHelloAckContext ctx;
+  ctx.phase = CallMediaBundlePhase::OutboundHello;
+  ctx.ack_ok = false;
+  ctx.from_outbound_control = true;
+  ctx.offerer = true;
+  ctx.local_wins_glare = true; // even if local thought it won, yield for dual-dial recovery
+  EXPECT_EQ(DecideCallMediaHelloAck(ctx), CallMediaHelloAckDecision::YieldOutbound);
 }
 
 TEST(CallMediaBundleLogicTest, ChannelCloseIgnoresInboundDuringOutboundHello) {

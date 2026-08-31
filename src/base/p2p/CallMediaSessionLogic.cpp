@@ -143,7 +143,8 @@ bool CallMediaFailNotifySuppressed(CallMediaSessionPhase phase) {
 
 bool LocalWinsCallMediaGlare(const std::string& local_peer_id, const std::string& remote_peer_id) {
   if (local_peer_id.empty() || remote_peer_id.empty()) {
-    return true;
+    // Without both identities, claiming a win makes dual-dial RejectGlare on both sides.
+    return false;
   }
   return local_peer_id > remote_peer_id;
 }

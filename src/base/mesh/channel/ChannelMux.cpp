@@ -12,7 +12,10 @@ int64_t DefaultNowMs() { return 0; }
 
 } // namespace
 
-ChannelMux::ChannelMux(Session& session) : session_(session), now_ms_(DefaultNowMs) {}
+ChannelMux::ChannelMux(Session& session) : session_(session), now_ms_(DefaultNowMs) {
+  // Dual-open on one Session: initiator allocates odd ids, responder even — avoids OPEN glare.
+  next_dynamic_id_ = session.Material().initiator ? 1u : 2u;
+}
 
 void ChannelMux::SetPeerSession(Session* peer_session) { peer_session_ = peer_session; }
 
@@ -62,9 +65,11 @@ Roe<uint32_t> ChannelMux::OpenOutbound(const std::string& protocol_id, ChannelPo
       return Error("amp mux: channel id in use");
     }
   } else {
-    id = next_dynamic_id_++;
+    id = next_dynamic_id_;
+    next_dynamic_id_ += 2;
     if (id == kIllegalChannelId) {
-      id = next_dynamic_id_++;
+      id = next_dynamic_id_;
+      next_dynamic_id_ += 2;
     }
   }
   ChannelRecord rec;
