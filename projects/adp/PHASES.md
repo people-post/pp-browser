@@ -112,9 +112,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
-cmake --build build --target pp_browser_adp_test pp_browser_p2p_test -j
+cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_p2p_test -j
 ./build/src/base/adp/tests/pp_browser_adp_test
-# AMP targets (after D1/D2):
-# ./build/src/base/mesh/session/tests/pp_browser_amp_session_test
-# ./build/src/base/mesh/channel/tests/pp_browser_amp_channel_test
+./build/src/base/mesh/session/tests/pp_browser_amp_session_test
+./build/src/base/mesh/channel/tests/pp_browser_amp_channel_test
 ```
