@@ -97,9 +97,6 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   config.libp2p.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
   config.libp2p.capabilities.media_relay = (state.media_relay_enabled == "on");
   config.libp2p.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
-  if (!state.libp2p_listen_multiaddr.empty()) {
-    config.libp2p.listen_multiaddr = state.libp2p_listen_multiaddr;
-  }
   NormalizeLibp2pConfig(config.libp2p);
   return config;
 }

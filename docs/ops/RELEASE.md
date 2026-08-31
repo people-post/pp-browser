@@ -116,11 +116,11 @@ docker pull ghcr.io/people-post/pp-node:0.1.0
 docker run --rm -it \
   --cap-add=NET_BIND_SERVICE \
   -e PP_BROWSER_PIN=... \
-  -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443 \
+  -e PP_NODE_AMP_UDP_PORT=443 \
   -e PP_NODE_DATA_DIR=/var/lib/pp-node \
   -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
   -v pp-node-data:/var/lib/pp-node \
-  -p 443:443 \
+  -p 443:443/udp \
   -p 18518:18518 \
   ghcr.io/people-post/pp-node:0.1.0
 ```

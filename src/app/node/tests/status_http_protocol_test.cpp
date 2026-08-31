@@ -38,7 +38,7 @@ TEST(StatusHttpProtocolTest, LoopbackDetection) {
 TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = true;
-  snap.listen_multiaddr = "/ip4/0.0.0.0/tcp/443";
+  snap.listen_multiaddr = "/ip4/0.0.0.0/udp/443/adp/1.0.0/p2p/12D3KooWTest";
   snap.peer_id = "12D3KooWtest";
   snap.circuit_relay = true;
   snap.media_relay = false;

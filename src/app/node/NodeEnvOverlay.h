@@ -17,12 +17,11 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
 
 /**
  * Apply PP_NODE_* deploy overlays onto loaded config (file/defaults).
- * Does not apply CLI; caller applies `--listen` after this so CLI wins.
  * Full precedence: CLI → env → config file → defaults.
  *
  * Env keys:
  *   PP_NODE_DATA_DIR
- *   PP_NODE_LISTEN
+ *   PP_NODE_AMP_UDP_PORT
  *   PP_NODE_BOOTSTRAP_PEERS   (comma-separated multiaddrs)
  *   PP_NODE_CAP_CIRCUIT_RELAY
  *   PP_NODE_CAP_MEDIA_RELAY

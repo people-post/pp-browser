@@ -89,8 +89,8 @@
 ## Landed (D9 building block)
 
 - `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer
-- **`MeshHost` parallel Amp** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)): `enable_amp_stack` / `AttachAmpStack`; soft-fail Amp; `Tick` pumps Amp
-- **Product wiring:** `libp2p.enable_amp_stack` (default **true**) → MessagingHub + pp-node; `TickLibp2p` calls `mesh_->Tick()` so Amp pumps
+- **`MeshHost` Amp underlay** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys) / D10): `mesh_enabled` / `AttachAmpStack`; hard-require Amp; `Tick` pumps Amp
+- **Product wiring:** `libp2p.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickLibp2p` calls `mesh_->Tick()` so Amp pumps
 - `pp_browser_p2p_test` — `MeshHostAmpTest.AttachAmpStackParallelNoLibp2p`
 
 ## Landed (D9 step 3 — chat/history single entry)
@@ -143,8 +143,8 @@
 ## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
 
 - **`AmpChatBlobService`** — `/pp-browser/chat-blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
-- **Amp UDP accept** always enabled (decoupled from TCP `listen_enabled`)
-- **When Amp starts:** MeshHost forces `listen_enabled=false`, `skip_identify=true`; skips DialBack + libp2p circuit/media-relay hosting (Amp L4 coords own those)
+- **Amp UDP accept** always enabled
+- **When Amp starts:** Amp L4 coords own dial-back + circuit/media-relay hosting (no TCP Identify/DialBack)
 - **Deleted** transitional TCP-hello Opus dogfood: `CallMediaAdpDogfood.h`, `CallMediaAdpPath`, `CallMediaAdpKey`, hello `adp_*` fields
 - Docs: NETWORKING / CALLS / LIBP2P_STREAMS / AMP-CHANNEL updated for Amp-primary mesh
 
@@ -153,7 +153,7 @@
 | Change | Why |
 |--------|-----|
 | **Do not block MeshHost Amp attach on AMP dial-back / mDNS** | Ownership is independent of reachability chrome; libp2p DialBack/Identify still cover probes until cutover |
-| **Shared device ML-DSA keys required for `enable_amp_stack`** | One PeerId across stacks ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
+| **Shared device ML-DSA keys required for `mesh_enabled`** | One PeerId across stacks ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
 | **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0 |
 | **Amp start is soft-fail** | **Superseded by D10** — Amp hard-require; no TCP underlay fallback |
 | **AMP dial-back is optional until Identify/TCP teardown** | **D10:** DialBack retired; Amp dial-back remains D8 follow-on |
@@ -165,7 +165,7 @@
 
 ## Landed (D10 — clean TCP mesh drop)
 
-- **Hard-require Amp:** `MeshHost::Start` fails if `enable_amp_stack` and Amp cannot bind/start (no soft-fail TCP underlay)
+- **Hard-require Amp:** `MeshHost::Start` fails if `mesh_enabled` and Amp cannot bind/start (no soft-fail TCP underlay)
 - **No silent Host:** when Amp succeeds, MeshHost does **not** construct `NodeRuntime` / `Libp2pHost` / `PeerSessionManager`
 - **LAN keep:** PreferLocal / invite use `BuildAmpLanAdvertisedAddrs`; mDNS advertises with Amp UDP port + `amp_udp=` without TCP bound; SoftMigrate dial registry prefers Amp ADP MAs
 - **Product L4:** chat / history / blob / call-media / SoftMigrate Amp-only; TCP DialBack / Identify / libp2p circuit+media-relay hosting not started

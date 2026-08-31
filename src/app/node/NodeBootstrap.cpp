@@ -8,7 +8,6 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
-#include "base/p2p/Reachability.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -26,11 +25,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return config.error();
   }
 
-  // Env overlays (PP_NODE_*), then CLI listen override — CLI wins.
   ApplyPpNodeConfigEnvOverlays(*config);
-  if (!options.listen_override.empty()) {
-    config->libp2p.listen_multiaddr = options.listen_override;
-  }
   config->libp2p.node_enabled = true;
   NormalizeLibp2pConfig(config->libp2p);
 
@@ -93,8 +88,6 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   AppRuntime::Initialize();
 
   MeshHostConfig mesh_cfg;
-  mesh_cfg.host.listen_enabled = true;
-  mesh_cfg.host.listen_multiaddr = config->libp2p.listen_multiaddr;
   if (auto priv = identity->GetDeviceMlDsaPrivateKey()) {
     mesh_cfg.host.device_ml_dsa_private_key = *priv;
   }
@@ -108,9 +101,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   mesh_cfg.media_relay_pricing = config->libp2p.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
-  mesh_cfg.enable_amp_stack = config->libp2p.enable_amp_stack &&
-                              mesh_cfg.host.device_ml_dsa_private_key &&
-                              mesh_cfg.host.device_ml_dsa_public_key;
+  mesh_cfg.mesh_enabled = config->libp2p.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
+                          mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
       config->libp2p.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->libp2p.amp_udp_port);
   mesh_cfg.bootstrap_peers = config->libp2p.bootstrap_peers;
@@ -123,7 +115,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     secrets->UnregisterDekConsumer(identity.get());
     return started.error();
   }
-  if (mesh_cfg.enable_amp_stack) {
+  if (mesh_cfg.mesh_enabled) {
     if (!mesh->Amp()) {
       log.error << "amp stack failed: " << mesh->AmpLastError();
       AppRuntime::Shutdown();
@@ -132,13 +124,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
   } else {
-    log.warning << "amp stack disabled (enable_amp_stack=false); peer mesh underlay off";
-  }
-
-  if (!mesh->AmpListenMultiaddr().empty()) {
-    config->libp2p.listen_multiaddr = mesh->AmpListenMultiaddr();
-  } else if (!mesh->BoundListenMultiaddr().empty()) {
-    config->libp2p.listen_multiaddr = mesh->BoundListenMultiaddr();
+    log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
 
   NodeBootstrapResult result;
@@ -158,7 +144,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (result.mesh->Amp()) {
     peer_id = result.mesh->Amp()->LocalPeerId();
   }
-  log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
+  const std::string listen =
+      result.mesh->AmpListenMultiaddr().empty() ? std::string("(none)") : result.mesh->AmpListenMultiaddr();
+  log.info << "pp-node listening on " << listen
            << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
            << " underlay=amp"
            << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off")

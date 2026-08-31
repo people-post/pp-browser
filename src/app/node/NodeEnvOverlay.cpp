@@ -75,9 +75,6 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   if (const char* data_dir = EnvOrNull("PP_NODE_DATA_DIR")) {
     config.data_dir = data_dir;
   }
-  if (const char* listen = EnvOrNull("PP_NODE_LISTEN")) {
-    config.libp2p.listen_multiaddr = listen;
-  }
   if (const char* peers = EnvOrNull("PP_NODE_BOOTSTRAP_PEERS")) {
     config.libp2p.bootstrap_peers = ParsePpNodeBootstrapPeersCsv(peers);
   }

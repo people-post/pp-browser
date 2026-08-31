@@ -226,7 +226,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
   ui_state_.node_enabled = bindings_.node_enabled.c_str();
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
-  ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
+  ui_state_.amp_listen_multiaddr = bindings_.amp_listen_multiaddr.c_str();
   ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
   ui_state_.reachability_status_label = bindings_.reachability_status_label.c_str();
   ui_state_.reachability_summary = bindings_.reachability_summary.c_str();
@@ -298,7 +298,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
   bindings_.node_enabled = ui_state_.node_enabled.c_str();
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
-  bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
+  bindings_.amp_listen_multiaddr = ui_state_.amp_listen_multiaddr.c_str();
   bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
   bindings_.reachability_status_label = ui_state_.reachability_status_label.c_str();
   bindings_.reachability_summary = ui_state_.reachability_summary.c_str();
@@ -375,6 +375,11 @@ void SettingsController::SyncBindingsFromSession() {
     ui_state_.libp2p_status_message = commands_.last_libp2p_error();
   } else {
     ui_state_.libp2p_status_message.clear();
+  }
+  if (commands_.amp_listen_multiaddr) {
+    ui_state_.amp_listen_multiaddr = commands_.amp_listen_multiaddr();
+  } else {
+    ui_state_.amp_listen_multiaddr.clear();
   }
   ApplyReachability();
   ApplySupportDiscovery();
@@ -455,7 +460,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
     ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
-    ctor.Bind("libp2p_listen_multiaddr", &controller.bindings_.libp2p_listen_multiaddr);
+    ctor.Bind("amp_listen_multiaddr", &controller.bindings_.amp_listen_multiaddr);
     ctor.Bind("libp2p_status_message", &controller.bindings_.libp2p_status_message);
     ctor.Bind("reachability_status_label", &controller.bindings_.reachability_status_label);
     ctor.Bind("reachability_summary", &controller.bindings_.reachability_summary);
@@ -585,7 +590,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "registration_base_url");
   host.Dirty("settings", "node_enabled");
   host.Dirty("settings", "show_node_toggle");
-  host.Dirty("settings", "libp2p_listen_multiaddr");
+  host.Dirty("settings", "amp_listen_multiaddr");
   host.Dirty("settings", "libp2p_status_message");
   host.Dirty("settings", "reachability_status_label");
   host.Dirty("settings", "reachability_summary");

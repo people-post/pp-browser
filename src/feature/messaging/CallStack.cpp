@@ -189,8 +189,6 @@ void CallStack::WireMediaRelayDeps() {
                              m->AmpMediaRelayCoord()->IsStarted();
   if (m && !m->AmpListenMultiaddr().empty()) {
     deps.local_listen_multiaddr = m->AmpListenMultiaddr();
-  } else {
-    deps.local_listen_multiaddr = libp2p.listen_multiaddr;
   }
   // PreferLocal CallSfuAttach fan-out needs dialable LAN addrs (same as invite listen_multiaddrs).
   deps.local_advertise_multiaddrs = LocalCallListenMultiaddrs();

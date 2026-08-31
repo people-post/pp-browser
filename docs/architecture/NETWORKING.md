@@ -10,7 +10,7 @@ pp-browser uses **HTTP** plus a **peer mesh**. Product peer mesh is **AMP** (UDP
 | Plane | Preferred role |
 |-------|----------------|
 | **HTTP** | Contact **org backends** when reachable: Brief APIs, relay store/history, client-compat, quotes/billing UX, settlement orchestration |
-| **Peer mesh (AMP)** | **Peer data exchange** when `libp2p.enable_amp_stack` (default true): messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Amp bind failure **fails mesh start** (D10 — no TCP underlay fallback). `enable_amp_stack=false` leaves peer mesh off |
+| **Peer mesh (AMP)** | **Peer data exchange** when `libp2p.mesh_enabled` (default true): messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Amp bind failure **fails mesh start** (D10 — no TCP underlay fallback). `mesh_enabled=false` leaves peer mesh off |
 
 ## Settlement (pricing)
 
@@ -23,7 +23,7 @@ Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects
 
 ## Amp mesh (D10)
 
-**AMP** ([`projects/adp`](../../projects/adp/)) is the only product underlay when `enable_amp_stack` is on: UDP + MSH + channels; ch0 replaces Identify; Amp UDP accept is always on. MeshHost does **not** start TCP listen, Identify, DialBack, or libp2p circuit/media-relay hosting.
+**AMP** ([`projects/adp`](../../projects/adp/)) is the only product underlay when `mesh_enabled` is on: UDP + MSH + channels; ch0 replaces Identify; Amp UDP accept is always on. MeshHost does **not** start TCP listen, Identify, DialBack, or libp2p circuit/media-relay hosting.
 
 **LAN keep:** mDNS TXT `amp_udp=`, PreferLocal / invite Amp multiaddrs (`BuildAmpLanAdvertisedAddrs`), contact/ch0 ADP addrs. **WAN inbound chrome:** Amp dial-back (D8) + optional UPnP UDP; needs ADP bootstrap peers for seed dial.
 

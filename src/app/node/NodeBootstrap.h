@@ -18,9 +18,6 @@ struct NodeBootstrapOptions {
   char** argv = nullptr;
   std::string pin;
   std::string profile_override;
-  std::string listen_override;
-  /** When true, use desktop listen fallback (N016 opt-in). Default fail-loud. */
-  bool listen_fallback = false;
 };
 
 struct NodeBootstrapResult {

@@ -58,11 +58,10 @@ TEST(ConfigJsonTest, ResolvesPromotedMcpFallbacks) {
 TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   pbr::AppConfig config;
   config.libp2p.node_enabled = false;
-  config.libp2p.listen_multiaddr = "/ip4/0.0.0.0/tcp/18520";
   config.libp2p.bootstrap_peers = {
-      "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
+      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.libp2p.prefer_contacts_for_routing = false;
-  config.libp2p.enable_amp_stack = false;
+  config.libp2p.mesh_enabled = false;
   config.libp2p.amp_udp_port = 18518;
   config.libp2p.capabilities.circuit_relay = true;
   config.libp2p.capabilities.media_relay = false;
@@ -74,11 +73,13 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   const pbr::Object* libp2p = out.getObject("libp2p");
   ASSERT_NE(libp2p, nullptr);
   EXPECT_EQ(libp2p->getIf<bool>("node_enabled"), false);
-  EXPECT_EQ(libp2p->getString("listen_multiaddr"), "/ip4/0.0.0.0/tcp/18520");
+  EXPECT_FALSE(libp2p->contains("listen_multiaddr"));
+  EXPECT_FALSE(libp2p->contains("enable_amp_stack"));
+  EXPECT_FALSE(libp2p->contains("max_connections"));
   ASSERT_NE(libp2p->getArray("bootstrap_peers"), nullptr);
   EXPECT_EQ(libp2p->getArray("bootstrap_peers")->elements.size(), 1u);
   EXPECT_EQ(libp2p->getIf<bool>("prefer_contacts_for_routing"), false);
-  EXPECT_EQ(libp2p->getIf<bool>("enable_amp_stack"), false);
+  EXPECT_EQ(libp2p->getIf<bool>("mesh_enabled"), false);
   EXPECT_EQ(libp2p->getNonNegInt("amp_udp_port"), 18518);
   const pbr::Object* caps = libp2p->getObject("capabilities");
   ASSERT_NE(caps, nullptr);
@@ -88,11 +89,10 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   pbr::AppConfig parsed;
   pbr::AppConfigFromObject(out, parsed);
   EXPECT_FALSE(parsed.libp2p.node_enabled);
-  EXPECT_EQ(parsed.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18520");
   ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.libp2p.bootstrap_peers[0], config.libp2p.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.libp2p.prefer_contacts_for_routing);
-  EXPECT_FALSE(parsed.libp2p.enable_amp_stack);
+  EXPECT_FALSE(parsed.libp2p.mesh_enabled);
   EXPECT_EQ(parsed.libp2p.amp_udp_port, 18518);
   EXPECT_TRUE(parsed.libp2p.capabilities.circuit_relay);
   EXPECT_FALSE(parsed.libp2p.capabilities.media_relay);

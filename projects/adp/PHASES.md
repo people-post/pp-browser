@@ -121,7 +121,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 ### D9 — Retire legacy underlay
 
 - [x] `AmpStack` composition helper (`Endpoint` + `MeshRuntime`)
-- [x] Attach `AmpStack` to `MeshHost` (parallel; `enable_amp_stack` / `AttachAmpStack`; [A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys))
+- [x] Attach `AmpStack` to `MeshHost` (`mesh_enabled` / `AttachAmpStack`; [A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys))
 - [x] Enable Amp in product node/MessagingHub start (default on; soft-fail)
 - [x] Chat + history single transport entry via Amp when `MeshHost::Amp()` is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Call-media single transport entry via `CallMediaAmpTransport` / `CallMediaLegCoordinator` when Amp is up; `kCallMediaAdpOpusDogfood=false`
@@ -136,7 +136,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D10 — Clean TCP mesh drop
 
-- [x] Hard-require Amp (`enable_amp_stack`): Amp bind/start failure fails mesh start (no TCP underlay fallback)
+- [x] Hard-require Amp (`mesh_enabled`): Amp bind/start failure fails mesh start (no TCP underlay fallback)
 - [x] PreferLocal / invite + LAN mDNS work Amp-only (`BuildAmpLanAdvertisedAddrs`, mDNS `amp_udp` without TCP bind)
 - [x] Product composition Amp-only (chat/history/blob/call-media/SoftMigrate); collapse libp2p L4 branches
 - [x] No product `Libp2pHost` / `PeerSessionManager` when Amp owns mesh; N025 TCP ephemeral retired (Amp accept + mDNS)

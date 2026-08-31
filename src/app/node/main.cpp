@@ -1,5 +1,4 @@
 #include "app/node/NodeBootstrap.h"
-#include "app/node/NodeEnvOverlay.h"
 #include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
@@ -37,13 +36,11 @@ void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0 << " [options]\n"
       << "\n"
-      << "Headless Brief mesh node (N011). Always Node; fail-loud listen by default (N016).\n"
+      << "Headless Brief mesh node (N011). Always Node.\n"
       << "Precedence: CLI flags → environment → config file → defaults.\n"
       << "\n"
       << "Options:\n"
       << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG)\n"
-      << "  --listen <multiaddr>  Override libp2p listen (or PP_NODE_LISTEN)\n"
-      << "  --listen-fallback     Allow desktop-style port fallback (or PP_NODE_LISTEN_FALLBACK)\n"
       << "  --status              Print reachability JSON and exit (nr ops)\n"
       << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
       << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
@@ -57,7 +54,7 @@ void PrintUsage(const char* argv0) {
       << "  --help                Show this help\n"
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
-      << "  PP_NODE_DATA_DIR, PP_NODE_LISTEN, PP_NODE_BOOTSTRAP_PEERS,\n"
+      << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
       << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
       << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
@@ -89,11 +86,7 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
   if (boot.mesh) {
-    if (!boot.mesh->AmpListenMultiaddr().empty()) {
-      snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
-    } else {
-      snap.listen_multiaddr = boot.mesh->BoundListenMultiaddr();
-    }
+    snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
     if (boot.mesh->Amp()) {
       snap.peer_id = boot.mesh->Amp()->LocalPeerId();
     }
@@ -113,11 +106,6 @@ int main(int argc, char** argv) {
   std::string pin;
   // Env defaults; CLI overwrites below (CLI → env → file).
   std::string profile_override = EnvOrEmpty("PP_NODE_PROFILE");
-  std::string listen_override; // CLI only; PP_NODE_LISTEN applied in Bootstrap
-  bool listen_fallback = false;
-  if (auto from_env = pbr::ParsePpNodeBoolEnv(EnvOrEmpty("PP_NODE_LISTEN_FALLBACK"))) {
-    listen_fallback = *from_env;
-  }
   bool print_status = false;
   std::string status_addr_spec =
       std::string(pbr::kDefaultStatusHttpBindHost) + ":" + std::to_string(pbr::kDefaultStatusHttpBindPort);
@@ -135,8 +123,6 @@ int main(int argc, char** argv) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--sandbox") == 0) {
       // Handled by ResolveSandboxModeFromLaunch below.
-    } else if (std::strcmp(argv[i], "--listen-fallback") == 0) {
-      listen_fallback = true;
     } else if (std::strcmp(argv[i], "--status") == 0) {
       print_status = true;
     } else if (std::strcmp(argv[i], "--status-addr") == 0 && i + 1 < argc) {
@@ -147,8 +133,6 @@ int main(int argc, char** argv) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[++i];
-    } else if (std::strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
-      listen_override = argv[++i];
     } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       ++i; // Config::Load reads --config from argv
     } else {
@@ -176,8 +160,6 @@ int main(int argc, char** argv) {
   options.argv = argv;
   options.pin = pin;
   options.profile_override = profile_override;
-  options.listen_override = listen_override;
-  options.listen_fallback = listen_fallback;
 
   auto boot = pbr::BootstrapPpNode(options);
   if (!boot) {

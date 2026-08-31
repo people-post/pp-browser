@@ -77,15 +77,16 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
   "registration": { "base_url": "https://www.brief.global/api/relay" },
   "libp2p": {
     "node_enabled": true,
-    "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
+    "mesh_enabled": true,
+    "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
+      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
     ]
   }
 }
 ```
 
-**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no listen). Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
+**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
 Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to those defaults; production never falls back to in-process mocks (`Mock*Client` is test-only).
 
 ## Relay envelope (target — D056, D090)

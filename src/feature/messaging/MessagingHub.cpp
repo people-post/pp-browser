@@ -224,8 +224,6 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   const Libp2pRole role = ResolveLibp2pRole(libp2p_cfg);
 
   MeshHostConfig mesh_cfg;
-  mesh_cfg.host.listen_enabled = (role == Libp2pRole::Node);
-  mesh_cfg.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
     mesh_cfg.host.device_ml_dsa_private_key = *priv;
   }
@@ -249,8 +247,8 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
       on_reachability_updated_();
     }
   };
-  mesh_cfg.enable_amp_stack = libp2p_cfg.enable_amp_stack && mesh_cfg.host.device_ml_dsa_private_key &&
-                              mesh_cfg.host.device_ml_dsa_public_key;
+  mesh_cfg.mesh_enabled = libp2p_cfg.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
+                          mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
       libp2p_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(libp2p_cfg.amp_udp_port);
   mesh_cfg.bootstrap_peers = libp2p_cfg.bootstrap_peers;
@@ -262,10 +260,10 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     mesh_.reset();
     return started.error();
   }
-  if (mesh_cfg.enable_amp_stack) {
+  if (mesh_cfg.mesh_enabled) {
     log().info << "amp stack listen=" << mesh_->AmpListenMultiaddr();
   } else {
-    log().info << "amp stack disabled (enable_amp_stack=false); peer mesh underlay off";
+    log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
   return {};

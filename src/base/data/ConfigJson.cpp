@@ -354,18 +354,12 @@ Object Libp2pConfigToObject(const Libp2pConfig& config) {
   }
 
   Object object;
-  object.set("listen_multiaddr", config.listen_multiaddr);
   object.set("node_enabled", config.node_enabled);
   object.set("bootstrap_peers", makeArray(std::move(peers)));
   object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
   object.set("mesh_publish", config.mesh_publish);
-  object.setJsonUInt("max_connections", config.max_connections);
-  object.setJsonUInt("max_concurrent_dials", config.max_concurrent_dials);
-  object.set("dial_timeout_ms", static_cast<int64_t>(config.dial_timeout_ms));
-  object.set("idle_ttl_ms", static_cast<int64_t>(config.idle_ttl_ms));
-  object.set("dial_failure_backoff_ms", static_cast<int64_t>(config.dial_failure_backoff_ms));
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
-  object.set("enable_amp_stack", config.enable_amp_stack);
+  object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("capabilities", Libp2pCapabilitiesToObject(config.capabilities));
   object.set("pricing", Libp2pPricingToObject(config.pricing));
@@ -374,9 +368,6 @@ Object Libp2pConfigToObject(const Libp2pConfig& config) {
 }
 
 void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
-  if (auto listen_multiaddr = object.getString("listen_multiaddr")) {
-    config.listen_multiaddr = *listen_multiaddr;
-  }
   if (auto node_enabled = object.getIf<bool>("node_enabled")) {
     config.node_enabled = *node_enabled;
   }
@@ -399,26 +390,11 @@ void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
   if (auto mesh_publish = object.getIf<bool>("mesh_publish")) {
     config.mesh_publish = *mesh_publish;
   }
-  if (auto max_connections = object.getNonNegInt("max_connections")) {
-    config.max_connections = static_cast<size_t>(*max_connections);
-  }
-  if (auto max_concurrent_dials = object.getNonNegInt("max_concurrent_dials")) {
-    config.max_concurrent_dials = static_cast<size_t>(*max_concurrent_dials);
-  }
-  if (auto dial_timeout_ms = ReadI64(object, "dial_timeout_ms")) {
-    config.dial_timeout_ms = static_cast<int>(*dial_timeout_ms);
-  }
-  if (auto idle_ttl_ms = ReadI64(object, "idle_ttl_ms")) {
-    config.idle_ttl_ms = static_cast<int>(*idle_ttl_ms);
-  }
-  if (auto dial_failure_backoff_ms = ReadI64(object, "dial_failure_backoff_ms")) {
-    config.dial_failure_backoff_ms = static_cast<int>(*dial_failure_backoff_ms);
-  }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
   }
-  if (auto enable_amp = object.getIf<bool>("enable_amp_stack")) {
-    config.enable_amp_stack = *enable_amp;
+  if (auto mesh_enabled = object.getIf<bool>("mesh_enabled")) {
+    config.mesh_enabled = *mesh_enabled;
   }
   if (auto amp_udp_port = object.getNonNegInt("amp_udp_port")) {
     config.amp_udp_port = static_cast<int>(*amp_udp_port);

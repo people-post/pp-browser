@@ -79,7 +79,7 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 | dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
 | media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |
 
-When `enable_amp_stack` succeeds, `MeshHost` skips libp2p Identify + TCP mesh listen (D9 step 6). Amp framing: [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md).
+When `mesh_enabled` succeeds, `MeshHost` skips libp2p Identify + TCP mesh listen (D9 step 6). Amp framing: [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md).
 
 ## Application payload (inside the JSON frame)
 

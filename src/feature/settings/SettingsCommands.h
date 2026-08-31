@@ -56,6 +56,8 @@ struct SettingsCommands {
   /** Messaging status without holding MessagingHub*. */
   std::function<bool()> messaging_ready;
   std::function<std::string()> last_libp2p_error;
+  /** Runtime Amp listen multiaddr (empty when mesh is down). */
+  std::function<std::string()> amp_listen_multiaddr;
   std::function<SettingsReachabilityView()> load_reachability;
   /** Refresh Me / Network attention dots after reachability nudge ack. */
   std::function<void()> refresh_nav_badges;

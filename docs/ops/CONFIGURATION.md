@@ -28,7 +28,6 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_BROWSER_PIN` | profile unlock | Required (or `--pin`). Secret — never bake into images. |
 | `PP_BROWSER_CONFIG` | config file path | Or `--config` |
 | `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
-| `PP_NODE_LISTEN` | `libp2p.listen_multiaddr` | Legacy TCP field (unused when Amp owns mesh) |
 | `PP_NODE_AMP_UDP_PORT` | `libp2p.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
 | `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/1.0.0/p2p/…`) |
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
@@ -37,7 +36,6 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
-| `PP_NODE_LISTEN_FALLBACK` | busy-port fallback | Or `--listen-fallback`; default fail-loud |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
 | `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for both `/healthz` and `/status` |
 
@@ -149,17 +147,11 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
   "registration": { "base_url": "https://www.brief.global/api/relay" },
   "libp2p": {
     "node_enabled": true,
-    "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
+    "mesh_enabled": true,
+    "amp_udp_port": 0,
     "bootstrap_peers": [
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
-    ],
-    "amp_udp_port": 0,
-    "enable_amp_stack": true,
-    "max_connections": 48,
-    "max_concurrent_dials": 6,
-    "dial_timeout_ms": 8000,
-    "idle_ttl_ms": 180000,
-    "dial_failure_backoff_ms": 30000
+    ]
   }
 }
 ```
@@ -168,7 +160,7 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/base/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
-- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`enable_amp_stack`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `enable_amp_stack=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP seed (`/udp/443/adp/1.0.0/…`) for SoftMigrate + dial-back. LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`).
+- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP seed (`/udp/443/adp/1.0.0/…`) for SoftMigrate + dial-back. LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 

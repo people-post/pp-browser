@@ -103,7 +103,7 @@ private:
     Rml::String registration_base_url;
     Rml::String node_enabled = "on";
     bool show_node_toggle = true;
-    Rml::String libp2p_listen_multiaddr;
+    Rml::String amp_listen_multiaddr;
     Rml::String libp2p_status_message;
     Rml::String reachability_status_label;
     Rml::String reachability_summary;

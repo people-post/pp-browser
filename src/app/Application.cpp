@@ -509,6 +509,15 @@ bool Application::Initialize(const char* window_title) {
     }
     return facade.LastLibp2pError();
   };
+  settings_commands.amp_listen_multiaddr = [&facade]() -> std::string {
+    if (!facade.IsInitialized()) {
+      return {};
+    }
+    if (const MeshHost* mesh = facade.Hub().Mesh()) {
+      return mesh->AmpListenMultiaddr();
+    }
+    return {};
+  };
   settings_commands.load_reachability = [&facade]() {
     SettingsReachabilityView view;
     if (!facade.IsInitialized()) {

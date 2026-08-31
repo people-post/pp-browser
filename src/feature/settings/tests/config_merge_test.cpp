@@ -1,5 +1,4 @@
 #include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
 #include "base/data/LlmPreset.h"
 #include "feature/settings/SettingsLogic.h"
 #include "feature/settings/SettingsUiState.h"
@@ -110,20 +109,15 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   network_state.directory_base_url.clear();
   network_state.registration_base_url.clear();
   network_state.node_enabled = "off";
-  network_state.libp2p_listen_multiaddr = pbr::kPreferredLibp2pListenMultiaddr;
   const pbr::AppConfig network = pbr::ApplyNetworkSettingsDraft(defaults, network_state);
   EXPECT_EQ(network.relay.base_url, defaults.relay.base_url);
   EXPECT_EQ(network.directory.base_url, defaults.directory.base_url);
   EXPECT_EQ(network.registration.base_url, defaults.registration.base_url);
   EXPECT_FALSE(network.libp2p.node_enabled);
   EXPECT_FALSE(network.libp2p.bootstrap_peers.empty());
-  EXPECT_EQ(network.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18517");
 
-  pbr::AppConfig stale_base = defaults;
-  stale_base.libp2p.listen_multiaddr = "/ip4/127.0.0.1/tcp/9999";
-  pbr::SettingsUiState reset_listen = network_state;
-  reset_listen.node_enabled = "on";
-  reset_listen.libp2p_listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
-  const pbr::AppConfig after_reset = pbr::ApplyNetworkSettingsDraft(stale_base, reset_listen);
-  EXPECT_EQ(after_reset.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18517");
+  pbr::SettingsUiState reset_node = network_state;
+  reset_node.node_enabled = "on";
+  const pbr::AppConfig after_reset = pbr::ApplyNetworkSettingsDraft(defaults, reset_node);
+  EXPECT_TRUE(after_reset.libp2p.node_enabled);
 }

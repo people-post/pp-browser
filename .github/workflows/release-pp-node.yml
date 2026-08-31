@@ -179,7 +179,8 @@ jobs:
           docker rm -f pp-node-ci-smoke >/dev/null 2>&1 || true
           docker run -d --name pp-node-ci-smoke \
             -e PP_BROWSER_PIN=ci-smoke-pin \
-            -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/18517 \
+            -e PP_NODE_AMP_UDP_PORT=18517 \
+            -p 18517:18517/udp \
             -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
             -p 18518:18518 \
             "${PRIMARY_TAG}"

@@ -451,8 +451,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      ToolDefinition{"get_network_settings", "Read mesh/network participation settings (node, relays, prefer contacts) and "
-                                     "listen multiaddr. Does not change endpoints.", MustSchema(R"json({"type":"object","properties":{}})json")},
+      ToolDefinition{"get_network_settings", "Read mesh/network participation settings (node, relays, prefer contacts, "
+                                     "mesh_enabled, amp_udp_port). Does not change endpoints.", MustSchema(R"json({"type":"object","properties":{}})json")},
       Meta("network", "read", false),
       [ports](const Object&) -> Roe<std::string> {
          auto store = RequireStore(ports);
@@ -462,7 +462,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          const Libp2pConfig& libp2p = (*store)->Snapshot().config.libp2p;
          Object out;
          out.set("node_enabled", libp2p.node_enabled);
-         out.set("listen_multiaddr", libp2p.listen_multiaddr);
+         out.set("amp_udp_port", static_cast<int64_t>(libp2p.amp_udp_port));
+         out.set("mesh_enabled", libp2p.mesh_enabled);
          out.set("prefer_contacts_for_routing", libp2p.prefer_contacts_for_routing);
          out.set("circuit_relay", libp2p.capabilities.circuit_relay);
          out.set("media_relay", libp2p.capabilities.media_relay);
