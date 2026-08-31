@@ -114,6 +114,14 @@
 - `MessagingHub::ApplyMeshAdmissionPolicies` mirrors admission onto Amp coordinators
 - **SoftMigrate stays on libp2p** (`MediaRelayService` / `CircuitRelayService`) — Amp media-relay still quote/attach-only (no Subscribe/SendFrame/local hop); Amp circuit returns `ChannelSession`, not a stream for SoftMigrate fan-out
 
+## Landed (D9 step 5b — media-relay SoftMigrate single entry)
+
+- **`AmpMediaRelayCoordinator` DATA plane** — Subscribe, SendFrame, AttachAsLocalHop, StartClientFrameReader, Detach, host fan-out on `ChannelSession`
+- **`AmpMediaRelayClient`** — blocking `IMediaRelayClient` over coordinator ([A020])
+- **`CallStack::WireMediaRelayDeps`** picks Amp when `MeshHost::AmpMediaRelayCoord()` is started; libp2p fallback unchanged
+- **`PeerSessionDialRegistry`** mirrors ADP endpoints to Amp `PeerLinkManager` when on Amp path
+- **Circuit SoftMigrate / NAT** still libp2p (`TryEnsureCircuitHopReachable`) until Amp circuit adopt lands
+
 ## Plan adjustments (2026-08-31)
 
 | Change | Why |
@@ -130,7 +138,7 @@
 
 ## Next (implementation)
 
-1. **D9 step 5b** — Amp SoftMigrate fan-out (Subscribe/SendFrame/local hop) + call-media adopt bridged Session
+1. **D9 step 5c** — Amp circuit adopt for SoftMigrate NAT + call-media bridged Session
 2. **D8 optional** — AMP dial-back when retiring libp2p Identify
 3. **D9** — delete dogfood headers + TCP call-media path; update NETWORKING / CALLS
 
@@ -145,7 +153,8 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | **Done** — MessagingHub composition; mDNS `amp_udp` + Identify Amp MA |
 | 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | **Done** — `CallMediaAmpTransport` + `ICallMediaTransport`; dogfood gate **false** |
 | 5a | MeshHost owns Amp circuit + media-relay; multiplex IoTick; admission | **Done** — SoftMigrate still libp2p |
-| 5b | SoftMigrate / call-media circuit single entry via Amp | Needs Amp fan-out + adopt Session |
+| 5b | SoftMigrate media-relay single entry via Amp | **Done** — circuit/NAT still libp2p |
+| 5c | Amp circuit adopt + SoftMigrate NAT | Needs `InstallAmpCircuitHop` / adopt Session |
 | 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 

@@ -6,6 +6,7 @@
 #include "base/p2p/MediaRelayLogic.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -19,6 +20,10 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+inline uint64_t SubKey(const uint32_t stream_id, const uint16_t channel_id) {
+  return (static_cast<uint64_t>(stream_id) << 16) | channel_id;
+}
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -62,15 +67,33 @@ struct AmpMediaRelayCoordinator::Impl {
   std::atomic<uint64_t> next_id{1};
   amp::MeshRuntime::IoTickId io_tick_id = 0;
 
+  struct AmpHostParticipant {
+    std::string peer_id;
+    std::shared_ptr<amp::ChannelSession> channel;
+    FrameHandler local_on_frame;
+    std::unordered_set<uint64_t> subscriptions;
+    std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
+  };
+
+  struct AmpHostSession {
+    std::string call_id;
+    std::string session_token;
+    std::vector<std::shared_ptr<AmpHostParticipant>> participants;
+  };
+
+  struct ClientState {
+    std::shared_ptr<amp::ChannelSession> channel;
+    std::string hop_peer_key;
+    std::string call_id;
+    FrameHandler on_frame;
+    bool reader_started = false;
+    std::unordered_set<uint64_t> subscriptions;
+    std::function<void()> transport_lost_handler;
+  };
+
   struct PendingQuote {
     MediaRelayQuote quote;
     std::string call_id;
-  };
-
-  struct HostCallSession {
-    std::string call_id;
-    std::string session_token;
-    std::unordered_set<std::string> peers;
   };
 
   struct Session {
@@ -94,7 +117,11 @@ struct AmpMediaRelayCoordinator::Impl {
 
   std::unordered_map<uint64_t, std::unique_ptr<Session>> sessions;
   std::unordered_map<std::string, PendingQuote> quotes_by_id;
-  std::unordered_map<std::string, std::shared_ptr<HostCallSession>> hosts_by_call;
+  std::unordered_map<std::string, std::shared_ptr<AmpHostSession>> hosts_by_call;
+  ClientState client_;
+  std::shared_ptr<AmpHostParticipant> local_hop_part_;
+  std::shared_ptr<AmpHostSession> local_hop_session_;
+  std::string local_hop_peer_id_;
 
   void PostIo(std::function<void()> task) {
     if (runtime && task) {
@@ -198,6 +225,221 @@ struct AmpMediaRelayCoordinator::Impl {
     sessions.erase(session.id.value);
   }
 
+  AmpHostSession* FindHostSession(const std::string& call_id) {
+    auto it = hosts_by_call.find(call_id);
+    return it == hosts_by_call.end() ? nullptr : it->second.get();
+  }
+
+  void DetachClientLocked() {
+    if (client_.channel && !client_.channel->IsClosed()) {
+      client_.channel->CloseQuiet();
+    }
+    client_ = {};
+    if (local_hop_part_) {
+      local_hop_part_->local_on_frame = nullptr;
+      if (local_hop_session_) {
+        local_hop_session_->participants.erase(
+            std::remove_if(local_hop_session_->participants.begin(), local_hop_session_->participants.end(),
+                           [this](const std::shared_ptr<AmpHostParticipant>& p) {
+                             return p.get() == local_hop_part_.get();
+                           }),
+            local_hop_session_->participants.end());
+      }
+    }
+    local_hop_part_.reset();
+    local_hop_session_.reset();
+    local_hop_peer_id_.clear();
+  }
+
+  void Fanout(AmpHostSession& session, const std::string& from_peer, const MediaDataFrame& frame,
+              const std::vector<uint8_t>& body) {
+    const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
+    for (const auto& part : session.participants) {
+      if (!part || part->peer_id == from_peer) {
+        continue;
+      }
+      if (part->subscriptions.find(key) == part->subscriptions.end()) {
+        continue;
+      }
+      if (frame.channel_type == MediaChannelType::LatestLossy) {
+        auto it = part->last_lossy_seq.find(key);
+        if (ShouldDropStaleLossyFrame(it != part->last_lossy_seq.end(),
+                                      it != part->last_lossy_seq.end() ? it->second : 0, frame.seq,
+                                      frame.mark)) {
+          continue;
+        }
+        part->last_lossy_seq[key] = frame.seq;
+      }
+      if (part->local_on_frame) {
+        part->local_on_frame(frame);
+        continue;
+      }
+      if (part->channel) {
+        (void)part->channel->EnqueueOutbound(body);
+      }
+    }
+  }
+
+  bool HandleHostParticipantControl(const std::shared_ptr<AmpHostSession>& session,
+                                    const std::shared_ptr<AmpHostParticipant>& part, const Object& root) {
+    const std::string op = root.getString("op").value_or("");
+    const uint32_t stream_id = static_cast<uint32_t>(root.getNonNegInt("stream_id").value_or(0));
+    const uint16_t channel_id = static_cast<uint16_t>(root.getNonNegInt("channel_id").value_or(0));
+    if (op == "subscribe") {
+      part->subscriptions.insert(SubKey(stream_id, channel_id));
+      if (part->channel) {
+        Object ack;
+        ack.set("v", int64_t{1});
+        ack.set("ok", true);
+        ack.set("op", "subscribe");
+        part->channel->EnqueueOutbound(JsonToBody(DumpJson(ack)));
+      }
+      return true;
+    }
+    if (op == "unsubscribe") {
+      part->subscriptions.erase(SubKey(stream_id, channel_id));
+      if (part->channel) {
+        Object ack;
+        ack.set("v", int64_t{1});
+        ack.set("ok", true);
+        ack.set("op", "unsubscribe");
+        part->channel->EnqueueOutbound(JsonToBody(DumpJson(ack)));
+      }
+      return true;
+    }
+    if (op == "detach") {
+      if (part->channel) {
+        Object ack;
+        ack.set("v", int64_t{1});
+        ack.set("ok", true);
+        ack.set("op", "detach");
+        part->channel->EnqueueOutbound(JsonToBody(DumpJson(ack)));
+        part->channel->CloseQuiet();
+      }
+      session->participants.erase(
+          std::remove_if(session->participants.begin(), session->participants.end(),
+                         [&](const std::shared_ptr<AmpHostParticipant>& p) { return p.get() == part.get(); }),
+          session->participants.end());
+      return false;
+    }
+    (void)session;
+    return true;
+  }
+
+  bool HandleHostParticipantFrame(const std::shared_ptr<AmpHostSession>& session,
+                                  const std::shared_ptr<AmpHostParticipant>& part,
+                                  const std::vector<uint8_t>& body) {
+    if (body.empty()) {
+      return true;
+    }
+    if (body[0] == '{') {
+      auto root = TryParseObject(BodyToJson(body));
+      if (!root) {
+        return true;
+      }
+      return HandleHostParticipantControl(session, part, *root);
+    }
+    auto frame = DecodeMediaDataFrame(body);
+    if (!frame) {
+      return true;
+    }
+    Fanout(*session, part->peer_id, *frame, body);
+    return true;
+  }
+
+  bool HandleClientMediaFrame(const std::vector<uint8_t>& body) {
+    if (body.empty()) {
+      return true;
+    }
+    if (body[0] == '{') {
+      return true; // subscribe ack / control
+    }
+    if (!client_.reader_started || !client_.on_frame) {
+      return true;
+    }
+    auto frame = DecodeMediaDataFrame(body);
+    if (!frame) {
+      return true;
+    }
+    const uint64_t key = SubKey(frame->stream_id, frame->channel_id);
+    if (client_.subscriptions.find(key) == client_.subscriptions.end()) {
+      return true;
+    }
+    client_.on_frame(*frame);
+    return true;
+  }
+
+  void RebindClientMediaHandlers() {
+    if (!client_.channel) {
+      return;
+    }
+    client_.channel->SetFrameHandler([this](Roe<std::vector<uint8_t>> frame) {
+      if (!frame) {
+        HandleClientTransportLost("channel failed");
+        return false;
+      }
+      return HandleClientMediaFrame(*frame);
+    });
+    client_.channel->SetClosedCallback([this](const char* reason) { HandleClientTransportLost(reason); });
+  }
+
+  void HandleClientTransportLost(const char* reason) {
+    std::function<void()> handler;
+    {
+      std::lock_guard lock(mu);
+      if (!client_.channel) {
+        return;
+      }
+      client_.channel.reset();
+      client_.subscriptions.clear();
+      client_.reader_started = false;
+      handler = std::move(client_.transport_lost_handler);
+    }
+    (void)reason;
+    if (handler) {
+      handler();
+    }
+  }
+
+  void RebindHostParticipantHandlers(const std::shared_ptr<AmpHostSession>& session,
+                                     const std::shared_ptr<AmpHostParticipant>& part) {
+    if (!part || !part->channel) {
+      return;
+    }
+    part->channel->SetFrameHandler([this, session, part](Roe<std::vector<uint8_t>> frame) {
+      if (!frame) {
+        if (part->channel) {
+          part->channel->CloseQuiet();
+        }
+        std::lock_guard lock(mu);
+        session->participants.erase(
+            std::remove_if(session->participants.begin(), session->participants.end(),
+                           [&](const std::shared_ptr<AmpHostParticipant>& p) { return p.get() == part.get(); }),
+            session->participants.end());
+        return false;
+      }
+      return HandleHostParticipantFrame(session, part, *frame);
+    });
+  }
+
+  void AdoptClientChannel(Session& session) {
+    auto channel = session.channel;
+    const std::string hop = session.hop_peer_key;
+    const std::string call_id = session.call_id;
+    FrameHandler on_frame = std::move(session.on_frame);
+    sessions.erase(session.id.value);
+    session.channel.reset();
+
+    DetachClientLocked();
+    client_.channel = std::move(channel);
+    client_.hop_peer_key = hop;
+    client_.call_id = call_id;
+    client_.on_frame = std::move(on_frame);
+    client_.reader_started = false;
+    client_.subscriptions.clear();
+    RebindClientMediaHandlers();
+  }
+
   void BindClientChannel(Session& session, amp::PeerLink& link, const uint32_t channel_id) {
     session.channel = std::make_shared<amp::ChannelSession>();
     const MediaRelaySessionId id = session.id;
@@ -274,10 +516,7 @@ struct AmpMediaRelayCoordinator::Impl {
               out.ok = true;
               out.session_token = session->session_token;
               FinishAttach(*session, std::move(out));
-              return true;
-            }
-            if (session->phase == MediaRelayBundlePhase::Attached) {
-              // Control JSON or media frames — D7b ignores DATA beyond handshake.
+              AdoptClientChannel(*session);
               return true;
             }
           }
@@ -442,10 +681,28 @@ struct AmpMediaRelayCoordinator::Impl {
                     if (!frame || stopped.load(std::memory_order_acquire)) {
                       return false;
                     }
+                    if (frame->empty()) {
+                      return true;
+                    }
+                    if (frame->front() != '{') {
+                      std::lock_guard lock(mu);
+                      if (host_sm->phase != MediaRelayAttachPhase::Attached || host_sm->call_id.empty()) {
+                        return true;
+                      }
+                      auto host_it = hosts_by_call.find(host_sm->call_id);
+                      if (host_it == hosts_by_call.end()) {
+                        return true;
+                      }
+                      for (const auto& part : host_it->second->participants) {
+                        if (part && part->channel.get() == channel.get()) {
+                          return HandleHostParticipantFrame(host_it->second, part, *frame);
+                        }
+                      }
+                      return true;
+                    }
                     auto root = TryParseObject(BodyToJson(*frame));
                     if (!root) {
-                      RejectHost(*channel, *host_sm, "invalid media-relay json",
-                                 MediaRelayAttachEvent::Cancel);
+                      RejectHost(*channel, *host_sm, "invalid media-relay json", MediaRelayAttachEvent::Cancel);
                       return false;
                     }
                     const std::string op = root->getString("op").value_or("");
@@ -557,21 +814,45 @@ struct AmpMediaRelayCoordinator::Impl {
                                    MediaRelayAttachEvent::AdmitFail);
                         return false;
                       }
-                      auto host = hosts_by_call[call_id];
+                      std::shared_ptr<AmpHostSession> host = hosts_by_call[call_id];
                       if (!host) {
-                        host = std::make_shared<HostCallSession>();
+                        host = std::make_shared<AmpHostSession>();
                         host->call_id = call_id;
                         host->session_token = token;
                         hosts_by_call[call_id] = host;
                       }
-                      host->peers.insert(host_sm->remote);
+                      auto part = std::make_shared<AmpHostParticipant>();
+                      part->peer_id = host_sm->remote;
+                      part->channel = channel;
+                      host->participants.push_back(part);
+                      PostIo([this, host, part] { RebindHostParticipantHandlers(host, part); });
                       Object attach_resp;
                       attach_resp.set("v", int64_t{1});
                       attach_resp.set("ok", true);
                       attach_resp.set("op", "attach");
                       channel->EnqueueOutbound(JsonToBody(DumpJson(attach_resp)));
                       (void)host_sm->Apply(MediaRelayAttachEvent::AttachOk);
-                      return true; // keep open for future DATA (D7b+)
+                      return true;
+                    }
+                    if (host_sm->phase == MediaRelayAttachPhase::Attached) {
+                      std::shared_ptr<AmpHostSession> host;
+                      std::shared_ptr<AmpHostParticipant> part;
+                      for (auto& [call_id_key, host_session] : hosts_by_call) {
+                        (void)call_id_key;
+                        for (const auto& candidate : host_session->participants) {
+                          if (candidate && candidate->channel.get() == channel.get()) {
+                            host = host_session;
+                            part = candidate;
+                            break;
+                          }
+                        }
+                        if (part) {
+                          break;
+                        }
+                      }
+                      if (host && part) {
+                        return HandleHostParticipantControl(host, part, *root);
+                      }
                     }
                     RejectHost(*channel, *host_sm, "unsupported op", MediaRelayAttachEvent::OpUnsupported);
                     return false;
@@ -621,6 +902,7 @@ void AmpMediaRelayCoordinator::SetAdmissionPolicy(MediaRelayAdmissionPolicy poli
 void AmpMediaRelayCoordinator::AbortInflight() {
   impl_->PostIo([impl = impl_.get()] {
     std::lock_guard lock(impl->mu);
+    impl->DetachClientLocked();
     std::vector<uint64_t> ids;
     for (auto& [id, _] : impl->sessions) {
       ids.push_back(id);
@@ -747,6 +1029,142 @@ MediaRelayBundlePhase AmpMediaRelayCoordinator::Phase(const MediaRelaySessionId 
 
 bool AmpMediaRelayCoordinator::IsSessionActive(const MediaRelaySessionId id) const {
   return MediaRelayBundlePhaseIsActive(Phase(id));
+}
+
+void AmpMediaRelayCoordinator::StartClientFrameReader() {
+  std::lock_guard lock(impl_->mu);
+  impl_->client_.reader_started = true;
+}
+
+void AmpMediaRelayCoordinator::SetClientTransportLostHandler(std::function<void()> handler) {
+  std::lock_guard lock(impl_->mu);
+  impl_->client_.transport_lost_handler = std::move(handler);
+}
+
+Roe<MediaRelayAttachResult> AmpMediaRelayCoordinator::AttachAsLocalHop(
+    const std::string& call_id, std::function<void(MediaDataFrame)> on_frame) {
+  if (call_id.empty()) {
+    return Error("missing call_id");
+  }
+  if (!IsStarted()) {
+    return Error("media_relay not started");
+  }
+  const std::string local_peer = runtime_.Links().LocalCapability().local_peer_id;
+  if (local_peer.empty()) {
+    return Error("amp media-relay: missing local peer id");
+  }
+  std::lock_guard lock(impl_->mu);
+  if (impl_->local_hop_part_ && impl_->local_hop_session_ &&
+      impl_->local_hop_session_->call_id == call_id && impl_->local_hop_peer_id_ == local_peer) {
+    impl_->local_hop_part_->local_on_frame = std::move(on_frame);
+    MediaRelayAttachResult out;
+    out.ok = true;
+    out.session_token = impl_->local_hop_session_->session_token;
+    return out;
+  }
+  impl_->DetachClientLocked();
+  auto part = std::make_shared<AmpMediaRelayCoordinator::Impl::AmpHostParticipant>();
+  part->peer_id = local_peer;
+  part->local_on_frame = std::move(on_frame);
+  std::shared_ptr<AmpMediaRelayCoordinator::Impl::AmpHostSession> session;
+  if (auto it = impl_->hosts_by_call.find(call_id); it != impl_->hosts_by_call.end()) {
+    session = it->second;
+  } else {
+    session = std::make_shared<AmpMediaRelayCoordinator::Impl::AmpHostSession>();
+    session->call_id = call_id;
+    session->session_token = MakeSessionToken();
+    impl_->hosts_by_call[call_id] = session;
+  }
+  session->participants.erase(
+      std::remove_if(session->participants.begin(), session->participants.end(),
+                     [&](const std::shared_ptr<AmpMediaRelayCoordinator::Impl::AmpHostParticipant>& p) {
+                       return p && p->peer_id == part->peer_id && p->local_on_frame;
+                     }),
+      session->participants.end());
+  session->participants.push_back(part);
+  impl_->local_hop_part_ = part;
+  impl_->local_hop_session_ = session;
+  impl_->local_hop_peer_id_ = local_peer;
+  MediaRelayAttachResult out;
+  out.ok = true;
+  out.session_token = session->session_token;
+  return out;
+}
+
+Roe<void> AmpMediaRelayCoordinator::Subscribe(const uint32_t stream_id, const uint16_t channel_id) {
+  const uint64_t key = SubKey(stream_id, channel_id);
+  std::lock_guard lock(impl_->mu);
+  if (impl_->local_hop_part_) {
+    impl_->local_hop_part_->subscriptions.insert(key);
+    return {};
+  }
+  if (impl_->client_.subscriptions.count(key) != 0) {
+    return {};
+  }
+  if (!impl_->client_.channel) {
+    return Error("not attached");
+  }
+  impl_->client_.subscriptions.insert(key);
+  Object sub;
+  sub.set("v", int64_t{1});
+  sub.set("op", "subscribe");
+  sub.setJsonUInt("stream_id", stream_id);
+  sub.setJsonUInt("channel_id", channel_id);
+  if (!impl_->client_.channel->EnqueueOutbound(JsonToBody(DumpJson(sub)))) {
+    impl_->client_.subscriptions.erase(key);
+    return Error("not attached");
+  }
+  return {};
+}
+
+Roe<void> AmpMediaRelayCoordinator::SendFrame(const MediaDataFrame& frame) {
+  const std::vector<uint8_t> body = EncodeMediaDataFrame(frame);
+  std::shared_ptr<AmpMediaRelayCoordinator::Impl::AmpHostSession> session;
+  std::string from_peer;
+  {
+    std::lock_guard lock(impl_->mu);
+    if (impl_->local_hop_part_) {
+      session = impl_->local_hop_session_;
+      from_peer = impl_->local_hop_peer_id_;
+    } else if (impl_->client_.channel) {
+      if (!impl_->client_.channel->EnqueueOutbound(body)) {
+        return Error("not attached");
+      }
+      return {};
+    } else {
+      return Error("not attached");
+    }
+  }
+  if (session) {
+    impl_->Fanout(*session, from_peer, frame, body);
+  }
+  return {};
+}
+
+void AmpMediaRelayCoordinator::Detach() {
+  impl_->PostIo([impl = impl_.get()] {
+    std::lock_guard lock(impl->mu);
+    impl->DetachClientLocked();
+  });
+}
+
+bool AmpMediaRelayCoordinator::IsAttached() const {
+  std::lock_guard lock(impl_->mu);
+  return impl_->client_.channel != nullptr || impl_->local_hop_part_ != nullptr;
+}
+
+bool AmpMediaRelayCoordinator::IsLocalHopAttached() const {
+  std::lock_guard lock(impl_->mu);
+  return impl_->local_hop_part_ != nullptr;
+}
+
+double AmpMediaRelayCoordinator::PathPressure() const { return HealthSnapshot().path_pressure; }
+
+CallHopHealth AmpMediaRelayCoordinator::HealthSnapshot() const {
+  CallHopHealth health;
+  std::lock_guard lock(impl_->mu);
+  health.attached = impl_->client_.channel != nullptr || impl_->local_hop_part_ != nullptr;
+  return health;
 }
 
 } // namespace pbr

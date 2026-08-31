@@ -102,8 +102,10 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     caps.present = true;
     // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
     caps.media_relay = ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node &&
-                       config().libp2p.capabilities.media_relay && MediaRelay() &&
-                       MediaRelay()->IsStarted();
+                       config().libp2p.capabilities.media_relay &&
+                       ((mesh() && mesh()->Amp() && mesh()->AmpMediaRelayCoord() &&
+                         mesh()->AmpMediaRelayCoord()->IsStarted()) ||
+                        (MediaRelay() && MediaRelay()->IsStarted()));
     return caps;
   });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -173,7 +175,17 @@ void CallStack::WireMediaRelayDeps() {
   if (!call_sessions_) {
     return;
   }
-  media_relay_client_ = std::make_unique<MediaRelayServiceClient>(MediaRelay());
+  MeshHost* m = mesh();
+  const bool use_amp_relay =
+      m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
+  if (use_amp_relay) {
+    media_relay_client_ = std::make_unique<AmpMediaRelayClient>(
+        *m->AmpMediaRelayCoord(), [m]() { m->Tick(); }, m->Amp()->LocalPeerId());
+    log().info << "media-relay transport=amp";
+  } else {
+    media_relay_client_ = std::make_unique<MediaRelayServiceClient>(MediaRelay());
+    log().info << "media-relay transport=libp2p";
+  }
   PeerSessionManager* sessions = Runtime() ? Runtime()->Sessions() : nullptr;
   // Keep dial registry + libp2p media bridge stable across N025 listen sync — recreating them
   // mid-call drops pending answerer state and dangling dial pointers.
@@ -182,6 +194,7 @@ void CallStack::WireMediaRelayDeps() {
   } else {
     dial_registry_->SetSessions(sessions);
   }
+  dial_registry_->SetAmpLinks(use_amp_relay && m->Amp() ? &m->Amp()->Links() : nullptr);
   if (sessions && config().libp2p.capabilities.circuit_relay) {
     if (!circuit_hop_reach_) {
       circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
@@ -202,8 +215,9 @@ void CallStack::WireMediaRelayDeps() {
   // PreferLocal = durable Node hosting only. Mobile ephemeral Start() must not SoftMigrate-self
   // into the SFU hop (V028 / dogfood: Android hop crash → peer Connection reset).
   deps.prefer_local_as_hop = ResolveLibp2pRole(config().libp2p) == Libp2pRole::Node &&
-                             libp2p.capabilities.media_relay && MediaRelay() &&
-                             MediaRelay()->IsStarted();
+                             libp2p.capabilities.media_relay &&
+                             ((use_amp_relay && m->AmpMediaRelayCoord()->IsStarted()) ||
+                              (!use_amp_relay && MediaRelay() && MediaRelay()->IsStarted()));
   if (Runtime() && !Runtime()->BoundListenMultiaddr().empty()) {
     deps.local_listen_multiaddr = Runtime()->BoundListenMultiaddr();
   } else {
@@ -300,8 +314,8 @@ void CallStack::AbortCallMediaForShutdown() {
     m->AbortInflightCircuitRequests();
   }
   // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
-  if (MediaRelay()) {
-    MediaRelay()->Detach();
+  if (media_relay_client_) {
+    media_relay_client_->Detach();
   }
   // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
   // leave Connecting instead of sitting on a half-open stream after we detach.

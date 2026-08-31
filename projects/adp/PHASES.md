@@ -98,8 +98,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Wire `CallMediaLegCoordinator` into `CallStack` via `CallMediaAmpTransport` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Disable `kCallMediaAdpOpusDogfood` (legacy side-path idle; delete header in D9 step 7)
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — after TCP call-media path removed
-- [x] MeshHost owns Amp `CircuitTunnelCoordinator` + `AmpMediaRelayCoordinator` (hosting flags + admission); `MeshRuntime` multiplexed IoTick
-- [ ] SoftMigrate / call-media circuit single entry via Amp (fan-out + adopt Session) — D9 step 5b
+- [x] SoftMigrate media-relay single entry via `AmpMediaRelayClient` when Amp is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- [ ] Amp circuit adopt for SoftMigrate NAT (step 5c)
+- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — after TCP call-media path removed
 
 ### D7 — L4 port: circuit + media-relay
 
@@ -123,8 +124,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Enable Amp in product node/MessagingHub start (default on; soft-fail)
 - [x] Chat + history single transport entry via Amp when `MeshHost::Amp()` is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Call-media single transport entry via `CallMediaAmpTransport` / `CallMediaLegCoordinator` when Amp is up; `kCallMediaAdpOpusDogfood=false`
-- [x] Circuit / media-relay Amp ownership on MeshHost (step 5a) — SoftMigrate still libp2p
-- [ ] Circuit / media-relay SoftMigrate single entry (step 5b) — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
+- [x] Circuit / media-relay Amp ownership on MeshHost (step 5a) — hosting + admission
+- [x] SoftMigrate media-relay single entry (step 5b) — circuit/NAT still libp2p
+- [ ] Circuit adopt + SoftMigrate NAT (step 5c) — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello Opus path
