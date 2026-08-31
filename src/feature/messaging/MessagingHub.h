@@ -53,9 +53,6 @@ class ProfileSecretsService;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
-class Libp2pHost;
-class PeerSessionManager;
-class NodeRuntime;
 
 /**
  * App-only messaging composition root (also known as MessagingCore).
@@ -168,10 +165,6 @@ public:
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
-  /** Always null after A017 (TCP Host retired). Prefer Mesh()->Amp(). */
-  Libp2pHost* Libp2p();
-  /** Always null after A017. */
-  PeerSessionManager* Sessions() const;
   /** Last mesh start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
@@ -253,8 +246,6 @@ private:
   void StopLibp2p();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
-  /** Always null after A017. */
-  NodeRuntime* Runtime() const { return mesh_ ? mesh_->Runtime() : nullptr; }
   void ApplyMeshAdmissionPolicies();
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */

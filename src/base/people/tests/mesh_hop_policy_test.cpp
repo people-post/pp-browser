@@ -1,6 +1,6 @@
 #include "base/people/MeshHopPolicy.h"
 #include "base/people/RelayScope.h"
-#include "base/p2p/MediaRelayService.h"
+#include "base/p2p/MediaRelayTypes.h"
 
 #include <gtest/gtest.h>
 

@@ -60,7 +60,6 @@ MessagingContactsPorts MakeMessagingContactsPorts(MessagingHub& hub) {
     hub.P2p().RegisterPeerKemKey(peer_identity_kind, peer_identity_value, kem_public_key_b64, source);
   };
   ports.is_contact_reachable = [&hub](const Contact& contact) { return hub.IsContactReachable(contact); };
-  ports.sessions = [&hub]() { return hub.Sessions(); };
   return ports;
 }
 

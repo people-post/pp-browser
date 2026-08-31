@@ -531,7 +531,7 @@ void MessagingHub::RegisterContactEndpoints() {
 
 
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
-  return IsContactReachableForMessaging(contact, nullptr, relay_ != nullptr);
+  return IsContactReachableForMessaging(contact, relay_ != nullptr);
 }
 
 
@@ -1778,15 +1778,5 @@ IPushDeviceClient* MessagingHub::PushDevices() {
 IClientCompatClient* MessagingHub::ClientCompat() {
   return client_compat_;
 }
-
-Libp2pHost* MessagingHub::Libp2p() {
-  return nullptr;
-}
-
-
-PeerSessionManager* MessagingHub::Sessions() const {
-  return nullptr;
-}
-
 
 } // namespace pbr

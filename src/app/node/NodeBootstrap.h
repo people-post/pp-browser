@@ -32,11 +32,11 @@ struct NodeBootstrapResult {
   /** Node-owned profile vault / DEK service (holds identity DEK consumer). */
   std::unique_ptr<ProfileSecretsService> secrets;
   std::unique_ptr<IdentityStore> identity;
-  /** Shared libp2p mesh host: NodeRuntime + dial-back + relays + reachability. */
+  /** Shared Amp mesh host: AmpStack + L4 coordinators + reachability. */
   std::unique_ptr<MeshHost> mesh;
 };
 
-/** Headless node bootstrap: config + PIN unlock + NodeRuntime + dial-back (N011). */
+/** Headless node bootstrap: config + PIN unlock + Amp mesh + dial-back (N011). */
 Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options);
 
 } // namespace pbr

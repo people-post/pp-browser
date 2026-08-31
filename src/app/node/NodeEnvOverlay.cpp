@@ -81,6 +81,15 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   if (const char* peers = EnvOrNull("PP_NODE_BOOTSTRAP_PEERS")) {
     config.libp2p.bootstrap_peers = ParsePpNodeBootstrapPeersCsv(peers);
   }
+  if (const char* amp_udp = EnvOrNull("PP_NODE_AMP_UDP_PORT")) {
+    try {
+      const int port = std::stoi(amp_udp);
+      if (port >= 0 && port <= 65535) {
+        config.libp2p.amp_udp_port = port;
+      }
+    } catch (...) {
+    }
+  }
   if (const char* circuit = EnvOrNull("PP_NODE_CAP_CIRCUIT_RELAY")) {
     if (auto parsed = ParsePpNodeBoolEnv(circuit)) {
       config.libp2p.capabilities.circuit_relay = *parsed;

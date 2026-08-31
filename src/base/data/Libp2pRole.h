@@ -13,9 +13,9 @@ enum class Libp2pRole {
   Node,
 };
 
-/** Default Brief seed multiaddr (N002). */
+/** Default Brief seed ADP multiaddr (N002 / A017). Org `pp-node` must pin `amp_udp_port=443`. */
 inline constexpr const char* kDefaultLibp2pBootstrapPeer =
-    "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+    "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
 
 /** Preferred desktop Node listen (N003). */
 inline constexpr const char* kPreferredLibp2pListenMultiaddr = "/ip4/0.0.0.0/tcp/18517";

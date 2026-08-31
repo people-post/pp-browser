@@ -1,20 +1,10 @@
 #include "feature/messaging/ContactReachability.h"
 
 #include "base/people/ContactIdentity.h"
-#include "base/people/MeshHopPolicy.h"
 
 namespace pbr {
 
-class PeerSessionManager;
-
-bool IsContactStackDialable(const Contact& contact, const PeerSessionManager* /*sessions*/) {
-  // A017: TCP PeerSessionManager dialability retired; Amp reach uses multiaddrs / mDNS / hops.
-  (void)contact;
-  return false;
-}
-
-bool IsContactReachableForMessaging(const Contact& contact, const PeerSessionManager* sessions,
-                                    bool relay_configured) {
+bool IsContactReachableForMessaging(const Contact& contact, bool relay_configured) {
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
@@ -28,10 +18,7 @@ bool IsContactReachableForMessaging(const Contact& contact, const PeerSessionMan
       return true;
     }
   }
-  if (!contact.multiaddrs.empty()) {
-    return true;
-  }
-  return IsContactStackDialable(contact, sessions);
+  return !contact.multiaddrs.empty();
 }
 
 } // namespace pbr

@@ -300,10 +300,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
           "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
       return;
     }
-    if (contact.multiaddrs.empty() && ports.sessions &&
-        IsContactStackDialable(contact, ports.sessions())) {
-      detail.message_hint = "Direct link via address book (no pasted multiaddr).";
-    } else if (contact.multiaddrs.empty()) {
+    if (contact.multiaddrs.empty()) {
       detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
     } else {
       detail.message_hint = "";

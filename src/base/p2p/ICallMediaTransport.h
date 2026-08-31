@@ -63,7 +63,7 @@ struct CallMediaDirectCallbacks {
 
 /**
  * Single product entry for 1:1 call-media transport ([A020]).
- * Libp2p: CallMediaDirectService. Amp: CallMediaAmpTransport → CallMediaLegCoordinator.
+ * Amp: CallMediaAmpTransport → CallMediaLegCoordinator.
  */
 class ICallMediaTransport {
 public:

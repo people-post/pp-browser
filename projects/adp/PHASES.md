@@ -97,10 +97,10 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Shared `mesh_test_harness.h` + `MeshRuntime` for AMP L4 tests
 - [x] Wire `CallMediaLegCoordinator` into `CallStack` via `CallMediaAmpTransport` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Disable `kCallMediaAdpOpusDogfood` (legacy side-path idle; delete header in D9 step 7)
-- [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)) — after TCP call-media path removed
+- [x] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
 - [x] SoftMigrate media-relay single entry via `AmpMediaRelayClient` when Amp is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Amp circuit hop registry + SoftMigrate NAT reach (`AmpCircuitHopReach` / media-relay adopt)
-- [ ] Amp call-media circuit — nested Session ([A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session), [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
+- [x] Amp call-media circuit — nested Session ([A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session), [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
 
 ### D7 — L4 port: circuit + media-relay
 
@@ -108,7 +108,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
 - [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 - [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
-- [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — see [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
+- [x] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
 
 ### D8 — Reachability
 
@@ -141,8 +141,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Product composition Amp-only (chat/history/blob/call-media/SoftMigrate); collapse libp2p L4 branches
 - [x] No product `Libp2pHost` / `PeerSessionManager` when Amp owns mesh; N025 TCP ephemeral retired (Amp accept + mDNS)
 - [x] Delete TCP-only compose/unit tests (Amp twins retained); DialBack/Identify chrome deferred
-- [x] **A017 wave:** product/`pp_base_p2p` unlink Yamux/Noise Host (`p2p`); MeshHost Amp-only; PeerId via `p2p_peer_id`/`p2p_wire`; Host-only tests + probes skipped
-- [ ] Delete unused TCP L4 `.cpp` + shrink `src/lib/libp2p` transport tree ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only))
+- [x] **A017 wave:** delete idle TCP L4 sources; MeshHost Amp-only API; ADP Brief bootstrap; libp2p Host tree CMake-gated (default OFF)
+- [ ] Physical delete unused `src/lib/libp2p` Host/TCP/Yamux/Noise sources ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only))
 
 ---
 

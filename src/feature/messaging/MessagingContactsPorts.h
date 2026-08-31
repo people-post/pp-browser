@@ -16,8 +16,6 @@
 
 namespace pbr {
 
-class PeerSessionManager;
-
 /**
  * Contacts / directory / thread ports for UI presenters.
  * Application fills from MessagingHub. Clear via BindContactsPorts({}).
@@ -60,7 +58,6 @@ struct MessagingContactsPorts {
       register_peer_kem_key;
 
   std::function<bool(const Contact& contact)> is_contact_reachable;
-  std::function<const PeerSessionManager*()> sessions;
 };
 
 class MessagingHub;
