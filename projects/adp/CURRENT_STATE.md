@@ -53,13 +53,14 @@
 
 ## Landed (L4 call-media — D6 partial)
 
-- `AmpCallMediaDirectService` — `/pp-browser/call-media/1.0.0` hello + encrypted media on one Realtime `ChannelSession` (parallel stack; production still libp2p)
-- `pp_browser_p2p_test` — `AmpCallMediaDirectServiceTest.HelloAndEncryptedAudioRoundTrip`
+- `AmpCallMediaDirectService` — `/pp-browser/call-media/1.0.0` with **split channels**: Reliable `RealtimeControl` hello + BestEffort `Realtime` AEAD media (parallel stack; production still libp2p)
+- Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
+- `pp_browser_p2p_test` — 7× `AmpCallMediaDirectServiceTest` cases
 - Shared AMP test harness: `src/base/mesh/link/tests/mesh_test_harness.h`
 
 ## Next (implementation)
 
-1. **D6** — split hello/media channels, port remaining call-media gtests, retire `CallMediaAdpDogfood`
+1. **D6** — glare/dual-dial gtests, retire `CallMediaAdpDogfood`
 2. **D7** — circuit + media-relay on ChannelSession
 
 See [PHASES.md](PHASES.md) for full ordering.

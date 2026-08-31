@@ -55,15 +55,25 @@ std::string BuildHelloAckJson(const bool ok, const char* error = nullptr) {
 
 enum class AmpCallLeg {
   None,
-  AwaitingHelloAck,
+  ControlHello,
+  AwaitingMedia,
   Media,
 };
+
+void RunWorker(const AmpCallMediaDirectService::WorkerPost& post_worker, std::function<void()> task) {
+  if (post_worker) {
+    post_worker(std::move(task));
+  } else {
+    task();
+  }
+}
 
 } // namespace
 
 struct AmpCallMediaDirectService::Impl {
   amp::PeerLinkManager* links = nullptr;
   IoPump io_pump;
+  AmpCallMediaDirectService::WorkerPost post_worker;
   std::mutex mu;
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
@@ -72,9 +82,14 @@ struct AmpCallMediaDirectService::Impl {
 
   CallMediaDirectConnectParams active_params;
   CallMediaDirectCallbacks callbacks;
-  std::shared_ptr<amp::ChannelSession> session;
+  amp::PeerLink* active_link = nullptr;
+  std::shared_ptr<amp::ChannelSession> control_session;
+  std::shared_ptr<amp::ChannelSession> media_session;
   std::shared_ptr<std::promise<Roe<void>>> connect_promise;
   std::shared_ptr<std::atomic<bool>> connect_settled;
+  std::atomic<bool> control_ready{false};
+  std::atomic<bool> media_bound{false};
+  Clock::time_point connect_deadline{};
 
   void PumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
     while (!done() && Clock::now() < deadline) {
@@ -84,17 +99,32 @@ struct AmpCallMediaDirectService::Impl {
     }
   }
 
-  void ResetLocked() {
-    if (session) {
-      session->Close();
-    }
-    session.reset();
+  void ResetFieldsUnlocked() {
+    active_link = nullptr;
     callbacks = {};
     active_params = {};
     leg.store(AmpCallLeg::None, std::memory_order_release);
     phase.store(CallMediaSessionPhase::Idle, std::memory_order_release);
+    control_ready.store(false, std::memory_order_release);
+    media_bound.store(false, std::memory_order_release);
     connect_promise.reset();
     connect_settled.reset();
+  }
+
+  void ResetLocked() {
+    control_session.reset();
+    media_session.reset();
+    ResetFieldsUnlocked();
+  }
+
+  void OnChannelClosed() {
+    std::lock_guard lock(mu);
+    if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::Idle) {
+      return;
+    }
+    control_session.reset();
+    media_session.reset();
+    ResetFieldsUnlocked();
   }
 
   void CompleteConnect(Roe<void> result) {
@@ -120,13 +150,53 @@ struct AmpCallMediaDirectService::Impl {
     CompleteConnect({});
   }
 
-  bool HandleJsonFrame(const std::string& json_utf8, amp::ChannelSession& channel_session) {
+  void TryEnterMediaReady() {
+    if (!control_ready.load(std::memory_order_acquire) || !media_bound.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (leg.load(std::memory_order_acquire) == AmpCallLeg::Media) {
+      return;
+    }
+    EnterMediaReady();
+  }
+
+  void OpenMediaChannelOnActiveLink(const Clock::time_point deadline) {
+    amp::PeerLink* link = nullptr;
+    {
+      std::lock_guard lock(mu);
+      link = active_link;
+    }
+    if (!link || !link->Mux()) {
+      CompleteConnect(Error("amp call-media: no link for media channel"));
+      return;
+    }
+    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, amp::CallMediaChannelPolicy());
+    if (!channel_id) {
+      CompleteConnect(channel_id.error());
+      return;
+    }
+    PumpUntil(
+        [&] {
+          return link->Mux()->State(*channel_id) == amp::ChannelState::Open;
+        },
+        deadline);
+    if (link->Mux()->State(*channel_id) != amp::ChannelState::Open) {
+      CompleteConnect(Error("amp call-media: media channel open failed"));
+      return;
+    }
+    BindMediaChannel(*link, *channel_id);
+    TryEnterMediaReady();
+  }
+
+  bool HandleControlJson(const std::string& json_utf8, const std::shared_ptr<amp::ChannelSession>& channel_session,
+                         const Clock::time_point deadline) {
     auto parsed = ParseJsonObject(json_utf8);
     if (!parsed) {
       return false;
     }
     const auto type = parsed->getString("type").value_or("");
     if (type == "hello") {
+      phase.store(CallMediaSessionPhase::HelloInbound, std::memory_order_release);
       CallMediaDirectConnectParams params;
       params.call_id = parsed->getString("call_id").value_or("");
       params.media_epoch = static_cast<uint32_t>(parsed->getNonNegInt("media_epoch").value_or(1));
@@ -139,21 +209,35 @@ struct AmpCallMediaDirectService::Impl {
         std::lock_guard lock(mu);
         handler = inbound;
       }
-      if (handler) {
-        handler(answer_params, answer_cbs);
-      }
-      if (!channel_session.EnqueueOutbound(Utf8Body(BuildHelloAckJson(true)))) {
+      if (!handler) {
+        if (!channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "no handler")))) {
+          return false;
+        }
+        if (io_pump) {
+          io_pump();
+        }
+        CompleteConnect(Error("amp call-media: inbound rejected"));
         return false;
       }
-      if (io_pump) {
-        io_pump();
-      }
-      {
-        std::lock_guard lock(mu);
-        active_params = answer_params;
-        callbacks = std::move(answer_cbs);
-      }
-      EnterMediaReady();
+      RunWorker(post_worker, [this, channel_session, answer_params, answer_cbs = std::move(answer_cbs),
+                              handler = std::move(handler)]() mutable {
+        handler(answer_params, answer_cbs);
+        if (!channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(true)))) {
+          CompleteConnect(Error("amp call-media: hello ack failed"));
+          return;
+        }
+        if (io_pump) {
+          io_pump();
+        }
+        {
+          std::lock_guard lock(mu);
+          active_params = answer_params;
+          callbacks = std::move(answer_cbs);
+          leg.store(AmpCallLeg::AwaitingMedia, std::memory_order_release);
+        }
+        control_ready.store(true, std::memory_order_release);
+        TryEnterMediaReady();
+      });
       return true;
     }
     if (type == "hello_ack") {
@@ -161,7 +245,9 @@ struct AmpCallMediaDirectService::Impl {
         CompleteConnect(Error("amp call-media: hello rejected"));
         return false;
       }
-      EnterMediaReady();
+      control_ready.store(true, std::memory_order_release);
+      leg.store(AmpCallLeg::AwaitingMedia, std::memory_order_release);
+      OpenMediaChannelOnActiveLink(deadline);
       return true;
     }
     return false;
@@ -198,37 +284,79 @@ struct AmpCallMediaDirectService::Impl {
     return true;
   }
 
-  void BindCallChannel(amp::PeerLink& link, const uint32_t channel_id) {
+  void BindControlChannel(amp::PeerLink& link, const uint32_t channel_id) {
+    {
+      std::lock_guard lock(mu);
+      if (phase.load(std::memory_order_acquire) == CallMediaSessionPhase::MediaReady) {
+        return;
+      }
+      active_link = &link;
+    }
     auto channel_session = std::make_shared<amp::ChannelSession>();
-    channel_session->Bind(*link.Mux(), channel_id, amp::CallMediaChannelPolicy(),
-                          [this, channel_session](Roe<std::vector<uint8_t>> frame) {
+    const auto deadline = connect_deadline.time_since_epoch().count() != 0
+                              ? connect_deadline
+                              : Clock::now() + std::chrono::seconds(15);
+    channel_session->Bind(*link.Mux(), channel_id, amp::CallMediaControlChannelPolicy(),
+                          [this, channel_session, deadline](Roe<std::vector<uint8_t>> frame) {
                             if (!frame) {
                               return false;
                             }
-                            const auto leg_now = leg.load(std::memory_order_acquire);
-                            if (leg_now != AmpCallLeg::Media) {
-                              const std::string json_utf8(frame->begin(), frame->end());
-                              (void)HandleJsonFrame(json_utf8, *channel_session);
-                              return true;
+                            const std::string json_utf8(frame->begin(), frame->end());
+                            (void)HandleControlJson(json_utf8, channel_session, deadline);
+                            return true;
+                          },
+                          [this](const char*) { OnChannelClosed(); });
+    std::lock_guard lock(mu);
+    control_session = std::move(channel_session);
+  }
+
+  void BindMediaChannel(amp::PeerLink& link, const uint32_t channel_id) {
+    {
+      std::lock_guard lock(mu);
+      active_link = &link;
+    }
+    auto channel_session = std::make_shared<amp::ChannelSession>();
+    channel_session->Bind(*link.Mux(), channel_id, amp::CallMediaChannelPolicy(),
+                          [this](Roe<std::vector<uint8_t>> frame) {
+                            if (!frame) {
+                              return false;
                             }
                             return HandleMediaBody(*frame);
-                          });
-    std::lock_guard lock(mu);
-    session = std::move(channel_session);
+                          },
+                          [this](const char*) { OnChannelClosed(); });
+    {
+      std::lock_guard lock(mu);
+      media_session = std::move(channel_session);
+    }
+    media_bound.store(true, std::memory_order_release);
+    TryEnterMediaReady();
   }
 
   void HandleInboundChannel(amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire)) {
       return;
     }
-    BindCallChannel(link, channel_id);
+    if (!link.Mux()) {
+      return;
+    }
+    const auto cls = link.Mux()->Class(channel_id);
+    if (cls == amp::ChannelClass::RealtimeControl) {
+      BindControlChannel(link, channel_id);
+      return;
+    }
+    if (cls == amp::ChannelClass::Realtime) {
+      BindMediaChannel(link, channel_id);
+    }
   }
 };
 
-AmpCallMediaDirectService::AmpCallMediaDirectService(amp::PeerLinkManager& links, IoPump io_pump)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)) {
+AmpCallMediaDirectService::AmpCallMediaDirectService(amp::PeerLinkManager& links, IoPump io_pump,
+                                                     WorkerPost post_worker)
+    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
+  impl_->post_worker = post_worker_;
 }
 
 AmpCallMediaDirectService::~AmpCallMediaDirectService() {
@@ -278,8 +406,25 @@ CallMediaSessionPhase AmpCallMediaDirectService::Phase() const {
 }
 
 void AmpCallMediaDirectService::Detach() {
-  std::lock_guard lock(impl_->mu);
-  impl_->ResetLocked();
+  std::shared_ptr<amp::ChannelSession> control;
+  std::shared_ptr<amp::ChannelSession> media;
+  {
+    std::lock_guard lock(impl_->mu);
+    const bool connect_in_flight =
+        impl_->connect_settled && !impl_->connect_settled->load(std::memory_order_acquire);
+    if (connect_in_flight) {
+      impl_->CompleteConnect(Error("call-media aborted"));
+    }
+    control = std::move(impl_->control_session);
+    media = std::move(impl_->media_session);
+    impl_->ResetFieldsUnlocked();
+  }
+  if (control) {
+    control->Close();
+  }
+  if (media) {
+    media->Close();
+  }
 }
 
 Roe<void> AmpCallMediaDirectService::Connect(const CallMediaDirectConnectParams& params,
@@ -306,12 +451,14 @@ Roe<void> AmpCallMediaDirectService::Connect(const CallMediaDirectConnectParams&
     std::lock_guard lock(impl_->mu);
     impl_->active_params = params;
     impl_->callbacks = callbacks;
-    impl_->leg.store(AmpCallLeg::AwaitingHelloAck, std::memory_order_release);
+    impl_->leg.store(AmpCallLeg::ControlHello, std::memory_order_release);
+    impl_->phase.store(CallMediaSessionPhase::HelloOutbound, std::memory_order_release);
     impl_->connect_promise = connect_promise;
     impl_->connect_settled = connect_settled;
+    impl_->connect_deadline = deadline;
   }
 
-  links_.OpenChannel(peer_key, kCallMediaDirectProtocolId, amp::CallMediaChannelPolicy(),
+  links_.OpenChannel(peer_key, kCallMediaDirectProtocolId, amp::CallMediaControlChannelPolicy(),
                      [this, peer_key, params, deadline](Roe<uint32_t> channel) mutable {
                        if (!channel) {
                          impl_->CompleteConnect(channel.error());
@@ -330,11 +477,11 @@ Roe<void> AmpCallMediaDirectService::Connect(const CallMediaDirectConnectParams&
                          impl_->CompleteConnect(Error("amp call-media: channel open failed"));
                          return;
                        }
-                       impl_->BindCallChannel(*link, *channel);
+                       impl_->BindControlChannel(*link, *channel);
                        std::shared_ptr<amp::ChannelSession> session;
                        {
                          std::lock_guard lock(impl_->mu);
-                         session = impl_->session;
+                         session = impl_->control_session;
                        }
                        if (!session || !session->EnqueueOutbound(Utf8Body(BuildHelloJson(params)))) {
                          impl_->CompleteConnect(Error("amp call-media: hello write failed"));
@@ -343,17 +490,28 @@ Roe<void> AmpCallMediaDirectService::Connect(const CallMediaDirectConnectParams&
 
   impl_->PumpUntil(
       [&] {
-        return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready &&
-               impl_->phase.load(std::memory_order_acquire) == CallMediaSessionPhase::MediaReady;
+        if (result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+          return true;
+        }
+        return impl_->phase.load(std::memory_order_acquire) == CallMediaSessionPhase::MediaReady;
       },
       deadline);
 
-  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready ||
-      impl_->phase.load(std::memory_order_acquire) != CallMediaSessionPhase::MediaReady) {
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     impl_->CompleteConnect(Error("amp call-media connect timed out"));
+    Detach();
     return Error("amp call-media connect timed out");
   }
-  return result_future.get();
+  auto result = result_future.get();
+  if (!result) {
+    Detach();
+    return result.error();
+  }
+  if (impl_->phase.load(std::memory_order_acquire) != CallMediaSessionPhase::MediaReady) {
+    Detach();
+    return Error("amp call-media connect incomplete");
+  }
+  return Roe<void>();
 }
 
 Roe<void> AmpCallMediaDirectService::SendMedia(const uint8_t channel, const std::vector<uint8_t>& payload,
@@ -362,10 +520,10 @@ Roe<void> AmpCallMediaDirectService::SendMedia(const uint8_t channel, const std:
   CallMediaDirectConnectParams params;
   {
     std::lock_guard lock(impl_->mu);
-    if (impl_->leg.load(std::memory_order_acquire) != AmpCallLeg::Media || !impl_->session) {
+    if (impl_->leg.load(std::memory_order_acquire) != AmpCallLeg::Media || !impl_->media_session) {
       return Error("amp call-media: not in media ready");
     }
-    session = impl_->session;
+    session = impl_->media_session;
     params = impl_->active_params;
   }
   auto encrypted =

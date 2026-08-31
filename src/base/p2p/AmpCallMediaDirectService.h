@@ -18,9 +18,11 @@ namespace pbr {
 class AmpCallMediaDirectService {
 public:
   using IoPump = std::function<void()>;
+  using WorkerPost = std::function<void(std::function<void()>)>;
   using InboundHandler = std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)>;
 
-  AmpCallMediaDirectService(amp::PeerLinkManager& links, IoPump io_pump);
+  AmpCallMediaDirectService(amp::PeerLinkManager& links, IoPump io_pump,
+                            WorkerPost post_worker = {});
   ~AmpCallMediaDirectService();
 
   AmpCallMediaDirectService(const AmpCallMediaDirectService&) = delete;
@@ -47,6 +49,7 @@ private:
   std::unique_ptr<Impl> impl_;
   amp::PeerLinkManager& links_;
   IoPump io_pump_;
+  WorkerPost post_worker_;
   bool started_ = false;
 };
 

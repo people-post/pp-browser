@@ -88,13 +88,12 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D6 — L4 port: call-media
 
-- [x] `AmpCallMediaDirectService` — hello + AEAD Opus over `ChannelSession` / `PeerLinkManager::OpenChannel`
-- [x] `CallMediaControlChannelPolicy` factory (for follow-up split hello leg)
-- [x] `AmpCallMediaDirectServiceTest.HelloAndEncryptedAudioRoundTrip`
+- [x] `AmpCallMediaDirectService` — hello on Reliable `RealtimeControl` + AEAD Opus on BestEffort `Realtime` (`PeerLinkManager::OpenChannel`)
+- [x] `CallMediaControlChannelPolicy` + split control/media channels (normative AMP-CHANNEL)
+- [x] `AmpCallMediaDirectServiceTest` — 7 tests (audio, video, detach, timeout, handler clear, k-cycle)
 - [x] Shared `mesh_test_harness.h` for AMP L4 tests
-- [ ] Split Reliable hello + BestEffort media onto separate channels (normative AMP-CHANNEL)
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
-- [ ] Port remaining `CallMediaDirectService` gtests + `CallMediaAdp*` tests
+- [ ] Port `DualDial` / conflict gtests + `CallMediaAdp*` tests
 
 ### D7 — L4 port: circuit + media-relay
 
