@@ -88,14 +88,26 @@
 
 ## Landed (D9 building block)
 
-- `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer (composition helper for MeshHost cutover)
-- `AmpStackTest.CreateAndAssociateViaStacks`
-- Product `MeshHost` not yet holding AmpStack (no traffic flip)
+- `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer
+- **`MeshHost` parallel Amp** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)): `enable_amp_stack` / `AttachAmpStack`; `Tick` pumps Amp; no L4 traffic flip
+- `pp_browser_p2p_test` — `MeshHostAmpTest.AttachAmpStackParallelNoLibp2p`
+- Product defaults: `enable_amp_stack = false`
+
+## Plan adjustments (2026-08-31)
+
+| Change | Why |
+|--------|-----|
+| **Do not block MeshHost Amp attach on AMP dial-back / mDNS** | Ownership is independent of reachability chrome; libp2p DialBack/Identify still cover probes until cutover |
+| **Shared device ML-DSA keys required for `enable_amp_stack`** | One PeerId across stacks ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
+| **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0 |
+| **Keep L4 flip order: chat → call-media → circuit/media-relay** | Unchanged; SoftMigrate fan-out stays after circuit/media AMP is the single entry |
+| **AMP dial-back is optional until Identify/TCP teardown** | Prefer ch0 addr ingest + existing libp2p DialBack during parallel phase |
 
 ## Next (implementation)
 
-1. **D8 remainder** — AMP dial-back / mDNS / listen policy
-2. **D9** — attach `AmpStack` to `MeshHost` (parallel), then cutover L4 per checklist below
+1. **D9** — turn on `enable_amp_stack` in node/MessagingHub behind keys (still no L4 flip); wire ch0 advertised protocols from hosting posture (mostly done in `ApplyAmpAdvertisement`)
+2. **D9** — cut over chat/history to Amp services (single entry)
+3. **D8 optional** — AMP dial-back / mDNS when retiring libp2p Identify
 
 ### D9 cutover checklist
 
@@ -103,12 +115,12 @@ Do **not** dual `if (amp)` in product paths ([A020](DECISIONS.md#a020--single-tr
 
 | Step | Action | Notes |
 |------|--------|--------|
-| 1 | Own `AmpStack` / `MeshRuntime` (+ UDP listen) inside `MeshHost` / node bootstrap | `AmpStack` landed; MeshHost attach next; no app traffic yet |
-| 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | Feeds Identify replacement |
+| 1 | Own `AmpStack` inside `MeshHost` (parallel) | **Done** — `enable_amp_stack` / `AttachAmpStack` ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)); product flag still off |
+| 2 | Wire ch0 listen addrs + advertised L4 protocol list from hosting posture | `ApplyAmpAdvertisement` on enable; ingest already on PeerLinkManager |
 | 3 | Swap chat + history to `AmpDirectChatService` / `AmpChatHistoryService` | Already tested parallel |
 | 4 | Swap call-media to `CallMediaLegCoordinator`; drop `kCallMediaAdpOpusDogfood` | `CallStack.cpp` still includes dogfood |
 | 5 | Swap circuit + media-relay to AMP coordinators | SoftMigrate / MeshHost fan-out |
-| 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers |
+| 6 | Stop starting libp2p Identify / TCP listen for mesh | Keep PeerId crypto helpers; AMP dial-back/mDNS if still needed |
 | 7 | Delete dogfood + TCP-hello Opus; update NETWORKING / CALLS / LIBP2P_STREAMS | |
 
 See [PHASES.md](PHASES.md) for full ordering.

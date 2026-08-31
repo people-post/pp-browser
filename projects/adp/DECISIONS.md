@@ -158,3 +158,10 @@
 **Decision:** AMP circuit relay is a **`CircuitTunnelId`-keyed tunnel** on `MeshRuntime`, not a blocking `RequestBridge` + `StreamBridge` port. Public API is non-blocking (`StartBridge` + completion callback). Phase machine and admission live in pure `CircuitBundleLogic`. Runtime (`CircuitTunnelCoordinator`) drives `EnsureAssociation` / `OpenChannel` via **callbacks + `PostToIo` only** — L4 must never call `MeshRuntime::Pump()` / `IoPumpUntil`. `ChannelBridge` remains an io-thread DATA splice helper armed **after** handshake, never via `SetFrameHandler` from inside an active frame handler. D7b media-relay follows this same template.  
 **Rationale:** Same failure modes A021 fixed — nested pump reentrancy, handler UAF from mid-callback `SetFrameHandler`, mutex/Stop deadlock, Browser-IO stalls on sync waits. Libp2p circuit blocks on a **worker** lane; AMP put the same waits on the pump thread in transitional D7a.  
 **Alternatives:** Keep sync `AmpCircuitRelayService::RequestBridge` with more `PostToIo` workarounds; port `CircuitRelayRuntime::WaitReadyOrStop` onto MeshRuntime.
+
+## A023 — MeshHost may own AmpStack in parallel; same device keys
+
+**Date:** 2026-08-31  
+**Decision:** `MeshHost` may construct / attach an `amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. `MeshHost::Tick` pumps the Amp stack. Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
+**Rationale:** Cutover needs a live UDP+MSH host object before flipping protocols; separate keys would fork identity.  
+**Alternatives:** Separate Amp-only process; generate a second PeerId for AMP.

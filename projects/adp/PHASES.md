@@ -108,16 +108,17 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D8 — Reachability
 
-- [ ] Listen policy, mDNS on ADP multiaddrs (follow-on)
-- [ ] AMP dial-back protocol (follow-on; libp2p `DialBackService` still production)
-- [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane)) — dialer opens ch0; mutual PeerId / listen addrs / protocols; `SetCapabilityHandler`
+- [ ] Listen policy, mDNS on ADP multiaddrs (follow-on; not a MeshHost-Amp blocker)
+- [ ] AMP dial-back protocol (follow-on; libp2p `DialBackService` still production until D9 step 6)
+- [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane))
 - [x] Ingest remote ADP listen addrs under authenticated PeerId (`PreferredMultiaddr` / peer-id dial)
 
 ### D9 — Retire legacy underlay
 
 - [x] `AmpStack` composition helper (`Endpoint` + `MeshRuntime`)
-- [ ] Attach `AmpStack` to `MeshHost` (parallel; no traffic) — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
-- [ ] Single transport entry in `MeshHost` / `CallStack` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- [x] Attach `AmpStack` to `MeshHost` (parallel; `enable_amp_stack` / `AttachAmpStack`; [A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys))
+- [ ] Enable Amp in product node/MessagingHub start (still no L4 flip)
+- [ ] Single transport entry cutover — see [CURRENT_STATE.md](CURRENT_STATE.md#d9-cutover-checklist)
 - [ ] Remove TCP/Yamux/Noise wire from product host
 - [ ] Remove libp2p `Host::newStream` from app path
 - [ ] Delete `CallMediaAdpDogfood.h` + TCP-hello Opus path
