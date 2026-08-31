@@ -72,10 +72,13 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D4 — PeerLinkManager
 
-- [ ] `EnsureAssociation` + `OpenChannel` API
-- [ ] Multiaddr `/ip4/.../udp/.../adp/1.0.0/p2p/...`
-- [ ] Warm/cold, backoff (port from `PeerSessionManager`)
-- [ ] `MeshPump` integration on io thread
+- [x] `src/base/mesh/link/` + `pp_base_mesh_link`
+- [x] `EnsureAssociation` + `OpenChannel` API
+- [x] Multiaddr `/ip4/.../udp/.../adp/1.0.0/p2p/...`
+- [x] Warm/cold, backoff (ported from `PeerSessionManager` shape)
+- [x] `MeshPump` integration on io thread
+- [x] MSH-over-ADP with chunking for payloads > ADP MTU
+- [x] `pp_browser_amp_link_test` (3 tests, green)
 
 ### D5 — L4 port: chat + history
 
@@ -112,8 +115,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
-cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_p2p_test -j
+cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_p2p_test -j
 ./build/src/base/adp/tests/pp_browser_adp_test
 ./build/src/base/mesh/session/tests/pp_browser_amp_session_test
 ./build/src/base/mesh/channel/tests/pp_browser_amp_channel_test
+./build/src/base/mesh/link/tests/pp_browser_amp_link_test
 ```

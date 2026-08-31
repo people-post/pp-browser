@@ -58,6 +58,8 @@ void Connection::SetPeerEndpoint(IpEndpoint peer) {
   }
 }
 
+void Connection::UpgradeBinder(PeerKey key) { binder_.SetKey(key); }
+
 bool Connection::LooksAlive(int64_t now_ms) const {
   if (closed_ || last_auth_rx_ms_ == 0) {
     return false;

@@ -37,9 +37,16 @@
 - FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
 - `pp_browser_amp_channel_test` (11 tests, green)
 
+## Landed (link layer — D4)
+
+- `src/base/mesh/link/` → `pp_base_mesh_link`
+- ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`
+- `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
+- `pp_browser_amp_link_test` (3 tests, green)
+
 ## Next (implementation)
 
 1. **D3** — fragmentation edge-case tests (loss, reorder, timeout)
-2. **D4** — `PeerLinkManager` + `MeshPump`
+2. **D5** — port chat + history onto `ChannelSession`
 
 See [PHASES.md](PHASES.md) for full ordering.

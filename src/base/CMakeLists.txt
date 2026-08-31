@@ -37,6 +37,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_adp
   pp_base_mesh_session
   pp_base_mesh_channel
+  pp_base_mesh_link
   pp_base_p2p
   pp_base_people
   pp_base_messaging

@@ -18,6 +18,8 @@ public:
   Roe<std::vector<uint8_t>> Seal(std::span<const uint8_t> header_and_payload) const;
   Roe<void> Verify(std::span<const uint8_t> datagram) const;
 
+  void SetKey(PeerKey key) { key_ = key; }
+
   static std::array<uint8_t, kHmacBytes> ComputeTag(const PeerKey& key,
                                                     std::span<const uint8_t> mac_input);
 
