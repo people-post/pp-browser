@@ -100,9 +100,9 @@ inline ChannelPolicy MediaRelayHopChannelPolicy() {
   ChannelPolicy policy;
   policy.cls = ChannelClass::Realtime;
   policy.drop = ChannelDropPolicy::Oldest;
-  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxCallMediaOutboundFrames;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames;
   policy.write_preferred = true;
-  policy.max_message_bytes = Libp2pExecutorLimits::kMaxCallMediaFrameBytes;
+  policy.max_message_bytes = Libp2pExecutorLimits::kMaxMediaDataFrameBytes;
   return policy;
 }
 
@@ -112,7 +112,7 @@ inline ChannelPolicy MediaRelayClientChannelPolicy(
   ChannelPolicy policy;
   policy.cls = ChannelClass::RealtimeControl;
   policy.drop = ChannelDropPolicy::Never;
-  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxControlOutboundFrames;
+  policy.max_outbound_frames = Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames;
   policy.read_once = false;
   policy.max_message_bytes = Libp2pExecutorLimits::kMaxChatStreamJsonBytes;
   policy.read_timeout = read_timeout;

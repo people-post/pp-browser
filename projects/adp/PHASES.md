@@ -103,7 +103,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] **D7a** Channel tunnel — `ChannelBridge` splice + **`CircuitTunnelCoordinator`** / `CircuitBundleLogic` on `MeshRuntime` ([A022](DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)); non-blocking `StartBridge` (no `IoPumpUntil`)
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
 - [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
-- [ ] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/attach/fan-out (same A022 template)
+- [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
 - [ ] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — deferred
 
 ### D8 — Reachability

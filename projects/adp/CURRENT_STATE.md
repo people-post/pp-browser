@@ -69,10 +69,16 @@
 - Bridge JSON + admission parity with libp2p circuit; parallel stack only ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 
+## Landed (L4 media-relay — D7b / A022)
+
+- `MediaRelayBundleLogic` — admit / ack / default quote helpers (reuses `MediaRelayAttachSm` + `MediaRelayLogic`)
+- `AmpMediaRelayCoordinator` — non-blocking `StartQuote` / `StartAttach` on `MeshRuntime`
+- `pp_browser_p2p_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
+- Fan-out SoftMigrate / MeshHost wire deferred
+
 ## Next (implementation)
 
-1. **D7b** — `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` (A022 template)
-2. **D8** — reachability / ch0 caps on ADP multiaddrs
-3. **D9** — single cutover: wire AMP L4 into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood` / TCP-hello path
+1. **D8** — reachability / ch0 caps on ADP multiaddrs
+2. **D9** — single cutover: wire AMP L4 into `MeshHost` / `CallStack`; retire `CallMediaAdpDogfood` / TCP-hello path
 
 See [PHASES.md](PHASES.md) for full ordering.
