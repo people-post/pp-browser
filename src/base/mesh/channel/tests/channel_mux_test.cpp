@@ -1,3 +1,4 @@
+#include "base/mesh/channel/AmpChannelLimits.h"
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/channel/ChannelSession.h"
 #include "base/mesh/channel/tests/amp_test_link.h"
@@ -6,6 +7,25 @@
 
 namespace pbr::amp {
 namespace {
+
+ChannelPolicy TestRealtimePolicy() {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::Realtime;
+  policy.drop = ChannelDropPolicy::Oldest;
+  policy.max_outbound_frames = AmpChannelLimits::kMaxCallMediaOutboundFrames;
+  policy.write_preferred = true;
+  policy.max_message_bytes = AmpChannelLimits::kMaxCallMediaFrameBytes;
+  return policy;
+}
+
+ChannelPolicy TestBulkPolicy() {
+  ChannelPolicy policy;
+  policy.cls = ChannelClass::Bulk;
+  policy.drop = ChannelDropPolicy::Never;
+  policy.max_outbound_frames = AmpChannelLimits::kMaxControlOutboundFrames;
+  policy.max_message_bytes = AmpChannelLimits::kMaxChatBlobFrameBytes;
+  return policy;
+}
 
 TEST(ChannelMuxTest, OpenAndDataRoundTrip) {
   auto link_result = test::AmpTestLink::Create();
@@ -31,7 +51,7 @@ TEST(ChannelMuxTest, RealtimeUsesBestEffortQos) {
   ASSERT_TRUE(static_cast<bool>(link_result));
   auto& link = **link_result;
 
-  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/call-media/1.0.0", CallMediaChannelPolicy());
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/call-media/1.0.0", TestRealtimePolicy());
   ASSERT_TRUE(static_cast<bool>(ch));
   ASSERT_TRUE(static_cast<bool>(link.initiator.mux.SendData(*ch, {'o'})));
   EXPECT_EQ(link.initiator.mux.LastSendQos(), adp::QosClass::BestEffort);
@@ -66,7 +86,7 @@ TEST(ChannelMuxTest, LargePayloadFragments) {
   ASSERT_TRUE(static_cast<bool>(link_result));
   auto& link = **link_result;
 
-  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat-blob/1.0.0", ChatBlobChannelPolicy());
+  auto ch = link.initiator.mux.OpenOutbound("/pp-browser/chat-blob/1.0.0", TestBulkPolicy());
   ASSERT_TRUE(static_cast<bool>(ch));
 
   std::vector<uint8_t> received;

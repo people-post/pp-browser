@@ -2,7 +2,7 @@
 #include "base/adp/OsUdpDatagramIo.h"
 #include "base/adp/Types.h"
 #include "base/crypto/MlDsa.h"
-#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/channel/ChannelSession.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/AmpStack.h"

@@ -126,18 +126,21 @@ Max reassembled size defaults match today’s stream caps:
 | Policy | Default max |
 |--------|-------------|
 | Control JSON | 256 KiB |
-| Chat blob | per `Libp2pExecutorLimits` |
-| Call media | per `CallMediaIoPolicy` |
+| Chat blob | per `AmpChannelLimits` |
+| Call media | per `AmpChannelLimits` / product policy |
 
 ## Channel policies (port StreamIoPolicy)
 
-| Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout |
-|---------|-------|----------------|------|-------------|--------------|
-| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off |
-| `MediaRelayHopChannelPolicy` | Realtime | 1 | Oldest | no | off |
-| `MediaRelayClientChannelPolicy` | Interactive | 4 | Oldest | no | off |
-| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s |
-| `ChatBlobChannelPolicy` | Bulk | 1 | Never | configurable | 8 s |
+Core factories: `base/mesh/channel/ChannelPolicy.h`. Product L4 factories: `base/p2p/ProductChannelPolicies.h`.
+
+| Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
+|---------|-------|----------------|------|-------------|--------------|------|
+| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off | product |
+| `MediaRelayHopChannelPolicy` | Realtime | 2 | Oldest | no | off | product |
+| `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | 8 s | product |
+| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s | core |
+| `ChatBlobChannelPolicy` | Bulk | 1 | Never | configurable | 8 s | product |
+| `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | 8 s | core |
 
 Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameSession` today).
 

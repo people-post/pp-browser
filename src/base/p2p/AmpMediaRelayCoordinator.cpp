@@ -1,6 +1,6 @@
 #include "base/p2p/AmpMediaRelayCoordinator.h"
 
-#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/link/PeerLink.h"
 #include "base/p2p/MediaRelayAttachSm.h"
 #include "base/p2p/MediaRelayLogic.h"

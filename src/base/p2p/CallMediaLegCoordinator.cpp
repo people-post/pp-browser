@@ -1,6 +1,6 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
 
-#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/channel/ChannelSession.h"
 #include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/CallMediaFrameCrypto.h"

@@ -1,7 +1,7 @@
 #include "base/p2p/CircuitTunnelCoordinator.h"
 
 #include "base/mesh/channel/ChannelBridge.h"
-#include "base/mesh/channel/ChannelPolicy.h"
+#include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/PeerLink.h"
 #include "base/mesh/link/Types.h"

@@ -60,7 +60,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 |------|----------|
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, `StartupTiming`, lifecycle, branding/version |
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
-| `base/p2p/` | Libp2p product glue (mesh, circuit/media relay, stream framing); OS net-if / mDNS sockets in `*_Win32.cpp` / `*_Posix.cpp` |
+| `base/p2p/` | Product Amp glue (MeshHost, circuit/media relay, call-media L4); PeerId util is separate target `pp_base_peer_id` |
 | `base/adp/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
 | `base/mesh/session/` | AMP L2 — MSH, Session AEAD, rekey (`pp_base_mesh_session`) |
 | `base/mesh/link/` | AMP link — `PeerLinkManager`, `MeshRuntime`, `AmpStack`, MSH-over-ADP (`pp_base_mesh_link`) |
@@ -74,7 +74,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 
-Acyclic order (excerpt): `crypto` → `adp` → `mesh` → `p2p` → `people`. `adp` and `mesh` must not link `p2p`/libp2p. `p2p` may include header-only `people/RelayScope.h` but must not link `pp_base_people`. See [projects/adp/STACK.md](../../projects/adp/STACK.md).
+Acyclic order (excerpt): `crypto` → `adp` → `mesh` → `peer_id` → `p2p` → `people`. `adp` and `mesh` must not link `p2p`/product MeshHost. Mesh/link **tests** may link `pp_base_peer_id` (retained libp2p PeerId encode) without `pp_base_p2p`. `p2p` may include header-only `people/RelayScope.h` but must not link `pp_base_people`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [A025](../../projects/adp/DECISIONS.md#a025--pre-extract-layer-cleanup-limits-policies-peerid).
 
 ## Feature subfolders
 
