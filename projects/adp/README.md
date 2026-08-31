@@ -31,7 +31,7 @@
 | D7a | Circuit tunnel AMP (A022 coordinator) | **Done** |
 | D7b | Media-relay AMP coordinator | **Done** |
 | D8 | ch0 capability exchange + addr ingest | **Partial** — dial-back/mDNS deferred (not blocking D9) |
-| D9 | MeshHost/CallStack cutover | **In progress** — `AmpStack` on MeshHost (parallel); L4 flip next |
+| D9 | MeshHost/CallStack cutover | **In progress** — product Amp parallel on; L4 flip (chat) next |
 
 ## Locked product decisions
 

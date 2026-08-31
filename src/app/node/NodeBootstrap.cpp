@@ -121,6 +121,11 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   mesh_cfg.media_relay_pricing = config->libp2p.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
+  mesh_cfg.enable_amp_stack = config->libp2p.enable_amp_stack &&
+                              mesh_cfg.runtime.host.device_ml_dsa_private_key &&
+                              mesh_cfg.runtime.host.device_ml_dsa_public_key;
+  mesh_cfg.amp_udp_port =
+      config->libp2p.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->libp2p.amp_udp_port);
 
   auto mesh = std::make_unique<MeshHost>();
   if (auto started = mesh->Start(mesh_cfg); !started) {
@@ -129,6 +134,13 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     AppRuntime::Shutdown();
     secrets->UnregisterDekConsumer(identity.get());
     return started.error();
+  }
+  if (mesh_cfg.enable_amp_stack) {
+    if (mesh->Amp()) {
+      log.info << "amp stack parallel listen=" << mesh->AmpListenMultiaddr() << " (no L4 traffic yet)";
+    } else {
+      log.warning << "amp stack enable failed (libp2p continues): " << mesh->AmpLastError();
+    }
   }
 
   if (!mesh->BoundListenMultiaddr().empty()) {

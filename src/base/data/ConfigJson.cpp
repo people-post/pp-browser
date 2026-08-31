@@ -365,6 +365,8 @@ Object Libp2pConfigToObject(const Libp2pConfig& config) {
   object.set("idle_ttl_ms", static_cast<int64_t>(config.idle_ttl_ms));
   object.set("dial_failure_backoff_ms", static_cast<int64_t>(config.dial_failure_backoff_ms));
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
+  object.set("enable_amp_stack", config.enable_amp_stack);
+  object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("capabilities", Libp2pCapabilitiesToObject(config.capabilities));
   object.set("pricing", Libp2pPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
@@ -414,6 +416,12 @@ void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
+  }
+  if (auto enable_amp = object.getIf<bool>("enable_amp_stack")) {
+    config.enable_amp_stack = *enable_amp;
+  }
+  if (auto amp_udp_port = object.getNonNegInt("amp_udp_port")) {
+    config.amp_udp_port = static_cast<int>(*amp_udp_port);
   }
   if (const Object* capabilities = object.getObject("capabilities")) {
     Libp2pCapabilitiesFromObject(*capabilities, config.capabilities);

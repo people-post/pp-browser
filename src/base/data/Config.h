@@ -95,6 +95,13 @@ struct Libp2pConfig {
    * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
    */
   bool prefer_contacts_for_routing = true;
+  /**
+   * Parallel AMP UDP stack beside libp2p ([A023]). No product L4 traffic yet.
+   * Requires device ML-DSA keys; UDP bind failure is soft (libp2p stays up).
+   */
+  bool enable_amp_stack = true;
+  /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
+  int amp_udp_port = 0;
   Libp2pCapabilities capabilities;
   Libp2pPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;

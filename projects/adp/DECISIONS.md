@@ -162,6 +162,6 @@
 ## A023 — MeshHost may own AmpStack in parallel; same device keys
 
 **Date:** 2026-08-31  
-**Decision:** `MeshHost` may construct / attach an `amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. `MeshHost::Tick` pumps the Amp stack. Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
-**Rationale:** Cutover needs a live UDP+MSH host object before flipping protocols; separate keys would fork identity.  
-**Alternatives:** Separate Amp-only process; generate a second PeerId for AMP.
+**Decision:** `MeshHost` may construct / attach an `amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. Amp start failure is **soft** (libp2p stays up; `AmpLastError()`). `MeshHost::Tick` pumps the Amp stack — product must call `mesh->Tick()` (not only `Runtime()->Tick()`). Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
+**Rationale:** Cutover needs a live UDP+MSH host object before flipping protocols; separate keys would fork identity; hard-failing Amp would take down production mesh during the parallel phase.  
+**Alternatives:** Separate Amp-only process; generate a second PeerId for AMP; hard-fail MeshHost::Start when Amp fails.

@@ -292,6 +292,10 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
       on_reachability_updated_();
     }
   };
+  mesh_cfg.enable_amp_stack = libp2p_cfg.enable_amp_stack && runtime.host.device_ml_dsa_private_key &&
+                              runtime.host.device_ml_dsa_public_key;
+  mesh_cfg.amp_udp_port =
+      libp2p_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(libp2p_cfg.amp_udp_port);
 
   mesh_ = std::make_unique<MeshHost>();
   auto started = mesh_->Start(mesh_cfg);
@@ -299,6 +303,13 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     libp2p_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
     mesh_.reset();
     return started.error();
+  }
+  if (mesh_cfg.enable_amp_stack) {
+    if (mesh_->Amp()) {
+      log().info << "amp stack parallel listen=" << mesh_->AmpListenMultiaddr() << " (no L4 traffic yet)";
+    } else {
+      log().warning << "amp stack enable failed (libp2p continues): " << mesh_->AmpLastError();
+    }
   }
 
   if (runtime.host.listen_enabled) {
@@ -1058,8 +1069,8 @@ void MessagingHub::TickLibp2p() {
   if (!messaging_ready_) {
     return;
   }
-  if (Runtime()) {
-    Runtime()->Tick();
+  if (mesh_) {
+    mesh_->Tick();
   }
   if (p2p_) {
     p2p_->TickLibp2p();
