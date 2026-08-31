@@ -108,6 +108,9 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
     // Convenience: advertise list implies mesh_node publish for pp-node (N027).
     config.libp2p.mesh_publish = true;
   }
+  if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
+    config.registration.base_url = registration;
+  }
 }
 
 } // namespace pbr

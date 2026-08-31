@@ -59,6 +59,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g6("PP_NODE_ADVERTISE_MULTIADDRS");
   EnvGuard g7("PP_NODE_MESH_PUBLISH");
   EnvGuard g8("PP_NODE_AMP_UDP_PORT");
+  EnvGuard g9("PP_NODE_REGISTRATION_BASE_URL");
 
   pbr::AppConfig config;
   config.data_dir = "/old";
@@ -67,6 +68,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   config.libp2p.capabilities.circuit_relay = false;
   config.libp2p.capabilities.media_relay = false;
   config.libp2p.mesh_publish = false;
+  config.registration.base_url = "https://www.brief.global/api/relay";
 
   SetEnv("PP_NODE_DATA_DIR", "/var/lib/pp-node");
   SetEnv("PP_NODE_BOOTSTRAP_PEERS",
@@ -75,6 +77,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   SetEnv("PP_NODE_CAP_CIRCUIT_RELAY", "true");
   SetEnv("PP_NODE_CAP_MEDIA_RELAY", "0");
   SetEnv("PP_NODE_ADVERTISE_MULTIADDRS", "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
+  SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://www-en.qa.peoplepost.org/api/relay");
 
   pbr::ApplyPpNodeConfigEnvOverlays(config);
 
@@ -87,4 +90,5 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   ASSERT_EQ(config.libp2p.advertise_multiaddrs.size(), 1u);
   EXPECT_EQ(config.libp2p.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   EXPECT_TRUE(config.libp2p.mesh_publish);
+  EXPECT_EQ(config.registration.base_url, "https://www-en.qa.peoplepost.org/api/relay");
 }

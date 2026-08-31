@@ -41,6 +41,7 @@ EXPOSE 18518
 #   PP_NODE_DATA_DIR            e.g. /var/lib/pp-node
 #   PP_NODE_BOOTSTRAP_PEERS     comma-separated Amp ADP multiaddrs
 #   PP_NODE_CAP_CIRCUIT_RELAY / PP_NODE_CAP_MEDIA_RELAY
+#   PP_NODE_REGISTRATION_BASE_URL  mesh directory register/renew base URL
 #   PP_NODE_STATUS_ADDR         e.g. 0.0.0.0:18518 for console
 #   PP_NODE_STATUS_TOKEN        (optional Bearer for status HTTP)
 ENTRYPOINT ["/usr/local/bin/pp-node", "--config", "/etc/pp-node/config.json"]
