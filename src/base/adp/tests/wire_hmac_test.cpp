@@ -89,6 +89,33 @@ TEST_F(AdpWireTest, RejectTruncated) {
   EXPECT_FALSE(pbr::adp::WireCodec::Decode(tiny));
 }
 
+TEST_F(AdpWireTest, RejectBadPacketType) {
+  pbr::adp::WirePacket pkt;
+  pkt.type = pbr::adp::PacketType::DataBestEffort;
+  pkt.seq = 1;
+  auto enc = pbr::adp::WireCodec::Encode(pkt);
+  ASSERT_TRUE(enc);
+  auto sealed = pbr::adp::HmacBinder(TestKey()).Seal(*enc);
+  ASSERT_TRUE(sealed);
+  (*sealed)[1] = 99;
+  EXPECT_FALSE(pbr::adp::WireCodec::Decode(*sealed));
+}
+
+TEST_F(AdpWireTest, RejectLengthMismatch) {
+  pbr::adp::WirePacket pkt;
+  pkt.type = pbr::adp::PacketType::DataBestEffort;
+  pkt.seq = 1;
+  pkt.payload = {1, 2, 3};
+  auto enc = pbr::adp::WireCodec::Encode(pkt);
+  ASSERT_TRUE(enc);
+  auto sealed = pbr::adp::HmacBinder(TestKey()).Seal(*enc);
+  ASSERT_TRUE(sealed);
+  // Claim zero payload bytes while body still contains 3 bytes.
+  (*sealed)[26] = 0;
+  (*sealed)[27] = 0;
+  EXPECT_FALSE(pbr::adp::WireCodec::Decode(*sealed));
+}
+
 TEST_F(AdpWireTest, GoldenHeaderLayoutLittleEndian) {
   pbr::adp::WirePacket pkt;
   pkt.type = pbr::adp::PacketType::Ack;
