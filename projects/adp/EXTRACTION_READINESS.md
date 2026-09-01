@@ -1,7 +1,7 @@
 # AMP extraction readiness (pp-browser)
 
 **Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v0.1.1`).  
-**Done:** in-tree production sources removed; `src/lib/amp/**` holds thin forwarding headers for `#include "lib/amp/..."`. L4 harness duplicated under `src/base/p2p/tests/support/`.
+**Done:** in-tree production sources removed; consumers use `#include "amp/..."` from FetchContent pp-cpp-amp. L4 harness duplicated under `src/base/p2p/tests/support/`.
 
 ## Layer map
 

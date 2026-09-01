@@ -1,10 +1,10 @@
 #include "base/p2p/CircuitTunnelCoordinator.h"
 
-#include "lib/amp/L3/ChannelBridge.h"
+#include "amp/L3/ChannelBridge.h"
 #include "base/p2p/ProductChannelPolicies.h"
-#include "lib/amp/link/AdpMultiaddr.h"
-#include "lib/amp/link/PeerLink.h"
-#include "lib/amp/link/Types.h"
+#include "amp/link/AdpMultiaddr.h"
+#include "amp/link/PeerLink.h"
+#include "amp/link/Types.h"
 #include "common/ValueJson.h"
 
 #include <atomic>

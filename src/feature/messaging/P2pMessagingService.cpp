@@ -34,7 +34,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/PeerBriefRoute.h"
 #include "base/messaging/SyncStateTypes.h"
-#include "lib/amp/link/AdpMultiaddr.h"
+#include "amp/link/AdpMultiaddr.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
 #include "base/people/ContactIdentity.h"

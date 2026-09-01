@@ -19,8 +19,8 @@
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
-#include "lib/amp/link/PeerLinkManager.h"
-#include "lib/amp/link/Types.h"
+#include "amp/link/PeerLinkManager.h"
+#include "amp/link/Types.h"
 #include "base/net/ServiceClients.h"
 
 #include <atomic>

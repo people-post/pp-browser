@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/ThreadTypes.h"
-#include "lib/amp/link/PeerLinkManager.h"
+#include "amp/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
 #include "feature/messaging/IDirectMessageClient.h"
 

@@ -3,9 +3,9 @@
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
-#include "lib/amp/L3/ChannelPolicy.h"
-#include "lib/amp/L3/ChannelSession.h"
-#include "lib/amp/L3/Types.h"
+#include "amp/L3/ChannelPolicy.h"
+#include "amp/L3/ChannelSession.h"
+#include "amp/L3/Types.h"
 
 #include <atomic>
 #include <chrono>
