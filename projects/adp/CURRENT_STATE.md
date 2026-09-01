@@ -1,13 +1,13 @@
 # Current state — ADP / AMP
 
-**As of:** 2026-08-31
+**As of:** 2026-09-01
 
 ## Landed (L1)
 
 - Project docs + ADRs A001–A020
 - `src/base/adp/` → `pp_base_adp` (Asio-free)
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
-- `pp_browser_adp_test` (26 tests)
+- `pp_browser_adp_test` (40 tests)
 - Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
 
 ## Landed (stack spec — D0)
@@ -28,7 +28,7 @@
 - `src/base/mesh/session/` → `pp_base_mesh_session`
 - MSH v1 handshake (ML-KEM + ML-DSA identity bind), session key derivation
 - `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
-- `pp_browser_amp_session_test` (8 tests, green)
+- `pp_browser_amp_session_test` (12 tests, green)
 
 ## Landed (L3 — D2)
 
@@ -36,7 +36,7 @@
 - L3 wire codec, `ChannelMux`, `ChannelSession`, channel 0 capability plane
 - FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
 - D3 fragmentation edge tests (reorder, loss, dup, timeout)
-- `pp_browser_amp_channel_test` (14 tests, green)
+- `pp_browser_amp_channel_test` (16 tests, green)
 
 ## Landed (link layer — D4)
 
@@ -44,7 +44,9 @@
 - ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`, **`MeshRuntime`**
 - PeerId from MSH identity; inbound link adopt/rekey to registered alias
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
-- `pp_browser_amp_link_test` (5 tests, green)
+- `pp_browser_amp_link_test` (9 link unit tests, green)
+- `pp_browser_amp_integration_test` (15 Tier B tests, green)
+- Shared harness: `src/base/mesh/tests/support/` (see [EXTRACTION_READINESS.md](EXTRACTION_READINESS.md))
 
 ## Landed (L4 chat — D5)
 
@@ -63,7 +65,7 @@
 - Connect timeout does not `Detach()` when inbound already `IsActive()`
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
 - `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
-- Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
+- Shared AMP test harness: `src/base/mesh/tests/support/mesh_test_harness.h` + `MeshRuntime`
 
 ### LAN dogfood checklist (call-media / A026)
 

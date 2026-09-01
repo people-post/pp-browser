@@ -104,7 +104,17 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 | Deploy smoke | Image/env/caps/reach from outside hop | Medium | Low–medium |
 | Tier C | Topology, process isolation, capacity, long soak | Highest | Highest |
 
-**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey) and adversarial hardening (max_links, dial_timeout, garbage MSH, sealed flood, FRAG bomb). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_link_test` (`amp_integration_test.cpp`).
+**AMP test suites (Tier A + B):**
+
+| Target | Tier | Role |
+|--------|------|------|
+| `pp_browser_adp_test` | A | L1 wire / connection |
+| `pp_browser_amp_session_test` | A | L2 MSH + session crypto |
+| `pp_browser_amp_channel_test` | A | L3 mux + FRAG |
+| `pp_browser_amp_link_test` | A | Link / `MeshRuntime` unit |
+| `pp_browser_amp_integration_test` | B | Cross-layer `A-INT-*` / `A-ADV-*` |
+
+**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey) and adversarial hardening (max_links, dial_timeout, garbage MSH, sealed flood, FRAG bomb). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_integration_test` (`src/base/mesh/tests/integration/amp_integration_test.cpp`). Per-layer Tier A matrices: [projects/adp/L1_TEST_MATRIX.md](../../projects/adp/L1_TEST_MATRIX.md) and siblings under `projects/adp/`.
 
 ---
 
