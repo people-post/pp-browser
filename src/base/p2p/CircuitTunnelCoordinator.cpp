@@ -2,9 +2,9 @@
 
 #include "lib/amp/L3/ChannelBridge.h"
 #include "base/p2p/ProductChannelPolicies.h"
-#include "base/mesh/link/AdpMultiaddr.h"
-#include "base/mesh/link/PeerLink.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/AdpMultiaddr.h"
+#include "lib/amp/link/PeerLink.h"
+#include "lib/amp/link/Types.h"
 #include "common/ValueJson.h"
 
 #include <atomic>

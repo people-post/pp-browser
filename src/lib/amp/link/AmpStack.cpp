@@ -1,4 +1,4 @@
-#include "base/mesh/link/AmpStack.h"
+#include "lib/amp/link/AmpStack.h"
 
 namespace pbr::amp {
 

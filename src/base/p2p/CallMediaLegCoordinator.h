@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/link/MeshRuntime.h"
+#include "lib/amp/link/MeshRuntime.h"
 #include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/ICallMediaTransport.h"
 

@@ -18,3 +18,10 @@ using pp::Error;
 using pp::Roe;
 
 } // namespace pbr::adp
+
+namespace pbr::test {
+
+using pp::Error;
+using pp::Roe;
+
+} // namespace pbr::test

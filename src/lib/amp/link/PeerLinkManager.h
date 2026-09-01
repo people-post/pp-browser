@@ -1,15 +1,14 @@
 #pragma once
 
 #include "lib/amp/L1/Endpoint.h"
-#include "base/error/CodedFailure.h"
+#include "lib/amp/link/CodedFailure.h"
 #include "lib/amp/L3/Capability.h"
 #include "lib/amp/L3/ChannelPolicy.h"
-#include "base/mesh/link/PeerLink.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/PeerLink.h"
+#include "lib/amp/link/Types.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <chrono>
 #include <functional>

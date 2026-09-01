@@ -1,12 +1,12 @@
 #include "lib/amp/L1/Clock.h"
 #include "lib/amp/L1/Endpoint.h"
 #include "lib/amp/L1/MemoryDatagramIo.h"
-#include "base/crypto/MlDsa.h"
+#include "crypto/MlDsa.h"
 #include "lib/amp/L3/ChannelPolicy.h"
-#include "base/mesh/link/AdpMultiaddr.h"
-#include "base/mesh/link/AmpStack.h"
-#include "base/mesh/link/MeshPump.h"
-#include "base/mesh/link/PeerLinkManager.h"
+#include "lib/amp/link/AdpMultiaddr.h"
+#include "lib/amp/link/AmpStack.h"
+#include "lib/amp/link/MeshPump.h"
+#include "lib/amp/link/PeerLinkManager.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 #include "base/mesh/tests/support/mesh_harness_support.h"
 
@@ -49,8 +49,8 @@ struct MeshLinkFixture {
     f.ep_b = std::make_unique<adp::Endpoint>(f.io_b, f.clock);
     f.ep_b->SetAcceptEnabled(true);
 
-    auto alice_keys = MlDsa::GenerateKeyPair();
-    auto bob_keys = MlDsa::GenerateKeyPair();
+    auto alice_keys = pp::MlDsa::GenerateKeyPair();
+    auto bob_keys = pp::MlDsa::GenerateKeyPair();
     if (!alice_keys || !bob_keys) {
       return Error("mesh link test: keygen failed");
     }
@@ -396,8 +396,8 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   auto io_a = std::make_shared<adp::MemoryDatagramIo>(hub, addr_a);
   auto io_b = std::make_shared<adp::MemoryDatagramIo>(hub, addr_b);
 
-  auto alice_keys = MlDsa::GenerateKeyPair();
-  auto bob_keys = MlDsa::GenerateKeyPair();
+  auto alice_keys = pp::MlDsa::GenerateKeyPair();
+  auto bob_keys = pp::MlDsa::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(alice_keys));
   ASSERT_TRUE(static_cast<bool>(bob_keys));
 

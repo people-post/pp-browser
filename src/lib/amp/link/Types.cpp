@@ -1,4 +1,4 @@
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 
 #include <sodium.h>
 

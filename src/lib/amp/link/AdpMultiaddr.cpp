@@ -1,6 +1,6 @@
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 
 #include <charconv>
 #include <sstream>

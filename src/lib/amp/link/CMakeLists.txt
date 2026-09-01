@@ -13,8 +13,7 @@ pp_browser_add_base_library(pp_base_mesh_link
     pp_base_mesh_channel
     pp_base_mesh_session
     pp_base_adp
-    pp_base_crypto
-    pp_base_error
+    pp_crypto
     sodium)
 
 if(PP_BROWSER_BUILD_TESTS)

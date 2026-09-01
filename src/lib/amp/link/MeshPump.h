@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/amp/L1/Endpoint.h"
-#include "base/mesh/link/PeerLinkManager.h"
+#include "lib/amp/link/PeerLinkManager.h"
 
 namespace pbr::amp {
 

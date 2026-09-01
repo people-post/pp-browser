@@ -1,7 +1,7 @@
 #include "base/p2p/AmpCircuitHopRegistry.h"
 #include "base/p2p/CallMediaLegCoordinator.h"
 #include "base/p2p/CircuitTunnelCoordinator.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 #include "base/mesh/tests/support/mesh_triple_harness.h"
 
 #include <gtest/gtest.h>

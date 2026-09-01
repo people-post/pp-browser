@@ -6,9 +6,9 @@
 #include "lib/amp/L3/ChannelPolicy.h"
 #include "lib/amp/L3/ChannelWire.h"
 #include "lib/amp/L3/Types.h"
-#include "base/mesh/link/AmpAdpCarrier.h"
-#include "base/crypto/MlDsa.h"
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
+#include "crypto/MlDsa.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 #include "base/mesh/tests/support/mesh_harness_support.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 

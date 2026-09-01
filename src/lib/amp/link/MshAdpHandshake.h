@@ -3,8 +3,7 @@
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <functional>
 #include <optional>

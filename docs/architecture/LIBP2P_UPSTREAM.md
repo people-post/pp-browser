@@ -4,7 +4,7 @@
 
 pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/lib/libp2p/` as a **hard fork** (committed source, no git submodule).
 
-**A017 (2026-08-31):** Host / TCP / Yamux / Noise / QUIC / Identify / Kademlia / Gossip were **deleted**. The fork retains **PeerId + key wire** only (`p2p_peer_id`, `p2p_wire`). Product mesh is Amp (`lib/amp` + `base/mesh/link`).
+**A017 (2026-08-31):** Host / TCP / Yamux / Noise / QUIC / Identify / Kademlia / Gossip were **deleted**. The fork retains **PeerId + key wire** only (`p2p_peer_id`, `p2p_wire`). Product mesh is Amp (`lib/amp`).
 
 ## Layout
 

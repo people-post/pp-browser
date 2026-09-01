@@ -1,4 +1,4 @@
-#include "base/mesh/link/AmpAdpCarrier.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
 
 namespace pbr::amp {
 

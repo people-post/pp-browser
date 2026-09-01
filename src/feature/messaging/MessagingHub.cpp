@@ -45,7 +45,7 @@
 #include "base/p2p/LanMdnsDiscovery.h"
 #include "base/p2p/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 #include "base/p2p/NatTraversal.h"
 #include "base/p2p/Reachability.h"
 #include "base/runtime/StartupTiming.h"

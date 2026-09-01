@@ -1,4 +1,4 @@
-#include "base/mesh/link/MeshRuntime.h"
+#include "lib/amp/link/MeshRuntime.h"
 
 namespace pbr::amp {
 

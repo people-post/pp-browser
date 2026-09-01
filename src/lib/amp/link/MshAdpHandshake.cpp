@@ -1,6 +1,6 @@
-#include "base/mesh/link/MshAdpHandshake.h"
+#include "lib/amp/link/MshAdpHandshake.h"
 
-#include "base/mesh/link/AmpAdpCarrier.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/SessionKeys.h"
 

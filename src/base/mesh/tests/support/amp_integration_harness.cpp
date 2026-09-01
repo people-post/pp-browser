@@ -15,8 +15,8 @@ Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness(
   harness->ep_b = std::make_unique<adp::Endpoint>(harness->io_b, harness->clock);
   harness->ep_b->SetAcceptEnabled(true);
 
-  auto alice_keys = MlDsa::GenerateKeyPair();
-  auto bob_keys = MlDsa::GenerateKeyPair();
+  auto alice_keys = pp::MlDsa::GenerateKeyPair();
+  auto bob_keys = pp::MlDsa::GenerateKeyPair();
   if (!alice_keys || !bob_keys) {
     return Error("amp integration harness: keygen failed");
   }

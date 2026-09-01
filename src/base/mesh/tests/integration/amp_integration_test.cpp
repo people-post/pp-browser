@@ -2,7 +2,7 @@
 #include "lib/amp/L3/ChannelPolicy.h"
 #include "lib/amp/L3/ChannelWire.h"
 #include "lib/amp/L3/Types.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 #include "base/mesh/tests/support/amp_integration_harness.h"
 #include "lib/amp/L2/SessionControl.h"
 

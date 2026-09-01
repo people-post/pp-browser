@@ -2,7 +2,7 @@
 
 **Tier:** A (link unit tests on `MemoryDatagramIo`; no Tier B adversarial matrix)  
 **Contract:** [STACK.md](STACK.md) · **Design:** [DECISIONS.md](DECISIONS.md) (A025, A026)  
-**Suite:** `pp_browser_amp_link_test` (`src/base/mesh/link/tests/`)
+**Suite:** `pp_browser_amp_link_test` (`src/lib/amp/link/tests/`)
 
 Tier B cross-layer integration: [TEST_MATRIX.md](TEST_MATRIX.md) → `pp_browser_amp_integration_test`.
 
