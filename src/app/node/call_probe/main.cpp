@@ -244,6 +244,17 @@ struct AsyncWait {
     };
   }
 
+  pp::amp::PeerLinkManager::LinkCb LinkFn() {
+    return [this](pp::amp::PeerLinkManager::LinkRoe r) {
+      if (r) {
+        result = pbr::Roe<Result>();
+      } else {
+        result = pbr::Error(r.error().message);
+      }
+      done.store(true, std::memory_order_release);
+    };
+  }
+
   bool PumpUntilDone(AmpPeer& peer, const int timeout_ms = 10000) {
     return PumpUntil(peer, [this] { return done.load(std::memory_order_acquire); }, timeout_ms);
   }
@@ -289,7 +300,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
   }
 
   AsyncWait<void> nested_wait;
-  peer.Links().EstablishNestedOverCarrier(peer_id, bridge_wait.result->session, true, nested_wait.Fn());
+  peer.Links().EstablishNestedOverCarrier(peer_id, bridge_wait.result->session, true, nested_wait.LinkFn());
   if (!nested_wait.PumpUntilDone(peer, 12000) || !nested_wait.result) {
     return nested_wait.result ? pbr::Error("nested failed") : nested_wait.result.error();
   }
