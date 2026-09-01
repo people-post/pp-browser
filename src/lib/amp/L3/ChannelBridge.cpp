@@ -1,6 +1,6 @@
 #include "lib/amp/L3/ChannelBridge.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 void ChannelBridge::Attach(std::shared_ptr<ChannelSession> left, std::shared_ptr<ChannelSession> right,
                            CancelCheck is_cancelled, ClosedCallback on_closed) {
@@ -94,4 +94,4 @@ void ChannelBridge::Stop() {
   closed_fired_.reset();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

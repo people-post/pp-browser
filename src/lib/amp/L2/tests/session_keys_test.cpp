@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 TEST(SessionKeysTest, TranscriptHashDeterministic) {
@@ -40,4 +40,4 @@ TEST(SessionKeysTest, RekeyChangesSendRecv) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

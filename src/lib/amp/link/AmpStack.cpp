@@ -1,6 +1,6 @@
-#include "base/mesh/link/AmpStack.h"
+#include "lib/amp/link/AmpStack.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 Roe<std::unique_ptr<AmpStack>> AmpStack::Create(std::shared_ptr<adp::DatagramIo> io,
                                                 std::shared_ptr<adp::Clock> clock, Config config) {
@@ -50,4 +50,4 @@ void AmpStack::PostToIo(MeshRuntime::IoTask task) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

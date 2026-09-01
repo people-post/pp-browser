@@ -5,15 +5,13 @@
 #include "lib/amp/L2/SessionKeys.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Established L2 session — seal/open L3 payloads. */
 class Session {
@@ -51,4 +49,4 @@ private:
   int64_t grace_until_ms_ = 0;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

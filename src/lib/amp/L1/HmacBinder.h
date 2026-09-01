@@ -2,14 +2,12 @@
 
 #include "lib/amp/L1/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <array>
 #include <span>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 class HmacBinder {
 public:
@@ -27,4 +25,4 @@ private:
   PeerKey key_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

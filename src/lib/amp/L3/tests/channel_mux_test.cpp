@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 ChannelPolicy TestRealtimePolicy() {
@@ -179,4 +179,4 @@ TEST(ChannelSessionTest, ReadOnceClosesAfterFirstFrame) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

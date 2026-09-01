@@ -1,17 +1,16 @@
-#include "base/mesh/link/MshAdpHandshake.h"
+#include "lib/amp/link/MshAdpHandshake.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/MlDsa.h"
-#include "base/mesh/link/AmpAdpCarrier.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/SessionKeys.h"
 
+#include "crypto/MlDsa.h"
 #include "crypto/MlKem.h"
+#include "crypto/SodiumUtil.h"
 
 #include <sodium.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -20,14 +19,14 @@ void AppendPart(std::vector<ByteVector>& transcript, const std::vector<uint8_t>&
 }
 
 Roe<ByteVector> RandomNonce() {
-  EnsureSodiumInit();
+  pp::EnsureSodiumInit();
   ByteVector nonce(kHandshakeNonceBytes);
   randombytes_buf(nonce.data(), nonce.size());
   return nonce;
 }
 
 Roe<ByteVector> CombineMasterIkm(const ByteVector& client_ss, const ByteVector& server_ss) {
-  if (client_ss.size() != kHybridKemSharedSecretBytes || server_ss.size() != kHybridKemSharedSecretBytes) {
+  if (client_ss.size() != pp::kMlKem768SharedSecretBytes || server_ss.size() != pp::kMlKem768SharedSecretBytes) {
     return Error("amp msh adp: bad kem shared secret size");
   }
   ByteVector out;
@@ -42,7 +41,7 @@ Roe<void> VerifyPayload(const MshPayload& payload) {
   if (!sign_msg) {
     return sign_msg.error();
   }
-  auto ok = MlDsa::Verify(payload.identity_public_key, *sign_msg, payload.identity_signature);
+  auto ok = pp::MlDsa::Verify(payload.identity_public_key, *sign_msg, payload.identity_signature);
   if (!ok) {
     return ok.error();
   }
@@ -78,8 +77,8 @@ Roe<std::vector<uint8_t>> MshAdpHandshake::EncodeHello(const MshMessageType type
 
 Roe<MshPayload> MshAdpHandshake::BuildLocalPayload(const KemState& kem, const ByteVector& remote_kem_pk,
                                                      ByteVector& shared_secret_out) {
-  if (identity_.ml_dsa_public_key.size() != kMlDsa65PublicKeyBytes
-      || identity_.ml_dsa_secret_key.size() != kMlDsa65SecretKeyBytes) {
+  if (identity_.ml_dsa_public_key.size() != pp::kMlDsa65PublicKeyBytes
+      || identity_.ml_dsa_secret_key.size() != pp::kMlDsa65SecretKeyBytes) {
     return Error("amp msh adp: bad identity key sizes");
   }
   auto encap = ::pp::MlKem::Encapsulate(remote_kem_pk);
@@ -91,7 +90,7 @@ Roe<MshPayload> MshAdpHandshake::BuildLocalPayload(const KemState& kem, const By
   if (!sign_msg) {
     return sign_msg.error();
   }
-  auto sig = MlDsa::Sign(identity_.ml_dsa_secret_key, *sign_msg);
+  auto sig = pp::MlDsa::Sign(identity_.ml_dsa_secret_key, *sign_msg);
   if (!sig) {
     return sig.error();
   }
@@ -353,4 +352,4 @@ Roe<void> MshAdpHandshake::MaybeComplete() {
   return Roe<void>();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

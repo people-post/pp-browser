@@ -6,7 +6,7 @@
 #include <functional>
 #include <memory>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Bidirectional DATA splice between two ChannelSessions (AMP StreamBridge).
@@ -41,4 +41,4 @@ private:
   std::shared_ptr<std::atomic<bool>> closed_fired_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

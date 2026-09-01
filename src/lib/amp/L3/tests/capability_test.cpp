@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 TEST(CapabilityTest, EncodeDecodeRoundTrip) {
@@ -21,4 +21,4 @@ TEST(CapabilityTest, EncodeDecodeRoundTrip) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

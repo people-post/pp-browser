@@ -1,12 +1,12 @@
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 
 #include <charconv>
 #include <sstream>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -102,4 +102,4 @@ Roe<std::string> FormatAdpMultiaddr(const adp::IpEndpoint& endpoint, const std::
   return out.str();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

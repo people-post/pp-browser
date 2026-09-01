@@ -2,15 +2,13 @@
 
 #include "lib/amp/L3/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 struct ChannelHeader {
   uint8_t frame_version = kChannelFrameVersion;
@@ -51,4 +49,4 @@ public:
   static Roe<std::string> DecodeLenUtf8Le(std::span<const uint8_t> wire, size_t& consumed);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

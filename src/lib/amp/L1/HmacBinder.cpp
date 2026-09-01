@@ -1,12 +1,11 @@
 #include "lib/amp/L1/HmacBinder.h"
 
-#include "common/PbrCompat.h"
 
 #include <sodium.h>
 
 #include <cstring>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 HmacBinder::HmacBinder(PeerKey key) : key_(key) {}
 
@@ -39,4 +38,4 @@ Roe<void> HmacBinder::Verify(std::span<const uint8_t> datagram) const {
   return {};
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

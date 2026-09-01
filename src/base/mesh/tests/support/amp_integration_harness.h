@@ -6,9 +6,9 @@
 #include "lib/amp/L3/ChannelPolicy.h"
 #include "lib/amp/L3/ChannelWire.h"
 #include "lib/amp/L3/Types.h"
-#include "base/mesh/link/AmpAdpCarrier.h"
-#include "base/crypto/MlDsa.h"
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
+#include "crypto/MlDsa.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 #include "base/mesh/tests/support/mesh_harness_support.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 
@@ -23,13 +23,13 @@ enum class HarnessSide { A, B };
 
 /** Helpers for AMP L1–L3 integration tests (Track A). */
 struct AmpIntegrationHarness : AmpMeshHarness {
-  amp::PeerLinkManager& Mgr(const HarnessSide side) {
+  pp::amp::PeerLinkManager& Mgr(const HarnessSide side) {
     return side == HarnessSide::A ? mgr_a() : mgr_b();
   }
 
-  adp::Endpoint& Ep(const HarnessSide side) { return side == HarnessSide::A ? *ep_a : *ep_b; }
+  pp::adp::Endpoint& Ep(const HarnessSide side) { return side == HarnessSide::A ? *ep_a : *ep_b; }
 
-  std::shared_ptr<adp::MemoryDatagramIo>& Io(const HarnessSide side) {
+  std::shared_ptr<pp::adp::MemoryDatagramIo>& Io(const HarnessSide side) {
     return side == HarnessSide::A ? io_a : io_b;
   }
 
@@ -43,7 +43,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     }
     bool done = false;
     bool ok = false;
-    mgr_a().EnsureAssociation(alias_a, [&](amp::PeerLinkManager::LinkRoe result) {
+    mgr_a().EnsureAssociation(alias_a, [&](pp::amp::PeerLinkManager::LinkRoe result) {
       ok = result.isOk();
       done = true;
     });
@@ -54,7 +54,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     bool ready = false;
     PumpUntil([&] {
       auto* link = mgr_a().FindLink(alias_a);
-      ready = link && link->Mux() && link->Mux()->State(amp::kCapabilityChannelId) == amp::ChannelState::Open
+      ready = link && link->Mux() && link->Mux()->State(pp::amp::kCapabilityChannelId) == pp::amp::ChannelState::Open
               && link->RemoteCapability() != nullptr;
       return ready;
     });
@@ -74,11 +74,11 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     bool done_b = false;
     bool ok_a = false;
     bool ok_b = false;
-    mgr_a().EnsureAssociation(alias_a, [&](amp::PeerLinkManager::LinkRoe result) {
+    mgr_a().EnsureAssociation(alias_a, [&](pp::amp::PeerLinkManager::LinkRoe result) {
       ok_a = result.isOk();
       done_a = true;
     });
-    mgr_b().EnsureAssociation(alias_b, [&](amp::PeerLinkManager::LinkRoe result) {
+    mgr_b().EnsureAssociation(alias_b, [&](pp::amp::PeerLinkManager::LinkRoe result) {
       ok_b = result.isOk();
       done_b = true;
     });
@@ -90,10 +90,10 @@ struct AmpIntegrationHarness : AmpMeshHarness {
   }
 
   std::optional<uint32_t> OpenChannel(const HarnessSide side, const std::string& alias, const std::string& protocol_id,
-                                    amp::ChannelPolicy policy) {
+                                    pp::amp::ChannelPolicy policy) {
     bool done = false;
     std::optional<uint32_t> channel_id;
-    Mgr(side).OpenChannel(alias, protocol_id, policy, [&](amp::PeerLinkManager::ChannelRoe ch) {
+    Mgr(side).OpenChannel(alias, protocol_id, policy, [&](pp::amp::PeerLinkManager::ChannelRoe ch) {
       if (ch.isOk()) {
         channel_id = ch.value();
       }
@@ -106,7 +106,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     bool channel_open = false;
     PumpUntil([&] {
       auto* link = Mgr(side).FindLink(alias);
-      channel_open = link && link->Mux() && link->Mux()->State(*channel_id) == amp::ChannelState::Open;
+      channel_open = link && link->Mux() && link->Mux()->State(*channel_id) == pp::amp::ChannelState::Open;
       return channel_open;
     });
     return channel_id;
@@ -116,7 +116,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     bool ch0_open = false;
     PumpUntil([&] {
       auto* link = Mgr(side).FindLink(alias);
-      ch0_open = link && link->Mux() && link->Mux()->State(amp::kCapabilityChannelId) == amp::ChannelState::Open;
+      ch0_open = link && link->Mux() && link->Mux()->State(pp::amp::kCapabilityChannelId) == pp::amp::ChannelState::Open;
       return ch0_open;
     });
     return ch0_open;
@@ -173,14 +173,14 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     if (!conn) {
       return false;
     }
-    return static_cast<bool>(conn->Send(adp::QosClass::Reliable, payload));
+    return static_cast<bool>(conn->Send(pp::adp::QosClass::Reliable, payload));
   }
 
   /** Inject syntactically valid but cryptographically invalid sealed carrier frames. */
   bool InjectSealedGarbage(const HarnessSide side, const std::string& alias, const uint32_t channel_id,
                            const uint32_t channel_seq, const size_t garbage_len = 64) {
     std::vector<uint8_t> garbage(garbage_len, 0xDE);
-    auto wire = amp::AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, garbage);
+    auto wire = pp::amp::AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, garbage);
     if (!wire) {
       return false;
     }
@@ -189,12 +189,12 @@ struct AmpIntegrationHarness : AmpMeshHarness {
 
   /** Inject invalid MSH-shaped carrier garbage during handshake. */
   bool InjectMshGarbage(const HarnessSide side, const std::string& alias) {
-    std::vector<uint8_t> garbage = {static_cast<uint8_t>(amp::AmpAdpPayloadKind::Msh), 0xFF, 0x00, 0x01, 0x02};
+    std::vector<uint8_t> garbage = {static_cast<uint8_t>(pp::amp::AmpAdpPayloadKind::Msh), 0xFF, 0x00, 0x01, 0x02};
     return InjectAdpPayload(side, alias, std::move(garbage));
   }
 
   /** Deliver a raw UDP datagram (bypasses ADP connection state). */
-  bool InjectRawDatagram(const HarnessSide from, const adp::IpEndpoint& to, std::vector<uint8_t> datagram) {
+  bool InjectRawDatagram(const HarnessSide from, const pp::adp::IpEndpoint& to, std::vector<uint8_t> datagram) {
     return static_cast<bool>(Io(from)->SendTo(to, datagram));
   }
 
@@ -206,8 +206,8 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     if (!link || !link->GetSession() || !link->Mux()) {
       return false;
     }
-    amp::ChannelFrame frame;
-    frame.header.frame_type = amp::ChannelFrameType::Frag;
+    pp::amp::ChannelFrame frame;
+    frame.header.frame_type = pp::amp::ChannelFrameType::Frag;
     frame.header.channel_id = channel_id;
     frame.header.channel_seq = channel_seq;
     frame.frag.msg_id = msg_id;
@@ -215,7 +215,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     frame.frag.frag_count = frag_count;
     frame.frag.total_len = total_len;
     frame.frag.chunk = std::move(chunk);
-    auto wire = amp::ChannelWire::Encode(frame);
+    auto wire = pp::amp::ChannelWire::Encode(frame);
     if (!wire) {
       return false;
     }
@@ -228,18 +228,18 @@ struct AmpIntegrationHarness : AmpMeshHarness {
 
   /** Send one sealed L3 DATA frame from an alternate local UDP path (NAT handoff). */
   bool SendSealedFromAlternatePath(const HarnessSide sender, const std::string& alias, const uint32_t channel_id,
-                                   const adp::IpEndpoint& alt_local, std::vector<uint8_t> payload,
+                                   const pp::adp::IpEndpoint& alt_local, std::vector<uint8_t> payload,
                                    uint32_t channel_seq = 1) {
     auto* link = Mgr(sender).FindLink(alias);
     if (!link || !link->GetSession() || !link->ConnectionOrNull()) {
       return false;
     }
-    amp::ChannelFrame frame;
-    frame.header.frame_type = amp::ChannelFrameType::Data;
+    pp::amp::ChannelFrame frame;
+    frame.header.frame_type = pp::amp::ChannelFrameType::Data;
     frame.header.channel_id = channel_id;
     frame.header.channel_seq = channel_seq;
     frame.payload = std::move(payload);
-    auto wire = amp::ChannelWire::Encode(frame);
+    auto wire = pp::amp::ChannelWire::Encode(frame);
     if (!wire) {
       return false;
     }
@@ -247,20 +247,20 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     if (!sealed) {
       return false;
     }
-    auto carrier = amp::AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, *sealed);
+    auto carrier = pp::amp::AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, *sealed);
     if (!carrier) {
       return false;
     }
 
     auto* conn = link->ConnectionOrNull();
-    adp::OpenParams params;
+    pp::adp::OpenParams params;
     params.key = link->GetSession()->AssocKey();
     params.id = conn->Id();
     params.mint_id = false;
     params.peer = sender == HarnessSide::A ? addr_b : addr_a;
 
-    migrate_io_ = std::make_shared<adp::MemoryDatagramIo>(hub, alt_local);
-    migrate_ep_ = std::make_unique<adp::Endpoint>(migrate_io_, clock);
+    migrate_io_ = std::make_shared<pp::adp::MemoryDatagramIo>(hub, alt_local);
+    migrate_ep_ = std::make_unique<pp::adp::Endpoint>(migrate_io_, clock);
     auto opened = migrate_ep_->Open(params);
     if (!opened) {
       migrate_ep_.reset();
@@ -268,7 +268,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
       return false;
     }
     migrate_conn_ = *opened;
-    if (!static_cast<bool>(migrate_conn_->Send(adp::QosClass::Reliable, *carrier))) {
+    if (!static_cast<bool>(migrate_conn_->Send(pp::adp::QosClass::Reliable, *carrier))) {
       return false;
     }
     migrate_ep_->Tick();
@@ -277,9 +277,9 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     return true;
   }
 
-  std::shared_ptr<adp::MemoryDatagramIo> migrate_io_;
-  std::unique_ptr<adp::Endpoint> migrate_ep_;
-  std::shared_ptr<adp::Connection> migrate_conn_;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> migrate_io_;
+  std::unique_ptr<pp::adp::Endpoint> migrate_ep_;
+  std::shared_ptr<pp::adp::Connection> migrate_conn_;
 
   bool RequestRekey(const HarnessSide side, const std::string& alias) {
     if (!WaitCh0Open(side, alias)) {
@@ -291,7 +291,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     }
     bool done = false;
     bool ok = false;
-    link->RequestSessionRekey([&](Roe<void> result) {
+    link->RequestSessionRekey([&](pp::Roe<void> result) {
       ok = result.isOk();
       done = true;
     });
@@ -300,7 +300,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
   }
 };
 
-Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness(
-    std::optional<amp::PeerLinkConfig> link_config = std::nullopt);
+pp::Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness(
+    std::optional<pp::amp::PeerLinkConfig> link_config = std::nullopt);
 
 } // namespace pbr::test

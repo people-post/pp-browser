@@ -1,12 +1,12 @@
 #include "lib/amp/L1/Clock.h"
 #include "lib/amp/L1/Endpoint.h"
 #include "lib/amp/L1/MemoryDatagramIo.h"
-#include "base/crypto/MlDsa.h"
+#include "crypto/MlDsa.h"
 #include "lib/amp/L3/ChannelPolicy.h"
-#include "base/mesh/link/AdpMultiaddr.h"
-#include "base/mesh/link/AmpStack.h"
-#include "base/mesh/link/MeshPump.h"
-#include "base/mesh/link/PeerLinkManager.h"
+#include "lib/amp/link/AdpMultiaddr.h"
+#include "lib/amp/link/AmpStack.h"
+#include "lib/amp/link/MeshPump.h"
+#include "lib/amp/link/PeerLinkManager.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 #include "base/mesh/tests/support/mesh_harness_support.h"
 
@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 struct MeshLinkFixture {
@@ -49,8 +49,8 @@ struct MeshLinkFixture {
     f.ep_b = std::make_unique<adp::Endpoint>(f.io_b, f.clock);
     f.ep_b->SetAcceptEnabled(true);
 
-    auto alice_keys = MlDsa::GenerateKeyPair();
-    auto bob_keys = MlDsa::GenerateKeyPair();
+    auto alice_keys = pp::MlDsa::GenerateKeyPair();
+    auto bob_keys = pp::MlDsa::GenerateKeyPair();
     if (!alice_keys || !bob_keys) {
       return Error("mesh link test: keygen failed");
     }
@@ -162,7 +162,7 @@ TEST(MeshLinkTest, OpenChannelDataRoundTrip) {
 
 TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
 
@@ -185,11 +185,11 @@ TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
 
 TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
 
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
   ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
@@ -214,10 +214,10 @@ TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
 
 TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
   h.mgr_a().SetAdvertisedProtocols({"/pp-browser/chat/1.0.0", "/pp-browser/circuit-relay/1.0.0"});
@@ -274,10 +274,10 @@ TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
 
 TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   // Only A knows how to dial B initially; B learns A's listen addr from ch0.
   h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
@@ -320,10 +320,10 @@ TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
 
 TEST(MeshLinkTest, DualDialElectsOneConnectedLinkPerPeerId) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   // Both peers accept so simultaneous A↔B dials can complete.
   h.ep_a->SetAcceptEnabled(true);
@@ -396,8 +396,8 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   auto io_a = std::make_shared<adp::MemoryDatagramIo>(hub, addr_a);
   auto io_b = std::make_shared<adp::MemoryDatagramIo>(hub, addr_b);
 
-  auto alice_keys = MlDsa::GenerateKeyPair();
-  auto bob_keys = MlDsa::GenerateKeyPair();
+  auto alice_keys = pp::MlDsa::GenerateKeyPair();
+  auto bob_keys = pp::MlDsa::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(alice_keys));
   ASSERT_TRUE(static_cast<bool>(bob_keys));
 
@@ -408,19 +408,19 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   bob.ml_dsa_secret_key = std::move(bob_keys->secret_key);
   bob.ml_dsa_public_key = std::move(bob_keys->public_key);
 
-  auto peer_a = test::DeriveTestPeerId(alice.ml_dsa_public_key);
-  auto peer_b = test::DeriveTestPeerId(bob.ml_dsa_public_key);
+  auto peer_a = pbr::test::DeriveTestPeerId(alice.ml_dsa_public_key);
+  auto peer_b = pbr::test::DeriveTestPeerId(bob.ml_dsa_public_key);
   ASSERT_TRUE(static_cast<bool>(peer_a));
   ASSERT_TRUE(static_cast<bool>(peer_b));
 
   AmpStack::Config cfg_a;
   cfg_a.identity = alice;
   cfg_a.local_peer_id = *peer_a;
-  cfg_a.link_config = test::AmpMeshTestLinkConfig();
+  cfg_a.link_config = pbr::test::AmpMeshTestLinkConfig();
   AmpStack::Config cfg_b;
   cfg_b.identity = bob;
   cfg_b.local_peer_id = *peer_b;
-  cfg_b.link_config = test::AmpMeshTestLinkConfig();
+  cfg_b.link_config = pbr::test::AmpMeshTestLinkConfig();
 
   auto stack_a = AmpStack::Create(io_a, clock, cfg_a);
   auto stack_b = AmpStack::Create(io_b, clock, cfg_b);
@@ -447,4 +447,4 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

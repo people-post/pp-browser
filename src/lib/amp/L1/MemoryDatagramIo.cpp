@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 std::shared_ptr<MemoryDatagramHub> MemoryDatagramIo::MakeHub() {
   return std::make_shared<MemoryDatagramHub>();
@@ -92,4 +92,4 @@ Roe<std::optional<std::pair<IpEndpoint, std::vector<uint8_t>>>> MemoryDatagramHu
   return std::optional<std::pair<IpEndpoint, std::vector<uint8_t>>>{std::move(pkt)};
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

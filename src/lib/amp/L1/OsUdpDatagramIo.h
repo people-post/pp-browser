@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 /** Thin non-blocking UDP socket (POSIX / Winsock). Asio-free. */
 class OsUdpDatagramIo final : public DatagramIo {
@@ -27,4 +27,4 @@ private:
   IpEndpoint local_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

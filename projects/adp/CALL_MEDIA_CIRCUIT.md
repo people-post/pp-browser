@@ -32,7 +32,7 @@ A ══MSH════════════════ B  (inner Session ov
 
 | Piece | Location |
 |-------|----------|
-| Outer protocol | `amp::kAmpCircuitCarrierProtocolId` (`/pp-browser/amp-circuit-carrier/1.0.0`) |
+| Outer protocol | `pp::amp::kAmpCircuitCarrierProtocolId` (`/pp-browser/amp-circuit-carrier/1.0.0`) |
 | Outer policy | `CircuitCarrierChannelPolicy` — BestEffort + FRAG-friendly queue (avoids ADP reliable_window stall) |
 | Carrier MSH | `PeerLink` carrier ctor + `MshAdpHandshake(chunked_wire=false)` |
 | Install / accept | `PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept` |

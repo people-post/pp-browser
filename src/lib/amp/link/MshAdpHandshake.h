@@ -3,15 +3,13 @@
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <functional>
 #include <optional>
 #include <span>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 struct MshAdpEstablished {
   SessionMaterial local_material;
@@ -72,4 +70,4 @@ private:
   ByteVector master_ikm_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

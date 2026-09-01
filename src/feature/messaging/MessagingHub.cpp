@@ -45,7 +45,7 @@
 #include "base/p2p/LanMdnsDiscovery.h"
 #include "base/p2p/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 #include "base/p2p/NatTraversal.h"
 #include "base/p2p/Reachability.h"
 #include "base/runtime/StartupTiming.h"
@@ -330,7 +330,7 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
 
   const std::string peer_id = mesh_->Amp()->LocalPeerId();
   int amp_udp = 0;
-  if (auto parsed = amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
+  if (auto parsed = pp::amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
     amp_udp = static_cast<int>(parsed->endpoint.port);
   }
   if (peer_id.empty() || amp_udp <= 0) {
@@ -709,7 +709,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                   << " (direct P2P unavailable; relay messaging may still work)";
   }
 
-  amp::PeerLinkManager* amp_links = nullptr;
+  pp::amp::PeerLinkManager* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
   if (mesh_ && mesh_->Amp()) {
@@ -1572,7 +1572,7 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   CircuitRelayBridgeResult last;
   last.error = "all hops failed";
 
-  amp::PeerLinkManager& links = mesh_->Amp()->Links();
+  pp::amp::PeerLinkManager& links = mesh_->Amp()->Links();
   for (const MeshHopCandidate& hop : hops) {
     const std::string key = hop.peer_id;
     if (!target.target_peer_id.empty() && key == target.target_peer_id) {

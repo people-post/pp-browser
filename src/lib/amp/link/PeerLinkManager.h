@@ -1,15 +1,13 @@
 #pragma once
 
 #include "lib/amp/L1/Endpoint.h"
-#include "base/error/CodedFailure.h"
+#include "lib/amp/link/CodedFailure.h"
 #include "lib/amp/L3/Capability.h"
 #include "lib/amp/L3/ChannelPolicy.h"
-#include "base/mesh/link/PeerLink.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/PeerLink.h"
+#include "lib/amp/link/Types.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <chrono>
 #include <functional>
@@ -19,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Dial + warm policy over ADP/AMP (replaces libp2p PeerSessionManager on the AMP path). */
 class PeerLinkManager {
@@ -175,4 +173,4 @@ private:
   std::vector<std::pair<std::string, std::string>> pending_alias_adopt_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <functional>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 enum class ChannelDropPolicy {
   Never,
@@ -65,4 +65,4 @@ inline ChannelPolicy CircuitCarrierChannelPolicy(
   return policy;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -1,6 +1,6 @@
 #include "lib/amp/L2/SessionControl.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -60,4 +60,4 @@ Roe<SessionRekeyMessage> SessionControlCodec::Decode(const std::span<const uint8
   return out;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -1,8 +1,8 @@
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 TEST(AdpMultiaddrTest, ParseAndFormatRoundTrip) {
@@ -18,4 +18,4 @@ TEST(AdpMultiaddrTest, ParseAndFormatRoundTrip) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

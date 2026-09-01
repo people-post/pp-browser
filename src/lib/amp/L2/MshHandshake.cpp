@@ -1,15 +1,16 @@
 #include "lib/amp/L2/MshHandshake.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/MlDsa.h"
 #include "lib/amp/L2/SessionKeys.h"
 
+#include "crypto/MlDsa.h"
 #include "crypto/MlKem.h"
+#include "crypto/SodiumUtil.h"
 
 #include <sodium.h>
 
-namespace pbr::amp {
+#include <cstring>
+
+namespace pp::amp {
 
 namespace {
 
@@ -23,7 +24,7 @@ void AppendPart(std::vector<ByteVector>& transcript, const std::vector<uint8_t>&
 }
 
 Roe<ByteVector> RandomNonce() {
-  EnsureSodiumInit();
+  pp::EnsureSodiumInit();
   ByteVector nonce(kHandshakeNonceBytes);
   randombytes_buf(nonce.data(), nonce.size());
   return nonce;
@@ -53,8 +54,8 @@ Roe<std::vector<uint8_t>> EncodeHello(const MshMessageType type, const KemState&
 
 Roe<MshPayload> BuildPayload(const MshIdentity& identity, const KemState& kem,
                               const ByteVector& remote_ephemeral_public) {
-  if (identity.ml_dsa_public_key.size() != kMlDsa65PublicKeyBytes
-      || identity.ml_dsa_secret_key.size() != kMlDsa65SecretKeyBytes) {
+  if (identity.ml_dsa_public_key.size() != pp::kMlDsa65PublicKeyBytes
+      || identity.ml_dsa_secret_key.size() != pp::kMlDsa65SecretKeyBytes) {
     return Error("amp msh: bad identity key sizes");
   }
   auto encap = ::pp::MlKem::Encapsulate(remote_ephemeral_public);
@@ -65,7 +66,7 @@ Roe<MshPayload> BuildPayload(const MshIdentity& identity, const KemState& kem,
   if (!sign_msg) {
     return sign_msg.error();
   }
-  auto sig = MlDsa::Sign(identity.ml_dsa_secret_key, *sign_msg);
+  auto sig = pp::MlDsa::Sign(identity.ml_dsa_secret_key, *sign_msg);
   if (!sig) {
     return sig.error();
   }
@@ -82,7 +83,7 @@ Roe<void> VerifyPayload(const MshPayload& payload) {
   if (!sign_msg) {
     return sign_msg.error();
   }
-  auto ok = MlDsa::Verify(payload.identity_public_key, *sign_msg, payload.identity_signature);
+  auto ok = pp::MlDsa::Verify(payload.identity_public_key, *sign_msg, payload.identity_signature);
   if (!ok) {
     return ok.error();
   }
@@ -93,7 +94,7 @@ Roe<void> VerifyPayload(const MshPayload& payload) {
 }
 
 Roe<ByteVector> CombineMasterIkm(const ByteVector& client_ss, const ByteVector& server_ss) {
-  if (client_ss.size() != kHybridKemSharedSecretBytes || server_ss.size() != kHybridKemSharedSecretBytes) {
+  if (client_ss.size() != pp::kMlKem768SharedSecretBytes || server_ss.size() != pp::kMlKem768SharedSecretBytes) {
     return Error("amp msh: bad kem shared secret size");
   }
   ByteVector out;
@@ -104,7 +105,7 @@ Roe<ByteVector> CombineMasterIkm(const ByteVector& client_ss, const ByteVector& 
 }
 
 Roe<ByteVector> FinishedMac(const ByteVector& master_ikm, const ByteVector& transcript_hash) {
-  EnsureSodiumInit();
+  pp::EnsureSodiumInit();
   unsigned char prk[crypto_kdf_hkdf_sha256_KEYBYTES];
   if (crypto_kdf_hkdf_sha256_extract(prk, reinterpret_cast<const unsigned char*>(kAmpHkdfSalt), std::strlen(kAmpHkdfSalt),
                                      master_ikm.data(), master_ikm.size()) != 0) {
@@ -270,4 +271,4 @@ Roe<MshEstablished> MshHandshake::Run(const MshIdentity& initiator, const MshIde
   return out;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -3,7 +3,6 @@
 #include "lib/amp/L1/Types.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/PbrCompat.h"
 
 #include <sodium.h>
 
@@ -12,7 +11,7 @@
 #include <functional>
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 inline constexpr const char* kAdpMultiaddrProtocol = "adp";
 inline constexpr const char* kAdpMultiaddrVersion = "1.0.0";
@@ -56,4 +55,4 @@ struct PeerLinkConfig {
   std::function<std::string(const ByteVector& identity_public_key)> peer_id_from_identity;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

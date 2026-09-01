@@ -1,15 +1,15 @@
-#include "base/crypto/MlDsa.h"
+#include "crypto/MlDsa.h"
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/Session.h"
 #include "lib/amp/L2/SessionControl.h"
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 MshIdentity MakeIdentity() {
-  auto keys = MlDsa::GenerateKeyPair();
+  auto keys = pp::MlDsa::GenerateKeyPair();
   if (!keys) {
     throw std::runtime_error(keys.error().message);
   }
@@ -68,4 +68,4 @@ TEST(SessionRekeyGraceTest, ApplyRekeyRejectsPreviousEpochAfterGrace) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

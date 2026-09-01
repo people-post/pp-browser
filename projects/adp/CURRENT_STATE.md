@@ -40,7 +40,7 @@
 
 ## Landed (link layer — D4)
 
-- `src/base/mesh/link/` → `pp_base_mesh_link`
+- `src/lib/amp/link/` → `pp_base_mesh_link`
 - ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`, **`MeshRuntime`**
 - PeerId from MSH identity; inbound link adopt/rekey to registered alias
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`

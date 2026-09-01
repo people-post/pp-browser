@@ -1,6 +1,6 @@
 #include "lib/amp/L3/Capability.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -90,4 +90,4 @@ Roe<CapabilityPayload> CapabilityCodec::Decode(std::span<const uint8_t> wire) {
   return out;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

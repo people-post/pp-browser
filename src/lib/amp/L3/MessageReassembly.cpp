@@ -1,6 +1,6 @@
 #include "lib/amp/L3/MessageReassembly.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 MessageReassembly::MessageReassembly(const size_t max_message_bytes) : max_message_bytes_(max_message_bytes) {}
 
@@ -55,4 +55,4 @@ void MessageReassembly::SweepExpired(const int64_t now_ms) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

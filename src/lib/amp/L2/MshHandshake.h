@@ -3,12 +3,10 @@
 #include "lib/amp/L2/MshMessages.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 struct MshEstablished {
   SessionMaterial initiator_material;
@@ -28,4 +26,4 @@ public:
                                   std::span<const uint8_t> finished_wire);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

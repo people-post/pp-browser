@@ -20,7 +20,7 @@ using socklen_t = int;
 #include <unistd.h>
 #endif
 
-namespace pbr::adp {
+namespace pp::adp {
 namespace {
 
 Error IoErr(const char* what) { return Error(std::string("adp udp: ") + what); }
@@ -164,4 +164,4 @@ Roe<std::optional<std::pair<IpEndpoint, std::vector<uint8_t>>>> OsUdpDatagramIo:
       {FromSockAddr(ss), std::move(buf)}};
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

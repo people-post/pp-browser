@@ -72,7 +72,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D4 — PeerLinkManager
 
-- [x] `src/base/mesh/link/` + `pp_base_mesh_link`
+- [x] `src/lib/amp/link/` + `pp_base_mesh_link`
 - [x] `EnsureAssociation` + `OpenChannel` API
 - [x] Multiaddr `/ip4/.../udp/.../adp/1.0.0/p2p/...`
 - [x] Warm/cold, backoff (ported from `PeerSessionManager` shape)
@@ -153,6 +153,6 @@ cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_
 ./build/src/lib/amp/L1/tests/pp_browser_adp_test
 ./build/src/lib/amp/L2/tests/pp_browser_amp_session_test
 ./build/src/lib/amp/L3/tests/pp_browser_amp_channel_test
-./build/src/base/mesh/link/tests/pp_browser_amp_link_test
+./build/src/lib/amp/link/tests/pp_browser_amp_link_test
 ./build/src/base/mesh/tests/integration/pp_browser_amp_integration_test
 ```

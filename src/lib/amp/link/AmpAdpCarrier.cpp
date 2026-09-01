@@ -1,6 +1,6 @@
-#include "base/mesh/link/AmpAdpCarrier.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -130,4 +130,4 @@ Roe<std::vector<uint8_t>> AmpAdpCarrier::DecodeSealedBody(const std::span<const 
   return std::vector<uint8_t>(payload.begin() + 9, payload.end());
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -1,15 +1,15 @@
-#include "base/mesh/link/PeerLink.h"
+#include "lib/amp/link/PeerLink.h"
 
-#include "base/error/CodedFailure.h"
+#include "lib/amp/link/CodedFailure.h"
 #include "lib/amp/L3/Types.h"
-#include "base/mesh/link/AmpAdpCarrier.h"
-#include "base/mesh/link/PeerLinkManager.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/AmpAdpCarrier.h"
+#include "lib/amp/link/PeerLinkManager.h"
+#include "lib/amp/link/Types.h"
 #include "lib/amp/L2/SessionControl.h"
 
 #include <functional>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 PeerLink::Failure PeerLink::WrapConnectionFailure(const adp::Connection::Failure& child) {
   switch (child.GetCode()) {
@@ -455,4 +455,4 @@ void PeerLink::HandleSessionControl(const std::span<const uint8_t> payload) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

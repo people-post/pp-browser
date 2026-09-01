@@ -3,11 +3,8 @@
 #include "lib/amp/L1/Clock.h"
 #include "lib/amp/L1/HmacBinder.h"
 #include "lib/amp/L1/Types.h"
-#include "base/error/CodedFailure.h"
-
-#include "base/crypto/ReplayWindow.h"
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/L1/CodedFailure.h"
+#include "lib/amp/L1/ReplayWindow.h"
 
 #include <chrono>
 #include <cstdint>
@@ -17,7 +14,7 @@
 #include <span>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 class Endpoint;
 
@@ -113,4 +110,4 @@ private:
   std::deque<Outstanding> outstanding_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

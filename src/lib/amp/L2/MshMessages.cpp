@@ -1,11 +1,12 @@
 #include "lib/amp/L2/MshMessages.h"
 
-#include "base/crypto/MlDsa.h"
+#include "crypto/MlDsa.h"
+#include "crypto/MlKem.h"
 #include "lib/amp/L2/Types.h"
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -39,7 +40,7 @@ Roe<void> ExpectType(std::span<const uint8_t>& wire, MshMessageType expected) {
 } // namespace
 
 Roe<ByteVector> MshMessages::BuildIdentitySignMessage(const ByteVector& static_kem_public_key) {
-  if (static_kem_public_key.size() != kHybridKemPublicKeyBytes) {
+  if (static_kem_public_key.size() != pp::kMlKem768PublicKeyBytes) {
     return Error("amp msh: bad static kem pk size");
   }
   ByteVector msg;
@@ -53,7 +54,7 @@ Roe<std::vector<uint8_t>> MshMessages::EncodeHello(const MshMessageType type, co
   if (hello.version != kMshVersion) {
     return Error("amp msh: bad hello version");
   }
-  if (hello.kem_public_key.size() != kHybridKemPublicKeyBytes) {
+  if (hello.kem_public_key.size() != pp::kMlKem768PublicKeyBytes) {
     return Error("amp msh: bad kem pk size");
   }
   if (hello.nonce.size() != kHandshakeNonceBytes) {
@@ -82,7 +83,7 @@ Roe<MshHello> MshMessages::DecodeHello(const MshMessageType expected, std::span<
   if (hello.version != kMshVersion) {
     return Error("amp msh: unsupported hello version");
   }
-  auto kem_pk = ReadFixed(span, kHybridKemPublicKeyBytes);
+  auto kem_pk = ReadFixed(span, pp::kMlKem768PublicKeyBytes);
   if (!kem_pk) {
     return kem_pk.error();
   }
@@ -99,16 +100,16 @@ Roe<MshHello> MshMessages::DecodeHello(const MshMessageType expected, std::span<
 }
 
 Roe<std::vector<uint8_t>> MshMessages::EncodePayload(const MshMessageType type, const MshPayload& payload) {
-  if (payload.kem_ciphertext.size() != kHybridKemCiphertextBytes) {
+  if (payload.kem_ciphertext.size() != pp::kMlKem768CiphertextBytes) {
     return Error("amp msh: bad kem ct size");
   }
-  if (payload.identity_public_key.size() != kMlDsa65PublicKeyBytes) {
+  if (payload.identity_public_key.size() != pp::kMlDsa65PublicKeyBytes) {
     return Error("amp msh: bad identity pk size");
   }
-  if (payload.static_kem_public_key.size() != kHybridKemPublicKeyBytes) {
+  if (payload.static_kem_public_key.size() != pp::kMlKem768PublicKeyBytes) {
     return Error("amp msh: bad static kem pk size");
   }
-  if (payload.identity_signature.size() != kMlDsa65SignatureBytes) {
+  if (payload.identity_signature.size() != pp::kMlDsa65SignatureBytes) {
     return Error("amp msh: bad identity sig size");
   }
   std::vector<uint8_t> out;
@@ -127,19 +128,19 @@ Roe<MshPayload> MshMessages::DecodePayload(const MshMessageType expected, std::s
     return typed.error();
   }
   MshPayload payload;
-  auto kem_ct = ReadFixed(span, kHybridKemCiphertextBytes);
+  auto kem_ct = ReadFixed(span, pp::kMlKem768CiphertextBytes);
   if (!kem_ct) {
     return kem_ct.error();
   }
-  auto id_pk = ReadFixed(span, kMlDsa65PublicKeyBytes);
+  auto id_pk = ReadFixed(span, pp::kMlDsa65PublicKeyBytes);
   if (!id_pk) {
     return id_pk.error();
   }
-  auto static_pk = ReadFixed(span, kHybridKemPublicKeyBytes);
+  auto static_pk = ReadFixed(span, pp::kMlKem768PublicKeyBytes);
   if (!static_pk) {
     return static_pk.error();
   }
-  auto sig = ReadFixed(span, kMlDsa65SignatureBytes);
+  auto sig = ReadFixed(span, pp::kMlDsa65SignatureBytes);
   if (!sig) {
     return sig.error();
   }
@@ -181,4 +182,4 @@ Roe<MshFinished> MshMessages::DecodeFinished(std::span<const uint8_t> wire) {
   return finished;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/link/MeshRuntime.h"
+#include "lib/amp/link/MeshRuntime.h"
 #include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/ICallMediaTransport.h"
 
@@ -24,7 +24,7 @@ public:
   using LegFinished = std::function<void(Roe<void> result)>;
   using InboundHandler = std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)>;
 
-  CallMediaLegCoordinator(amp::MeshRuntime& runtime, WorkerPost post_worker = {});
+  CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, WorkerPost post_worker = {});
   ~CallMediaLegCoordinator();
 
   CallMediaLegCoordinator(const CallMediaLegCoordinator&) = delete;
@@ -61,7 +61,7 @@ public:
 private:
   struct Impl;
   std::shared_ptr<Impl> impl_;
-  amp::MeshRuntime& runtime_;
+  pp::amp::MeshRuntime& runtime_;
 };
 
 } // namespace pbr

@@ -1,6 +1,7 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
 #include "base/mesh/tests/support/mesh_harness_support.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
+#include "crypto/MlDsa.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -18,10 +19,10 @@ namespace {
 
 struct LegCompletion {
   std::atomic<bool> finished{false};
-  Roe<void> result = Error("pending");
+  pp::Roe<void> result = pp::Error("pending");
 
   CallMediaLegCoordinator::LegFinished Fn() {
-    return [this](Roe<void> r) {
+    return [this](pp::Roe<void> r) {
       result = std::move(r);
       finished.store(true, std::memory_order_release);
     };
@@ -51,7 +52,7 @@ protected:
     ASSERT_GE(sodium_init(), 0);
     stall_release_ = std::make_shared<std::atomic<bool>>(false);
 
-    auto created = test::AmpMeshHarness::Create();
+    auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -77,7 +78,7 @@ protected:
   }
 
   std::shared_ptr<std::atomic<bool>> stall_release_;
-  std::unique_ptr<test::AmpMeshHarness> harness_;
+  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -465,7 +466,7 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
   // one Connected PeerLink per PeerId; dual call-media opens share that mux (channel glare).
   // Ownership canary ([A027]): TearDown/CloseQuiet under dual open must not UAF.
   std::atomic<bool> a_assoc{false};
-  harness_->mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe r) {
+  harness_->mgr_a().EnsureAssociation("b", [&](pp::amp::PeerLinkManager::LinkRoe r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);
   });
   harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
@@ -563,7 +564,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   });
 
   std::atomic<bool> a_assoc{false};
-  harness_->mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe r) {
+  harness_->mgr_a().EnsureAssociation("b", [&](pp::amp::PeerLinkManager::LinkRoe r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);
   });
   harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
@@ -618,23 +619,23 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
 
 /** B-CONFLICT: while A–B is MediaReady, C's inbound is rejected; after A leaves, C can connect. */
 struct AmpTripleMeshHarness {
-  std::shared_ptr<adp::VirtualClock> clock;
-  std::shared_ptr<adp::MemoryDatagramHub> hub;
-  std::shared_ptr<adp::MemoryDatagramIo> io_a;
-  std::shared_ptr<adp::MemoryDatagramIo> io_b;
-  std::shared_ptr<adp::MemoryDatagramIo> io_c;
-  std::unique_ptr<adp::Endpoint> ep_a;
-  std::unique_ptr<adp::Endpoint> ep_b;
-  std::unique_ptr<adp::Endpoint> ep_c;
-  adp::IpEndpoint addr_a;
-  adp::IpEndpoint addr_b;
-  adp::IpEndpoint addr_c;
-  amp::MshIdentity alice;
-  amp::MshIdentity bob;
-  amp::MshIdentity charlie;
-  std::unique_ptr<amp::MeshRuntime> runtime_a;
-  std::unique_ptr<amp::MeshRuntime> runtime_b;
-  std::unique_ptr<amp::MeshRuntime> runtime_c;
+  std::shared_ptr<pp::adp::VirtualClock> clock;
+  std::shared_ptr<pp::adp::MemoryDatagramHub> hub;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> io_a;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> io_b;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> io_c;
+  std::unique_ptr<pp::adp::Endpoint> ep_a;
+  std::unique_ptr<pp::adp::Endpoint> ep_b;
+  std::unique_ptr<pp::adp::Endpoint> ep_c;
+  pp::adp::IpEndpoint addr_a;
+  pp::adp::IpEndpoint addr_b;
+  pp::adp::IpEndpoint addr_c;
+  pp::amp::MshIdentity alice;
+  pp::amp::MshIdentity bob;
+  pp::amp::MshIdentity charlie;
+  std::unique_ptr<pp::amp::MeshRuntime> runtime_a;
+  std::unique_ptr<pp::amp::MeshRuntime> runtime_b;
+  std::unique_ptr<pp::amp::MeshRuntime> runtime_c;
   std::string peer_id_a;
   std::string peer_id_b;
   std::string peer_id_c;
@@ -642,31 +643,31 @@ struct AmpTripleMeshHarness {
   std::string ma_b;
   std::string ma_c;
 
-  amp::PeerLinkManager& mgr_a() { return runtime_a->Links(); }
-  amp::PeerLinkManager& mgr_b() { return runtime_b->Links(); }
-  amp::PeerLinkManager& mgr_c() { return runtime_c->Links(); }
+  pp::amp::PeerLinkManager& mgr_a() { return runtime_a->Links(); }
+  pp::amp::PeerLinkManager& mgr_b() { return runtime_b->Links(); }
+  pp::amp::PeerLinkManager& mgr_c() { return runtime_c->Links(); }
 
-  static Roe<std::unique_ptr<AmpTripleMeshHarness>> Create() {
+  static pp::Roe<std::unique_ptr<AmpTripleMeshHarness>> Create() {
     auto harness = std::make_unique<AmpTripleMeshHarness>();
-    harness->clock = std::make_shared<adp::VirtualClock>(1'000'000);
-    harness->hub = adp::MemoryDatagramIo::MakeHub();
-    harness->addr_a = adp::IpEndpoint::V4(10, 0, 0, 1, 1000);
-    harness->addr_b = adp::IpEndpoint::V4(10, 0, 0, 2, 2000);
-    harness->addr_c = adp::IpEndpoint::V4(10, 0, 0, 3, 3000);
-    harness->io_a = std::make_shared<adp::MemoryDatagramIo>(harness->hub, harness->addr_a);
-    harness->io_b = std::make_shared<adp::MemoryDatagramIo>(harness->hub, harness->addr_b);
-    harness->io_c = std::make_shared<adp::MemoryDatagramIo>(harness->hub, harness->addr_c);
-    harness->ep_a = std::make_unique<adp::Endpoint>(harness->io_a, harness->clock);
-    harness->ep_b = std::make_unique<adp::Endpoint>(harness->io_b, harness->clock);
-    harness->ep_c = std::make_unique<adp::Endpoint>(harness->io_c, harness->clock);
+    harness->clock = std::make_shared<pp::adp::VirtualClock>(1'000'000);
+    harness->hub = pp::adp::MemoryDatagramIo::MakeHub();
+    harness->addr_a = pp::adp::IpEndpoint::V4(10, 0, 0, 1, 1000);
+    harness->addr_b = pp::adp::IpEndpoint::V4(10, 0, 0, 2, 2000);
+    harness->addr_c = pp::adp::IpEndpoint::V4(10, 0, 0, 3, 3000);
+    harness->io_a = std::make_shared<pp::adp::MemoryDatagramIo>(harness->hub, harness->addr_a);
+    harness->io_b = std::make_shared<pp::adp::MemoryDatagramIo>(harness->hub, harness->addr_b);
+    harness->io_c = std::make_shared<pp::adp::MemoryDatagramIo>(harness->hub, harness->addr_c);
+    harness->ep_a = std::make_unique<pp::adp::Endpoint>(harness->io_a, harness->clock);
+    harness->ep_b = std::make_unique<pp::adp::Endpoint>(harness->io_b, harness->clock);
+    harness->ep_c = std::make_unique<pp::adp::Endpoint>(harness->io_c, harness->clock);
     harness->ep_b->SetAcceptEnabled(true);
     harness->ep_c->SetAcceptEnabled(true);
 
-    auto alice_keys = MlDsa::GenerateKeyPair();
-    auto bob_keys = MlDsa::GenerateKeyPair();
-    auto charlie_keys = MlDsa::GenerateKeyPair();
+    auto alice_keys = pp::MlDsa::GenerateKeyPair();
+    auto bob_keys = pp::MlDsa::GenerateKeyPair();
+    auto charlie_keys = pp::MlDsa::GenerateKeyPair();
     if (!alice_keys || !bob_keys || !charlie_keys) {
-      return Error("triple harness: keygen failed");
+      return pp::Error("triple harness: keygen failed");
     }
     harness->alice.ml_dsa_secret_key = std::move(alice_keys->secret_key);
     harness->alice.ml_dsa_public_key = std::move(alice_keys->public_key);
@@ -675,32 +676,32 @@ struct AmpTripleMeshHarness {
     harness->charlie.ml_dsa_secret_key = std::move(charlie_keys->secret_key);
     harness->charlie.ml_dsa_public_key = std::move(charlie_keys->public_key);
 
-    auto alice_id = test::DeriveTestPeerId(harness->alice.ml_dsa_public_key);
-    auto bob_id = test::DeriveTestPeerId(harness->bob.ml_dsa_public_key);
-    auto charlie_id = test::DeriveTestPeerId(harness->charlie.ml_dsa_public_key);
+    auto alice_id = pbr::test::DeriveTestPeerId(harness->alice.ml_dsa_public_key);
+    auto bob_id = pbr::test::DeriveTestPeerId(harness->bob.ml_dsa_public_key);
+    auto charlie_id = pbr::test::DeriveTestPeerId(harness->charlie.ml_dsa_public_key);
     if (!alice_id || !bob_id || !charlie_id) {
-      return Error("triple harness: peer id derivation failed");
+      return pp::Error("triple harness: peer id derivation failed");
     }
     harness->peer_id_a = *alice_id;
     harness->peer_id_b = *bob_id;
     harness->peer_id_c = *charlie_id;
 
-    const auto link_config = test::AmpMeshTestLinkConfig();
+    const auto link_config = pbr::test::AmpMeshTestLinkConfig();
     harness->runtime_a =
-        std::make_unique<amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a, link_config);
+        std::make_unique<pp::amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a, link_config);
     harness->runtime_b =
-        std::make_unique<amp::MeshRuntime>(*harness->ep_b, harness->bob, harness->peer_id_b, link_config);
+        std::make_unique<pp::amp::MeshRuntime>(*harness->ep_b, harness->bob, harness->peer_id_b, link_config);
     harness->runtime_c =
-        std::make_unique<amp::MeshRuntime>(*harness->ep_c, harness->charlie, harness->peer_id_c, link_config);
+        std::make_unique<pp::amp::MeshRuntime>(*harness->ep_c, harness->charlie, harness->peer_id_c, link_config);
     harness->runtime_a->Start();
     harness->runtime_b->Start();
     harness->runtime_c->Start();
 
-    auto ma_b = amp::FormatAdpMultiaddr(harness->addr_b, harness->peer_id_b);
-    auto ma_a = amp::FormatAdpMultiaddr(harness->addr_a, harness->peer_id_a);
-    auto ma_c = amp::FormatAdpMultiaddr(harness->addr_c, harness->peer_id_c);
+    auto ma_b = pp::amp::FormatAdpMultiaddr(harness->addr_b, harness->peer_id_b);
+    auto ma_a = pp::amp::FormatAdpMultiaddr(harness->addr_a, harness->peer_id_a);
+    auto ma_c = pp::amp::FormatAdpMultiaddr(harness->addr_c, harness->peer_id_c);
     if (!ma_b || !ma_a || !ma_c) {
-      return Error("triple harness: multiaddr format failed");
+      return pp::Error("triple harness: multiaddr format failed");
     }
     harness->ma_a = *ma_a;
     harness->ma_b = *ma_b;

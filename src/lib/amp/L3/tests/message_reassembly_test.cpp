@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 ChannelFragBody MakeFrag(uint64_t msg_id, uint16_t index, uint16_t count, std::vector<uint8_t> chunk,
@@ -97,4 +97,4 @@ TEST(MessageReassemblyTest, SweepExpiredDropsStalePartial) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

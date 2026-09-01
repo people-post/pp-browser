@@ -4,13 +4,11 @@
 #include "lib/amp/L3/Capability.h"
 #include "lib/amp/L3/ChannelMux.h"
 #include "lib/amp/L3/ChannelSession.h"
-#include "base/error/CodedFailure.h"
-#include "base/mesh/link/MshAdpHandshake.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/CodedFailure.h"
+#include "lib/amp/link/MshAdpHandshake.h"
+#include "lib/amp/link/Types.h"
 #include "lib/amp/L2/Session.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <functional>
 #include <functional>
@@ -20,7 +18,7 @@
 #include <string>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 class PeerLinkManager;
 
@@ -147,4 +145,4 @@ private:
                                                          std::span<const uint8_t> chunk);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

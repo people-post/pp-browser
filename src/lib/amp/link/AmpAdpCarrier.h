@@ -2,15 +2,13 @@
 
 #include "lib/amp/L2/MshMessages.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <cstdint>
 #include <span>
 #include <tuple>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 enum class AmpAdpPayloadKind : uint8_t {
   Msh = 0,
@@ -36,4 +34,4 @@ public:
   static Roe<std::vector<uint8_t>> DecodeSealedBody(std::span<const uint8_t> payload);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

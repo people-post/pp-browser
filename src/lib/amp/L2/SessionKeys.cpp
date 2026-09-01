@@ -1,12 +1,12 @@
 #include "lib/amp/L2/SessionKeys.h"
 
-#include "base/crypto/CryptoUtil.h"
+#include "crypto/SodiumUtil.h"
 
 #include <sodium.h>
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -35,7 +35,7 @@ Roe<ByteVector> DeriveLabel(const ByteVector& prk, const char* label, uint32_t s
 } // namespace
 
 Roe<ByteVector> SessionKeys::TranscriptHash(const std::vector<ByteVector>& transcript_parts) {
-  EnsureSodiumInit();
+  pp::EnsureSodiumInit();
   crypto_hash_sha256_state state;
   crypto_hash_sha256_init(&state);
   for (const auto& part : transcript_parts) {
@@ -55,7 +55,7 @@ Roe<SessionMaterial> SessionKeys::Derive(std::span<const uint8_t> master_ikm,
   if (transcript_hash.size() != crypto_hash_sha256_BYTES) {
     return Error("amp: bad transcript hash size");
   }
-  EnsureSodiumInit();
+  pp::EnsureSodiumInit();
 
   ByteVector ikm;
   ikm.reserve(master_ikm.size() + transcript_hash.size());
@@ -89,4 +89,4 @@ Roe<SessionMaterial> SessionKeys::Derive(std::span<const uint8_t> master_ikm,
   return material;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

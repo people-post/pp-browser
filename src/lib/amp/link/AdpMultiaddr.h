@@ -2,12 +2,10 @@
 
 #include "lib/amp/L1/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 struct ParsedAdpMultiaddr {
   adp::IpEndpoint endpoint;
@@ -20,4 +18,4 @@ Roe<ParsedAdpMultiaddr> ParseAdpMultiaddr(std::string_view multiaddr);
 /** Format an ADP listen/dial multiaddr. */
 Roe<std::string> FormatAdpMultiaddr(const adp::IpEndpoint& endpoint, std::string_view peer_id);
 
-} // namespace pbr::amp
+} // namespace pp::amp

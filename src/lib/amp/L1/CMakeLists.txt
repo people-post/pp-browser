@@ -6,10 +6,10 @@ pp_browser_add_base_library(pp_base_adp
     HmacBinder.cpp
     MemoryDatagramIo.cpp
     OsUdpDatagramIo.cpp
+    ReplayWindow.cpp
     WireCodec.cpp
   PUBLIC_LIBS
-    pp_base_crypto
-    pp_base_error
+    pp_crypto
     sodium)
 
 if(WIN32)

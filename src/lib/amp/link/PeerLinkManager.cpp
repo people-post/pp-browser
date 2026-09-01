@@ -1,16 +1,16 @@
-#include "base/mesh/link/PeerLinkManager.h"
+#include "lib/amp/link/PeerLinkManager.h"
 
-#include "base/error/CodedFailure.h"
+#include "lib/amp/link/CodedFailure.h"
 #include "lib/amp/L3/ChannelPolicy.h"
 #include "lib/amp/L3/ChannelSession.h"
 #include "lib/amp/L3/Types.h"
-#include "base/mesh/link/AdpMultiaddr.h"
+#include "lib/amp/link/AdpMultiaddr.h"
 #include "lib/amp/L2/SessionControl.h"
-#include "base/mesh/link/Types.h"
+#include "lib/amp/link/Types.h"
 
 #include <iterator>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 PeerLinkManager::Failure PeerLinkManager::WrapPeerLinkFailure(const PeerLink::Failure& child) {
   switch (child.GetCode()) {
@@ -916,4 +916,4 @@ void PeerLinkManager::HandleInboundCarrierChannel(PeerLink& via_link, const uint
   EstablishNestedOverCarrier(provisional, std::move(carrier), false, {});
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -1,6 +1,6 @@
 #include "lib/amp/L3/ChannelSession.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 ChannelSession::~ChannelSession() {
   ReleaseHandlers();
@@ -180,4 +180,4 @@ void ChannelSession::Reset(const uint32_t code) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 inline constexpr uint8_t kChannelFrameVersion = 1;
 inline constexpr uint32_t kCapabilityChannelId = 0;
@@ -45,4 +45,4 @@ inline adp::QosClass QosForClass(ChannelClass cls) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

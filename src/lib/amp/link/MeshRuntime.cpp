@@ -1,6 +1,6 @@
-#include "base/mesh/link/MeshRuntime.h"
+#include "lib/amp/link/MeshRuntime.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 MeshRuntime::MeshRuntime(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
                          PeerLinkConfig config)
@@ -104,4 +104,4 @@ void MeshRuntime::RemoveIoTick(const IoTickId id) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

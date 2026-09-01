@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/link/MeshRuntime.h"
+#include "lib/amp/link/MeshRuntime.h"
 #include "base/p2p/CallMediaLegCoordinator.h"
 #include "base/p2p/ICallMediaTransport.h"
 
@@ -21,7 +21,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = CallMediaLegCoordinator::WorkerPost;
 
-  CallMediaAmpTransport(amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker = {});
+  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker = {});
   ~CallMediaAmpTransport() override;
 
   CallMediaAmpTransport(const CallMediaAmpTransport&) = delete;

@@ -2,13 +2,11 @@
 
 #include "lib/amp/L1/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
 
 #include <span>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 class WireCodec {
 public:
@@ -19,4 +17,4 @@ public:
   static std::span<const uint8_t> MacInput(std::span<const uint8_t> datagram);
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "lib/amp/L1/Endpoint.h"
-#include "base/mesh/link/MeshPump.h"
-#include "base/mesh/link/PeerLinkManager.h"
+#include "lib/amp/link/MeshPump.h"
+#include "lib/amp/link/PeerLinkManager.h"
 #include "lib/amp/L2/Types.h"
 
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Io-thread composer for Endpoint + PeerLinkManager + MeshPump.
@@ -78,4 +78,4 @@ private:
   mutable std::recursive_mutex io_mu_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

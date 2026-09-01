@@ -11,39 +11,39 @@
 
 namespace {
 
-pbr::adp::PeerKey Key() {
-  pbr::adp::PeerKey k;
+pp::adp::PeerKey Key() {
+  pp::adp::PeerKey k;
   k.bytes.fill(0x55);
   return k;
 }
 
-pbr::adp::AssocId Aid() {
-  pbr::adp::AssocId id;
+pp::adp::AssocId Aid() {
+  pp::adp::AssocId id;
   id.bytes.fill(0x66);
   return id;
 }
 
 struct Pair {
-  std::shared_ptr<pbr::adp::VirtualClock> clock;
-  std::shared_ptr<pbr::adp::MemoryDatagramHub> hub;
-  std::shared_ptr<pbr::adp::MemoryDatagramIo> io_a;
-  std::shared_ptr<pbr::adp::MemoryDatagramIo> io_b;
-  std::unique_ptr<pbr::adp::Endpoint> ep_a;
-  std::unique_ptr<pbr::adp::Endpoint> ep_b;
-  pbr::adp::IpEndpoint addr_a;
-  pbr::adp::IpEndpoint addr_b;
+  std::shared_ptr<pp::adp::VirtualClock> clock;
+  std::shared_ptr<pp::adp::MemoryDatagramHub> hub;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> io_a;
+  std::shared_ptr<pp::adp::MemoryDatagramIo> io_b;
+  std::unique_ptr<pp::adp::Endpoint> ep_a;
+  std::unique_ptr<pp::adp::Endpoint> ep_b;
+  pp::adp::IpEndpoint addr_a;
+  pp::adp::IpEndpoint addr_b;
 };
 
 Pair MakePair() {
   Pair p;
-  p.clock = std::make_shared<pbr::adp::VirtualClock>(5'000'000);
-  p.hub = pbr::adp::MemoryDatagramIo::MakeHub();
-  p.addr_a = pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 4001);
-  p.addr_b = pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 4002);
-  p.io_a = std::make_shared<pbr::adp::MemoryDatagramIo>(p.hub, p.addr_a);
-  p.io_b = std::make_shared<pbr::adp::MemoryDatagramIo>(p.hub, p.addr_b);
-  p.ep_a = std::make_unique<pbr::adp::Endpoint>(p.io_a, p.clock);
-  p.ep_b = std::make_unique<pbr::adp::Endpoint>(p.io_b, p.clock);
+  p.clock = std::make_shared<pp::adp::VirtualClock>(5'000'000);
+  p.hub = pp::adp::MemoryDatagramIo::MakeHub();
+  p.addr_a = pp::adp::IpEndpoint::V4(127, 0, 0, 1, 4001);
+  p.addr_b = pp::adp::IpEndpoint::V4(127, 0, 0, 1, 4002);
+  p.io_a = std::make_shared<pp::adp::MemoryDatagramIo>(p.hub, p.addr_a);
+  p.io_b = std::make_shared<pp::adp::MemoryDatagramIo>(p.hub, p.addr_b);
+  p.ep_a = std::make_unique<pp::adp::Endpoint>(p.io_a, p.clock);
+  p.ep_b = std::make_unique<pp::adp::Endpoint>(p.io_b, p.clock);
   return p;
 }
 
@@ -67,7 +67,7 @@ TEST_F(AdpReliableTest, DeliverUnderLoss) {
   p.ep_b->SetAcceptEnabled(true);
   p.io_a->DropNext(2); // drop first two datagrams (data + maybe nothing)
 
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
@@ -79,17 +79,17 @@ TEST_F(AdpReliableTest, DeliverUnderLoss) {
 
   std::vector<std::string> got;
   // Pre-open B so we can attach handler before rtx lands.
-  pbr::adp::OpenParams opb = op;
+  pp::adp::OpenParams opb = op;
   opb.peer = p.addr_a;
   auto cb = p.ep_b->Open(opb);
   ASSERT_TRUE(cb);
-  (*cb)->OnMessage([&](const pbr::adp::Message& m) {
-    if (m.qos == pbr::adp::QosClass::Reliable) {
+  (*cb)->OnMessage([&](const pp::adp::Message& m) {
+    if (m.qos == pp::adp::QosClass::Reliable) {
       got.emplace_back(m.payload.begin(), m.payload.end());
     }
   });
 
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("rel"), 3)));
   // First send dropped.
   PumpBoth(p);
@@ -105,7 +105,7 @@ TEST_F(AdpReliableTest, DeliverUnderLoss) {
 
 TEST_F(AdpReliableTest, AckStopsRetransmit) {
   auto p = MakePair();
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
@@ -113,16 +113,16 @@ TEST_F(AdpReliableTest, AckStopsRetransmit) {
   op.rtx_interval_ms = 10;
   auto ca = p.ep_a->Open(op);
   auto cb = [&] {
-    pbr::adp::OpenParams opb = op;
+    pp::adp::OpenParams opb = op;
     opb.peer = p.addr_a;
     return p.ep_b->Open(opb);
   }();
   ASSERT_TRUE(ca);
   ASSERT_TRUE(cb);
   size_t msg_count = 0;
-  (*cb)->OnMessage([&](const pbr::adp::Message&) { ++msg_count; });
+  (*cb)->OnMessage([&](const pp::adp::Message&) { ++msg_count; });
 
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("m"), 1)));
   PumpBoth(p);
   EXPECT_EQ(msg_count, 1u);
@@ -136,40 +136,40 @@ TEST_F(AdpReliableTest, AckStopsRetransmit) {
 
 TEST_F(AdpReliableTest, QosIsolation) {
   auto p = MakePair();
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
   op.peer = p.addr_b;
   auto ca = p.ep_a->Open(op);
-  pbr::adp::OpenParams opb = op;
+  pp::adp::OpenParams opb = op;
   opb.peer = p.addr_a;
   auto cb = p.ep_b->Open(opb);
   ASSERT_TRUE(ca);
   ASSERT_TRUE(cb);
 
-  std::vector<pbr::adp::QosClass> order;
-  (*cb)->OnMessage([&](const pbr::adp::Message& m) { order.push_back(m.qos); });
+  std::vector<pp::adp::QosClass> order;
+  (*cb)->OnMessage([&](const pp::adp::Message& m) { order.push_back(m.qos); });
 
   p.io_a->DropNext(1); // drop best-effort
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::BestEffort,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::BestEffort,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("b"), 1)));
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("r"), 1)));
   PumpBoth(p);
   ASSERT_EQ(order.size(), 1u);
-  EXPECT_EQ(order[0], pbr::adp::QosClass::Reliable);
+  EXPECT_EQ(order[0], pp::adp::QosClass::Reliable);
 }
 
 TEST_F(AdpReliableTest, ShutdownClose) {
   auto p = MakePair();
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
   op.peer = p.addr_b;
   auto ca = p.ep_a->Open(op);
-  pbr::adp::OpenParams opb = op;
+  pp::adp::OpenParams opb = op;
   opb.peer = p.addr_a;
   auto cb = p.ep_b->Open(opb);
   ASSERT_TRUE(ca);
@@ -177,26 +177,26 @@ TEST_F(AdpReliableTest, ShutdownClose) {
   (*ca)->Close();
   PumpBoth(p);
   EXPECT_TRUE((*cb)->IsClosed());
-  EXPECT_FALSE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  EXPECT_FALSE((*ca)->Send(pp::adp::QosClass::Reliable,
                            std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("x"), 1)));
 }
 
 TEST_F(AdpReliableTest, SpuriousAckIgnored) {
   auto p = MakePair();
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
   op.peer = p.addr_b;
   auto ca = p.ep_a->Open(op);
-  pbr::adp::OpenParams opb = op;
+  pp::adp::OpenParams opb = op;
   opb.peer = p.addr_a;
   auto cb = p.ep_b->Open(opb);
   ASSERT_TRUE(ca);
   ASSERT_TRUE(cb);
   // Send ACK from B without data — should not create issues.
   // Use reliable send then normal path; inject nothing else.
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("z"), 1)));
   PumpBoth(p);
   SUCCEED();
@@ -205,7 +205,7 @@ TEST_F(AdpReliableTest, SpuriousAckIgnored) {
 TEST_F(AdpReliableTest, GiveUpAfterMaxRtx) {
   auto p = MakePair();
   // B not accepting / not open — rtx until give-up, no crash.
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
@@ -214,7 +214,7 @@ TEST_F(AdpReliableTest, GiveUpAfterMaxRtx) {
   op.max_rtx = 3;
   auto ca = p.ep_a->Open(op);
   ASSERT_TRUE(ca);
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("z"), 1)));
   for (int i = 0; i < 10; ++i) {
     p.clock->Advance(5);

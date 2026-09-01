@@ -32,7 +32,7 @@ app → feature → base → lib → common
 |------|------|
 | *(RmlUi)* | Hard fork in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`); paths via `PP_LIB_RMLUI_*` |
 | `lib/libp2p/` | Hard-fork PeerId + key wire only (A017; Host/TCP/Yamux/Noise deleted) |
-| `lib/amp/` | AMP L1–L3 stack (ADP, MSH session, channel mux); future `pp-cpp-amp` extract |
+| `lib/amp/` | AMP L1–L3 + link stack (ADP, session, channel, PeerLinkManager); future `pp-cpp-amp` extract |
 | `lib/libp2p/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI) |
 
 Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake), [`src/lib/pp_lib_rmlui.cmake`](../../src/lib/pp_lib_rmlui.cmake), [`src/lib/pp_lib_libp2p.cmake`](../../src/lib/pp_lib_libp2p.cmake) (`PP_LIB_RMLUI_*`, `PP_LIB_LIBP2P_*`).
@@ -66,7 +66,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/p2p/` | Product Amp glue (MeshHost, circuit/media relay, call-media L4); PeerId util is separate target `pp_base_peer_id` |
 | `lib/amp/L1/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
 | `lib/amp/L2/` | AMP L2 — MSH, Session AEAD, rekey (`pp_base_mesh_session`) |
-| `base/mesh/link/` | AMP link — `PeerLinkManager`, `MeshRuntime`, `AmpStack`, MSH-over-ADP (`pp_base_mesh_link`) |
+| `lib/amp/link/` | AMP link — `PeerLinkManager`, `MeshRuntime`, `AmpStack`, MSH-over-ADP (`pp_base_mesh_link`) |
 | `lib/amp/L3/` | AMP L3 — channel mux, fragmentation, `ChannelSession` (`pp_base_mesh_channel`; [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md)) |
 | `base/render/` | Product RmlUi host/overlays (`pp_base_render`); reusable SDL/GL in pp-cpp-ui `backend/` |
 | `base/net/` | HTTP client, service clients |
