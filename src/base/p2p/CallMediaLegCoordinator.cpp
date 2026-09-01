@@ -941,14 +941,15 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       runtime->Links().OpenChannel(
           peer_key, kCallMediaDirectProtocolId, amp::CallMediaControlChannelPolicy(),
           [this, self, leg_id, peer_key, call_id, params, deadline, retries,
-           open_control](Roe<uint32_t> channel) mutable {
+           open_control](amp::PeerLinkManager::ChannelRoe channel) mutable {
             std::unique_lock lock(mu);
             auto* bundle = FindByCallId(call_id);
             if (!bundle || bundle->leg_id.value != leg_id.value) {
               return;
             }
             if (!channel) {
-              if (channel.error().message == "amp link: association not ready" && retries < 500 && !bundle->finished) {
+              if (amp::PeerLinkManager::IsAssociationNotReady(channel.error()) && retries < 500
+                  && !bundle->finished) {
                 lock.unlock();
                 PostIo([open_control, retries]() { (*open_control)(retries + 1); });
                 return;

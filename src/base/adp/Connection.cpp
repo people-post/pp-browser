@@ -12,7 +12,7 @@ Connection::Connection(Endpoint& endpoint, OpenParams params)
     : endpoint_(&endpoint), id_(params.id), binder_(params.key), peer_(params.peer),
       params_(std::move(params)), rx_be_(params_.replay_window), rx_rel_(params_.replay_window) {}
 
-Roe<std::shared_ptr<Connection>> Connection::Open(Endpoint& endpoint, OpenParams params) {
+Connection::Roe<std::shared_ptr<Connection>> Connection::Open(Endpoint& endpoint, OpenParams params) {
   if (params.mint_id) {
     bool zero = true;
     for (uint8_t b : params.id.bytes) {
@@ -89,7 +89,7 @@ void Connection::MaybeLearnPath(const IpEndpoint& from) {
   }
 }
 
-Roe<void> Connection::SendPacket(PacketType type, uint32_t seq, std::span<const uint8_t> payload,
+Connection::Roe<void> Connection::SendPacket(PacketType type, uint32_t seq, std::span<const uint8_t> payload,
                                  int64_t now_ms) {
   if (peer_.port == 0 && type != PacketType::Close) {
     // Allow send only if peer known (except we still encode close).
@@ -103,35 +103,48 @@ Roe<void> Connection::SendPacket(PacketType type, uint32_t seq, std::span<const 
   pkt.payload.assign(payload.begin(), payload.end());
   auto encoded = WireCodec::Encode(pkt);
   if (!encoded) {
-    return encoded.error();
+    return Failure::Of(Err::WireError, encoded.error().message);
   }
   auto sealed = binder_.Seal(*encoded);
   if (!sealed) {
-    return sealed.error();
+    return Failure::Of(Err::WireError, sealed.error().message);
   }
-  return endpoint_->SendRaw(peer_, *sealed);
+  auto sent = endpoint_->SendRaw(peer_, *sealed);
+  if (!sent) {
+    return Failure::Of(Err::WireError, sent.error().message);
+  }
+  return {};
 }
 
-Roe<void> Connection::Send(QosClass qos, std::span<const uint8_t> payload) {
+Connection::Roe<void> Connection::SendPacketAsFailure(const PacketType type, const uint32_t seq,
+                                          const std::span<const uint8_t> payload, const int64_t now_ms) {
+  auto sent = SendPacket(type, seq, payload, now_ms);
+  if (!sent) {
+    return Failure::Of(Err::WireError, sent.error().message);
+  }
+  return {};
+}
+
+Connection::Roe<void> Connection::Send(QosClass qos, std::span<const uint8_t> payload) {
   if (closed_) {
-    return Error("adp: send on closed connection");
+    return Failure::Of(Err::Closed, "adp: send on closed connection");
   }
   if (payload.size() > kMaxPayload) {
-    return Error("adp: payload too large");
+    return Failure::Of(Err::PayloadTooLarge, "adp: payload too large");
   }
   const int64_t now = endpoint_->GetClock().NowMs();
   if (qos == QosClass::BestEffort) {
     if (tx_seq_be_ == 0xffffffffu) {
-      return Error("adp: seq wrap");
+      return Failure::Of(Err::SeqWrap, "adp: seq wrap");
     }
     ++tx_seq_be_;
-    return SendPacket(PacketType::DataBestEffort, tx_seq_be_, payload, now);
+    return SendPacketAsFailure(PacketType::DataBestEffort, tx_seq_be_, payload, now);
   }
   if (outstanding_.size() >= params_.reliable_window) {
-    return Error("adp: reliable window full");
+    return Failure::Of(Err::WindowFull, "adp: reliable window full");
   }
   if (tx_seq_rel_ == 0xffffffffu) {
-    return Error("adp: seq wrap");
+    return Failure::Of(Err::SeqWrap, "adp: seq wrap");
   }
   ++tx_seq_rel_;
   Outstanding o;
@@ -139,7 +152,7 @@ Roe<void> Connection::Send(QosClass qos, std::span<const uint8_t> payload) {
   o.payload.assign(payload.begin(), payload.end());
   o.next_rtx_ms = now + params_.rtx_interval_ms;
   o.attempts = 0;
-  auto err = SendPacket(PacketType::DataReliable, o.seq, payload, now);
+  auto err = SendPacketAsFailure(PacketType::DataReliable, o.seq, payload, now);
   if (!err) {
     return err.error();
   }

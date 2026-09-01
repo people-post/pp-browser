@@ -91,7 +91,7 @@ TEST(MeshLinkTest, EnsureAssociationOverMemoryIo) {
 
   bool associated = false;
   std::string assoc_error;
-  fixture->mgr_a->EnsureAssociation("bob", [&](Roe<void> result) {
+  fixture->mgr_a->EnsureAssociation("bob", [&](PeerLinkManager::LinkRoe result) {
     associated = result.isOk();
     if (!associated) {
       assoc_error = result.error().message;
@@ -117,7 +117,7 @@ TEST(MeshLinkTest, OpenChannelDataRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(fixture->mgr_a->RegisterEndpoint("bob", *bob_addr)));
 
   bool associated = false;
-  fixture->mgr_a->EnsureAssociation("bob", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  fixture->mgr_a->EnsureAssociation("bob", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   fixture->PumpUntil([&] {
     return associated && fixture->mgr_b->FindConnectedInboundLink() != nullptr;
   });
@@ -128,7 +128,7 @@ TEST(MeshLinkTest, OpenChannelDataRoundTrip) {
   std::optional<uint32_t> channel_id_result;
   std::string channel_error;
   fixture->mgr_a->OpenChannel("bob", "/pp-browser/chat/1.0.0", ControlJsonChannelPolicy(),
-                              [&](Roe<uint32_t> ch) {
+                              [&](PeerLinkManager::ChannelRoe ch) {
                                 if (ch.isOk()) {
                                   channel_id_result = ch.value();
                                 } else {
@@ -170,7 +170,7 @@ TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(harness->mgr_b().RegisterEndpoint("a", harness->ma_a)));
 
   bool associated = false;
-  harness->mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  harness->mgr_a().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   harness->PumpUntil([&] {
     return associated && harness->mgr_a().IsConnected("b") && harness->mgr_b().FindLinkByPeerId(harness->peer_id_a);
   });
@@ -195,7 +195,7 @@ TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
   ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
 
   bool associated = false;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.mgr_a().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   h.PumpUntil([&] { return associated; });
   ASSERT_TRUE(associated);
 
@@ -241,7 +241,7 @@ TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
   ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
 
   bool associated = false;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.mgr_a().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   h.PumpUntil([&] {
     return associated && caps_a > 0 && caps_b > 0 && h.mgr_a().FindLink("b") &&
            h.mgr_a().FindLink("b")->RemoteCapability() && h.mgr_b().FindLink("a") &&
@@ -288,7 +288,7 @@ TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
   // Intentionally do not RegisterEndpoint(peer_id_a) on B before caps.
 
   bool associated = false;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  h.mgr_a().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   h.PumpUntil([&] {
     return associated && h.mgr_b().PreferredMultiaddr(h.peer_id_a).has_value() &&
            h.mgr_a().PreferredMultiaddr(h.peer_id_b).has_value();
@@ -306,7 +306,7 @@ TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
   // B can now EnsureAssociation by authenticated PeerId without a prior alias registration.
   bool b_assoc = false;
   std::string b_err;
-  h.mgr_b().EnsureAssociation(h.peer_id_a, [&](Roe<void> result) {
+  h.mgr_b().EnsureAssociation(h.peer_id_a, [&](PeerLinkManager::LinkRoe result) {
     b_assoc = static_cast<bool>(result);
     if (!result) {
       b_err = result.error().message;
@@ -338,14 +338,14 @@ TEST(MeshLinkTest, DualDialElectsOneConnectedLinkPerPeerId) {
   int done_b = 0;
   std::string err_a;
   std::string err_b;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+  h.mgr_a().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) {
     assoc_a = result.isOk();
     if (!assoc_a) {
       err_a = result.error().message;
     }
     ++done_a;
   });
-  h.mgr_b().EnsureAssociation("a", [&](Roe<void> result) {
+  h.mgr_b().EnsureAssociation("a", [&](PeerLinkManager::LinkRoe result) {
     assoc_b = result.isOk();
     if (!assoc_b) {
       err_b = result.error().message;
@@ -435,7 +435,7 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   ASSERT_TRUE(static_cast<bool>((*stack_a)->Links().RegisterEndpoint("b", *ma_b)));
 
   bool associated = false;
-  (*stack_a)->Links().EnsureAssociation("b", [&](Roe<void> result) { associated = static_cast<bool>(result); });
+  (*stack_a)->Links().EnsureAssociation("b", [&](PeerLinkManager::LinkRoe result) { associated = static_cast<bool>(result); });
   for (size_t i = 0; i < 500 && !associated; ++i) {
     (*stack_a)->Pump();
     (*stack_b)->Pump();

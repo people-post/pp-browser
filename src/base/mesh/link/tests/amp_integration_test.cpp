@@ -131,7 +131,7 @@ TEST_F(AmpIntegrationTest, MshFailureNoConnectedMux) {
   h.io_b->SetDropRate(1.0);
   bool done = false;
   bool ok = true;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+  h.mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe result) {
     ok = result.isOk();
     done = true;
   });
@@ -143,6 +143,25 @@ TEST_F(AmpIntegrationTest, MshFailureNoConnectedMux) {
   if (done) {
     EXPECT_FALSE(ok);
   }
+}
+
+TEST_F(AmpIntegrationTest, OpenChannelWithoutEndpointReturnsCodedError) {
+  auto created = MakeAmpIntegrationHarness();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+
+  bool done = false;
+  amp::PeerLinkManager::Err err_code = amp::PeerLinkManager::Err::Ok;
+  h.mgr_a().OpenChannel("b", "/pp-browser/chat/1.0.0", amp::ControlJsonChannelPolicy(),
+                        [&](amp::PeerLinkManager::ChannelRoe channel) {
+                          if (!channel) {
+                            err_code = channel.error().GetCode();
+                          }
+                          done = true;
+                        });
+  EXPECT_TRUE(done);
+  EXPECT_EQ(err_code, amp::PeerLinkManager::Err::EndpointNotRegistered);
+  EXPECT_FALSE(h.mgr_a().IsConnected("b"));
 }
 
 TEST_F(AmpIntegrationTest, AssociationCloseAndRecovery) {
@@ -321,13 +340,18 @@ TEST_F(AmpIntegrationTest, AdversarialDialTimeoutAdv04) {
 
   bool done = false;
   bool ok = true;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+  amp::PeerLinkManager::Err err_code = amp::PeerLinkManager::Err::Ok;
+  h.mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe result) {
     ok = result.isOk();
+    if (!result) {
+      err_code = result.error().GetCode();
+    }
     done = true;
   });
   h.AdvanceMs(250);
   EXPECT_TRUE(done);
   EXPECT_FALSE(ok);
+  EXPECT_EQ(err_code, amp::PeerLinkManager::Err::DialTimeout);
   EXPECT_FALSE(h.mgr_a().IsConnected("b"));
 }
 
@@ -346,12 +370,17 @@ TEST_F(AmpIntegrationTest, AdversarialMaxLinksAdv02) {
 
   bool dial_done = false;
   bool dial_ok = true;
-  h.mgr_a().EnsureAssociation("b2", [&](Roe<void> result) {
+  amp::PeerLinkManager::Err dial_err = amp::PeerLinkManager::Err::Ok;
+  h.mgr_a().EnsureAssociation("b2", [&](amp::PeerLinkManager::LinkRoe result) {
     dial_ok = result.isOk();
+    if (!result) {
+      dial_err = result.error().GetCode();
+    }
     dial_done = true;
   });
   EXPECT_TRUE(dial_done);
   EXPECT_FALSE(dial_ok);
+  EXPECT_EQ(dial_err, amp::PeerLinkManager::Err::MaxLinksReached);
   EXPECT_EQ(h.CountLinks(HarnessSide::A), 1);
 
   h.ep_b->SetAcceptEnabled(true);
@@ -379,7 +408,7 @@ TEST_F(AmpIntegrationTest, AdversarialGarbageMshMidHandshakeAdv03) {
 
   bool done = false;
   bool ok = false;
-  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+  h.mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe result) {
     ok = result.isOk();
     done = true;
   });

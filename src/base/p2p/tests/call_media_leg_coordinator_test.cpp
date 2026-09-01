@@ -464,7 +464,7 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
   // one Connected PeerLink per PeerId; dual call-media opens share that mux (channel glare).
   // Ownership canary ([A027]): TearDown/CloseQuiet under dual open must not UAF.
   std::atomic<bool> a_assoc{false};
-  harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
+  harness_->mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);
   });
   harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
@@ -562,7 +562,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   });
 
   std::atomic<bool> a_assoc{false};
-  harness_->mgr_a().EnsureAssociation("b", [&](Roe<void> r) {
+  harness_->mgr_a().EnsureAssociation("b", [&](amp::PeerLinkManager::LinkRoe r) {
     a_assoc.store(static_cast<bool>(r), std::memory_order_release);
   });
   harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);

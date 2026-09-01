@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/adp/Endpoint.h"
+#include "base/error/CodedFailure.h"
 #include "base/mesh/channel/Capability.h"
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/link/PeerLink.h"
@@ -23,8 +24,29 @@ namespace pbr::amp {
 /** Dial + warm policy over ADP/AMP (replaces libp2p PeerSessionManager on the AMP path). */
 class PeerLinkManager {
 public:
-  using LinkCb = std::function<void(Roe<void>)>;
-  using ChannelCb = std::function<void(Roe<uint32_t>)>;
+  enum class Err : int32_t {
+    Ok = 0,
+    EndpointNotRegistered,
+    DialInBackoff,
+    TooManyConcurrentDials,
+    MaxLinksReached,
+    AssociationNotReady,
+    LinkNotFound,
+    NestedCarrierIncomplete,
+    DialTimeout,
+    HandshakeFailed,
+    TransportFailed,
+    DualDialLost,
+    ChannelOpenFailed,
+    Generic,
+  };
+
+  using Failure = CodedFailure<Err>;
+  using LinkRoe = CodedRoe<void, Err>;
+  using ChannelRoe = CodedRoe<uint32_t, Err>;
+
+  using LinkCb = std::function<void(LinkRoe)>;
+  using ChannelCb = std::function<void(ChannelRoe)>;
   using ProtocolHandler = std::function<void(PeerLink& link, uint32_t channel_id)>;
   /** Fired once per link when the remote capability payload is first decoded (ch0 / A016). */
   using CapabilityHandler = std::function<void(PeerLink& link, const CapabilityPayload& remote)>;
@@ -87,6 +109,10 @@ public:
 
   size_t CountLinks() const { return links_.size(); }
 
+  static bool IsAssociationNotReady(const Failure& failure) {
+    return failure.GetCode() == Err::AssociationNotReady;
+  }
+
   void Tick();
 
 private:
@@ -108,8 +134,8 @@ private:
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
   void OnCh0Data(const std::string& peer_key, std::vector<uint8_t> payload);
   void IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote);
-  void FinishDial(const std::string& peer_key, Roe<void> result);
-  void FinishNestedCarrier(const std::string& provisional_key, Roe<void> result);
+  void FinishDial(const std::string& peer_key, LinkRoe result);
+  void FinishNestedCarrier(const std::string& provisional_key, LinkRoe result);
   void HandleInboundCarrierChannel(PeerLink& via_link, uint32_t channel_id);
   std::string DeriveRemotePeerId(const ByteVector& identity_public_key) const;
   /** Returns false if `link` was erased as the dual-dial loser ([A026]). */
@@ -123,6 +149,9 @@ private:
   void DropLink(const std::string& peer_key);
   /** After dual-dial loser outbound drops, rekey winner onto the dial alias. */
   void ScheduleAdoptDialAlias(std::string remote_peer_id, std::string dial_alias);
+
+  static Failure WrapPeerLinkFailure(const PeerLink::Failure& child);
+  static LinkRoe WrapPeerLinkResult(const PeerLink::LinkRoe& child);
 
   adp::Endpoint& endpoint_;
   MshIdentity local_identity_;
@@ -139,7 +168,7 @@ private:
   std::unordered_map<std::string, std::string> peer_id_to_key_;
   std::unordered_map<std::string, std::vector<LinkCb>> inflight_associations_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> dial_failed_until_;
-  std::unordered_map<std::string, std::string> last_error_;
+  std::unordered_map<std::string, Failure> last_error_;
   size_t concurrent_dials_ = 0;
   /** Erase after PeerLink stack unwinds (dual-dial loser must not destroy `this` mid-callback). */
   std::vector<std::string> pending_drop_keys_;

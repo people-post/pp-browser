@@ -1,5 +1,6 @@
 #include "base/mesh/link/PeerLink.h"
 
+#include "base/error/CodedFailure.h"
 #include "base/mesh/channel/Types.h"
 #include "base/mesh/link/AmpAdpCarrier.h"
 #include "base/mesh/link/PeerLinkManager.h"
@@ -9,6 +10,21 @@
 #include <functional>
 
 namespace pbr::amp {
+
+PeerLink::Failure PeerLink::WrapConnectionFailure(const adp::Connection::Failure& child) {
+  switch (child.GetCode()) {
+  case adp::Connection::Err::Closed:
+  case adp::Connection::Err::WindowFull:
+    return Failure::Of(Err::TransportUnavailable,
+                       detail::AppendFrom("amp link: transport unavailable", "adp", child.message));
+  case adp::Connection::Err::PayloadTooLarge:
+  case adp::Connection::Err::SeqWrap:
+  case adp::Connection::Err::WireError:
+  default:
+    return Failure::Of(Err::TransportFailed,
+                       detail::AppendFrom("amp link: transport failed", "adp", child.message));
+  }
+}
 
 PeerLink::PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
                    std::shared_ptr<adp::Connection> connection, MshIdentity local_identity, PeerLinkManager& owner)
@@ -41,7 +57,7 @@ void PeerLink::AttachCarrierFrameHandler() {
   }
   carrier_->SetFrameHandler([this](Roe<std::vector<uint8_t>> frame) {
     if (!frame) {
-      FailAssociation(frame.error());
+      FailAssociationMessage(frame.error(), Err::CarrierClosed);
       return false;
     }
     HandleCarrierFrame(*frame);
@@ -52,7 +68,7 @@ void PeerLink::AttachCarrierFrameHandler() {
       phase_ = PeerLinkPhase::Backoff;
       return;
     }
-    FailAssociation(Error(reason && reason[0] ? reason : "amp carrier closed"));
+    FailAssociation(Failure::Of(Err::CarrierClosed, reason && reason[0] ? reason : "amp carrier closed"));
   });
 }
 
@@ -65,9 +81,17 @@ void PeerLink::StartHandshakeCommon(const MshAdpHandshake::Role role, CompleteCb
       role, identity_,
       [this](std::vector<uint8_t> payload) {
         if (IsCarrierBacked()) {
-          return SendCarrierWire(std::move(payload));
+          auto sent = SendCarrierWire(std::move(payload));
+          if (!sent) {
+            return Roe<void>(Error(sent.error().message));
+          }
+          return Roe<void>();
         }
-        return SendAdp(std::move(payload), adp::QosClass::Reliable);
+        auto sent = SendAdpLink(std::move(payload), adp::QosClass::Reliable);
+        if (!sent) {
+          return Roe<void>(Error(sent.error().message));
+        }
+        return Roe<void>();
       },
       [this](Roe<MshAdpEstablished> established) { OnHandshakeComplete(std::move(established)); }, chunked);
 }
@@ -75,7 +99,7 @@ void PeerLink::StartHandshakeCommon(const MshAdpHandshake::Role role, CompleteCb
 void PeerLink::StartOutboundHandshake(CompleteCb on_established) {
   StartHandshakeCommon(MshAdpHandshake::Role::Initiator, std::move(on_established));
   if (auto started = handshake_->Start(); !started) {
-    FailAssociation(started.error());
+    FailAssociationMessage(started.error(), Err::HandshakeFailed);
   }
 }
 
@@ -152,7 +176,7 @@ void PeerLink::HandleAdpPayload(const std::span<const uint8_t> payload) {
     }
     auto assembled = PushMshChunk(std::get<0>(*chunk), std::get<1>(*chunk), std::get<2>(*chunk), std::get<3>(*chunk));
     if (!assembled) {
-      FailAssociation(assembled.error());
+      FailAssociationMessage(assembled.error(), Err::HandshakeFailed);
       return;
     }
     if (!assembled->has_value()) {
@@ -218,26 +242,38 @@ Roe<std::optional<std::vector<uint8_t>>> PeerLink::PushMshChunk(const MshMessage
   return std::optional<std::vector<uint8_t>>{std::move(*wire)};
 }
 
-Roe<void> PeerLink::SendAdp(std::vector<uint8_t> payload, const adp::QosClass qos) {
+PeerLink::LinkRoe PeerLink::SendAdpLink(std::vector<uint8_t> payload, const adp::QosClass qos) {
   if (!connection_) {
-    return Error("amp link: no connection");
+    return LinkRoe::error(Failure::Of(Err::NoConnection, "amp link: no connection"));
   }
-  return connection_->Send(qos, payload);
+  auto sent = connection_->Send(qos, payload);
+  if (!sent) {
+    return LinkRoe::error(WrapConnectionFailure(sent.error()));
+  }
+  return LinkRoe();
 }
 
-Roe<void> PeerLink::SendCarrierWire(std::vector<uint8_t> payload) {
-  if (!carrier_ || carrier_->IsClosed()) {
-    return Error("amp link: carrier closed");
-  }
-  if (!carrier_->EnqueueOutbound(std::move(payload))) {
-    return Error("amp link: carrier enqueue failed");
+Roe<void> PeerLink::SendAdp(std::vector<uint8_t> payload, const adp::QosClass qos) {
+  auto sent = SendAdpLink(std::move(payload), qos);
+  if (!sent) {
+    return Error(sent.error().message);
   }
   return Roe<void>();
 }
 
+PeerLink::LinkRoe PeerLink::SendCarrierWire(std::vector<uint8_t> payload) {
+  if (!carrier_ || carrier_->IsClosed()) {
+    return LinkRoe::error(Failure::Of(Err::CarrierClosed, "amp link: carrier closed"));
+  }
+  if (!carrier_->EnqueueOutbound(std::move(payload))) {
+    return LinkRoe::error(Failure::Of(Err::CarrierEnqueueFailed, "amp link: carrier enqueue failed"));
+  }
+  return LinkRoe();
+}
+
 void PeerLink::OnHandshakeComplete(Roe<MshAdpEstablished> established) {
   if (!established) {
-    FailAssociation(established.error());
+    FailAssociationMessage(established.error(), Err::HandshakeFailed);
     return;
   }
   FinishEstablishment(std::move(*established));
@@ -257,7 +293,7 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
 
   auto session = Session::FromMaterial(established.local_material, master_ikm_, transcript_hash_);
   if (!session) {
-    FailAssociation(session.error());
+    FailAssociationMessage(session.error(), Err::HandshakeFailed);
     return;
   }
 
@@ -284,9 +320,9 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
     }
     if (establish_cb_) {
       if (assoc_ok) {
-        establish_cb_(Roe<void>());
+        establish_cb_(LinkRoe());
       } else {
-        establish_cb_(Error("amp link: dual-dial election lost"));
+        establish_cb_(LinkRoe::error(Failure::Of(Err::DualDialLost, "amp link: dual-dial election lost")));
       }
       establish_cb_ = nullptr;
     }
@@ -294,21 +330,27 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
   }
 
   if (establish_cb_) {
-    establish_cb_(Roe<void>());
+    establish_cb_(LinkRoe());
     establish_cb_ = nullptr;
   }
 }
 
-void PeerLink::FailAssociation(const Error& error) {
+void PeerLink::FailAssociation(const Failure& failure) {
   phase_ = PeerLinkPhase::Backoff;
   handshake_.reset();
   if (establish_cb_) {
-    establish_cb_(error);
+    establish_cb_(LinkRoe::error(failure));
     establish_cb_ = nullptr;
   }
 }
 
-void PeerLink::FailHandshakeTimeout() { FailAssociation(Error("amp link: dial timeout")); }
+void PeerLink::FailAssociationMessage(const Error& error, const Err code) {
+  FailAssociation(Failure::Of(code, error.message));
+}
+
+void PeerLink::FailHandshakeTimeout() {
+  FailAssociation(Failure::Of(Err::DialTimeout, "amp link: dial timeout"));
+}
 
 void PeerLink::AttachMuxTransport() {
   mux_->SetTransport([this](const uint32_t channel_id, const uint32_t channel_seq, const adp::QosClass qos,

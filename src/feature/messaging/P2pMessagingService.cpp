@@ -463,7 +463,7 @@ void P2pMessagingService::WarmPeerForThread(const std::string& thread_id) {
   }
   amp_links_->MarkWarm(peer);
   if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](Roe<void>) {});
+    amp_links_->EnsureAssociation(peer, [](amp::PeerLinkManager::LinkRoe) {});
   }
 }
 
@@ -593,7 +593,7 @@ void P2pMessagingService::RetryPeerDial(const std::string& thread_id) {
   }
   amp_links_->MarkWarm(peer);
   if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](Roe<void>) {});
+    amp_links_->EnsureAssociation(peer, [](amp::PeerLinkManager::LinkRoe) {});
   }
 }
 

@@ -334,7 +334,7 @@ struct CircuitTunnelCoordinator::Impl {
     // Must not hold mu across OpenChannel — callback may run synchronously.
     runtime->Links().OpenChannel(
         relay_key, kCircuitRelayProtocolId, PolicyForCircuitTarget(tunnel.target.target_protocol),
-        [this, id, relay_key, deadline, request_json](Roe<uint32_t> channel) mutable {
+        [this, id, relay_key, deadline, request_json](amp::PeerLinkManager::ChannelRoe channel) mutable {
           amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
@@ -441,7 +441,8 @@ struct CircuitTunnelCoordinator::Impl {
     const auto deadline = tunnel.deadline;
     const std::string target_protocol = tunnel.target.target_protocol;
 
-    runtime->Links().EnsureAssociation(target_key, [this, id, target_key, deadline, target_protocol](Roe<void> assoc) {
+    runtime->Links().EnsureAssociation(target_key, [this, id, target_key, deadline, target_protocol](
+                                               amp::PeerLinkManager::LinkRoe assoc) {
       {
         std::lock_guard lock(mu);
         auto* tunnel = Find(id);
@@ -462,7 +463,7 @@ struct CircuitTunnelCoordinator::Impl {
       }
       runtime->Links().OpenChannel(
           target_key, target_protocol, PolicyForCircuitTarget(target_protocol),
-          [this, id, target_key, deadline](Roe<uint32_t> channel) {
+          [this, id, target_key, deadline](amp::PeerLinkManager::ChannelRoe channel) {
             amp::PeerLink* link = nullptr;
             uint32_t channel_id = 0;
             {

@@ -168,9 +168,9 @@ Roe<void> AmpDirectChatService::SendEnvelope(const std::string& peer_relay_user_
   const std::string peer_key = peer_relay_user_id;
   links_.OpenChannel(peer_key, kDirectChatProtocolId, amp::ControlJsonChannelPolicy(),
                      [this, peer_key, envelope_json, finish, settled, session,
-                      deadline](Roe<uint32_t> channel) mutable {
+                      deadline](amp::PeerLinkManager::ChannelRoe channel) mutable {
                        if (!channel) {
-                         finish(channel.error());
+                         finish(Error(channel.error().message));
                          return;
                        }
                        impl_->IoPumpUntil(
