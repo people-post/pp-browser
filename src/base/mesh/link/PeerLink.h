@@ -12,6 +12,7 @@
 #include "common/PbrCompat.h"
 
 #include <functional>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -64,6 +65,11 @@ public:
   void ClearWarm();
   bool IsWarm() const { return warm_; }
 
+  /** Wire-coordinated session rekey on channel 0 (after capability exchange). */
+  void RequestSessionRekey(std::function<void(Roe<void>)> on_complete);
+
+  void HandleSessionControl(std::span<const uint8_t> payload);
+
 private:
   friend class PeerLinkManager;
 
@@ -108,6 +114,8 @@ private:
   MshMessageType msh_chunk_type_{};
   uint16_t msh_chunk_count_ = 0;
   std::vector<std::vector<uint8_t>> msh_chunk_parts_;
+
+  std::function<void(Roe<void>)> rekey_cb_;
   Roe<std::optional<std::vector<uint8_t>>> PushMshChunk(MshMessageType type, uint16_t index, uint16_t count,
                                                          std::span<const uint8_t> chunk);
 };

@@ -4,6 +4,7 @@
 #include "base/mesh/channel/ChannelSession.h"
 #include "base/mesh/channel/Types.h"
 #include "base/mesh/link/AdpMultiaddr.h"
+#include "base/mesh/session/SessionControl.h"
 #include "base/mesh/link/Types.h"
 
 #include <iterator>
@@ -578,7 +579,7 @@ void PeerLinkManager::StartCapabilityExchange(PeerLink& link) {
   }
   const std::string peer_key = link.PeerKey();
   link.Mux()->SetDataHandler(kCapabilityChannelId, [this, peer_key](uint32_t, std::vector<uint8_t> payload) {
-    OnCapabilityData(peer_key, std::move(payload));
+    OnCh0Data(peer_key, std::move(payload));
   });
 
   if (link.CapabilityExchangeStarted()) {
@@ -592,6 +593,16 @@ void PeerLinkManager::StartCapabilityExchange(PeerLink& link) {
   }
   link.MarkCapabilityOfferSent();
   (void)ChannelMux::SendCapabilityOffer(*link.Mux(), LocalCapability());
+}
+
+void PeerLinkManager::OnCh0Data(const std::string& peer_key, std::vector<uint8_t> payload) {
+  if (SessionControlCodec::LooksLike(payload)) {
+    if (auto* link = FindLink(peer_key)) {
+      link->HandleSessionControl(payload);
+    }
+    return;
+  }
+  OnCapabilityData(peer_key, std::move(payload));
 }
 
 void PeerLinkManager::OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload) {

@@ -273,7 +273,8 @@ Roe<void> ChannelMux::DispatchFrame(ChannelFrame frame) {
 
 Roe<void> ChannelMux::OnSealedInbound(const uint32_t channel_id, const uint32_t channel_seq,
                                       std::span<const uint8_t> sealed) {
-  auto opened = session_.Open(channel_id, channel_seq, sealed);
+  const int64_t now_ms = now_ms_ ? now_ms_() : 0;
+  auto opened = session_.Open(channel_id, channel_seq, sealed, now_ms);
   if (!opened) {
     return opened.error();
   }

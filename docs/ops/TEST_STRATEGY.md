@@ -104,6 +104,8 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 | Deploy smoke | Image/env/caps/reach from outside hop | Medium | Low–medium |
 | Tier C | Topology, process isolation, capacity, long soak | Highest | Highest |
 
+**AMP integration matrix (`A-INT-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_link_test` (`amp_integration_test.cpp`).
+
 ---
 
 ## Product split

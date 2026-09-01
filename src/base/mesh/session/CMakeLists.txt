@@ -3,6 +3,7 @@ pp_browser_add_base_library(pp_base_mesh_session
     MshHandshake.cpp
     MshMessages.cpp
     Session.cpp
+    SessionControl.cpp
     SessionCrypto.cpp
     SessionKeys.cpp
   PUBLIC_LIBS

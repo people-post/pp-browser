@@ -104,6 +104,7 @@ private:
   void ApplyProtocolHandlers(PeerLink& link);
   void StartCapabilityExchange(PeerLink& link);
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
+  void OnCh0Data(const std::string& peer_key, std::vector<uint8_t> payload);
   void IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote);
   void FinishDial(const std::string& peer_key, Roe<void> result);
   void FinishNestedCarrier(const std::string& provisional_key, Roe<void> result);

@@ -1,5 +1,7 @@
 #include "base/mesh/session/Session.h"
 
+#include "base/mesh/session/SessionControl.h"
+
 #include <cstring>
 
 namespace pbr::amp {
@@ -38,14 +40,23 @@ Direction Session::InDirection() const {
 }
 
 Roe<std::vector<uint8_t>> Session::Seal(const uint32_t channel_id, const uint32_t channel_seq,
-                                        std::span<const uint8_t> plaintext) const {
+                                        const std::span<const uint8_t> plaintext) const {
   return SessionCrypto::Seal(material_.k_send, material_.session_epoch, channel_id, channel_seq, OutDirection(),
-                           plaintext);
+                             plaintext);
 }
 
 Roe<std::vector<uint8_t>> Session::Open(const uint32_t channel_id, const uint32_t channel_seq,
-                                       std::span<const uint8_t> sealed) const {
-  return SessionCrypto::Open(material_.k_recv, material_.session_epoch, channel_id, channel_seq, InDirection(), sealed);
+                                        const std::span<const uint8_t> sealed, const int64_t now_ms) const {
+  auto opened = SessionCrypto::Open(material_.k_recv, material_.session_epoch, channel_id, channel_seq, InDirection(),
+                                    sealed);
+  if (opened) {
+    return opened;
+  }
+  if (previous_recv_key_ && now_ms > 0 && now_ms <= grace_until_ms_) {
+    const uint32_t previous_epoch = material_.session_epoch - 1;
+    return SessionCrypto::Open(*previous_recv_key_, previous_epoch, channel_id, channel_seq, InDirection(), sealed);
+  }
+  return opened.error();
 }
 
 Roe<void> Session::Rekey() {
@@ -56,7 +67,29 @@ Roe<void> Session::Rekey() {
   }
   material_.k_send = std::move(refreshed->k_send);
   material_.k_recv = std::move(refreshed->k_recv);
+  previous_recv_key_.reset();
+  grace_until_ms_ = 0;
   return Roe<void>();
+}
+
+Roe<void> Session::ApplyRekey(const uint32_t target_epoch, const int64_t now_ms) {
+  if (target_epoch != material_.session_epoch + 1) {
+    return Error("amp session: unexpected rekey epoch");
+  }
+  previous_recv_key_ = material_.k_recv;
+  grace_until_ms_ = now_ms + kSessionRekeyGraceMs;
+  material_.session_epoch = target_epoch;
+  auto refreshed = SessionKeys::Derive(master_ikm_, transcript_hash_, material_.initiator, material_.session_epoch);
+  if (!refreshed) {
+    return refreshed.error();
+  }
+  material_.k_send = std::move(refreshed->k_send);
+  material_.k_recv = std::move(refreshed->k_recv);
+  return Roe<void>();
+}
+
+bool Session::HasGraceRecvKey(const int64_t now_ms) const {
+  return previous_recv_key_.has_value() && now_ms > 0 && now_ms <= grace_until_ms_;
 }
 
 } // namespace pbr::amp
