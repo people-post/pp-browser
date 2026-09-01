@@ -112,7 +112,7 @@ flowchart LR
   E --> F[upload artifact]
 ```
 
-CPack on macOS packages **`CMAKE_INSTALL_PREFIX` as-is** (does not re-install into a DESTDIR staging tree). Sign **before** `cpack`, or the DMG will contain an unsigned app and notarization returns `Invalid`.
+CPack on macOS packages the signed **`PP.app` only** from `CMAKE_INSTALL_PREFIX` (not `bin/pp-node*`, which ships on the separate `pp-node/v*` train). Sign **before** `cpack`, or the DMG will contain an unsigned app and notarization returns `Invalid`.
 
 | Step | Script command | When skipped |
 |------|----------------|--------------|
@@ -186,7 +186,7 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 | Symptom | Likely fix |
 |---------|------------|
 | Notarization rejected — missing entitlement | Add key to [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements); check log with `xcrun notarytool log <submission-id> --key ...` |
-| Notarization `Invalid` / staple “Record not found” | DMG likely packaged **unsigned** (cpack re-install stripped signatures). Ensure `cmake --install` → `sign-app` → `cpack`; macOS CPack uses install prefix only |
+| Notarization `Invalid` / staple “Record not found” | DMG likely packaged **unsigned** (cpack re-install stripped signatures), or included unsigned `bin/pp-node*`. Ensure `cmake --install` → `sign-app` → `cpack`; macOS CPack ships **PP.app only** |
 | `errSecInternalComponent` in CI | Ensure `APPLE_CERTIFICATE_BASE64` decodes cleanly; re-export `.p12`; check keychain import in script |
 | Wrong identity | Match `APPLE_SIGNING_IDENTITY` exactly to `security find-identity -v -p codesigning` |
 | CI still unsigned | Confirm all seven secrets are set; unsigned path logs `warning: macOS signing credentials not configured` |
