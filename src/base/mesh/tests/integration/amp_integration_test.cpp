@@ -3,7 +3,7 @@
 #include "base/mesh/channel/ChannelWire.h"
 #include "base/mesh/channel/Types.h"
 #include "base/mesh/link/Types.h"
-#include "base/mesh/link/tests/amp_integration_harness.h"
+#include "base/mesh/tests/support/amp_integration_harness.h"
 #include "base/mesh/session/SessionControl.h"
 
 #include <gtest/gtest.h>

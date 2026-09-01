@@ -2,7 +2,7 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
 #include "base/p2p/CircuitTunnelCoordinator.h"
 #include "base/mesh/link/Types.h"
-#include "base/mesh/link/tests/mesh_triple_harness.h"
+#include "base/mesh/tests/support/mesh_triple_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -101,7 +101,7 @@ protected:
       };
     }
 
-    std::function<amp::PeerLinkManager::LinkCb> LinkFn() {
+    amp::PeerLinkManager::LinkCb LinkFn() {
       return [this](amp::PeerLinkManager::LinkRoe r) {
         if (r) {
           result = Roe<void>();

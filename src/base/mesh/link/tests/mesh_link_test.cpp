@@ -7,8 +7,8 @@
 #include "base/mesh/link/AmpStack.h"
 #include "base/mesh/link/MeshPump.h"
 #include "base/mesh/link/PeerLinkManager.h"
-#include "base/mesh/link/tests/mesh_test_harness.h"
-#include "base/p2p/PeerIdUtil.h"
+#include "base/mesh/tests/support/mesh_test_harness.h"
+#include "base/mesh/tests/support/mesh_harness_support.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -408,8 +408,8 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   bob.ml_dsa_secret_key = std::move(bob_keys->secret_key);
   bob.ml_dsa_public_key = std::move(bob_keys->public_key);
 
-  auto peer_a = PeerIdFromMlDsaPublicKey(alice.ml_dsa_public_key);
-  auto peer_b = PeerIdFromMlDsaPublicKey(bob.ml_dsa_public_key);
+  auto peer_a = test::DeriveTestPeerId(alice.ml_dsa_public_key);
+  auto peer_b = test::DeriveTestPeerId(bob.ml_dsa_public_key);
   ASSERT_TRUE(static_cast<bool>(peer_a));
   ASSERT_TRUE(static_cast<bool>(peer_b));
 

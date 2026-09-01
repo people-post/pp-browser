@@ -1,5 +1,6 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
-#include "base/mesh/link/tests/mesh_test_harness.h"
+#include "base/mesh/tests/support/mesh_harness_support.h"
+#include "base/mesh/tests/support/mesh_test_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -674,9 +675,9 @@ struct AmpTripleMeshHarness {
     harness->charlie.ml_dsa_secret_key = std::move(charlie_keys->secret_key);
     harness->charlie.ml_dsa_public_key = std::move(charlie_keys->public_key);
 
-    auto alice_id = PeerIdFromMlDsaPublicKey(harness->alice.ml_dsa_public_key);
-    auto bob_id = PeerIdFromMlDsaPublicKey(harness->bob.ml_dsa_public_key);
-    auto charlie_id = PeerIdFromMlDsaPublicKey(harness->charlie.ml_dsa_public_key);
+    auto alice_id = test::DeriveTestPeerId(harness->alice.ml_dsa_public_key);
+    auto bob_id = test::DeriveTestPeerId(harness->bob.ml_dsa_public_key);
+    auto charlie_id = test::DeriveTestPeerId(harness->charlie.ml_dsa_public_key);
     if (!alice_id || !bob_id || !charlie_id) {
       return Error("triple harness: peer id derivation failed");
     }
