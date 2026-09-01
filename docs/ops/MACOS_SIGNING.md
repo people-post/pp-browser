@@ -112,7 +112,7 @@ flowchart LR
   E --> F[upload artifact]
 ```
 
-CPack on macOS packages **`CMAKE_INSTALL_PREFIX` as-is** (does not re-install into a DESTDIR staging tree). Sign **before** `cpack`, or the DMG will contain an unsigned app and notarization returns `Invalid`.
+CPack on macOS packages the signed **`PP.app` only** from `CMAKE_INSTALL_PREFIX` (not `bin/pp-node*`, which ships on the separate `pp-node/v*` train). Sign **before** `cpack`, or the DMG will contain an unsigned app and notarization returns `Invalid`.
 
 | Step | Script command | When skipped |
 |------|----------------|--------------|
