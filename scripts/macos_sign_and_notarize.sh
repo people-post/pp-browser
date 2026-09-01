@@ -187,6 +187,13 @@ cmd_sign_app() {
     echo "error: app bundle not found: ${app_path}" >&2
     exit 1
   fi
+  if [[ ! -f "${app_path}/Contents/Info.plist" ]]; then
+    echo "error: not a valid macOS app bundle (missing Contents/Info.plist): ${app_path}" >&2
+    echo "error: install tree under $(dirname "$app_path"):" >&2
+    ls -la "$(dirname "$app_path")" >&2 || true
+    find "$(dirname "$app_path")" -maxdepth 3 \( -name '*.app' -o -name Info.plist \) 2>/dev/null >&2 || true
+    exit 1
+  fi
 
   local entitlements="${MACOS_ENTITLEMENTS:-$DEFAULT_ENTITLEMENTS}"
   if [[ ! -f "$entitlements" ]]; then
@@ -251,11 +258,36 @@ cmd_notarize() {
   p8="$(notary_key_path)"
 
   log "Submitting ${submit_path} for notarization"
-  xcrun notarytool submit "$submit_path" \
-    --key "$p8" \
-    --key-id "$APPLE_NOTARY_KEY_ID" \
-    --issuer "$APPLE_NOTARY_ISSUER_ID" \
-    --wait
+  # --wait exits 0 even when status is Invalid; parse JSON and fail explicitly.
+  local submit_json
+  if ! submit_json="$(xcrun notarytool submit "$submit_path" \
+      --key "$p8" \
+      --key-id "$APPLE_NOTARY_KEY_ID" \
+      --issuer "$APPLE_NOTARY_ISSUER_ID" \
+      --wait \
+      --output-format json)"; then
+    echo "error: notarytool submit failed" >&2
+    printf '%s\n' "$submit_json" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$submit_json"
+
+  local status submission_id
+  status="$(printf '%s' "$submit_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
+  submission_id="$(printf '%s' "$submit_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or d.get("submission-id") or "")')"
+
+  if [[ "$status" != "Accepted" ]]; then
+    echo "error: notarization status=${status:-unknown} id=${submission_id:-unknown}" >&2
+    if [[ -n "$submission_id" ]]; then
+      log "Fetching notarization log for ${submission_id}"
+      xcrun notarytool log "$submission_id" \
+        --key "$p8" \
+        --key-id "$APPLE_NOTARY_KEY_ID" \
+        --issuer "$APPLE_NOTARY_ISSUER_ID" || true
+    fi
+    exit 1
+  fi
 
   if [[ "$submit_path" != "$artifact" && -f "$submit_path" ]]; then
     rm -f "$submit_path"

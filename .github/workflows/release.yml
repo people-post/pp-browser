@@ -91,6 +91,9 @@ jobs:
       - name: Install
         run: cmake --install build
 
+      - name: Check no Homebrew dylib linkage
+        run: ./scripts/macos_check_bundled_linkage.sh "${INSTALL_PREFIX}/PP.app"
+
       - name: Sign macOS app
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -135,6 +138,26 @@ jobs:
           fi
           echo "Packaged ${dmg}"
           echo "dmg_path=${dmg}" >> "$GITHUB_ENV"
+
+      - name: Verify signed app inside DMG
+        run: |
+          set -euo pipefail
+          mnt="$(mktemp -d "${RUNNER_TEMP}/pp-dmg.XXXXXX")"
+          cleanup() { hdiutil detach "$mnt" -force >/dev/null 2>&1 || true; rm -rf "$mnt"; }
+          trap cleanup EXIT
+          hdiutil attach "${dmg_path}" -readonly -nobrowse -mountpoint "$mnt"
+          app="$(find "$mnt" -maxdepth 2 -name '*.app' -print -quit)"
+          if [ -z "$app" ]; then
+            echo "::error::No .app in DMG"
+            ls -la "$mnt"
+            exit 1
+          fi
+          echo "Verifying ${app}"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          details="$(codesign -dv --verbose=2 "$app" 2>&1 || true)"
+          echo "$details"
+          echo "$details" | grep -q "Authority=Developer ID Application" \
+            || { echo "::error::DMG app is not Developer ID–signed (cpack may have re-installed unsigned)"; exit 1; }
 
       - name: Notarize and staple DMG
         env:
