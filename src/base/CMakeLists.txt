@@ -8,8 +8,7 @@ add_subdirectory(i18n)
 add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
-# AMP L1–L3 live under src/lib/amp (future pp-cpp-amp); built here after crypto/error.
-add_subdirectory(${CMAKE_SOURCE_DIR}/src/lib/amp ${CMAKE_BINARY_DIR}/src/lib/amp)
+# AMP L1–L3 + link: FetchContent pp-cpp-amp (cmake/PpCppAmp.cmake).
 add_subdirectory(p2p)
 add_subdirectory(people)
 

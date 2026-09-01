@@ -5,7 +5,7 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "lib/amp/tests/support/mesh_test_harness.h"
+#include "base/p2p/tests/support/mesh_test_harness.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

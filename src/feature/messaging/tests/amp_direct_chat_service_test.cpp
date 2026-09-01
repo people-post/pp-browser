@@ -2,7 +2,7 @@
 
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "lib/amp/tests/support/mesh_test_harness.h"
+#include "base/p2p/tests/support/mesh_test_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>

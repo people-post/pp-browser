@@ -1,7 +1,7 @@
 #include "base/p2p/AmpMediaRelayCoordinator.h"
 
 #include "base/p2p/ProductChannelPolicies.h"
-#include "lib/amp/link/PeerLink.h"
+#include "amp/link/PeerLink.h"
 #include "base/p2p/MediaRelayAttachSm.h"
 #include "base/p2p/MediaRelayLogic.h"
 #include "common/ValueJson.h"

@@ -32,7 +32,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 
 ## libp2p is maintained in-tree (PeerId only)
 
-We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [`src/lib/amp/`](src/lib/amp/) + [`src/base/p2p/`](src/base/p2p/).
+We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/base/p2p/`](src/base/p2p/).
 
 - Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
 - Import/update remaining deps with `./scripts/libp2p_vendor_import.sh`.

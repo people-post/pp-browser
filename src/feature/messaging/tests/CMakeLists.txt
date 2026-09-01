@@ -3,7 +3,7 @@ pp_browser_add_feature_folder_tests(
   pp_browser_feature_messaging_test
   EXTRA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/base/p2p/tests/support/mesh_harness_support.cpp
-    ${CMAKE_SOURCE_DIR}/src/lib/amp/tests/support/mesh_test_harness.cpp
+    ${CMAKE_SOURCE_DIR}/src/base/p2p/tests/support/mesh_test_harness.cpp
   LINK_LIBS pp_base_peer_id
   PRIVATE_DEFINITIONS
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

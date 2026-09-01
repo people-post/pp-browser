@@ -1,7 +1,7 @@
 #include "feature/messaging/CallStack.h"
 
 #include "base/data/Libp2pRole.h"
-#include "lib/amp/link/AdpMultiaddr.h"
+#include "amp/link/AdpMultiaddr.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/people/ContactTypes.h"

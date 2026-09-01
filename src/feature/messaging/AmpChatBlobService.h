@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
-#include "lib/amp/link/PeerLinkManager.h"
+#include "amp/link/PeerLinkManager.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
 

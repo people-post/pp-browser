@@ -1,8 +1,8 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
 
 #include "base/p2p/ProductChannelPolicies.h"
-#include "lib/amp/L3/ChannelSession.h"
-#include "lib/amp/link/PeerLink.h"
+#include "amp/L3/ChannelSession.h"
+#include "amp/link/PeerLink.h"
 #include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/p2p/CallMediaSessionLogic.h"
