@@ -131,7 +131,7 @@ Respect [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDA
 
 | Metric | Plan |
 |--------|------|
-| Brief poll ok/fail | `P2pMessagingService` atomic — now |
+| Brief poll ok/fail | `MeshMessagingService` atomic — now |
 | Direct / inbound flags | `ReachabilitySnapshot` — now |
 | Circuit / media active counts | Snapshot count — s3 ([S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a)) |
 | Throughput / delay | Post-MVP after counts |

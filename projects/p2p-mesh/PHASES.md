@@ -15,11 +15,11 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 ## n1 — Role shell + bootstrap + Network UI
 
-- [x] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
+- [x] `MeshConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
 - [x] Desktop busy-port fallback **18517–18526** (+ optional ephemeral); persist actual port (N016)
 - [x] Clear error / UX if Node listen ultimately fails (no silent “no libp2p”)
 - [x] `ConfigJson` + `config.json.example`
-- [x] `ResolveLibp2pRole` (mobile → Client; desktop × `node_enabled`)
+- [x] `ResolveMeshRole` (mobile → Client; desktop × `node_enabled`)
 - [x] Skip `host->listen` for Client; register bootstrap peers
 - [x] `SessionConfigFromApp` via `Platform::IsMobile()`
 - [x] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet); surface **actual** listen port when Node
@@ -152,5 +152,5 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 
 - [x] `_pp-browser._tcp` mDNS announce when Node or mobile ephemeral listen active
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
-- [x] Wire `MessagingHub::TickLibp2p` + contact list refresh
+- [x] Wire `MessagingHub::TickMesh` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)

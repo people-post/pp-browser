@@ -83,7 +83,7 @@
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "base/runtime/StartupTiming.h"
-#include "base/p2p/Reachability.h"
+#include "base/mesh/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -503,11 +503,11 @@ bool Application::Initialize(const char* window_title) {
   settings_commands.messaging_ready = [&facade]() {
     return facade.IsInitialized() && facade.IsMessagingReady();
   };
-  settings_commands.last_libp2p_error = [&facade]() -> std::string {
+  settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
       return {};
     }
-    return facade.LastLibp2pError();
+    return facade.LastMeshError();
   };
   settings_commands.amp_listen_multiaddr = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
@@ -733,7 +733,7 @@ bool Application::Initialize(const char* window_title) {
     if (contacts_shell_bridge_) {
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
-    if (Platform::IsDesktop() && store_.Snapshot().config.libp2p.node_enabled) {
+    if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
       const ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(

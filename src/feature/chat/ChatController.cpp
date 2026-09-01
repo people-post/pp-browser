@@ -54,7 +54,7 @@
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
 #include "feature/ui/BlobQuotaRecoveryFlow.h"
-#include "base/p2p/Reachability.h"
+#include "base/mesh/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -3026,7 +3026,7 @@ void ChatController::OnApplicationPause() {
     agent_ports_.cancel();
   }
   if (messaging_ready_) {
-    facade_->SuspendLibp2pColdPeers();
+    facade_->SuspendMeshColdPeers();
   }
 }
 

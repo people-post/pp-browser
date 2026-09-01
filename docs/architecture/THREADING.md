@@ -59,7 +59,7 @@ flowchart TB
 
 ~**6–9** OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier (+ SDL audio internals).
 
-During an active call, add SDL capture/video/ringtone threads and libp2p call-media IO on the host thread.
+During an active call, add SDL capture/video/ringtone threads and mesh call-media IO on the host thread.
 
 See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for the wiring diagram.
 
@@ -149,7 +149,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 ### Libp2p integration executors
 
-Integration services under `src/base/p2p/` use three executor classes via `Libp2pScheduler`:
+Integration services under `src/base/mesh/` use three executor classes via `Libp2pScheduler`:
 
 | Class | Dispatch | Examples |
 |-------|----------|------------|
@@ -157,7 +157,7 @@ Integration services under `src/base/p2p/` use three executor classes via `Libp2
 | **Data** | `Libp2pHost::Post` / stream async (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media duplex **and** call-media hello/ack |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `pp::amp::AmpChannelLimits` (legacy alias `Libp2pExecutorLimits`).
+Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `pp::amp::AmpChannelLimits` (legacy alias `MeshChannelLimits`).
 
 ---
 

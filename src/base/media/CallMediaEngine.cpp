@@ -568,7 +568,7 @@ struct CallMediaEngine::Impl {
   /**
    * Open SDL capture/playback. May block for a long time on OS mic permission
    * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
-   * or the libp2p host thread (that freezes accept + peer signaling).
+   * or the mesh host thread (that freezes accept + peer signaling).
    */
   /** Open DEFAULT_RECORDING; retries briefly — OEM speaker route (Moto) races AAudio open. */
   bool TryOpenCaptureStream(const SDL_AudioSpec& want, SDL_AudioStream** out_stream,

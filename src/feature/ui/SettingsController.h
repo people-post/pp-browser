@@ -104,7 +104,7 @@ private:
     Rml::String node_enabled = "on";
     bool show_node_toggle = true;
     Rml::String amp_listen_multiaddr;
-    Rml::String libp2p_status_message;
+    Rml::String mesh_status_message;
     Rml::String reachability_status_label;
     Rml::String reachability_summary;
     Rml::String reachability_help_kind;

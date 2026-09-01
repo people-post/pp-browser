@@ -13,7 +13,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "base/runtime/ProductBranding.h"
 #include "common/Utilities.h"
-#include "base/p2p/CallMediaFrameCrypto.h"
+#include "base/mesh/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -248,7 +248,7 @@ void CallTopologyController::PollPendingSfuAttach() {
   if (auto joined = sessions_.CountJoined(call_id)) {
     in.joined_count = *joined;
   }
-  in.media_active_p2p_for_call =
+  in.media_active_mesh_for_call =
       media_.IsActive() && media_.ActiveCallId() == call_id && !media_.IsSfuMode();
 
   switch (PollSfuAttachWait(in)) {

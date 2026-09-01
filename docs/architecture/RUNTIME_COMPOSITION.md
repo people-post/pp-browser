@@ -103,7 +103,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["MessagingHub<br/><small>feature/messaging/</small>"]
-    Mesh["MeshHost<br/><small>base/p2p/ — shared w/ pp-node</small>"]
+    Mesh["MeshHost<br/><small>base/mesh/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>base/ui/</small>"]
@@ -221,7 +221,7 @@ flowchart TB
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
-| Application Run loop | `MessagingHub::TickLibp2p` | **Removed** — hub policy on coordinator timer (t4) |
+| Application Run loop | `MessagingHub::TickMesh` | **Removed** — hub policy on coordinator timer (t4) |
 | UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
 | Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
 
@@ -252,12 +252,12 @@ flowchart TB
   subgraph pool["Worker pool 2–4"]
     Pool["WorkerPool<br/><small>Critical · Normal · Background</small>"]
     Http["HttpClient · AgentSession<br/><small>LLM / tools / libcurl</small>"]
-    P2pWork["P2pMessagingService · MessagingHub<br/><small>relay sync / send</small>"]
+    P2pWork["MeshMessagingService · MessagingHub<br/><small>relay sync / send</small>"]
     Pool --> Http
     Pool --> P2pWork
   end
 
-  subgraph libp2p_stack["libp2p host"]
+  subgraph libp2p_stack["mesh host"]
     LpIo["Libp2pHost io_thread_<br/><small>asio::io_context::run</small>"]
     Host["libp2p::Host<br/><small>lib/libp2p — Yamux + Noise</small>"]
     LpIo --> Host
@@ -282,7 +282,7 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **libp2p IO** | `Libp2pHost` | `base/p2p/` | `asio::io_context` run loop |
+| **libp2p IO** | `Libp2pHost` | `base/mesh/` | `asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
 | **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
@@ -305,8 +305,8 @@ Full model: [THREADING.md](THREADING.md).
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
-| **MeshHost** | `base/p2p/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
-| **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, libp2p media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
+| **MeshHost** | `base/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
 | **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
@@ -333,5 +333,5 @@ Full model: [THREADING.md](THREADING.md).
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `base/runtime/` | UI mailbox + worker pool + coordinator |
-| **Libp2pHost** | `base/p2p/` | Vendored host + asio IO thread |
+| **Libp2pHost** | `base/mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `base/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

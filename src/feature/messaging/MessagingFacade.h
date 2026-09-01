@@ -17,10 +17,10 @@
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/MessagingUiPorts.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
 #include "feature/messaging/PskSessionCoordinator.h"
-#include "base/p2p/Reachability.h"
+#include "base/mesh/Reachability.h"
 
 #include <cstdint>
 #include <functional>
@@ -56,7 +56,7 @@ public:
   Roe<void> SyncPushDevices(bool show_notifications);
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
-  void SuspendLibp2pColdPeers();
+  void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------
   const std::string& ActiveThreadId();
@@ -187,7 +187,7 @@ public:
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
-  std::string LastLibp2pError();
+  std::string LastMeshError();
   /** Desktop Node "Help the network" posture (for mesh UX projections). */
   bool IsHelpNetworkEnabled();
 

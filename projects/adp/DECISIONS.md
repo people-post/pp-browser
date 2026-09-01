@@ -175,7 +175,7 @@
 ## A025 — Pre-extract layer cleanup (limits, policies, PeerId)
 
 **Date:** 2026-08-31  
-**Decision:** Before extracting `pp-cpp-amp`: (1) channel budgets live in `pp::amp::AmpChannelLimits` under `lib/amp/L3/` (not `base/p2p`); (2) core AMP policy factories stay in `ChannelPolicy.h` (`ControlJson`, `Capability`, `CircuitCarrier`); product L4 factories move to `base/p2p/ProductChannelPolicies.h`; (3) `PeerIdFromMlDsaPublicKey` is its own CMake target `pp_base_peer_id` so mesh/link tests and people do not link `pp_base_p2p`. `Libp2pExecutorLimits` remains a deprecated alias of `AmpChannelLimits`.  
+**Decision:** Before extracting `pp-cpp-amp`: (1) channel budgets live in `pp::amp::AmpChannelLimits` under `lib/amp/L3/` (not `base/p2p`); (2) core AMP policy factories stay in `ChannelPolicy.h` (`ControlJson`, `Capability`, `CircuitCarrier`); product L4 factories move to `base/mesh/ProductChannelPolicies.h`; (3) `PeerIdFromMlDsaPublicKey` is its own CMake target `pp_base_peer_id` so mesh/link tests and people do not link `pp_base_mesh`. `MeshChannelLimits` remains a deprecated alias of `AmpChannelLimits`.  
 **Rationale:** Removes the mesh→p2p include edge that blocked shared-lib extract; keeps product protocol sizes out of AMP core; PeerId encoding still needs retained libp2p wire but must not pull MeshHost.  
 **Alternatives:** Leave limits in p2p; move PeerId into `pp-cpp-crypto` immediately; keep all factories in `ChannelPolicy.h`.
 

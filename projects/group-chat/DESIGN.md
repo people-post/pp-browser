@@ -31,7 +31,7 @@ flowchart TB
   subgraph feature [Feature messaging]
     GMS[GroupMembershipService]
     GIP[GroupInvitePolicy]
-    P2P[P2pMessagingService]
+    P2P[MeshMessagingService]
     Pipe[RelayReceivePipeline]
   end
   subgraph base [Base messaging]

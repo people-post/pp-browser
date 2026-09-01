@@ -35,7 +35,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
       sessions.NotePeerMediaRelayCap(peer_id, caps.media_relay);
     }
     if (IsAccountIdentityValue(identity)) {
-      sessions.NoteLibp2pPeerIdForRelay(identity, peer_id);
+      sessions.NoteMeshPeerIdForRelay(identity, peer_id);
     }
   }
 }
@@ -142,8 +142,8 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
         if (auto put = media_keys_.PutEpochKey(invite->call_id, session.media_epoch, *unwrapped); put) {
           log().info << "CallInvite embedded media key stored call_id=" << invite->call_id
                         << " epoch=" << session.media_epoch;
-          if (libp2p_bridge_) {
-            libp2p_bridge_->OnMediaKeyReady(invite->call_id);
+          if (call_media_bridge_) {
+            call_media_bridge_->OnMediaKeyReady(invite->call_id);
           }
         } else {
           log().warning << "CallInvite media key store failed: " << put.error().message;
@@ -196,7 +196,7 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
     register_peer_listen_multiaddrs_(pending.inviter_identity, invite->listen_multiaddrs);
   }
   if (!invite->libp2p_peer_id.empty()) {
-    NoteLibp2pPeerIdForRelay(pending.inviter_identity, invite->libp2p_peer_id);
+    NoteMeshPeerIdForRelay(pending.inviter_identity, invite->libp2p_peer_id);
   }
   NoteCapsForIdentity(*this, contacts_, pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
   PrefetchReach(prefetch_reach_, pending.inviter_identity);
@@ -217,7 +217,7 @@ Roe<void> CallSessionManager::HandleInboundAccept(const std::string& detail_json
     register_peer_listen_multiaddrs_(identity, accept->listen_multiaddrs);
   }
   if (!accept->libp2p_peer_id.empty()) {
-    NoteLibp2pPeerIdForRelay(identity, accept->libp2p_peer_id);
+    NoteMeshPeerIdForRelay(identity, accept->libp2p_peer_id);
   }
   NoteCapsForIdentity(*this, contacts_, identity, accept->caps, accept->listen_multiaddrs);
   CallParticipant participant;
@@ -429,9 +429,9 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
       log().warning << "CallMediaKey missing peer session key from=" << sender_identity;
     }
   }
-  // Libp2p answerer Start waits for epoch key (V015); kick deferred BeginSession.
-  if (stored && libp2p_bridge_) {
-    libp2p_bridge_->OnMediaKeyReady(key->call_id);
+  // Mesh answerer Start waits for epoch key (V015); kick deferred BeginSession.
+  if (stored && call_media_bridge_) {
+    call_media_bridge_->OnMediaKeyReady(key->call_id);
   }
   return {};
 }

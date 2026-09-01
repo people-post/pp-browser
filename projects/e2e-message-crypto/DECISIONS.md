@@ -26,7 +26,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E003 — Groundwork module before messaging schema changes
 
 **Date:** 2026-06-29  
-**Decision:** Phase **c1** delivers `src/base/crypto/` + unit tests + frozen test vectors **without** changing `ThreadTypes`, `RelayEnvelope`, or `P2pMessagingService`. Messaging wiring waits for **c2** and [chat-storage-and-memory](../chat-storage-and-memory/) channel split (v2b) and envelope extensions (v6).  
+**Decision:** Phase **c1** delivers `src/base/crypto/` + unit tests + frozen test vectors **without** changing `ThreadTypes`, `RelayEnvelope`, or `MeshMessagingService`. Messaging wiring waits for **c2** and [chat-storage-and-memory](../chat-storage-and-memory/) channel split (v2b) and envelope extensions (v6).  
 **Rationale:** Crypto API and wire format can be reviewed independently; avoids half-integrated relay changes.  
 **Alternatives:** Big-bang PR touching envelope + P2P + crypto together.
 

@@ -23,20 +23,20 @@
 
 | Area | State |
 |------|-------|
-| `Libp2pConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
-| Role | `ResolveLibp2pRole` — mobile Client; desktop × `node_enabled` |
+| `MeshConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
+| Role | `ResolveMeshRole` — mobile Client; desktop × `node_enabled` |
 | Listen | Client skips `host->listen`; Node tries **18517–18526** then `/tcp/0`; persist bound addr |
-| Errors | `MessagingHub::LastLibp2pError` surfaced in Me → Network |
+| Errors | `MessagingHub::LastMeshError` surfaced in Me → Network |
 | UI | Desktop **Help the network** toggle + actual listen multiaddr |
-| Tests | `Libp2pRole` helpers + ConfigJson / settings merge |
+| Tests | `MeshRole` helpers + ConfigJson / settings merge |
 
 ## np in code
 
 | Area | State |
 |------|-------|
 | Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
-| Shared runtime | `base/p2p/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
-| Shared mesh host | `base/p2p/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
+| Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
+| Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use MessagingHub / inbox / calls |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |

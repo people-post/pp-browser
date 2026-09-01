@@ -112,7 +112,7 @@ Resolved cycles (2026): `PlatformDefaults` moved from `platform/` to `data/`; co
 2. **Shared structs go low** — if two modules need the same DTO, move it to the lower owner (or a dedicated `*Types.h` in that owner).
 3. **Headers are contracts** — prefer heavy includes in `.cpp` files; keep headers lean to limit compile-time coupling.
 4. **Orchestration stays up** — multi-module workflows (`AgentSession`, `ShellHost`, `MessagingHub`) belong in `feature/`.
-5. **Fork glue stays at the edge** — RmlUi backend in `base/render/`; libp2p glue in `base/p2p/` (forks under `src/lib/`).
+5. **Fork glue stays at the edge** — RmlUi backend in `base/render/`; libp2p glue in `base/mesh/` (forks under `src/lib/`).
 
 ---
 

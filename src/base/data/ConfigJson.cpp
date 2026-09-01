@@ -53,13 +53,13 @@ void RelayPricingFromObject(const Object& object, RelayPricingConfig& pricing) {
   }
 }
 
-Object Libp2pPricingToObject(const Libp2pPricingConfig& pricing) {
+Object MeshPricingToObject(const MeshPricingConfig& pricing) {
   Object object;
   object.set("media_relay", RelayPricingToObject(pricing.media_relay));
   return object;
 }
 
-void Libp2pPricingFromObject(const Object& object, Libp2pPricingConfig& pricing) {
+void MeshPricingFromObject(const Object& object, MeshPricingConfig& pricing) {
   if (const Object* media_relay = object.getObject("media_relay")) {
     RelayPricingFromObject(*media_relay, pricing.media_relay);
   }
@@ -325,14 +325,14 @@ void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endp
   }
 }
 
-Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps) {
+Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
   Object object;
   object.set("circuit_relay", caps.circuit_relay);
   object.set("media_relay", caps.media_relay);
   return object;
 }
 
-void Libp2pCapabilitiesFromObject(const Object& object, Libp2pCapabilities& caps) {
+void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
   if (auto circuit_relay = object.getIf<bool>("circuit_relay")) {
     caps.circuit_relay = *circuit_relay;
   }
@@ -341,7 +341,7 @@ void Libp2pCapabilitiesFromObject(const Object& object, Libp2pCapabilities& caps
   }
 }
 
-Object Libp2pConfigToObject(const Libp2pConfig& config) {
+Object MeshConfigToObject(const MeshConfig& config) {
   std::vector<Value> peers;
   peers.reserve(config.bootstrap_peers.size());
   for (const std::string& peer : config.bootstrap_peers) {
@@ -361,13 +361,13 @@ Object Libp2pConfigToObject(const Libp2pConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
-  object.set("capabilities", Libp2pCapabilitiesToObject(config.capabilities));
-  object.set("pricing", Libp2pPricingToObject(config.pricing));
+  object.set("capabilities", MeshCapabilitiesToObject(config.capabilities));
+  object.set("pricing", MeshPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
   return object;
 }
 
-void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
+void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   if (auto node_enabled = object.getIf<bool>("node_enabled")) {
     config.node_enabled = *node_enabled;
   }
@@ -400,10 +400,10 @@ void Libp2pConfigFromObject(const Object& object, Libp2pConfig& config) {
     config.amp_udp_port = static_cast<int>(*amp_udp_port);
   }
   if (const Object* capabilities = object.getObject("capabilities")) {
-    Libp2pCapabilitiesFromObject(*capabilities, config.capabilities);
+    MeshCapabilitiesFromObject(*capabilities, config.capabilities);
   }
   if (const Object* pricing = object.getObject("pricing")) {
-    Libp2pPricingFromObject(*pricing, config.pricing);
+    MeshPricingFromObject(*pricing, config.pricing);
   }
   if (const Object* media_relay_budget = object.getObject("media_relay_budget")) {
     MediaRelayBudgetFromObject(*media_relay_budget, config.media_relay_budget);
@@ -470,7 +470,7 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("relay", ServiceEndpointToObject(config.relay));
   object.set("directory", ServiceEndpointToObject(config.directory));
   object.set("registration", ServiceEndpointToObject(config.registration));
-  object.set("libp2p", Libp2pConfigToObject(config.libp2p));
+  object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
@@ -546,8 +546,10 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   if (auto initiation_floor = ReadI64(object, "initiation_floor")) {
     config.initiation_floor = *initiation_floor;
   }
-  if (const Object* libp2p = object.getObject("libp2p")) {
-    Libp2pConfigFromObject(*libp2p, config.libp2p);
+  if (const Object* mesh = object.getObject("mesh")) {
+    MeshConfigFromObject(*mesh, config.mesh);
+  } else if (const Object* legacy = object.getObject("libp2p")) {
+    MeshConfigFromObject(*legacy, config.mesh);
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "config_version": 1,
   "data_dir": "/var/lib/pp-node",
-  "libp2p": {
+  "mesh": {
     "node_enabled": true,
     "mesh_enabled": true,
     "amp_udp_port": 443,

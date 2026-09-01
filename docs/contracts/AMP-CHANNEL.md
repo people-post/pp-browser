@@ -131,7 +131,7 @@ Max reassembled size defaults match today’s stream caps:
 
 ## Channel policies (port StreamIoPolicy)
 
-Core factories: `lib/amp/L3/ChannelPolicy.h`. Product L4 factories: `base/p2p/ProductChannelPolicies.h`.
+Core factories: `lib/amp/L3/ChannelPolicy.h`. Product L4 factories: `base/mesh/ProductChannelPolicies.h`.
 
 | Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
 |---------|-------|----------------|------|-------------|--------------|------|

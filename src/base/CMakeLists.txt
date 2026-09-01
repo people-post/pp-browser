@@ -9,7 +9,7 @@ add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
 # AMP L1–L3 + link: FetchContent pp-cpp-amp (cmake/PpCppAmp.cmake).
-add_subdirectory(p2p)
+add_subdirectory(mesh)
 add_subdirectory(people)
 
 if(PP_BROWSER_HEADLESS)
@@ -38,7 +38,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_mesh_channel
   pp_base_mesh_link
   pp_base_peer_id
-  pp_base_p2p
+  pp_base_mesh
   pp_base_people
   pp_base_messaging
   pp_base_media

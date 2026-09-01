@@ -68,7 +68,7 @@ protected:
       return view;
     };
     ports.messaging_ready = []() { return true; };
-    ports.last_libp2p_error = []() { return std::string{}; };
+    ports.last_mesh_error = []() { return std::string{}; };
     ports.run_reachability_probe = [this](bool try_upnp) {
       probed_ = true;
       try_upnp_ = try_upnp;

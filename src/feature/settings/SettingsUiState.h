@@ -32,7 +32,7 @@ struct SettingsUiState {
   /** Runtime Amp listen multiaddr (display-only; not persisted). */
   std::string amp_listen_multiaddr;
   /** Last mesh start error for Network UX (may be empty). */
-  std::string libp2p_status_message;
+  std::string mesh_status_message;
   std::string reachability_status_label;
   std::string reachability_summary;
   std::string reachability_help_kind;

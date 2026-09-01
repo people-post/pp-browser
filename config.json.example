@@ -37,7 +37,7 @@
   "registration": {
     "base_url": "https://www.brief.global/api/relay"
   },
-  "libp2p": {
+  "mesh": {
     "node_enabled": true,
     "mesh_enabled": true,
     "amp_udp_port": 0,

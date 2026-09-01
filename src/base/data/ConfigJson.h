@@ -20,12 +20,12 @@ pp::common::Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint
 void ServiceEndpointFromObject(const pp::common::Object& object,
                                ServiceEndpointConfig& endpoint);
 
-pp::common::Object Libp2pCapabilitiesToObject(const Libp2pCapabilities& caps);
-void Libp2pCapabilitiesFromObject(const pp::common::Object& object,
-                                  Libp2pCapabilities& caps);
+pp::common::Object MeshCapabilitiesToObject(const MeshCapabilities& caps);
+void MeshCapabilitiesFromObject(const pp::common::Object& object,
+                                  MeshCapabilities& caps);
 
-pp::common::Object Libp2pConfigToObject(const Libp2pConfig& config);
-void Libp2pConfigFromObject(const pp::common::Object& object, Libp2pConfig& config);
+pp::common::Object MeshConfigToObject(const MeshConfig& config);
+void MeshConfigFromObject(const pp::common::Object& object, MeshConfig& config);
 
 pp::common::Object McpConfigToObject(const McpConfig& config);
 void McpConfigFromObject(const pp::common::Object& object, McpConfig& config);

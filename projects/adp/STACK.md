@@ -163,7 +163,7 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 
 L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
 
-**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickLibp2p` (coordinator) may both call Tick without racing PeerLink/Mux.
+**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
 
 ## Code layout (planned)
 
@@ -171,7 +171,7 @@ L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` t
 src/lib/amp/L1/          → L1 (exists; no libp2p)
 src/lib/amp/L2/ → L2 MSH, Session, rekey
 src/lib/amp/L3/ → L3 mux, frag, ChannelSession
-src/base/p2p/          → PeerLinkManager, reachability; libp2p glue shrinks
+src/base/mesh/          → PeerLinkManager, reachability; libp2p glue shrinks
 ```
 
 Acyclic: `crypto` → `adp` → `mesh` → `p2p` → `people`. `mesh` must not link libp2p ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)).

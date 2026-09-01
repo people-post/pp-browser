@@ -27,7 +27,7 @@ struct LocalIdentity {
   /** Account ML-KEM-768 private key (base64). Copied on link-device; not the device key. */
   std::string kem_private_key_b64;
   std::string nickname;
-  /** Device endpoint: libp2p PeerId base58; derived in memory from device ML-DSA pubkey. */
+  /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;
   /** Transport handle (route): relay-assigned; empty until registered (D082 / M006). */
   std::string relay_user_id;

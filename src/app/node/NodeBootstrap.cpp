@@ -5,7 +5,7 @@
 #include "base/crypto/PinResolver.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
-#include "base/data/Libp2pRole.h"
+#include "base/data/MeshRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
 #include "base/runtime/AppRuntime.h"
@@ -26,8 +26,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   ApplyPpNodeConfigEnvOverlays(*config);
-  config->libp2p.node_enabled = true;
-  NormalizeLibp2pConfig(config->libp2p);
+  config->mesh.node_enabled = true;
+  NormalizeMeshConfig(config->mesh);
 
   AppPaths::DataDir(config->data_dir);
 
@@ -95,17 +95,17 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
   // Org seed: circuit / media_relay host inbound when enabled (N018).
-  mesh_cfg.host_circuit_relay = config->libp2p.capabilities.circuit_relay;
-  mesh_cfg.host_media_relay = config->libp2p.capabilities.media_relay;
-  mesh_cfg.media_relay_budget = config->libp2p.media_relay_budget;
-  mesh_cfg.media_relay_pricing = config->libp2p.pricing.media_relay;
+  mesh_cfg.host_circuit_relay = config->mesh.capabilities.circuit_relay;
+  mesh_cfg.host_media_relay = config->mesh.capabilities.media_relay;
+  mesh_cfg.media_relay_budget = config->mesh.media_relay_budget;
+  mesh_cfg.media_relay_pricing = config->mesh.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
-  mesh_cfg.mesh_enabled = config->libp2p.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
+  mesh_cfg.mesh_enabled = config->mesh.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
                           mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
-      config->libp2p.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->libp2p.amp_udp_port);
-  mesh_cfg.bootstrap_peers = config->libp2p.bootstrap_peers;
+      config->mesh.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->mesh.amp_udp_port);
+  mesh_cfg.bootstrap_peers = config->mesh.bootstrap_peers;
 
   auto mesh = std::make_unique<MeshHost>();
   if (auto started = mesh->Start(mesh_cfg); !started) {
@@ -149,8 +149,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   log.info << "pp-node listening on " << listen
            << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
            << " underlay=amp"
-           << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off")
-           << " media-relay=" << (result.config.libp2p.capabilities.media_relay ? "on" : "off");
+           << " circuit-relay=" << (result.config.mesh.capabilities.circuit_relay ? "on" : "off")
+           << " media-relay=" << (result.config.mesh.capabilities.media_relay ? "on" : "off");
   return result;
 }
 

@@ -46,7 +46,7 @@
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
 - `pp_browser_amp_link_test` (9 link unit tests, green)
 - `pp_browser_amp_integration_test` (15 Tier B tests, green)
-- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/base/p2p/tests/support/`
+- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/base/mesh/tests/support/`
 
 ## Landed (L4 chat — D5)
 
@@ -64,7 +64,7 @@
 - SoftMigrate audio reopen gated to Android settle (`CaptureReopenSettleDelayMs() > 0`)
 - Connect timeout does not `Detach()` when inbound already `IsActive()`
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
-- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
+- `pp_browser_mesh_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
 - Shared AMP test harness: `src/lib/amp/tests/support/mesh_test_harness.h` + `MeshRuntime`
 
 ### LAN dogfood checklist (call-media / A026)
@@ -80,13 +80,13 @@
 - `CircuitTunnelCoordinator` — non-blocking `StartBridge` on `MeshRuntime` (callbacks + `PostToIo`; no nested `Pump`)
 - `ChannelBridge` — io-thread DATA splice armed after handshake
 - Bridge JSON + admission parity with libp2p circuit; parallel stack only ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
-- `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
+- `pp_browser_mesh_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 
 ## Landed (L4 media-relay — D7b / A022)
 
 - `MediaRelayBundleLogic` — admit / ack / default quote helpers (reuses `MediaRelayAttachSm` + `MediaRelayLogic`)
 - `AmpMediaRelayCoordinator` — non-blocking `StartQuote` / `StartAttach` on `MeshRuntime`
-- `pp_browser_p2p_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
+- `pp_browser_mesh_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
 - Fan-out SoftMigrate / MeshHost wire deferred
 
 ## Landed (D8 ch0 — partial)
@@ -103,12 +103,12 @@
 
 - `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer
 - **`MeshHost` Amp underlay** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys) / D10): `mesh_enabled` / `AttachAmpStack`; hard-require Amp; `Tick` pumps Amp
-- **Product wiring:** `libp2p.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickLibp2p` calls `mesh_->Tick()` so Amp pumps
-- `pp_browser_p2p_test` — `MeshHostAmpTest.AttachAmpStackParallelNoLibp2p`
+- **Product wiring:** `mesh.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickMesh` calls `mesh_->Tick()` so Amp pumps
+- `pp_browser_mesh_test` — `MeshHostAmpTest.AttachAmpStackParallelNoMeshHost`
 
 ## Landed (D9 step 3 — chat/history single entry)
 
-- **Composition cutover:** when `MeshHost::Amp()` is up, `P2pMessagingService` constructs `AmpDirectChatService` + `AmpChatHistoryService` only (no dual chat handlers; [A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- **Composition cutover:** when `MeshHost::Amp()` is up, `MeshMessagingService` constructs `AmpDirectChatService` + `AmpChatHistoryService` only (no dual chat handlers; [A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - Blob / call-media / circuit / dial-back remain on libp2p
 - ADP endpoints registered from contacts, ch0 ingest, Identify Amp listen push, and LAN mDNS TXT `amp_udp=`
 - Without an ADP multiaddr, direct chat falls back to relay (TCP-only contacts)
@@ -151,7 +151,7 @@
 - **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
 - **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link
 - **MeshHost** enables nested carrier accept whenever Amp L4 is up
-- `pp_browser_p2p_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
+- `pp_browser_mesh_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
 
 ## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
 

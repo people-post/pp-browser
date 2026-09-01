@@ -25,7 +25,7 @@ struct SfuAttachWaitPollInput {
   bool sfu_attached_for_call = false;
   size_t joined_count = 0;
   /** Active 1:1 P2P for this call_id (not SFU). */
-  bool media_active_p2p_for_call = false;
+  bool media_active_mesh_for_call = false;
 };
 
 /**

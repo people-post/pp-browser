@@ -21,11 +21,11 @@ public:
   virtual void P2pSetLastMediaError(std::string message) = 0;
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
   /**
-   * Map inbound call-media libp2p PeerId → call-roster `relay:` identity.
+   * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
    * Do not use P2pPeerIdentityForCall for this — that returns an arbitrary remote and
    * mis-keys PreferLocal 1:1 audio onto another peer's SFU stream_id.
    */
-  virtual Roe<std::optional<std::string>> P2pRelayIdentityForLibp2pPeerId(
+  virtual Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(
       const std::string& call_id, const std::string& peer_id) const = 0;
   virtual bool P2pIsAwaitingSfuRecovery() const = 0;
   /**

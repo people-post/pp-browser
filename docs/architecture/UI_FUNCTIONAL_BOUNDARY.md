@@ -13,7 +13,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 
 1. **Two self-contained systems.** Functional components (messaging hub, agent session, vault gate, …) and the UI shell are separate. In theory, features run headless; UI is a client of functional facades.
 2. **Explicit interfaces for UI-visible behavior.** Every state, config, and action the UI needs is declared by the owning system (or a narrow facade). UI never reaches into subsystems or internal singletons.
-3. **Limited top-level exposure.** UI sees a small set of top-level systems. Everything else (libp2p host, thread stores, turn executor, …) stays internal.
+3. **Limited top-level exposure.** UI sees a small set of top-level systems. Everything else (mesh host, thread stores, turn executor, …) stays internal.
 4. **Four interaction channels** (see below). State, Config, Actions, and Events — each with clear semantics and thread rules.
 
 ---
@@ -206,7 +206,7 @@ struct MessagingActions {
 - Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `UnlockEnsurePorts`, `FlowCoordinatorPorts`, `BadgeNotifyPorts`, `PinGateActionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
-- Runs the main loop: UI tick, `TickLibp2p`, drain `AppRuntime` UI mailbox
+- Runs the main loop: UI tick, `TickMesh`, drain `AppRuntime` UI mailbox
 
 Presenters are **app-owned instances** (`Application` holds `unique_ptr` and calls `InstallInstance` for RmlUi static callbacks). New code must not add presenter `::Instance()` call sites outside static RmlUi handlers and SDL function-pointer constraints.
 
