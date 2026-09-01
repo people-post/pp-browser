@@ -10,7 +10,6 @@ add_subdirectory(data)
 add_subdirectory(crypto)
 # AMP L1–L3 live under src/lib/amp (future pp-cpp-amp); built here after crypto/error.
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/lib/amp ${CMAKE_BINARY_DIR}/src/lib/amp)
-add_subdirectory(mesh)
 add_subdirectory(p2p)
 add_subdirectory(people)
 

@@ -2,7 +2,7 @@
 
 **Tier:** B (local integration on `MemoryDatagramIo`)  
 **Stack:** [STACK.md](STACK.md) · [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) · [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md)  
-**Suite:** `pp_browser_amp_integration_test` (`src/base/mesh/tests/integration/amp_integration_test.cpp`)
+**Suite:** `pp_browser_amp_integration_test` (`src/lib/amp/tests/integration/amp_integration_test.cpp`)
 
 Rekey receive path uses a **grace window ≤ 1 s** for the previous epoch ([AMP-SESSION.md § Rekey](../../docs/contracts/AMP-SESSION.md)).
 

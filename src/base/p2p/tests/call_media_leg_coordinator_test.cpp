@@ -1,6 +1,6 @@
 #include "base/p2p/CallMediaLegCoordinator.h"
-#include "base/mesh/tests/support/mesh_harness_support.h"
-#include "base/mesh/tests/support/mesh_test_harness.h"
+#include "lib/amp/tests/support/mesh_harness_support.h"
+#include "lib/amp/tests/support/mesh_test_harness.h"
 #include "crypto/MlDsa.h"
 
 #include <gtest/gtest.h>

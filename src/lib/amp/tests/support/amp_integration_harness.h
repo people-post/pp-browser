@@ -9,8 +9,8 @@
 #include "lib/amp/link/AmpAdpCarrier.h"
 #include "crypto/MlDsa.h"
 #include "lib/amp/link/AdpMultiaddr.h"
-#include "base/mesh/tests/support/mesh_harness_support.h"
-#include "base/mesh/tests/support/mesh_test_harness.h"
+#include "lib/amp/tests/support/mesh_harness_support.h"
+#include "lib/amp/tests/support/mesh_test_harness.h"
 
 #include <functional>
 #include <optional>

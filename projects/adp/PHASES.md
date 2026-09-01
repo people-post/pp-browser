@@ -154,5 +154,5 @@ cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_
 ./build/src/lib/amp/L2/tests/pp_browser_amp_session_test
 ./build/src/lib/amp/L3/tests/pp_browser_amp_channel_test
 ./build/src/lib/amp/link/tests/pp_browser_amp_link_test
-./build/src/base/mesh/tests/integration/pp_browser_amp_integration_test
+./build/src/lib/amp/tests/integration/pp_browser_amp_integration_test
 ```

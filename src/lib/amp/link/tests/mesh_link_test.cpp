@@ -7,8 +7,8 @@
 #include "lib/amp/link/AmpStack.h"
 #include "lib/amp/link/MeshPump.h"
 #include "lib/amp/link/PeerLinkManager.h"
-#include "base/mesh/tests/support/mesh_test_harness.h"
-#include "base/mesh/tests/support/mesh_harness_support.h"
+#include "lib/amp/tests/support/mesh_test_harness.h"
+#include "lib/amp/tests/support/mesh_harness_support.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
