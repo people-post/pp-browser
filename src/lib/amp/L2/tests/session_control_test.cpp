@@ -32,5 +32,28 @@ TEST(SessionControlCodecTest, DistinguishesFromCapabilityVersionOne) {
   EXPECT_FALSE(SessionControlCodec::LooksLike(cap_like));
 }
 
+TEST(SessionControlCodecTest, RejectBadLength) {
+  const std::vector<uint8_t> short_wire = {kSessionControlWireVersion, 1, 0, 0, 0};
+  EXPECT_FALSE(static_cast<bool>(SessionControlCodec::Decode(short_wire)));
+  const std::vector<uint8_t> long_wire = {kSessionControlWireVersion, 1, 0, 0, 0, 0, 0};
+  EXPECT_FALSE(static_cast<bool>(SessionControlCodec::Decode(long_wire)));
+}
+
+TEST(SessionControlCodecTest, RejectBadVersionAndKind) {
+  const std::vector<uint8_t> bad_version = {1, 1, 0, 0, 0, 0};
+  EXPECT_FALSE(static_cast<bool>(SessionControlCodec::Decode(bad_version)));
+  const std::vector<uint8_t> bad_kind = {kSessionControlWireVersion, 9, 0, 0, 0, 0};
+  EXPECT_FALSE(static_cast<bool>(SessionControlCodec::Decode(bad_kind)));
+}
+
+TEST(SessionControlCodecTest, LooksLikeRequiresVersionTwoAndKnownKind) {
+  const std::vector<uint8_t> bad_kind = {kSessionControlWireVersion, 9, 0, 0, 0, 0};
+  const std::vector<uint8_t> request = {kSessionControlWireVersion, 1, 0, 0, 0, 0};
+  const std::vector<uint8_t> ack = {kSessionControlWireVersion, 2, 0, 0, 0, 0};
+  EXPECT_FALSE(SessionControlCodec::LooksLike(bad_kind));
+  EXPECT_TRUE(SessionControlCodec::LooksLike(request));
+  EXPECT_TRUE(SessionControlCodec::LooksLike(ack));
+}
+
 } // namespace
 } // namespace pp::amp

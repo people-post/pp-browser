@@ -28,7 +28,7 @@
 - `src/lib/amp/L2/` → `pp_base_mesh_session`
 - MSH v1 handshake (ML-KEM + ML-DSA identity bind), session key derivation
 - `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
-- `pp_browser_amp_session_test` (12 tests, green)
+- `pp_browser_amp_session_test` (46 tests, green)
 
 ## Landed (L3 — D2)
 
