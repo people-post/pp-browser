@@ -91,6 +91,9 @@ jobs:
       - name: Install
         run: cmake --install build
 
+      - name: Check no Homebrew dylib linkage
+        run: ./scripts/macos_check_bundled_linkage.sh "${INSTALL_PREFIX}/PP.app"
+
       - name: Sign macOS app
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
