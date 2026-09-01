@@ -1,12 +1,12 @@
 #pragma once
 
-#include "base/adp/Endpoint.h"
+#include "lib/amp/L1/Endpoint.h"
 #include "base/error/CodedFailure.h"
-#include "base/mesh/channel/Capability.h"
-#include "base/mesh/channel/ChannelPolicy.h"
+#include "lib/amp/L3/Capability.h"
+#include "lib/amp/L3/ChannelPolicy.h"
 #include "base/mesh/link/PeerLink.h"
 #include "base/mesh/link/Types.h"
-#include "base/mesh/session/Types.h"
+#include "lib/amp/L2/Types.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

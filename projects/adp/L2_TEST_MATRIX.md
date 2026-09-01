@@ -2,7 +2,7 @@
 
 **Tier:** A (pure L2; in-memory handshake + crypto unit tests)  
 **Contract:** [docs/contracts/AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) · **Design:** [STACK.md](STACK.md)  
-**Suite:** `pp_browser_amp_session_test` (`src/base/mesh/session/tests/`)
+**Suite:** `pp_browser_amp_session_test` (`src/lib/amp/L2/tests/`)
 
 Cross-layer checks live in [TEST_MATRIX.md](TEST_MATRIX.md) (Tier B).
 

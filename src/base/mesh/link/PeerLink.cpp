@@ -1,11 +1,11 @@
 #include "base/mesh/link/PeerLink.h"
 
 #include "base/error/CodedFailure.h"
-#include "base/mesh/channel/Types.h"
+#include "lib/amp/L3/Types.h"
 #include "base/mesh/link/AmpAdpCarrier.h"
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/mesh/link/Types.h"
-#include "base/mesh/session/SessionControl.h"
+#include "lib/amp/L2/SessionControl.h"
 
 #include <functional>
 

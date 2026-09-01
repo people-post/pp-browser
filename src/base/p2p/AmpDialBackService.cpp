@@ -1,7 +1,7 @@
 #include "base/p2p/AmpDialBackService.h"
 
-#include "base/mesh/channel/ChannelPolicy.h"
-#include "base/mesh/channel/ChannelSession.h"
+#include "lib/amp/L3/ChannelPolicy.h"
+#include "lib/amp/L3/ChannelSession.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/p2p/SettledWait.h"
 #include "common/ValueJson.h"

@@ -1,6 +1,6 @@
 #include "base/p2p/CircuitTunnelCoordinator.h"
 
-#include "base/mesh/channel/ChannelBridge.h"
+#include "lib/amp/L3/ChannelBridge.h"
 #include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/link/AdpMultiaddr.h"
 #include "base/mesh/link/PeerLink.h"

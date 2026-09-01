@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/adp/Types.h"
+#include "lib/amp/L1/Types.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

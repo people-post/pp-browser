@@ -2,7 +2,7 @@
 
 **Tier:** A (pure L1 on `MemoryDatagramIo` + `VirtualClock`; OsUdp smoke in harden suite)  
 **Contract:** [docs/contracts/ADP.md](../../docs/contracts/ADP.md) · **Design:** [DESIGN.md](DESIGN.md)  
-**Suite:** `pp_browser_adp_test` (`src/base/adp/tests/`)
+**Suite:** `pp_browser_adp_test` (`src/lib/amp/L1/tests/`)
 
 Cross-layer L1 checks live in [TEST_MATRIX.md](TEST_MATRIX.md) (`A-INT-02`, `A-INT-05`, `A-INT-06`; `A-INT-10` deferred).
 

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/adp/Endpoint.h"
+#include "lib/amp/L1/Endpoint.h"
 #include "base/mesh/link/MeshPump.h"
 #include "base/mesh/link/PeerLinkManager.h"
-#include "base/mesh/session/Types.h"
+#include "lib/amp/L2/Types.h"
 
 #include <cstdint>
 #include <deque>

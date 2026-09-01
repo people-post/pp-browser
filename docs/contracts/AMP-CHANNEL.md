@@ -1,6 +1,6 @@
 # AMP Channel — L3 normative contract
 
-**Status:** Foundation spec (2026-08-30). Normative for `base/mesh/channel` (planned).  
+**Status:** Foundation spec (2026-08-30). Normative for `lib/amp/L3/`.
 **Stack:** [STACK.md](../../projects/adp/STACK.md) · L2 [AMP-SESSION.md](AMP-SESSION.md) · L1 [ADP.md](ADP.md)  
 **Version axes:** `channel_frame_version`, per-channel `protocol_id`
 
@@ -131,7 +131,7 @@ Max reassembled size defaults match today’s stream caps:
 
 ## Channel policies (port StreamIoPolicy)
 
-Core factories: `base/mesh/channel/ChannelPolicy.h`. Product L4 factories: `base/p2p/ProductChannelPolicies.h`.
+Core factories: `lib/amp/L3/ChannelPolicy.h`. Product L4 factories: `base/p2p/ProductChannelPolicies.h`.
 
 | Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
 |---------|-------|----------------|------|-------------|--------------|------|

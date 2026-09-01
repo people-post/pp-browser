@@ -4,8 +4,8 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/MlDsa.h"
 #include "base/mesh/link/AmpAdpCarrier.h"
-#include "base/mesh/session/MshHandshake.h"
-#include "base/mesh/session/SessionKeys.h"
+#include "lib/amp/L2/MshHandshake.h"
+#include "lib/amp/L2/SessionKeys.h"
 
 #include "crypto/MlKem.h"
 

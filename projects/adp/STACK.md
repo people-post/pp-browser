@@ -8,7 +8,7 @@
 
 | Name | Scope |
 |------|--------|
-| **ADP** | L1 wire only — Association Datagram Protocol (`src/base/adp/`, `pp_base_adp`) |
+| **ADP** | L1 wire only — Association Datagram Protocol (`src/lib/amp/L1/`, `pp_base_adp`) |
 | **AMP** | Full four-layer peer mesh stack built on ADP — **A**ssociation **M**esh **P**rotocol |
 
 When migrating off TCP/QUIC/Yamux, say **AMP** or **ADP stack**. Reserve **ADP** for the UDP datagram layer.
@@ -168,9 +168,9 @@ L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` t
 ## Code layout (planned)
 
 ```text
-src/base/adp/          → L1 (exists; no libp2p)
-src/base/mesh/session/ → L2 MSH, Session, rekey
-src/base/mesh/channel/ → L3 mux, frag, ChannelSession
+src/lib/amp/L1/          → L1 (exists; no libp2p)
+src/lib/amp/L2/ → L2 MSH, Session, rekey
+src/lib/amp/L3/ → L3 mux, frag, ChannelSession
 src/base/p2p/          → PeerLinkManager, reachability; libp2p glue shrinks
 ```
 

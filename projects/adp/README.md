@@ -40,7 +40,7 @@
 
 ## Locked product decisions
 
-- **ADP** = L1 only (`src/base/adp/`, `pp_base_adp`)
+- **ADP** = L1 only (`src/lib/amp/L1/`, `pp_base_adp`)
 - **AMP** = L1–L4 stack; see [STACK.md](STACK.md)
 - L2 **full** Session (MSH + AEAD) — [A013](DECISIONS.md#a013--l2-full-session-only)
 - One assoc per peer; many channels — [A014](DECISIONS.md#a014--one-association-per-peer-pair)

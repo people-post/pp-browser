@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/channel/AmpChannelLimits.h"
+#include "lib/amp/L3/AmpChannelLimits.h"
 
 namespace pbr {
 

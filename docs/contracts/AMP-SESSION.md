@@ -1,6 +1,6 @@
 # AMP Session — L2 normative contract
 
-**Status:** Foundation spec (2026-08-30). Normative for `base/mesh/session` (planned).  
+**Status:** Foundation spec (2026-08-30). Normative for `lib/amp/L2/`.
 **Stack:** [STACK.md](../../projects/adp/STACK.md) · L1 [ADP.md](ADP.md) · L3 [AMP-CHANNEL.md](AMP-CHANNEL.md)  
 **Version axes:** `msh_version`, `session_epoch`
 

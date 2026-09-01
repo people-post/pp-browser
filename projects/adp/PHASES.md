@@ -50,7 +50,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D1 — L2 Session (MSH + full AEAD)
 
-- [x] `src/base/mesh/session/` + `pp_base_mesh_session`
+- [x] `src/lib/amp/L2/` + `pp_base_mesh_session`
 - [x] MSH v1 state machine + KDF (`K_assoc`, `K_session`)
 - [x] Seal/open with AAD (`session_epoch`, `channel_id`, `channel_seq`)
 - [x] Rekey (epoch bump; `k_assoc` stable, send/recv rotate)
@@ -58,7 +58,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D2 — L3 Channel mux
 
-- [x] `src/base/mesh/channel/` + `pp_base_mesh_channel`
+- [x] `src/lib/amp/L3/` + `pp_base_mesh_channel`
 - [x] OPEN/ACK/DATA/CLOSE/RESET
 - [x] Channel 0 capability plane
 - [x] QoS map (channel class → ADP Reliable/BE)
@@ -150,9 +150,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
 cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_amp_integration_test pp_browser_p2p_test -j
-./build/src/base/adp/tests/pp_browser_adp_test
-./build/src/base/mesh/session/tests/pp_browser_amp_session_test
-./build/src/base/mesh/channel/tests/pp_browser_amp_channel_test
+./build/src/lib/amp/L1/tests/pp_browser_adp_test
+./build/src/lib/amp/L2/tests/pp_browser_amp_session_test
+./build/src/lib/amp/L3/tests/pp_browser_amp_channel_test
 ./build/src/base/mesh/link/tests/pp_browser_amp_link_test
 ./build/src/base/mesh/tests/integration/pp_browser_amp_integration_test
 ```
