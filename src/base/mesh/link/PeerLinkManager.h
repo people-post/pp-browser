@@ -31,6 +31,10 @@ public:
 
   PeerLinkManager(adp::Endpoint& endpoint, MshIdentity local_identity, std::string local_peer_id,
                   PeerLinkConfig config = {});
+  ~PeerLinkManager();
+
+  PeerLinkManager(const PeerLinkManager&) = delete;
+  PeerLinkManager& operator=(const PeerLinkManager&) = delete;
 
   adp::Endpoint& GetEndpoint() { return endpoint_; }
   const std::string& LocalPeerId() const { return local_peer_id_; }
@@ -81,6 +85,8 @@ public:
   /** Connected links whose RemotePeerId matches (for dual-dial / A026 tests). */
   size_t CountConnectedLinksForPeerId(const std::string& peer_id) const;
 
+  size_t CountLinks() const { return links_.size(); }
+
   void Tick();
 
 private:
@@ -100,6 +106,7 @@ private:
   void ApplyProtocolHandlers(PeerLink& link);
   void StartCapabilityExchange(PeerLink& link);
   void OnCapabilityData(const std::string& peer_key, std::vector<uint8_t> payload);
+  void OnCh0Data(const std::string& peer_key, std::vector<uint8_t> payload);
   void IngestRemoteCapabilityAddrs(PeerLink& link, const CapabilityPayload& remote);
   void FinishDial(const std::string& peer_key, Roe<void> result);
   void FinishNestedCarrier(const std::string& provisional_key, Roe<void> result);

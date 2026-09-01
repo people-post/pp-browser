@@ -1,8 +1,12 @@
 #include "base/mesh/link/PeerLink.h"
 
+#include "base/mesh/channel/Types.h"
 #include "base/mesh/link/AmpAdpCarrier.h"
 #include "base/mesh/link/PeerLinkManager.h"
 #include "base/mesh/link/Types.h"
+#include "base/mesh/session/SessionControl.h"
+
+#include <functional>
 
 namespace pbr::amp {
 
@@ -20,6 +24,15 @@ PeerLink::PeerLink(std::string peer_key, std::string remote_peer_id, const bool 
     : peer_key_(std::move(peer_key)), remote_peer_id_(std::move(remote_peer_id)), outbound_(outbound),
       carrier_(std::move(carrier)), identity_(std::move(local_identity)), owner_(owner) {
   AttachCarrierFrameHandler();
+}
+
+PeerLink::~PeerLink() {
+  // Carrier is Bound to an outer Mux ([A024]). Orphan without touching mux_ — map destroy
+  // order may have already freed that Mux (Windows SEH / SIGFPE on dead unordered_map).
+  if (carrier_) {
+    carrier_->OrphanFromMux();
+    carrier_.reset();
+  }
 }
 
 void PeerLink::AttachCarrierFrameHandler() {
@@ -46,6 +59,7 @@ void PeerLink::AttachCarrierFrameHandler() {
 void PeerLink::StartHandshakeCommon(const MshAdpHandshake::Role role, CompleteCb on_established) {
   establish_cb_ = std::move(on_established);
   phase_ = PeerLinkPhase::Handshaking;
+  handshake_started_ms_ = owner_.GetEndpoint().GetClock().NowMs();
   const bool chunked = !IsCarrierBacked();
   handshake_ = std::make_unique<MshAdpHandshake>(
       role, identity_,
@@ -252,6 +266,7 @@ void PeerLink::FinishEstablishment(MshAdpEstablished established) {
   }
   session_ = std::make_unique<Session>(std::move(*session));
   mux_ = std::make_unique<ChannelMux>(*session_);
+  mux_->SetClock([this]() { return owner_.GetEndpoint().GetClock().NowMs(); });
   AttachMuxTransport();
   handshake_.reset();
   phase_ = PeerLinkPhase::Connected;
@@ -293,6 +308,8 @@ void PeerLink::FailAssociation(const Error& error) {
   }
 }
 
+void PeerLink::FailHandshakeTimeout() { FailAssociation(Error("amp link: dial timeout")); }
+
 void PeerLink::AttachMuxTransport() {
   mux_->SetTransport([this](const uint32_t channel_id, const uint32_t channel_seq, const adp::QosClass qos,
                             std::vector<uint8_t> sealed) {
@@ -311,5 +328,89 @@ void PeerLink::AttachMuxTransport() {
 void PeerLink::MarkWarm() { warm_ = true; }
 
 void PeerLink::ClearWarm() { warm_ = false; }
+
+void PeerLink::RequestSessionRekey(std::function<void(Roe<void>)> on_complete) {
+  if (phase_ != PeerLinkPhase::Connected || !mux_ || !session_) {
+    if (on_complete) {
+      on_complete(Error("amp link: not connected"));
+    }
+    return;
+  }
+  if (rekey_cb_) {
+    if (on_complete) {
+      on_complete(Error("amp link: rekey already in flight"));
+    }
+    return;
+  }
+  rekey_cb_ = std::move(on_complete);
+  SessionRekeyMessage msg;
+  msg.kind = SessionControlKind::RekeyRequest;
+  msg.target_epoch = session_->Material().session_epoch + 1;
+  auto encoded = SessionControlCodec::Encode(msg);
+  if (!encoded) {
+    rekey_cb_ = nullptr;
+    if (on_complete) {
+      on_complete(encoded.error());
+    }
+    return;
+  }
+  if (mux_->State(kCapabilityChannelId) != ChannelState::Open) {
+    rekey_cb_ = nullptr;
+    if (on_complete) {
+      on_complete(Error("amp link: ch0 not open"));
+    }
+    return;
+  }
+  const auto sent = mux_->SendData(kCapabilityChannelId, std::move(*encoded));
+  if (!sent) {
+    rekey_cb_ = nullptr;
+    if (on_complete) {
+      on_complete(sent.error());
+    }
+  }
+}
+
+void PeerLink::HandleSessionControl(const std::span<const uint8_t> payload) {
+  if (phase_ != PeerLinkPhase::Connected || !mux_ || !session_) {
+    return;
+  }
+  auto decoded = SessionControlCodec::Decode(payload);
+  if (!decoded) {
+    return;
+  }
+  const int64_t now_ms = owner_.GetEndpoint().GetClock().NowMs();
+  const uint32_t expected = session_->Material().session_epoch + 1;
+
+  if (decoded->kind == SessionControlKind::RekeyRequest) {
+    if (decoded->target_epoch != expected) {
+      return;
+    }
+    SessionRekeyMessage ack;
+    ack.kind = SessionControlKind::RekeyAck;
+    ack.target_epoch = decoded->target_epoch;
+    if (auto encoded = SessionControlCodec::Encode(ack)) {
+      (void)mux_->SendData(kCapabilityChannelId, std::move(*encoded));
+    }
+    (void)session_->ApplyRekey(decoded->target_epoch, now_ms);
+    return;
+  }
+
+  if (decoded->kind == SessionControlKind::RekeyAck) {
+    if (decoded->target_epoch != expected) {
+      return;
+    }
+    if (auto applied = session_->ApplyRekey(decoded->target_epoch, now_ms); !applied) {
+      if (rekey_cb_) {
+        rekey_cb_(applied.error());
+        rekey_cb_ = nullptr;
+      }
+      return;
+    }
+    if (rekey_cb_) {
+      rekey_cb_(Roe<void>());
+      rekey_cb_ = nullptr;
+    }
+  }
+}
 
 } // namespace pbr::amp

@@ -27,6 +27,13 @@ elseif(APPLE)
   set(CPACK_PACKAGE_FILE_NAME "${PP_BROWSER_PRODUCT_SLUG}-${PP_BROWSER_RELEASE_VERSION}-macos")
   set(CPACK_DMG_VOLUME_NAME "${PP_BROWSER_PRODUCT_NAME}")
   set(CPACK_DMG_FORMAT "UDZO")
+  # Package the signed PP.app only. A full-prefix copy would also ship bin/pp-node*
+  # (separate release train), which fails notarization if left unsigned.
+  # Release flow: cmake --install → sign-app → cpack.
+  set(CPACK_INSTALL_CMAKE_PROJECTS "")
+  set(CPACK_INSTALLED_DIRECTORIES
+    "${CMAKE_INSTALL_PREFIX}/${PP_BROWSER_PRODUCT_NAME}.app"
+    "${PP_BROWSER_PRODUCT_NAME}.app")
 endif()
 
 include(CPack)

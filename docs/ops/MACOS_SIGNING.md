@@ -106,16 +106,20 @@ On tag push, the **macos** job in [`release.yml`](../../.github/workflows/releas
 ```mermaid
 flowchart LR
   A[cmake --install] --> B[sign-app PP.app]
-  B --> C[cpack → .dmg]
+  B --> C[cpack from install prefix → .dmg]
   C --> D[notarytool submit]
   D --> E[stapler staple]
   E --> F[upload artifact]
 ```
 
+CPack on macOS packages the signed **`PP.app` only** from `CMAKE_INSTALL_PREFIX` (not `bin/pp-node*`, which ships on the separate `pp-node/v*` train). Sign **before** `cpack`, or the DMG will contain an unsigned app and notarization returns `Invalid`.
+
 | Step | Script command | When skipped |
 |------|----------------|--------------|
 | After install | `./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/PP.app"` | No `APPLE_CERTIFICATE_BASE64` |
 | After cpack | `notarize` + `staple` on the `.dmg` | No `APPLE_NOTARY_*` secrets |
+
+On `Invalid`, the script prints the notary JSON log (`notarytool log <submission-id>`).
 
 Signing uses **hardened runtime** and [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) (network client/server for Brief API and libp2p).
 
@@ -182,10 +186,12 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 | Symptom | Likely fix |
 |---------|------------|
 | Notarization rejected — missing entitlement | Add key to [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements); check log with `xcrun notarytool log <submission-id> --key ...` |
+| Notarization `Invalid` / staple “Record not found” | DMG likely packaged **unsigned** (cpack re-install stripped signatures), or included unsigned `bin/pp-node*`. Ensure `cmake --install` → `sign-app` → `cpack`; macOS CPack ships **PP.app only** |
 | `errSecInternalComponent` in CI | Ensure `APPLE_CERTIFICATE_BASE64` decodes cleanly; re-export `.p12`; check keychain import in script |
 | Wrong identity | Match `APPLE_SIGNING_IDENTITY` exactly to `security find-identity -v -p codesigning` |
 | CI still unsigned | Confirm all seven secrets are set; unsigned path logs `warning: macOS signing credentials not configured` |
 | Gatekeeper blocks signed app | Ensure DMG was **notarized and stapled**, not just the `.app` |
+| Launch crash: `Library not loaded: /opt/homebrew/...` or Team ID mismatch | Binary linked Homebrew dylibs (nghttp2/png/brotli). Reconfigure with clean build; curl has `USE_NGHTTP2=OFF`, FreeType disables brotli and forces vendored libpng. Run `./scripts/macos_check_bundled_linkage.sh install/PP.app` |
 
 ---
 

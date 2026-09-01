@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROBE_BIN="${PP_CALL_PROBE_BIN:-${ROOT}/build/src/app/node/pp-call-probe}"
 CYCLES="${PP_CALL_PROBE_CYCLES:-3}"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
-LISTEN="${PP_CALL_PROBE_LISTEN:-/ip4/127.0.0.1/tcp/47100}"
+LISTEN="${PP_CALL_PROBE_LISTEN:-/ip4/127.0.0.1/udp/47100/adp/1.0.0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

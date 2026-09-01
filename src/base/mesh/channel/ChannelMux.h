@@ -63,6 +63,9 @@ public:
 
   static Roe<void> SendCapabilityOffer(ChannelMux& mux, const CapabilityPayload& offer);
 
+  /** Test hook — send pre-sealed L3 bytes on the mux transport. */
+  Roe<void> InjectSealedForTest(uint32_t channel_id, uint32_t channel_seq, std::vector<uint8_t> sealed);
+
 private:
   struct ChannelRecord {
     uint32_t id = 0;

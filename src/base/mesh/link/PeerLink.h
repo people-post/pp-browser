@@ -12,6 +12,7 @@
 #include "common/PbrCompat.h"
 
 #include <functional>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -34,6 +35,11 @@ public:
   /** Nested Session over circuit carrier (no ADP Connection). */
   PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
            std::shared_ptr<ChannelSession> carrier, MshIdentity local_identity, PeerLinkManager& owner);
+
+  ~PeerLink();
+
+  PeerLink(const PeerLink&) = delete;
+  PeerLink& operator=(const PeerLink&) = delete;
 
   void StartOutboundHandshake(CompleteCb on_established);
   void StartInboundHandshake(CompleteCb on_established);
@@ -58,6 +64,14 @@ public:
   void MarkWarm();
   void ClearWarm();
   bool IsWarm() const { return warm_; }
+
+  /** Wire-coordinated session rekey on channel 0 (after capability exchange). */
+  void RequestSessionRekey(std::function<void(Roe<void>)> on_complete);
+
+  void HandleSessionControl(std::span<const uint8_t> payload);
+
+  int64_t HandshakeStartedMs() const { return handshake_started_ms_; }
+  void FailHandshakeTimeout();
 
 private:
   friend class PeerLinkManager;
@@ -103,6 +117,9 @@ private:
   MshMessageType msh_chunk_type_{};
   uint16_t msh_chunk_count_ = 0;
   std::vector<std::vector<uint8_t>> msh_chunk_parts_;
+
+  std::function<void(Roe<void>)> rekey_cb_;
+  int64_t handshake_started_ms_ = 0;
   Roe<std::optional<std::vector<uint8_t>>> PushMshChunk(MshMessageType type, uint16_t index, uint16_t count,
                                                          std::span<const uint8_t> chunk);
 };

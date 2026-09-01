@@ -2,6 +2,7 @@
 
 #include "base/p2p/ProductChannelPolicies.h"
 #include "base/mesh/channel/ChannelSession.h"
+#include "base/mesh/link/PeerLink.h"
 #include "base/p2p/CallMediaBundleLogic.h"
 #include "base/p2p/CallMediaFrameCrypto.h"
 #include "base/p2p/CallMediaSessionLogic.h"
@@ -71,11 +72,19 @@ void RunWorker(const CallMediaLegCoordinator::WorkerPost& post_worker, std::func
 }
 
 /** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
-void CloseQuietSlot(std::shared_ptr<amp::ChannelSession>& slot) {
+void CloseQuietSlot(std::shared_ptr<amp::ChannelSession>& slot, amp::PeerLink* link) {
   auto session = std::move(slot);
-  if (session) {
+  if (!session) {
+    return;
+  }
+  // Only call into mux when this session is still bound to a live Connected link's mux.
+  // Destroyed ChannelMux (PeerLink drop) has bucket_count==0 → SIGFPE on unordered_map hash%.
+  if (link && link->Mux() && link->Phase() == amp::PeerLinkPhase::Connected &&
+      session->Mux() == link->Mux()) {
     session->CloseQuiet();
     session->ReleaseHandlers();
+  } else {
+    session->OrphanFromMux();
   }
 }
 
@@ -241,25 +250,40 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return false;
   }
 
+  /** True when CloseQuiet/ReleaseHandlers may safely touch the session's mux. */
+  bool MuxAliveForBundle(const Bundle& bundle) const {
+    amp::PeerLink* link = ResolveLink(bundle);
+    return link && link->Mux() && link->Phase() == amp::PeerLinkPhase::Connected;
+  }
+
+  /** PeerLink erased (DropLink) — ChannelSession mux_ may already be dangling. */
+  bool PeerLinkMissing(const Bundle& bundle) const {
+    if (!runtime || bundle.params.peer_key.empty()) {
+      return false;
+    }
+    return runtime->Links().FindLink(bundle.params.peer_key) == nullptr;
+  }
+
   void DropRole(Bundle& bundle, const CallMediaChannelRole role) {
+    amp::PeerLink* link = ResolveLink(bundle);
     switch (role) {
     case CallMediaChannelRole::OutboundControl:
       if (bundle.outbound_control) {
         UnindexChannel(bundle.outbound_control->ChannelId());
       }
-      CloseQuietSlot(bundle.outbound_control);
+      CloseQuietSlot(bundle.outbound_control, link);
       break;
     case CallMediaChannelRole::InboundControl:
       if (bundle.inbound_control) {
         UnindexChannel(bundle.inbound_control->ChannelId());
       }
-      CloseQuietSlot(bundle.inbound_control);
+      CloseQuietSlot(bundle.inbound_control, link);
       break;
     case CallMediaChannelRole::Media:
       if (bundle.media) {
         UnindexChannel(bundle.media->ChannelId());
       }
-      CloseQuietSlot(bundle.media);
+      CloseQuietSlot(bundle.media, link);
       bundle.media_bound = false;
       break;
     }
@@ -352,10 +376,23 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   void TickDeadlines() {
     const auto now = Clock::now();
     std::vector<std::string> timed_out;
+    std::vector<std::string> link_lost;
     {
       std::lock_guard lock(mu);
       for (auto& [call_id, bundle] : bundles) {
-        if (!bundle || bundle->finished) {
+        if (!bundle || IsPendingCallId(call_id)) {
+          continue;
+        }
+        if (bundle->phase == CallMediaBundlePhase::Idle || bundle->phase == CallMediaBundlePhase::Closing) {
+          continue;
+        }
+        // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
+        // Do not treat Handshaking as lost (FindLink still present until DropLink).
+        if (PeerLinkMissing(*bundle)) {
+          link_lost.push_back(call_id);
+          continue;
+        }
+        if (bundle->finished) {
           continue;
         }
         if (bundle->deadline.time_since_epoch().count() == 0) {
@@ -365,6 +402,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           timed_out.push_back(call_id);
         }
       }
+    }
+    for (const auto& call_id : link_lost) {
+      std::lock_guard lock(mu);
+      auto* bundle = FindByCallId(call_id);
+      if (!bundle || bundle->phase == CallMediaBundlePhase::Idle ||
+          bundle->phase == CallMediaBundlePhase::Closing) {
+        continue;
+      }
+      TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true,
+                     "amp call-media: peer link lost");
     }
     for (const auto& call_id : timed_out) {
       std::lock_guard lock(mu);

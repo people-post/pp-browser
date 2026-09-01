@@ -38,7 +38,11 @@ public:
   void Stop();
   bool IsStarted() const { return started_; }
 
-  /** ADP pump + link tick + drain PostToIo (io entry). */
+  /**
+   * ADP pump + link tick + drain PostToIo (io entry).
+   * Reentrant: a nested Pump from an in-pump callback still drives ADP I/O
+   * (needed by L4 OpenChannel wait loops) but does not re-enter ticks/queue.
+   */
   void Pump();
   void Tick();
   /** Pump then Tick under one lock — prefer for MeshHost product ticks. */

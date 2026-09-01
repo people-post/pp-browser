@@ -200,11 +200,27 @@
 - **Default Brief bootstrap** — ADP MA `/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooW…`
 - Product TCP L4 sources deleted earlier in A017 wave
 
+## Landed (Track A — integration matrix + wire rekey)
+
+- [TEST_MATRIX.md](TEST_MATRIX.md) — `A-INT-01` … `A-INT-09` mapped to STACK failure rows
+- `amp_integration_harness.h` + `amp_integration_test.cpp` in `pp_browser_amp_link_test` (9 Tier-B tests)
+- `SessionControl` codec (wire v2 on ch0) + `Session::ApplyRekey` grace window (1000 ms)
+- `PeerLink::RequestSessionRekey()` — coordinated rekey over ch0 after capability exchange
+- `pp_browser_amp_session_test` — `SessionControlCodecTest`, `SessionRekeyGraceTest`
+
+## Landed (Track A-adv — adversarial hardening)
+
+- `PeerLinkConfig::dial_timeout` enforced in `PeerLinkManager::Tick` (Handshaking/Dialing)
+- `PeerLinkConfig::max_links` enforced on outbound dial + inbound accept
+- `A-ADV-02` … `A-ADV-08` integration tests (see [TEST_MATRIX.md](TEST_MATRIX.md))
+- `ChannelMux::InjectSealedForTest` — harness hook for sealed FRAG injection
+
 ## Next (implementation)
 
 1. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)
 2. **Org seed deploy** — ship `pp-node` with `PP_NODE_AMP_UDP_PORT=443` so default ADP bootstrap dials succeed
 3. **A027 follow-on** — migrate L4 TearDown-from-`on_frame_` to signal → parent drop after dispatch (call-media / media-relay / circuit); see repo [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md)
+4. **A-INT-10** (stretch) — MSH chunk loss + ADP rtx during handshake
 
 ### D9 cutover checklist
 

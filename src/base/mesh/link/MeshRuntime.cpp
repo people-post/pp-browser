@@ -21,6 +21,9 @@ void MeshRuntime::Stop() {
 
 void MeshRuntime::PumpLocked() {
   if (pumping_) {
+    // Nested wait loops (OpenChannel callbacks in AmpDirectChat / dial-back / history)
+    // need ADP I/O progress without re-entering io ticks or the PostToIo drain.
+    pump_.Pump();
     return;
   }
   pumping_ = true;

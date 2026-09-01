@@ -104,6 +104,8 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 | Deploy smoke | Image/env/caps/reach from outside hop | Medium | Low–medium |
 | Tier C | Topology, process isolation, capacity, long soak | Highest | Highest |
 
+**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey) and adversarial hardening (max_links, dial_timeout, garbage MSH, sealed flood, FRAG bomb). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_link_test` (`amp_integration_test.cpp`).
+
 ---
 
 ## Product split
@@ -146,7 +148,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|Libp2pDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.

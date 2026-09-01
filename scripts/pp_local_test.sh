@@ -22,7 +22,7 @@ BUILD_DIR="${PP_LOCAL_BUILD_DIR:-${ROOT}/build}"
 DOCKER_CONTEXT="${ROOT}/dist/pp-node/docker"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
 # gtest_discover_tests names are PascalCase fixture names (ctest -R is case-sensitive).
-CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|Libp2pDirectChat'
+CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|AmpDirectChat'
 
 SUITE="all"
 DOWN_AFTER=0
@@ -135,13 +135,30 @@ cmake_build_probes() {
   cmake --build "${BUILD_DIR}" --target pp-node-probe pp-call-probe pp-node -j
 }
 
-# Hop image was packaged Aug 7; desktop probe is current. Staging a newer desktop
-# pp-node avoids "ProtocolMuxer: protocol negotiation failed" on media-relay.
+# Keep staged hop binary + packaging files in sync with the desktop build / Amp
+# packaging tree (stale TCP listen_multiaddr configs break Amp-only hops).
 HOP_NEEDS_REBUILD=0
 DESKTOP_NODE="${BUILD_DIR}/src/app/node/pp-node"
 STAGED_NODE="${DOCKER_CONTEXT}/pp-node"
 
+stage_hop_packaging() {
+  mkdir -p "${DOCKER_CONTEXT}"
+  local pkg_cfg="${ROOT}/packaging/pp-node/config.json.example"
+  local pkg_df="${ROOT}/packaging/pp-node/Dockerfile"
+  local staged_cfg="${DOCKER_CONTEXT}/config.json.example"
+  local staged_df="${DOCKER_CONTEXT}/Dockerfile"
+  if [[ ! -f "${staged_cfg}" ]] || ! cmp -s "${pkg_cfg}" "${staged_cfg}"; then
+    cp -f "${pkg_cfg}" "${staged_cfg}"
+    HOP_NEEDS_REBUILD=1
+  fi
+  if [[ ! -f "${staged_df}" ]] || ! cmp -s "${pkg_df}" "${staged_df}"; then
+    cp -f "${pkg_df}" "${staged_df}"
+    HOP_NEEDS_REBUILD=1
+  fi
+}
+
 stage_hop_binary_if_newer() {
+  stage_hop_packaging
   if [[ ! -x "${DESKTOP_NODE}" ]]; then
     echo "warn: ${DESKTOP_NODE} missing; using staged hop binary as-is"
     return 0
@@ -150,16 +167,12 @@ stage_hop_binary_if_newer() {
     return 0
   fi
   echo "staging newer desktop pp-node into ${STAGED_NODE} (hop image was stale vs probe)"
-  mkdir -p "${DOCKER_CONTEXT}"
   if command -v strip >/dev/null 2>&1; then
     strip --strip-unneeded -o "${STAGED_NODE}" "${DESKTOP_NODE}"
   else
     cp -f "${DESKTOP_NODE}" "${STAGED_NODE}"
   fi
   chmod +x "${STAGED_NODE}"
-  if [[ ! -f "${DOCKER_CONTEXT}/config.json.example" ]]; then
-    cp -f "${ROOT}/packaging/pp-node/config.json.example" "${DOCKER_CONTEXT}/config.json.example"
-  fi
   HOP_NEEDS_REBUILD=1
 }
 

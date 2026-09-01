@@ -112,7 +112,16 @@ Triggers (policy, configurable):
 - Data volume bound
 - Explicit `SessionRekey` control message on channel 0
 
-**Invariant:** channels stay open across rekey; only keys and `session_epoch` change. Peers must accept in-flight messages from previous epoch for a short grace window or fail closed — pick one in implementation and test (recommend **grace window ≤ 1 s**).
+**Wire (ch0 DATA, version `2` — capability payloads remain version `1`):**
+
+| kind | Meaning |
+|------|---------|
+| `1` | `SessionRekeyRequest` + `u32` LE `target_epoch` (= local epoch + 1) |
+| `2` | `SessionRekeyAck` + same `target_epoch` |
+
+Responder sends **Ack at the current epoch**, then both sides call `ApplyRekey`. Receive path keeps the previous `k_recv` for **`kSessionRekeyGraceMs` (1000 ms)** so in-flight epoch-*N* ciphertext still opens.
+
+**Invariant:** channels stay open across rekey; only keys and `session_epoch` change. After the grace window, stale epochs fail closed.
 
 ## Path migrate interaction
 
