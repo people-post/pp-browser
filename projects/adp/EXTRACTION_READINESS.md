@@ -1,7 +1,7 @@
 # AMP extraction readiness (pp-browser)
 
-**Status:** Full AMP wire stack under `src/lib/amp/` (L1–L3 + link); deps limited to `pp_common` + `pp_crypto`.  
-**Not started:** FetchContent wiring, deleting in-tree `src/lib/amp` after cutover.
+**Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v0.1.1`).  
+**Done:** in-tree production sources removed; `src/lib/amp/**` holds thin forwarding headers for `#include "lib/amp/..."`. L4 harness duplicated under `src/base/p2p/tests/support/`.
 
 ## Layer map
 
@@ -61,8 +61,8 @@ Matrices: [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](L2_TEST_MA
 
 ## Do not do yet
 
-1. Add `cmake/PpCppAmp.cmake` or FetchContent `pp-cpp-amp`
-2. Delete in-tree `src/lib/amp` after pp-cpp-amp cutover
+1. ~~Add `cmake/PpCppAmp.cmake` or FetchContent `pp-cpp-amp`~~
+2. ~~Delete in-tree `src/lib/amp` after pp-cpp-amp cutover~~
 3. Wire pp-ledger to shared AMP
 4. Replace real `PeerIdUtil` in product paths with test stubs
 

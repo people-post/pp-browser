@@ -86,6 +86,7 @@ include(Platform)
 include(PpBrowserWarnings)
 include(PpCppCommon)
 include(PpCppCrypto)
+include(PpCppAmp)
 include(pp_lib_paths)
 include(pp_lib_libp2p)
 
