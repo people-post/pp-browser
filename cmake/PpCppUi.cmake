@@ -21,6 +21,14 @@ set(PP_CPP_UI_GIT_TAG "v0.2.0"
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
 set(RMLUI_TESTS OFF CACHE BOOL "Build RmlUi unit tests" FORCE)
 
+# FreeType: no WOFF2 (brotli). Force PpUiVendors into vendored zlib+libpng even when
+# Homebrew PNG/ZLIB would satisfy find_package (Developer ID cannot load Cellar dylibs).
+set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+set(FT_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
+set(CMAKE_DISABLE_FIND_PACKAGE_BrotliDec TRUE)
+set(CMAKE_DISABLE_FIND_PACKAGE_PNG TRUE)
+set(CMAKE_DISABLE_FIND_PACKAGE_ZLIB TRUE)
+
 set(_pp_ui_sibling "${CMAKE_SOURCE_DIR}/../pp-cpp-ui")
 if(PP_CPP_UI_SOURCE_DIR)
   set(_pp_ui_src "${PP_CPP_UI_SOURCE_DIR}")
@@ -35,6 +43,9 @@ if(_pp_ui_src)
   add_subdirectory("${_pp_ui_src}"
                    "${CMAKE_BINARY_DIR}/_deps/pp_cpp_ui-build" EXCLUDE_FROM_ALL)
 else()
+  # cmake/patches/pp-cpp-ui-PpUiVendors-always-vendor-png.patch — upstream into
+  # pp-cpp-ui when convenient. Until then FT_DISABLE_BROTLI +
+  # CMAKE_DISABLE_FIND_PACKAGE_{PNG,ZLIB,BrotliDec} above force vendored deps.
   FetchContent_Declare(
     pp_cpp_ui
     GIT_REPOSITORY ${PP_CPP_UI_GIT_REPOSITORY}

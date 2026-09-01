@@ -191,6 +191,7 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 | Wrong identity | Match `APPLE_SIGNING_IDENTITY` exactly to `security find-identity -v -p codesigning` |
 | CI still unsigned | Confirm all seven secrets are set; unsigned path logs `warning: macOS signing credentials not configured` |
 | Gatekeeper blocks signed app | Ensure DMG was **notarized and stapled**, not just the `.app` |
+| Launch crash: `Library not loaded: /opt/homebrew/...` or Team ID mismatch | Binary linked Homebrew dylibs (nghttp2/png/brotli). Reconfigure with clean build; curl has `USE_NGHTTP2=OFF`, FreeType disables brotli and forces vendored libpng. Run `./scripts/macos_check_bundled_linkage.sh install/PP.app` |
 
 ---
 
