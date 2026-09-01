@@ -5,7 +5,7 @@
 ## Landed (L1)
 
 - Project docs + ADRs A001–A020
-- `src/base/adp/` → `pp_base_adp` (Asio-free)
+- `src/lib/amp/L1/` → `pp_base_adp` (Asio-free)
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
 - `pp_browser_adp_test` (40 tests)
 - Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
@@ -25,14 +25,14 @@
 
 ## Landed (L2 — D1)
 
-- `src/base/mesh/session/` → `pp_base_mesh_session`
+- `src/lib/amp/L2/` → `pp_base_mesh_session`
 - MSH v1 handshake (ML-KEM + ML-DSA identity bind), session key derivation
 - `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
 - `pp_browser_amp_session_test` (12 tests, green)
 
 ## Landed (L3 — D2)
 
-- `src/base/mesh/channel/` → `pp_base_mesh_channel`
+- `src/lib/amp/L3/` → `pp_base_mesh_channel`
 - L3 wire codec, `ChannelMux`, `ChannelSession`, channel 0 capability plane
 - FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
 - D3 fragmentation edge tests (reorder, loss, dup, timeout)

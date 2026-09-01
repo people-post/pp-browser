@@ -1,10 +1,10 @@
 #pragma once
 
-#include "base/adp/Clock.h"
-#include "base/adp/DatagramIo.h"
-#include "base/adp/Endpoint.h"
+#include "lib/amp/L1/Clock.h"
+#include "lib/amp/L1/DatagramIo.h"
+#include "lib/amp/L1/Endpoint.h"
 #include "base/mesh/link/MeshRuntime.h"
-#include "base/mesh/session/Types.h"
+#include "lib/amp/L2/Types.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

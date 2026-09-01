@@ -1,11 +1,11 @@
 #pragma once
 
-#include "base/adp/Connection.h"
-#include "base/adp/Endpoint.h"
-#include "base/adp/Types.h"
-#include "base/mesh/channel/ChannelPolicy.h"
-#include "base/mesh/channel/ChannelWire.h"
-#include "base/mesh/channel/Types.h"
+#include "lib/amp/L1/Connection.h"
+#include "lib/amp/L1/Endpoint.h"
+#include "lib/amp/L1/Types.h"
+#include "lib/amp/L3/ChannelPolicy.h"
+#include "lib/amp/L3/ChannelWire.h"
+#include "lib/amp/L3/Types.h"
 #include "base/mesh/link/AmpAdpCarrier.h"
 #include "base/crypto/MlDsa.h"
 #include "base/mesh/link/AdpMultiaddr.h"

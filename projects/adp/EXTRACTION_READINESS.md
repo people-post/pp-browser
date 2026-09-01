@@ -1,15 +1,15 @@
 # AMP extraction readiness (pp-browser)
 
-**Status:** In-tree prep on `dev-team-1` — code and tests organized for a future `pp-cpp-amp` cutover.  
-**Not started:** FetchContent wiring, folder renames (`L1/` / `L2/`), deleting in-tree sources.
+**Status:** L1–L3 colocated under `src/lib/amp/` on `dev-team-1` for future `pp-cpp-amp` extraction.  
+**Not started:** FetchContent wiring, deleting in-tree `src/lib/amp` after cutover.
 
 ## Layer map
 
 | Layer | In-tree path | CMake target | Contract |
 |-------|--------------|--------------|----------|
-| L1 ADP wire | `src/base/adp/` | `pp_base_adp` | [ADP.md](../../docs/contracts/ADP.md) |
-| L2 MSH session | `src/base/mesh/session/` | `pp_base_mesh_session` | [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) |
-| L3 channel mux | `src/base/mesh/channel/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) |
+| L1 ADP wire | `src/lib/amp/L1/` | `pp_base_adp` | [ADP.md](../../docs/contracts/ADP.md) |
+| L2 MSH session | `src/lib/amp/L2/` | `pp_base_mesh_session` | [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) |
+| L3 channel mux | `src/lib/amp/L3/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) |
 | Link (horizontal) | `src/base/mesh/link/` | `pp_base_mesh_link` | [STACK.md](STACK.md) |
 | L4 product | `src/base/p2p/`, `src/feature/messaging/` | `pp_base_p2p`, … | stays in pp-browser |
 
@@ -51,9 +51,9 @@ Acyclic order: `crypto` → `adp` → `mesh/session` → `mesh/channel` → `mes
 
 | Tier | Target | Location |
 |------|--------|----------|
-| A L1 | `pp_browser_adp_test` | `src/base/adp/tests/` |
-| A L2 | `pp_browser_amp_session_test` | `src/base/mesh/session/tests/` |
-| A L3 | `pp_browser_amp_channel_test` | `src/base/mesh/channel/tests/` |
+| A L1 | `pp_browser_adp_test` | `src/lib/amp/L1/tests/` |
+| A L2 | `pp_browser_amp_session_test` | `src/lib/amp/L2/tests/` |
+| A L3 | `pp_browser_amp_channel_test` | `src/lib/amp/L3/tests/` |
 | A link | `pp_browser_amp_link_test` | `src/base/mesh/link/tests/` |
 | B integration | `pp_browser_amp_integration_test` | `src/base/mesh/tests/integration/` |
 | Support | (compiled into targets above) | `src/base/mesh/tests/support/` |
@@ -65,14 +65,13 @@ Matrices: [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](L2_TEST_MA
 ## Do not do yet
 
 1. Add `cmake/PpCppAmp.cmake` or FetchContent `pp-cpp-amp`
-2. Rename `base/adp` → `L1/` or mass-rewrite includes
-3. Delete in-tree `src/base/adp` or `src/base/mesh`
-4. Wire pp-ledger to shared AMP
-5. Replace real `PeerIdUtil` in product paths with test stubs
+2. Delete in-tree `src/lib/amp` after pp-cpp-amp cutover
+3. Wire pp-ledger to shared AMP
+4. Replace real `PeerIdUtil` in product paths with test stubs
 
 ## Future cutover checklist (one PR after `pp-cpp-amp` lands)
 
 1. `include(PpCppAmp)` in root `CMakeLists.txt` (after `PpCppCrypto`)
-2. Remove `add_subdirectory(adp)` / `add_subdirectory(mesh)` from `src/base/CMakeLists.txt`
+2. Remove `add_subdirectory(amp)` from `src/lib/CMakeLists.txt`
 3. Keep legacy aliases (`pp_base_adp` → fetched lib) or thin forwarding headers
 4. Run all five AMP ctest targets + harness-dependent p2p/messaging tests

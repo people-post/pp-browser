@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/mesh/session/MshHandshake.h"
-#include "base/mesh/session/Types.h"
+#include "lib/amp/L2/MshHandshake.h"
+#include "lib/amp/L2/Types.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

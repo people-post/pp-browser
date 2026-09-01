@@ -2,7 +2,7 @@
 
 **Tier:** A (in-memory MSH link via `amp_test_link.h`; no `PeerLinkManager`)  
 **Contract:** [docs/contracts/AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) · **Design:** [STACK.md](STACK.md)  
-**Suite:** `pp_browser_amp_channel_test` (`src/base/mesh/channel/tests/`)
+**Suite:** `pp_browser_amp_channel_test` (`src/lib/amp/L3/tests/`)
 
 Cross-layer FRAG / RESET checks live in [TEST_MATRIX.md](TEST_MATRIX.md) (Tier B).
 

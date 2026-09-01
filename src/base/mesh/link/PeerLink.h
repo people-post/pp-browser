@@ -1,13 +1,13 @@
 #pragma once
 
-#include "base/adp/Connection.h"
-#include "base/mesh/channel/Capability.h"
-#include "base/mesh/channel/ChannelMux.h"
-#include "base/mesh/channel/ChannelSession.h"
+#include "lib/amp/L1/Connection.h"
+#include "lib/amp/L3/Capability.h"
+#include "lib/amp/L3/ChannelMux.h"
+#include "lib/amp/L3/ChannelSession.h"
 #include "base/error/CodedFailure.h"
 #include "base/mesh/link/MshAdpHandshake.h"
 #include "base/mesh/link/Types.h"
-#include "base/mesh/session/Session.h"
+#include "lib/amp/L2/Session.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

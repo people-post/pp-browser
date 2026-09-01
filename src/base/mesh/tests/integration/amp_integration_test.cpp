@@ -1,10 +1,10 @@
-#include "base/mesh/channel/AmpChannelLimits.h"
-#include "base/mesh/channel/ChannelPolicy.h"
-#include "base/mesh/channel/ChannelWire.h"
-#include "base/mesh/channel/Types.h"
+#include "lib/amp/L3/AmpChannelLimits.h"
+#include "lib/amp/L3/ChannelPolicy.h"
+#include "lib/amp/L3/ChannelWire.h"
+#include "lib/amp/L3/Types.h"
 #include "base/mesh/link/Types.h"
 #include "base/mesh/tests/support/amp_integration_harness.h"
-#include "base/mesh/session/SessionControl.h"
+#include "lib/amp/L2/SessionControl.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>

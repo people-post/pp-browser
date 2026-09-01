@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/session/MshMessages.h"
+#include "lib/amp/L2/MshMessages.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"
