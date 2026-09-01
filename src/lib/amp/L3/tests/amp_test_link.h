@@ -1,6 +1,7 @@
 #pragma once
 
-#include "base/crypto/MlDsa.h"
+#include "crypto/MlDsa.h"
+#include "lib/amp/AmpRoe.h"
 #include "lib/amp/L3/ChannelMux.h"
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/Session.h"
@@ -21,8 +22,8 @@ struct AmpTestLink {
   AmpTestPeer responder;
 
   static Roe<std::unique_ptr<AmpTestLink>> Create() {
-    auto alice_keys = MlDsa::GenerateKeyPair();
-    auto bob_keys = MlDsa::GenerateKeyPair();
+    auto alice_keys = pp::MlDsa::GenerateKeyPair();
+    auto bob_keys = pp::MlDsa::GenerateKeyPair();
     if (!alice_keys || !bob_keys) {
       return Error("test link: keygen failed");
     }

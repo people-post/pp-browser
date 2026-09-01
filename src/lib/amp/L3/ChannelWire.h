@@ -2,8 +2,7 @@
 
 #include "lib/amp/L3/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <span>

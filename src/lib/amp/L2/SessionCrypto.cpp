@@ -1,7 +1,6 @@
 #include "lib/amp/L2/SessionCrypto.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/MessageCipher.h"
+#include "lib/amp/L2/SessionAead.h"
 
 namespace pbr::amp {
 
@@ -28,12 +27,12 @@ Roe<std::vector<uint8_t>> SessionCrypto::Seal(const ByteVector& key, const uint3
                                               const uint32_t channel_id, const uint32_t channel_seq,
                                               const Direction direction, std::span<const uint8_t> plaintext) {
   auto aad = BuildAad(session_epoch, channel_id, channel_seq, direction);
-  auto nonce = MessageCipher::GenerateNonce();
+  auto nonce = SessionAead::GenerateNonce();
   if (!nonce) {
     return nonce.error();
   }
   ByteVector plain(plaintext.begin(), plaintext.end());
-  auto blob = MessageCipher::Encrypt(key, plain, aad, *nonce);
+  auto blob = SessionAead::Encrypt(key, plain, aad, *nonce);
   if (!blob) {
     return blob.error();
   }
@@ -50,11 +49,11 @@ Roe<std::vector<uint8_t>> SessionCrypto::Open(const ByteVector& key, const uint3
   if (sealed.size() < kAeadNonceSize) {
     return Error("amp: sealed payload too short");
   }
-  EncryptedBlob blob;
+  AeadBlob blob;
   blob.nonce.assign(sealed.begin(), sealed.begin() + kAeadNonceSize);
   blob.ciphertext.assign(sealed.begin() + kAeadNonceSize, sealed.end());
   auto aad = BuildAad(session_epoch, channel_id, channel_seq, direction);
-  auto plain = MessageCipher::Decrypt(key, blob, aad);
+  auto plain = SessionAead::Decrypt(key, blob, aad);
   if (!plain) {
     return plain.error();
   }

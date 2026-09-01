@@ -1,6 +1,6 @@
 #include "lib/amp/L1/HmacBinder.h"
 
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <sodium.h>
 

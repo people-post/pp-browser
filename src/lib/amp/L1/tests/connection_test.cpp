@@ -2,7 +2,7 @@
 #include "lib/amp/L1/Endpoint.h"
 #include "lib/amp/L1/MemoryDatagramIo.h"
 #include "lib/amp/L1/Types.h"
-#include "base/crypto/ReplayWindow.h"
+#include "lib/amp/L1/ReplayWindow.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -54,7 +54,7 @@ protected:
 };
 
 TEST_F(AdpConnTest, ReplayWindowBasics) {
-  pbr::ReplayWindow w(8);
+  pbr::adp::ReplayWindow w(8);
   EXPECT_TRUE(w.Accept(1));
   EXPECT_FALSE(w.Accept(1));
   EXPECT_TRUE(w.Accept(3));

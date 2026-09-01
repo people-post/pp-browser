@@ -1,15 +1,18 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
+#include "crypto/Types.h"
 
 #include <cstdint>
 #include <vector>
 
 namespace pbr::amp {
 
+using ByteVector = pp::ByteVector;
+
 inline constexpr uint8_t kMshVersion = 1;
 inline constexpr size_t kAssocKeyBytes = 32;
 inline constexpr size_t kSessionKeyBytes = 32;
+inline constexpr size_t kAeadNonceSize = 24;
 inline constexpr size_t kFinishedMacBytes = 32;
 inline constexpr size_t kHandshakeNonceBytes = 32;
 

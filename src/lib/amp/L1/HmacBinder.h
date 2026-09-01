@@ -2,8 +2,7 @@
 
 #include "lib/amp/L1/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <array>
 #include <span>

@@ -7,8 +7,7 @@
 #include "lib/amp/L3/MessageReassembly.h"
 #include "lib/amp/L2/Session.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <functional>

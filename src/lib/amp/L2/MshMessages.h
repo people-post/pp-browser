@@ -1,11 +1,8 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/HybridKem.h"
 #include "lib/amp/L2/Types.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <span>

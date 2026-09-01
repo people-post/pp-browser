@@ -1,7 +1,6 @@
 #pragma once
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <span>

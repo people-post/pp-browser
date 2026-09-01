@@ -3,8 +3,7 @@
 #include "lib/amp/L3/ChannelMux.h"
 #include "lib/amp/L3/ChannelPolicy.h"
 
-#include "common/Error.h"
-#include "common/PbrCompat.h"
+#include "lib/amp/AmpRoe.h"
 
 #include <cstddef>
 #include <deque>
