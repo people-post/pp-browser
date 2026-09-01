@@ -63,11 +63,11 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
 
   pbr::AppConfig config;
   config.data_dir = "/old";
-  config.libp2p.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/x"};
-  config.libp2p.amp_udp_port = 0;
-  config.libp2p.capabilities.circuit_relay = false;
-  config.libp2p.capabilities.media_relay = false;
-  config.libp2p.mesh_publish = false;
+  config.mesh.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/x"};
+  config.mesh.amp_udp_port = 0;
+  config.mesh.capabilities.circuit_relay = false;
+  config.mesh.capabilities.media_relay = false;
+  config.mesh.mesh_publish = false;
   config.registration.base_url = "https://www.brief.global/api/relay";
 
   SetEnv("PP_NODE_DATA_DIR", "/var/lib/pp-node");
@@ -82,13 +82,13 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   pbr::ApplyPpNodeConfigEnvOverlays(config);
 
   EXPECT_EQ(config.data_dir, "/var/lib/pp-node");
-  EXPECT_EQ(config.libp2p.amp_udp_port, 443);
-  ASSERT_EQ(config.libp2p.bootstrap_peers.size(), 2u);
-  EXPECT_EQ(config.libp2p.bootstrap_peers[0], "/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/a");
-  EXPECT_TRUE(config.libp2p.capabilities.circuit_relay);
-  EXPECT_FALSE(config.libp2p.capabilities.media_relay);
-  ASSERT_EQ(config.libp2p.advertise_multiaddrs.size(), 1u);
-  EXPECT_EQ(config.libp2p.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
-  EXPECT_TRUE(config.libp2p.mesh_publish);
+  EXPECT_EQ(config.mesh.amp_udp_port, 443);
+  ASSERT_EQ(config.mesh.bootstrap_peers.size(), 2u);
+  EXPECT_EQ(config.mesh.bootstrap_peers[0], "/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/a");
+  EXPECT_TRUE(config.mesh.capabilities.circuit_relay);
+  EXPECT_FALSE(config.mesh.capabilities.media_relay);
+  ASSERT_EQ(config.mesh.advertise_multiaddrs.size(), 1u);
+  EXPECT_EQ(config.mesh.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
+  EXPECT_TRUE(config.mesh.mesh_publish);
   EXPECT_EQ(config.registration.base_url, "https://www-en.qa.peoplepost.org/api/relay");
 }

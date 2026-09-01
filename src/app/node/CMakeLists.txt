@@ -24,7 +24,7 @@ target_include_directories(pp-node PRIVATE
 )
 
 target_link_libraries(pp-node PRIVATE
-  pp_base_p2p
+  pp_base_mesh
   pp_base_people
   pp_base_crypto
   pp_base_data
@@ -46,7 +46,7 @@ install(TARGETS pp-node RUNTIME DESTINATION bin)
 
 # Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
-  pp_base_p2p
+  pp_base_mesh
   pp_base_mesh_link
   pp_base_crypto
   pp_base_adp

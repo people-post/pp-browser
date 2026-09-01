@@ -149,7 +149,7 @@ struct CallInviteDetail {
    */
   std::vector<std::string> listen_multiaddrs;
   /**
-   * Inviter libp2p PeerId (base58). Additive — lets peers map inbound call-media PeerId → relay:
+   * Inviter mesh PeerId (base58). Additive — lets peers map inbound call-media PeerId → relay:
    * without contacts or listen multiaddrs (group members need not be contacts).
    */
   std::string libp2p_peer_id;
@@ -172,7 +172,7 @@ struct CallAcceptDetail {
   bool video_enabled = false;
   /** Answerer listen multiaddrs so offerer can fallback-dial when inbound never arrives. */
   std::vector<std::string> listen_multiaddrs;
-  /** Answerer libp2p PeerId (base58); same role as invite.libp2p_peer_id. */
+  /** Answerer mesh PeerId (base58); same role as invite.libp2p_peer_id. */
   std::string libp2p_peer_id;
   /** Optional capability ads (additive; old peers ignore). */
   CallPeerCaps caps;

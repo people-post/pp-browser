@@ -80,7 +80,7 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_base
   pp_common
   pp_base_render
-  pp_base_p2p
+  pp_base_mesh
   RmlUi::Core
   CURL::libcurl
   Threads::Threads

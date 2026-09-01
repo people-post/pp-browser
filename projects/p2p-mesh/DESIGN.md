@@ -86,7 +86,7 @@ flowchart TB
 **Effective service *C*:** `role == Node && C_enabled && C_implemented`.  
 **Charging for *C*:** that **and** `pricing(C) == paid`.
 
-Resolver: e.g. `ResolveLibp2pRole`.
+Resolver: e.g. `ResolveMeshRole`.
 
 ### Platform defaults
 
@@ -393,7 +393,7 @@ Pricing UI ships with the first billable capability — **not** as a fake standa
 
 ## Host lifecycle
 
-`MessagingHub::StartLibp2p` / `Libp2pHost::Start`:
+`MessagingHub::StartMesh` / `Libp2pHost::Start`:
 
 - Pass resolved role (`listen_enabled` + listen multiaddr + `bootstrap_peers`).
 - **Client:** create host + `start()` **without** `listen`.
@@ -461,7 +461,7 @@ pp-node --listen /ip4/0.0.0.0/tcp/443 \
         --capabilities dht,circuit_relay,message_relay
 ```
 
-**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `MessagingHub::StartLibp2p` / host lifecycle; do **not** fork a second libp2p integration for servers.
+**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `MessagingHub::StartMesh` / host lifecycle; do **not** fork a second libp2p integration for servers.
 
 ---
 

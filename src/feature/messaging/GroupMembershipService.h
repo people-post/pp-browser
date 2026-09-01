@@ -6,7 +6,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/GroupInviteGate.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 
 #include "common/Module.h"
 
@@ -24,7 +24,7 @@ namespace pbr {
 class GroupMembershipService : public Module {
 public:
   GroupMembershipService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                         GroupRosterStore& roster, GroupInviteGate& invite_gate, P2pMessagingService& p2p);
+                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshMessagingService& mesh_messaging);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
 
@@ -100,7 +100,7 @@ private:
   IdentityStore& identity_;
   GroupRosterStore& roster_;
   GroupInviteGate& invite_gate_;
-  P2pMessagingService& p2p_;
+  MeshMessagingService& mesh_messaging_;
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;

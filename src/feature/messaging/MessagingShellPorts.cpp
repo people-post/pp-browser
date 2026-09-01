@@ -2,22 +2,22 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
-#include "feature/messaging/P2pMessagingService.h"
-#include "base/p2p/AmpMediaRelayCoordinator.h"
-#include "base/p2p/CircuitTunnelCoordinator.h"
-#include "base/p2p/MeshHost.h"
+#include "feature/messaging/MeshMessagingService.h"
+#include "base/mesh/AmpMediaRelayCoordinator.h"
+#include "base/mesh/CircuitTunnelCoordinator.h"
+#include "base/mesh/MeshHost.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
 
-BriefRelayHealth MapBriefHealth(P2pMessagingService::BriefRelayHealthState health) {
+BriefRelayHealth MapBriefHealth(MeshMessagingService::BriefRelayHealthState health) {
   switch (health) {
-  case P2pMessagingService::BriefRelayHealthState::Ok:
+  case MeshMessagingService::BriefRelayHealthState::Ok:
     return BriefRelayHealth::Ok;
-  case P2pMessagingService::BriefRelayHealthState::Failed:
+  case MeshMessagingService::BriefRelayHealthState::Failed:
     return BriefRelayHealth::Failed;
-  case P2pMessagingService::BriefRelayHealthState::Unknown:
+  case MeshMessagingService::BriefRelayHealthState::Unknown:
   default:
     return BriefRelayHealth::Unknown;
   }
@@ -195,7 +195,7 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
 }
 
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
-                                                       bool host_running, bool has_libp2p_error,
+                                                       bool host_running, bool has_mesh_error,
                                                        ReachabilityStatus reachability,
                                                        bool help_network_enabled,
                                                        const RelayRuntimeStats& load) {
@@ -222,7 +222,7 @@ StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, Bri
   }
 
   if (!host_running) {
-    if (has_libp2p_error) {
+    if (has_mesh_error) {
       snap.direct = StatusbarClusterSnapshot::DirectState::Error;
       if (snap.label.empty()) {
         snap.label_tone = StatusbarClusterSnapshot::LabelTone::Error;
@@ -328,7 +328,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
     const bool running = mesh && mesh->IsRunning();
-    const bool has_error = deps.last_libp2p_error && !deps.last_libp2p_error().empty();
+    const bool has_error = deps.last_mesh_error && !deps.last_mesh_error().empty();
     const ReachabilityStatus status = mesh ? mesh->Reachability().Snapshot().status : ReachabilityStatus::Unknown;
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
     const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
@@ -340,7 +340,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     const bool ready = deps.messaging_ready && deps.messaging_ready();
     const bool running = mesh && mesh->IsRunning();
     const ReachabilitySnapshot reach = mesh ? mesh->Reachability().Snapshot() : ReachabilitySnapshot{};
-    const std::string last_error = deps.last_libp2p_error ? deps.last_libp2p_error() : std::string{};
+    const std::string last_error = deps.last_mesh_error ? deps.last_mesh_error() : std::string{};
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
     const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
@@ -356,9 +356,9 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingHub& hub) {
   MessagingShellPortsDeps deps;
   deps.mesh = [&hub]() -> MeshHost* { return hub.Mesh(); };
   deps.messaging_ready = [&hub]() { return hub.IsMessagingReady(); };
-  deps.brief_health = [&hub]() { return MapBriefHealth(hub.P2p().BriefRelayHealth()); };
+  deps.brief_health = [&hub]() { return MapBriefHealth(hub.MeshMessaging().BriefRelayHealth()); };
   deps.help_network_enabled = [&hub]() { return hub.IsHelpNetworkEnabled(); };
-  deps.last_libp2p_error = [&hub]() { return hub.LastLibp2pError(); };
+  deps.last_mesh_error = [&hub]() { return hub.LastMeshError(); };
   deps.retest_reachability = [&hub]() { hub.RunReachabilityProbe(false); };
   deps.relay_load_stats = [&hub]() { return CollectRelayRuntimeStats(hub.Mesh()); };
   return MakeMessagingShellPorts(std::move(deps));

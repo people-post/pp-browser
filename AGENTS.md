@@ -32,7 +32,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 
 ## libp2p is maintained in-tree (PeerId only)
 
-We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/base/p2p/`](src/base/p2p/).
+We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/base/mesh/`](src/base/mesh/).
 
 - Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
 - Import/update remaining deps with `./scripts/libp2p_vendor_import.sh`.
@@ -60,9 +60,9 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| Libp2p stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/base/p2p/StreamFrameIo.*` |
+| Libp2p stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/base/mesh/StreamFrameIo.*` |
 | P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done; **N023** relay scope ([RELAY_SCOPE.md](projects/p2p-mesh/RELAY_SCOPE.md)); **N022** invest libp2p; **N026** media-relay attach SM design ([MEDIA_RELAY_ATTACH.md](projects/p2p-mesh/MEDIA_RELAY_ATTACH.md)) |
-| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** libp2p media (**m1** mobile LAN OK; **m2** teardown done); **V033** session SMs + circuit compose; **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
+| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** mesh media (**m1** mobile LAN OK; **m2** teardown done); **V033** session SMs + circuit compose; **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s3 landed**; s4 polish next — [DESIGN](projects/network-status-chrome/DESIGN.md) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |

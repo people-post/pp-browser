@@ -4,7 +4,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     CallMediaKeyStore.cpp
     AmpCircuitHopReach.cpp
     AmpMediaRelayClient.cpp
-    CallLibp2pMediaBridge.cpp
+    CallMediaBridge.cpp
     CallLifecycle.cpp
     CallInboundHandlers.cpp
     CallSessionManager.cpp
@@ -32,7 +32,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
-    P2pMessagingService.cpp
+    MeshMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
@@ -47,7 +47,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_base_crypto
     pp_base_media
     pp_base_mesh_link
-    pp_base_p2p
+    pp_base_mesh
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime

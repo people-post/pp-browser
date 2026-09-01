@@ -106,7 +106,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 - [x] **D7a** Channel tunnel — `ChannelBridge` splice + **`CircuitTunnelCoordinator`** / `CircuitBundleLogic` on `MeshRuntime` ([A022](DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)); non-blocking `StartBridge` (no `IoPumpUntil`)
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
-- [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
+- [x] `pp_browser_mesh_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 - [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
 - [x] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
 
@@ -149,7 +149,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
-cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_amp_integration_test pp_browser_p2p_test -j
+cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_amp_integration_test pp_browser_mesh_test -j
 ./build/src/lib/amp/L1/tests/pp_browser_adp_test
 ./build/src/lib/amp/L2/tests/pp_browser_amp_session_test
 ./build/src/lib/amp/L3/tests/pp_browser_amp_channel_test

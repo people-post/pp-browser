@@ -46,8 +46,8 @@ d0 (complete)
 
 | Wave | Phase | Work | Checkpoint |
 |------|-------|------|------------|
-| **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `P2pMessagingService` in `base/crypto` |
-| **5** | **c2** | `P2pMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
+| **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `MeshMessagingService` in `base/crypto` |
+| **5** | **c2** | `MeshMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
 | **6** | **c3** | Generate/export/import PSK; fingerprint gate; rotation bundle (D086); compromise hooks to chat D038 | User verify + send/receive + simulated epoch bump |
 | **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Landed |
 
@@ -118,7 +118,7 @@ d0 (complete)
 
 ## Phase c1 — `base/crypto` groundwork
 
-**Goal:** Self-contained libsodium module; unit tests; **no** `ThreadTypes` / `P2pMessagingService` changes.
+**Goal:** Self-contained libsodium module; unit tests; **no** `ThreadTypes` / `MeshMessagingService` changes.
 
 **Depends on:** d0 exit.
 
@@ -167,7 +167,7 @@ d0 (complete)
 ### Envelope and types
 
 - [x] Wire shape: `body.e2e.payload_b64` only (chat v2a-p2p — plaintext bytes until c2)
-- [x] `P2pMessagingService`: **encrypt/decrypt** on `channel == e2e` (replace `RelayWirePayload` plaintext path)
+- [x] `MeshMessagingService`: **encrypt/decrypt** on `channel == e2e` (replace `RelayWirePayload` plaintext path)
 - [x] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
 - [x] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
 - [x] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)

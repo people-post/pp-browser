@@ -44,7 +44,7 @@ Path constants and product profiles: [`src/lib/pp_lib_paths.cmake`](../../src/li
 | `base/render/platform/` | Mobile GL lifecycle helpers |
 | `base/render/renderer/` | Product overlays (loupe, call video tiles) |
 | `base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
-| `base/p2p/` | `Libp2pHost`, mesh/relay/stream glue |
+| `base/mesh/` | `Libp2pHost`, mesh/relay/stream glue |
 
 Dependency rule:
 
@@ -63,7 +63,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 |------|----------|
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, `StartupTiming`, lifecycle, branding/version |
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
-| `base/p2p/` | Product Amp glue (MeshHost, circuit/media relay, call-media L4); PeerId util is separate target `pp_base_peer_id` |
+| `base/mesh/` | Product Amp glue (MeshHost, circuit/media relay, call-media L4); PeerId util is separate target `pp_base_peer_id` |
 | `lib/amp/L1/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
 | `lib/amp/L2/` | AMP L2 — MSH, Session AEAD, rekey (`pp_base_mesh_session`) |
 | `lib/amp/link/` | AMP link — `PeerLinkManager`, `MeshRuntime`, `AmpStack`, MSH-over-ADP (`pp_base_mesh_link`) |
@@ -77,7 +77,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 
-Acyclic order (excerpt): `crypto` → `adp` → `mesh` → `peer_id` → `p2p` → `people`. `adp` and `mesh` must not link `p2p`/product MeshHost. Mesh/link **tests** may link `pp_base_peer_id` (retained libp2p PeerId encode) without `pp_base_p2p`. `p2p` may include header-only `people/RelayScope.h` but must not link `pp_base_people`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [A025](../../projects/adp/DECISIONS.md#a025--pre-extract-layer-cleanup-limits-policies-peerid).
+Acyclic order (excerpt): `crypto` → `adp` → `mesh` → `peer_id` → `p2p` → `people`. `adp` and `mesh` must not link `p2p`/product MeshHost. Mesh/link **tests** may link `pp_base_peer_id` (retained mesh PeerId encode) without `pp_base_mesh`. `p2p` may include header-only `people/RelayScope.h` but must not link `pp_base_people`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [A025](../../projects/adp/DECISIONS.md#a025--pre-extract-layer-cleanup-limits-policies-peerid).
 
 ## Feature subfolders
 
@@ -104,20 +104,20 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | Target | Layer |
 |--------|-------|
 | `pp_common` | common |
-| `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_p2p`, `pp_base_render`) |
+| `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_mesh`, `pp_base_render`) |
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
 | `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
-Base module tests compile to one executable per folder (e.g. `pp_browser_p2p_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
+Base module tests compile to one executable per folder (e.g. `pp_browser_mesh_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
 
 Fork product profiles (embedding policy + path constants): `src/lib/pp_lib_paths.cmake`, `src/lib/pp_lib_rmlui.cmake`, `src/lib/pp_lib_libp2p.cmake`. Shared `third_party` wiring stays in `cmake/dependencies.cmake` and `cmake/libp2p_dependencies.cmake`.
 
 ## Test placement
 
 - Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
-- Libp2p glue tests live under [`src/base/p2p/tests/`](../../src/base/p2p/tests/).
+- Libp2p glue tests live under [`src/base/mesh/tests/`](../../src/base/mesh/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
@@ -137,12 +137,12 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 ```cpp
 #include "common/Logger.h"
 #include "base/data/Config.h"
-#include "base/p2p/Libp2pHost.h"
+#include "base/mesh/Libp2pHost.h"
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```
 
-Fork public APIs use their upstream include style (`<RmlUi/...>`, `<libp2p/...>`), with include roots from `pp_base_render` / `pp_base_p2p` PUBLIC dirs.
+Fork public APIs use their upstream include style (`<RmlUi/...>`, `<libp2p/...>`), with include roots from `pp_base_render` / `pp_base_mesh` PUBLIC dirs.
 
 ### Prefer include over forward declaration
 

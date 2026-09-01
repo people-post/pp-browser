@@ -24,7 +24,7 @@ TEST(SfuAttachWaitLogicTest, ClearAsP2pWhenJoinedUnderThree) {
   SfuAttachWaitPollInput in;
   in.wait_active = true;
   in.joined_count = 2;
-  in.media_active_p2p_for_call = true;
+  in.media_active_mesh_for_call = true;
   in.now_ms = 100;
   in.deadline_ms = 50;
   EXPECT_EQ(PollSfuAttachWait(in), SfuAttachWaitPollResult::ClearAsP2p);

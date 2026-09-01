@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/messaging/ChatBlobResponder.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/p2p/ProductChannelPolicies.h"
+#include "base/mesh/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"
 

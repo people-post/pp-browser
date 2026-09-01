@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/p2p/Reachability.h"
-#include "base/p2p/RelayRuntimeStats.h"
+#include "base/mesh/Reachability.h"
+#include "base/mesh/RelayRuntimeStats.h"
 
 #include <cstddef>
 #include <functional>
@@ -129,7 +129,7 @@ enum class BriefRelayHealth {
 
 /** Pure mapping for tests and MakeMessagingShellPorts. */
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
-                                                       bool host_running, bool has_libp2p_error,
+                                                       bool host_running, bool has_mesh_error,
                                                        ReachabilityStatus reachability,
                                                        bool help_network_enabled,
                                                        const RelayRuntimeStats& load = {});
@@ -167,7 +167,7 @@ struct MessagingShellPortsDeps {
   std::function<bool()> messaging_ready;
   std::function<BriefRelayHealth()> brief_health;
   std::function<bool()> help_network_enabled;
-  std::function<std::string()> last_libp2p_error;
+  std::function<std::string()> last_mesh_error;
   std::function<void()> retest_reachability;
   std::function<RelayRuntimeStats()> relay_load_stats;
 };

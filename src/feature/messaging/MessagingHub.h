@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
+#include "base/data/MeshRole.h"
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/GroupTypes.h"
@@ -24,17 +24,17 @@
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "base/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 #include "base/net/BlobClient.h"
 #include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
-#include "base/p2p/CircuitRelayTypes.h"
-#include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/Reachability.h"
-#include "base/p2p/ReachabilityService.h"
-#include "base/p2p/MeshHost.h"
+#include "base/mesh/CircuitRelayTypes.h"
+#include "base/mesh/LanMdnsDiscovery.h"
+#include "base/mesh/Reachability.h"
+#include "base/mesh/ReachabilityService.h"
+#include "base/mesh/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"
 
 #include <cstdint>
@@ -141,7 +141,7 @@ public:
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
-  P2pMessagingService& P2p();
+  MeshMessagingService& MeshMessaging();
   GroupMembershipService& Groups();
   /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
   CallStack& CallStackRef() { return *call_stack_; }
@@ -166,9 +166,9 @@ public:
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
-  const std::string& LastLibp2pError() const { return libp2p_last_error_; }
+  const std::string& LastMeshError() const { return mesh_last_error_; }
 
-  /** Desktop Node "Help the network" posture (node_enabled → Libp2pRole::Node). */
+  /** Desktop Node "Help the network" posture (node_enabled → MeshRole::Node). */
   bool IsHelpNetworkEnabled() const;
 
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
@@ -227,9 +227,9 @@ public:
   PeerSigningKeyStore& SigningKeys();
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is TickAmpMesh. */
-  void TickLibp2p();
+  void TickMesh();
   /** Drop cold peer connections (Android background). */
-  void SuspendLibp2pColdPeers();
+  void SuspendMeshColdPeers();
 
   void SetOnMessagingReady(std::function<void()> callback);
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
@@ -242,8 +242,8 @@ private:
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);
   void WireRelayAuthSigner();
-  Roe<void> StartLibp2p(const AppConfig& config);
-  void StopLibp2p();
+  Roe<void> StartMesh(const AppConfig& config);
+  void StopMesh();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
   void ApplyMeshAdmissionPolicies();
@@ -308,7 +308,7 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<P2pMessagingService> p2p_;
+  std::unique_ptr<MeshMessagingService> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
@@ -318,7 +318,7 @@ private:
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
-  std::string libp2p_last_error_;
+  std::string mesh_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;

@@ -1,6 +1,6 @@
-#include "base/p2p/AmpCircuitHopRegistry.h"
-#include "base/p2p/CallMediaFrameCrypto.h"
-#include "base/p2p/LanMdnsDiscovery.h"
+#include "base/mesh/AmpCircuitHopRegistry.h"
+#include "base/mesh/CallMediaFrameCrypto.h"
+#include "base/mesh/LanMdnsDiscovery.h"
 
 #include <gtest/gtest.h>
 

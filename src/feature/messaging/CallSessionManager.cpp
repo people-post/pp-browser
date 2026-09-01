@@ -45,9 +45,9 @@ void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn,
 
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                                       P2pMessagingService& p2p, IPskSessionStore& psk_store, CallMediaEngine& media)
+                                       MeshMessagingService& mesh_messaging, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
-      p2p_(p2p), psk_store_(psk_store), media_(media),
+      mesh_messaging_(mesh_messaging), psk_store_(psk_store), media_(media),
       topology_(*this, sessions, contacts, media) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
@@ -57,14 +57,14 @@ void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
   topology_.SetMediaRelayDeps(std::move(deps));
 }
 
-void CallSessionManager::SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge) {
-  libp2p_bridge_ = bridge;
+void CallSessionManager::SetCallMediaBridge(CallMediaBridge* bridge) {
+  call_media_bridge_ = bridge;
 }
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
-  if (!libp2p_bridge_) {
-    log().error << "ScheduleStartDirectMedia: libp2p media bridge not configured call_id=" << call_id;
+  if (!call_media_bridge_) {
+    log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
     last_media_error_ = "Call media unavailable";
     NotifyRingChanged();
     return;
@@ -72,9 +72,9 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
   if (offerer) {
-    libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
+    call_media_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
   } else {
-    libp2p_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+    call_media_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
   }
 }
 
@@ -208,8 +208,8 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
   local_peer_caps_ = std::move(callback);
 }
 
-void CallSessionManager::SetLocalLibp2pPeerIdProvider(LocalLibp2pPeerIdFn callback) {
-  local_libp2p_peer_id_ = std::move(callback);
+void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
+  local_mesh_peer_id_ = std::move(callback);
 }
 
 void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback) {
@@ -239,19 +239,19 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
   }
 }
 
-void CallSessionManager::NoteLibp2pPeerIdForRelay(const std::string& relay_identity,
+void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity,
                                                   const std::string& peer_id) {
   if (relay_identity.empty() || peer_id.empty() || !IsAccountIdentityValue(relay_identity)) {
     return;
   }
   peer_id_to_relay_[peer_id] = relay_identity;
-  if (libp2p_bridge_) {
-    libp2p_bridge_->NotePeerIdRelayMapping(peer_id, relay_identity);
+  if (call_media_bridge_) {
+    call_media_bridge_->NotePeerIdRelayMapping(peer_id, relay_identity);
   }
   auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
   if (!found || !found->has_value()) {
     // Non-contact call participants: in-memory map + bridge rebind is enough.
-    log().info << "NoteLibp2pPeerIdForRelay map-only (no contact) peer_id=" << peer_id
+    log().info << "NoteMeshPeerIdForRelay map-only (no contact) peer_id=" << peer_id
                << " account=" << relay_identity;
     return;
   }
@@ -274,11 +274,11 @@ void CallSessionManager::NoteLibp2pPeerIdForRelay(const std::string& relay_ident
   PromoteFlatFieldsToNested(contact);
   SyncContactMirrors(contact);
   if (auto saved = contacts_.Upsert(contact); !saved) {
-    log().warning << "NoteLibp2pPeerIdForRelay contact upsert failed account=" << relay_identity
+    log().warning << "NoteMeshPeerIdForRelay contact upsert failed account=" << relay_identity
                   << " peer=" << peer_id << " err=" << saved.error().message;
     return;
   }
-  log().info << "NoteLibp2pPeerIdForRelay learned peer_id=" << peer_id << " account=" << relay_identity;
+  log().info << "NoteMeshPeerIdForRelay learned peer_id=" << peer_id << " account=" << relay_identity;
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
@@ -351,7 +351,7 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   opts.update_preview = false;
   // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
   opts.critical_lane = true;
-  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }
@@ -503,8 +503,8 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   // Detach media_relay BEFORE JoinCaptureThread. Capture may be blocked in BlockingWrite on the
   // SFU stream; OnMediaStopped closes it so Stop/quit can finish (group-call hang).
   topology_.OnMediaStopped(call_id);
-  if (libp2p_bridge_) {
-    libp2p_bridge_->StopLibp2pMedia(call_id);
+  if (call_media_bridge_) {
+    call_media_bridge_->StopMeshMedia(call_id);
   }
 }
 
@@ -718,8 +718,8 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   if (local_listen_multiaddrs_) {
     invite.listen_multiaddrs = local_listen_multiaddrs_();
   }
-  if (local_libp2p_peer_id_) {
-    invite.libp2p_peer_id = local_libp2p_peer_id_();
+  if (local_mesh_peer_id_) {
+    invite.libp2p_peer_id = local_mesh_peer_id_();
   }
   if (invite.libp2p_peer_id.empty()) {
     const auto ids = PeerIdsFromListenMultiaddrs(invite.listen_multiaddrs);
@@ -895,8 +895,8 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   if (local_listen_multiaddrs_) {
     accept.listen_multiaddrs = local_listen_multiaddrs_();
   }
-  if (local_libp2p_peer_id_) {
-    accept.libp2p_peer_id = local_libp2p_peer_id_();
+  if (local_mesh_peer_id_) {
+    accept.libp2p_peer_id = local_mesh_peer_id_();
   }
   if (accept.libp2p_peer_id.empty()) {
     const auto ids = PeerIdsFromListenMultiaddrs(accept.listen_multiaddrs);
@@ -920,7 +920,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   }
 
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
-  p2p_.SyncInboxFromWake(true);
+  mesh_messaging_.SyncInboxFromWake(true);
 
   // Roster / prefetch after Accept returns — keep Accept worker snappy (no Accept hang UX).
   const std::string accept_call_id = call_id;
@@ -1227,22 +1227,22 @@ bool CallSessionManager::IsSfuAttachWaitActive() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
-  return libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed();
+  return call_media_bridge_ && call_media_bridge_->IsMeshConnectFailed();
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
-  return libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed() && libp2p_bridge_->Libp2pConnectMissingMic();
+  return call_media_bridge_ && call_media_bridge_->IsMeshConnectFailed() && call_media_bridge_->MeshConnectMissingMic();
 }
 
 void CallSessionManager::PollP2pConnectHealth() {
-  if (libp2p_bridge_) {
-    libp2p_bridge_->PollLibp2pConnectHealth();
+  if (call_media_bridge_) {
+    call_media_bridge_->PollMeshConnectHealth();
   }
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
-  if (libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id)) {
-    return libp2p_bridge_->RetryLibp2pMedia(call_id);
+  if (call_media_bridge_ && call_media_bridge_->MediaAttempted(call_id)) {
+    return call_media_bridge_->RetryMeshMedia(call_id);
   }
   return Error("Call media retry unavailable");
 }
@@ -1343,7 +1343,7 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 }
 
 bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
-  return libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id);
+  return call_media_bridge_ && call_media_bridge_->MediaAttempted(call_id);
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
@@ -1446,8 +1446,8 @@ void CallSessionManager::ClearMediaActivity() {
 }
 
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
-  if (libp2p_bridge_) {
-    libp2p_bridge_->NoteMediaAttempted(call_id);
+  if (call_media_bridge_) {
+    call_media_bridge_->NoteMediaAttempted(call_id);
   }
 }
 
@@ -1458,13 +1458,13 @@ void CallSessionManager::TopologyClearMediaPeerIdentity() {
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
-  if (libp2p_bridge_) {
-    libp2p_bridge_->ReleaseDirectTransport();
+  if (call_media_bridge_) {
+    call_media_bridge_->ReleaseDirectTransport();
   }
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {
-  p2p_.SyncInboxFromWake(true);
+  mesh_messaging_.SyncInboxFromWake(true);
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
@@ -1488,7 +1488,7 @@ Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const
   return PeerIdentityForCall(call_id);
 }
 
-Roe<std::optional<std::string>> CallSessionManager::P2pRelayIdentityForLibp2pPeerId(
+Roe<std::optional<std::string>> CallSessionManager::RelayIdentityForMeshPeerId(
     const std::string& call_id, const std::string& peer_id) const {
   if (peer_id.empty()) {
     return std::optional<std::string>{};
@@ -1564,7 +1564,7 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
 }
 
 void CallSessionManager::P2pRequestInboxSync() {
-  p2p_.SyncInboxFromWake(true);
+  mesh_messaging_.SyncInboxFromWake(true);
 }
 
 bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {

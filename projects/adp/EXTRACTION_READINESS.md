@@ -1,7 +1,7 @@
 # AMP extraction readiness (pp-browser)
 
 **Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v0.1.1`).  
-**Done:** in-tree production sources removed; consumers use `#include "amp/..."` from FetchContent pp-cpp-amp. L4 harness duplicated under `src/base/p2p/tests/support/`.
+**Done:** in-tree production sources removed; consumers use `#include "amp/..."` from FetchContent pp-cpp-amp. L4 harness duplicated under `src/base/mesh/tests/support/`.
 
 ## Layer map
 
@@ -11,7 +11,7 @@
 | L2 MSH session | `src/lib/amp/L2/` | `pp_base_mesh_session` | [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) |
 | L3 channel mux | `src/lib/amp/L3/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) |
 | Link (horizontal) | `src/lib/amp/link/` | `pp_base_mesh_link` | [STACK.md](STACK.md) |
-| L4 product | `src/base/p2p/`, `src/feature/messaging/` | `pp_base_p2p`, … | stays in pp-browser |
+| L4 product | `src/base/mesh/`, `src/feature/messaging/` | `pp_base_mesh`, … | stays in pp-browser |
 
 ## Shared helpers (colocated in `src/lib/amp/`)
 
@@ -38,9 +38,9 @@ Acyclic order: `pp_common` + `pp_crypto` → L1 → L2 → L3 → link → `peer
 
 ## Stays in pp-browser
 
-- `pp_base_peer_id` — libp2p PeerId encode (`PeerIdUtil`)
+- `pp_base_peer_id` — mesh PeerId encode (`PeerIdUtil`)
 - L4 coordinators, product channel policies (`ProductChannelPolicies.h`)
-- `mesh_triple_harness` consumers (circuit compose tests in `pp_base_p2p`)
+- `mesh_triple_harness` consumers (circuit compose tests in `pp_base_mesh`)
 - GUI, SQLite, libp2p Host glue
 
 ## Test layout (after prep)
@@ -53,9 +53,9 @@ Acyclic order: `pp_common` + `pp_crypto` → L1 → L2 → L3 → link → `peer
 | A link | `pp_browser_amp_link_test` | `src/lib/amp/link/tests/` |
 | B integration | `pp_browser_amp_integration_test` | `src/lib/amp/tests/integration/` |
 | AMP test support | (compiled into Tier A link + Tier B) | `src/lib/amp/tests/support/` (PeerId stub; no `pp_base_peer_id`) |
-| L4 test support | p2p/messaging compose harnesses | `src/base/p2p/tests/support/` (`mesh_harness_support` uses real `PeerIdUtil`; `mesh_triple_harness`) |
+| L4 test support | p2p/messaging compose harnesses | `src/base/mesh/tests/support/` (`mesh_harness_support` uses real `PeerIdUtil`; `mesh_triple_harness`) |
 
-Harness headers under `lib/amp/tests/support/` are **p2p-free**. AMP-owned tests link the stub `mesh_harness_support.cpp` in that directory. L4 tests link `base/p2p/tests/support/mesh_harness_support.cpp` instead (same header, libp2p PeerId derivation).
+Harness headers under `lib/amp/tests/support/` are **p2p-free**. AMP-owned tests link the stub `mesh_harness_support.cpp` in that directory. L4 tests link `base/mesh/tests/support/mesh_harness_support.cpp` instead (same header, mesh PeerId derivation).
 
 Matrices: [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](L2_TEST_MATRIX.md), [L3_TEST_MATRIX.md](L3_TEST_MATRIX.md), [LINK_TEST_MATRIX.md](LINK_TEST_MATRIX.md), [TEST_MATRIX.md](TEST_MATRIX.md) (Tier B).
 

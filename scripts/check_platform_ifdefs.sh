@@ -52,7 +52,7 @@ check_tree "base/runtime/ must not use OS #ifdefs" src/base/runtime
 
 check_tree "base/media/ portable TUs must not use OS #ifdefs" src/base/media \
   "${BACKEND_GLOBS[@]}"
-check_tree "base/p2p/ portable TUs must not use OS #ifdefs" src/base/p2p \
+check_tree "base/mesh/ portable TUs must not use OS #ifdefs" src/base/mesh \
   "${BACKEND_GLOBS[@]}"
 
 check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cpp, Logger.h)" src/common \

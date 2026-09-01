@@ -32,9 +32,9 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Area | Status | Location |
 |------|--------|----------|
 | Relay wire codec | **Implemented** | `E2eRelayPayloadCodec.*` |
-| Outbound encrypt (`channel == e2e`) | **Implemented** | `P2pMessagingService::SendUserMessage` |
+| Outbound encrypt (`channel == e2e`) | **Implemented** | `MeshMessagingService::SendUserMessage` |
 | Outbound encrypt (`channel == e2e_public`) | **Implemented** | Auto-key encapsulation in `SendUserMessage` |
-| Group outbound encrypt (pairwise per member) | **Implemented** | `P2pMessagingService::SendGroupMessage`, `GroupE2ePayloadCodec` |
+| Group outbound encrypt (pairwise per member) | **Implemented** | `MeshMessagingService::SendGroupMessage`, `GroupE2ePayloadCodec` |
 | Inbound decrypt | **Implemented** | `RelayReceivePipeline::ProcessEnvelope` |
 | History re-encrypt on export | **Implemented** | `ChatHistoryResponder`, `Libp2pChatHistoryService` |
 | Directory signing key resolver | **Implemented** | `RelayDirectorySigningKeyResolver.*` |
@@ -50,7 +50,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Verify gate (`psk_verified_at`) | **Implemented** | `ChatController::OnVerifyPsk`, send blocked until verified |
 | `rotate_psk` + bundle export | **Implemented** | `PskSessionCoordinator::RotatePskAndExportBundle`, compromised banner |
 | Signing key fingerprint on add-contact | **Implemented** (display-only) | `contact_detail.rml`, `ContactsController` |
-| `e2e_public` send | **Implemented** (auto-key) | `P2pMessagingService::SendUserMessage` |
+| `e2e_public` send | **Implemented** (auto-key) | `MeshMessagingService::SendUserMessage` |
 | Public device-lock rekey (E027) | **Next** | `PublicPskLockCoordinator` |
 
 ## Related messaging (today)
@@ -58,7 +58,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Area | Status | Location |
 |------|--------|----------|
 | Payload bytes on wire (`e2e`) | **AEAD ciphertext** | `E2eRelayPayloadCodec.*` |
-| Outbound signing | **E014 canonical bytes** | `EnvelopeSigner`, `P2pMessagingService` |
+| Outbound signing | **E014 canonical bytes** | `EnvelopeSigner`, `MeshMessagingService` |
 | Inbound verify | **Cache + lazy directory** | `PeerSigningKeyStore`, `RelayDirectorySigningKeyResolver` |
 | Tier split (`e2e` / `e2e_public`) | **Implemented** | chat-storage v2b |
 

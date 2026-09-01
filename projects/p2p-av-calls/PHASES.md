@@ -85,7 +85,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking), mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup). Mobile LAN: [V027](DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi) + mesh [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node) / [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
 
-- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`
+- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallMediaBridge`
 - [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
 - [x] Loopback compose: circuit + call-media Opus (`CircuitCallMediaComposeTest`); circuit + media_relay fan-out (`CircuitMediaRelayComposeTest`)
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)

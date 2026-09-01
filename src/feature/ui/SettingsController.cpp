@@ -227,7 +227,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.node_enabled = bindings_.node_enabled.c_str();
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.amp_listen_multiaddr = bindings_.amp_listen_multiaddr.c_str();
-  ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
+  ui_state_.mesh_status_message = bindings_.mesh_status_message.c_str();
   ui_state_.reachability_status_label = bindings_.reachability_status_label.c_str();
   ui_state_.reachability_summary = bindings_.reachability_summary.c_str();
   ui_state_.reachability_help_kind = bindings_.reachability_help_kind.c_str();
@@ -299,7 +299,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.node_enabled = ui_state_.node_enabled.c_str();
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.amp_listen_multiaddr = ui_state_.amp_listen_multiaddr.c_str();
-  bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
+  bindings_.mesh_status_message = ui_state_.mesh_status_message.c_str();
   bindings_.reachability_status_label = ui_state_.reachability_status_label.c_str();
   bindings_.reachability_summary = ui_state_.reachability_summary.c_str();
   bindings_.reachability_help_kind = ui_state_.reachability_help_kind.c_str();
@@ -371,10 +371,10 @@ void SettingsController::SyncBindingsFromSession() {
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
   }
-  if (commands_.last_libp2p_error) {
-    ui_state_.libp2p_status_message = commands_.last_libp2p_error();
+  if (commands_.last_mesh_error) {
+    ui_state_.mesh_status_message = commands_.last_mesh_error();
   } else {
-    ui_state_.libp2p_status_message.clear();
+    ui_state_.mesh_status_message.clear();
   }
   if (commands_.amp_listen_multiaddr) {
     ui_state_.amp_listen_multiaddr = commands_.amp_listen_multiaddr();
@@ -461,7 +461,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
     ctor.Bind("amp_listen_multiaddr", &controller.bindings_.amp_listen_multiaddr);
-    ctor.Bind("libp2p_status_message", &controller.bindings_.libp2p_status_message);
+    ctor.Bind("mesh_status_message", &controller.bindings_.mesh_status_message);
     ctor.Bind("reachability_status_label", &controller.bindings_.reachability_status_label);
     ctor.Bind("reachability_summary", &controller.bindings_.reachability_summary);
     ctor.Bind("reachability_help_kind", &controller.bindings_.reachability_help_kind);
@@ -591,7 +591,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "node_enabled");
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "amp_listen_multiaddr");
-  host.Dirty("settings", "libp2p_status_message");
+  host.Dirty("settings", "mesh_status_message");
   host.Dirty("settings", "reachability_status_label");
   host.Dirty("settings", "reachability_summary");
   host.Dirty("settings", "reachability_help_kind");
@@ -1574,7 +1574,7 @@ void SettingsController::ApplyReachability() {
   }
 
   if (commands_.session_store) {
-    const auto& cfg = Store().Snapshot().config.libp2p;
+    const auto& cfg = Store().Snapshot().config.mesh;
     ui_state_.circuit_relay_enabled = cfg.capabilities.circuit_relay ? "on" : "off";
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";

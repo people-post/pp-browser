@@ -32,7 +32,7 @@ struct SearchConfig {
   std::string api_key;
 };
 
-struct Libp2pCapabilities {
+struct MeshCapabilities {
   /** Host circuit-relay bridge for NAT'd peers (n3). */
   bool circuit_relay = false;
   /** Host blind media forwarder (n4-media / N018). Default on for Node hosts. */
@@ -58,11 +58,11 @@ struct RelayPricingConfig {
   double rate = 0.0;
 };
 
-struct Libp2pPricingConfig {
+struct MeshPricingConfig {
   RelayPricingConfig media_relay;
 };
 
-struct Libp2pConfig {
+struct MeshConfig {
   /** Desktop opt-out of Node; ignored on mobile (always Client). */
   bool node_enabled = true;
   /**
@@ -92,8 +92,8 @@ struct Libp2pConfig {
   bool mesh_enabled = true;
   /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
   int amp_udp_port = 0;
-  Libp2pCapabilities capabilities;
-  Libp2pPricingConfig pricing;
+  MeshCapabilities capabilities;
+  MeshPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;
 };
 
@@ -106,7 +106,7 @@ struct AppConfig {
   ServiceEndpointConfig relay;
   ServiceEndpointConfig directory;
   ServiceEndpointConfig registration;
-  Libp2pConfig libp2p;
+  MeshConfig mesh;
   McpConfig promoted_mcp;
   std::vector<McpConfig> mcp_servers;
   SearchConfig search;

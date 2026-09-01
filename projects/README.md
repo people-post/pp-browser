@@ -40,7 +40,7 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
 | [pricing](pricing/) | **P001 first slice** | Initiation floor + media quote gates (no payment rails) — [DECISIONS](pricing/DECISIONS.md) |
 | [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — N022 invest; **N023 relay scope** spec | Libp2p deepen; scope escalation; HTTP settle preferred — [RELAY_SCOPE](p2p-mesh/RELAY_SCOPE.md) |
-| [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
+| [p2p-av-calls](p2p-av-calls/) | **V026** mesh media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
 | [network-status-chrome](network-status-chrome/) | **s1 landed** — s2 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |
 | [multi-device-account](multi-device-account/) | **m3 `endpoints[]` landed** — **m4c** paste contacts next (M018) | Account ID on wire; shared DEK + account KEM + first-run link-device — [DESIGN](multi-device-account/DESIGN.md) |

@@ -21,7 +21,7 @@
 
 - [x] Foreground 2s / background 45s while alive
 - [x] Bounded IO resume for background sync
-- [x] `P2pMessagingService::SyncInboxFromWake`
+- [x] `MeshMessagingService::SyncInboxFromWake`
 - [x] Android WorkManager worker (JNI)
 
 ## p4 — Android FCM E2E

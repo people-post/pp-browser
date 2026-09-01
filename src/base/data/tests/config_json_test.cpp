@@ -55,46 +55,46 @@ TEST(ConfigJsonTest, ResolvesPromotedMcpFallbacks) {
   EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://www.brief.global/mcp");
 }
 
-TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
+TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   pbr::AppConfig config;
-  config.libp2p.node_enabled = false;
-  config.libp2p.bootstrap_peers = {
+  config.mesh.node_enabled = false;
+  config.mesh.bootstrap_peers = {
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
-  config.libp2p.prefer_contacts_for_routing = false;
-  config.libp2p.mesh_enabled = false;
-  config.libp2p.amp_udp_port = 18518;
-  config.libp2p.capabilities.circuit_relay = true;
-  config.libp2p.capabilities.media_relay = false;
-  config.libp2p.pricing.media_relay.mode = "volunteer";
-  config.libp2p.media_relay_budget.default_per_user_up_bps = 12345;
+  config.mesh.prefer_contacts_for_routing = false;
+  config.mesh.mesh_enabled = false;
+  config.mesh.amp_udp_port = 18518;
+  config.mesh.capabilities.circuit_relay = true;
+  config.mesh.capabilities.media_relay = false;
+  config.mesh.pricing.media_relay.mode = "volunteer";
+  config.mesh.media_relay_budget.default_per_user_up_bps = 12345;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
-  ASSERT_TRUE(out.contains("libp2p"));
-  const pbr::Object* libp2p = out.getObject("libp2p");
-  ASSERT_NE(libp2p, nullptr);
-  EXPECT_EQ(libp2p->getIf<bool>("node_enabled"), false);
-  EXPECT_FALSE(libp2p->contains("listen_multiaddr"));
-  EXPECT_FALSE(libp2p->contains("enable_amp_stack"));
-  EXPECT_FALSE(libp2p->contains("max_connections"));
-  ASSERT_NE(libp2p->getArray("bootstrap_peers"), nullptr);
-  EXPECT_EQ(libp2p->getArray("bootstrap_peers")->elements.size(), 1u);
-  EXPECT_EQ(libp2p->getIf<bool>("prefer_contacts_for_routing"), false);
-  EXPECT_EQ(libp2p->getIf<bool>("mesh_enabled"), false);
-  EXPECT_EQ(libp2p->getNonNegInt("amp_udp_port"), 18518);
-  const pbr::Object* caps = libp2p->getObject("capabilities");
+  ASSERT_TRUE(out.contains("mesh"));
+  const pbr::Object* mesh = out.getObject("mesh");
+  ASSERT_NE(mesh, nullptr);
+  EXPECT_EQ(mesh->getIf<bool>("node_enabled"), false);
+  EXPECT_FALSE(mesh->contains("listen_multiaddr"));
+  EXPECT_FALSE(mesh->contains("enable_amp_stack"));
+  EXPECT_FALSE(mesh->contains("max_connections"));
+  ASSERT_NE(mesh->getArray("bootstrap_peers"), nullptr);
+  EXPECT_EQ(mesh->getArray("bootstrap_peers")->elements.size(), 1u);
+  EXPECT_EQ(mesh->getIf<bool>("prefer_contacts_for_routing"), false);
+  EXPECT_EQ(mesh->getIf<bool>("mesh_enabled"), false);
+  EXPECT_EQ(mesh->getNonNegInt("amp_udp_port"), 18518);
+  const pbr::Object* caps = mesh->getObject("capabilities");
   ASSERT_NE(caps, nullptr);
   EXPECT_EQ(caps->getIf<bool>("circuit_relay"), true);
   EXPECT_EQ(caps->getIf<bool>("media_relay"), false);
 
   pbr::AppConfig parsed;
   pbr::AppConfigFromObject(out, parsed);
-  EXPECT_FALSE(parsed.libp2p.node_enabled);
-  ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);
-  EXPECT_EQ(parsed.libp2p.bootstrap_peers[0], config.libp2p.bootstrap_peers[0]);
-  EXPECT_FALSE(parsed.libp2p.prefer_contacts_for_routing);
-  EXPECT_FALSE(parsed.libp2p.mesh_enabled);
-  EXPECT_EQ(parsed.libp2p.amp_udp_port, 18518);
-  EXPECT_TRUE(parsed.libp2p.capabilities.circuit_relay);
-  EXPECT_FALSE(parsed.libp2p.capabilities.media_relay);
-  EXPECT_EQ(parsed.libp2p.media_relay_budget.default_per_user_up_bps, 12345);
+  EXPECT_FALSE(parsed.mesh.node_enabled);
+  ASSERT_EQ(parsed.mesh.bootstrap_peers.size(), 1u);
+  EXPECT_EQ(parsed.mesh.bootstrap_peers[0], config.mesh.bootstrap_peers[0]);
+  EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
+  EXPECT_FALSE(parsed.mesh.mesh_enabled);
+  EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
+  EXPECT_TRUE(parsed.mesh.capabilities.circuit_relay);
+  EXPECT_FALSE(parsed.mesh.capabilities.media_relay);
+  EXPECT_EQ(parsed.mesh.media_relay_budget.default_per_user_up_bps, 12345);
 }

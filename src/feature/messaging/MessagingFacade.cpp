@@ -59,7 +59,7 @@ Roe<void> MessagingFacade::ImportLinkDevice(const std::string& bundle_json, cons
   return {};
 }
 
-void MessagingFacade::SuspendLibp2pColdPeers() { hub_.SuspendLibp2pColdPeers(); }
+void MessagingFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
 
 // --- Inbox ------------------------------------------------------------------
 
@@ -149,123 +149,123 @@ Roe<PeerSyncState> MessagingFacade::GetPeerSyncState(const std::string& thread_i
 
 // --- P2P --------------------------------------------------------------------
 
-void MessagingFacade::MaybeTailSync(const std::string& thread_id) { hub_.P2p().MaybeTailSync(thread_id); }
+void MessagingFacade::MaybeTailSync(const std::string& thread_id) { hub_.MeshMessaging().MaybeTailSync(thread_id); }
 
 Roe<ThreadMessage> MessagingFacade::SendUserMessage(const std::string& thread_id, const std::string& text,
                                                     SendRelayOptions opts) {
-  return hub_.P2p().SendUserMessage(thread_id, text, opts);
+  return hub_.MeshMessaging().SendUserMessage(thread_id, text, opts);
 }
 
 Roe<ThreadMessage> MessagingFacade::SendReaction(const std::string& thread_id, const std::string& target_message_id,
                                                  const std::string& emoji) {
-  return hub_.P2p().SendReaction(thread_id, target_message_id, emoji);
+  return hub_.MeshMessaging().SendReaction(thread_id, target_message_id, emoji);
 }
 
 Roe<ThreadMessage> MessagingFacade::ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                                   const std::string& emoji) {
-  return hub_.P2p().ClearReaction(thread_id, target_message_id, emoji);
+  return hub_.MeshMessaging().ClearReaction(thread_id, target_message_id, emoji);
 }
 
 void MessagingFacade::SetOnMessagesChanged(std::function<void()> callback) {
-  hub_.P2p().SetOnMessagesChanged(std::move(callback));
+  hub_.MeshMessaging().SetOnMessagesChanged(std::move(callback));
 }
 
 void MessagingFacade::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
-  hub_.P2p().SetOnDeliveryNotice(std::move(callback));
+  hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
 }
 
 void MessagingFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string)> callback) {
-  hub_.P2p().SetOnBackgroundUnread(std::move(callback));
+  hub_.MeshMessaging().SetOnBackgroundUnread(std::move(callback));
 }
 
-void MessagingFacade::SyncInboxFromWake(const bool force) { hub_.P2p().SyncInboxFromWake(force); }
+void MessagingFacade::SyncInboxFromWake(const bool force) { hub_.MeshMessaging().SyncInboxFromWake(force); }
 
-void MessagingFacade::TailSyncActiveE2eThread() { hub_.P2p().TailSyncActiveE2eThread(); }
+void MessagingFacade::TailSyncActiveE2eThread() { hub_.MeshMessaging().TailSyncActiveE2eThread(); }
 
-void MessagingFacade::WarmPeerForThread(const std::string& thread_id) { hub_.P2p().WarmPeerForThread(thread_id); }
+void MessagingFacade::WarmPeerForThread(const std::string& thread_id) { hub_.MeshMessaging().WarmPeerForThread(thread_id); }
 
 ThreadPeerLinkView MessagingFacade::GetThreadPeerLink(const std::string& thread_id) {
-  return hub_.P2p().GetThreadPeerLink(thread_id);
+  return hub_.MeshMessaging().GetThreadPeerLink(thread_id);
 }
 
-void MessagingFacade::RetryPeerDial(const std::string& thread_id) { hub_.P2p().RetryPeerDial(thread_id); }
+void MessagingFacade::RetryPeerDial(const std::string& thread_id) { hub_.MeshMessaging().RetryPeerDial(thread_id); }
 
 void MessagingFacade::ScrollBackfill(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done) {
-  hub_.P2p().ScrollBackfill(thread_id, std::move(on_done));
+  hub_.MeshMessaging().ScrollBackfill(thread_id, std::move(on_done));
 }
 
 void MessagingFacade::SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done) {
-  hub_.P2p().SyncWithPeer(thread_id, std::move(on_done));
+  hub_.MeshMessaging().SyncWithPeer(thread_id, std::move(on_done));
 }
 
 void MessagingFacade::RetryGapSync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done) {
-  hub_.P2p().RetryGapSync(thread_id, std::move(on_done));
+  hub_.MeshMessaging().RetryGapSync(thread_id, std::move(on_done));
 }
 
 Roe<uint32_t> MessagingFacade::StartNewSecureChat(const std::string& thread_id) {
-  return hub_.P2p().StartNewSecureChat(thread_id);
+  return hub_.MeshMessaging().StartNewSecureChat(thread_id);
 }
 
 Roe<void> MessagingFacade::PauseIntegrityOnly(const std::string& thread_id) {
-  return hub_.P2p().PauseIntegrityOnly(thread_id);
+  return hub_.MeshMessaging().PauseIntegrityOnly(thread_id);
 }
 
 Roe<PskExportView> MessagingFacade::EnsurePskGenerated(const std::string& thread_id) {
-  return hub_.P2p().EnsurePskGenerated(thread_id);
+  return hub_.MeshMessaging().EnsurePskGenerated(thread_id);
 }
 
 Roe<PskExportView> MessagingFacade::GetPskExportView(const std::string& thread_id) {
-  return hub_.P2p().GetPskExportView(thread_id);
+  return hub_.MeshMessaging().GetPskExportView(thread_id);
 }
 
 Roe<PskSessionStatus> MessagingFacade::GetPskStatus(const std::string& thread_id) {
-  return hub_.P2p().GetPskStatus(thread_id);
+  return hub_.MeshMessaging().GetPskStatus(thread_id);
 }
 
 Roe<void> MessagingFacade::ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json) {
-  return hub_.P2p().ImportPskBundleJson(thread_id, bundle_json);
+  return hub_.MeshMessaging().ImportPskBundleJson(thread_id, bundle_json);
 }
 
 Roe<void> MessagingFacade::ImportPskRawBase64(const std::string& thread_id, const std::string& raw_b64) {
-  return hub_.P2p().ImportPskRawBase64(thread_id, raw_b64);
+  return hub_.MeshMessaging().ImportPskRawBase64(thread_id, raw_b64);
 }
 
 Roe<void> MessagingFacade::MarkPskVerified(const std::string& thread_id) {
-  return hub_.P2p().MarkPskVerified(thread_id);
+  return hub_.MeshMessaging().MarkPskVerified(thread_id);
 }
 
 Roe<std::string> MessagingFacade::RotatePskAndExportBundle(const std::string& thread_id) {
-  return hub_.P2p().RotatePskAndExportBundle(thread_id);
+  return hub_.MeshMessaging().RotatePskAndExportBundle(thread_id);
 }
 
 Roe<void> MessagingFacade::LockPublicThreadToThisDevice(const std::string& thread_id) {
-  return hub_.P2p().LockPublicThreadToThisDevice(thread_id);
+  return hub_.MeshMessaging().LockPublicThreadToThisDevice(thread_id);
 }
 
 Roe<PublicKeyScope> MessagingFacade::GetPublicKeyScope(const std::string& thread_id) {
-  return hub_.P2p().GetPublicKeyScope(thread_id);
+  return hub_.MeshMessaging().GetPublicKeyScope(thread_id);
 }
 
 Roe<bool> MessagingFacade::CanLockPublicToThisDevice(const std::string& thread_id) {
-  return hub_.P2p().CanLockPublicToThisDevice(thread_id);
+  return hub_.MeshMessaging().CanLockPublicToThisDevice(thread_id);
 }
 
 void MessagingFacade::SetSupportAccountId(std::string account_id) {
-  hub_.P2p().SetSupportAccountId(std::move(account_id));
+  hub_.MeshMessaging().SetSupportAccountId(std::move(account_id));
 }
 
 void MessagingFacade::RegisterContactDirectEndpoints(const Contact& contact) {
-  hub_.P2p().RegisterContactDirectEndpoints(contact);
+  hub_.MeshMessaging().RegisterContactDirectEndpoints(contact);
 }
 
 void MessagingFacade::RegisterPeerSigningKey(const std::string& kind, const std::string& value,
                                              const std::string& key_b64, const std::string& source) {
-  hub_.P2p().RegisterPeerSigningKey(kind, value, key_b64, source);
+  hub_.MeshMessaging().RegisterPeerSigningKey(kind, value, key_b64, source);
 }
 
 void MessagingFacade::RegisterPeerKemKey(const std::string& kind, const std::string& value,
                                          const std::string& key_b64, const std::string& source) {
-  hub_.P2p().RegisterPeerKemKey(kind, value, key_b64, source);
+  hub_.MeshMessaging().RegisterPeerKemKey(kind, value, key_b64, source);
 }
 
 Roe<Contact> MessagingFacade::AddContactFromDirectoryHit(const DirectoryHit& hit) {
@@ -273,7 +273,7 @@ Roe<Contact> MessagingFacade::AddContactFromDirectoryHit(const DirectoryHit& hit
 }
 
 Roe<RelayDeleteResult> MessagingFacade::ClearUndeliveredOlderThan(const int older_than_days) {
-  return hub_.P2p().ClearUndeliveredOlderThan(older_than_days);
+  return hub_.MeshMessaging().ClearUndeliveredOlderThan(older_than_days);
 }
 
 // --- Groups -----------------------------------------------------------------
@@ -488,7 +488,7 @@ void MessagingFacade::RunReachabilityProbe(const bool try_upnp) { hub_.RunReacha
 
 void MessagingFacade::TryUpnpPortMapping() { hub_.TryUpnpPortMapping(); }
 
-std::string MessagingFacade::LastLibp2pError() { return hub_.LastLibp2pError(); }
+std::string MessagingFacade::LastMeshError() { return hub_.LastMeshError(); }
 
 bool MessagingFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnabled(); }
 

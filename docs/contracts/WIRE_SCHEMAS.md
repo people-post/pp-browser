@@ -398,7 +398,7 @@ Chat-shaped response (libp2p / documentation):
 | `has_more` | boolean | yes | |
 | `cursor` | object | yes | Pagination hints for caller |
 
-**Implementation:** one C++ struct pair (`ChatHistoryRequest`, `ChatHistoryResponse`) shared by `IRelayClient` and libp2p host glue — do not fork field names per transport (D072).
+**Implementation:** one C++ struct pair (`ChatHistoryRequest`, `ChatHistoryResponse`) shared by `IRelayClient` and mesh host glue — do not fork field names per transport (D072).
 
 ---
 

@@ -11,7 +11,7 @@ pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src
 | Path | Role |
 |------|------|
 | `src/lib/libp2p/` | Shrunk cpp-libp2p (`include/` + `src/` PeerId/crypto/multi/wire/log) |
-| `src/base/p2p/` | Amp mesh glue (`MeshHost`, PeerIdUtil, L4 coordinators) — **not** Libp2pHost |
+| `src/base/mesh/` | Amp mesh glue (`MeshHost`, PeerIdUtil, L4 coordinators) — **not** Libp2pHost |
 
 Dependency rule:
 

@@ -312,7 +312,7 @@ SettingsToolPorts SettingsToolPortsFromCommands(const SettingsCommands& commands
       .apply_appearance = commands.apply_appearance,
       .session_store = commands.session_store,
       .messaging_ready = commands.messaging_ready,
-      .last_libp2p_error = commands.last_libp2p_error,
+      .last_mesh_error = commands.last_mesh_error,
       .load_reachability = commands.load_reachability,
       .load_pin_protection = commands.load_pin_protection,
       .run_reachability_probe = commands.run_reachability_probe,
@@ -418,7 +418,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          out.set("upnp_mapped", view.upnp_mapped);
          out.set("help_kind", view.help_kind);
          out.set("messaging_ready", ports.messaging_ready ? ports.messaging_ready() : false);
-         out.set("last_libp2p_error", ports.last_libp2p_error ? ports.last_libp2p_error() : "");
+         out.set("last_mesh_error", ports.last_mesh_error ? ports.last_mesh_error() : "");
          return DumpJson(out);
        }));
 
@@ -459,14 +459,14 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (!store) {
            return store.error();
          }
-         const Libp2pConfig& libp2p = (*store)->Snapshot().config.libp2p;
+         const MeshConfig& mesh_cfg = (*store)->Snapshot().config.mesh;
          Object out;
-         out.set("node_enabled", libp2p.node_enabled);
-         out.set("amp_udp_port", static_cast<int64_t>(libp2p.amp_udp_port));
-         out.set("mesh_enabled", libp2p.mesh_enabled);
-         out.set("prefer_contacts_for_routing", libp2p.prefer_contacts_for_routing);
-         out.set("circuit_relay", libp2p.capabilities.circuit_relay);
-         out.set("media_relay", libp2p.capabilities.media_relay);
+         out.set("node_enabled", mesh_cfg.node_enabled);
+         out.set("amp_udp_port", static_cast<int64_t>(mesh_cfg.amp_udp_port));
+         out.set("mesh_enabled", mesh_cfg.mesh_enabled);
+         out.set("prefer_contacts_for_routing", mesh_cfg.prefer_contacts_for_routing);
+         out.set("circuit_relay", mesh_cfg.capabilities.circuit_relay);
+         out.set("media_relay", mesh_cfg.capabilities.media_relay);
          return DumpJson(out);
        }));
 
@@ -698,12 +698,12 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
            return store.error();
          }
          AppConfig config = (*store)->Snapshot().config;
-         config.libp2p.node_enabled = *enabled;
+         config.mesh.node_enabled = *enabled;
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
          Object ok;
-         ok.set("node_enabled", config.libp2p.node_enabled);
+         ok.set("node_enabled", config.mesh.node_enabled);
          return DumpJson(OkJson(std::move(ok)));
        }));
 
@@ -723,21 +723,21 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          }
          AppConfig config = (*store)->Snapshot().config;
          if (circuit) {
-           config.libp2p.capabilities.circuit_relay = *circuit;
+           config.mesh.capabilities.circuit_relay = *circuit;
          }
          if (media) {
-           config.libp2p.capabilities.media_relay = *media;
+           config.mesh.capabilities.media_relay = *media;
          }
          if (prefer) {
-           config.libp2p.prefer_contacts_for_routing = *prefer;
+           config.mesh.prefer_contacts_for_routing = *prefer;
          }
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
          Object ok;
-         ok.set("circuit_relay", config.libp2p.capabilities.circuit_relay);
-         ok.set("media_relay", config.libp2p.capabilities.media_relay);
-         ok.set("prefer_contacts_for_routing", config.libp2p.prefer_contacts_for_routing);
+         ok.set("circuit_relay", config.mesh.capabilities.circuit_relay);
+         ok.set("media_relay", config.mesh.capabilities.media_relay);
+         ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
          return DumpJson(OkJson(std::move(ok)));
        }));
 

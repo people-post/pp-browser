@@ -80,8 +80,8 @@
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
           <p class="text muted" data-rml="amp_listen_multiaddr"></p>
         </label>
-        <p class="text muted settings-help" data-if="libp2p_status_message != ''"
-           data-rml="libp2p_status_message"></p>
+        <p class="text muted settings-help" data-if="mesh_status_message != ''"
+           data-rml="mesh_status_message"></p>
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.network.relay}}</span>
           <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>

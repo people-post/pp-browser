@@ -79,8 +79,8 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 
 | Feature | Status | Location |
 |---------|--------|----------|
-| Relay send + poll (v1 envelope) | **Implemented** | `P2pMessagingService.*` |
-| **E014 outbound signing** | **Implemented** | `EnvelopeSigner`, `P2pMessagingService` |
+| Relay send + poll (v1 envelope) | **Implemented** | `MeshMessagingService.*` |
+| **E014 outbound signing** | **Implemented** | `EnvelopeSigner`, `MeshMessagingService` |
 | **Inbound receive pipeline** | **Implemented** | `RelayReceivePipeline`, `E2eIngestClassifier`, `ReplayWindow` |
 | **Inbound Ed25519 verify** | **Implemented** (fail closed if key missing) | `PeerSigningKeyStore`, `RelayDirectorySigningKeyResolver` |
 | **AEAD payload in `payload_b64` (`e2e`)** | **Implemented** (c2) | `E2eRelayPayloadCodec.*` |
@@ -88,7 +88,7 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Local write + outbox | **Implemented** | `AppendMessage`, `ReconcileOutbox` |
 | Inbound find-only routing (D062) | **Implemented** | `RelayReceivePipeline` |
 | **History floor on clear** (D037) | **Implemented** | `SqliteThreadStore::ClearMessages` |
-| **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `P2pMessagingService` |
+| **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `MeshMessagingService` |
 | **`FetchChatTargetMessages`** / tail sync | **Implemented** | `ChatSyncService` |
 | **User-initiated sync UX** (D059) | **Implemented** | `chat.rml` — Sync with peer / Retry sync banner |
 | **Scroll backfill UX** (D052/post-v6c) | **Implemented** | Load older messages banner, `ScrollBackfill` |
