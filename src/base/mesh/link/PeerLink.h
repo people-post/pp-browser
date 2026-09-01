@@ -4,6 +4,7 @@
 #include "base/mesh/channel/Capability.h"
 #include "base/mesh/channel/ChannelMux.h"
 #include "base/mesh/channel/ChannelSession.h"
+#include "base/error/CodedFailure.h"
 #include "base/mesh/link/MshAdpHandshake.h"
 #include "base/mesh/link/Types.h"
 #include "base/mesh/session/Session.h"
@@ -27,7 +28,25 @@ class PeerLinkManager;
  *  Carrier-backed links ([A024]) use a bridged ChannelSession instead of ADP Connection. */
 class PeerLink {
 public:
-  using CompleteCb = std::function<void(Roe<void>)>;
+  enum class Err : int32_t {
+    Ok = 0,
+    NoConnection,
+    TransportFailed,
+    TransportUnavailable,
+    HandshakeFailed,
+    DialTimeout,
+    CarrierClosed,
+    CarrierEnqueueFailed,
+    DualDialLost,
+    NotConnected,
+    RekeyInFlight,
+    Ch0NotOpen,
+    Generic,
+  };
+
+  using Failure = CodedFailure<Err>;
+  using LinkRoe = CodedRoe<void, Err>;
+  using CompleteCb = std::function<void(LinkRoe)>;
 
   PeerLink(std::string peer_key, std::string remote_peer_id, const bool outbound,
            std::shared_ptr<adp::Connection> connection, MshIdentity local_identity, PeerLinkManager& owner);
@@ -84,14 +103,18 @@ private:
   void MarkCapabilityOfferSent() { capability_offer_sent_ = true; }
 
   Roe<void> SendAdp(std::vector<uint8_t> payload, adp::QosClass qos);
-  Roe<void> SendCarrierWire(std::vector<uint8_t> payload);
+  LinkRoe SendAdpLink(std::vector<uint8_t> payload, adp::QosClass qos);
+  LinkRoe SendCarrierWire(std::vector<uint8_t> payload);
   void OnHandshakeComplete(Roe<MshAdpEstablished> established);
   void FinishEstablishment(MshAdpEstablished established);
-  void FailAssociation(const Error& error);
+  void FailAssociation(const Failure& failure);
+  void FailAssociationMessage(const Error& error, Err code = Err::Generic);
   void AttachMuxTransport();
   void AttachCarrierFrameHandler();
   void HandleCarrierFrame(std::span<const uint8_t> payload);
   void StartHandshakeCommon(MshAdpHandshake::Role role, CompleteCb on_established);
+
+  static Failure WrapConnectionFailure(const adp::Connection::Failure& child);
 
   std::string peer_key_;
   std::string remote_peer_id_;

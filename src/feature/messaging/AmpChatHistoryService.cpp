@@ -180,16 +180,16 @@ Roe<ChatHistoryResponse> AmpChatHistoryService::FetchChatHistory(const ChatHisto
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session, deadline,
-                                      read_timeout](Roe<void> assoc) mutable {
+                                      read_timeout](amp::PeerLinkManager::LinkRoe assoc) mutable {
     if (!assoc) {
-      finish(assoc.error());
+      finish(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatHistoryProtocolId, amp::ControlJsonChannelPolicy(read_timeout),
                        [this, peer_key, request_json, finish, settled, session, deadline,
-                        read_timeout](Roe<uint32_t> channel) mutable {
+                        read_timeout](amp::PeerLinkManager::ChannelRoe channel) mutable {
                          if (!channel) {
-                           finish(channel.error());
+                           finish(Error(channel.error().message));
                            return;
                          }
                          impl_->IoPumpUntil(

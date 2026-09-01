@@ -65,7 +65,13 @@ DialBackProbeResult DialAmpTargets(amp::PeerLinkManager& links, AmpDialBackServi
     }
 
     SettledWait<void> wait;
-    links.EnsureAssociation(key, [wait](Roe<void> result) { wait.Finish(std::move(result)); });
+    links.EnsureAssociation(key, [wait](amp::PeerLinkManager::LinkRoe result) {
+      if (result) {
+        wait.Finish(Roe<void>());
+      } else {
+        wait.Finish(Roe<void>(Error(result.error().message)));
+      }
+    });
     const auto deadline = Clock::now() + std::chrono::milliseconds(timeout);
     while (Clock::now() < deadline && !wait.IsSettled()) {
       if (io_pump) {
@@ -229,16 +235,16 @@ Roe<DialBackProbeResult> AmpDialBackService::Probe(const std::string& seed_peer_
 
   const auto read_timeout = RemainingTimeout(deadline);
   links_.EnsureAssociation(seed_peer_key, [this, seed_peer_key, request_json, finish, session, deadline,
-                                           read_timeout](Roe<void> assoc) mutable {
+                                           read_timeout](amp::PeerLinkManager::LinkRoe assoc) mutable {
     if (!assoc) {
-      finish(assoc.error());
+      finish(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(seed_peer_key, kDialBackProtocolId, amp::ControlJsonChannelPolicy(read_timeout),
                        [this, seed_peer_key, request_json, finish, session, deadline,
-                        read_timeout](Roe<uint32_t> channel) mutable {
+                        read_timeout](amp::PeerLinkManager::ChannelRoe channel) mutable {
                          if (!channel) {
-                           finish(channel.error());
+                           finish(Error(channel.error().message));
                            return;
                          }
                          impl_->IoPumpUntil(

@@ -3,6 +3,7 @@
 #include "base/adp/Clock.h"
 #include "base/adp/HmacBinder.h"
 #include "base/adp/Types.h"
+#include "base/error/CodedFailure.h"
 
 #include "base/crypto/ReplayWindow.h"
 #include "common/Error.h"
@@ -34,6 +35,19 @@ struct OpenParams {
 
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
+  enum class Err : int32_t {
+    Ok = 0,
+    Closed,
+    PayloadTooLarge,
+    SeqWrap,
+    WindowFull,
+    WireError,
+  };
+
+  using Failure = CodedFailure<Err>;
+  template <typename T>
+  using Roe = CodedRoe<T, Err>;
+
   static Roe<std::shared_ptr<Connection>> Open(Endpoint& endpoint, OpenParams params);
 
   void Close();
@@ -67,6 +81,8 @@ private:
 
   Roe<void> SendPacket(PacketType type, uint32_t seq, std::span<const uint8_t> payload,
                        int64_t now_ms);
+  Roe<void> SendPacketAsFailure(PacketType type, uint32_t seq, std::span<const uint8_t> payload,
+                                int64_t now_ms);
   uint32_t TruncTs(int64_t now_ms) const;
   bool AcceptSkew(uint32_t ts, int64_t now_ms) const;
   void MaybeLearnPath(const IpEndpoint& from);

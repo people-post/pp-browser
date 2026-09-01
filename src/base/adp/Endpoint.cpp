@@ -13,7 +13,7 @@ Endpoint::Endpoint(std::shared_ptr<DatagramIo> io, std::shared_ptr<Clock> clock)
 Roe<std::shared_ptr<Connection>> Endpoint::Open(OpenParams params) {
   auto opened = Connection::Open(*this, std::move(params));
   if (!opened) {
-    return opened.error();
+    return Error(opened.error().message);
   }
   auto conn = *opened;
   if (conns_.count(conn->Id()) != 0) {

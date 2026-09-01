@@ -719,7 +719,7 @@ struct AmpMediaRelayCoordinator::Impl {
 
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, amp::MediaRelayClientChannelPolicy(),
-        [this, id, hop, deadline, json](Roe<uint32_t> channel) {
+        [this, id, hop, deadline, json](amp::PeerLinkManager::ChannelRoe channel) {
           amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
@@ -779,7 +779,7 @@ struct AmpMediaRelayCoordinator::Impl {
 
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, amp::MediaRelayClientChannelPolicy(),
-        [this, id, hop, deadline, json](Roe<uint32_t> channel) {
+        [this, id, hop, deadline, json](amp::PeerLinkManager::ChannelRoe channel) {
           amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {

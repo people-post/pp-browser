@@ -44,7 +44,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     }
     bool done = false;
     bool ok = false;
-    mgr_a().EnsureAssociation(alias_a, [&](Roe<void> result) {
+    mgr_a().EnsureAssociation(alias_a, [&](amp::PeerLinkManager::LinkRoe result) {
       ok = result.isOk();
       done = true;
     });
@@ -75,11 +75,11 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     bool done_b = false;
     bool ok_a = false;
     bool ok_b = false;
-    mgr_a().EnsureAssociation(alias_a, [&](Roe<void> result) {
+    mgr_a().EnsureAssociation(alias_a, [&](amp::PeerLinkManager::LinkRoe result) {
       ok_a = result.isOk();
       done_a = true;
     });
-    mgr_b().EnsureAssociation(alias_b, [&](Roe<void> result) {
+    mgr_b().EnsureAssociation(alias_b, [&](amp::PeerLinkManager::LinkRoe result) {
       ok_b = result.isOk();
       done_b = true;
     });
@@ -94,7 +94,7 @@ struct AmpIntegrationHarness : AmpMeshHarness {
                                     amp::ChannelPolicy policy) {
     bool done = false;
     std::optional<uint32_t> channel_id;
-    Mgr(side).OpenChannel(alias, protocol_id, policy, [&](Roe<uint32_t> ch) {
+    Mgr(side).OpenChannel(alias, protocol_id, policy, [&](amp::PeerLinkManager::ChannelRoe ch) {
       if (ch.isOk()) {
         channel_id = ch.value();
       }
