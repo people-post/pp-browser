@@ -51,10 +51,11 @@ Acyclic order: `pp_common` + `pp_crypto` → L1 → L2 → L3 → link → `peer
 | A L2 | `pp_browser_amp_session_test` | `src/lib/amp/L2/tests/` |
 | A L3 | `pp_browser_amp_channel_test` | `src/lib/amp/L3/tests/` |
 | A link | `pp_browser_amp_link_test` | `src/lib/amp/link/tests/` |
-| B integration | `pp_browser_amp_integration_test` | `src/base/mesh/tests/integration/` |
-| Support | (compiled into targets above) | `src/base/mesh/tests/support/` |
+| B integration | `pp_browser_amp_integration_test` | `src/lib/amp/tests/integration/` |
+| AMP test support | (compiled into Tier A link + Tier B) | `src/lib/amp/tests/support/` (PeerId stub; no `pp_base_peer_id`) |
+| L4 test support | p2p/messaging compose harnesses | `src/base/p2p/tests/support/` (`mesh_harness_support` uses real `PeerIdUtil`; `mesh_triple_harness`) |
 
-Harness headers are **p2p-free**; only `mesh_harness_support.cpp` links `pp_base_peer_id`.
+Harness headers under `lib/amp/tests/support/` are **p2p-free**. AMP-owned tests link the stub `mesh_harness_support.cpp` in that directory. L4 tests link `base/p2p/tests/support/mesh_harness_support.cpp` instead (same header, libp2p PeerId derivation).
 
 Matrices: [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](L2_TEST_MATRIX.md), [L3_TEST_MATRIX.md](L3_TEST_MATRIX.md), [LINK_TEST_MATRIX.md](LINK_TEST_MATRIX.md), [TEST_MATRIX.md](TEST_MATRIX.md) (Tier B).
 

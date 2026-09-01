@@ -46,7 +46,7 @@
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
 - `pp_browser_amp_link_test` (9 link unit tests, green)
 - `pp_browser_amp_integration_test` (15 Tier B tests, green)
-- Shared harness: `src/base/mesh/tests/support/` (see [EXTRACTION_READINESS.md](EXTRACTION_READINESS.md))
+- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/base/p2p/tests/support/`
 
 ## Landed (L4 chat — D5)
 
@@ -65,7 +65,7 @@
 - Connect timeout does not `Detach()` when inbound already `IsActive()`
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
 - `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
-- Shared AMP test harness: `src/base/mesh/tests/support/mesh_test_harness.h` + `MeshRuntime`
+- Shared AMP test harness: `src/lib/amp/tests/support/mesh_test_harness.h` + `MeshRuntime`
 
 ### LAN dogfood checklist (call-media / A026)
 

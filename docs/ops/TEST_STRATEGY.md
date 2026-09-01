@@ -114,7 +114,7 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 | `pp_browser_amp_link_test` | A | Link / `MeshRuntime` unit |
 | `pp_browser_amp_integration_test` | B | Cross-layer `A-INT-*` / `A-ADV-*` |
 
-**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey) and adversarial hardening (max_links, dial_timeout, garbage MSH, sealed flood, FRAG bomb). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_integration_test` (`src/base/mesh/tests/integration/amp_integration_test.cpp`). Per-layer Tier A matrices: [projects/adp/L1_TEST_MATRIX.md](../../projects/adp/L1_TEST_MATRIX.md) and siblings under `projects/adp/`.
+**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** Tier B cross-layer tests on `MemoryDatagramIo` + `PeerLinkManager` — failure propagation (RESET, loss, dual-dial, MSH fail, assoc close, path migrate, FRAG, wire rekey) and adversarial hardening (max_links, dial_timeout, garbage MSH, sealed flood, FRAG bomb). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Suite: `pp_browser_amp_integration_test` (`src/lib/amp/tests/integration/amp_integration_test.cpp`). Per-layer Tier A matrices: [projects/adp/L1_TEST_MATRIX.md](../../projects/adp/L1_TEST_MATRIX.md) and siblings under `projects/adp/`.
 
 ---
 
