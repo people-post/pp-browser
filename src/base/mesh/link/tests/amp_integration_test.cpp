@@ -2,6 +2,7 @@
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/channel/ChannelWire.h"
 #include "base/mesh/channel/Types.h"
+#include "base/mesh/link/Types.h"
 #include "base/mesh/link/tests/amp_integration_harness.h"
 #include "base/mesh/session/SessionControl.h"
 
@@ -14,6 +15,15 @@ namespace {
 amp::ChannelPolicy BulkPolicy() {
   amp::ChannelPolicy policy;
   policy.cls = amp::ChannelClass::Bulk;
+  policy.drop = amp::ChannelDropPolicy::Never;
+  policy.max_outbound_frames = amp::AmpChannelLimits::kMaxControlOutboundFrames;
+  policy.max_message_bytes = amp::AmpChannelLimits::kMaxChatBlobFrameBytes;
+  return policy;
+}
+
+amp::ChannelPolicy RealtimeBulkPolicy() {
+  amp::ChannelPolicy policy;
+  policy.cls = amp::ChannelClass::Realtime;
   policy.drop = amp::ChannelDropPolicy::Never;
   policy.max_outbound_frames = amp::AmpChannelLimits::kMaxControlOutboundFrames;
   policy.max_message_bytes = amp::AmpChannelLimits::kMaxChatBlobFrameBytes;
@@ -298,6 +308,155 @@ TEST_F(AmpIntegrationTest, PostGraceStaleEpochDropped) {
   });
   ASSERT_TRUE(h.SendMuxData(HarnessSide::A, "b", *ch, msg));
   ASSERT_TRUE(h.PumpUntilReceived(received, [&] { return received == msg; }));
+}
+
+TEST_F(AmpIntegrationTest, AdversarialDialTimeoutAdv04) {
+  amp::PeerLinkConfig cfg = AmpMeshTestLinkConfig();
+  cfg.dial_timeout = std::chrono::milliseconds(200);
+  auto created = MakeAmpIntegrationHarness(cfg);
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+  h.ep_b->SetAcceptEnabled(false);
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+
+  bool done = false;
+  bool ok = true;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+    ok = result.isOk();
+    done = true;
+  });
+  h.AdvanceMs(250);
+  EXPECT_TRUE(done);
+  EXPECT_FALSE(ok);
+  EXPECT_FALSE(h.mgr_a().IsConnected("b"));
+}
+
+TEST_F(AmpIntegrationTest, AdversarialMaxLinksAdv02) {
+  amp::PeerLinkConfig cfg = AmpMeshTestLinkConfig();
+  cfg.max_links = 1;
+  auto created = MakeAmpIntegrationHarness(cfg);
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+
+  h.ep_b->SetAcceptEnabled(false);
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b2", h.ma_b)));
+  h.mgr_a().EnsureAssociation("b", {});
+  EXPECT_EQ(h.CountLinks(HarnessSide::A), 1);
+
+  bool dial_done = false;
+  bool dial_ok = true;
+  h.mgr_a().EnsureAssociation("b2", [&](Roe<void> result) {
+    dial_ok = result.isOk();
+    dial_done = true;
+  });
+  EXPECT_TRUE(dial_done);
+  EXPECT_FALSE(dial_ok);
+  EXPECT_EQ(h.CountLinks(HarnessSide::A), 1);
+
+  h.ep_b->SetAcceptEnabled(true);
+  ASSERT_TRUE(h.Associate());
+  EXPECT_EQ(h.CountLinks(HarnessSide::B), 1);
+
+  adp::OpenParams params;
+  params.key = amp::PreSessionPeerKey();
+  params.mint_id = true;
+  params.peer = h.addr_b;
+  h.AdvanceMs(1);
+  auto extra = h.ep_a->Open(params);
+  ASSERT_TRUE(static_cast<bool>(extra));
+  (void)(*extra)->Send(adp::QosClass::Reliable, std::vector<uint8_t>{0xDE, 0xAD});
+  h.PumpBoth();
+  EXPECT_EQ(h.CountLinks(HarnessSide::B), 1);
+}
+
+TEST_F(AmpIntegrationTest, AdversarialGarbageMshMidHandshakeAdv03) {
+  auto created = MakeAmpIntegrationHarness();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+  h.ep_b->SetAcceptEnabled(true);
+  ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
+
+  bool done = false;
+  bool ok = false;
+  h.mgr_a().EnsureAssociation("b", [&](Roe<void> result) {
+    ok = result.isOk();
+    done = true;
+  });
+  for (size_t i = 0; i < 500; ++i) {
+    if (h.mgr_a().FindLink("b") != nullptr) {
+      h.InjectMshGarbage(HarnessSide::A, "b");
+    }
+    h.InjectRawDatagram(HarnessSide::A, h.addr_b, std::vector<uint8_t>(32, 0xCC));
+    h.PumpBoth();
+    if (done && h.mgr_a().IsConnected("b")) {
+      break;
+    }
+  }
+  ASSERT_TRUE(done);
+  EXPECT_TRUE(ok);
+  EXPECT_TRUE(h.mgr_a().IsConnected("b"));
+}
+
+TEST_F(AmpIntegrationTest, AdversarialSealedGarbageFloodAdv06) {
+  auto created = MakeAmpIntegrationHarness();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+  ASSERT_TRUE(h.Associate());
+
+  const auto ch = h.OpenChannel(HarnessSide::A, "b", "/pp-browser/chat/1.0.0", amp::ControlJsonChannelPolicy());
+  ASSERT_TRUE(ch.has_value());
+
+  for (uint32_t i = 0; i < 500; ++i) {
+    h.InjectSealedGarbage(HarnessSide::A, "b", *ch, i + 1000);
+  }
+  h.PumpBudget(30);
+  EXPECT_TRUE(h.mgr_a().IsConnected("b"));
+  EXPECT_TRUE(h.mgr_b().FindLinkByPeerId(h.peer_id_a) != nullptr);
+
+  std::vector<uint8_t> received;
+  auto* inbound = h.mgr_b().FindLinkByPeerId(h.peer_id_a);
+  ASSERT_NE(inbound, nullptr);
+  inbound->Mux()->SetDataHandler(*ch, [&](uint32_t, std::vector<uint8_t> payload) {
+    received = std::move(payload);
+  });
+
+  const std::vector<uint8_t> msg = {'f', 'l', 'o', 'o', 'd'};
+  ASSERT_TRUE(h.SendMuxData(HarnessSide::A, "b", *ch, msg));
+  ASSERT_TRUE(h.PumpUntilReceived(received, [&] { return received == msg; }));
+}
+
+TEST_F(AmpIntegrationTest, AdversarialFragPartialBombAdv08) {
+  auto created = MakeAmpIntegrationHarness();
+  ASSERT_TRUE(static_cast<bool>(created));
+  auto& h = **created;
+  ASSERT_TRUE(h.Associate());
+
+  const auto ch = h.OpenChannel(HarnessSide::A, "b", "/pp-browser/chat-blob/1.0.0", RealtimeBulkPolicy());
+  ASSERT_TRUE(ch.has_value());
+
+  for (uint64_t msg_id = 1; msg_id <= 25; ++msg_id) {
+    ASSERT_TRUE(h.InjectPartialFrag(HarnessSide::A, "b", *ch, 1, msg_id, 0, 50, 50'000,
+                                    std::vector<uint8_t>(500, 0xBB)));
+  }
+  h.PumpBudget(10);
+  EXPECT_TRUE(h.mgr_a().IsConnected("b"));
+
+  std::vector<uint8_t> received;
+  auto* inbound = h.mgr_b().FindLinkByPeerId(h.peer_id_a);
+  ASSERT_NE(inbound, nullptr);
+  inbound->Mux()->SetDataHandler(*ch, [&](uint32_t, std::vector<uint8_t> payload) {
+    received = std::move(payload);
+  });
+
+  const std::vector<uint8_t> msg = {'b', 'o', 'm', 'b'};
+  ASSERT_TRUE(h.SendMuxData(HarnessSide::A, "b", *ch, msg));
+  ASSERT_TRUE(h.PumpUntilReceived(received, [&] { return received == msg; }));
+
+  h.mgr_a().MarkWarm("b");
+  h.AdvanceMs(amp::kDefaultFragAssemblyTimeoutMs + 100);
+  h.PumpBudget(5);
+  EXPECT_TRUE(h.mgr_a().IsConnected("b"));
 }
 
 } // namespace

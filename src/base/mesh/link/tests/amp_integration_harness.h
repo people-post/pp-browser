@@ -2,6 +2,7 @@
 
 #include "base/adp/Connection.h"
 #include "base/adp/Endpoint.h"
+#include "base/adp/Types.h"
 #include "base/mesh/channel/ChannelPolicy.h"
 #include "base/mesh/channel/ChannelWire.h"
 #include "base/mesh/channel/Types.h"
@@ -155,6 +156,77 @@ struct AmpIntegrationHarness : AmpMeshHarness {
     PumpBoth();
   }
 
+  size_t CountLinks(const HarnessSide side) { return Mgr(side).CountLinks(); }
+
+  void PumpBudget(const size_t rounds) {
+    for (size_t i = 0; i < rounds; ++i) {
+      PumpBoth();
+    }
+  }
+
+  /** Inject arbitrary ADP payload on an existing link connection (post- or mid-handshake). */
+  bool InjectAdpPayload(const HarnessSide side, const std::string& alias, std::vector<uint8_t> payload) {
+    auto* link = Mgr(side).FindLink(alias);
+    if (!link) {
+      return false;
+    }
+    auto* conn = link->ConnectionOrNull();
+    if (!conn) {
+      return false;
+    }
+    return static_cast<bool>(conn->Send(adp::QosClass::Reliable, payload));
+  }
+
+  /** Inject syntactically valid but cryptographically invalid sealed carrier frames. */
+  bool InjectSealedGarbage(const HarnessSide side, const std::string& alias, const uint32_t channel_id,
+                           const uint32_t channel_seq, const size_t garbage_len = 64) {
+    std::vector<uint8_t> garbage(garbage_len, 0xDE);
+    auto wire = amp::AmpAdpCarrier::EncodeSealed(channel_id, channel_seq, garbage);
+    if (!wire) {
+      return false;
+    }
+    return InjectAdpPayload(side, alias, std::move(*wire));
+  }
+
+  /** Inject invalid MSH-shaped carrier garbage during handshake. */
+  bool InjectMshGarbage(const HarnessSide side, const std::string& alias) {
+    std::vector<uint8_t> garbage = {static_cast<uint8_t>(amp::AmpAdpPayloadKind::Msh), 0xFF, 0x00, 0x01, 0x02};
+    return InjectAdpPayload(side, alias, std::move(garbage));
+  }
+
+  /** Deliver a raw UDP datagram (bypasses ADP connection state). */
+  bool InjectRawDatagram(const HarnessSide from, const adp::IpEndpoint& to, std::vector<uint8_t> datagram) {
+    return static_cast<bool>(Io(from)->SendTo(to, datagram));
+  }
+
+  /** Send one sealed FRAG frame (for partial-assembly adversarial tests). */
+  bool InjectPartialFrag(const HarnessSide side, const std::string& alias, const uint32_t channel_id,
+                         const uint32_t channel_seq, const uint64_t msg_id, const uint16_t frag_index,
+                         const uint16_t frag_count, const uint32_t total_len, std::vector<uint8_t> chunk) {
+    auto* link = Mgr(side).FindLink(alias);
+    if (!link || !link->GetSession() || !link->Mux()) {
+      return false;
+    }
+    amp::ChannelFrame frame;
+    frame.header.frame_type = amp::ChannelFrameType::Frag;
+    frame.header.channel_id = channel_id;
+    frame.header.channel_seq = channel_seq;
+    frame.frag.msg_id = msg_id;
+    frame.frag.frag_index = frag_index;
+    frame.frag.frag_count = frag_count;
+    frame.frag.total_len = total_len;
+    frame.frag.chunk = std::move(chunk);
+    auto wire = amp::ChannelWire::Encode(frame);
+    if (!wire) {
+      return false;
+    }
+    auto sealed = link->GetSession()->Seal(channel_id, channel_seq, *wire);
+    if (!sealed) {
+      return false;
+    }
+    return static_cast<bool>(link->Mux()->InjectSealedForTest(channel_id, channel_seq, std::move(*sealed)));
+  }
+
   /** Send one sealed L3 DATA frame from an alternate local UDP path (NAT handoff). */
   bool SendSealedFromAlternatePath(const HarnessSide sender, const std::string& alias, const uint32_t channel_id,
                                    const adp::IpEndpoint& alt_local, std::vector<uint8_t> payload,
@@ -229,7 +301,8 @@ struct AmpIntegrationHarness : AmpMeshHarness {
   }
 };
 
-inline Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness() {
+inline Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness(
+    std::optional<amp::PeerLinkConfig> link_config = std::nullopt) {
   auto harness = std::make_unique<AmpIntegrationHarness>();
   harness->clock = std::make_shared<adp::VirtualClock>(1'000'000);
   harness->hub = adp::MemoryDatagramIo::MakeHub();
@@ -259,9 +332,9 @@ inline Roe<std::unique_ptr<AmpIntegrationHarness>> MakeAmpIntegrationHarness() {
   harness->peer_id_a = *alice_id;
   harness->peer_id_b = *bob_id;
 
-  const auto link_config = AmpMeshTestLinkConfig();
-  harness->runtime_a = std::make_unique<amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a, link_config);
-  harness->runtime_b = std::make_unique<amp::MeshRuntime>(*harness->ep_b, harness->bob, harness->peer_id_b, link_config);
+  const auto cfg = link_config.value_or(AmpMeshTestLinkConfig());
+  harness->runtime_a = std::make_unique<amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a, cfg);
+  harness->runtime_b = std::make_unique<amp::MeshRuntime>(*harness->ep_b, harness->bob, harness->peer_id_b, cfg);
   harness->runtime_a->Start();
   harness->runtime_b->Start();
 

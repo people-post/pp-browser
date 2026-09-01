@@ -85,6 +85,8 @@ public:
   /** Connected links whose RemotePeerId matches (for dual-dial / A026 tests). */
   size_t CountConnectedLinksForPeerId(const std::string& peer_id) const;
 
+  size_t CountLinks() const { return links_.size(); }
+
   void Tick();
 
 private:

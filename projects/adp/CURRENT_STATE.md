@@ -208,6 +208,13 @@
 - `PeerLink::RequestSessionRekey()` — coordinated rekey over ch0 after capability exchange
 - `pp_browser_amp_session_test` — `SessionControlCodecTest`, `SessionRekeyGraceTest`
 
+## Landed (Track A-adv — adversarial hardening)
+
+- `PeerLinkConfig::dial_timeout` enforced in `PeerLinkManager::Tick` (Handshaking/Dialing)
+- `PeerLinkConfig::max_links` enforced on outbound dial + inbound accept
+- `A-ADV-02` … `A-ADV-08` integration tests (see [TEST_MATRIX.md](TEST_MATRIX.md))
+- `ChannelMux::InjectSealedForTest` — harness hook for sealed FRAG injection
+
 ## Next (implementation)
 
 1. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)

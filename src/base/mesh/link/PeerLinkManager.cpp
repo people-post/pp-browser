@@ -409,6 +409,13 @@ void PeerLinkManager::EnsureAssociation(const std::string& peer_key, LinkCb on_c
     return;
   }
 
+  if (links_.size() >= config_.max_links) {
+    if (on_complete) {
+      on_complete(Error("amp link: max links reached"));
+    }
+    return;
+  }
+
   adp::OpenParams params;
   params.key = PreSessionPeerKey();
   params.mint_id = true;
@@ -533,6 +540,9 @@ void PeerLinkManager::FinishDial(const std::string& peer_key, Roe<void> result) 
 }
 
 void PeerLinkManager::OnInboundConnection(std::shared_ptr<adp::Connection> connection) {
+  if (links_.size() >= config_.max_links) {
+    return;
+  }
   std::string peer_key = "inbound:";
   for (size_t i = 0; i < connection->Id().bytes.size(); ++i) {
     peer_key.push_back(static_cast<char>('0' + (connection->Id().bytes[i] >> 4)));
@@ -711,6 +721,32 @@ void PeerLinkManager::Tick() {
   }
 
   const int64_t now = endpoint_.GetClock().NowMs();
+  const int64_t dial_timeout_ms = config_.dial_timeout.count();
+  std::vector<std::string> timed_out;
+  for (auto& [key, link] : links_) {
+    if (link->IsCarrierBacked()) {
+      continue;
+    }
+    const auto phase = link->Phase();
+    if (phase != PeerLinkPhase::Handshaking && phase != PeerLinkPhase::Dialing) {
+      continue;
+    }
+    if (link->HandshakeStartedMs() > 0 && now - link->HandshakeStartedMs() > dial_timeout_ms) {
+      timed_out.push_back(key);
+    }
+  }
+  for (const auto& key : timed_out) {
+    if (auto* link = FindLink(key)) {
+      const bool outbound = link->IsOutbound();
+      link->FailHandshakeTimeout();
+      if (outbound) {
+        FinishDial(key, Error("amp link: dial timeout"));
+      } else {
+        ScheduleDropLink(key);
+      }
+    }
+  }
+
   std::vector<std::string> evict;
   for (auto& [key, link] : links_) {
     if (link->IsCarrierBacked()) {
@@ -761,6 +797,13 @@ void PeerLinkManager::EstablishNestedOverCarrier(const std::string& peer_key,
       inflight_associations_[peer_key].push_back(std::move(on_complete));
       return;
     }
+  }
+
+  if (links_.size() >= config_.max_links) {
+    if (on_complete) {
+      on_complete(Error("amp link: max links reached"));
+    }
+    return;
   }
 
   inflight_associations_[peer_key].push_back(std::move(on_complete));

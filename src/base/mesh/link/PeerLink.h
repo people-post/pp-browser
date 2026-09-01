@@ -70,6 +70,9 @@ public:
 
   void HandleSessionControl(std::span<const uint8_t> payload);
 
+  int64_t HandshakeStartedMs() const { return handshake_started_ms_; }
+  void FailHandshakeTimeout();
+
 private:
   friend class PeerLinkManager;
 
@@ -116,6 +119,7 @@ private:
   std::vector<std::vector<uint8_t>> msh_chunk_parts_;
 
   std::function<void(Roe<void>)> rekey_cb_;
+  int64_t handshake_started_ms_ = 0;
   Roe<std::optional<std::vector<uint8_t>>> PushMshChunk(MshMessageType type, uint16_t index, uint16_t count,
                                                          std::span<const uint8_t> chunk);
 };

@@ -21,6 +21,19 @@ Rekey receive path uses a **grace window ≤ 1 s** for the previous epoch ([AMP-
 | A-INT-09 | Post-grace stale epoch dropped | `AmpIntegrationTest.PostGraceStaleEpochDropped` | done |
 | A-INT-10 | MSH chunk loss + ADP rtx (stretch) | — | deferred |
 
+## Adversarial sender matrix (Track A-adv)
+
+| ID | Threat | gtest | Status |
+|----|--------|-------|--------|
+| A-ADV-02 | `max_links` caps dial + inbound accept | `AmpIntegrationTest.AdversarialMaxLinksAdv02` | done |
+| A-ADV-03 | Garbage MSH mid-handshake | `AmpIntegrationTest.AdversarialGarbageMshMidHandshakeAdv03` | done |
+| A-ADV-04 | Handshake `dial_timeout` enforced | `AmpIntegrationTest.AdversarialDialTimeoutAdv04` | done |
+| A-ADV-06 | Sealed AEAD garbage flood post-establish | `AmpIntegrationTest.AdversarialSealedGarbageFloodAdv06` | done |
+| A-ADV-08 | FRAG partial assembly bomb | `AmpIntegrationTest.AdversarialFragPartialBombAdv08` | done |
+| A-ADV-01 | Pre-decrypt rate limit | — | deferred |
+| A-ADV-05 | OPEN flood | — | deferred |
+| A-ADV-07 | Rekey spam | — | deferred |
+
 ## Session control wire (ch0)
 
 | Field | Value |

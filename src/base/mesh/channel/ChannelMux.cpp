@@ -395,4 +395,18 @@ Roe<void> ChannelMux::SendCapabilityOffer(ChannelMux& mux, const CapabilityPaylo
   return Error("amp mux: capability channel not usable");
 }
 
+Roe<void> ChannelMux::InjectSealedForTest(const uint32_t channel_id, const uint32_t channel_seq,
+                                          std::vector<uint8_t> sealed) {
+  if (!transport_) {
+    return Error("amp mux: no transport");
+  }
+  auto* channel = ChannelById(channel_id);
+  if (!channel || channel->state != ChannelState::Open) {
+    return Error("amp mux: inject on closed channel");
+  }
+  last_send_qos_ = QosForClass(channel->policy.cls);
+  transport_(channel_id, channel_seq, last_send_qos_, std::move(sealed));
+  return Roe<void>();
+}
+
 } // namespace pbr::amp

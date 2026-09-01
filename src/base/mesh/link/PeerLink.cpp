@@ -59,6 +59,7 @@ void PeerLink::AttachCarrierFrameHandler() {
 void PeerLink::StartHandshakeCommon(const MshAdpHandshake::Role role, CompleteCb on_established) {
   establish_cb_ = std::move(on_established);
   phase_ = PeerLinkPhase::Handshaking;
+  handshake_started_ms_ = owner_.GetEndpoint().GetClock().NowMs();
   const bool chunked = !IsCarrierBacked();
   handshake_ = std::make_unique<MshAdpHandshake>(
       role, identity_,
@@ -306,6 +307,8 @@ void PeerLink::FailAssociation(const Error& error) {
     establish_cb_ = nullptr;
   }
 }
+
+void PeerLink::FailHandshakeTimeout() { FailAssociation(Error("amp link: dial timeout")); }
 
 void PeerLink::AttachMuxTransport() {
   mux_->SetTransport([this](const uint32_t channel_id, const uint32_t channel_seq, const adp::QosClass qos,
