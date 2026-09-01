@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -182,4 +182,4 @@ Roe<MshFinished> MshMessages::DecodeFinished(std::span<const uint8_t> wire) {
   return finished;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

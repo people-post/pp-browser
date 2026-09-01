@@ -22,7 +22,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpDirectChatService(amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpDirectChatService(pp::amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker = {});
   ~AmpDirectChatService() override;
 
   AmpDirectChatService(const AmpDirectChatService&) = delete;
@@ -39,7 +39,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  amp::PeerLinkManager& links_;
+  pp::amp::PeerLinkManager& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;

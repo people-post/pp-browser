@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Shared AMP channel I/O budgets (frame sizes + outbound queue caps).
@@ -30,4 +30,4 @@ struct AmpChannelLimits {
   static constexpr size_t kMaxControlOutboundFrames = 1;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

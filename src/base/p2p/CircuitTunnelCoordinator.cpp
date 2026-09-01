@@ -19,11 +19,11 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
-  if (target_protocol == amp::kAmpCircuitCarrierProtocolId) {
-    return amp::CircuitCarrierChannelPolicy();
+pp::amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
+  if (target_protocol == pp::amp::kAmpCircuitCarrierProtocolId) {
+    return pp::amp::CircuitCarrierChannelPolicy();
   }
-  return amp::CircuitTunnelChannelPolicy();
+  return pp::amp::CircuitTunnelChannelPolicy();
 }
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
@@ -34,13 +34,13 @@ std::string BodyToJson(const std::vector<uint8_t>& body) {
   return std::string(body.begin(), body.end());
 }
 
-Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(amp::PeerLinkManager& links,
+Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::PeerLinkManager& links,
                                                                    const CircuitBridgeTarget& target) {
   if (target.target_multiaddr.empty() && target.target_peer_id.empty()) {
     return Error("missing circuit bridge target");
   }
   if (!target.target_multiaddr.empty()) {
-    auto parsed = amp::ParseAdpMultiaddr(target.target_multiaddr);
+    auto parsed = pp::amp::ParseAdpMultiaddr(target.target_multiaddr);
     if (!parsed) {
       return parsed.error();
     }
@@ -64,14 +64,14 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(amp::PeerLink
 } // namespace
 
 struct CircuitTunnelCoordinator::Impl {
-  amp::MeshRuntime* runtime = nullptr;
+  pp::amp::MeshRuntime* runtime = nullptr;
   std::mutex mu;
   CircuitRelayAdmissionPolicy admission;
   std::atomic<bool> started{false};
   std::atomic<bool> stopped{true};
   std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
-  amp::MeshRuntime::IoTickId io_tick_id = 0;
+  pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
 
   struct Tunnel {
     CircuitTunnelId id;
@@ -82,9 +82,9 @@ struct CircuitTunnelCoordinator::Impl {
     std::string relay_peer_key;
     std::string dialer_peer_id;
     std::string resolved_multiaddr;
-    std::shared_ptr<amp::ChannelSession> near_session;   // client↔relay circuit channel
-    std::shared_ptr<amp::ChannelSession> far_session;    // relay↔target protocol channel
-    std::shared_ptr<amp::ChannelBridge> bridge;
+    std::shared_ptr<pp::amp::ChannelSession> near_session;   // client↔relay circuit channel
+    std::shared_ptr<pp::amp::ChannelSession> far_session;    // relay↔target protocol channel
+    std::shared_ptr<pp::amp::ChannelBridge> bridge;
     FrameHandler on_payload;
     ClosedCallback on_closed;
     BridgeFinished on_finished;
@@ -111,7 +111,7 @@ struct CircuitTunnelCoordinator::Impl {
     return it == tunnels.end() ? nullptr : it->second.get();
   }
 
-  void ScheduleWhenChannelOpen(amp::PeerLink* link, const uint32_t channel_id, const Clock::time_point deadline,
+  void ScheduleWhenChannelOpen(pp::amp::PeerLink* link, const uint32_t channel_id, const Clock::time_point deadline,
                                std::function<void(bool open)> done) {
     PostIo([this, link, channel_id, deadline, done = std::move(done)]() mutable {
       if (stopped.load(std::memory_order_acquire)) {
@@ -122,7 +122,7 @@ struct CircuitTunnelCoordinator::Impl {
         done(false);
         return;
       }
-      if (link->Mux()->State(channel_id) == amp::ChannelState::Open) {
+      if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
         done(true);
         return;
       }
@@ -208,7 +208,7 @@ struct CircuitTunnelCoordinator::Impl {
       return;
     }
     tunnel.phase = CircuitTunnelPhase::Bridging;
-    tunnel.bridge = std::make_shared<amp::ChannelBridge>();
+    tunnel.bridge = std::make_shared<pp::amp::ChannelBridge>();
     const CircuitTunnelId id = tunnel.id;
     tunnel.bridge->Attach(
         tunnel.near_session, tunnel.far_session, {}, [this, id]() {
@@ -239,8 +239,8 @@ struct CircuitTunnelCoordinator::Impl {
     }
   }
 
-  void BindClientNear(Tunnel& tunnel, amp::PeerLink& link, const uint32_t channel_id) {
-    tunnel.near_session = std::make_shared<amp::ChannelSession>();
+  void BindClientNear(Tunnel& tunnel, pp::amp::PeerLink& link, const uint32_t channel_id) {
+    tunnel.near_session = std::make_shared<pp::amp::ChannelSession>();
     const CircuitTunnelId id = tunnel.id;
     tunnel.near_session->Bind(
         *link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
@@ -334,8 +334,8 @@ struct CircuitTunnelCoordinator::Impl {
     // Must not hold mu across OpenChannel — callback may run synchronously.
     runtime->Links().OpenChannel(
         relay_key, kCircuitRelayProtocolId, PolicyForCircuitTarget(tunnel.target.target_protocol),
-        [this, id, relay_key, deadline, request_json](amp::PeerLinkManager::ChannelRoe channel) mutable {
-          amp::PeerLink* link = nullptr;
+        [this, id, relay_key, deadline, request_json](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+          pp::amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
             std::lock_guard lock(mu);
@@ -380,8 +380,8 @@ struct CircuitTunnelCoordinator::Impl {
         });
   }
 
-  void ContinueServeAfterTargetOpen(Tunnel& tunnel, amp::PeerLink& target_link, const uint32_t channel_id) {
-    tunnel.far_session = std::make_shared<amp::ChannelSession>();
+  void ContinueServeAfterTargetOpen(Tunnel& tunnel, pp::amp::PeerLink& target_link, const uint32_t channel_id) {
+    tunnel.far_session = std::make_shared<pp::amp::ChannelSession>();
     tunnel.far_session->Bind(*target_link.Mux(), channel_id, PolicyForCircuitTarget(tunnel.target.target_protocol),
                      [](Roe<std::vector<uint8_t>>) { return true; });
 
@@ -442,7 +442,7 @@ struct CircuitTunnelCoordinator::Impl {
     const std::string target_protocol = tunnel.target.target_protocol;
 
     runtime->Links().EnsureAssociation(target_key, [this, id, target_key, deadline, target_protocol](
-                                               amp::PeerLinkManager::LinkRoe assoc) {
+                                               pp::amp::PeerLinkManager::LinkRoe assoc) {
       {
         std::lock_guard lock(mu);
         auto* tunnel = Find(id);
@@ -463,8 +463,8 @@ struct CircuitTunnelCoordinator::Impl {
       }
       runtime->Links().OpenChannel(
           target_key, target_protocol, PolicyForCircuitTarget(target_protocol),
-          [this, id, target_key, deadline](amp::PeerLinkManager::ChannelRoe channel) {
-            amp::PeerLink* link = nullptr;
+          [this, id, target_key, deadline](pp::amp::PeerLinkManager::ChannelRoe channel) {
+            pp::amp::PeerLink* link = nullptr;
             uint32_t channel_id = 0;
             {
               std::lock_guard lock(mu);
@@ -518,14 +518,14 @@ struct CircuitTunnelCoordinator::Impl {
     });
   }
 
-  void HandleInboundChannel(amp::PeerLink& link, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !runtime || !link.Mux()) {
       return;
     }
-    auto near_session = std::make_shared<amp::ChannelSession>();
+    auto near_session = std::make_shared<pp::amp::ChannelSession>();
     auto started_req = std::make_shared<std::atomic<bool>>(false);
     const std::string remote = link.RemotePeerId();
-    near_session->Bind(*link.Mux(), channel_id, amp::CircuitTunnelChannelPolicy(),
+    near_session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
                [this, near_session, started_req, remote](Roe<std::vector<uint8_t>> frame) {
                  if (!frame || stopped.load(std::memory_order_acquire)) {
                    return false;
@@ -595,7 +595,7 @@ struct CircuitTunnelCoordinator::Impl {
   }
 };
 
-CircuitTunnelCoordinator::CircuitTunnelCoordinator(amp::MeshRuntime& runtime)
+CircuitTunnelCoordinator::CircuitTunnelCoordinator(pp::amp::MeshRuntime& runtime)
     : impl_(std::make_unique<Impl>()), runtime_(runtime) {
   impl_->runtime = &runtime_;
 }
@@ -611,7 +611,7 @@ void CircuitTunnelCoordinator::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
   runtime_.Links().SetProtocolHandler(kCircuitRelayProtocolId,
-                                      [impl = impl_.get()](amp::PeerLink& link, const uint32_t ch) {
+                                      [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t ch) {
                                         impl->HandleInboundChannel(link, ch);
                                       });
 }
@@ -741,7 +741,7 @@ bool CircuitTunnelCoordinator::IsTunnelActive(const CircuitTunnelId id) const {
   return CircuitTunnelPhaseIsActive(Phase(id));
 }
 
-std::shared_ptr<amp::ChannelSession> CircuitTunnelCoordinator::Session(const CircuitTunnelId id) const {
+std::shared_ptr<pp::amp::ChannelSession> CircuitTunnelCoordinator::Session(const CircuitTunnelId id) const {
   std::lock_guard lock(impl_->mu);
   if (const auto* tunnel = impl_->Find(id)) {
     return tunnel->near_session;

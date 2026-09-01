@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 MshIdentity MakeIdentity() {
@@ -72,4 +72,4 @@ TEST(SessionTest, RekeyRotatesSendRecv) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

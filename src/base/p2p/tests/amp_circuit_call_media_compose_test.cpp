@@ -27,7 +27,7 @@ struct LegCompletion {
     };
   }
 
-  void PumpUntilDone(test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2500) {
+  void PumpUntilDone(pbr::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2500) {
     harness.PumpUntil([this] { return finished.load(std::memory_order_acquire); }, max_rounds);
     ASSERT_TRUE(finished.load(std::memory_order_acquire)) << "leg completion timed out";
   }
@@ -40,7 +40,7 @@ class AmpCircuitCallMediaComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = test::AmpMeshTripleHarness::Create();
+    auto created = pbr::test::AmpMeshTripleHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
     harness_ = std::move(*created);
 
@@ -101,8 +101,8 @@ protected:
       };
     }
 
-    amp::PeerLinkManager::LinkCb LinkFn() {
-      return [this](amp::PeerLinkManager::LinkRoe r) {
+    pp::amp::PeerLinkManager::LinkCb LinkFn() {
+      return [this](pp::amp::PeerLinkManager::LinkRoe r) {
         if (r) {
           result = Roe<void>();
         } else {
@@ -112,7 +112,7 @@ protected:
       };
     }
 
-    void PumpUntilDone(test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
+    void PumpUntilDone(pbr::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
       harness.PumpUntil([this] { return done.load(std::memory_order_acquire); }, max_rounds);
       ASSERT_TRUE(done.load(std::memory_order_acquire));
     }
@@ -122,7 +122,7 @@ protected:
     CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     target.target_multiaddr = harness_->ma_b;
-    target.target_protocol = amp::kAmpCircuitCarrierProtocolId;
+    target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
     Wait<CircuitTunnelBridgeResult> bridge_wait;
     auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
@@ -147,12 +147,12 @@ protected:
     if (!harness_->mgr_a().IsConnected(harness_->peer_id_b)) {
       return Error("nested link not connected on A");
     }
-    (void)hops_->Install(harness_->peer_id_b, "relay", amp::kAmpCircuitCarrierProtocolId,
+    (void)hops_->Install(harness_->peer_id_b, "relay", pp::amp::kAmpCircuitCarrierProtocolId,
                          bridge_wait.result->session, tunnel_id);
     return {};
   }
 
-  std::unique_ptr<test::AmpMeshTripleHarness> harness_;
+  std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
   std::unique_ptr<AmpCircuitHopRegistry> hops_;
   std::unique_ptr<CircuitTunnelCoordinator> circuit_r_;
   std::unique_ptr<CircuitTunnelCoordinator> circuit_a_;

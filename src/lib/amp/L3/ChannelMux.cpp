@@ -2,7 +2,7 @@
 
 #include "lib/amp/L3/Capability.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -409,4 +409,4 @@ Roe<void> ChannelMux::InjectSealedForTest(const uint32_t channel_id, const uint3
   return Roe<void>();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

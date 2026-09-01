@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 class Endpoint {
 public:
@@ -50,4 +50,4 @@ private:
   AcceptHandler accept_handler_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

@@ -20,7 +20,7 @@
 | `lib/amp/L1/ReplayWindow.{h,cpp}` | L1 | ADP seq window (messaging keeps separate copy in `base/crypto`) |
 | `lib/amp/L1/CodedFailure.h` | L1 | `Connection::Failure` template |
 | `lib/amp/L2/SessionAead.{h,cpp}` | L2 | XChaCha20-Poly1305 session AEAD |
-| `lib/amp/AmpRoe.h` | all | `pp::` Error/Roe/ByteVector aliases (no `PbrCompat`) |
+| `lib/amp/L1/Types.h`, `lib/amp/L2/Types.h` | L1/L2 | `pp::Error` / `pp::Roe` / `ByteVector` via layer Types headers |
 | `lib/amp/link/CodedFailure.h` | link | `PeerLink` / `PeerLinkManager` failures |
 
 Product `base/crypto` helpers (`MessageCipher`, `HybridKem`, E2E codecs) stay in pp-browser; AMP uses `pp_crypto` (`MlKem`, `MlDsa`, `SodiumUtil`) directly.

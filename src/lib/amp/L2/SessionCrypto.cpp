@@ -2,7 +2,7 @@
 
 #include "lib/amp/L2/SessionAead.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 ByteVector SessionCrypto::BuildAad(const uint32_t session_epoch, const uint32_t channel_id, const uint32_t channel_seq,
                                  const Direction direction) {
@@ -60,4 +60,4 @@ Roe<std::vector<uint8_t>> SessionCrypto::Open(const ByteVector& key, const uint3
   return std::vector<uint8_t>(plain->begin(), plain->end());
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -8,7 +8,6 @@
 #include "lib/amp/link/Types.h"
 #include "lib/amp/L2/Types.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <chrono>
 #include <functional>
@@ -18,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Dial + warm policy over ADP/AMP (replaces libp2p PeerSessionManager on the AMP path). */
 class PeerLinkManager {
@@ -174,4 +173,4 @@ private:
   std::vector<std::pair<std::string, std::string>> pending_alias_adopt_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

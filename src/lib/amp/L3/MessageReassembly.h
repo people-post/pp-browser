@@ -2,14 +2,13 @@
 
 #include "lib/amp/L3/ChannelWire.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Reassemble FRAG frames into one L4 message (Reliable channels). */
 class MessageReassembly {
@@ -33,4 +32,4 @@ private:
   std::map<uint64_t, Partial> partial_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

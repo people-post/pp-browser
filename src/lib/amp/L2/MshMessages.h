@@ -2,13 +2,12 @@
 
 #include "lib/amp/L2/Types.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 enum class MshMessageType : uint8_t {
   ClientHello = 1,
@@ -49,4 +48,4 @@ public:
   static Roe<ByteVector> BuildIdentitySignMessage(const ByteVector& static_kem_public_key);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

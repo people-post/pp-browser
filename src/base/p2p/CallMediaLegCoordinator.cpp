@@ -72,14 +72,14 @@ void RunWorker(const CallMediaLegCoordinator::WorkerPost& post_worker, std::func
 }
 
 /** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
-void CloseQuietSlot(std::shared_ptr<amp::ChannelSession>& slot, amp::PeerLink* link) {
+void CloseQuietSlot(std::shared_ptr<pp::amp::ChannelSession>& slot, pp::amp::PeerLink* link) {
   auto session = std::move(slot);
   if (!session) {
     return;
   }
   // Only call into mux when this session is still bound to a live Connected link's mux.
   // Destroyed ChannelMux (PeerLink drop) has bucket_count==0 → SIGFPE on unordered_map hash%.
-  if (link && link->Mux() && link->Phase() == amp::PeerLinkPhase::Connected &&
+  if (link && link->Mux() && link->Phase() == pp::amp::PeerLinkPhase::Connected &&
       session->Mux() == link->Mux()) {
     session->CloseQuiet();
     session->ReleaseHandlers();
@@ -110,19 +110,19 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     LegFinished on_finished;
     Clock::time_point deadline{};
 
-    std::shared_ptr<amp::ChannelSession> outbound_control;
-    std::shared_ptr<amp::ChannelSession> inbound_control;
-    std::shared_ptr<amp::ChannelSession> media;
+    std::shared_ptr<pp::amp::ChannelSession> outbound_control;
+    std::shared_ptr<pp::amp::ChannelSession> inbound_control;
+    std::shared_ptr<pp::amp::ChannelSession> media;
   };
 
-  amp::MeshRuntime* runtime = nullptr;
+  pp::amp::MeshRuntime* runtime = nullptr;
   WorkerPost post_worker;
   mutable std::mutex mu;
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
   std::atomic<bool> started{false};
   std::atomic<uint64_t> next_leg_id{1};
-  amp::MeshRuntime::IoTickId io_tick_id = 0;
+  pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
 
   /** call_id → bundle */
   std::unordered_map<std::string, std::unique_ptr<Bundle>> bundles;
@@ -136,7 +136,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     runtime->PostToIo(std::move(task));
   }
 
-  bool LocalWinsForLink(const amp::PeerLink& link) const {
+  bool LocalWinsForLink(const pp::amp::PeerLink& link) const {
     if (!runtime) {
       return true;
     }
@@ -152,7 +152,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return LocalWinsCallMediaGlare(runtime->Links().LocalPeerId(), remote);
   }
 
-  bool LocalWinsForBundle(const Bundle& bundle, const amp::PeerLink& fallback_link) const {
+  bool LocalWinsForBundle(const Bundle& bundle, const pp::amp::PeerLink& fallback_link) const {
     if (!bundle.params.peer_key.empty()) {
       if (const auto* dial = runtime->Links().FindLink(bundle.params.peer_key)) {
         return LocalWinsForLink(*dial);
@@ -161,14 +161,14 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return LocalWinsForLink(fallback_link);
   }
 
-  amp::PeerLink* ResolveLink(const Bundle& bundle) const {
+  pp::amp::PeerLink* ResolveLink(const Bundle& bundle) const {
     if (!runtime || bundle.params.peer_key.empty()) {
       return nullptr;
     }
     return runtime->Links().FindLink(bundle.params.peer_key);
   }
 
-  bool BundleMatchesLink(const Bundle& bundle, const amp::PeerLink& link) const {
+  bool BundleMatchesLink(const Bundle& bundle, const pp::amp::PeerLink& link) const {
     if (!bundle.params.peer_key.empty() && bundle.params.peer_key == link.PeerKey()) {
       return true;
     }
@@ -235,7 +235,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   bool OwnsRole(const Bundle& bundle, const CallMediaChannelRole role,
-                const amp::ChannelSession* session) const {
+                const pp::amp::ChannelSession* session) const {
     if (!session) {
       return false;
     }
@@ -252,8 +252,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   /** True when CloseQuiet/ReleaseHandlers may safely touch the session's mux. */
   bool MuxAliveForBundle(const Bundle& bundle) const {
-    amp::PeerLink* link = ResolveLink(bundle);
-    return link && link->Mux() && link->Phase() == amp::PeerLinkPhase::Connected;
+    pp::amp::PeerLink* link = ResolveLink(bundle);
+    return link && link->Mux() && link->Phase() == pp::amp::PeerLinkPhase::Connected;
   }
 
   /** PeerLink erased (DropLink) — ChannelSession mux_ may already be dangling. */
@@ -265,7 +265,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void DropRole(Bundle& bundle, const CallMediaChannelRole role) {
-    amp::PeerLink* link = ResolveLink(bundle);
+    pp::amp::PeerLink* link = ResolveLink(bundle);
     switch (role) {
     case CallMediaChannelRole::OutboundControl:
       if (bundle.outbound_control) {
@@ -356,12 +356,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         done(false);
         return;
       }
-      amp::PeerLink* link = runtime ? runtime->Links().FindLink(peer_key) : nullptr;
+      pp::amp::PeerLink* link = runtime ? runtime->Links().FindLink(peer_key) : nullptr;
       if (!link || !link->Mux()) {
         done(false);
         return;
       }
-      if (link->Mux()->State(channel_id) == amp::ChannelState::Open) {
+      if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
         done(true);
         return;
       }
@@ -425,7 +425,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void OnChannelClosed(const std::string& /*call_id*/, const CallMediaChannelRole role,
-                       const std::shared_ptr<amp::ChannelSession>& session, const char* reason) {
+                       const std::shared_ptr<pp::amp::ChannelSession>& session, const char* reason) {
     std::lock_guard lock(mu);
     Bundle* bundle = nullptr;
     for (auto& [_, b] : bundles) {
@@ -459,12 +459,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void OpenMediaOutbound(Bundle& bundle) {
-    amp::PeerLink* link = ResolveLink(bundle);
+    pp::amp::PeerLink* link = ResolveLink(bundle);
     if (!link || !link->Mux()) {
       TearDownBundle(bundle, false, false, "amp call-media: no link for media channel");
       return;
     }
-    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, amp::CallMediaChannelPolicy());
+    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy());
     if (!channel_id) {
       TearDownBundle(bundle, false, false, channel_id.error().message);
       return;
@@ -499,15 +499,15 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                             });
   }
 
-  void BindControlChannel(Bundle& bundle, amp::PeerLink& link, const uint32_t channel_id,
+  void BindControlChannel(Bundle& bundle, pp::amp::PeerLink& link, const uint32_t channel_id,
                           const CallMediaChannelRole role) {
     if (bundle.params.peer_key.empty()) {
       bundle.params.peer_key = link.PeerKey();
     }
-    auto channel_session = std::make_shared<amp::ChannelSession>();
+    auto channel_session = std::make_shared<pp::amp::ChannelSession>();
     const std::string call_id = bundle.call_id;
     channel_session->Bind(
-        *link.Mux(), channel_id, amp::CallMediaControlChannelPolicy(),
+        *link.Mux(), channel_id, pp::amp::CallMediaControlChannelPolicy(),
         [this, self = shared_from_this(), call_id, role, channel_session](Roe<std::vector<uint8_t>> frame) {
           if (!frame) {
             return false;
@@ -527,14 +527,14 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  void BindMediaChannel(Bundle& bundle, amp::PeerLink& link, const uint32_t channel_id) {
+  void BindMediaChannel(Bundle& bundle, pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (bundle.params.peer_key.empty()) {
       bundle.params.peer_key = link.PeerKey();
     }
-    auto channel_session = std::make_shared<amp::ChannelSession>();
+    auto channel_session = std::make_shared<pp::amp::ChannelSession>();
     const std::string call_id = bundle.call_id;
     channel_session->Bind(
-        *link.Mux(), channel_id, amp::CallMediaChannelPolicy(),
+        *link.Mux(), channel_id, pp::amp::CallMediaChannelPolicy(),
         [this, self = shared_from_this(), call_id](Roe<std::vector<uint8_t>> frame) {
           if (!frame) {
             return false;
@@ -582,7 +582,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
 
-  Bundle* FindByInboundSession(const std::shared_ptr<amp::ChannelSession>& session) {
+  Bundle* FindByInboundSession(const std::shared_ptr<pp::amp::ChannelSession>& session) {
     for (auto& [_, bundle] : bundles) {
       if (bundle && bundle->inbound_control == session) {
         return bundle.get();
@@ -608,7 +608,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void HandleControlJson(const std::string& known_call_id, const CallMediaChannelRole role,
-                         const std::shared_ptr<amp::ChannelSession>& channel_session,
+                         const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
                          const std::string& json_utf8) {
     auto parsed = ParseJsonObject(json_utf8);
     if (!parsed) {
@@ -624,7 +624,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  void HandleInboundHello(const std::shared_ptr<amp::ChannelSession>& channel_session, const Object& hello) {
+  void HandleInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const Object& hello) {
     if (!channel_session) {
       return;
     }
@@ -633,7 +633,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return;
     }
 
-    amp::PeerLink* link = nullptr;
+    pp::amp::PeerLink* link = nullptr;
     {
       std::lock_guard lock(mu);
       Bundle* holder = FindByInboundSession(channel_session);
@@ -743,7 +743,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (!bundle || bundle->phase != CallMediaBundlePhase::InboundHello) {
           return;
         }
-        amp::PeerLink* resolved = runtime->Links().FindLink(peer_key);
+        pp::amp::PeerLink* resolved = runtime->Links().FindLink(peer_key);
         if (!resolved) {
           return;
         }
@@ -814,12 +814,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  void HandleInboundChannel(amp::PeerLink& link, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !link.Mux()) {
       return;
     }
     const auto cls = link.Mux()->Class(channel_id);
-    if (cls == amp::ChannelClass::RealtimeControl) {
+    if (cls == pp::amp::ChannelClass::RealtimeControl) {
       std::lock_guard lock(mu);
       auto pending = std::make_unique<Bundle>();
       pending->call_id = std::string("__pending_") + std::to_string(channel_id);
@@ -834,7 +834,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       BindControlChannel(*raw, link, channel_id, CallMediaChannelRole::InboundControl);
       return;
     }
-    if (cls == amp::ChannelClass::Realtime) {
+    if (cls == pp::amp::ChannelClass::Realtime) {
       std::lock_guard lock(mu);
       Bundle* target = nullptr;
       for (auto& [_, bundle] : bundles) {
@@ -939,16 +939,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     *open_control = [this, self = shared_from_this(), leg_id, peer_key, call_id, params, deadline,
                      open_control](const int retries) {
       runtime->Links().OpenChannel(
-          peer_key, kCallMediaDirectProtocolId, amp::CallMediaControlChannelPolicy(),
+          peer_key, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
           [this, self, leg_id, peer_key, call_id, params, deadline, retries,
-           open_control](amp::PeerLinkManager::ChannelRoe channel) mutable {
+           open_control](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
             std::unique_lock lock(mu);
             auto* bundle = FindByCallId(call_id);
             if (!bundle || bundle->leg_id.value != leg_id.value) {
               return;
             }
             if (!channel) {
-              if (amp::PeerLinkManager::IsAssociationNotReady(channel.error()) && retries < 500
+              if (pp::amp::PeerLinkManager::IsAssociationNotReady(channel.error()) && retries < 500
                   && !bundle->finished) {
                 lock.unlock();
                 PostIo([open_control, retries]() { (*open_control)(retries + 1); });
@@ -1014,7 +1014,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 };
 
-CallMediaLegCoordinator::CallMediaLegCoordinator(amp::MeshRuntime& runtime, WorkerPost post_worker)
+CallMediaLegCoordinator::CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, WorkerPost post_worker)
     : impl_(std::make_shared<Impl>()), runtime_(runtime) {
   impl_->runtime = &runtime_;
   impl_->post_worker = std::move(post_worker);
@@ -1036,7 +1036,7 @@ void CallMediaLegCoordinator::Start() {
     }
   });
   runtime_.Links().SetProtocolHandler(kCallMediaDirectProtocolId,
-                                      [weak = std::weak_ptr(impl_)](amp::PeerLink& link, const uint32_t ch) {
+                                      [weak = std::weak_ptr(impl_)](pp::amp::PeerLink& link, const uint32_t ch) {
                                         if (auto impl = weak.lock()) {
                                           impl->HandleInboundChannel(link, ch);
                                         }
@@ -1194,7 +1194,7 @@ CallMediaBundlePhase CallMediaLegCoordinator::BundlePhase(const CallMediaLegId i
 Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint8_t channel,
                                              const std::vector<uint8_t>& payload, const uint32_t seq,
                                              const uint8_t mark) {
-  std::shared_ptr<amp::ChannelSession> session;
+  std::shared_ptr<pp::amp::ChannelSession> session;
   CallMediaDirectConnectParams params;
   {
     std::lock_guard lock(impl_->mu);

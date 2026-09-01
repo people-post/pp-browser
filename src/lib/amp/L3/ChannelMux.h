@@ -7,7 +7,6 @@
 #include "lib/amp/L3/MessageReassembly.h"
 #include "lib/amp/L2/Session.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <functional>
@@ -18,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Multiplexes L3 channels over one AMP Session. Io-thread affine. */
 class ChannelMux {
@@ -104,4 +103,4 @@ private:
   void FlushPendingOpenData(uint32_t channel_id);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

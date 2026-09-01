@@ -1,13 +1,16 @@
 #pragma once
 
+#include "common/Error.h"
 #include "crypto/Types.h"
 
 #include <cstdint>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 using ByteVector = pp::ByteVector;
+using pp::Error;
+using pp::Roe;
 
 inline constexpr uint8_t kMshVersion = 1;
 inline constexpr size_t kAssocKeyBytes = 32;
@@ -41,4 +44,4 @@ struct SessionMaterial {
   bool initiator = false;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

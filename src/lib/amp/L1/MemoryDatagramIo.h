@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 /**
  * In-process datagram fabric for tests. Endpoints share a Hub; optional
@@ -65,4 +65,4 @@ private:
       queues_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

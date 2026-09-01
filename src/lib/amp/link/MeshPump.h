@@ -3,7 +3,7 @@
 #include "lib/amp/L1/Endpoint.h"
 #include "lib/amp/link/PeerLinkManager.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Io-thread driver: ADP Endpoint pump/tick for PeerLinkManager links. */
 class MeshPump {
@@ -18,4 +18,4 @@ private:
   PeerLinkManager& links_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

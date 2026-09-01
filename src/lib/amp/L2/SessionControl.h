@@ -1,12 +1,12 @@
 #pragma once
 
-#include "lib/amp/AmpRoe.h"
+#include "lib/amp/L2/Types.h"
 
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 inline constexpr uint8_t kSessionControlWireVersion = 2;
 
@@ -30,4 +30,4 @@ public:
 
 inline constexpr int64_t kSessionRekeyGraceMs = 1000;
 
-} // namespace pbr::amp
+} // namespace pp::amp

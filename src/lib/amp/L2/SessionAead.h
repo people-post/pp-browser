@@ -1,8 +1,8 @@
 #pragma once
 
-#include "lib/amp/AmpRoe.h"
+#include "lib/amp/L2/Types.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 struct AeadBlob {
   ByteVector nonce;
@@ -18,4 +18,4 @@ public:
   static Roe<ByteVector> GenerateNonce();
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

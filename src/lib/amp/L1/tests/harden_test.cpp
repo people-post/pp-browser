@@ -15,14 +15,14 @@
 
 namespace {
 
-pbr::adp::PeerKey Key() {
-  pbr::adp::PeerKey k;
+pp::adp::PeerKey Key() {
+  pp::adp::PeerKey k;
   k.bytes.fill(0x77);
   return k;
 }
 
-pbr::adp::AssocId Aid() {
-  pbr::adp::AssocId id;
+pp::adp::AssocId Aid() {
+  pp::adp::AssocId id;
   id.bytes.fill(0x88);
   return id;
 }
@@ -33,15 +33,15 @@ protected:
 };
 
 TEST_F(AdpHardenTest, PacketMutilatorNeverCrashes) {
-  pbr::adp::WirePacket pkt;
-  pkt.type = pbr::adp::PacketType::DataBestEffort;
+  pp::adp::WirePacket pkt;
+  pkt.type = pp::adp::PacketType::DataBestEffort;
   pkt.assoc = Aid();
   pkt.seq = 1;
   pkt.timestamp_ms = 42;
   pkt.payload = {9, 8, 7};
-  auto enc = pbr::adp::WireCodec::Encode(pkt);
+  auto enc = pp::adp::WireCodec::Encode(pkt);
   ASSERT_TRUE(enc);
-  auto sealed = pbr::adp::HmacBinder(Key()).Seal(*enc);
+  auto sealed = pp::adp::HmacBinder(Key()).Seal(*enc);
   ASSERT_TRUE(sealed);
 
   std::mt19937 rng(12345);
@@ -54,25 +54,25 @@ TEST_F(AdpHardenTest, PacketMutilatorNeverCrashes) {
     if (rng() % 2 == 0 && mut.size() > 4) {
       mut.resize(rng() % mut.size());
     }
-    (void)pbr::adp::WireCodec::Decode(mut);
-    (void)pbr::adp::HmacBinder(Key()).Verify(mut);
+    (void)pp::adp::WireCodec::Decode(mut);
+    (void)pp::adp::HmacBinder(Key()).Verify(mut);
   }
 }
 
 TEST_F(AdpHardenTest, OsUdpLoopbackSmoke) {
-  auto bound_a = pbr::adp::OsUdpDatagramIo::Bind(pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 0));
-  auto bound_b = pbr::adp::OsUdpDatagramIo::Bind(pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 0));
+  auto bound_a = pp::adp::OsUdpDatagramIo::Bind(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0));
+  auto bound_b = pp::adp::OsUdpDatagramIo::Bind(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0));
   ASSERT_TRUE(bound_a);
   ASSERT_TRUE(bound_b);
-  std::shared_ptr<pbr::adp::DatagramIo> io_a(std::move(*bound_a));
-  std::shared_ptr<pbr::adp::DatagramIo> io_b(std::move(*bound_b));
-  auto clock = std::make_shared<pbr::adp::VirtualClock>(9'000'000);
-  auto ep_a = std::make_unique<pbr::adp::Endpoint>(io_a, clock);
-  auto ep_b = std::make_unique<pbr::adp::Endpoint>(io_b, clock);
+  std::shared_ptr<pp::adp::DatagramIo> io_a(std::move(*bound_a));
+  std::shared_ptr<pp::adp::DatagramIo> io_b(std::move(*bound_b));
+  auto clock = std::make_shared<pp::adp::VirtualClock>(9'000'000);
+  auto ep_a = std::make_unique<pp::adp::Endpoint>(io_a, clock);
+  auto ep_b = std::make_unique<pp::adp::Endpoint>(io_b, clock);
   const auto addr_a = ep_a->Io().LocalEndpoint();
   const auto addr_b = ep_b->Io().LocalEndpoint();
 
-  pbr::adp::OpenParams op;
+  pp::adp::OpenParams op;
   op.key = Key();
   op.id = Aid();
   op.mint_id = false;
@@ -81,15 +81,15 @@ TEST_F(AdpHardenTest, OsUdpLoopbackSmoke) {
   ASSERT_TRUE(ca);
 
   std::string got;
-  pbr::adp::OpenParams opb = op;
+  pp::adp::OpenParams opb = op;
   opb.peer = addr_a;
   auto cb = ep_b->Open(opb);
   ASSERT_TRUE(cb);
-  (*cb)->OnMessage([&](const pbr::adp::Message& m) {
+  (*cb)->OnMessage([&](const pp::adp::Message& m) {
     got.assign(m.payload.begin(), m.payload.end());
   });
 
-  ASSERT_TRUE((*ca)->Send(pbr::adp::QosClass::Reliable,
+  ASSERT_TRUE((*ca)->Send(pp::adp::QosClass::Reliable,
                           std::span<const uint8_t>(reinterpret_cast<const uint8_t*>("udp"), 3)));
   for (int i = 0; i < 50; ++i) {
     ep_a->Pump();
@@ -105,22 +105,22 @@ TEST_F(AdpHardenTest, OsUdpLoopbackSmoke) {
 }
 
 TEST_F(AdpHardenTest, MultiConnectionStressMemory) {
-  auto clock = std::make_shared<pbr::adp::VirtualClock>(1);
-  auto hub = pbr::adp::MemoryDatagramIo::MakeHub();
-  auto addr_a = pbr::adp::IpEndpoint::V4(10, 1, 1, 1, 1);
-  auto addr_b = pbr::adp::IpEndpoint::V4(10, 1, 1, 2, 2);
-  auto io_a = std::make_shared<pbr::adp::MemoryDatagramIo>(hub, addr_a);
-  auto io_b = std::make_shared<pbr::adp::MemoryDatagramIo>(hub, addr_b);
-  auto ep_a = std::make_unique<pbr::adp::Endpoint>(io_a, clock);
-  auto ep_b = std::make_unique<pbr::adp::Endpoint>(io_b, clock);
+  auto clock = std::make_shared<pp::adp::VirtualClock>(1);
+  auto hub = pp::adp::MemoryDatagramIo::MakeHub();
+  auto addr_a = pp::adp::IpEndpoint::V4(10, 1, 1, 1, 1);
+  auto addr_b = pp::adp::IpEndpoint::V4(10, 1, 1, 2, 2);
+  auto io_a = std::make_shared<pp::adp::MemoryDatagramIo>(hub, addr_a);
+  auto io_b = std::make_shared<pp::adp::MemoryDatagramIo>(hub, addr_b);
+  auto ep_a = std::make_unique<pp::adp::Endpoint>(io_a, clock);
+  auto ep_b = std::make_unique<pp::adp::Endpoint>(io_b, clock);
   ep_b->SetAcceptKey(Key());
   ep_b->SetAcceptEnabled(true);
 
   constexpr int N = 32;
-  std::vector<std::shared_ptr<pbr::adp::Connection>> cons;
+  std::vector<std::shared_ptr<pp::adp::Connection>> cons;
   size_t received = 0;
   for (int i = 0; i < N; ++i) {
-    pbr::adp::OpenParams op;
+    pp::adp::OpenParams op;
     op.key = Key();
     op.id = Aid();
     op.id.bytes[0] = static_cast<uint8_t>(i);
@@ -129,15 +129,15 @@ TEST_F(AdpHardenTest, MultiConnectionStressMemory) {
     auto c = ep_a->Open(op);
     ASSERT_TRUE(c);
     cons.push_back(*c);
-    pbr::adp::OpenParams opb = op;
+    pp::adp::OpenParams opb = op;
     opb.peer = addr_a;
     auto cb = ep_b->Open(opb);
     ASSERT_TRUE(cb);
-    (*cb)->OnMessage([&](const pbr::adp::Message&) { ++received; });
+    (*cb)->OnMessage([&](const pp::adp::Message&) { ++received; });
   }
   for (int i = 0; i < N; ++i) {
     const uint8_t b = static_cast<uint8_t>(i);
-    ASSERT_TRUE(cons[static_cast<size_t>(i)]->Send(pbr::adp::QosClass::BestEffort,
+    ASSERT_TRUE(cons[static_cast<size_t>(i)]->Send(pp::adp::QosClass::BestEffort,
                                                    std::span<const uint8_t>(&b, 1)));
   }
   ep_b->Pump();

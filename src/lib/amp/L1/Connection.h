@@ -5,7 +5,6 @@
 #include "lib/amp/L1/Types.h"
 #include "lib/amp/L1/CodedFailure.h"
 #include "lib/amp/L1/ReplayWindow.h"
-#include "lib/amp/AmpRoe.h"
 
 #include <chrono>
 #include <cstdint>
@@ -15,7 +14,7 @@
 #include <span>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 class Endpoint;
 
@@ -111,4 +110,4 @@ private:
   std::deque<Outstanding> outstanding_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

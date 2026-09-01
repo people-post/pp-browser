@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 TEST(SessionControlCodecTest, RoundTripRequestAndAck) {
@@ -33,4 +33,4 @@ TEST(SessionControlCodecTest, DistinguishesFromCapabilityVersionOne) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

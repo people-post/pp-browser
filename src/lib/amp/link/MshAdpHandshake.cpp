@@ -10,7 +10,7 @@
 
 #include <sodium.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -352,4 +352,4 @@ Roe<void> MshAdpHandshake::MaybeComplete() {
   return Roe<void>();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

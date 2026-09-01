@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 struct MeshLinkFixture {
@@ -162,7 +162,7 @@ TEST(MeshLinkTest, OpenChannelDataRoundTrip) {
 
 TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
 
@@ -185,11 +185,11 @@ TEST(MeshRuntimeTest, PumpDrivesAssociationRoundTrip) {
 
 TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
 
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   ASSERT_TRUE(static_cast<bool>(h.mgr_a().RegisterEndpoint("b", h.ma_b)));
   ASSERT_TRUE(static_cast<bool>(h.mgr_b().RegisterEndpoint("a", h.ma_a)));
@@ -214,10 +214,10 @@ TEST(MeshLinkTest, InboundLinkRekeysToRegisteredAlias) {
 
 TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
   h.mgr_a().SetAdvertisedProtocols({"/pp-browser/chat/1.0.0", "/pp-browser/circuit-relay/1.0.0"});
@@ -274,10 +274,10 @@ TEST(MeshLinkTest, CapabilityExchangeAfterAssociation) {
 
 TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   // Only A knows how to dial B initially; B learns A's listen addr from ch0.
   h.mgr_a().SetLocalListenMultiaddrs({h.ma_a});
@@ -320,10 +320,10 @@ TEST(MeshLinkTest, CapabilityIngestEnablesPeerIdDial) {
 
 TEST(MeshLinkTest, DualDialElectsOneConnectedLinkPerPeerId) {
   ASSERT_GE(sodium_init(), 0);
-  auto created = test::AmpMeshHarness::Create();
+  auto created = pbr::test::AmpMeshHarness::Create();
   ASSERT_TRUE(static_cast<bool>(created));
   auto harness = std::move(*created);
-  test::AmpMeshHarness& h = *harness;
+  pbr::test::AmpMeshHarness& h = *harness;
 
   // Both peers accept so simultaneous A↔B dials can complete.
   h.ep_a->SetAcceptEnabled(true);
@@ -408,19 +408,19 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
   bob.ml_dsa_secret_key = std::move(bob_keys->secret_key);
   bob.ml_dsa_public_key = std::move(bob_keys->public_key);
 
-  auto peer_a = test::DeriveTestPeerId(alice.ml_dsa_public_key);
-  auto peer_b = test::DeriveTestPeerId(bob.ml_dsa_public_key);
+  auto peer_a = pbr::test::DeriveTestPeerId(alice.ml_dsa_public_key);
+  auto peer_b = pbr::test::DeriveTestPeerId(bob.ml_dsa_public_key);
   ASSERT_TRUE(static_cast<bool>(peer_a));
   ASSERT_TRUE(static_cast<bool>(peer_b));
 
   AmpStack::Config cfg_a;
   cfg_a.identity = alice;
   cfg_a.local_peer_id = *peer_a;
-  cfg_a.link_config = test::AmpMeshTestLinkConfig();
+  cfg_a.link_config = pbr::test::AmpMeshTestLinkConfig();
   AmpStack::Config cfg_b;
   cfg_b.identity = bob;
   cfg_b.local_peer_id = *peer_b;
-  cfg_b.link_config = test::AmpMeshTestLinkConfig();
+  cfg_b.link_config = pbr::test::AmpMeshTestLinkConfig();
 
   auto stack_a = AmpStack::Create(io_a, clock, cfg_a);
   auto stack_b = AmpStack::Create(io_b, clock, cfg_b);
@@ -447,4 +447,4 @@ TEST(AmpStackTest, CreateAndAssociateViaStacks) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

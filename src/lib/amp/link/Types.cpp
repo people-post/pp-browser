@@ -2,7 +2,7 @@
 
 #include <sodium.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 adp::PeerKey PreSessionPeerKey() {
   adp::PeerKey key{};
@@ -35,4 +35,4 @@ std::string IdentityPublicKeyFingerprint(const ByteVector& identity_public_key) 
   return out;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

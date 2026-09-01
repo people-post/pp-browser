@@ -100,7 +100,7 @@ protected:
     ASSERT_GE(sodium_init(), 0);
     data_ = std::make_unique<HistoryHarness>("svc");
 
-    auto created = test::AmpMeshHarness::Create();
+    auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     mesh_ = std::move(*created);
 
@@ -125,7 +125,7 @@ protected:
   }
 
   std::unique_ptr<HistoryHarness> data_;
-  std::unique_ptr<test::AmpMeshHarness> mesh_;
+  std::unique_ptr<pbr::test::AmpMeshHarness> mesh_;
   std::unique_ptr<AmpChatHistoryService> responder_history_;
   std::unique_ptr<AmpChatHistoryService> client_history_;
 };

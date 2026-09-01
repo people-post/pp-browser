@@ -3,7 +3,6 @@
 #include "lib/amp/L3/ChannelMux.h"
 #include "lib/amp/L3/ChannelPolicy.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <cstddef>
 #include <deque>
@@ -11,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Single-channel L3 pipe (io-thread affine) — AMP counterpart to DuplexFrameSession.
@@ -81,4 +80,4 @@ private:
   bool closed_ = false;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

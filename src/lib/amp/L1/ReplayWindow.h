@@ -4,7 +4,7 @@
 #include <optional>
 #include <unordered_set>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 /** Out-of-order seq acceptance helper for ADP reliable / best-effort demux. */
 class ReplayWindow {
@@ -20,4 +20,4 @@ private:
   std::unordered_set<uint64_t> pending_;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

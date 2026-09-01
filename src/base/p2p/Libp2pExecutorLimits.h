@@ -5,8 +5,8 @@
 namespace pbr {
 
 /**
- * @deprecated Prefer `amp::AmpChannelLimits`. Kept as an alias for transitional includes.
+ * @deprecated Prefer `pp::amp::AmpChannelLimits`. Kept as an alias for transitional includes.
  */
-using Libp2pExecutorLimits = amp::AmpChannelLimits;
+using Libp2pExecutorLimits = pp::amp::AmpChannelLimits;
 
 } // namespace pbr

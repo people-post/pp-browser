@@ -6,7 +6,7 @@
 
 #include <sodium.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 Roe<ByteVector> SessionAead::GenerateNonce() {
   pp::EnsureSodiumInit();
@@ -58,4 +58,4 @@ Roe<ByteVector> SessionAead::Decrypt(const ByteVector& session_key, const AeadBl
   return plaintext;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Io-thread composer for Endpoint + PeerLinkManager + MeshPump.
@@ -78,4 +78,4 @@ private:
   mutable std::recursive_mutex io_mu_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

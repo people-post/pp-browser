@@ -33,7 +33,7 @@ class AmpDirectChatServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = test::AmpMeshHarness::Create();
+    auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -54,7 +54,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<test::AmpMeshHarness> harness_;
+  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   std::unique_ptr<AmpDirectChatService> a_chat_;
   std::unique_ptr<AmpDirectChatService> b_chat_;
 };

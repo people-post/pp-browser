@@ -158,8 +158,8 @@ std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
   return multiaddr;
 }
 
-pbr::amp::PeerLinkConfig MakeProbeLinkConfig() {
-  pbr::amp::PeerLinkConfig config;
+pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
+  pp::amp::PeerLinkConfig config;
   config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
     auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
     if (!peer_id) {
@@ -171,8 +171,8 @@ pbr::amp::PeerLinkConfig MakeProbeLinkConfig() {
 }
 
 struct AmpPeer {
-  std::shared_ptr<pbr::adp::WallClock> clock;
-  std::unique_ptr<pbr::amp::AmpStack> stack;
+  std::shared_ptr<pp::adp::WallClock> clock;
+  std::unique_ptr<pp::amp::AmpStack> stack;
   std::string peer_id;
   std::string listen_ma;
 
@@ -183,8 +183,8 @@ struct AmpPeer {
     }
   }
 
-  pbr::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
-  pbr::amp::PeerLinkManager& Links() { return stack->Links(); }
+  pp::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
+  pp::amp::PeerLinkManager& Links() { return stack->Links(); }
 };
 
 void PumpPeers(const std::vector<AmpPeer*>& peers) {
@@ -208,7 +208,7 @@ bool PumpUntil(const std::vector<AmpPeer*>& peers, Pred&& done, const int timeou
   return done();
 }
 
-pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_ep,
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_ep,
                                                const bool accept_inbound) {
   auto keys = pbr::MlDsa::GenerateKeyPair();
   if (!keys) {
@@ -219,26 +219,26 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_
     return peer_id.error();
   }
 
-  auto bound = pbr::adp::OsUdpDatagramIo::Bind(bind_ep);
+  auto bound = pp::adp::OsUdpDatagramIo::Bind(bind_ep);
   if (!bound) {
     return bound.error();
   }
 
   auto peer = std::make_unique<AmpPeer>();
-  peer->clock = std::make_shared<pbr::adp::WallClock>();
+  peer->clock = std::make_shared<pp::adp::WallClock>();
   peer->peer_id = *peer_id;
 
-  pbr::amp::MshIdentity identity;
+  pp::amp::MshIdentity identity;
   identity.ml_dsa_secret_key = std::move(keys->secret_key);
   identity.ml_dsa_public_key = std::move(keys->public_key);
 
-  pbr::amp::AmpStack::Config cfg;
+  pp::amp::AmpStack::Config cfg;
   cfg.identity = std::move(identity);
   cfg.local_peer_id = peer->peer_id;
   cfg.link_config = MakeProbeLinkConfig();
 
-  std::shared_ptr<pbr::adp::DatagramIo> io = std::move(*bound);
-  auto stack = pbr::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
+  std::shared_ptr<pp::adp::DatagramIo> io = std::move(*bound);
+  auto stack = pp::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
   if (!stack) {
     return stack.error();
   }
@@ -246,7 +246,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_
   peer->stack->Start();
   peer->stack->GetEndpoint().SetAcceptEnabled(accept_inbound);
 
-  auto listen = pbr::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
+  auto listen = pp::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
   if (!listen) {
     return listen.error();
   }
@@ -256,11 +256,11 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_
 }
 
 pbr::Roe<std::unique_ptr<AmpPeer>> MakeLocalClient() {
-  return MakeAmpPeer(pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
+  return MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
 }
 
 pbr::Roe<std::unique_ptr<AmpPeer>> MakeAdvertisableTarget() {
-  return MakeAmpPeer(pbr::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
+  return MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
 }
 
 template <typename Result>
@@ -282,9 +282,9 @@ struct AsyncWait {
 
 void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vector<uint8_t>& payload) {
   target.Links().SetProtocolHandler(
-      kProbeBridgeProtocol, [&](pbr::amp::PeerLink& link, const uint32_t channel_id) {
-        auto session = std::make_shared<pbr::amp::ChannelSession>();
-        session->Bind(*link.Mux(), channel_id, pbr::amp::CircuitTunnelChannelPolicy(),
+      kProbeBridgeProtocol, [&](pp::amp::PeerLink& link, const uint32_t channel_id) {
+        auto session = std::make_shared<pp::amp::ChannelSession>();
+        session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
                       [&, session](pbr::Roe<std::vector<uint8_t>> frame) {
                         if (!frame) {
                           return false;

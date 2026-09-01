@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace pbr::adp {
+namespace pp::adp {
 namespace {
 
 void WriteU16Le(std::vector<uint8_t>& out, uint16_t v) {
@@ -86,4 +86,4 @@ std::span<const uint8_t> WireCodec::MacInput(std::span<const uint8_t> datagram) 
   return datagram.first(datagram.size() - kHmacBytes);
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

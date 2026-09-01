@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 Connection::Connection(Endpoint& endpoint, OpenParams params)
     : endpoint_(&endpoint), id_(params.id), binder_(params.key), peer_(params.peer),
@@ -248,4 +248,4 @@ void Connection::HandleAuthenticated(const WirePacket& pkt, const IpEndpoint& fr
   }
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

@@ -10,7 +10,7 @@
 
 #include <iterator>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 PeerLinkManager::Failure PeerLinkManager::WrapPeerLinkFailure(const PeerLink::Failure& child) {
   switch (child.GetCode()) {
@@ -916,4 +916,4 @@ void PeerLinkManager::HandleInboundCarrierChannel(PeerLink& via_link, const uint
   EstablishNestedOverCarrier(provisional, std::move(carrier), false, {});
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

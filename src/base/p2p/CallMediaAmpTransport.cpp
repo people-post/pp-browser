@@ -12,7 +12,7 @@ using Clock = std::chrono::steady_clock;
 
 } // namespace
 
-CallMediaAmpTransport::CallMediaAmpTransport(amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker)
+CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker)
     : coordinator_(runtime, std::move(post_worker)), io_pump_(std::move(io_pump)) {}
 
 CallMediaAmpTransport::~CallMediaAmpTransport() {

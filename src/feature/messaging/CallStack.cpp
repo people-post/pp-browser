@@ -376,7 +376,7 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
 std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const {
   std::vector<std::string> relay_ids;
   MeshHost* m = mesh();
-  amp::PeerLinkManager* amp_links = (m && m->Amp()) ? &m->Amp()->Links() : nullptr;
+  pp::amp::PeerLinkManager* amp_links = (m && m->Amp()) ? &m->Amp()->Links() : nullptr;
   AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
   if (!amp_links && !amp_hops) {
     return relay_ids;
@@ -397,7 +397,7 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
-    if (!hop.multiaddr.empty() && amp_links && amp::ParseAdpMultiaddr(hop.multiaddr)) {
+    if (!hop.multiaddr.empty() && amp_links && pp::amp::ParseAdpMultiaddr(hop.multiaddr)) {
       (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
     } else if (hop.multiaddr.empty() && amp_links) {
       if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {

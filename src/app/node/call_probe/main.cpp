@@ -99,8 +99,8 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
 }
 
 /** Parse `/ip4/H/udp/P/adp/1.0.0` with optional `/p2p/...` for answerer bind. */
-std::optional<pbr::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
-  if (auto full = pbr::amp::ParseAdpMultiaddr(ma)) {
+std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
+  if (auto full = pp::amp::ParseAdpMultiaddr(ma)) {
     return full->endpoint;
   }
   // Without /p2p/: /ip4/H/udp/P/adp/1.0.0
@@ -137,13 +137,13 @@ std::optional<pbr::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
       d > 255) {
     return std::nullopt;
   }
-  return pbr::adp::IpEndpoint::V4(static_cast<uint8_t>(a), static_cast<uint8_t>(b),
+  return pp::adp::IpEndpoint::V4(static_cast<uint8_t>(a), static_cast<uint8_t>(b),
                                   static_cast<uint8_t>(c), static_cast<uint8_t>(d),
                                   static_cast<uint16_t>(port));
 }
 
-pbr::amp::PeerLinkConfig MakeProbeLinkConfig() {
-  pbr::amp::PeerLinkConfig config;
+pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
+  pp::amp::PeerLinkConfig config;
   config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
     auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
     if (!peer_id) {
@@ -155,8 +155,8 @@ pbr::amp::PeerLinkConfig MakeProbeLinkConfig() {
 }
 
 struct AmpPeer {
-  std::shared_ptr<pbr::adp::WallClock> clock;
-  std::unique_ptr<pbr::amp::AmpStack> stack;
+  std::shared_ptr<pp::adp::WallClock> clock;
+  std::unique_ptr<pp::amp::AmpStack> stack;
   std::string peer_id;
   std::string listen_ma;
 
@@ -167,8 +167,8 @@ struct AmpPeer {
     }
   }
 
-  pbr::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
-  pbr::amp::PeerLinkManager& Links() { return stack->Links(); }
+  pp::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
+  pp::amp::PeerLinkManager& Links() { return stack->Links(); }
 };
 
 template <typename Pred>
@@ -184,7 +184,7 @@ bool PumpUntil(AmpPeer& peer, Pred&& done, const int timeout_ms) {
   return done();
 }
 
-pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_ep,
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_ep,
                                                const bool accept_inbound) {
   auto keys = pbr::MlDsa::GenerateKeyPair();
   if (!keys) {
@@ -195,26 +195,26 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_
     return peer_id.error();
   }
 
-  auto bound = pbr::adp::OsUdpDatagramIo::Bind(bind_ep);
+  auto bound = pp::adp::OsUdpDatagramIo::Bind(bind_ep);
   if (!bound) {
     return bound.error();
   }
 
   auto peer = std::make_unique<AmpPeer>();
-  peer->clock = std::make_shared<pbr::adp::WallClock>();
+  peer->clock = std::make_shared<pp::adp::WallClock>();
   peer->peer_id = *peer_id;
 
-  pbr::amp::MshIdentity identity;
+  pp::amp::MshIdentity identity;
   identity.ml_dsa_secret_key = std::move(keys->secret_key);
   identity.ml_dsa_public_key = std::move(keys->public_key);
 
-  pbr::amp::AmpStack::Config cfg;
+  pp::amp::AmpStack::Config cfg;
   cfg.identity = std::move(identity);
   cfg.local_peer_id = peer->peer_id;
   cfg.link_config = MakeProbeLinkConfig();
 
-  std::shared_ptr<pbr::adp::DatagramIo> io = std::move(*bound);
-  auto stack = pbr::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
+  std::shared_ptr<pp::adp::DatagramIo> io = std::move(*bound);
+  auto stack = pp::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
   if (!stack) {
     return stack.error();
   }
@@ -222,7 +222,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pbr::adp::IpEndpoint& bind_
   peer->stack->Start();
   peer->stack->GetEndpoint().SetAcceptEnabled(accept_inbound);
 
-  auto listen = pbr::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
+  auto listen = pp::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
   if (!listen) {
     return listen.error();
   }
@@ -274,7 +274,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
   pbr::CircuitBridgeTarget target;
   target.target_peer_id = peer_id;
   target.target_multiaddr = peer_ma;
-  target.target_protocol = pbr::amp::kAmpCircuitCarrierProtocolId;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
   AsyncWait<pbr::CircuitTunnelBridgeResult> bridge_wait;
   auto tunnel_id = circuit.StartBridge(hop_key, target, {}, {}, bridge_wait.Fn(), 10000);
@@ -296,7 +296,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
   if (!peer.Links().IsConnected(peer_id)) {
     return pbr::Error("nested link not connected");
   }
-  (void)hops.Install(peer_id, hop_key, pbr::amp::kAmpCircuitCarrierProtocolId, bridge_wait.result->session,
+  (void)hops.Install(peer_id, hop_key, pp::amp::kAmpCircuitCarrierProtocolId, bridge_wait.result->session,
                      tunnel_id);
   return {};
 }
@@ -430,7 +430,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     return 1;
   }
 
-  auto offerer = MakeAmpPeer(pbr::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
   if (!offerer) {
     std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
     return 1;
@@ -564,7 +564,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
     media->DetachLeg(leg_id);
     if (via_hop) {
-      hops->Clear(*peer_id, pbr::amp::kAmpCircuitCarrierProtocolId);
+      hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
       const auto settle = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
       while (std::chrono::steady_clock::now() < settle) {
         (*offerer)->Pump();
@@ -587,7 +587,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       }
       std::cout << "ok  chat after leave cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
       if (via_hop) {
-        hops->Clear(*peer_id, pbr::amp::kAmpCircuitCarrierProtocolId);
+        hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
       }
     }
 

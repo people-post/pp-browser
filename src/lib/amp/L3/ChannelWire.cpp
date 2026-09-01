@@ -1,6 +1,6 @@
 #include "lib/amp/L3/ChannelWire.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -246,4 +246,4 @@ Roe<ChannelFrame> ChannelWire::Decode(std::span<const uint8_t> wire) {
   return frame;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

@@ -9,7 +9,7 @@
 
 #include <functional>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 PeerLink::Failure PeerLink::WrapConnectionFailure(const adp::Connection::Failure& child) {
   switch (child.GetCode()) {
@@ -455,4 +455,4 @@ void PeerLink::HandleSessionControl(const std::span<const uint8_t> payload) {
   }
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

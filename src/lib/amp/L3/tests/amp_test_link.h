@@ -1,14 +1,13 @@
 #pragma once
 
 #include "crypto/MlDsa.h"
-#include "lib/amp/AmpRoe.h"
 #include "lib/amp/L3/ChannelMux.h"
 #include "lib/amp/L2/MshHandshake.h"
 #include "lib/amp/L2/Session.h"
 
 #include <memory>
 
-namespace pbr::amp::test {
+namespace pp::amp::test {
 
 struct AmpTestPeer {
   Session session;
@@ -71,4 +70,4 @@ private:
   }
 };
 
-} // namespace pbr::amp::test
+} // namespace pp::amp::test

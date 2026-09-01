@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -89,4 +89,4 @@ Roe<SessionMaterial> SessionKeys::Derive(std::span<const uint8_t> master_ikm,
   return material;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

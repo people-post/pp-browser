@@ -5,7 +5,7 @@
 
 #include <cstring>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 Endpoint::Endpoint(std::shared_ptr<DatagramIo> io, std::shared_ptr<Clock> clock)
     : io_(std::move(io)), clock_(std::move(clock)) {}
@@ -116,4 +116,4 @@ void Endpoint::HandleDatagram(const IpEndpoint& from, std::span<const uint8_t> d
   (*accepted)->HandleAuthenticated(*decoded, from, now);
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

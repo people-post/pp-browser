@@ -7,7 +7,7 @@
 #include <string>
 #include <utility>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 /** Layer-local coded failure — `Err` enum is defined by the owning class. */
 template <typename ErrEnum>
@@ -42,4 +42,4 @@ inline std::string AppendFrom(std::string detail, const std::string_view from_la
 
 } // namespace detail
 
-} // namespace pbr::adp
+} // namespace pp::adp

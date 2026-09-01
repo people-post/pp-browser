@@ -2,13 +2,12 @@
 
 #include "lib/amp/L2/Types.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 class SessionCrypto {
 public:
@@ -22,4 +21,4 @@ public:
                                        uint32_t channel_seq, Direction direction, std::span<const uint8_t> sealed);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

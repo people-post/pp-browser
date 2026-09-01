@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Error.h"
+
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -9,7 +11,10 @@
 #include <string>
 #include <vector>
 
-namespace pbr::adp {
+namespace pp::adp {
+
+using pp::Error;
+using pp::Roe;
 
 inline constexpr uint8_t kWireVersion = 1;
 inline constexpr size_t kAssocIdBytes = 16;
@@ -119,4 +124,4 @@ struct Message {
 using MessageHandler = std::function<void(const Message&)>;
 using PathChangeHandler = std::function<void(const IpEndpoint& from, const IpEndpoint& to)>;
 
-} // namespace pbr::adp
+} // namespace pp::adp

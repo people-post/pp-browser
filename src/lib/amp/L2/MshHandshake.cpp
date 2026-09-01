@@ -10,7 +10,7 @@
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 namespace {
 
@@ -271,4 +271,4 @@ Roe<MshEstablished> MshHandshake::Run(const MshIdentity& initiator, const MshIde
   return out;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

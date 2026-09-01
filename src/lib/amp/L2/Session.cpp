@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 Session::Session(SessionMaterial material, ByteVector master_ikm, ByteVector transcript_hash)
     : material_(std::move(material)),
@@ -92,4 +92,4 @@ bool Session::HasGraceRecvKey(const int64_t now_ms) const {
   return previous_recv_key_.has_value() && now_ms > 0 && now_ms <= grace_until_ms_;
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp

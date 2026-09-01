@@ -6,12 +6,11 @@
 #include "lib/amp/link/MeshRuntime.h"
 #include "lib/amp/L2/Types.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <memory>
 #include <string>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /**
  * Owns ADP Endpoint + MeshRuntime for one local peer (D9 composition building block).
@@ -52,4 +51,4 @@ private:
   std::string local_peer_id_;
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

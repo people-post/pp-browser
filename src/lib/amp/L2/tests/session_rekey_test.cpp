@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 MshIdentity MakeIdentity() {
@@ -68,4 +68,4 @@ TEST(SessionRekeyGraceTest, ApplyRekeyRejectsPreviousEpochAfterGrace) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

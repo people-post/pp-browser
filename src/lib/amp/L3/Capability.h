@@ -2,12 +2,11 @@
 
 #include "lib/amp/L3/ChannelWire.h"
 
-#include "lib/amp/AmpRoe.h"
 
 #include <string>
 #include <vector>
 
-namespace pbr::amp {
+namespace pp::amp {
 
 /** Channel 0 capability payload (binary v1). */
 struct CapabilityPayload {
@@ -22,4 +21,4 @@ public:
   static Roe<CapabilityPayload> Decode(std::span<const uint8_t> wire);
 };
 
-} // namespace pbr::amp
+} // namespace pp::amp

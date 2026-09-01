@@ -1,6 +1,6 @@
 #include "lib/amp/L1/ReplayWindow.h"
 
-namespace pbr::adp {
+namespace pp::adp {
 
 ReplayWindow::ReplayWindow(const size_t window_size) : window_size_(window_size) {}
 
@@ -24,4 +24,4 @@ bool ReplayWindow::Accept(const uint64_t seq) {
   return pending_.insert(seq).second;
 }
 
-} // namespace pbr::adp
+} // namespace pp::adp

@@ -162,7 +162,7 @@
 ## A023 — MeshHost may own AmpStack in parallel; same device keys
 
 **Date:** 2026-08-31  
-**Decision:** `MeshHost` may construct / attach an `amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. Amp start failure is **soft** (libp2p stays up; `AmpLastError()`). `MeshHost::Tick` pumps the Amp stack — product must call `mesh->Tick()` (not only `Runtime()->Tick()`). Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
+**Decision:** `MeshHost` may construct / attach an `pp::amp::AmpStack` **beside** libp2p without routing product L4 ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol) still forbids dual `if (amp)` in app paths). `enable_amp_stack` **requires** the same `device_ml_dsa_*` keys as `Libp2pHost` so AMP PeerId matches. Amp start failure is **soft** (libp2p stays up; `AmpLastError()`). `MeshHost::Tick` pumps the Amp stack — product must call `mesh->Tick()` (not only `Runtime()->Tick()`). Dial-back / mDNS on ADP are **not** blockers for this ownership step.  
 **Rationale:** Cutover needs a live UDP+MSH host object before flipping protocols; separate keys would fork identity; hard-failing Amp would take down production mesh during the parallel phase.  
 **Alternatives:** Separate Amp-only process; generate a second PeerId for AMP; hard-fail MeshHost::Start when Amp fails.
 
@@ -175,7 +175,7 @@
 ## A025 — Pre-extract layer cleanup (limits, policies, PeerId)
 
 **Date:** 2026-08-31  
-**Decision:** Before extracting `pp-cpp-amp`: (1) channel budgets live in `amp::AmpChannelLimits` under `lib/amp/L3/` (not `base/p2p`); (2) core AMP policy factories stay in `ChannelPolicy.h` (`ControlJson`, `Capability`, `CircuitCarrier`); product L4 factories move to `base/p2p/ProductChannelPolicies.h`; (3) `PeerIdFromMlDsaPublicKey` is its own CMake target `pp_base_peer_id` so mesh/link tests and people do not link `pp_base_p2p`. `Libp2pExecutorLimits` remains a deprecated alias of `AmpChannelLimits`.  
+**Decision:** Before extracting `pp-cpp-amp`: (1) channel budgets live in `pp::amp::AmpChannelLimits` under `lib/amp/L3/` (not `base/p2p`); (2) core AMP policy factories stay in `ChannelPolicy.h` (`ControlJson`, `Capability`, `CircuitCarrier`); product L4 factories move to `base/p2p/ProductChannelPolicies.h`; (3) `PeerIdFromMlDsaPublicKey` is its own CMake target `pp_base_peer_id` so mesh/link tests and people do not link `pp_base_p2p`. `Libp2pExecutorLimits` remains a deprecated alias of `AmpChannelLimits`.  
 **Rationale:** Removes the mesh→p2p include edge that blocked shared-lib extract; keeps product protocol sizes out of AMP core; PeerId encoding still needs retained libp2p wire but must not pull MeshHost.  
 **Alternatives:** Leave limits in p2p; move PeerId into `pp-cpp-crypto` immediately; keep all factories in `ChannelPolicy.h`.
 

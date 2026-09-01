@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-namespace pbr::amp {
+namespace pp::amp {
 namespace {
 
 TEST(ChannelWireTest, OpenRoundTrip) {
@@ -37,4 +37,4 @@ TEST(ChannelWireTest, DataRoundTrip) {
 }
 
 } // namespace
-} // namespace pbr::amp
+} // namespace pp::amp

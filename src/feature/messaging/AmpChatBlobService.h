@@ -25,7 +25,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpChatBlobService(amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
+  AmpChatBlobService(pp::amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
                      WorkerPost post_worker = {});
   ~AmpChatBlobService() override;
 
@@ -47,7 +47,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  amp::PeerLinkManager& links_;
+  pp::amp::PeerLinkManager& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;

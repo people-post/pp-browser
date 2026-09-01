@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace pbr::adp {
+namespace pp::adp {
 
 /** Injectable clock — tests Advance; production uses wall time. */
 class Clock {
@@ -27,4 +27,4 @@ private:
   int64_t now_ms_ = 0;
 };
 
-} // namespace pbr::adp
+} // namespace pp::adp

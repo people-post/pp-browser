@@ -1,6 +1,6 @@
 #include "lib/amp/link/MeshPump.h"
 
-namespace pbr::amp {
+namespace pp::amp {
 
 MeshPump::MeshPump(adp::Endpoint& endpoint, PeerLinkManager& links) : endpoint_(endpoint), links_(links) {}
 
@@ -14,4 +14,4 @@ void MeshPump::Tick() {
   links_.Tick();
 }
 
-} // namespace pbr::amp
+} // namespace pp::amp
