@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 
 #include "common/Error.h"
 

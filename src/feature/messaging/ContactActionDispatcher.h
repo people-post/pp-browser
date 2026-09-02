@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/InboxController.h"

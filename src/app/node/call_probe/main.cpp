@@ -5,7 +5,7 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
-#include "base/messaging/RelayEnvelope.h"
+#include "common/chat/RelayEnvelope.h"
 #include "base/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "base/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"

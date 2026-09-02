@@ -1,7 +1,7 @@
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>

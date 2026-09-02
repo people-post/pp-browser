@@ -7,7 +7,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/people/AvatarGlyph.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"

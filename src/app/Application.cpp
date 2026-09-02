@@ -10,7 +10,7 @@
 #include "common/Error.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/ChatPayloadValidator.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ContextMenuHost.h"

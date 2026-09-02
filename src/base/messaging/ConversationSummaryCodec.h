@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/ThreadMemoryTypes.h"
+#include "common/thread/ThreadMemoryTypes.h"
 
 #include "common/Error.h"
 

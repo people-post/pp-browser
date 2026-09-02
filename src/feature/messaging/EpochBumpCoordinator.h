@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 
 #include "common/Error.h"
 

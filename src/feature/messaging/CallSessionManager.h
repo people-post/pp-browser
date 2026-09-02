@@ -6,7 +6,7 @@
 #include "base/messaging/CallSessionStore.h"
 #include "base/data/PricingTypes.h"
 #include "base/messaging/InitiationBillingStore.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"

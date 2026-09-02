@@ -4,7 +4,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/media/CallAudioSession.h"
 #include "base/media/CallMediaEngine.h"
-#include "base/media/CallMediaHealth.h"
+#include "common/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/people/AvatarGlyph.h"

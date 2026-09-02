@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/messaging/ChatPayloadTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 #include "common/Error.h"
 

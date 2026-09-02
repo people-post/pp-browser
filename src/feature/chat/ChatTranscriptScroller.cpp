@@ -2,7 +2,7 @@
 #include "feature/chat/ChatTranscriptScroller.h"
 
 #include "base/i18n/LocalizationService.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "feature/ui/DataModelHost.h"
 
 #include <RmlUi/Core/Context.h>

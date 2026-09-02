@@ -1,6 +1,6 @@
 #include "base/messaging/ConversationSummaryCodec.h"
 
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

@@ -4,7 +4,7 @@
 
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"

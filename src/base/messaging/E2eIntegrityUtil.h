@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/SyncStateTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/SyncStateTypes.h"
 
 #include <string>
 

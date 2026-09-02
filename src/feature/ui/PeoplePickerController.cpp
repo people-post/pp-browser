@@ -6,7 +6,7 @@
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"

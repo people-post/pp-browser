@@ -1,8 +1,7 @@
 #pragma once
 
-// Compatibility shim — prefer `#include "common/PeopleDiscoveryBlocks.h"`.
-#include "common/PeopleDiscoveryBlocks.h"
 #include "base/people/ContactTypes.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
 
 #include <vector>
 

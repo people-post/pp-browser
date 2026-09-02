@@ -27,6 +27,8 @@ check_absent() {
 check_absent "data must not include ai/" '#include "base/ai/' src/base/data
 check_absent "crypto must not include messaging/ThreadTypes.h" \
   '#include "base/messaging/ThreadTypes.h"' src/base/crypto
+check_absent "crypto must not include common/thread/ThreadTypes.h" \
+  '#include "common/thread/ThreadTypes.h"' src/base/crypto
 check_absent "messaging must not include ai/conversation/ConversationTypes.h" \
   '#include "base/ai/conversation/ConversationTypes.h"' src/base/messaging
 check_absent "platform headers must not include ui/" \
@@ -95,38 +97,57 @@ while IFS= read -r -d '' file; do
 done < <(find "$ROOT/src/base" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
   ! -path '*/tests/*' -print0)
 
-# Ensure allowlisted edges that we claim were peeled stay peeled when removed from list.
-# (No-op structural check: verify mesh no longer includes people/RelayScope.)
-check_absent "mesh must not include people/RelayScope.h (use common/RelayScope.h)" \
+# Peeled paths must stay peeled (old locations / shims removed).
+check_absent "mesh must not include people/RelayScope.h (use common/directory/RelayScope.h)" \
   '#include "base/people/RelayScope.h"' src/base/mesh
-check_absent "mesh must not include people/ContactTypes.h (use common/DirectoryTypes.h)" \
+check_absent "mesh must not include people/ContactTypes.h (use common/directory/DirectoryTypes.h)" \
   '#include "base/people/ContactTypes.h"' src/base/mesh
-check_absent "mesh production must not include base/net/ (use common/IDirectoryClient.h)" \
+check_absent "mesh production must not include base/net/ (use common/directory/IDirectoryClient.h)" \
   '#include "base/net/' src/base/mesh/discovery
-check_absent "mesh must not include base/media/ (use common/CallMediaHealth.h)" \
+check_absent "mesh must not include base/media/ (use common/media/CallMediaHealth.h)" \
   '#include "base/media/' src/base/mesh
-check_absent "ai must not include ui/WorkingSetTypes.h (use common/WorkingSetTypes.h)" \
+check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
   '#include "base/ui/WorkingSetTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ChatActionTypes.h (use common/)" \
+check_absent "ai must not include messaging/ChatActionTypes.h (use common/chat/)" \
   '#include "base/messaging/ChatActionTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/)" \
+check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadMemoryTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ThreadTypes.h (use common/)" \
+check_absent "ai must not include messaging/ThreadTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadTypes.h"' src/base/ai
-check_absent "ai must not include messaging/IThreadStore.h (use common/)" \
+check_absent "ai must not include messaging/IThreadStore.h (use common/thread/)" \
   '#include "base/messaging/IThreadStore.h"' src/base/ai
-check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/)" \
+check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/chat/)" \
   '#include "base/messaging/PeopleDiscoveryBlocks.h"' src/base/ai
-check_absent "net must not include messaging/ThreadTypes.h (use common/)" \
+check_absent "net must not include messaging/ThreadTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadTypes.h"' src/base/net
-check_absent "net must not include messaging/ChatPayloadTypes.h (use common/)" \
+check_absent "net must not include messaging/ChatPayloadTypes.h (use common/chat/)" \
   '#include "base/messaging/ChatPayloadTypes.h"' src/base/net
-check_absent "net must not include messaging/IThreadStore.h (use common/)" \
+check_absent "net must not include messaging/IThreadStore.h (use common/thread/)" \
   '#include "base/messaging/IThreadStore.h"' src/base/net
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
 check_absent "messaging must not include feature/ (domain may not include feature)" \
   '#include "feature/' src/base/messaging
+
+# Removed shim paths must stay deleted.
+for shim in \
+  src/common/ThreadTypes.h \
+  src/common/IThreadStore.h \
+  src/common/CallMediaHealth.h \
+  src/base/messaging/ThreadTypes.h \
+  src/base/messaging/IThreadStore.h \
+  src/base/data/ContextBudget.h \
+  src/base/people/RelayScope.h \
+  src/base/net/CurlSsl.h \
+  src/base/media/CallMediaHealth.h \
+  src/base/ui/WorkingSetTypes.h \
+  src/base/messaging/PeopleDiscoveryBlocks.h
+do
+  if [[ -e "$ROOT/$shim" ]]; then
+    echo "FAIL: shim path still exists: $shim"
+    FAIL=1
+  fi
+done
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

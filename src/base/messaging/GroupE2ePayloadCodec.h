@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/GroupTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/IPskSessionStore.h"
 

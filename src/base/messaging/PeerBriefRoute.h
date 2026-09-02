@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactsStore.h"
 

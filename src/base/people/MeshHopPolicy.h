@@ -2,7 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/people/ContactTypes.h"
-#include "common/RelayScope.h"
+#include "common/directory/RelayScope.h"
 
 #include <cstdint>
 #include <string>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"

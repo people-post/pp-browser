@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
-#include "common/DirectoryJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "common/Value.h"
 
 #include <string>

@@ -1,6 +1,6 @@
 #include "base/messaging/GroupMembershipCodec.h"
 
-#include "base/messaging/ChatPayloadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

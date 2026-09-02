@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 namespace pbr {
 

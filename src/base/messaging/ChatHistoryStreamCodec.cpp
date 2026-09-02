@@ -1,6 +1,6 @@
 #include "base/messaging/ChatHistoryStreamCodec.h"
 
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 
 #include <cstring>
 #include "common/PbrCompat.h"

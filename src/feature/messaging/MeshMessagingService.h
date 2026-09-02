@@ -3,7 +3,7 @@
 #include "common/Module.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"

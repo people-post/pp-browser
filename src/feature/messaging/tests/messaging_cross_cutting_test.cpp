@@ -2,7 +2,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/MlDsa.h"
 #include "base/people/IdentityStore.h"

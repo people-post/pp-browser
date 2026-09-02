@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/SyncStateTypes.h"
+#include "common/thread/SyncStateTypes.h"
 
 #include "common/Error.h"
 

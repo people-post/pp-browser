@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 

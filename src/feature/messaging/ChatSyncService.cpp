@@ -5,7 +5,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactsStore.h"
 

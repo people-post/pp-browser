@@ -2,7 +2,7 @@
 
 #include "base/data/AtomicFileWrite.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

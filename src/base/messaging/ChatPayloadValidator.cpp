@@ -1,8 +1,8 @@
 #include "base/messaging/ChatPayloadValidator.h"
 
 #include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/ChatPayloadTypes.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/ChatPayloadTypes.h"
+#include "common/chat/MessagingLimits.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

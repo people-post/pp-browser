@@ -2,7 +2,7 @@
 
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/RelayEnvelope.h"
+#include "common/chat/RelayEnvelope.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

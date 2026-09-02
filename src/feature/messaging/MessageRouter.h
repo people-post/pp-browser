@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/AtAiParser.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 #include "common/Module.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/MeshMessagingService.h"

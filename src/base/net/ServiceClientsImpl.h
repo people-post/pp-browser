@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/DirectoryTypes.h"
+#include "common/directory/DirectoryTypes.h"
 #include "base/net/BlobClient.h"
 #include "base/net/ClientCompat.h"
 #include "base/net/IPushDeviceClient.h"

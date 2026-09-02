@@ -12,7 +12,7 @@
 #include "base/net/HttpBlobClient.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
-#include "common/DirectoryJson.h"
+#include "common/directory/DirectoryJson.h"
 
 #include <algorithm>
 #include <mutex>

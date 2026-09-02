@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/PskBundleCodec.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

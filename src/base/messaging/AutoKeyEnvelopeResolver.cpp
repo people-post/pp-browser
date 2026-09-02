@@ -3,7 +3,7 @@
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
-#include "base/messaging/ThreadChannel.h"
+#include "common/thread/ThreadChannel.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

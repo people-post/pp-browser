@@ -2,7 +2,7 @@
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/conversation/ConversationTypes.h"
-#include "base/messaging/ChatActionTypes.h"
+#include "common/chat/ChatActionTypes.h"
 #include "base/ui/ChatWidgetTypes.h"
 
 #include <map>

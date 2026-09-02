@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/crypto/ReplayWindow.h"
-#include "base/messaging/SyncStateTypes.h"
+#include "common/thread/SyncStateTypes.h"
 
 #include <cstdint>
 #include <optional>

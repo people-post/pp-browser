@@ -10,7 +10,7 @@
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ReactionTypes.h"
 #include "base/ui/ChatFormHelper.h"

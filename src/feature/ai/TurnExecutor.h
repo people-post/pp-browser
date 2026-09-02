@@ -6,7 +6,7 @@
 #include "base/ai/ToolRegistry.h"
 #include "common/Error.h"
 #include "base/people/ContactTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <functional>
 #include <optional>

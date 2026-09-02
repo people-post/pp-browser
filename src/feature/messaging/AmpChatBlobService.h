@@ -1,8 +1,8 @@
 #pragma once
 
 #include "base/crypto/CryptoTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"

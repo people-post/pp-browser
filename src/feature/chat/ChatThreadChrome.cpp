@@ -3,8 +3,8 @@
 #include "feature/chat/ChatDataModel.h"
 #include "base/crypto/CryptoTypes.h"
 #include "base/i18n/LocalizationService.h"
-#include "base/messaging/SyncStateTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/SyncStateTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 
 #include <RmlUi/Core/Core.h>

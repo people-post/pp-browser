@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/data/PricingTypes.h"
-#include "base/media/CallMediaHealth.h"
+#include "common/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/CallLifecycle.h"

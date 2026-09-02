@@ -1,6 +1,6 @@
 #include "base/ai/conversation/ThreadContextPolicy.h"
-#include "common/ThreadMemoryTypes.h"
-#include "common/ThreadTypes.h"
+#include "common/thread/ThreadMemoryTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <gtest/gtest.h>
 

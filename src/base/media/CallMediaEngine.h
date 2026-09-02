@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/media/CallMediaAdaptation.h"
-#include "base/media/CallMediaHealth.h"
+#include "common/media/CallMediaHealth.h"
 #include "common/Error.h"
 #include "common/Module.h"
 

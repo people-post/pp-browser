@@ -2,7 +2,7 @@
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
-#include "base/media/CallMediaHealth.h"
+#include "common/media/CallMediaHealth.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/platform/PlatformLogSink.h"

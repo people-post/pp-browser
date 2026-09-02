@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/PeerSigningKeyStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/ContactTypes.h"
 #include "common/Error.h"

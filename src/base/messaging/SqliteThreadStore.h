@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/IDekConsumer.h"
 #include "common/Module.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 
 #include <list>
 #include <mutex>

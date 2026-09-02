@@ -1,6 +1,6 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/messaging/PskRotateCodec.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>

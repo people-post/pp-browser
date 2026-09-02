@@ -2,7 +2,7 @@
 
 #include "common/Module.h"
 #include "base/people/ContactTypes.h"
-#include "base/messaging/IThreadStore.h"
+#include "common/thread/IThreadStore.h"
 
 #include <mutex>
 #include <optional>

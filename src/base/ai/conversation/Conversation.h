@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/conversation/ConversationTypes.h"
-#include "common/ThreadMemoryTypes.h"
+#include "common/thread/ThreadMemoryTypes.h"
 
 #include <mutex>
 #include <optional>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/data/PricingTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
 
 #include <optional>

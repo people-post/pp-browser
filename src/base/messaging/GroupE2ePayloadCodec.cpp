@@ -3,7 +3,7 @@
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
 #include "common/PbrCompat.h"

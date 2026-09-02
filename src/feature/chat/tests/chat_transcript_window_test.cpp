@@ -1,4 +1,4 @@
-#include "base/messaging/MessagingLimits.h"
+#include "common/chat/MessagingLimits.h"
 #include "base/ui/ChatWidgetTypes.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 

@@ -10,7 +10,7 @@ app → feature → domain → foundation → common → pp_common
 
 Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
-Prefer **subdir paths** (`common/thread/…`, `common/chat/…`). Top-level `common/*.h` files are compatibility shims.
+Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-level forwarding headers.
 
 ---
 
@@ -63,5 +63,5 @@ All units in this folder are peers: no cycles. Prefer new files over growing umb
 
 1. Confirm it is not orchestration (that belongs in `feature/`).
 2. Confirm no `base/` / foundation / domain includes.
-3. Put new contracts in the matching subdir; add a top-level shim only if an old path must keep compiling.
+3. Put new contracts in the matching subdir; update call sites to the subdir path (no forwarding headers).
 4. Document wire/disk-facing shapes in [`docs/contracts/`](../../docs/contracts/) when they escape the process.

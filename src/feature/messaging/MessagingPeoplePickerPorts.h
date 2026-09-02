@@ -2,7 +2,7 @@
 
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/GroupTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
 #include "common/Error.h"
 

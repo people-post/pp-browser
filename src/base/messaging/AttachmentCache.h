@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/ChatPayloadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
 #include "base/crypto/CryptoTypes.h"
 
 #include "common/Error.h"

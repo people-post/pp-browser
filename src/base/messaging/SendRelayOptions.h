@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <optional>
 #include <string>
