@@ -1,6 +1,6 @@
-#include "base/media/IVideoCodec.h"
-#include "base/media/VideoCodecOs.h"
-#include "base/media/VideoCodecUnavailable.h"
+#include "domain/media/IVideoCodec.h"
+#include "domain/media/VideoCodecOs.h"
+#include "domain/media/VideoCodecUnavailable.h"
 
 #if defined(__APPLE__)
 

@@ -1,6 +1,6 @@
 #include "feature/messaging/CallTopologyController.h"
 
-#include "base/media/CallMediaAdaptation.h"
+#include "domain/media/CallMediaAdaptation.h"
 #include "base/messaging/HopHintLogic.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/messaging/SfuAttachFanout.h"

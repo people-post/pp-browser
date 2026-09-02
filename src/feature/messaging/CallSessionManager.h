@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/IPskSessionStore.h"
-#include "base/media/CallMediaEngine.h"
+#include "domain/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"

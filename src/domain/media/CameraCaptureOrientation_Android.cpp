@@ -1,4 +1,4 @@
-#include "base/media/CameraCaptureOrientation.h"
+#include "domain/media/CameraCaptureOrientation.h"
 
 #if defined(__ANDROID__)
 

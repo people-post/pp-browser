@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/media/IVideoCodec.h"
+#include "domain/media/IVideoCodec.h"
 
 #include <memory>
 

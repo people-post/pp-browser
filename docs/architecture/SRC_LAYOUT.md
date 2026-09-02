@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`. **Started domain move:** `people` lives under `src/domain/people/` (`#include "domain/people/…"`, `pp_domain_people`). Remaining peers still under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
+> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`. **Started domain move:** `people` and `media` live under `src/domain/` (`#include "domain/…"`, `pp_domain_*`). Remaining peers still under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
 
 ## Layers
 
@@ -115,7 +115,7 @@ Target path after move: `src/foundation/<module>/`.
 | `base/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
 | `base/net/` | HTTP client, service clients (no people/messaging policy) |
 | `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
-| `base/media/` | `CallMediaEngine` — capture/playback + HW H264 |
+| `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `base/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 | `base/render/` | Product RmlUi host/overlays; reusable SDL/GL in pp-cpp-ui |
@@ -182,7 +182,7 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_common` | common (FetchContent) |
 | `pp_pbr_common` | common (in-tree) |
 | `pp_foundation_*` | foundation modules under `src/foundation/` (e.g. `pp_foundation_data`) |
-| `pp_domain_*` | migrated domain peers under `src/domain/` (today: `pp_domain_people`) |
+| `pp_domain_*` | migrated domain peers under `src/domain/` (today: `pp_domain_people`, `pp_domain_media`) |
 | `pp_base_*` | remaining domain modules under `src/base/` (e.g. `pp_base_mesh`) — rename to `pp_domain_*` when folders move |
 | `pp_base` | aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |

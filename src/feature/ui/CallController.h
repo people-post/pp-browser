@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/media/CallMediaHealth.h"
-#include "base/media/CallRingtone.h"
+#include "domain/media/CallRingtone.h"
 #include "base/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/messaging/CallFunctionalPorts.h"

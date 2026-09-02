@@ -1,7 +1,7 @@
-#include "base/media/IVideoCodec.h"
-#include "base/media/VideoCodecOs.h"
-#include "base/media/VideoCodecUnavailable.h"
-#include "base/media/VideoYuv.h"
+#include "domain/media/IVideoCodec.h"
+#include "domain/media/VideoCodecOs.h"
+#include "domain/media/VideoCodecUnavailable.h"
+#include "domain/media/VideoYuv.h"
 
 #if defined(__ANDROID__)
 

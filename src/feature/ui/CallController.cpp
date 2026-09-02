@@ -2,8 +2,8 @@
 #include "feature/ui/CallController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "base/media/CallAudioSession.h"
-#include "base/media/CallMediaEngine.h"
+#include "domain/media/CallAudioSession.h"
+#include "domain/media/CallMediaEngine.h"
 #include "common/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/SfuAttachFanout.h"

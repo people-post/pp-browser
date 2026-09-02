@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
-#include "base/media/CallMediaEngine.h"
+#include "domain/media/CallMediaEngine.h"
 #include "base/messaging/CallSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"

@@ -1,11 +1,11 @@
-#include "base/media/CallMediaEngine.h"
+#include "domain/media/CallMediaEngine.h"
 
-#include "base/media/CallAudioSession.h"
-#include "base/media/CallMediaPlayout.h"
-#include "base/media/CallRingtone.h"
-#include "base/media/CameraCaptureOrientation.h"
-#include "base/media/IVideoCodec.h"
-#include "base/media/VideoYuv.h"
+#include "domain/media/CallAudioSession.h"
+#include "domain/media/CallMediaPlayout.h"
+#include "domain/media/CallRingtone.h"
+#include "domain/media/CameraCaptureOrientation.h"
+#include "domain/media/IVideoCodec.h"
+#include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL.h>

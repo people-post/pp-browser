@@ -50,7 +50,7 @@ check_tree "foundation/error/ must not use OS #ifdefs" src/foundation/error
 check_tree "foundation/i18n/ must not use OS #ifdefs" src/foundation/i18n
 check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
-check_tree "base/media/ portable TUs must not use OS #ifdefs" src/base/media \
+check_tree "domain/media/ portable TUs must not use OS #ifdefs" src/domain/media \
   "${BACKEND_GLOBS[@]}"
 check_tree "base/mesh/ portable TUs must not use OS #ifdefs" src/base/mesh \
   "${BACKEND_GLOBS[@]}"

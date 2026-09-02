@@ -1,5 +1,5 @@
-#include "base/media/IVideoCodec.h"
-#include "base/media/VideoCodecOs.h"
+#include "domain/media/IVideoCodec.h"
+#include "domain/media/VideoCodecOs.h"
 
 namespace pbr {
 

@@ -16,7 +16,7 @@ OS-specific code has **three homes**, not one folder:
 | **Domain `*_Win32.cpp` / `*_Android.cpp` next to the feature** | Fat OS backends used by one module | H264, camera orientation, VoIP audio session, mDNS sockets, GL lifecycle, net-if enumeration |
 | **Runtime dispatch (`Platform::Detect()` / `IsMobile()`)** | Product behavior, not syscalls | Portrait lock, poll intervals, skip stdio MCP |
 
-Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_base_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
+Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_domain_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
 
 Hard rules:
 
@@ -42,9 +42,9 @@ Hard rules:
 | `foundation/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
-| `base/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
-| `base/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
-| `base/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
+| `domain/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
+| `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
+| `domain/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
 | `base/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
 | `base/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |
 | `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
@@ -82,7 +82,7 @@ Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/` and `desktop/`)
 - `src/base/render/` (GL/GLES backends)
-- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/base/media/` and `src/base/mesh/`
+- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` and `src/base/mesh/`
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)

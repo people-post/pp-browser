@@ -53,7 +53,7 @@ pp_browser_add_feature_library(pp_feature_messaging
   PUBLIC_LIBS
     pp_feature_ai
     pp_foundation_crypto
-    pp_base_media
+    pp_domain_media
     pp_base_messaging
     pp_base_mesh_link
     pp_base_mesh

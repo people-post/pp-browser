@@ -123,8 +123,8 @@ check_absent "mesh must not include people/ContactTypes.h (use common/directory/
   '#include "domain/people/ContactTypes.h"' src/base/mesh
 check_absent "mesh production must not include base/net/ (use common/directory/IDirectoryClient.h)" \
   '#include "base/net/' src/base/mesh/discovery
-check_absent "mesh must not include base/media/ (use common/media/CallMediaHealth.h)" \
-  '#include "base/media/' src/base/mesh
+check_absent "mesh must not include domain/media/ (use common/media/CallMediaHealth.h)" \
+  '#include "domain/media/' src/base/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
   '#include "base/ui/WorkingSetTypes.h"' src/base/ai
 check_absent "ai must not include messaging/ChatActionTypes.h (use common/chat/)" \
@@ -161,6 +161,8 @@ check_absent_prod "net must not include domain/people/ (use common/directory + f
   '#include "domain/people/' src/base/net
 check_absent "must not include base/people/ (moved to domain/people/)" \
   '#include "base/people/' src
+check_absent "must not include base/media/ (moved to domain/media/)" \
+  '#include "base/media/' src
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
 check_absent "domain must not include ChatBlobRequestUtil at old path (use feature/messaging/)" \
@@ -195,6 +197,7 @@ for shim in \
   src/base/people \
   src/base/people/RelayScope.h \
   src/base/net/CurlSsl.h \
+  src/base/media \
   src/base/media/CallMediaHealth.h \
   src/base/ui/WorkingSetTypes.h \
   src/base/messaging/PeopleDiscoveryBlocks.h \

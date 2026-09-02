@@ -66,7 +66,7 @@ src/base/
 ├── net/          [domain] HTTP client, relay / registration / directory clients
 ├── messaging/    [domain] Threads, SQLite + JSON stores, relay/group/E2E codecs
 ├── mesh/         [domain] Amp product glue — host, ports, reachability, L4
-├── media/        [domain] Call capture/playback + HW H264
+├── media/        [domain] **moved →** `src/domain/media/` (`pp_domain_media`)
 ├── ai/           [domain] LLM client, turn plans, structured parsing, MCP
 │   ├── conversation/
 │   └── mcp/

@@ -7,8 +7,9 @@ Independent **product peer** libraries (North Star). Peers must not `#include` o
 | Peer (today) | Path | CMake |
 |--------------|------|-------|
 | people | `domain/people/` | `pp_domain_people` |
-| messaging, net, mesh, media, ai, ui, render | still under `src/base/` | `pp_base_*` (rename with move) |
+| media | `domain/media/` | `pp_domain_media` |
+| messaging, net, mesh, ai, ui, render | still under `src/base/` | `pp_base_*` (rename with move) |
 
-Includes: `#include "domain/people/…"`. Old `src/base/people/` stays deleted.
+Includes: `#include "domain/people/…"`, `#include "domain/media/…"`. Old `src/base/people/` and `src/base/media/` stay deleted.
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).

@@ -283,8 +283,8 @@ flowchart TB
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **libp2p IO** | `Libp2pHost` | `base/mesh/` | `asio::io_context` run loop |
-| **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
-| **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
+| **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
+| **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
 ### Cross-thread rules of thumb
@@ -334,4 +334,4 @@ Full model: [THREADING.md](THREADING.md).
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | `base/mesh/` | Vendored host + asio IO thread |
-| **CallMediaEngine** | `base/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
+| **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

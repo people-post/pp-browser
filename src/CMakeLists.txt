@@ -4,9 +4,12 @@ add_subdirectory(common)
 add_subdirectory(foundation)
 add_subdirectory(base)
 add_subdirectory(domain)
-# people moved to domain/; attach after the target exists (base/ still owns pp_base).
+# Migrated domain peers attach after their targets exist (base/ still owns pp_base).
 if(TARGET pp_base AND TARGET pp_domain_people)
   target_link_libraries(pp_base INTERFACE pp_domain_people)
+endif()
+if(TARGET pp_base AND TARGET pp_domain_media)
+  target_link_libraries(pp_base INTERFACE pp_domain_media)
 endif()
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

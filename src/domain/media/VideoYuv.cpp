@@ -1,4 +1,4 @@
-#include "base/media/VideoYuv.h"
+#include "domain/media/VideoYuv.h"
 
 #include <algorithm>
 #include <cmath>

@@ -1,4 +1,4 @@
-#include "base/media/CallMediaAdaptation.h"
+#include "domain/media/CallMediaAdaptation.h"
 
 #include <algorithm>
 

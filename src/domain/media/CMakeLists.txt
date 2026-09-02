@@ -1,4 +1,4 @@
-pp_browser_add_base_library(pp_base_media
+pp_browser_add_domain_library(pp_domain_media
   SOURCES
     CallMediaAdaptation.cpp
     CallMediaEngine.cpp
@@ -14,36 +14,36 @@ pp_browser_add_base_library(pp_base_media
 
 # Domain OS backends — source-select; do not compile MediaCodec TUs on Linux, etc.
 if(WIN32)
-  target_sources(pp_base_media PRIVATE
+  target_sources(pp_domain_media PRIVATE
     VideoCodec_Win32.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp)
-  target_link_libraries(pp_base_media PRIVATE mfplat mf mfuuid)
+  target_link_libraries(pp_domain_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
-  target_sources(pp_base_media PRIVATE VideoCodec_Darwin.cpp)
-  target_link_libraries(pp_base_media PRIVATE
+  target_sources(pp_domain_media PRIVATE VideoCodec_Darwin.cpp)
+  target_link_libraries(pp_domain_media PRIVATE
     "-framework VideoToolbox"
     "-framework CoreMedia"
     "-framework CoreVideo"
     "-framework CoreFoundation")
   if(PP_BROWSER_IS_IOS)
-    target_sources(pp_base_media PRIVATE
+    target_sources(pp_domain_media PRIVATE
       CallAudioSession_Ios.mm
       CameraCaptureOrientation_Ios.mm)
-    target_link_libraries(pp_base_media PRIVATE "-framework AVFoundation" "-framework UIKit")
+    target_link_libraries(pp_domain_media PRIVATE "-framework AVFoundation" "-framework UIKit")
   else()
-    target_sources(pp_base_media PRIVATE
+    target_sources(pp_domain_media PRIVATE
       CallAudioSession_Default.cpp
       CameraCaptureOrientation_Default.cpp)
   endif()
 elseif(ANDROID)
-  target_sources(pp_base_media PRIVATE
+  target_sources(pp_domain_media PRIVATE
     VideoCodec_Android.cpp
     CallAudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp)
-  target_link_libraries(pp_base_media PRIVATE mediandk camera2ndk)
+  target_link_libraries(pp_domain_media PRIVATE mediandk camera2ndk)
 else()
-  target_sources(pp_base_media PRIVATE
+  target_sources(pp_domain_media PRIVATE
     VideoCodec_Linux.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp)
@@ -53,9 +53,9 @@ else()
     pkg_check_modules(PP_LIBVA QUIET libva libva-drm)
   endif()
   if(PP_LIBVA_FOUND)
-    target_compile_definitions(pp_base_media PRIVATE PP_BROWSER_HAS_LIBVA=1)
-    target_include_directories(pp_base_media PRIVATE ${PP_LIBVA_INCLUDE_DIRS})
-    target_link_libraries(pp_base_media PRIVATE ${PP_LIBVA_LIBRARIES})
+    target_compile_definitions(pp_domain_media PRIVATE PP_BROWSER_HAS_LIBVA=1)
+    target_include_directories(pp_domain_media PRIVATE ${PP_LIBVA_INCLUDE_DIRS})
+    target_link_libraries(pp_domain_media PRIVATE ${PP_LIBVA_LIBRARIES})
     message(STATUS "pp-browser: Linux H264 — libva + libva-drm (VA-API)")
   else()
     message(WARNING

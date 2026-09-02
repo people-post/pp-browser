@@ -1,6 +1,6 @@
 #include "common/ByteRateLimiter.h"
-#include "base/media/CallMediaAdaptation.h"
-#include "base/media/CallMediaPlayout.h"
+#include "domain/media/CallMediaAdaptation.h"
+#include "domain/media/CallMediaPlayout.h"
 
 #include <gtest/gtest.h>
 
