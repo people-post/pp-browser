@@ -1,8 +1,8 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
-#include "base/crypto/AutoKeyEstablishment.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"

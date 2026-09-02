@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsService.h"
 #include "foundation/data/Config.h"
 #include "base/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"

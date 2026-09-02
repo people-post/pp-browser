@@ -1,8 +1,8 @@
 #include "base/messaging/ChatBlobResponder.h"
 
-#include "base/crypto/AttachmentContentCipher.h"
-#include "base/crypto/AttachmentContentHash.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
+#include "foundation/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"

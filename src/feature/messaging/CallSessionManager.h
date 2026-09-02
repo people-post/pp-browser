@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/IPskSessionStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"

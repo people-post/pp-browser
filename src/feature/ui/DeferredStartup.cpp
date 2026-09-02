@@ -4,7 +4,7 @@
 #include "foundation/platform/IAssetLocator.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ClientCompatController.h"
 #include "feature/ui/ShellNavigationPorts.h"
 

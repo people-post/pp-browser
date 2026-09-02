@@ -1,7 +1,7 @@
 #include "feature/messaging/AttachmentFetchUtil.h"
 
-#include "base/crypto/AttachmentContentCipher.h"
-#include "base/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
+#include "foundation/crypto/AttachmentContentHash.h"
 #include "base/messaging/AttachmentCache.h"
 #include "feature/messaging/ChatBlobRequestUtil.h"
 #include "base/net/HttpClient.h"

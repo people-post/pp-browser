@@ -1,5 +1,5 @@
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/DataKeyVault.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/DataKeyVault.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/LinkDeviceExchange.h"
 

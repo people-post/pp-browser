@@ -1,10 +1,10 @@
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientsImpl.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/MlDsa.h"
 
 #include <gtest/gtest.h>
 

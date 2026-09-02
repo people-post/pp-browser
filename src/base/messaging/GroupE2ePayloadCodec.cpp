@@ -1,7 +1,7 @@
 #include "base/messaging/GroupE2ePayloadCodec.h"
 
-#include "base/crypto/AutoKeyEstablishment.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/directory/DirectoryJson.h"

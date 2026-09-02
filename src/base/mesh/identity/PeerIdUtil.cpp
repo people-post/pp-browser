@@ -1,6 +1,6 @@
 #include "base/mesh/identity/PeerIdUtil.h"
 
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/MlDsa.h"
 #include "base/mesh/identity/MlDsaPublicKeyWire.h"
 #include "base/mesh/identity/PeerId.h"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
+#include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
 
 #include "common/Error.h"

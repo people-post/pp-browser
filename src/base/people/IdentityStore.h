@@ -2,8 +2,8 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/IDekConsumer.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/IDekConsumer.h"
 #include "common/directory/IdentityTypes.h"
 
 #include <mutex>

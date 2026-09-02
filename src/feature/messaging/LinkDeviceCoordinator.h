@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/crypto/DataKeyVault.h"
-#include "base/crypto/IPskSessionStore.h"
-#include "base/crypto/LinkDeviceCodec.h"
-#include "base/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "foundation/crypto/LinkDeviceCodec.h"
+#include "foundation/crypto/ProfileSecretsService.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/LinkDeviceExchange.h"
 

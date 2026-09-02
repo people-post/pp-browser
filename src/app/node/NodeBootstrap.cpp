@@ -1,9 +1,9 @@
 #include "app/node/NodeBootstrap.h"
 #include "app/node/NodeEnvOverlay.h"
 
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/PinResolver.h"
-#include "base/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PinResolver.h"
+#include "foundation/crypto/ProfileSecretsService.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"

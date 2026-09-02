@@ -8,9 +8,9 @@
 #include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 
-#include "base/crypto/AutoKeyEstablishment.h"
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/people/DirectChatTargetFromContact.h"
 #include "base/messaging/InitiationBillingCodec.h"

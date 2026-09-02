@@ -1,7 +1,7 @@
 #include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
-#include "base/crypto/MessageCipher.h"
-#include "base/crypto/CryptoConstants.h"
+#include "foundation/crypto/MessageCipher.h"
+#include "foundation/crypto/CryptoConstants.h"
 
 #include <cstring>
 #include "common/PbrCompat.h"

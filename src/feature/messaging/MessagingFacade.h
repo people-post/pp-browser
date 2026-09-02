@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
+#include "foundation/crypto/CryptoTypes.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"

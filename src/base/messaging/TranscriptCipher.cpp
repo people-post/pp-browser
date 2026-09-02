@@ -1,7 +1,7 @@
 #include "base/messaging/TranscriptCipher.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/FileCipher.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/FileCipher.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

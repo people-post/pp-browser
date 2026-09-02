@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/DataKeyVault.h"
-#include "base/crypto/LinkDeviceCodec.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/LinkDeviceCodec.h"
 #include "base/people/IdentityStore.h"
 
 #include "common/Error.h"

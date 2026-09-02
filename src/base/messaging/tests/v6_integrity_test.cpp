@@ -1,4 +1,4 @@
-#include "base/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eIngestClassifier.h"
 #include "base/messaging/SqliteThreadStore.h"

@@ -1,7 +1,7 @@
 #include "feature/chat/ChatThreadChrome.h"
 
 #include "feature/chat/ChatDataModel.h"
-#include "base/crypto/CryptoTypes.h"
+#include "foundation/crypto/CryptoTypes.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"

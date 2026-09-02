@@ -1,6 +1,6 @@
 #include "base/messaging/E2eIngestClassifier.h"
 
-#include "base/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoConstants.h"
 
 #include <algorithm>
 

@@ -1,8 +1,8 @@
 #include "base/messaging/AutoKeyEnvelopeResolver.h"
 
-#include "base/crypto/AutoKeyEstablishment.h"
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/AutoKeyEstablishment.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/thread/ThreadChannel.h"
 #include "common/PbrCompat.h"
 

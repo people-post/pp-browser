@@ -2,8 +2,8 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/PskFingerprint.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PskFingerprint.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/people/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"

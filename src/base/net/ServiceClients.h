@@ -3,7 +3,7 @@
 #include "common/directory/DirectoryTypes.h"
 #include "common/Error.h"
 #include "common/directory/IDirectoryClient.h"
-#include "base/crypto/IDekConsumer.h"
+#include "foundation/crypto/IDekConsumer.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "common/thread/ChatHistoryTypes.h"
 

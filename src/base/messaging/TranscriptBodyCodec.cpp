@@ -1,6 +1,6 @@
 #include "base/messaging/TranscriptBodyCodec.h"
 
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

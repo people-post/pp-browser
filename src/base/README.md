@@ -60,7 +60,7 @@ src/base/
 ├── data/         [foundation] **moved →** `src/foundation/data/`
 ├── error/        [foundation] **moved →** `src/foundation/error/`
 ├── i18n/         [foundation] **moved →** `src/foundation/i18n/`
-├── crypto/       [foundation] E2E/at-rest crypto primitives, PIN vault, KEM helpers
+├── crypto/       [foundation] **moved →** `src/foundation/crypto/`
 │
 ├── people/       [domain] Identity, contacts
 ├── net/          [domain] HTTP client, relay / registration / directory clients
@@ -89,7 +89,7 @@ Includes (today): `#include "foundation/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (domain peers):** **zero** allowlisted peer→peer edges (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration / chat-blob orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` / `platform` / `data` → `src/foundation/`. Cleared domain peer allowlist (no messaging→people).
+**Current (domain peers):** **zero** allowlisted peer→peer edges (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration / chat-blob orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` / `platform` / `data` / `crypto` → `src/foundation/`. Domain peer allowlist empty.
 
 **Target:**
 

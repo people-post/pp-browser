@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/IDekConsumer.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/IDekConsumer.h"
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "base/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"

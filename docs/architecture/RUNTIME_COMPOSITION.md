@@ -318,8 +318,8 @@ Full model: [THREADING.md](THREADING.md).
 | **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
 | **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
 | **PinGateActionPorts** | `feature/ui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
-| **ProfileSecretsService** | `base/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
-| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
+| **ProfileSecretsService** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
+| **ProfileUnlockGate** | `foundation/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
 | **UnlockEnsurePorts** | `feature/ui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `foundation/i18n/` | Locale catalogs; nested `Prefs` |

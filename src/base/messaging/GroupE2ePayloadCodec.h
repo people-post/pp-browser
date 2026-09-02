@@ -2,8 +2,8 @@
 
 #include "base/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/IPskSessionStore.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/IPskSessionStore.h"
 
 #include "common/Error.h"
 

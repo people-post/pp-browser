@@ -1,4 +1,4 @@
-#include "base/crypto/CryptoTypes.h"
+#include "foundation/crypto/CryptoTypes.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/ValueJson.h"

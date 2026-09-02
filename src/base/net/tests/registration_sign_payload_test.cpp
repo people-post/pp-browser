@@ -1,6 +1,6 @@
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/HybridKem.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/HybridKem.h"
+#include "foundation/crypto/MlDsa.h"
 #include "base/net/RegistrationSignPayload.h"
 
 #include <gtest/gtest.h>

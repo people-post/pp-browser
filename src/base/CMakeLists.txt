@@ -1,8 +1,7 @@
 include(PpBrowserBase)
 
 # Acyclic module order: each library links only lower layers.
-# runtime/platform/data live under src/foundation/; crypto remains here for now.
-add_subdirectory(crypto)
+# foundation bands (runtime/platform/error/i18n/data/crypto) live under src/foundation/.
 # AMP L1–L3 + link: FetchContent pp-cpp-amp (cmake/PpCppAmp.cmake).
 add_subdirectory(mesh)
 add_subdirectory(people)

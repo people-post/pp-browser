@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/IPskSessionStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "base/mesh/host/MeshPorts.h"

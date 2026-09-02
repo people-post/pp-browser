@@ -1,9 +1,9 @@
 #include "base/net/ServiceClientsImpl.h"
 
 #include "common/Utilities.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/HybridKem.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/HybridKem.h"
+#include "foundation/crypto/MlDsa.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ValueJson.h"
 #include "common/chat/RelayStreamKey.h"

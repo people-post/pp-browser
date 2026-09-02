@@ -1,7 +1,7 @@
 #include "amp/L1/Clock.h"
 #include "amp/L1/OsUdpDatagramIo.h"
 #include "amp/L1/Types.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/MlDsa.h"
 #include "base/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"

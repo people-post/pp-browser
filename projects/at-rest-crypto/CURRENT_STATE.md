@@ -4,7 +4,7 @@
 |------------|--------|-------|
 | `AtomicFileWrite` | **Yes** | `src/foundation/data/AtomicFileWrite.*` |
 | JSON writers atomic | **Yes** | Config, prefs, registry, manifest, contacts, JsonThreadStore |
-| `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/base/crypto/` |
+| `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/foundation/crypto/` |
 | `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
 | `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK + transcript store |
 | `EnsureMessagingReady` | **Yes** | `MessagingHub` after profile unlock |

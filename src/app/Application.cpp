@@ -1,8 +1,8 @@
 #include "app/Application.h"
 #include "app/ConfigApplyBridge.h"
 
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"

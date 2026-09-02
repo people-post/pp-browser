@@ -2,9 +2,9 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/ReactionTypes.h"
-#include "base/crypto/AttachmentContentCipher.h"
-#include "base/crypto/AttachmentContentHash.h"
-#include "base/crypto/CryptoConstants.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
+#include "foundation/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "common/EmojiKey.h"
 
 #include <gtest/gtest.h>

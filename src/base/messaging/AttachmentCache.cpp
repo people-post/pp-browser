@@ -1,9 +1,9 @@
 #include "base/messaging/AttachmentCache.h"
 
-#include "base/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/platform/VideoPosterExtractor.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/FileCipher.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/FileCipher.h"
 
 #include <algorithm>
 #include <cctype>

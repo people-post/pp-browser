@@ -46,7 +46,7 @@ d0 (complete)
 
 | Wave | Phase | Work | Checkpoint |
 |------|-------|------|------------|
-| **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `MeshMessagingService` in `base/crypto` |
+| **1** | **c1** | Vendor libsodium; `src/foundation/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `MeshMessagingService` in `base/crypto` |
 | **5** | **c2** | `MeshMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
 | **6** | **c3** | Generate/export/import PSK; fingerprint gate; rotation bundle (D086); compromise hooks to chat D038 | User verify + send/receive + simulated epoch bump |
 | **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Landed |
@@ -131,7 +131,7 @@ d0 (complete)
 - [x] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
 - [x] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
 
-### Module `src/base/crypto/`
+### Module `src/foundation/crypto/`
 
 - [x] `CryptoTypes.h`, `CryptoConstants.h`
 - [x] `PskFingerprint` — BLAKE2b-256 + display format
@@ -144,7 +144,7 @@ d0 (complete)
 
 ### Tests
 
-- [x] [src/base/crypto/tests/](../../src/base/crypto/tests/) — GTest registered from [tests/CMakeLists.txt](../../tests/CMakeLists.txt)
+- [x] [src/foundation/crypto/tests/](../../src/foundation/crypto/tests/) — GTest registered from [tests/CMakeLists.txt](../../tests/CMakeLists.txt)
 - [x] HKDF determinism matches DESIGN test vector
 - [x] AEAD round-trip, tamper fail, wrong AAD fail
 - [x] Codec round-trip; ReplayWindow accept/reject

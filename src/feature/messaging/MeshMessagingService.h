@@ -7,7 +7,7 @@
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
-#include "base/crypto/IPskSessionStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "feature/messaging/ChatSyncService.h"

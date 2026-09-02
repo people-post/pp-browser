@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/crypto/ReplayWindow.h"
-#include "base/crypto/IPskSessionStore.h"
+#include "foundation/crypto/ReplayWindow.h"
+#include "foundation/crypto/IPskSessionStore.h"
 #include "base/messaging/E2eIngestClassifier.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"

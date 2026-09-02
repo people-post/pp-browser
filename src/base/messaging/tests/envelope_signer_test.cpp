@@ -1,5 +1,5 @@
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/MlDsa.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingJson.h"
 

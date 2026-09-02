@@ -1,6 +1,6 @@
 #include "base/messaging/ChatPayloadCodec.h"
 
-#include "base/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/AttachmentContentHash.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Serialize.hpp"

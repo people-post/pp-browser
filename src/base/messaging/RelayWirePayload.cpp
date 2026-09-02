@@ -1,6 +1,6 @@
 #include "base/messaging/RelayWirePayload.h"
 
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "common/PbrCompat.h"

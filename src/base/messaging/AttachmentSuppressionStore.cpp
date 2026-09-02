@@ -1,6 +1,6 @@
 #include "base/messaging/AttachmentSuppressionStore.h"
 
-#include "base/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/AttachmentContentHash.h"
 #include "base/messaging/AttachmentCache.h"
 #include "common/ValueJson.h"
 

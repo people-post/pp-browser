@@ -10,7 +10,7 @@
 
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"
-#include "base/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsService.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"

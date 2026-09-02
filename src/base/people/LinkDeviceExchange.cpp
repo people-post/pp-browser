@@ -1,7 +1,7 @@
 #include "base/people/LinkDeviceExchange.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
 
 #include <optional>
 #include "common/PbrCompat.h"

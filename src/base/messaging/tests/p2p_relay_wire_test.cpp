@@ -1,7 +1,7 @@
 #include "common/chat/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoUtil.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

@@ -1,6 +1,6 @@
 #include "feature/messaging/ChatHistoryResponder.h"
 
-#include "base/crypto/CryptoUtil.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingLimits.h"

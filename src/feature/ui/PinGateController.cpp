@@ -1,6 +1,6 @@
 #include "feature/ui/PinGateController.h"
 
-#include "base/crypto/PinDefaults.h"
+#include "foundation/crypto/PinDefaults.h"
 #include "foundation/i18n/LocalizationService.h"
 
 namespace pbr {

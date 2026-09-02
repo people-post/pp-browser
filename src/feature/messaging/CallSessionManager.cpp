@@ -1,7 +1,7 @@
 #include "feature/messaging/CallSessionManager.h"
 
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/SessionKeyDeriver.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/SessionKeyDeriver.h"
 #include "base/messaging/CallSessionLogic.h"
 #include "base/people/DirectChatTargetFromContact.h"
 #include "base/messaging/InitiationPricing.h"

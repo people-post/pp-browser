@@ -1,8 +1,8 @@
 #include "base/people/IdentityStore.h"
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/FileCipher.h"
-#include "base/crypto/MlDsa.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/MlDsa.h"
 #include "base/mesh/identity/PeerIdUtil.h"
 #include "common/ValueJson.h"
 

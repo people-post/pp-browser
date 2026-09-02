@@ -38,9 +38,9 @@ check_absent_prod() {
 # --- Hard bans (keep forever) ---
 check_absent "data must not include ai/" '#include "base/ai/' src/foundation/data
 check_absent "crypto must not include messaging/ThreadTypes.h" \
-  '#include "base/messaging/ThreadTypes.h"' src/base/crypto
+  '#include "base/messaging/ThreadTypes.h"' src/foundation/crypto
 check_absent "crypto must not include common/thread/ThreadTypes.h" \
-  '#include "common/thread/ThreadTypes.h"' src/base/crypto
+  '#include "common/thread/ThreadTypes.h"' src/foundation/crypto
 check_absent "messaging must not include ai/conversation/ConversationTypes.h" \
   '#include "base/ai/conversation/ConversationTypes.h"' src/base/messaging
 check_absent "platform headers must not include ui/" \
@@ -170,6 +170,7 @@ for shim in \
   src/base/messaging/MessagingJson.h \
   src/base/messaging/ChatBlobRequestUtil.h \
   src/base/data \
+  src/base/crypto \
   src/base/messaging/PeerBriefRoute.h \
   src/base/messaging/ChatHistoryResponder.h \
   src/base/net/ProfileIconClientUtil.h \

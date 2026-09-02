@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/crypto/ReplayWindow.h"
+#include "foundation/crypto/ReplayWindow.h"
 #include "common/thread/SyncStateTypes.h"
 
 #include <cstdint>

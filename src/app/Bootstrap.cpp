@@ -1,8 +1,8 @@
 #include "app/Bootstrap.h"
 
-#include "base/crypto/PinResolver.h"
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "foundation/crypto/PinResolver.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/Config.h"
 #include "foundation/platform/DeploymentProfile.h"
