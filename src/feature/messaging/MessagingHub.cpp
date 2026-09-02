@@ -25,9 +25,9 @@
 #include "feature/messaging/AttachmentClientUtil.h"
 #include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpClient.h"
-#include "base/net/ProfileIconClientUtil.h"
-#include "base/net/ProfileIconFetchUtil.h"
-#include "base/net/RegistrationClientUtil.h"
+#include "feature/messaging/ProfileIconClientUtil.h"
+#include "feature/messaging/ProfileIconFetchUtil.h"
+#include "feature/messaging/RegistrationClientUtil.h"
 #include "base/people/ProfileIconCache.h"
 #include "base/platform/ProfileIconImagePrep.h"
 #include "base/people/ContactIdentity.h"
@@ -1495,7 +1495,14 @@ Roe<BlobQuotaRecoveryPlan> MessagingHub::PlanRelayQuotaRecovery() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return PlanOldestRelayBlobDeletion(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
@@ -1508,7 +1515,14 @@ Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return pbr::FreeOldestRelayBlobSlot(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return pbr::FreeOldestRelayBlobSlot(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {

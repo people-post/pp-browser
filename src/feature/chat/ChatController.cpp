@@ -33,7 +33,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/people/ContactJson.h"
-#include "base/net/RegistrationClientUtil.h"
+#include "feature/messaging/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"

@@ -124,7 +124,7 @@ Target path after move: `src/domain/<module>/`.
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`; `net` → `people`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
 

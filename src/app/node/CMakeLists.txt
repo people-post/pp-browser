@@ -16,7 +16,7 @@ add_executable(pp-node
   ${CMAKE_SOURCE_DIR}/src/base/net/HttpClient.cpp
   ${CMAKE_SOURCE_DIR}/src/base/net/RelaySignBytes.cpp
   ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationSignPayload.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationClientUtil.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/messaging/RegistrationClientUtil.cpp
 )
 
 target_include_directories(pp-node PRIVATE

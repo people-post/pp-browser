@@ -1,22 +1,19 @@
 #include "base/net/BlobQuotaUtil.h"
 
-#include "base/people/IdentityStore.h"
 #include "foundation/error/AppError.h"
 #include "common/PbrCompat.h"
+
+#include <optional>
 
 namespace pbr {
 
 namespace {
 
-Roe<std::string> RequireRegisteredRelayUserId(IdentityStore& identity) {
-  auto loaded = identity.Get();
-  if (!loaded) {
-    return loaded.error();
-  }
-  if (!loaded->registered || loaded->relay_user_id.empty()) {
+Roe<std::string> RequireRelayUserId(const std::string& relay_user_id) {
+  if (relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return loaded->relay_user_id;
+  return relay_user_id;
 }
 
 } // namespace
@@ -26,14 +23,14 @@ bool IsBlobQuotaError(const Error& err) {
          err.code == static_cast<int32_t>(Err::Blob::QuotaExceeded);
 }
 
-Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, IdentityStore& identity,
+Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, const std::string& relay_user_id,
                                                        const std::string& protected_blob_id) {
-  auto relay_user_id = RequireRegisteredRelayUserId(identity);
-  if (!relay_user_id) {
-    return relay_user_id.error();
+  auto uid = RequireRelayUserId(relay_user_id);
+  if (!uid) {
+    return uid.error();
   }
 
-  auto listed = blob.List(*relay_user_id);
+  auto listed = blob.List(*uid);
   if (!listed) {
     return listed.error();
   }
@@ -60,24 +57,24 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, Identi
   return plan;
 }
 
-Roe<void> DeleteRelayBlob(IBlobClient& blob, IdentityStore& identity, const std::string& blob_id) {
+Roe<void> DeleteRelayBlob(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id) {
   if (blob_id.empty()) {
     return Error("blob_id is required");
   }
-  auto relay_user_id = RequireRegisteredRelayUserId(identity);
-  if (!relay_user_id) {
-    return relay_user_id.error();
+  auto uid = RequireRelayUserId(relay_user_id);
+  if (!uid) {
+    return uid.error();
   }
-  return blob.Delete(*relay_user_id, blob_id);
+  return blob.Delete(*uid, blob_id);
 }
 
-Roe<void> FreeOldestRelayBlobSlot(IBlobClient& blob, IdentityStore& identity,
+Roe<void> FreeOldestRelayBlobSlot(IBlobClient& blob, const std::string& relay_user_id,
                                   const std::string& protected_blob_id) {
-  auto plan = PlanOldestRelayBlobDeletion(blob, identity, protected_blob_id);
+  auto plan = PlanOldestRelayBlobDeletion(blob, relay_user_id, protected_blob_id);
   if (!plan) {
     return plan.error();
   }
-  return DeleteRelayBlob(blob, identity, plan->blob_to_delete.blob_id);
+  return DeleteRelayBlob(blob, relay_user_id, plan->blob_to_delete.blob_id);
 }
 
 } // namespace pbr

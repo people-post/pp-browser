@@ -2,7 +2,7 @@
 
 #include "base/crypto/AttachmentContentCipher.h"
 #include "base/crypto/AttachmentContentHash.h"
-#include "base/messaging/ChatBlobRequestUtil.h"
+#include "feature/messaging/ChatBlobRequestUtil.h"
 
 #include <algorithm>
 #include <cctype>

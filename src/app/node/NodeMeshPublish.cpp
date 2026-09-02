@@ -1,7 +1,7 @@
 #include "app/node/NodeMeshPublish.h"
 
 #include "base/net/HttpClient.h"
-#include "base/net/RegistrationClientUtil.h"
+#include "feature/messaging/RegistrationClientUtil.h"
 #include "base/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

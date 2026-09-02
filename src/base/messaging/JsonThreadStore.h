@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/people/ContactTypes.h"
 #include "common/thread/IThreadStore.h"
 
 #include <mutex>

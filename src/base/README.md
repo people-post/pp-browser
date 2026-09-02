@@ -89,7 +89,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** remaining allowlisted edges are `messaging`→`people` and `net`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment utils in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` → `src/foundation/`.
+**Current (legacy DAG inside `base/`):** remaining allowlisted edge is `messaging`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` → `src/foundation/`.
 
 **Target:**
 
@@ -110,7 +110,7 @@ Includes (today): `#include "base/data/Config.h"`.
 | Type | Header |
 |------|--------|
 | `LlmConfig` | `data/LlmConfig.h` |
-| Relay / blob helpers still coupling net↔people | `ProfileIcon*`, `RegistrationClientUtil`, `BlobQuotaUtil` |
+| Relay / blob helpers still coupling (feature orchestration) | `feature/messaging` ProfileIcon* / RegistrationClientUtil; net `BlobQuotaUtil` is IdentityStore-free |
 
 Candidates to promote into `common` when peeling peer edges: people/net helper ports, narrow view DTOs. Remaining messaging vocab lives in [`src/common/`](../common/) (`ThreadTypes`, `IThreadStore`, `RelayEnvelope`, …).
 

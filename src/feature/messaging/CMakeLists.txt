@@ -12,6 +12,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     CallSessionManager.cpp
     CallStack.cpp
     CallTopologyController.cpp
+    ChatBlobRequestUtil.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
@@ -36,10 +37,13 @@ pp_browser_add_feature_library(pp_feature_messaging
     MessagingPeoplePickerPorts.cpp
     MeshMessagingService.cpp
     PeerDisplayResolver.cpp
+    ProfileIconClientUtil.cpp
+    ProfileIconFetchUtil.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
+    RegistrationClientUtil.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
@@ -50,6 +54,8 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_base_media
     pp_base_mesh_link
     pp_base_mesh
+    pp_base_net
+    pp_base_people
     pp_base_platform_core
     pp_base_runtime_core
     pp_base_runtime

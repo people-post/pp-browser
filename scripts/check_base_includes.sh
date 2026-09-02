@@ -42,7 +42,6 @@ check_absent "common must not include feature/" \
 # Format: from->to (module folder names under src/base/).
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 messaging->people
-net->people
 EOF
 )
 
@@ -134,8 +133,16 @@ check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignB
   '#include "base/messaging/EnvelopeSigner.h"' src/base/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/base/net
+check_absent "net must not include base/people/ (use common/directory + feature wiring)" \
+  '#include "base/people/' src/base/net
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
+check_absent "domain must not include ChatBlobRequestUtil at old path (use feature/messaging/)" \
+  '#include "base/messaging/ChatBlobRequestUtil.h"' src
+check_absent "must not include base/net/ProfileIconClientUtil.h (use feature/messaging/)" \
+  '#include "base/net/ProfileIconClientUtil.h"' src
+check_absent "must not include base/net/RegistrationClientUtil.h (use feature/messaging/)" \
+  '#include "base/net/RegistrationClientUtil.h"' src
 check_absent "messaging must not include feature/ (domain may not include feature)" \
   '#include "feature/' src/base/messaging
 
@@ -147,6 +154,10 @@ for shim in \
   src/base/messaging/ThreadTypes.h \
   src/base/messaging/IThreadStore.h \
   src/base/messaging/MessagingJson.h \
+  src/base/messaging/ChatBlobRequestUtil.h \
+  src/base/net/ProfileIconClientUtil.h \
+  src/base/net/ProfileIconFetchUtil.h \
+  src/base/net/RegistrationClientUtil.h \
   src/base/data/ContextBudget.h \
   src/base/people/RelayScope.h \
   src/base/net/CurlSsl.h \

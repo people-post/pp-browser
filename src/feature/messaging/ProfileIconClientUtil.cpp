@@ -1,4 +1,4 @@
-#include "base/net/ProfileIconClientUtil.h"
+#include "feature/messaging/ProfileIconClientUtil.h"
 
 #include "base/people/ProfileIconCache.h"
 #include "common/Utilities.h"

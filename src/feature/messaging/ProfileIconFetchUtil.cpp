@@ -1,4 +1,4 @@
-#include "base/net/ProfileIconFetchUtil.h"
+#include "feature/messaging/ProfileIconFetchUtil.h"
 
 #include "base/net/HttpClient.h"
 #include "common/Utilities.h"
