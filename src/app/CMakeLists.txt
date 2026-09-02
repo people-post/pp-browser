@@ -26,8 +26,6 @@ else()
 endif()
 pp_browser_apply_warnings(${PP_BROWSER_APP_TARGET})
 
-option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
-
 set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
 if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
   list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
