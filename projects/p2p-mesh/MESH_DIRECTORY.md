@@ -120,8 +120,9 @@ flowchart LR
 
 ## Acceptance
 
-- [ ] www: mesh_node excluded from default search; listed on `/mesh/nodes` with capabilities.
-- [ ] pp-node: with PIN + data volume + advertise env, registers/renews as mesh_node.
-- [ ] pp-browser: Node on does **not** create mesh_node listings.
-- [ ] Customers can resolve org node by Account ID → endpoints without baking Peer ID.
-- [ ] Docs describe bootstrap → directory → mesh layering.
+- [x] www: `GET /v1/mesh/nodes` returns JSON `{nodes:[…]}` (prod + QA probed 2026-09-02; currently empty listings). Search endpoint answers; exclusion of `mesh_node` still needs a live published node to prove.
+- [ ] pp-node: with PIN + data volume + advertise env, registers/renews as mesh_node against www (ops smoke; not run against prod from lab).
+- [x] pp-browser: Node on does **not** create mesh_node listings (default `mesh_publish=false`; only pp-node / explicit advertise path).
+- [x] Lab: Amp directory twin two-node query + HTTP failover (`AmpDirectory*` tests); MeshHost regression via `scripts/pp_node_dht_smoke.sh`.
+- [ ] Customers can resolve org node by Account ID → endpoints without baking Peer ID (needs a published person/mesh listing in the target env).
+- [x] Docs describe bootstrap → directory → mesh layering (MESH_DIRECTORY + N029 / PRE_CHAIN).

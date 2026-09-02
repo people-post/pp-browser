@@ -45,7 +45,7 @@ Stale note: DISCOVERY_ROADMAP “Current state” table still said n-dir unwired
 - [x] N029 + NAME_DIRECTORY_NORTH_STAR
 - [x] Keep DISCOVERY_ROADMAP n-dir “current state” table honest (done / remaining)
 - [x] PHASES.md: add **nd** track pointing here; do not reopen finished n-dir/n2 checklists
-- [ ] Mark MESH_DIRECTORY Phase E smoke items still open vs done
+- [x] Mark MESH_DIRECTORY Phase E smoke items still open vs done (lab + API probe landed; live www publish still open)
 
 **Exit:** Engineers open this file first for “what’s left before chain.”
 

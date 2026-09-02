@@ -105,7 +105,7 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
 - [x] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
 - [x] Bridge score prefers directory when seed unreachable (`seed_dial_ok` → skip seeds)
-- [ ] Phase E smoke + docs (manual)
+- [x] Phase E smoke + docs (manual) — lab Amp/DHT + Brief `/mesh/nodes` probe done; live www `mesh_node` publish still open
 
 ## n2 — DHT (later per N015)
 
