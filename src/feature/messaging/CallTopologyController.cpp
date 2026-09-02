@@ -9,7 +9,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/people/PeerDisplayLabel.h"
-#include "base/platform/PlatformUserHints.h"
+#include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"

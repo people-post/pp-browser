@@ -1,6 +1,6 @@
 #include "base/ui/ViewCatalog.h"
 
-#include "base/platform/IAssetLocator.h"
+#include "foundation/platform/IAssetLocator.h"
 
 #include <gtest/gtest.h>
 

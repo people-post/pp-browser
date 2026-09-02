@@ -1,6 +1,6 @@
 #include "feature/messaging/RegistrationClientUtil.h"
 
-#include "base/platform/os/OsTime.h"
+#include "foundation/platform/os/OsTime.h"
 #include "common/Utilities.h"
 #include "base/net/RegistrationSignPayload.h"
 

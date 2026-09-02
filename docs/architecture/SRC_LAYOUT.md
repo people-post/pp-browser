@@ -99,7 +99,7 @@ crypto
 | Path (today) | Contents |
 |--------------|----------|
 | `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
-| `base/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
+| `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |

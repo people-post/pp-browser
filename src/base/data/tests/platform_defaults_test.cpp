@@ -1,6 +1,6 @@
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
-#include "base/platform/DeploymentProfile.h"
+#include "foundation/platform/DeploymentProfile.h"
 
 #include <gtest/gtest.h>
 

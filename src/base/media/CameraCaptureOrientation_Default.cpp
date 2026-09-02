@@ -6,7 +6,7 @@
 
 #if !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IPHONE)
 
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 
 namespace pbr {
 

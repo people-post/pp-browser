@@ -197,7 +197,7 @@ The on-disk model should match what you set.
 
 ## Platform layer
 
-Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../architecture/PLATFORMS.md):
+Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../architecture/PLATFORMS.md):
 
 - `IPathProvider` / `IAssetLocator` — desktop paths vs APK/bundle assets
 - `AssetIO` / `SdlAssetFileInterface` — unified bundle reads for UI and RmlUi

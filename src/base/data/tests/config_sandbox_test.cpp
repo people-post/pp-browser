@@ -1,6 +1,6 @@
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
-#include "base/platform/DeploymentProfile.h"
+#include "foundation/platform/DeploymentProfile.h"
 
 #include <fstream>
 #include <filesystem>

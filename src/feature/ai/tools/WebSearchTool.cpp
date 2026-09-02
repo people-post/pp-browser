@@ -3,7 +3,7 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
-#include "base/platform/CurlSsl.h"
+#include "foundation/platform/CurlSsl.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
 

@@ -5,12 +5,12 @@
 #include "base/crypto/ProfileUnlockGate.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
-#include "base/platform/DeploymentProfile.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "base/data/SchemaVersion.h"
 #include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
-#include "base/platform/PlatformLogSink.h"
-#include "base/platform/PlatformServices.h"
+#include "foundation/platform/PlatformLogSink.h"
+#include "foundation/platform/PlatformServices.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

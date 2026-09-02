@@ -6,8 +6,8 @@
 #include "base/data/MeshRole.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/PlatformDefaults.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/platform/Platform.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/Platform.h"
 #include "common/ValueJson.h"
 
 #include <cstdlib>

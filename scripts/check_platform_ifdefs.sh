@@ -60,7 +60,7 @@ check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cp
 
 if [[ "$FAIL" -ne 0 ]]; then
   echo ""
-  echo "Move OS-specific code to src/base/platform/, or a dedicated"
+  echo "Move OS-specific code to src/foundation/platform/, or a dedicated"
   echo "*_{Win32,Posix,Darwin,Linux,Android,Ios,Default} backend next to the module."
   echo "See docs/architecture/PLATFORM_CODE.md"
   exit 1

@@ -1,6 +1,7 @@
 include(PpBrowserBase)
 
-# Foundation bands (ordered): runtime → error/i18n; platform/data/crypto follow in later peels.
+# Foundation bands (ordered): runtime + platform → error/i18n; data/crypto follow later.
 add_subdirectory(runtime)
+add_subdirectory(platform)
 add_subdirectory(i18n)
 add_subdirectory(error)

@@ -1,6 +1,6 @@
 #include "base/ai/mcp/McpRuntime.h"
 
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 
 namespace pbr {
 

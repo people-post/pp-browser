@@ -32,7 +32,7 @@ check_absent "crypto must not include common/thread/ThreadTypes.h" \
 check_absent "messaging must not include ai/conversation/ConversationTypes.h" \
   '#include "base/ai/conversation/ConversationTypes.h"' src/base/messaging
 check_absent "platform headers must not include ui/" \
-  '#include "base/ui/' src/base/platform
+  '#include "base/ui/' src/foundation/platform
 check_absent "common must not include base/" \
   '#include "base/' src/common
 check_absent "common must not include feature/" \
@@ -164,7 +164,8 @@ for shim in \
   src/base/media/CallMediaHealth.h \
   src/base/ui/WorkingSetTypes.h \
   src/base/messaging/PeopleDiscoveryBlocks.h \
-  src/base/runtime
+  src/base/runtime \
+  src/base/platform
 do
   if [[ -e "$ROOT/$shim" ]]; then
     echo "FAIL: shim path still exists: $shim"

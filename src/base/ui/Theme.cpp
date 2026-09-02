@@ -1,7 +1,7 @@
 #include "base/ui/Theme.h"
 
-#include "base/platform/AndroidSystemChrome.h"
-#include "base/platform/AssetIO.h"
+#include "foundation/platform/AndroidSystemChrome.h"
+#include "foundation/platform/AssetIO.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/ElementDocument.h>

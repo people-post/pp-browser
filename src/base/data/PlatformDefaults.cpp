@@ -1,6 +1,6 @@
 #include "base/data/PlatformDefaults.h"
 
-#include "base/platform/DeploymentProfile.h"
+#include "foundation/platform/DeploymentProfile.h"
 
 #include <cstdlib>
 

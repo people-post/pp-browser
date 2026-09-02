@@ -4,8 +4,8 @@
 #include "app/node/StatusHttpServer.h"
 
 #include "base/crypto/ProfileSecretsService.h"
-#include "base/platform/PlatformLogDefaults.h"
-#include "base/platform/DeploymentProfile.h"
+#include "foundation/platform/PlatformLogDefaults.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"

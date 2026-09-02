@@ -285,7 +285,7 @@ flowchart TB
 | **libp2p IO** | `Libp2pHost` | `base/mesh/` | `asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
-| **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
+| **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
 ### Cross-thread rules of thumb
 

@@ -1,7 +1,7 @@
 #include "base/messaging/AttachmentCache.h"
 
 #include "base/crypto/AttachmentContentHash.h"
-#include "base/platform/VideoPosterExtractor.h"
+#include "foundation/platform/VideoPosterExtractor.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
 

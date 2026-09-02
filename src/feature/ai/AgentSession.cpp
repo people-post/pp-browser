@@ -1,5 +1,5 @@
 #include "feature/ai/AgentSession.h"
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 
 #include "feature/ai/PayloadTurnPlanBuilder.h"
 #include "base/ai/PromptBuilder.h"

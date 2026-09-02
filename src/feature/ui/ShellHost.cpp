@@ -3,9 +3,9 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "base/platform/DesktopWindowChrome.h"
-#include "base/platform/Platform.h"
-#include "base/platform/PlatformNavigation.h"
+#include "foundation/platform/DesktopWindowChrome.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/RmlVariantHelpers.h"
 #include "feature/messaging/MessagingShellPorts.h"

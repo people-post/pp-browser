@@ -1,6 +1,6 @@
 #include "base/data/ConfigJson.h"
 
-#include "base/platform/ICredentialStore.h"
+#include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
 #include <limits>

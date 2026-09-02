@@ -1,6 +1,6 @@
 #include "base/media/CallRingtone.h"
 
-#include "base/platform/IAssetLocator.h"
+#include "foundation/platform/IAssetLocator.h"
 
 #include <SDL3/SDL.h>
 

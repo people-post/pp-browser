@@ -22,7 +22,7 @@ struct AppRuntimeConfig {
 /**
  * Process-wide application runtime: worker pool, coordinator, UI mailbox.
  * Initialize from the composition root (Application ctor, pp-node bootstrap).
- * OS adapters live in base/platform/; call PlatformServices directly when needed.
+ * OS adapters live in foundation/platform/; call PlatformServices directly when needed.
  */
 class AppRuntime {
 public:

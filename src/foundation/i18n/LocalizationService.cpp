@@ -1,7 +1,7 @@
 #include "foundation/i18n/LocalizationService.h"
 
-#include "base/platform/AssetIO.h"
-#include "base/platform/IAssetLocator.h"
+#include "foundation/platform/AssetIO.h"
+#include "foundation/platform/IAssetLocator.h"
 #include "common/ValueJson.h"
 
 #if !defined(PP_BROWSER_HEADLESS)

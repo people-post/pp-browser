@@ -3,7 +3,7 @@
 #include "base/data/Config.h"
 #include "base/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
 

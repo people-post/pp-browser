@@ -5,7 +5,7 @@
 #include "base/net/ClientCompat.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "base/platform/PlatformOpenUrl.h"
+#include "foundation/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "feature/ui/UserFeedback.h"
 

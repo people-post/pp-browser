@@ -42,7 +42,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "base/platform/os/OsTime.h"
+#include "foundation/platform/os/OsTime.h"
 
 #include <algorithm>
 #include <atomic>

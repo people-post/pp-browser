@@ -1,6 +1,6 @@
 #include "base/ai/mcp/McpClient.h"
 
-#include "base/platform/os/OsProcess.h"
+#include "foundation/platform/os/OsProcess.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

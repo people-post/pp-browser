@@ -56,7 +56,7 @@ If unsure: *“Must every domain peer be allowed to link this?”* → foundatio
 ```
 src/base/
 ├── runtime/      [foundation] **moved →** `src/foundation/runtime/`
-├── platform/     [foundation] OS adapters — paths, assets, credentials, notifications; SDL glue
+├── platform/     [foundation] **moved →** `src/foundation/platform/`
 ├── data/         [foundation] Config, profiles, session, schema, atomic file writes
 ├── error/        [foundation] **moved →** `src/foundation/error/`
 ├── i18n/         [foundation] **moved →** `src/foundation/i18n/`
@@ -89,7 +89,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** remaining allowlisted edge is `messaging`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` → `src/foundation/`.
+**Current (legacy DAG inside `base/`):** remaining allowlisted edge is `messaging`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration / chat-blob orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` / `platform` → `src/foundation/`.
 
 **Target:**
 
