@@ -1,7 +1,7 @@
 #include "base/net/HttpClient.h"
 
 #include "base/error/AppError.h"
-#include "base/net/CurlSsl.h"
+#include "base/platform/CurlSsl.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"

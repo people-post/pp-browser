@@ -1,4 +1,4 @@
-#include "base/net/CurlSsl.h"
+#include "base/platform/CurlSsl.h"
 
 #include "base/platform/os/OsTlsPlatformCurl.h"
 
@@ -11,4 +11,4 @@ void ApplyCurlSslDefaults(CURL* curl) {
   os::ApplyPlatformCurlSsl(curl);
 }
 
-} // namespace pbr
+}  // namespace pbr

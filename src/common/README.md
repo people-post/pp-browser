@@ -43,7 +43,7 @@ Cross-module helpers with no domain ownership. Keep these small.
 | `RelayScope.h` | Relay scope bands / admission helpers (shared by mesh L4 + people hop policy) |
 | `DirectoryTypes.h` / `DirectoryJson.*` / `IDirectoryClient.h` | Directory vocabulary, JSON, and client port |
 | `CallMediaHealth.*` | Call path / hop health DTOs + pure evaluation (mesh L4 + UI) |
-| `ChatActionTypes.h` / `ThreadMemoryTypes.h` | Transcript action + conversation summary DTOs |
+| `MessagingLimits.h` | Shared size / poll / compaction limits |
 
 ### B. Domain contracts (North Star growth area)
 
