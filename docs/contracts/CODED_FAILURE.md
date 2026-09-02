@@ -128,25 +128,30 @@ pp-browser Phase 1 implements the **adapter** row:
 - [x] Tests: `mesh_ports_test.cpp`
 - [x] [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md) port alias note
 
-### Phase 2 — L4 owning layers (next)
+### Phase 2 — L4 owning layers (in progress)
 
 Each coordinator gets a **local `Err` enum**, `Failure` / `Roe` aliases, and
-**`WrapLinkFailure(const IChatPeerLinks::Failure&)`** (name may vary). Wrap at every
-failure exit that originated from `links_.EnsureAssociation` / `OpenChannel` / nested
+**`WrapLinkFailure(const …::Failure&)`** (name may vary). Wrap at every
+failure exit that originated from association / channel open / nested
 carrier — not string copy alone.
 
-| Module | Primary files | Suggested `Err` themes |
-|--------|---------------|------------------------|
-| Dial-back | `reachability/AmpDialBackService.{h,cpp}` | `LinkFailed`, `Timeout`, `Rejected`, `Generic` |
-| DHT | `dht/AmpDhtService.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `StoreError`, `Generic` |
-| Circuit tunnel | `l4/circuit/CircuitTunnelCoordinator.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` |
-| Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` |
-| Media relay | `l4/media_relay/AmpMediaRelayCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` |
+| Module | Primary files | Suggested `Err` themes | Status |
+|--------|---------------|------------------------|--------|
+| Dial-back | `reachability/AmpDialBackService.{h,cpp}` | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
+| DHT | `dht/AmpDhtService.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
+| Circuit tunnel | `l4/circuit/CircuitTunnelCoordinator.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
+| Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
+| Media relay | `l4/media_relay/AmpMediaRelayCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
+
+**Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so
+`WrapLinkFailure` takes `PeerLinkManager::Failure`. Feature-facing L4 that goes through
+`IChatPeerLinks` wraps that port’s `Failure` instead — same numeric child table.
 
 **Phase 2 checklist (per module):**
 
 1. Add `enum class Err` + `using Failure = CodedFailure<Err>` (header or colocated `*Errors.h`).
-2. Implement `WrapLinkFailure` with `switch` on **`IChatPeerLinks::Err` only**.
+2. Implement `WrapLinkFailure` with `switch` on the **immediate child's `Err` only**
+   (`PeerLinkManager::Err` or `IChatPeerLinks::Err` — never ADP / PeerLink).
 3. Replace `Error(link.error().message)` / opaque forwards with wrapped `Failure`.
 4. Export `Is*` helpers only where multiple call sites branch the same way.
 5. Unit/compose test: assert **`GetCode()`** at L4 boundary; keep message substring optional.

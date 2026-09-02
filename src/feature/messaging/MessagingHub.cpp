@@ -688,7 +688,7 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   }
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
-    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](Roe<DhtFindPeerResult> result) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
       if (!result) {
         return;
       }
