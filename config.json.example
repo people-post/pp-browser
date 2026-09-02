@@ -43,7 +43,16 @@
     "amp_udp_port": 0,
     "bootstrap_peers": [
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
-    ]
+    ],
+    "capabilities": {
+      "dht": false
+    },
+    "dht": {
+      "record_ttl_seconds": 3600,
+      "find_peer_timeout_ms": 5000,
+      "max_concurrent_lookups": 4,
+      "k_bucket_size": 20
+    }
   },
   "search": {
     "provider": "duckduckgo"

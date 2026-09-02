@@ -24,6 +24,9 @@ pp::common::Object MeshCapabilitiesToObject(const MeshCapabilities& caps);
 void MeshCapabilitiesFromObject(const pp::common::Object& object,
                                   MeshCapabilities& caps);
 
+pp::common::Object MeshDhtConfigToObject(const MeshDhtConfig& config);
+void MeshDhtConfigFromObject(const pp::common::Object& object, MeshDhtConfig& config);
+
 pp::common::Object MeshConfigToObject(const MeshConfig& config);
 void MeshConfigFromObject(const pp::common::Object& object, MeshConfig& config);
 

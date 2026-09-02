@@ -16,6 +16,18 @@ std::vector<MeshHopCandidate> FilterHopsByMediaRelayAds(
       out.push_back(std::move(hop));
       continue;
     }
+    if (hop.affinity == MeshHopAffinity::DirectoryNode) {
+      if (hop.advertises_media_relay) {
+        out.push_back(std::move(hop));
+      }
+      continue;
+    }
+    if (hop.affinity == MeshHopAffinity::DhtDiscovered) {
+      if (hop.advertises_media_relay) {
+        out.push_back(std::move(hop));
+      }
+      continue;
+    }
     if (has_media_relay_ad && has_media_relay_ad(hop.peer_id)) {
       out.push_back(std::move(hop));
     }

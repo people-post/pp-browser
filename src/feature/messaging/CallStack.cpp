@@ -187,6 +187,9 @@ void CallStack::WireMediaRelayDeps() {
   NormalizeMeshConfig(mesh_cfg);
   deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
   deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
+  deps.list_directory_nodes = deps_.list_directory_nodes;
+  deps.list_dht_nodes = deps_.list_dht_nodes;
+  deps.seed_dial_ok = deps_.seed_dial_ok;
   // PreferLocal = durable Node hosting only. Mobile ephemeral Start() must not SoftMigrate-self
   // into the SFU hop (V028 / dogfood: Android hop crash → peer Connection reset).
   deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
@@ -399,9 +402,17 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
   }
   MeshConfig mesh_cfg = config().mesh;
   NormalizeMeshConfig(mesh_cfg);
-  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts),
-                               CollectSeedHopCandidates(mesh_cfg.bootstrap_peers),
-                               mesh_cfg.prefer_contacts_for_routing);
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (deps_.list_directory_nodes) {
+    directory_nodes = deps_.list_directory_nodes();
+  }
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (deps_.list_dht_nodes) {
+    dht_nodes = deps_.list_dht_nodes();
+  }
+  const bool include_seeds = !deps_.seed_dial_ok || deps_.seed_dial_ok();
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
+                                  mesh_cfg.prefer_contacts_for_routing, include_seeds);
   relay_ids.reserve(hops.size());
   for (const MeshHopCandidate& hop : hops) {
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {

@@ -237,6 +237,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_circuit_relay_toggle = bindings_.show_circuit_relay_toggle;
   ui_state_.media_relay_enabled = bindings_.media_relay_enabled.c_str();
   ui_state_.show_media_relay_toggle = bindings_.show_media_relay_toggle;
+  ui_state_.dht_enabled = bindings_.dht_enabled.c_str();
+  ui_state_.show_dht_toggle = bindings_.show_dht_toggle;
   ui_state_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing.c_str();
   ui_state_.show_prefer_contacts_toggle = bindings_.show_prefer_contacts_toggle;
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
@@ -309,6 +311,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_circuit_relay_toggle = ui_state_.show_circuit_relay_toggle;
   bindings_.media_relay_enabled = ui_state_.media_relay_enabled.c_str();
   bindings_.show_media_relay_toggle = ui_state_.show_media_relay_toggle;
+  bindings_.dht_enabled = ui_state_.dht_enabled.c_str();
+  bindings_.show_dht_toggle = ui_state_.show_dht_toggle;
   bindings_.prefer_contacts_for_routing = ui_state_.prefer_contacts_for_routing.c_str();
   bindings_.show_prefer_contacts_toggle = ui_state_.show_prefer_contacts_toggle;
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
@@ -471,6 +475,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("show_circuit_relay_toggle", &controller.bindings_.show_circuit_relay_toggle);
     ctor.Bind("media_relay_enabled", &controller.bindings_.media_relay_enabled);
     ctor.Bind("show_media_relay_toggle", &controller.bindings_.show_media_relay_toggle);
+    ctor.Bind("dht_enabled", &controller.bindings_.dht_enabled);
+    ctor.Bind("show_dht_toggle", &controller.bindings_.show_dht_toggle);
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
     ctor.Bind("show_prefer_contacts_toggle", &controller.bindings_.show_prefer_contacts_toggle);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
@@ -548,6 +554,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("dismiss_reachability_help", &SettingsController::DismissReachabilityHelpCallback);
     ctor.BindEventCallback("toggle_circuit_relay", &SettingsController::ToggleCircuitRelayCallback);
     ctor.BindEventCallback("toggle_media_relay", &SettingsController::ToggleMediaRelayCallback);
+    ctor.BindEventCallback("toggle_dht", &SettingsController::ToggleDhtCallback);
     ctor.BindEventCallback("toggle_prefer_contacts", &SettingsController::TogglePreferContactsCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
@@ -601,6 +608,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_circuit_relay_toggle");
   host.Dirty("settings", "media_relay_enabled");
   host.Dirty("settings", "show_media_relay_toggle");
+  host.Dirty("settings", "dht_enabled");
+  host.Dirty("settings", "show_dht_toggle");
   host.Dirty("settings", "prefer_contacts_for_routing");
   host.Dirty("settings", "show_prefer_contacts_toggle");
   if (push_nick) {
@@ -1559,6 +1568,7 @@ void SettingsController::ApplyReachability() {
       ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && messaging_ready;
   ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_media_relay_toggle = ui_state_.show_connection_card;
+  ui_state_.show_dht_toggle = ui_state_.show_connection_card;
   ui_state_.show_prefer_contacts_toggle = ui_state_.show_connection_card;
 
   if (ui_state_.show_connection_card && commands_.load_reachability) {
@@ -1577,6 +1587,7 @@ void SettingsController::ApplyReachability() {
     const auto& cfg = Store().Snapshot().config.mesh;
     ui_state_.circuit_relay_enabled = cfg.capabilities.circuit_relay ? "on" : "off";
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
+    ui_state_.dht_enabled = cfg.capabilities.dht ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
   }
   PushUiStateToBindings();
@@ -1709,6 +1720,18 @@ void SettingsController::ToggleMediaRelayCallback(Rml::DataModelHandle /*model*/
   }
   controller.bindings_.media_relay_enabled =
       controller.bindings_.media_relay_enabled == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("network");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleDhtCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  if (!controller.bindings_.show_dht_toggle) {
+    return;
+  }
+  controller.bindings_.dht_enabled = controller.bindings_.dht_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("network");
   controller.DirtyAll();

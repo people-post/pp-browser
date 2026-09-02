@@ -8,14 +8,72 @@
 #include "base/data/MeshRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
+#include "base/mesh/dht/DhtTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <cstdlib>
+#include <unordered_set>
 #include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+namespace {
+
+void RegisterAmpBootstrapEndpoints(MeshHost& mesh, const std::vector<std::string>& bootstrap_peers) {
+  if (!mesh.Amp()) {
+    return;
+  }
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || ma.empty()) {
+      continue;
+    }
+    (void)mesh.Amp()->Links().RegisterEndpoint(peer_id, ma);
+  }
+}
+
+std::vector<std::string> CollectBootstrapPeerKeys(const std::vector<std::string>& bootstrap_peers) {
+  std::vector<std::string> keys;
+  std::unordered_set<std::string> seen;
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    keys.push_back(peer_id);
+  }
+  return keys;
+}
+
+void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppConfig& config) {
+  if (!mesh.Amp() || !mesh.AmpDht()) {
+    return;
+  }
+  const bool participate = config.mesh.capabilities.dht;
+  RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
+
+  AmpDhtServiceConfig cfg;
+  cfg.local_peer_id = mesh.Amp()->LocalPeerId();
+  if (!mesh.AmpListenMultiaddr().empty()) {
+    cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
+  }
+  if (auto priv = identity.GetDeviceMlDsaPrivateKey()) {
+    cfg.device_signing_secret = *priv;
+  }
+  if (auto pub = identity.GetDeviceMlDsaPublicKey()) {
+    cfg.device_signing_public = *pub;
+  }
+  cfg.tunables = config.mesh.dht;
+  cfg.query_peer_keys = CollectBootstrapPeerKeys(config.mesh.bootstrap_peers);
+  cfg.participate = participate;
+  cfg.publish_circuit_relay = participate && config.mesh.capabilities.circuit_relay;
+  cfg.publish_media_relay = participate && config.mesh.capabilities.media_relay;
+  mesh.ConfigureAmpDht(std::move(cfg));
+  mesh.RefreshAmpDhtHosting(participate);
+}
+
+} // namespace
 
 Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto log = logging::getLogger("pp-node");
@@ -97,6 +155,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   // Org seed: circuit / media_relay host inbound when enabled (N018).
   mesh_cfg.host_circuit_relay = config->mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = config->mesh.capabilities.media_relay;
+  mesh_cfg.host_dht = config->mesh.capabilities.dht;
   mesh_cfg.media_relay_budget = config->mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config->mesh.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
@@ -123,6 +182,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       return Error(mesh->AmpLastError().empty() ? "amp stack failed" : mesh->AmpLastError());
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
+    ConfigurePpNodeAmpDht(*mesh, *identity, *config);
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
@@ -150,7 +210,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
            << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
            << " underlay=amp"
            << " circuit-relay=" << (result.config.mesh.capabilities.circuit_relay ? "on" : "off")
-           << " media-relay=" << (result.config.mesh.capabilities.media_relay ? "on" : "off");
+           << " media-relay=" << (result.config.mesh.capabilities.media_relay ? "on" : "off")
+           << " dht=" << (result.config.mesh.capabilities.dht ? "on" : "off");
   return result;
 }
 

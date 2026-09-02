@@ -134,14 +134,16 @@
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
-| DHT | **n2** (later per N015) |
+| Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
+| DHT | **n2-hard landed** (rate limits, soft reputation, ops stats) — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
 | Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
 1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
-2. Curated public / paid regulation / **n2 DHT** later  
-3. **L3.5** multi-hop when single-hop cannot reach B
+2. Curated public / paid regulation later  
+3. **L3.5** multi-hop when single-hop cannot reach B  
+4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/pp_node_dht_smoke.sh`)
 
 ## Follow-ups
 

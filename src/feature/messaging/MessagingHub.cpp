@@ -45,6 +45,7 @@
 #include "base/mesh/reachability/LanMdnsDiscovery.h"
 #include "base/mesh/l4/shared/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
+#include "base/mesh/dht/DhtRecordCodec.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/mesh/reachability/NatTraversal.h"
 #include "base/mesh/reachability/Reachability.h"
@@ -114,6 +115,21 @@ CallStackDeps MessagingHub::MakeCallStackDeps() {
   deps.mesh_messaging = mesh_messaging_.get();
   deps.mesh = [this]() { return mesh_.get(); };
   deps.config = [this]() -> const AppConfig& { return config_; };
+  deps.list_directory_nodes = [this]() {
+    return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<MeshDirectoryNode>{};
+  };
+  deps.list_dht_nodes = [this]() {
+    if (!mesh_ || !mesh_->AmpDht()) {
+      return std::vector<MeshDirectoryNode>{};
+    }
+    return MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
+  };
+  deps.seed_dial_ok = [this]() {
+    if (!mesh_) {
+      return true;
+    }
+    return mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  };
   deps.prefetch_peer_reachability = [this](const std::string& identity) {
     PrefetchPeerReachability(identity);
   };
@@ -232,6 +248,7 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
   }
   mesh_cfg.host_circuit_relay = role == MeshRole::Node && config_.mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = role == MeshRole::Node && config_.mesh.capabilities.media_relay;
+  mesh_cfg.host_dht = role == MeshRole::Node && config_.mesh.capabilities.dht;
   mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
   mesh_cfg.start_reachability_probe = role == MeshRole::Node;
@@ -266,6 +283,7 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
     log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
+  ConfigureAmpDhtService();
   return {};
 }
 
@@ -527,6 +545,107 @@ void MessagingHub::RegisterContactEndpoints() {
   ApplyMeshAdmissionPolicies();
 }
 
+void MessagingHub::RegisterMeshDirectoryEndpoints() {
+  if (!mesh_messaging_ || !mesh_directory_cache_) {
+    return;
+  }
+  for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
+    for (const std::string& ma : node.multiaddrs) {
+      if (ma.empty()) {
+        continue;
+      }
+      mesh_messaging_->RegisterPeerDirectEndpoint(node.peer_id, ma);
+    }
+  }
+}
+
+namespace {
+
+std::vector<std::string> CollectDhtQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
+                                                 const std::vector<MeshDirectoryNode>& directory_nodes) {
+  std::vector<std::string> keys;
+  std::unordered_set<std::string> seen;
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    keys.push_back(peer_id);
+  }
+  for (const MeshDirectoryNode& node : directory_nodes) {
+    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    keys.push_back(node.peer_id);
+  }
+  return keys;
+}
+
+} // namespace
+
+void MessagingHub::RegisterDhtBootstrapEndpoints() {
+  if (!mesh_messaging_) {
+    return;
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const std::string& ma : mesh_cfg.bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+  RegisterMeshDirectoryEndpoints();
+}
+
+void MessagingHub::ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record) {
+  if (!mesh_messaging_ || peer_id.empty()) {
+    return;
+  }
+  for (const std::string& ma : record.multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+}
+
+void MessagingHub::ConfigureAmpDhtService() {
+  if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
+    return;
+  }
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool participate = role == MeshRole::Node && config_.mesh.capabilities.dht;
+
+  RegisterDhtBootstrapEndpoints();
+
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+
+  AmpDhtServiceConfig cfg;
+  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
+  if (!mesh_->AmpListenMultiaddr().empty()) {
+    cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
+  }
+  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
+    cfg.device_signing_secret = *priv;
+  }
+  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
+    cfg.device_signing_public = *pub;
+  }
+  cfg.tunables = config_.mesh.dht;
+  cfg.query_peer_keys = CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes);
+  cfg.participate = participate;
+  cfg.publish_circuit_relay = participate && config_.mesh.capabilities.circuit_relay;
+  cfg.publish_media_relay = participate && config_.mesh.capabilities.media_relay;
+  mesh_->ConfigureAmpDht(std::move(cfg));
+  mesh_->RefreshAmpDhtHosting(participate);
+}
 
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
   return IsContactReachableForMessaging(contact, relay_ != nullptr);
@@ -567,7 +686,15 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
-  (void)peer_id;
+  if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
+      config_.mesh.capabilities.dht) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](Roe<DhtFindPeerResult> result) {
+      if (!result) {
+        return;
+      }
+      ApplyDhtFindPeerResult(peer_id, result->record);
+    });
+  }
 }
 
 
@@ -636,6 +763,24 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
     }
   });
+
+  if (directory_) {
+    mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
+      if (!directory_) {
+        return std::vector<MeshDirectoryNode>{};
+      }
+      auto hits = directory_->ListMeshNodes();
+      if (!hits) {
+        return hits.error();
+      }
+      return MeshDirectoryNodesFromHits(*hits);
+    });
+    mesh_directory_cache_->SetOnUpdated([this]() {
+      RegisterMeshDirectoryEndpoints();
+      ConfigureAmpDhtService();
+    });
+    mesh_directory_cache_->RequestRefresh();
+  }
 
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
@@ -836,6 +981,12 @@ void MessagingHub::TickMesh() {
   // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
+  }
+  if (mesh_directory_cache_) {
+    mesh_directory_cache_->MaybeRefresh();
+  }
+  if (mesh_ && mesh_->AmpDht()) {
+    mesh_->AmpDht()->Tick();
   }
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
@@ -1454,6 +1605,7 @@ void MessagingHub::RefreshMeshCapabilities() {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
+  ConfigureAmpDhtService();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1473,6 +1625,7 @@ void MessagingHub::Apply(const NetworkConfig& next) {
       next.node_enabled != config_.mesh.node_enabled ||
       next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
       next.media_relay != config_.mesh.capabilities.media_relay ||
+      next.dht != config_.mesh.capabilities.dht ||
       next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing;
 
   config_.relay = next.relay;
@@ -1481,6 +1634,7 @@ void MessagingHub::Apply(const NetworkConfig& next) {
   config_.mesh.node_enabled = next.node_enabled;
   config_.mesh.capabilities.circuit_relay = next.circuit_relay;
   config_.mesh.capabilities.media_relay = next.media_relay;
+  config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
 
   if (service_urls_changed) {
@@ -1527,6 +1681,7 @@ MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config
   out.node_enabled = config.mesh.node_enabled;
   out.circuit_relay = config.mesh.capabilities.circuit_relay;
   out.media_relay = config.mesh.capabilities.media_relay;
+  out.dht = config.mesh.capabilities.dht;
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   return out;
 }
@@ -1558,8 +1713,17 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   }
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
-  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(mesh_cfg.bootstrap_peers),
-                               mesh_cfg.prefer_contacts_for_routing);
+  const bool include_seeds = !mesh_ || mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (mesh_ && mesh_->AmpDht()) {
+    dht_nodes = MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
+  }
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
+                                 mesh_cfg.prefer_contacts_for_routing, include_seeds);
   if (hops.empty()) {
     return Error("no circuit hop candidates");
   }
@@ -1703,6 +1867,7 @@ void MessagingHub::Shutdown() {
   inbox_.reset();
   peer_labels_.reset();
   directory_shadows_.reset();
+  mesh_directory_cache_.reset();
   http_relay_.reset();
   http_directory_.reset();
   http_registration_.reset();
