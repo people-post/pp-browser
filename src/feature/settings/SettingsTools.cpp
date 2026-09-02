@@ -708,14 +708,15 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, prefer_contacts_for_routing.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
          const auto media = BoolFromArgs(arguments, {"media_relay"});
+         const auto dht = BoolFromArgs(arguments, {"dht"});
          const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
-         if (!circuit && !media && !prefer) {
-           return Error("provide at least one of circuit_relay, media_relay, prefer_contacts_for_routing");
+         if (!circuit && !media && !dht && !prefer) {
+           return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing");
          }
          auto store = RequireStore(ports);
          if (!store) {
@@ -728,6 +729,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (media) {
            config.mesh.capabilities.media_relay = *media;
          }
+         if (dht) {
+           config.mesh.capabilities.dht = *dht;
+         }
          if (prefer) {
            config.mesh.prefer_contacts_for_routing = *prefer;
          }
@@ -737,6 +741,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          Object ok;
          ok.set("circuit_relay", config.mesh.capabilities.circuit_relay);
          ok.set("media_relay", config.mesh.capabilities.media_relay);
+         ok.set("dht", config.mesh.capabilities.dht);
          ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
          return DumpJson(OkJson(std::move(ok)));
        }));

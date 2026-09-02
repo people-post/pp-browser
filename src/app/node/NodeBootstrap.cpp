@@ -97,6 +97,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   // Org seed: circuit / media_relay host inbound when enabled (N018).
   mesh_cfg.host_circuit_relay = config->mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = config->mesh.capabilities.media_relay;
+  mesh_cfg.host_dht = config->mesh.capabilities.dht;
   mesh_cfg.media_relay_budget = config->mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config->mesh.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).

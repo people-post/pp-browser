@@ -35,6 +35,7 @@
 #include "base/mesh/reachability/Reachability.h"
 #include "base/mesh/reachability/ReachabilityService.h"
 #include "base/mesh/discovery/MeshDirectoryCache.h"
+#include "base/mesh/dht/DhtTypes.h"
 #include "base/mesh/host/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"
 
@@ -78,12 +79,13 @@ public:
     bool node_enabled = true;
     bool circuit_relay = false;
     bool media_relay = true;
+    bool dht = false;
     bool prefer_contacts_for_routing = true;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory.base_url == other.directory.base_url &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
-             circuit_relay == other.circuit_relay && media_relay == other.media_relay &&
+             circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
@@ -253,6 +255,9 @@ private:
   CallStackDeps MakeCallStackDeps();
   void RegisterContactEndpoints();
   void RegisterMeshDirectoryEndpoints();
+  void RegisterDhtBootstrapEndpoints();
+  void ConfigureAmpDhtService();
+  void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 

@@ -241,6 +241,7 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
   }
   mesh_cfg.host_circuit_relay = role == MeshRole::Node && config_.mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = role == MeshRole::Node && config_.mesh.capabilities.media_relay;
+  mesh_cfg.host_dht = role == MeshRole::Node && config_.mesh.capabilities.dht;
   mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
   mesh_cfg.start_reachability_probe = role == MeshRole::Node;
@@ -275,6 +276,7 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
     log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
+  ConfigureAmpDhtService();
   return {};
 }
 
@@ -550,6 +552,92 @@ void MessagingHub::RegisterMeshDirectoryEndpoints() {
   }
 }
 
+namespace {
+
+std::vector<std::string> CollectDhtQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
+                                                 const std::vector<MeshDirectoryNode>& directory_nodes) {
+  std::vector<std::string> keys;
+  std::unordered_set<std::string> seen;
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    keys.push_back(peer_id);
+  }
+  for (const MeshDirectoryNode& node : directory_nodes) {
+    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    keys.push_back(node.peer_id);
+  }
+  return keys;
+}
+
+} // namespace
+
+void MessagingHub::RegisterDhtBootstrapEndpoints() {
+  if (!mesh_messaging_) {
+    return;
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const std::string& ma : mesh_cfg.bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+  RegisterMeshDirectoryEndpoints();
+}
+
+void MessagingHub::ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record) {
+  if (!mesh_messaging_ || peer_id.empty()) {
+    return;
+  }
+  for (const std::string& ma : record.multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+}
+
+void MessagingHub::ConfigureAmpDhtService() {
+  if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
+    return;
+  }
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool participate = role == MeshRole::Node && config_.mesh.capabilities.dht;
+
+  RegisterDhtBootstrapEndpoints();
+
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+
+  AmpDhtServiceConfig cfg;
+  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
+  if (!mesh_->AmpListenMultiaddr().empty()) {
+    cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
+  }
+  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
+    cfg.device_signing_secret = *priv;
+  }
+  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
+    cfg.device_signing_public = *pub;
+  }
+  cfg.tunables = config_.mesh.dht;
+  cfg.query_peer_keys = CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes);
+  cfg.participate = participate;
+  mesh_->ConfigureAmpDht(std::move(cfg));
+  mesh_->RefreshAmpDhtHosting(participate);
+}
+
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
   return IsContactReachableForMessaging(contact, relay_ != nullptr);
 }
@@ -589,7 +677,15 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
-  (void)peer_id;
+  if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
+      config_.mesh.capabilities.dht) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](Roe<DhtFindPeerResult> result) {
+      if (!result) {
+        return;
+      }
+      ApplyDhtFindPeerResult(peer_id, result->record);
+    });
+  }
 }
 
 
@@ -670,7 +766,10 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       }
       return MeshDirectoryNodesFromHits(*hits);
     });
-    mesh_directory_cache_->SetOnUpdated([this]() { RegisterMeshDirectoryEndpoints(); });
+    mesh_directory_cache_->SetOnUpdated([this]() {
+      RegisterMeshDirectoryEndpoints();
+      ConfigureAmpDhtService();
+    });
     mesh_directory_cache_->RequestRefresh();
   }
 
@@ -876,6 +975,9 @@ void MessagingHub::TickMesh() {
   }
   if (mesh_directory_cache_) {
     mesh_directory_cache_->MaybeRefresh();
+  }
+  if (mesh_ && mesh_->AmpDht()) {
+    mesh_->AmpDht()->Tick();
   }
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
@@ -1494,6 +1596,7 @@ void MessagingHub::RefreshMeshCapabilities() {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
+  ConfigureAmpDhtService();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1513,6 +1616,7 @@ void MessagingHub::Apply(const NetworkConfig& next) {
       next.node_enabled != config_.mesh.node_enabled ||
       next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
       next.media_relay != config_.mesh.capabilities.media_relay ||
+      next.dht != config_.mesh.capabilities.dht ||
       next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing;
 
   config_.relay = next.relay;
@@ -1521,6 +1625,7 @@ void MessagingHub::Apply(const NetworkConfig& next) {
   config_.mesh.node_enabled = next.node_enabled;
   config_.mesh.capabilities.circuit_relay = next.circuit_relay;
   config_.mesh.capabilities.media_relay = next.media_relay;
+  config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
 
   if (service_urls_changed) {
@@ -1567,6 +1672,7 @@ MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config
   out.node_enabled = config.mesh.node_enabled;
   out.circuit_relay = config.mesh.capabilities.circuit_relay;
   out.media_relay = config.mesh.capabilities.media_relay;
+  out.dht = config.mesh.capabilities.dht;
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   return out;
 }
