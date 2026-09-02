@@ -43,6 +43,7 @@ flowchart TB
 |----------|----------------|
 | How does the mesh work? | [DESIGN.md](DESIGN.md) |
 | Name directory / chain-later phone book | [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md) (N029) |
+| Pre-chain engineering plan (A–C) | [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) |
 | Scope tags and bridge score | [RELAY_SCOPE.md](RELAY_SCOPE.md) |
 | Can we dial this hop PeerId? | [media-hop-reachability](../media-hop-reachability/DESIGN.md) |
 | How should `media_relay` attach be stated as a SM? | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) (N026) |
@@ -64,6 +65,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Authoritative spec** — roles, capabilities, services, reachability, relay policy, config, packaging |
 | [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md) | Phone book north star: HTTP now, chain later; pp-node as edge router (N029) |
+| [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) | Engineering plan for N029 Phases A–C (before on-chain names) |
 | [MESH_DIRECTORY.md](MESH_DIRECTORY.md) | N027 HTTP `mesh_node` directory delivery |
 | [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) | Directory consumers → DHT tracks |
 | [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score |

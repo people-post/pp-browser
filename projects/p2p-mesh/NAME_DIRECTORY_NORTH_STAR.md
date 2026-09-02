@@ -136,8 +136,11 @@ These may inform Phase B+; they must not delay Phase A’s HTTP phone book + n-d
 
 ## Near-term engineering order
 
-1. Freeze name-directory port + record schema (this doc + thin interface evolution from N027).
-2. Finish n-dir consumers (hop policy on directory).
-3. Keep L0 seed minimal; no DNS-unpinned dial.
-4. Ensure registration/renew and mesh_node publish fill frozen fields (`seq`, caps, kind).
-5. Later: Amp directory mirror → `ledger_gateway` capability → chain provider behind the same interface.
+See **[PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md)** for the full pre-blockchain work package list (nd0–nd5).
+
+Summary:
+
+1. Freeze name-directory port + record schema (nd1).  
+2. Field fidelity + first-release UX smoke (nd2); providers[] (nd3).  
+3. Keep L0 seed minimal; no DNS-unpinned dial.  
+4. Later: Amp directory mirror (nd4) → `ledger_gateway` capability prep (nd5) → chain provider (Phase D, separate plan).

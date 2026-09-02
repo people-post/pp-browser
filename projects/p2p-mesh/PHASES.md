@@ -4,6 +4,8 @@
 
 Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
+**Pre-blockchain name directory (N029):** after n-dir/n2 landings, follow **[PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md)** packages **nd1 → nd5** before on-chain names (Phase D).
+
 ## n0 — Project docs
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
@@ -12,6 +14,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
 - [x] **N023** — relay scope / domain bridging spec ([RELAY_SCOPE.md](RELAY_SCOPE.md))
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
+- [x] **N029** — name directory north star ([NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)); pre-chain plan ([PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md))
 
 ## n1 — Role shell + bootstrap + Network UI
 
