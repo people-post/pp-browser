@@ -24,8 +24,36 @@ struct McpConfig {
 
 struct ServiceEndpointConfig {
   std::string base_url;
+  /** http now; amp = MeshHost AmpDirectoryService (N029 nd4; not CreateServiceClients). */
   std::string transport = "http";
+
+  bool operator==(const ServiceEndpointConfig& other) const {
+    return base_url == other.base_url && transport == other.transport;
+  }
+  bool operator!=(const ServiceEndpointConfig& other) const { return !(*this == other); }
 };
+
+/**
+ * Directory / phone-book endpoints (N029 nd3).
+ * Legacy: `base_url` (+ optional `transport`).
+ * Preferred: ordered `providers[]` with failover; empty providers → synthesize from base_url.
+ */
+struct DirectoryConfig {
+  std::string base_url;
+  std::string transport = "http";
+  std::vector<ServiceEndpointConfig> providers;
+
+  bool operator==(const DirectoryConfig& other) const {
+    return base_url == other.base_url && transport == other.transport && providers == other.providers;
+  }
+  bool operator!=(const DirectoryConfig& other) const { return !(*this == other); }
+};
+
+/** Effective ordered provider list (providers, else single base_url entry). */
+std::vector<ServiceEndpointConfig> EffectiveDirectoryProviders(const DirectoryConfig& config);
+
+/** If base_url empty but providers set, mirror providers[0] into base_url/transport. */
+void NormalizeDirectoryConfig(DirectoryConfig& config);
 
 struct SearchConfig {
   std::string provider = "duckduckgo";
@@ -39,6 +67,11 @@ struct MeshCapabilities {
   bool media_relay = true;
   /** Participate in AMP Kademlia peer routing (n2). Default off; Node only. */
   bool dht = false;
+  /**
+   * Advertise as opaque ledger RPC gateway (N029 Phase C prep).
+   * Default off; no chain runtime required to store the flag.
+   */
+  bool ledger_gateway = false;
 };
 
 /** Tunables for mesh DHT (n2). Ignored when capabilities.dht is false. */
@@ -84,12 +117,19 @@ struct MeshPricingConfig {
   RelayPricingConfig media_relay;
 };
 
-/** Cached infra row from GET /v1/mesh/nodes (N027 / n-dir). */
+/** Cached infra row from GET /v1/mesh/nodes (N027 / n-dir / N029). */
 struct MeshDirectoryNode {
   std::string peer_id;
   std::vector<std::string> multiaddrs;
   bool circuit_relay = false;
   bool media_relay = false;
+  bool dht = false;
+  bool ledger_gateway = false;
+  std::string account_id;
+  std::string entity_kind;
+  int64_t seq = 0;
+  std::string expires_at;
+  std::string nickname;
 };
 
 struct MeshConfig {
@@ -135,7 +175,7 @@ struct AppConfig {
   std::string theme = "themes/base.rcss";
   std::string data_dir;
   ServiceEndpointConfig relay;
-  ServiceEndpointConfig directory;
+  DirectoryConfig directory;
   ServiceEndpointConfig registration;
   MeshConfig mesh;
   McpConfig promoted_mcp;

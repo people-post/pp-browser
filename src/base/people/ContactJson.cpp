@@ -391,6 +391,22 @@ DirectoryHit DirectoryHitFromJson(const Object& json) {
   if (const Object* icon = json.getObject("icon")) {
     hit.icon = ProfileIconRefFromJson(*icon);
   }
+  if (auto kind = json.getString("entity_kind")) {
+    hit.entity_kind = *kind;
+  }
+  if (auto seq = json.getIf<int64_t>("seq")) {
+    hit.seq = *seq;
+  }
+  if (auto expires = json.getString("expires_at")) {
+    hit.expires_at = *expires;
+  }
+  if (const Object* caps = json.getObject("capabilities")) {
+    hit.has_capabilities = true;
+    hit.circuit_relay = caps->getIf<bool>("circuit_relay").value_or(false);
+    hit.media_relay = caps->getIf<bool>("media_relay").value_or(false);
+    hit.dht = caps->getIf<bool>("dht").value_or(false);
+    hit.ledger_gateway = caps->getIf<bool>("ledger_gateway").value_or(false);
+  }
   return hit;
 }
 

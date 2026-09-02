@@ -90,6 +90,10 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
       state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
   config.directory.base_url =
       state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
+  // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
+  // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
+  config.directory.providers.clear();
+  config.directory.transport = "http";
   config.registration.base_url = state.registration_base_url.empty()
                                      ? defaults.registration.base_url
                                      : state.registration_base_url;

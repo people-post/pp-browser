@@ -2,8 +2,9 @@
 
 **Status:** Draft work plan  
 **Date:** 2026-09-01  
+**Updated:** 2026-09-02 — align with [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now) name-directory north star  
 **Amends:** N015 (delivery order), N027 (mesh directory), n2 in [PHASES.md](PHASES.md)  
-**Related:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../pp-ledger/docs/platform-integration.md) (pp-ledger DHT retired)
+**Related:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../pp-ledger/docs/platform-integration.md) (pp-ledger DHT retired)
 
 ## Context
 
@@ -12,6 +13,8 @@ pp-ledger removed BitTorrent DHT in favor of **curated ADP multiaddrs** for flee
 pp-browser mesh still needs decentralized **PeerId → multiaddr** lookup when contacts and HTTP directory are insufficient. That belongs here (phase **n2**), not in pp-ledger.
 
 **Principle:** finish **directory-backed discovery** before building Kademlia. DHT feeds candidates; **MeshHopPolicy** (N014/N020/N023) still decides who you dial or hop through.
+
+**Name authority (N029):** HTTP `GET /mesh/nodes` and person lookup are the **v1 phone book** behind a stable name-directory port. DHT must **not** become a name registry. On-chain unique names are the **final** phone book (after first release); keep record fields (`entity_kind`, capabilities, `seq`, PeerId-first) mappable 1:1.
 
 ```mermaid
 flowchart TD
@@ -59,12 +62,14 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 ### Current state
 
 | Piece | State |
-|-------|-------|
+|------|-------|
 | Brief `GET /v1/mesh/nodes` | Shipped (www) |
 | `HttpDirectoryClient::ListMeshNodes()` | Shipped |
 | pp-node `mesh_node` register/renew | Shipped (`NodeMeshPublish`) |
-| Consumer calls `ListMeshNodes` | **Not wired** |
-| Hop policy directory affinity | **Missing** |
+| `MeshDirectoryCache` + `TickMesh` refresh | Shipped |
+| Hop policy `DirectoryNode` + `CollectDirectoryHopCandidates` | Shipped |
+| Endpoint registration from directory snapshot | Shipped (via MessagingHub / hop build) |
+| **Remaining pre-chain** | See [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) (N029 nd1–nd5) — name port, record fidelity, Amp twin, `ledger_gateway` prep |
 
 ### Work items
 
@@ -245,8 +250,8 @@ ns bridge score ────────► n-dir-4 (partial; can parallel n2-sp
 - libp2p Kademlia import (fork retired; AMP-only path).
 - Open public relay market via DHT (N020 mid).
 - Content / blob DHT (relay-blob uses HTTP + peer fetch ladder today).
-- Second directory transport (libp2p directory protocol).
-
+- Second directory transport — tracked under [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) **nd4** (N029 Phase B), not n2.
+- On-chain names — N029 Phase D / out of pre-chain plan.
 ---
 
 ## Suggested PR sequence

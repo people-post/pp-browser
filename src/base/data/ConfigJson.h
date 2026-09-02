@@ -20,6 +20,9 @@ pp::common::Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint
 void ServiceEndpointFromObject(const pp::common::Object& object,
                                ServiceEndpointConfig& endpoint);
 
+pp::common::Object DirectoryConfigToObject(const DirectoryConfig& config);
+void DirectoryConfigFromObject(const pp::common::Object& object, DirectoryConfig& config);
+
 pp::common::Object MeshCapabilitiesToObject(const MeshCapabilities& caps);
 void MeshCapabilitiesFromObject(const pp::common::Object& object,
                                   MeshCapabilities& caps);

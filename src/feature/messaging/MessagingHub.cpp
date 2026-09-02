@@ -43,13 +43,15 @@
 #include "base/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "base/mesh/reachability/LanMdnsDiscovery.h"
-#include "base/mesh/l4/shared/SettledWait.h"
+#include "common/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/mesh/dht/DhtRecordCodec.h"
+#include "base/mesh/discovery/AmpDirectoryService.h"
+#include "base/mesh/discovery/NameDirectory.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/mesh/reachability/NatTraversal.h"
 #include "base/mesh/reachability/Reachability.h"
-#include "base/runtime/StartupTiming.h"
+#include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL_timer.h>
@@ -194,14 +196,42 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     log().warning << "relay.base_url is empty; relay client disabled";
   }
 
-  if (!directory_url.empty()) {
-    if (!http_directory_ || http_directory_url_ != directory_url) {
-      http_directory_url_ = directory_url;
-      http_directory_ = std::make_unique<HttpDirectoryClient>(http_directory_url_);
+  if (!directory_url.empty() || !config.directory.providers.empty()) {
+    DirectoryConfig dir_cfg = config.directory;
+    if (dir_cfg.base_url.empty()) {
+      dir_cfg.base_url = directory_url;
     }
-    directory_ = http_directory_.get();
+    NormalizeDirectoryConfig(dir_cfg);
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(dir_cfg);
+    std::vector<std::unique_ptr<IDirectoryClient>> backends;
+    backends.reserve(providers.size());
+    std::string fingerprint;
+    for (const ServiceEndpointConfig& provider : providers) {
+      const std::string transport = provider.transport.empty() ? "http" : provider.transport;
+      if (transport != "http") {
+        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryService +
+        // MeshDirectoryCache Amp-first fetcher (N029 nd4). Factory skips the same way.
+        continue;
+      }
+      fingerprint.append(provider.base_url).push_back('|');
+      backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
+    }
+    if (backends.empty()) {
+      directory_owned_.reset();
+      http_directory_url_.clear();
+      directory_ = nullptr;
+      log().warning << "directory providers empty; directory client disabled";
+    } else if (!directory_owned_ || http_directory_url_ != fingerprint) {
+      http_directory_url_ = std::move(fingerprint);
+      if (backends.size() == 1) {
+        directory_owned_ = std::move(backends.front());
+      } else {
+        directory_owned_ = std::make_unique<FailoverDirectoryClient>(std::move(backends));
+      }
+      directory_ = directory_owned_.get();
+    }
   } else {
-    http_directory_.reset();
+    directory_owned_.reset();
     http_directory_url_.clear();
     directory_ = nullptr;
     log().warning << "directory.base_url is empty; directory client disabled";
@@ -249,6 +279,8 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
   mesh_cfg.host_circuit_relay = role == MeshRole::Node && config_.mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = role == MeshRole::Node && config_.mesh.capabilities.media_relay;
   mesh_cfg.host_dht = role == MeshRole::Node && config_.mesh.capabilities.dht;
+  // Org seed / desktop Node: serve Amp directory twin (N029 nd4).
+  mesh_cfg.host_directory = role == MeshRole::Node;
   mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
   mesh_cfg.start_reachability_probe = role == MeshRole::Node;
@@ -284,6 +316,10 @@ Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
   }
   StartMeshServices();
   ConfigureAmpDhtService();
+  ConfigureAmpDirectoryService();
+  if (mesh_directory_cache_) {
+    mesh_directory_cache_->RequestRefresh();
+  }
   return {};
 }
 
@@ -647,6 +683,142 @@ void MessagingHub::ConfigureAmpDhtService() {
   mesh_->RefreshAmpDhtHosting(participate);
 }
 
+namespace {
+
+std::string AmpDirectoryPeerKeyFromBaseUrl(const std::string& base_url) {
+  if (base_url.empty()) {
+    return {};
+  }
+  if (base_url.find('/') != std::string::npos) {
+    return PeerIdFromMultiaddr(base_url);
+  }
+  return base_url;
+}
+
+MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const MeshConfig& mesh_cfg) {
+  MeshNodeHit hit;
+  hit.entity_kind = "mesh_node";
+  if (auto loaded = identity.Get()) {
+    hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
+    if (!loaded->account_id.empty()) {
+      hit.account_id = loaded->account_id;
+    }
+    if (!loaded->nickname.empty()) {
+      hit.nickname = loaded->nickname;
+    }
+    if (!loaded->public_key_b64.empty()) {
+      hit.signing_public_key_b64 = loaded->public_key_b64;
+    }
+    if (!loaded->kem_public_key_b64.empty()) {
+      hit.kem_public_key_b64 = loaded->kem_public_key_b64;
+    }
+  }
+  if (hit.relay_user_id.empty() && mesh.Amp()) {
+    hit.relay_user_id = mesh.Amp()->LocalPeerId();
+  }
+  hit.capabilities.circuit_relay = mesh_cfg.capabilities.circuit_relay;
+  hit.capabilities.media_relay = mesh_cfg.capabilities.media_relay;
+  hit.capabilities.dht = mesh_cfg.capabilities.dht;
+  hit.capabilities.ledger_gateway = mesh_cfg.capabilities.ledger_gateway;
+  DirectoryEndpoint ep;
+  if (mesh.Amp()) {
+    ep.peer_id = mesh.Amp()->LocalPeerId();
+  }
+  if (!mesh.AmpListenMultiaddr().empty()) {
+    ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
+  }
+  for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
+    if (!ma.empty() &&
+        std::find(ep.multiaddrs.begin(), ep.multiaddrs.end(), ma) == ep.multiaddrs.end()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  if (!ep.peer_id.empty()) {
+    hit.endpoints.push_back(std::move(ep));
+  }
+  return hit;
+}
+
+} // namespace
+
+void MessagingHub::ConfigureAmpDirectoryService() {
+  if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDirectory() || !identity_) {
+    return;
+  }
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool host_directory = role == MeshRole::Node;
+
+  RegisterDhtBootstrapEndpoints();
+
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+
+  std::vector<std::string> query_keys;
+  std::unordered_set<std::string> seen;
+  DirectoryConfig dir_cfg = config_.directory;
+  NormalizeDirectoryConfig(dir_cfg);
+  for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(dir_cfg)) {
+    const std::string transport = provider.transport.empty() ? "http" : provider.transport;
+    if (transport != "amp") {
+      continue;
+    }
+    const std::string key = AmpDirectoryPeerKeyFromBaseUrl(provider.base_url);
+    if (key.empty() || !seen.insert(key).second) {
+      continue;
+    }
+    query_keys.push_back(key);
+  }
+  for (const std::string& key : CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, {})) {
+    if (key.empty() || !seen.insert(key).second) {
+      continue;
+    }
+    query_keys.push_back(key);
+  }
+
+  AmpDirectoryServiceConfig cfg;
+  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
+  cfg.query_peer_keys = std::move(query_keys);
+  mesh_->ConfigureAmpDirectory(std::move(cfg));
+  mesh_->RefreshAmpDirectoryHosting(host_directory);
+
+  if (host_directory) {
+    mesh_->AmpDirectory()->SetNodesProvider([this, mesh_cfg]() {
+      std::vector<MeshNodeHit> nodes;
+      if (identity_ && mesh_) {
+        nodes.push_back(BuildLocalMeshNodeHit(*identity_, *mesh_, mesh_cfg));
+      }
+      if (mesh_directory_cache_) {
+        for (const MeshDirectoryNode& row : mesh_directory_cache_->Snapshot()) {
+          if (row.peer_id.empty()) {
+            continue;
+          }
+          MeshNodeHit hit;
+          hit.relay_user_id = row.account_id.empty() ? row.peer_id : row.account_id;
+          if (!row.account_id.empty()) {
+            hit.account_id = row.account_id;
+          }
+          if (!row.nickname.empty()) {
+            hit.nickname = row.nickname;
+          }
+          hit.entity_kind = row.entity_kind.empty() ? "mesh_node" : row.entity_kind;
+          hit.seq = row.seq;
+          hit.expires_at = row.expires_at;
+          hit.capabilities.circuit_relay = row.circuit_relay;
+          hit.capabilities.media_relay = row.media_relay;
+          hit.capabilities.dht = row.dht;
+          hit.capabilities.ledger_gateway = row.ledger_gateway;
+          DirectoryEndpoint ep;
+          ep.peer_id = row.peer_id;
+          ep.multiaddrs = row.multiaddrs;
+          hit.endpoints.push_back(std::move(ep));
+          nodes.push_back(std::move(hit));
+        }
+      }
+      return nodes;
+    });
+  }
+}
+
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
   return IsContactReachableForMessaging(contact, relay_ != nullptr);
 }
@@ -688,7 +860,7 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   }
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
-    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](Roe<DhtFindPeerResult> result) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
       if (!result) {
         return;
       }
@@ -766,18 +938,30 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   if (directory_) {
     mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
+      // N029 nd4: Amp directory twin first, then HTTP INameDirectory.
+      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+        auto amp_nodes = mesh_->AmpDirectory()->ListMeshNodes();
+        if (amp_nodes) {
+          auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
+          if (!rows.empty()) {
+            return rows;
+          }
+        }
+      }
       if (!directory_) {
         return std::vector<MeshDirectoryNode>{};
       }
-      auto hits = directory_->ListMeshNodes();
-      if (!hits) {
-        return hits.error();
+      DirectoryClientNameDirectory names(*directory_);
+      auto records = names.ListService("mesh_node");
+      if (!records) {
+        return records.error();
       }
-      return MeshDirectoryNodesFromHits(*hits);
+      return MeshDirectoryNodesFromNameRecords(*records);
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();
       ConfigureAmpDhtService();
+      ConfigureAmpDirectoryService();
     });
     mesh_directory_cache_->RequestRefresh();
   }
@@ -1606,6 +1790,7 @@ void MessagingHub::RefreshMeshCapabilities() {
                                                  config_.mesh.capabilities.media_relay);
   }
   ConfigureAmpDhtService();
+  ConfigureAmpDirectoryService();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1620,6 +1805,8 @@ void MessagingHub::Apply(const NetworkConfig& next) {
 
   const bool service_urls_changed = next.relay.base_url != config_.relay.base_url ||
                                     next.directory.base_url != config_.directory.base_url ||
+                                    next.directory.transport != config_.directory.transport ||
+                                    next.directory.providers != config_.directory.providers ||
                                     next.registration.base_url != config_.registration.base_url;
   const bool mesh_changed =
       next.node_enabled != config_.mesh.node_enabled ||
@@ -1869,7 +2056,7 @@ void MessagingHub::Shutdown() {
   directory_shadows_.reset();
   mesh_directory_cache_.reset();
   http_relay_.reset();
-  http_directory_.reset();
+  directory_owned_.reset();
   http_registration_.reset();
   http_push_devices_.reset();
   http_client_compat_.reset();

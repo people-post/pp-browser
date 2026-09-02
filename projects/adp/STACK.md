@@ -77,6 +77,11 @@ Carry forward the three-object discipline from [LIBP2P_STREAMS.md](../../docs/ar
 
 Domain state (call roster, SQLite, jitter buffers) lives on L4 consumers — not on Channel/Session objects.
 
+**Error escalation** follows the same hierarchy: each owner wraps its immediate child's
+`CodedFailure` (code remap + `AppendFrom` on `message`). See
+[CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md); link-level code table in
+[AMP-LINK-ERRORS.md](../../docs/contracts/AMP-LINK-ERRORS.md).
+
 ## One association per peer pair (default)
 
 **One long-lived Association + one Session per remote PeerId**, many Channels on top ([A026](DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election)).

@@ -54,6 +54,12 @@ std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::st
 /** Collect infra mesh_node peers from directory cache (N027 / n-dir). */
 std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
 
+/**
+ * Directory/DHT nodes advertising `ledger_gateway` (N029 Phase C prep).
+ * Unused by product dial paths until ledger transport lands.
+ */
+std::vector<MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+
 /** Collect DHT-discovered infra peers (n2-caps); same node shape as directory. */
 std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
 

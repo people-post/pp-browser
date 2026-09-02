@@ -6,7 +6,7 @@
 #include "base/mesh/l4/call_media/CallMediaBundleLogic.h"
 #include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "base/mesh/l4/call_media/CallMediaSessionLogic.h"
-#include "base/mesh/l4/shared/LengthPrefixedCodec.h"
+#include "common/LengthPrefixedCodec.h"
 
 #include "common/ValueJson.h"
 

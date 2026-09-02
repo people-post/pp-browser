@@ -325,11 +325,51 @@ void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endp
   }
 }
 
+Object DirectoryConfigToObject(const DirectoryConfig& config) {
+  Object object;
+  object.set("base_url", config.base_url);
+  object.set("transport", config.transport);
+  if (!config.providers.empty()) {
+    std::vector<Value> providers;
+    providers.reserve(config.providers.size());
+    for (const ServiceEndpointConfig& provider : config.providers) {
+      providers.push_back(ObjectValue(ServiceEndpointToObject(provider)));
+    }
+    object.set("providers", makeArray(std::move(providers)));
+  }
+  return object;
+}
+
+void DirectoryConfigFromObject(const Object& object, DirectoryConfig& config) {
+  if (auto base_url = object.getString("base_url")) {
+    config.base_url = *base_url;
+  }
+  if (auto transport = object.getString("transport")) {
+    config.transport = *transport;
+  }
+  if (const Array* providers = object.getArray("providers")) {
+    config.providers.clear();
+    for (const Value& item : providers->elements) {
+      const Object* row = asObject(item);
+      if (!row) {
+        continue;
+      }
+      ServiceEndpointConfig provider;
+      ServiceEndpointFromObject(*row, provider);
+      if (!provider.base_url.empty()) {
+        config.providers.push_back(std::move(provider));
+      }
+    }
+  }
+  NormalizeDirectoryConfig(config);
+}
+
 Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
   Object object;
   object.set("circuit_relay", caps.circuit_relay);
   object.set("media_relay", caps.media_relay);
   object.set("dht", caps.dht);
+  object.set("ledger_gateway", caps.ledger_gateway);
   return object;
 }
 
@@ -342,6 +382,9 @@ void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
   }
   if (auto dht = object.getIf<bool>("dht")) {
     caps.dht = *dht;
+  }
+  if (auto ledger_gateway = object.getIf<bool>("ledger_gateway")) {
+    caps.ledger_gateway = *ledger_gateway;
   }
 }
 
@@ -519,7 +562,7 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("search", SearchConfigToObject(config.search));
   object.set("context", ContextBudgetToObject(config.context));
   object.set("relay", ServiceEndpointToObject(config.relay));
-  object.set("directory", ServiceEndpointToObject(config.directory));
+  object.set("directory", DirectoryConfigToObject(config.directory));
   object.set("registration", ServiceEndpointToObject(config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
@@ -589,7 +632,7 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
     ServiceEndpointFromObject(*relay, config.relay);
   }
   if (const Object* directory = object.getObject("directory")) {
-    ServiceEndpointFromObject(*directory, config.directory);
+    DirectoryConfigFromObject(*directory, config.directory);
   }
   if (const Object* registration = object.getObject("registration")) {
     ServiceEndpointFromObject(*registration, config.registration);

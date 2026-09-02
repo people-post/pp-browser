@@ -4,6 +4,8 @@
 
 Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
+**Pre-blockchain name directory (N029):** after n-dir/n2 landings, follow **[PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md)** packages **nd1 → nd5** before on-chain names (Phase D).
+
 ## n0 — Project docs
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
@@ -12,6 +14,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
 - [x] **N023** — relay scope / domain bridging spec ([RELAY_SCOPE.md](RELAY_SCOPE.md))
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
+- [x] **N029** — name directory north star ([NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)); pre-chain plan ([PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md))
 
 ## n1 — Role shell + bootstrap + Network UI
 
@@ -102,7 +105,7 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
 - [x] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
 - [x] Bridge score prefers directory when seed unreachable (`seed_dial_ok` → skip seeds)
-- [ ] Phase E smoke + docs (manual)
+- [x] Phase E smoke + docs (manual) — lab Amp/DHT + Brief `/mesh/nodes` probe done; live www `mesh_node` publish still open
 
 ## n2 — DHT (later per N015)
 
@@ -114,6 +117,17 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] **n2-hard:** Rate limits / reputation (trail v1)
 - [ ] Never on Client/mobile
 - [x] Do not start n2-core until **n-dir** acceptance passes
+
+## nd — Pre-chain name directory (N029 Phases A–C)
+
+**Work plan:** [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md). Do **before** on-chain names (Phase D). n-dir/n2 consumer tracks are largely done; this hardens the phone-book seam.
+
+- [x] **nd1** — `INameDirectory` / `NameRecord` seam (load-bearing for chain swap)
+- [x] **nd2** — Record field fidelity + resolve-by-account on `INameDirectory` (manual Phase E smoke still open)
+- [x] **nd3** — `directory.providers[]` + HTTP failover
+- [x] **nd4** — Amp directory twin (`MESH_DIRECTORY_AMP.md` / `/pp-mesh/directory/1.0.0`)
+- [x] **nd5** — `ledger_gateway` capability vocab + hop collector (dial path / UI deferred)
+- [x] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 landed in same track
 - [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
 
 ## Later horizons

@@ -47,7 +47,7 @@ base/mesh/
   identity/       PeerId derivation (ML-DSA → base58)
   reachability/   Reachability, NAT, LAN mDNS, dial-back
   l4/
-    shared/       LengthPrefixedCodec, ProductChannelPolicies, SettledWait
+    shared/       ProductChannelPolicies
     circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
     media_relay/  AmpMediaRelayCoordinator, MediaRelay*
     call_media/   CallMediaLegCoordinator, ICallMediaTransport
@@ -65,6 +65,8 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 | Call-media transport | `CallMediaAmpTransport` via `CallStack` | Wire transport in mesh; `CallMediaBridge` in feature |
 
 Feature must **not** `#include "amp/link/*"` in headers. Implementation `.cpp` files may include `amp/link/PeerLink.h` only where channel session binding requires it; new code should prefer `IChatPeerLinks`.
+
+`IChatPeerLinks::LinkRoe` / `ChannelRoe` are `CodedRoe` aliases — stable `Err` codes match `PeerLinkManager` ([AMP-LINK-ERRORS.md](../contracts/AMP-LINK-ERRORS.md)). Inspect `Failure::GetCode()` for retry/backoff logic; use `message` for logs only. L4 coordinators must **wrap** link failures (not identity-map) per [CODED_FAILURE.md](../contracts/CODED_FAILURE.md).
 
 `MeshHost::Amp()` remains for mesh tests and `AttachAmpStack` harnesses only.
 
