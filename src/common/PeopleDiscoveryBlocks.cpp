@@ -90,20 +90,14 @@ std::string BuildBlocksJson(std::vector<Value> blocks) {
 
 PeopleDiscoveryContactView ContactViewFromJson(const Object& json) {
   PeopleDiscoveryContactView contact;
-  if (const Value* id = json.find("id")) {
-    if (const auto* s = asString(*id)) {
-      contact.id = *s;
-    }
+  if (auto id = json.getString("id")) {
+    contact.id = *id;
   }
-  if (const Value* display_name = json.find("display_name")) {
-    if (const auto* s = asString(*display_name)) {
-      contact.display_name = *s;
-    }
+  if (auto display_name = json.getString("display_name")) {
+    contact.display_name = *display_name;
   }
-  if (const Value* server_nickname = json.find("server_nickname")) {
-    if (const auto* s = asString(*server_nickname)) {
-      contact.server_nickname = *s;
-    }
+  if (auto server_nickname = json.getString("server_nickname")) {
+    contact.server_nickname = *server_nickname;
   }
   AppendContactIdsFromJson(json, contact.ids);
   return contact;
