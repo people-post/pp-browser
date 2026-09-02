@@ -100,7 +100,7 @@ else()
   )
 endif()
 
-# Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_base_error).
+# Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_foundation_error).
 # Desktop AssetIO is ifstream-only; no SDL. CurlSsl TLS defaults already live in core.
 if(PP_BROWSER_HEADLESS)
   list(APPEND _pp_platform_core_sources
@@ -111,8 +111,8 @@ if(PP_BROWSER_HEADLESS)
 endif()
 
 # Headless-safe platform surface (paths, env credentials, OS file/time/process).
-# No SDL / RmlUi — used by pp-node and by pp_base_data.
-pp_browser_add_base_library(pp_base_platform_core
+# No SDL / RmlUi — used by pp-node and by pp_foundation_data.
+pp_browser_add_foundation_library(pp_foundation_platform_core
   SOURCES
     ${_pp_platform_core_sources}
   PUBLIC_LIBS
@@ -126,12 +126,12 @@ endif()
 # OBJCXX is enabled in the top-level project() for desktop Darwin (required so
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
-pp_browser_add_base_library(pp_base_platform
+pp_browser_add_foundation_library(pp_foundation_platform
   SOURCES
     ${_pp_platform_gui_sources}
   PUBLIC_LIBS
-    pp_base_platform_core
-    pp_base_runtime
+    pp_foundation_platform_core
+    pp_foundation_runtime
     pp_base_render
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
@@ -139,7 +139,7 @@ pp_browser_add_base_library(pp_base_platform
 
 # iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios installs a SecTrust verify callback.
 if(PP_BROWSER_IS_IOS)
-  target_link_libraries(pp_base_platform PUBLIC
+  target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL
     OpenSSL::Crypto
@@ -149,17 +149,17 @@ endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
-  target_sources(pp_base_platform PRIVATE NetworkConnectivity_Android.cpp)
-  target_link_libraries(pp_base_platform PUBLIC CURL::libcurl)
+  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp)
+  target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
 endif()
 
 if(PP_BROWSER_IS_IOS)
-  target_sources(pp_base_platform PRIVATE NetworkConnectivity_Ios.mm)
+  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Ios.mm)
 endif()
 
 # Desktop macOS: UNUserNotificationCenter for local banners.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
-  target_link_libraries(pp_base_platform PUBLIC
+  target_link_libraries(pp_foundation_platform PUBLIC
     "-framework AppKit"
     "-framework QuartzCore"
     "-framework UserNotifications"
@@ -172,7 +172,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
-  target_link_libraries(pp_base_platform PRIVATE mfplat mfreadwrite mfuuid)
+  target_link_libraries(pp_foundation_platform PRIVATE mfplat mfreadwrite mfuuid)
 endif()
 
 # Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.
@@ -180,7 +180,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "LINUX" AND NOT PP_BROWSER_IS_ANDROID)
   find_package(PkgConfig REQUIRED)
   find_package(X11 REQUIRED)
   pkg_check_modules(PP_DBUS REQUIRED IMPORTED_TARGET dbus-1)
-  target_link_libraries(pp_base_platform PUBLIC PkgConfig::PP_DBUS X11::X11)
+  target_link_libraries(pp_foundation_platform PUBLIC PkgConfig::PP_DBUS X11::X11)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

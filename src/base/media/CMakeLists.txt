@@ -7,8 +7,8 @@ pp_browser_add_base_library(pp_base_media
     VideoCodecUnavailable.cpp
     VideoYuv.cpp
   PUBLIC_LIBS
-    pp_base_error
-    pp_base_platform
+    pp_foundation_error
+    pp_foundation_platform
     ${PP_BROWSER_SDL3_TARGET}
     Opus::opus)
 

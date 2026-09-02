@@ -18,15 +18,21 @@ add_subdirectory(ai)
 add_subdirectory(ui)
 add_subdirectory(render)
 
+# Foundation targets live under src/foundation/; listed here so pp_base still
+# aggregates the full product stack until a dedicated pp_foundation INTERFACE.
+set(PP_FOUNDATION_MODULE_LIBS
+  pp_foundation_error
+  pp_foundation_runtime_core
+  pp_foundation_runtime
+  pp_foundation_platform_core
+  pp_foundation_platform
+  pp_foundation_data
+  pp_foundation_i18n
+  pp_foundation_crypto
+)
+
 set(PP_BASE_MODULE_LIBS
-  pp_base_error
-  pp_base_runtime_core
-  pp_base_runtime
-  pp_base_platform_core
-  pp_base_platform
-  pp_base_data
-  pp_base_i18n
-  pp_base_crypto
+  ${PP_FOUNDATION_MODULE_LIBS}
   pp_base_adp
   pp_base_mesh_session
   pp_base_mesh_channel

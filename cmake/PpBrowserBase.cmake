@@ -1,5 +1,6 @@
 include(PpBrowserWarnings)
 
+# Shared static-lib helper for foundation (`pp_foundation_*`) and domain (`pp_base_*`) modules.
 function(pp_browser_add_base_library target)
   cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
   add_library(${target} STATIC ${ARG_SOURCES})
@@ -9,6 +10,11 @@ function(pp_browser_add_base_library target)
     target_link_libraries(${target} PRIVATE ${ARG_PRIVATE_LIBS})
   endif()
   pp_browser_apply_warnings(${target})
+endfunction()
+
+# Prefer this name under src/foundation/ (same implementation as pp_browser_add_base_library).
+function(pp_browser_add_foundation_library target)
+  pp_browser_add_base_library(${target} ${ARGN})
 endfunction()
 
 function(pp_browser_add_base_folder_tests lib_target test_target)
@@ -36,4 +42,8 @@ function(pp_browser_add_base_folder_tests lib_target test_target)
   endif()
   pp_browser_apply_warnings(${test_target})
   pp_browser_add_gtest(${test_target})
+endfunction()
+
+function(pp_browser_add_foundation_folder_tests lib_target test_target)
+  pp_browser_add_base_folder_tests(${lib_target} ${test_target} ${ARGN})
 endfunction()

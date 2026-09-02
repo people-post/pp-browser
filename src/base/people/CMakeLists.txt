@@ -15,9 +15,9 @@ set(PP_BASE_PEOPLE_SOURCES
 pp_browser_add_base_library(pp_base_people
   SOURCES ${PP_BASE_PEOPLE_SOURCES}
   PUBLIC_LIBS
-    pp_base_error
-    pp_base_data
-    pp_base_crypto
+    pp_foundation_error
+    pp_foundation_data
+    pp_foundation_crypto
     pp_base_mesh_identity
     sodium)
 

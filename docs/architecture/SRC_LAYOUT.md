@@ -30,10 +30,10 @@ app → feature → domain → foundation → common → pp_common (FetchContent
                  domain  → common / lib            (contracts + forks)
 ```
 
-Today’s include/link graph still uses the aggregate name **base** (`pp_base_*`, `#include "base/…"`):
+Today’s domain include/link graph still uses the aggregate name **base** (`pp_base_*`, `#include "base/…"`). Foundation already uses `pp_foundation_*` and `#include "foundation/…"`:
 
 ```
-app → feature → base → lib → pp_pbr_common → pp_common
+app → feature → base(domain) → foundation → lib → pp_pbr_common → pp_common
 ```
 
 `lib` and `common` may use `third_party`. No upward `#include` across layers.
@@ -181,7 +181,8 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 |--------|-------|
 | `pp_common` | common (FetchContent) |
 | `pp_pbr_common` | common (in-tree) |
-| `pp_base_*` | today’s foundation + domain modules (e.g. `pp_base_data`, `pp_base_mesh`) — rename to `pp_foundation_*` / `pp_domain_*` when folders move |
+| `pp_foundation_*` | foundation modules under `src/foundation/` (e.g. `pp_foundation_data`) |
+| `pp_base_*` | today’s domain modules under `src/base/` (e.g. `pp_base_mesh`) — rename to `pp_domain_*` when folders move |
 | `pp_base` | aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |

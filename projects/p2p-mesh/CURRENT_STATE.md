@@ -38,7 +38,7 @@
 
 | Area | State |
 |------|-------|
-| Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
+| Platform split | `pp_foundation_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_foundation_platform` |
 | Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
 | Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |

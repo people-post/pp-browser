@@ -8,8 +8,8 @@ pp_browser_add_base_library(pp_base_ui
     Theme.cpp
     ViewCatalog.cpp
   PUBLIC_LIBS
-    pp_base_platform
-    pp_base_i18n
+    pp_foundation_platform
+    pp_foundation_i18n
     pp_base_render
     RmlUi::Core)
 

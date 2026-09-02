@@ -16,7 +16,7 @@ OS-specific code has **three homes**, not one folder:
 | **Domain `*_Win32.cpp` / `*_Android.cpp` next to the feature** | Fat OS backends used by one module | H264, camera orientation, VoIP audio session, mDNS sockets, GL lifecycle, net-if enumeration |
 | **Runtime dispatch (`Platform::Detect()` / `IsMobile()`)** | Product behavior, not syscalls | Portrait lock, poll intervals, skip stdio MCP |
 
-Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_base_media` already depends on `pp_base_platform`) and mix shared OS services with domain types.
+Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_base_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
 
 Hard rules:
 

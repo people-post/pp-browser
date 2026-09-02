@@ -55,3 +55,12 @@ sys.exit(fail)
 PY
 
 echo "OK: base/domain PUBLIC_LIBS edges"
+
+# Foundation CMake targets must keep pp_foundation_* names (no pp_base_* aliases).
+if rg -n '\bpp_base_(error|i18n|runtime(_core)?|platform(_core)?|data|crypto)\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' "$ROOT" >/tmp/pp_foundation_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover transitional foundation lib names (use pp_foundation_*):"
+  cat /tmp/pp_foundation_rename.txt
+  exit 1
+fi
+echo "OK: foundation lib names"

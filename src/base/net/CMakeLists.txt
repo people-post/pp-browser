@@ -14,10 +14,10 @@ pp_browser_add_base_library(pp_base_net
     ServiceClientFactory.cpp
     ServiceClientsImpl.cpp
   PUBLIC_LIBS
-    pp_base_error
-    pp_base_data
-    pp_base_crypto
-    pp_base_platform_core
+    pp_foundation_error
+    pp_foundation_data
+    pp_foundation_crypto
+    pp_foundation_platform_core
     CURL::libcurl)
 
 target_compile_definitions(pp_base_net PUBLIC

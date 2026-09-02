@@ -12,8 +12,10 @@ data
 crypto
 ```
 
-Today this tree holds the full foundation band: `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, and `crypto/`.
+This tree holds the full foundation band: `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, and `crypto/`.
 
-CMake targets keep transitional `pp_base_runtime*` / `pp_base_platform*` / `pp_base_error` / `pp_base_i18n` / `pp_base_data` / `pp_base_crypto` names until the broader `pp_foundation_*` rename.
+CMake targets: `pp_foundation_runtime(_core)`, `pp_foundation_platform(_core)`, `pp_foundation_error`, `pp_foundation_i18n`, `pp_foundation_data`, `pp_foundation_crypto`. Use `pp_browser_add_foundation_library` in this tree.
+
+Includes: `#include "foundation/…"`. Old `src/base/{runtime,platform,error,i18n,data,crypto}` paths stay deleted.
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).

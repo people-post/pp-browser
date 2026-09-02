@@ -1,3 +1,3 @@
-pp_browser_add_base_library(pp_base_error
+pp_browser_add_foundation_library(pp_foundation_error
   SOURCES AppError.cpp
-  PUBLIC_LIBS pp_base_i18n)
+  PUBLIC_LIBS pp_foundation_i18n)

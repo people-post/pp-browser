@@ -52,16 +52,16 @@ pp_browser_add_feature_library(pp_feature_messaging
     SqlitePskSessionStore.cpp
   PUBLIC_LIBS
     pp_feature_ai
-    pp_base_crypto
+    pp_foundation_crypto
     pp_base_media
     pp_base_messaging
     pp_base_mesh_link
     pp_base_mesh
     pp_base_net
     pp_base_people
-    pp_base_platform_core
-    pp_base_runtime_core
-    pp_base_runtime
+    pp_foundation_platform_core
+    pp_foundation_runtime_core
+    pp_foundation_runtime
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

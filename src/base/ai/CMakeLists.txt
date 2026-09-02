@@ -10,8 +10,8 @@ pp_browser_add_base_library(pp_base_ai
     TurnTrace.cpp
     WorkingSetPolicy.cpp
   PUBLIC_LIBS
-    pp_base_error
-    pp_base_platform_core
+    pp_foundation_error
+    pp_foundation_platform_core
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

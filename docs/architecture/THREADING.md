@@ -157,7 +157,7 @@ Integration services under `src/base/mesh/` use three executor classes via `Libp
 | **Data** | `Libp2pHost::Post` / stream async (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media duplex **and** call-media hello/ack |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `pp::amp::AmpChannelLimits` (legacy alias `MeshChannelLimits`).
+Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `pp::amp::AmpChannelLimits`.
 
 ---
 

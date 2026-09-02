@@ -171,8 +171,11 @@ for shim in \
   src/base/messaging/ChatBlobRequestUtil.h \
   src/base/data \
   src/base/crypto \
+  src/base/error \
+  src/base/i18n \
   src/base/messaging/PeerBriefRoute.h \
   src/base/messaging/ChatHistoryResponder.h \
+  src/base/mesh/host/MeshChannelLimits.h \
   src/base/net/ProfileIconClientUtil.h \
   src/base/net/ProfileIconFetchUtil.h \
   src/base/net/RegistrationClientUtil.h \

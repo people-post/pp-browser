@@ -1,4 +1,4 @@
-pp_browser_add_base_library(pp_base_crypto
+pp_browser_add_foundation_library(pp_foundation_crypto
   SOURCES
     AttachmentContentHash.cpp
     AttachmentContentCipher.cpp
@@ -22,8 +22,8 @@ pp_browser_add_base_library(pp_base_crypto
     ReplayWindow.cpp
     SessionKeyDeriver.cpp
   PUBLIC_LIBS
-    pp_base_error
-    pp_base_data
+    pp_foundation_error
+    pp_foundation_data
     pp_crypto
     sodium)
 
