@@ -258,6 +258,7 @@ private:
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtService();
+  void ConfigureAmpDirectoryService();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -307,7 +308,8 @@ private:
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  std::unique_ptr<HttpDirectoryClient> http_directory_;
+  /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
+  std::unique_ptr<IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;

@@ -27,7 +27,8 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
       if (transport != "http") {
         logging::getLogger("ServiceClientFactory").warning
             << "directory provider transport '" << transport
-            << "' not implemented yet (N029 nd4); skipping " << provider.base_url;
+            << "' requires MeshHost (N029 nd4 Amp twin); skipping " << provider.base_url
+            << " — MessagingHub wires Amp via AmpDirectoryService";
         continue;
       }
       backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));

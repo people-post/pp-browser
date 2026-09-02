@@ -16,7 +16,7 @@
 | **np** | Headless `pp-node` + shared `MeshHost` + dial-back + circuit/media relay + reachability |
 | **N027** | Mesh directory `entity_kind` / pluggable providers / bootstrap→directory ([MESH_DIRECTORY.md](MESH_DIRECTORY.md)) — implementing; interim phone book under [N029](NAME_DIRECTORY_NORTH_STAR.md) |
 | **N029** | Name directory north star — HTTP now, chain later; pp-node as edge router ([NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)) — design accepted |
-| **nd (pre-chain)** | nd1–nd3 + nd5 landed; **nd4** Amp directory twin next — [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) |
+| **nd (pre-chain)** | nd1–nd5 landed — [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md); Amp twin [`MESH_DIRECTORY_AMP.md`](../../docs/contracts/MESH_DIRECTORY_AMP.md) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
 | **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |

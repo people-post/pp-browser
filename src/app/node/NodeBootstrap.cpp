@@ -9,6 +9,7 @@
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
 #include "base/mesh/dht/DhtTypes.h"
+#include "base/mesh/discovery/AmpDirectoryService.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -71,6 +72,50 @@ void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppCon
   cfg.publish_media_relay = participate && config.mesh.capabilities.media_relay;
   mesh.ConfigureAmpDht(std::move(cfg));
   mesh.RefreshAmpDhtHosting(participate);
+}
+
+void ConfigurePpNodeAmpDirectory(MeshHost& mesh, IdentityStore& identity, const AppConfig& config) {
+  if (!mesh.Amp() || !mesh.AmpDirectory()) {
+    return;
+  }
+  RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
+
+  AmpDirectoryServiceConfig cfg;
+  cfg.local_peer_id = mesh.Amp()->LocalPeerId();
+  cfg.query_peer_keys = CollectBootstrapPeerKeys(config.mesh.bootstrap_peers);
+  mesh.ConfigureAmpDirectory(std::move(cfg));
+  mesh.RefreshAmpDirectoryHosting(true);
+
+  MeshNodeHit self;
+  self.entity_kind = "mesh_node";
+  if (auto loaded = identity.Get()) {
+    self.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
+    if (!loaded->account_id.empty()) {
+      self.account_id = loaded->account_id;
+    }
+    if (!loaded->nickname.empty()) {
+      self.nickname = loaded->nickname;
+    }
+  }
+  if (self.relay_user_id.empty()) {
+    self.relay_user_id = mesh.Amp()->LocalPeerId();
+  }
+  self.capabilities.circuit_relay = config.mesh.capabilities.circuit_relay;
+  self.capabilities.media_relay = config.mesh.capabilities.media_relay;
+  self.capabilities.dht = config.mesh.capabilities.dht;
+  self.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
+  DirectoryEndpoint ep;
+  ep.peer_id = mesh.Amp()->LocalPeerId();
+  if (!mesh.AmpListenMultiaddr().empty()) {
+    ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
+  }
+  for (const std::string& ma : config.mesh.advertise_multiaddrs) {
+    if (!ma.empty()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  self.endpoints.push_back(std::move(ep));
+  mesh.AmpDirectory()->SetNodesSnapshot({std::move(self)});
 }
 
 } // namespace
@@ -156,6 +201,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   mesh_cfg.host_circuit_relay = config->mesh.capabilities.circuit_relay;
   mesh_cfg.host_media_relay = config->mesh.capabilities.media_relay;
   mesh_cfg.host_dht = config->mesh.capabilities.dht;
+  mesh_cfg.host_directory = true;
   mesh_cfg.media_relay_budget = config->mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config->mesh.pricing.media_relay;
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
@@ -183,6 +229,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
     ConfigurePpNodeAmpDht(*mesh, *identity, *config);
+    ConfigurePpNodeAmpDirectory(*mesh, *identity, *config);
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }

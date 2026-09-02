@@ -27,11 +27,11 @@ Phase D  on-chain names  ← OUT OF SCOPE here
 | N027 HTTP `ListMeshNodes` / person lookup / pp-node publish | Done |
 | `MeshDirectoryCache` + hop `DirectoryNode` (n-dir) | Done (see DISCOVERY_ROADMAP acceptance) |
 | DHT PeerId → multiaddr only (N028) | Done through n2-hard |
-| Abstract `INameDirectory` seam | **Missing** — callers use HTTP-shaped `IDirectoryClient` |
-| Frozen record fields on cache rows | **Partial** — `MeshDirectoryNode` is PeerId + addrs + two caps only |
-| `directory.providers[]` pluggable list | **Missing** — single `directory.base_url` |
-| Amp directory channel (Phase B) | Not started |
-| `ledger_gateway` capability (Phase C) | Not started |
+| Abstract `INameDirectory` seam | **Landed** (nd1) |
+| Frozen record fields on cache rows | **Landed** (nd2) |
+| `directory.providers[]` pluggable list | **Landed** (nd3) |
+| Amp directory channel (Phase B) | **Landed** (nd4) — `/pp-mesh/directory/1.0.0` |
+| `ledger_gateway` capability (Phase C) | **Landed** (nd5) — vocab + hop collector |
 | Unpinned DNS dial | Correctly **not** shipped |
 
 Stale note: DISCOVERY_ROADMAP “Current state” table still said n-dir unwired; acceptance checkboxes and code are ahead — treat this plan as source of truth for **remaining** pre-chain work.
@@ -115,7 +115,7 @@ expires_at
 
 **Exit:** Swapping the phone-book backend is a provider entry, not a MessagingHub rewrite.
 
-**Status:** Landed — `DirectoryConfig.providers[]`, `EffectiveDirectoryProviders`, `FailoverDirectoryClient`, factory wiring; amp transport skipped until nd4. Settings UI edits `base_url` only (clears providers).
+**Status:** Landed — `DirectoryConfig.providers[]`, `EffectiveDirectoryProviders`, `FailoverDirectoryClient`, factory HTTP wiring; Amp backends owned by MeshHost/MessagingHub (nd4). Settings UI edits `base_url` only (clears providers).
 
 ---
 
@@ -133,7 +133,7 @@ expires_at
 
 **Anti-scope:** fog anycast, root-signed epoch manifests, invite sponsorship (theory only until scheduled).
 
-**Status:** Not started.
+**Status:** Landed — `docs/contracts/MESH_DIRECTORY_AMP.md`; `AmpDirectoryService` + `AmpDirectoryClient`; MeshHost advertise/serve; MessagingHub Amp-first `MeshDirectoryCache` fetcher then HTTP; pp-node hosts snapshot; `CreateServiceClients` still HTTP-only (Amp needs PeerLinkManager).
 
 ---
 
