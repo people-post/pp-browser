@@ -41,10 +41,8 @@ check_absent "common must not include feature/" \
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 ai->messaging
 ai->net
-ai->ui
 mesh->media
 mesh->net
-mesh->people
 messaging->net
 messaging->people
 net->messaging
@@ -105,6 +103,10 @@ done < <(find "$ROOT/src/base" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' 
 # (No-op structural check: verify mesh no longer includes people/RelayScope.)
 check_absent "mesh must not include people/RelayScope.h (use common/RelayScope.h)" \
   '#include "base/people/RelayScope.h"' src/base/mesh
+check_absent "mesh must not include people/ContactTypes.h (use common/DirectoryTypes.h)" \
+  '#include "base/people/ContactTypes.h"' src/base/mesh
+check_absent "ai must not include ui/WorkingSetTypes.h (use common/WorkingSetTypes.h)" \
+  '#include "base/ui/WorkingSetTypes.h"' src/base/ai
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

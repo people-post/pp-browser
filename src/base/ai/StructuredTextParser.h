@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/TurnPlan.h"
-#include "base/ui/WorkingSetTypes.h"
+#include "common/WorkingSetTypes.h"
 #include "common/PbrCompat.h"
 
 #include <optional>

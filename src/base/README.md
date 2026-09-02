@@ -89,7 +89,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled: mesh L4 uses `common/RelayScope.h` instead of `people/RelayScope.h`.
+**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`), `WorkingSetTypes`.
 
 **Target:**
 

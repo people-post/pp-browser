@@ -2,6 +2,7 @@ include(PpBrowserWarnings)
 
 # pp-browser cross-module utilities (FetchContent pp_common is the external common layer).
 add_library(pp_pbr_common STATIC
+  DirectoryJson.cpp
   LengthPrefixedCodec.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
