@@ -79,13 +79,13 @@ expires_at
 4. `HttpDirectoryClient` implements the port; `MessagingHub` / hop builders consume **only** `NameRecord` / port snapshots
 5. Unit tests: mapping fixtures; mock directory behind the port
 
-**Touchpoints:** `src/base/net/ServiceClients*`, `src/base/data/Config.h` (`MeshDirectoryNode`), `src/base/mesh/discovery/*`, `src/feature/messaging/MessagingHub.cpp`, tests
+**Touchpoints:** `src/base/net/ServiceClients*`, `src/foundation/data/Config.h` (`MeshDirectoryNode`), `src/domain/mesh/discovery/*`, `src/feature/messaging/MessagingHub.cpp`, tests
 
 **Exit:** No hop/UI code parses Brief-only JSON keys outside the HTTP adapter.
 
 **Anti-scope:** no Amp protocol, no chain, no DNS dial.
 
-**Status:** Landed — `INameDirectory` + `DirectoryClientNameDirectory` + `NameRecord` in `src/base/mesh/discovery/NameDirectory.*`; MessagingHub cache fetcher uses `ListService("mesh_node")`.
+**Status:** Landed — `INameDirectory` + `DirectoryClientNameDirectory` + `NameRecord` in `src/domain/mesh/discovery/NameDirectory.*`; MessagingHub cache fetcher uses `ListService("mesh_node")`.
 
 ---
 

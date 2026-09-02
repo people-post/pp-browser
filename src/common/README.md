@@ -6,9 +6,39 @@ pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabula
 app → feature → domain → foundation → common → pp_common
 ```
 
-**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`) and other `common/` headers. It must **never** `#include` `base/`, `foundation/`, `domain/`, `feature/`, or `app/`.
+**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `base/`, `foundation/`, `domain/`, `feature/`, or `app/`.
 
 Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+
+Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-level forwarding headers.
+
+---
+
+## Layout
+
+| Subdir | Contents |
+|--------|----------|
+| *(root)* | Small utilities: `ValueJson`, `PbrCompat`, `SettledWait`, `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `CodedFailure` |
+| [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
+| [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `IdentityTypes` |
+| [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |
+| [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, people-discovery blocks |
+| [`media/`](media/) | `CallMediaHealth` |
+| [`ui/`](ui/) | `WorkingSetTypes` |
+
+### Thread role ports
+
+Prefer the narrow port at call sites:
+
+| Port | Role |
+|------|------|
+| `IThreadCatalog` | list/get/upsert/delete/find-or-create |
+| `IThreadTranscript` | pages, append/update, context window, clear |
+| `IThreadMemory` | conversation summary get/set/clear |
+| `IThreadSync` | seq/epoch/sync_state/outbox |
+| `IThreadStore` | inherits all four + `Flush()` (concrete stores implement this) |
+
+Thin type headers (prefer over the umbrella): `ThreadRecordTypes`, `ChatHistoryTypes`, `ChatBlobTypes`, `ThreadChannel`. `ThreadTypes.h` is an umbrella include only.
 
 ---
 
@@ -20,50 +50,13 @@ Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architectur
 | It is a header-light helper with no product ownership | It talks to SQLite, curl, SDL, RmlUi, Amp, filesystem vaults |
 | It is a pure seam (`I*` + POD) for feature to wire | It implements that seam |
 
-Litmus: *“Could two domain peers compile against this without linking each other?”* Yes → common. *“Does this open sockets / encrypt blobs / run a state machine?”* → not common.
-
----
-
-## Buckets
-
-### A. Basics (utilities)
-
-Cross-module helpers with no domain ownership. Keep these small.
-
-| Header / unit | Role |
-|---------------|------|
-| `ValueJson.h` | Bridge to `pp::Value` / JSON |
-| `PbrCompat.h` | Small compatibility shims |
-| `SettledWait.h` | Async/sync wait helpers |
-| `StartupTiming.h` | Startup timing probes |
-| `LengthPrefixedCodec.*` | Length-prefixed wire framing |
-| `ByteRateLimiter.h` | Simple rate limiting |
-| `EmojiKey.h` | Emoji key helper |
-| `CodedFailure.h` | `CodedFailure` template — escalation rules in [CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md) |
-| `RelayScope.h` | Relay scope bands / admission helpers (shared by mesh L4 + people hop policy) |
-| `DirectoryTypes.h` / `DirectoryJson.*` / `IDirectoryClient.h` | Directory vocabulary, JSON, and client port |
-| `CallMediaHealth.*` | Call path / hop health DTOs + pure evaluation (mesh L4 + UI) |
-| `MessagingLimits.h` | Shared size / poll / compaction limits |
-
-### B. Domain contracts (North Star growth area)
-
-pp-browser vocabulary and seams shared across **domain peers** (and used by feature wiring):
-
-| Category | Intend to live here | Do not put here |
-|----------|---------------------|-----------------|
-| Identity vocabulary | peer/account id aliases, hop-policy *enums*, `RelayScope` | `IdentityStore`, contact DB |
-| Messaging vocabulary | thread/message/channel ids, narrow store/view ports | `SqliteThreadStore`, full ChatPayload codec |
-| Crypto seams | multi-peer ports (`IDekConsumer`-shaped, etc.) | vault / AEAD implementations |
-| Net seams | blob/relay/directory *interfaces* | HTTP client implementations |
-| Compat / versions | shared schema tokens needed by multiple peers | UI strings, Rml |
-
-Prefer **pure headers**. Feature (or app) binds interfaces to concrete domain types.
+Litmus: *“Could two domain peers compile against this without linking each other?”* Yes → common.
 
 ---
 
 ## Independence
 
-All units in this folder are peers: no cycles, no “module A owns module B.” Add new files; do not grow a god header.
+All units in this folder are peers: no cycles. Prefer new files over growing umbrellas.
 
 ---
 
@@ -71,5 +64,5 @@ All units in this folder are peers: no cycles, no “module A owns module B.” 
 
 1. Confirm it is not orchestration (that belongs in `feature/`).
 2. Confirm no `base/` / foundation / domain includes.
-3. If introducing a port, keep the owning **implementation** in foundation or domain.
+3. Put new contracts in the matching subdir; update call sites to the subdir path (no forwarding headers).
 4. Document wire/disk-facing shapes in [`docs/contracts/`](../../docs/contracts/) when they escape the process.

@@ -2,16 +2,18 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/PskFingerprint.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/messaging/DirectChatTarget.h"
-#include "base/messaging/MessagingJson.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/people/AvatarGlyph.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/PeerDisplayLabel.h"
-#include "base/ui/ContextMenuHost.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PskFingerprint.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/people/DirectChatTargetFromContact.h"
+#include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/people/AvatarGlyph.h"
+#include "domain/people/ContactJson.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/PeerDisplayLabel.h"
+#include "domain/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/messaging/ContactReachability.h"
@@ -21,7 +23,7 @@
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>

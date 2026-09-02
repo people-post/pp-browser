@@ -18,7 +18,7 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp-browser/call-media/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../src/base/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
+Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../src/domain/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp-browser/call-media/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../src/domain/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
 
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
@@ -112,7 +112,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 | Android | `CURLOPT_CAPATH` → Conscrypt/system hashed PEMs (`os::TlsCaPath`) | Yes (OS CA updates) |
 | iOS | `CURLOPT_SSL_CTX_FUNCTION` → `SecTrustEvaluateWithError` | Yes (Keychain trust store) |
 
-Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
+Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/foundation/platform/os/OsTlsPlatformCurl_*`).
 
 **A/V (a3 wiring — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 
@@ -129,4 +129,4 @@ Desktop may run as a mesh **Node** (listen preferred on TCP **18517**, busy-port
 
 On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread.
 
-Inbox sync uses [`BackgroundSyncScheduler`](../../src/base/runtime/BackgroundSyncScheduler.h): foreground poll every 2s; while backgrounded and the process is alive, poll every ~45s (IO temporarily held open). Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).
+Inbox sync uses [`BackgroundSyncScheduler`](../../src/foundation/runtime/BackgroundSyncScheduler.h): foreground poll every 2s; while backgrounded and the process is alive, poll every ~45s (IO temporarily held open). Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).

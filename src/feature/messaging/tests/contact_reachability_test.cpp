@@ -1,6 +1,6 @@
 #include "feature/messaging/ContactReachability.h"
 
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 
 #include <gtest/gtest.h>
 

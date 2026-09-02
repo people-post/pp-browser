@@ -3,13 +3,13 @@
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/platform/PlatformLogDefaults.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/platform/PlatformLogDefaults.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"
-#include "base/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/Reachability.h"
 
 #include <atomic>
 #include <chrono>

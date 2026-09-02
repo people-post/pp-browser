@@ -129,7 +129,7 @@ Cancel flags without `reset()` are insufficient while `libp2p::read`/`write` is 
 
 ## Call-media session machine
 
-**Code today:** [`CallMediaDirectService`](../../src/base/mesh/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
+**Code today:** [`CallMediaDirectService`](../../src/domain/mesh/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
 **Policy rows:** [HOST_RECEIVE_POLICY — 1:1 media](HOST_RECEIVE_POLICY.md#11-media-host-call-media).  
 **Product reporter:** `CallMediaBridge` → `CallLifecycle` (`DirectConnected` / `ConnectFailed`).
 

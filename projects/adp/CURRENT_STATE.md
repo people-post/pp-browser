@@ -46,7 +46,7 @@
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
 - `pp_browser_amp_link_test` (9 link unit tests, green)
 - `pp_browser_amp_integration_test` (15 Tier B tests, green)
-- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/base/mesh/tests/support/`
+- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/domain/mesh/tests/support/`
 
 ## Landed (L4 chat — D5)
 

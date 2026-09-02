@@ -17,12 +17,12 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 | Area | Status | Location |
 |------|--------|----------|
-| `base/crypto/` module | **Implemented** | `src/base/crypto/*` |
+| `foundation/crypto/` module | **Implemented** | `src/foundation/crypto/*` |
 | libsodium vendored + linked | **Yes** | `third_party/libsodium/`, `src/base/CMakeLists.txt` |
 | `IPskSessionStore` | **Interface + SQLite store** | `IPskSessionStore.h`, `SqlitePskSessionStore.*` |
 | `MessageCipher` / AEAD | **Implemented** | `MessageCipher.*`, `EncryptedPayload.*` |
 | `PskBundleCodec` (E020) | **Implemented** | `PskBundleCodec.*` |
-| Unit tests + frozen vectors | **7/7 pass** | `src/base/crypto/tests/crypto_vectors_test.cpp` |
+| Unit tests + frozen vectors | **7/7 pass** | `src/foundation/crypto/tests/crypto_vectors_test.cpp` |
 | `docs/contracts/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable crypto contract |
 | `docs/contracts/WIRE_SCHEMAS.md` | **Promoted** | Normative wire (was under chat-storage) |
 | `docs/contracts/COMPATIBILITY.md` | **Policy** | Dirty disk + newer peer/API |
@@ -66,8 +66,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 | Area | Location |
 |------|----------|
-| E2E crypto (frozen vectors) | `src/base/crypto/tests/crypto_vectors_test.cpp` — **7 tests** |
-| PSK bundle codec | `src/base/crypto/tests/psk_bundle_codec_test.cpp` — **3 tests** |
+| E2E crypto (frozen vectors) | `src/foundation/crypto/tests/crypto_vectors_test.cpp` — **7 tests** |
+| PSK bundle codec | `src/foundation/crypto/tests/psk_bundle_codec_test.cpp` — **3 tests** |
 | PSK session coordinator | `src/feature/messaging/tests/psk_session_coordinator_test.cpp` — **1 test** |
 | Relay encrypt/decrypt + pipeline | `src/feature/messaging/tests/e2e_relay_crypto_test.cpp` — **2 tests** |
 | Chat sync (encrypted envelopes) | `src/feature/messaging/tests/chat_sync_test.cpp` — **13 tests** |

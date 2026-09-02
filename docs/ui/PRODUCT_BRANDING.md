@@ -27,7 +27,7 @@ User-visible product identity for the AI-centric browsing shell.
 
 ### Constants (single source of truth)
 
-C++ — [`src/base/runtime/ProductBranding.h`](../../src/base/runtime/ProductBranding.h):
+C++ — [`src/foundation/runtime/ProductBranding.h`](../../src/foundation/runtime/ProductBranding.h):
 
 ```cpp
 kProductName       = "PP"           // user-visible (marketing)
@@ -58,7 +58,7 @@ Mark: two stacked speech-bubble frames (sessions silhouette) in dual materials �
 
 Exploratory alternates live under [`design/branding/icon-candidates/`](../../design/branding/icon-candidates/) (outside `assets/`, not packaged).
 
-**Runtime:** [`WindowIcon`](../../src/base/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop). macOS/iOS bundles embed the same PNG.
+**Runtime:** [`WindowIcon`](../../src/foundation/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop). macOS/iOS bundles embed the same PNG.
 
 ---
 

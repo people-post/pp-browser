@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Today, foundation + domain code still lives under [`src/base/`](../../src/base/) with `#include "base/…"`. Treat the tables below as the **intended** split; physical moves come in follow-up PRs. Until then, map mentally: **foundation** and **domain** are *tiers inside today’s `base/`*, not yet separate trees.
+> **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
 
 ## Layers
 
@@ -17,8 +17,8 @@
 | Crypto (external) | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers; product wire helpers stay in foundation/domain crypto |
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks / extracted stacks (Amp via FetchContent; RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
-| **Foundation** | `src/foundation/` *(today: subset of `src/base/`)* | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto) |
-| **Domain** | `src/domain/` *(today: subset of `src/base/`)* | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui, render) — single-purpose engines/stores/clients |
+| **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
+| **Domain** | [`src/domain/`](../../src/domain/) | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui) — single-purpose engines/stores/clients |
 | Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions, screens; **wires** common contracts to concrete domain types |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
@@ -30,10 +30,16 @@ app → feature → domain → foundation → common → pp_common (FetchContent
                  domain  → common / lib            (contracts + forks)
 ```
 
-Today’s include/link graph still uses the aggregate name **base** (`pp_base_*`, `#include "base/…"`):
+Convenience link aggregate (not a folder layer):
 
 ```
-app → feature → base → lib → pp_pbr_common → pp_common
+pp_base INTERFACE = pp_foundation + pp_amp_{l1,l2,l3,link} + pp_domain_*
+```
+
+Foundation uses `pp_foundation_*` and `#include "foundation/…"`. Domain uses `pp_domain_*` and `#include "domain/…"`. Amp uses FetchContent targets `pp_amp_*`.
+
+```
+app → feature → (pp_base) → foundation / domain / amp → lib → pp_pbr_common → pp_common
 ```
 
 `lib` and `common` may use `third_party`. No upward `#include` across layers.
@@ -46,7 +52,7 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 
 | Layer | Inside-layer rule |
 |-------|-------------------|
-| **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ other common headers). |
+| **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
 | **domain** | **Strict independence.** Peers must not `#include` or `PUBLIC_LIBS`-link each other. Cross-need → contract/DTO in `common`; wire in `feature` (or `app` for lifetimes). |
 | **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. |
@@ -73,13 +79,13 @@ Two buckets only:
 
 Guardrails:
 
-1. Common may include only `pp_common` / STL / other `common/` headers — **never** `base/*`, `foundation/*`, `domain/*`, `feature/*`.
+1. Common may include only `pp_common` / `pp_crypto` (Base64) / STL / other `common/` headers — **never** `base/*`, `foundation/*`, `domain/*`, `feature/*`.
 2. Prefer pure headers for contracts (virtual iface + POD/DTO). No orchestration `.cpp`.
 3. Promote a type to common only when a **second domain peer** must compile against it without linking the owner. Otherwise keep it in the owning foundation/domain module.
 
 See [`src/common/README.md`](../../src/common/README.md).
 
-## Foundation vs domain (today under `src/base/`)
+## Foundation vs domain
 
 ### Foundation (ordered bands)
 
@@ -93,40 +99,38 @@ error, i18n
 data
   ↑
 crypto
-  (+ thin mesh_identity / PeerId if treated as kernel)
+  (+ identity / PeerId as kernel)
 ```
 
-| Path (today) | Contents |
-|--------------|----------|
-| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
-| `base/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
-| `base/error/` | App error categories on top of common |
-| `base/i18n/` | Localization catalogs |
-| `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
-| `base/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
-
-Target path after move: `src/foundation/<module>/`.
+| Path | Contents |
+|------|----------|
+| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
+| `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
+| `foundation/error/` | App error categories on top of common |
+| `foundation/i18n/` | Localization catalogs |
+| `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
+| `foundation/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
+| `foundation/identity/` | PeerId derivation (ML-DSA public key → PeerId) |
 
 ### Domain (strict peers)
 
-| Path (today) | Contents |
-|--------------|----------|
-| `base/people/` | Identity and contacts stores; presentation DTOs |
-| `base/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
-| `base/net/` | HTTP client, service clients (no people/messaging policy) |
-| `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
-| `base/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `base/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
-| `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
-| `base/render/` | Product RmlUi host/overlays; reusable SDL/GL in pp-cpp-ui |
+| Path | Contents |
+|------|----------|
+| `domain/people/` | Identity and contacts stores; presentation DTOs |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
+| `domain/net/` | HTTP client, service clients (no people/messaging policy) |
+| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
+| `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
+| `domain/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
+| `domain/ui/` | Product shell: theme, catalogs, input, context menu |
 
-Target path after move: `src/domain/<module>/`.
+Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
+
+Module maps: [`src/foundation/README.md`](../../src/foundation/README.md), [`src/domain/README.md`](../../src/domain/README.md).
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`; `net` → `people`/`messaging`; `ai` → `messaging`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
-
-Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
+Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 ## Lib subtree (`src/lib/`)
 
@@ -141,10 +145,10 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 
 | Path (today) | Role |
 |--------------|------|
-| `base/render/platform/` | Mobile GL lifecycle helpers |
-| `base/render/renderer/` | Product overlays (loupe, call video tiles) |
-| `base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
-| `base/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
+| `foundation/platform/ui/gl/` | Mobile GL lifecycle helpers |
+| `foundation/platform/ui/renderer/` | Product overlays (loupe, call video tiles) |
+| `foundation/platform/ui/host/` | `BrowserHost` product `Backend::*` bootstrap |
+| `domain/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
 
 ```
 domain/render → pp-cpp-ui `pp_ui` / PP_LIB_RMLUI_INCLUDE
@@ -181,20 +185,24 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 |--------|-------|
 | `pp_common` | common (FetchContent) |
 | `pp_pbr_common` | common (in-tree) |
-| `pp_base_*` | today’s foundation + domain modules (e.g. `pp_base_data`, `pp_base_mesh`) — rename to `pp_foundation_*` / `pp_domain_*` when folders move |
-| `pp_base` | aggregate (`INTERFACE`; `pp_identity` is an alias) |
+| `pp_foundation_*` | foundation modules under `src/foundation/` |
+| `pp_foundation` | foundation aggregate (`INTERFACE`) |
+| `pp_domain_*` | domain peers under `src/domain/` |
+| `pp_domain` | domain aggregate (`INTERFACE`; peers present for this build) |
+| `pp_amp_l1` / `pp_amp_l2` / `pp_amp_l3` / `pp_amp_link` | Amp (FetchContent pp-cpp-amp) |
+| `pp_base` | convenience product stack (`INTERFACE` = foundation + Amp + domain) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
 | `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
-Base module tests compile to one executable per folder (e.g. `pp_browser_mesh_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
+Foundation/domain module tests compile to one executable per folder (e.g. `pp_browser_mesh_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
 
 Fork product profiles: `src/lib/pp_lib_paths.cmake`, pp-cpp-ui `PpCppUi.cmake`. Shared `third_party` wiring: `cmake/dependencies.cmake`, `cmake/libp2p_dependencies.cmake`.
 
 ## Test placement
 
 - Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
-- Mesh glue tests live under [`src/base/mesh/tests/`](../../src/base/mesh/tests/).
+- Mesh glue tests live under [`src/domain/mesh/tests/`](../../src/domain/mesh/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under the owning module’s `tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (foundation/domain tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
@@ -205,15 +213,13 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 
 ```cpp
 #include "common/ValueJson.h"
-#include "base/data/Config.h"              // foundation (today)
-#include "base/mesh/host/MeshHost.h"       // domain (today)
+#include "foundation/data/Config.h"
+#include "domain/mesh/host/MeshHost.h"
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```
 
-After folder moves, prefer `foundation/…` and `domain/…`.
-
-Fork public APIs use their upstream include style (`<RmlUi/...>`, `<amp/...>`), with include roots from render/mesh PUBLIC dirs.
+Fork public APIs use their upstream include style (`<RmlUi/...>`, `<amp/...>`), with include roots from platform ui / Amp PUBLIC dirs.
 
 ### Prefer include over forward declaration
 
@@ -225,14 +231,14 @@ When a type lives in a **legal dependency** (same layer / lower layer / allowed 
 | The type is on an **allowed** same-layer / intra-feature edge | Incomplete type is enough **and** the include would force a forbidden module edge |
 | You need the full definition for members, nested types, or `sizeof` | Breaking a temporary compile cycle while a ports/DTO extraction is planned |
 
-Examples: feature/app headers that hold `SessionStore*` should `#include "base/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
+Examples: feature/app headers that hold `SessionStore*` should `#include "foundation/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
 
 ## Migration order (when coding starts)
 
-1. Enforce domain peer bans in CI (`check_base_includes.sh` + legacy allowlist; CMake `PUBLIC_LIBS` later) for **new** edges. **Started:** peels into `common/`: `RelayScope`, directory vocab + `IDirectoryClient`, `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes` (removed `mesh→people`, `mesh→net`, `mesh→media`, `ai→ui` legacy edges; `ai→messaging` reduced).
-2. Extract hottest cross-peer types into `src/common/` contracts (`net`↔messaging/people, `ai`↔messaging).
-3. Move foundation folders to `src/foundation/`; update includes/CMake.
-4. Move domain folders to `src/domain/`; drop aggregate “base” naming.
+1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/messaging`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
+2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
+3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
+4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
 5. Feature/app wiring absorbs former base↔base orchestration.

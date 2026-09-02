@@ -9,7 +9,7 @@ escalate across owning layers** inside the process.
 **Related:** object ownership [OWNERSHIP.md](../architecture/OWNERSHIP.md), mesh stack
 [projects/adp/STACK.md](../../projects/adp/STACK.md), link code table
 [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md), UI catalog errors `AppError` in
-`src/base/error/AppError.h`.
+`src/foundation/error/AppError.h`.
 
 ---
 

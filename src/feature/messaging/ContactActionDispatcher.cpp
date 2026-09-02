@@ -1,10 +1,12 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/MessagingJson.h"
-#include "base/net/RegistrationClientUtil.h"
-#include "base/people/ContactIdentity.h"
-#include "base/people/ContactTypes.h"
+#include "domain/messaging/GroupTypes.h"
+#include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "feature/messaging/RegistrationClientUtil.h"
+#include "domain/people/ContactIdentity.h"
+#include "domain/people/ContactJson.h"
+#include "domain/people/ContactTypes.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/MeshMessagingService.h"
 

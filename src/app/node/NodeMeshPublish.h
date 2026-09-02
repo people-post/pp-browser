@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/data/Config.h"
-#include "base/net/ServiceClients.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/data/Config.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 

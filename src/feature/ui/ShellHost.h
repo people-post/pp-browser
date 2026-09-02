@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/ui/ShellTypes.h"
-#include "base/data/UserPreferences.h"
+#include "domain/ui/ShellTypes.h"
+#include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/CallActionsPorts.h"

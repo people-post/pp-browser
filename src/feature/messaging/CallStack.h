@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/data/Config.h"
-#include "base/media/CallMediaEngine.h"
-#include "base/messaging/CallSessionStore.h"
+#include "foundation/data/Config.h"
+#include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/messaging/AmpCircuitHopReach.h"
@@ -12,9 +12,9 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "base/mesh/l4/call_media/CallMediaAmpTransport.h"
-#include "base/mesh/l4/call_media/ICallMediaTransport.h"
-#include "base/mesh/host/MeshHost.h"
+#include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
+#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "domain/mesh/host/MeshHost.h"
 
 #include <functional>
 #include <memory>

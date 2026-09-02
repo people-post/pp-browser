@@ -1,9 +1,9 @@
 #include "feature/settings/SettingsTools.h"
 
-#include "base/data/BootstrapTypes.h"
-#include "base/data/Config.h"
-#include "base/data/SessionStore.h"
-#include "base/data/UserPreferences.h"
+#include "foundation/data/BootstrapTypes.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/UserPreferences.h"
 
 #include "common/ValueJson.h"
 

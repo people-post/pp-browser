@@ -1,13 +1,13 @@
-#include "base/crypto/AttachmentContentCipher.h"
-#include "base/crypto/AttachmentContentHash.h"
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/messaging/AttachmentCache.h"
-#include "base/messaging/ChatBlobResponder.h"
-#include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/ChatPayloadValidator.h"
-#include "base/messaging/SqliteThreadStore.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/crypto/AttachmentContentCipher.h"
+#include "foundation/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/ChatBlobResponder.h"
+#include "domain/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/ChatPayloadValidator.h"
+#include "domain/messaging/SqliteThreadStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

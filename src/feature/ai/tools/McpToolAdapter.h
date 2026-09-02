@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/ai/ToolRegistry.h"
-#include "base/ai/mcp/McpClient.h"
+#include "domain/ai/ToolRegistry.h"
+#include "domain/ai/mcp/McpClient.h"
 
 #include <string>
 #include <unordered_set>

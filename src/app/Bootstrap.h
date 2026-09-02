@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/BootstrapTypes.h"
+#include "foundation/data/BootstrapTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/MessagingHub.h"
 #include "common/PbrCompat.h"

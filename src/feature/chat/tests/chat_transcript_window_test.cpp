@@ -1,5 +1,5 @@
-#include "base/messaging/MessagingLimits.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "common/chat/MessagingLimits.h"
+#include "domain/ui/ChatWidgetTypes.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 
 #include <gtest/gtest.h>

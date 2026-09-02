@@ -1,8 +1,8 @@
 #include "feature/settings/AboutSettingsSection.h"
 
-#include "base/i18n/LocalizationService.h"
-#include "base/runtime/AppVersion.h"
-#include "base/runtime/ProductBranding.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/runtime/AppVersion.h"
+#include "foundation/runtime/ProductBranding.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

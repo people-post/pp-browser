@@ -17,7 +17,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E002 — libsodium for application symmetric crypto; keep BoringSSL for TLS/libp2p
 
 **Date:** 2026-06-29  
-**Decision:** Vendor **libsodium** for `base/crypto/` (AEAD, HKDF, BLAKE2b fingerprints, CSPRNG). **Do not** replace BoringSSL/OpenSSL — curl HTTPS, libp2p TLS/SECIO/RSA/ECDSA, and existing `Ed25519Signer` remain on the OpenSSL stack until separately migrated.  
+**Decision:** Vendor **libsodium** for `foundation/crypto/` (AEAD, HKDF, BLAKE2b fingerprints, CSPRNG). **Do not** replace BoringSSL/OpenSSL — curl HTTPS, libp2p TLS/SECIO/RSA/ECDSA, and existing `Ed25519Signer` remain on the OpenSSL stack until separately migrated.  
 **Rationale:** libsodium is not a TLS/PKI replacement; complementary roles reduce footguns for symmetric crypto while avoiding libp2p fork rewrites.  
 **Alternatives:** BoringSSL EVP for all crypto; libsodium-only monolith.
 
@@ -26,7 +26,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E003 — Groundwork module before messaging schema changes
 
 **Date:** 2026-06-29  
-**Decision:** Phase **c1** delivers `src/base/crypto/` + unit tests + frozen test vectors **without** changing `ThreadTypes`, `RelayEnvelope`, or `MeshMessagingService`. Messaging wiring waits for **c2** and [chat-storage-and-memory](../chat-storage-and-memory/) channel split (v2b) and envelope extensions (v6).  
+**Decision:** Phase **c1** delivers `src/foundation/crypto/` + unit tests + frozen test vectors **without** changing `ThreadTypes`, `RelayEnvelope`, or `MeshMessagingService`. Messaging wiring waits for **c2** and [chat-storage-and-memory](../chat-storage-and-memory/) channel split (v2b) and envelope extensions (v6).  
 **Rationale:** Crypto API and wire format can be reviewed independently; avoids half-integrated relay changes.  
 **Alternatives:** Big-bang PR touching envelope + P2P + crypto together.
 

@@ -1,32 +1,35 @@
 #include "feature/ai/AgentSession.h"
-#include "base/platform/Platform.h"
+#include "foundation/platform/Platform.h"
 
 #include "feature/ai/PayloadTurnPlanBuilder.h"
-#include "base/ai/PromptBuilder.h"
-#include "base/ai/StructuredTextParser.h"
-#include "base/ai/ToolRegistry.h"
-#include "base/ai/ToolResultFormatter.h"
+#include "domain/ai/PromptBuilder.h"
+#include "domain/ai/StructuredTextParser.h"
+#include "domain/ai/ToolRegistry.h"
+#include "domain/ai/ToolResultFormatter.h"
 #include "feature/ai/ParkedApproval.h"
 #include "feature/ai/ToolPermissionPolicy.h"
 #include "feature/ai/ToolPermissionPrompt.h"
 #include "feature/ai/ToolRegistryBuild.h"
 #include "feature/ai/TurnExecutor.h"
 #include "feature/ai/TurnPlanner.h"
-#include "base/ai/conversation/Conversation.h"
-#include "base/ai/conversation/ThreadCompactionService.h"
-#include "base/ai/conversation/ThreadContextPolicy.h"
-#include "base/ai/conversation/TurnCoordinator.h"
-#include "base/error/AppError.h"
-#include "base/ai/mcp/McpClient.h"
-#include "base/ai/mcp/McpRuntime.h"
-#include "base/data/Config.h"
-#include "base/data/LlmPreset.h"
+#include "domain/ai/conversation/Conversation.h"
+#include "domain/ai/conversation/ThreadCompactionService.h"
+#include "domain/ai/conversation/ThreadContextPolicy.h"
+#include "domain/ai/conversation/TurnCoordinator.h"
+#include "foundation/error/AppError.h"
+#include "domain/ai/mcp/McpClient.h"
+#include "domain/net/HttpClient.h"
+
+#include <map>
+#include "domain/ai/mcp/McpRuntime.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
 #include "common/Logger.h"
 #include "common/Module.h"
 #include "common/Utilities.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/runtime/AppRuntime.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <atomic>
 #include <chrono>
@@ -791,7 +794,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) {
   if (state->thread_store && state->llm) {
-    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, state->llm.get());
+    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, *state->thread_store, *state->thread_store, state->llm.get());
   } else {
     state->compaction.reset();
   }
@@ -825,6 +828,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     state->llm = std::make_unique<LlmClient>(llm_config);
 
     const AppConfig defaults = Config::DefaultAppConfig();
+    McpClient::SetHttpPost([](const std::string& url, const std::string& body,
+                                  const std::map<std::string, std::string>& headers) {
+      return HttpClient::Post(url, body, headers);
+    });
     state->mcp.Start(state->config, defaults);
 
     std::vector<std::string> custom_prefixes;

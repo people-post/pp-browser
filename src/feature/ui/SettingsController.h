@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/SessionStore.h"
+#include "foundation/data/SessionStore.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"

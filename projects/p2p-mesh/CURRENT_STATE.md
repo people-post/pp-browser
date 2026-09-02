@@ -1,6 +1,6 @@
 # P2P mesh — current state
 
-> **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `base/mesh/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
+> **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `foundation/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
 
 **Last updated:** 2026-08-07
 
@@ -38,7 +38,7 @@
 
 | Area | State |
 |------|-------|
-| Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
+| Platform split | `pp_foundation_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_foundation_platform` |
 | Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
 | Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |

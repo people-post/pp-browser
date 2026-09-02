@@ -1,7 +1,7 @@
 #include "feature/messaging/DirectoryShadowCache.h"
 
-#include "base/people/ContactIdentity.h"
-#include "base/runtime/AppRuntime.h"
+#include "domain/people/ContactIdentity.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

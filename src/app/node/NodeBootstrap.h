@@ -1,11 +1,11 @@
 #pragma once
 
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/data/Config.h"
-#include "base/people/IdentityStore.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/data/Config.h"
+#include "domain/people/IdentityStore.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
-#include "base/mesh/host/MeshHost.h"
+#include "domain/mesh/host/MeshHost.h"
 
 #include <memory>
 #include <string>

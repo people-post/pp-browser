@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/LlmClient.h"
+#include "domain/ai/LlmClient.h"
 #include "feature/ai/bindings/BindingsManifest.h"
 #include "common/Error.h"
 #include "common/Module.h"

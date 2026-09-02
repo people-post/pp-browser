@@ -1,5 +1,5 @@
-#include "base/error/AppError.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"

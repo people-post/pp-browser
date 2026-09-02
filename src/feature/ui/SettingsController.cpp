@@ -1,15 +1,15 @@
 #include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
-#include "base/data/AppPaths.h"
-#include "base/data/LlmPreset.h"
-#include "base/data/SchemaVersion.h"
-#include "base/data/SessionStore.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/net/ClientCompat.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/ui/ContextMenuHost.h"
-#include "base/ui/ViewCatalog.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/net/ClientCompat.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "domain/ui/ContextMenuHost.h"
+#include "domain/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
@@ -22,7 +22,7 @@
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 #include "feature/ui/BlobQuotaRecoveryFlow.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>

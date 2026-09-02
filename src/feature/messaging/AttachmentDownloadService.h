@@ -1,14 +1,14 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "base/crypto/IDekConsumer.h"
-#include "base/messaging/AttachmentDownloadPolicy.h"
-#include "base/messaging/AttachmentSuppressionStore.h"
-#include "base/messaging/ChatPayloadTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/net/ServiceClients.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/IDekConsumer.h"
+#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "domain/messaging/AttachmentSuppressionStore.h"
+#include "common/chat/ChatPayloadTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 

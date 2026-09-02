@@ -1,6 +1,6 @@
 #include "feature/messaging/CallLifecycle.h"
 
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>
 #include <gtest/gtest.h>

@@ -10,47 +10,47 @@
 
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/data/LlmPreset.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/error/AppError.h"
-#include "base/data/MeshRole.h"
-#include "base/data/SessionStore.h"
-#include "base/data/UserPreferences.h"
-#include "base/messaging/AttachmentCache.h"
-#include "base/messaging/DirectChatTarget.h"
-#include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/SendRelayOptions.h"
-#include "base/net/AttachmentClientUtil.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/HttpClient.h"
-#include "base/net/ProfileIconClientUtil.h"
-#include "base/net/ProfileIconFetchUtil.h"
-#include "base/net/RegistrationClientUtil.h"
-#include "base/people/ProfileIconCache.h"
-#include "base/platform/ProfileIconImagePrep.h"
-#include "base/people/ContactIdentity.h"
-#include "base/people/ContactTypes.h"
-#include "base/runtime/AppLifecycle.h"
-#include "base/runtime/BackgroundSyncScheduler.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/platform/NetworkConnectivity.h"
-#include "base/platform/Platform.h"
-#include "base/data/PlatformDefaults.h"
-#include "base/mesh/l4/circuit/CircuitBridgeTarget.h"
-#include "base/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "base/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
-#include "base/mesh/reachability/LanMdnsDiscovery.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/error/AppError.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/UserPreferences.h"
+#include "domain/messaging/AttachmentCache.h"
+#include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/SendRelayOptions.h"
+#include "feature/messaging/AttachmentClientUtil.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/HttpClient.h"
+#include "feature/messaging/ProfileIconClientUtil.h"
+#include "feature/messaging/ProfileIconFetchUtil.h"
+#include "feature/messaging/RegistrationClientUtil.h"
+#include "domain/people/ProfileIconCache.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
+#include "domain/people/ContactIdentity.h"
+#include "domain/people/ContactTypes.h"
+#include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/BackgroundSyncScheduler.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/NetworkConnectivity.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/data/PlatformDefaults.h"
+#include "domain/mesh/l4/circuit/CircuitBridgeTarget.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "common/SettledWait.h"
-#include "base/people/MeshHopPolicy.h"
-#include "base/mesh/dht/DhtRecordCodec.h"
-#include "base/mesh/discovery/AmpDirectoryService.h"
-#include "base/mesh/discovery/NameDirectory.h"
-#include "base/mesh/host/MeshPorts.h"
-#include "base/mesh/reachability/NatTraversal.h"
-#include "base/mesh/reachability/Reachability.h"
+#include "domain/people/MeshHopPolicy.h"
+#include "domain/mesh/dht/DhtRecordCodec.h"
+#include "domain/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/discovery/NameDirectory.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/mesh/reachability/NatTraversal.h"
+#include "domain/mesh/reachability/Reachability.h"
 #include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
@@ -1495,7 +1495,14 @@ Roe<BlobQuotaRecoveryPlan> MessagingHub::PlanRelayQuotaRecovery() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return PlanOldestRelayBlobDeletion(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
@@ -1508,7 +1515,14 @@ Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return pbr::FreeOldestRelayBlobSlot(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return pbr::FreeOldestRelayBlobSlot(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {

@@ -26,9 +26,9 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 |--------|----------------|------------------|-------------------|
 | **Messaging** | `feature/messaging/` | threads, send/receive, reachability, calls | libp2p, relay, mesh, SQLite stores |
 | **Agent** | `feature/ai/` | turn status, tool results, generation | LLM client, MCP executor, turn pipeline |
-| **Profile / vault** | `base/crypto/` | unlock status, PIN policy | Argon2, secrets store |
-| **Session / prefs** | `base/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
-| **Localization / theme** | `base/i18n/`, `base/ui/` | labels, appearance | catalogs, asset resolution |
+| **Profile / vault** | `foundation/crypto/` | unlock status, PIN policy | Argon2, secrets store |
+| **Session / prefs** | `foundation/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
+| **Localization / theme** | `foundation/i18n/`, `domain/ui/` | labels, appearance | catalogs, asset resolution |
 | **Shell / navigation** | `feature/ui/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
 
 **UI surfaces** (presenters + RmlUi binding — *not* functional systems):
