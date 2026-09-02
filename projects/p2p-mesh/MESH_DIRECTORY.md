@@ -3,7 +3,8 @@
 **Status:** Accepted for implementation  
 **Date:** 2026-08-30  
 **Repos:** www (`web2/www`), pp-browser (`web3/pp-browser`), app-support DirectoryClient touch-up  
-**Related:** N002/N006/N011, M011/M017, SERVICE_ENDPOINTS.md
+**Related:** N002/N006/N011, M011/M017, SERVICE_ENDPOINTS.md  
+**North star:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md) / [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now) — HTTP directory is the **interim phone book**; chain names are the final authority. Keep this delivery’s schemas aligned with that port.
 
 ## Goals
 
@@ -111,15 +112,17 @@ flowchart LR
 
 ## Non-goals (this delivery)
 
-- Second directory transport (libp2p directory protocol).
+- Second directory transport (libp2p directory protocol). *(Deferred to N029 Phase B — Amp directory mirror behind the same name-directory port.)*
+- On-chain name registry. *(N029 Phase D — not first release.)*
 - Open public relay market / reputation.
 - Removing N002 seed from client defaults.
 - Home Node GUI opt-in mesh publish UI (config flag only if needed later).
 
 ## Acceptance
 
-- [ ] www: mesh_node excluded from default search; listed on `/mesh/nodes` with capabilities.
-- [ ] pp-node: with PIN + data volume + advertise env, registers/renews as mesh_node.
-- [ ] pp-browser: Node on does **not** create mesh_node listings.
-- [ ] Customers can resolve org node by Account ID → endpoints without baking Peer ID.
-- [ ] Docs describe bootstrap → directory → mesh layering.
+- [x] www: `GET /v1/mesh/nodes` returns JSON `{nodes:[…]}` (prod + QA probed 2026-09-02; currently empty listings). Search endpoint answers; exclusion of `mesh_node` still needs a live published node to prove.
+- [ ] pp-node: with PIN + data volume + advertise env, registers/renews as mesh_node against www (ops smoke; not run against prod from lab).
+- [x] pp-browser: Node on does **not** create mesh_node listings (default `mesh_publish=false`; only pp-node / explicit advertise path).
+- [x] Lab: Amp directory twin two-node query + HTTP failover (`AmpDirectory*` tests); MeshHost regression via `scripts/pp_node_dht_smoke.sh`.
+- [ ] Customers can resolve org node by Account ID → endpoints without baking Peer ID (needs a published person/mesh listing in the target env).
+- [x] Docs describe bootstrap → directory → mesh layering (MESH_DIRECTORY + N029 / PRE_CHAIN).

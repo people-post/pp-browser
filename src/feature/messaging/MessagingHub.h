@@ -35,6 +35,7 @@
 #include "base/mesh/reachability/Reachability.h"
 #include "base/mesh/reachability/ReachabilityService.h"
 #include "base/mesh/discovery/MeshDirectoryCache.h"
+#include "base/mesh/discovery/NameDirectory.h"
 #include "base/mesh/dht/DhtTypes.h"
 #include "base/mesh/host/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"
@@ -74,7 +75,7 @@ public:
   /** Hot-reloadable network / mesh slice projected from AppConfig. */
   struct NetworkConfig {
     ServiceEndpointConfig relay;
-    ServiceEndpointConfig directory;
+    DirectoryConfig directory;
     ServiceEndpointConfig registration;
     bool node_enabled = true;
     bool circuit_relay = false;
@@ -83,7 +84,7 @@ public:
     bool prefer_contacts_for_routing = true;
 
     bool operator==(const NetworkConfig& other) const {
-      return relay.base_url == other.relay.base_url && directory.base_url == other.directory.base_url &&
+      return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing;
@@ -257,6 +258,7 @@ private:
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtService();
+  void ConfigureAmpDirectoryService();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -306,7 +308,8 @@ private:
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  std::unique_ptr<HttpDirectoryClient> http_directory_;
+  /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
+  std::unique_ptr<IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;

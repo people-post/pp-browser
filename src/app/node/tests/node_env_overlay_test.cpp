@@ -57,6 +57,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g4("PP_NODE_CAP_CIRCUIT_RELAY");
   EnvGuard g5("PP_NODE_CAP_MEDIA_RELAY");
   EnvGuard g5b("PP_NODE_CAP_DHT");
+  EnvGuard g5c("PP_NODE_CAP_LEDGER_GATEWAY");
   EnvGuard g6("PP_NODE_ADVERTISE_MULTIADDRS");
   EnvGuard g7("PP_NODE_MESH_PUBLISH");
   EnvGuard g8("PP_NODE_AMP_UDP_PORT");
@@ -69,6 +70,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   config.mesh.capabilities.circuit_relay = false;
   config.mesh.capabilities.media_relay = false;
   config.mesh.capabilities.dht = false;
+  config.mesh.capabilities.ledger_gateway = false;
   config.mesh.mesh_publish = false;
   config.registration.base_url = "https://www.brief.global/api/relay";
 
@@ -79,6 +81,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   SetEnv("PP_NODE_CAP_CIRCUIT_RELAY", "true");
   SetEnv("PP_NODE_CAP_MEDIA_RELAY", "0");
   SetEnv("PP_NODE_CAP_DHT", "yes");
+  SetEnv("PP_NODE_CAP_LEDGER_GATEWAY", "1");
   SetEnv("PP_NODE_ADVERTISE_MULTIADDRS", "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://www-en.qa.peoplepost.org/api/relay");
 
@@ -91,6 +94,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EXPECT_TRUE(config.mesh.capabilities.circuit_relay);
   EXPECT_FALSE(config.mesh.capabilities.media_relay);
   EXPECT_TRUE(config.mesh.capabilities.dht);
+  EXPECT_TRUE(config.mesh.capabilities.ledger_gateway);
   ASSERT_EQ(config.mesh.advertise_multiaddrs.size(), 1u);
   EXPECT_EQ(config.mesh.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   EXPECT_TRUE(config.mesh.mesh_publish);

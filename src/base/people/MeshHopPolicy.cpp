@@ -219,6 +219,17 @@ std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<Me
   return out;
 }
 
+std::vector<MeshHopCandidate> CollectLedgerGatewayHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
+  std::vector<MeshDirectoryNode> filtered;
+  filtered.reserve(nodes.size());
+  for (const MeshDirectoryNode& node : nodes) {
+    if (node.ledger_gateway) {
+      filtered.push_back(node);
+    }
+  }
+  return CollectDirectoryHopCandidates(filtered);
+}
+
 std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
   auto out = CollectDirectoryHopCandidates(nodes);
   for (MeshHopCandidate& c : out) {

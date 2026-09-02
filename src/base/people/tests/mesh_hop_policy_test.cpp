@@ -253,5 +253,19 @@ TEST(MeshHopPolicyTest, CircuitOrdersDirectoryBeforeDhtBeforeSeed) {
   EXPECT_EQ(hops[2].affinity, MeshHopAffinity::OrgSeed);
 }
 
+TEST(MeshHopPolicyTest, CollectLedgerGatewayFiltersCapability) {
+  MeshDirectoryNode plain;
+  plain.peer_id = "12D3KooWPlain";
+  plain.multiaddrs = {"/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/12D3KooWPlain"};
+  MeshDirectoryNode gateway;
+  gateway.peer_id = "12D3KooWGw";
+  gateway.multiaddrs = {"/ip4/2.2.2.2/udp/443/adp/1.0.0/p2p/12D3KooWGw"};
+  gateway.ledger_gateway = true;
+  auto hops = CollectLedgerGatewayHopCandidates({plain, gateway});
+  ASSERT_EQ(hops.size(), 1u);
+  EXPECT_EQ(hops[0].peer_id, "12D3KooWGw");
+  EXPECT_EQ(hops[0].affinity, MeshHopAffinity::DirectoryNode);
+}
+
 } // namespace
 } // namespace pbr
