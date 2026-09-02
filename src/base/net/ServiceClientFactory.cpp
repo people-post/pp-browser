@@ -18,11 +18,28 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
         << "relay.base_url is empty; relay client not created";
   }
 
-  if (!config.directory.base_url.empty()) {
-    clients.directory = std::make_unique<HttpDirectoryClient>(config.directory.base_url);
-  } else {
-    logging::getLogger("ServiceClientFactory").warning
-        << "directory.base_url is empty; directory client not created";
+  {
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(config.directory);
+    std::vector<std::unique_ptr<IDirectoryClient>> backends;
+    backends.reserve(providers.size());
+    for (const ServiceEndpointConfig& provider : providers) {
+      const std::string transport = provider.transport.empty() ? "http" : provider.transport;
+      if (transport != "http") {
+        logging::getLogger("ServiceClientFactory").warning
+            << "directory provider transport '" << transport
+            << "' not implemented yet (N029 nd4); skipping " << provider.base_url;
+        continue;
+      }
+      backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
+    }
+    if (backends.size() == 1) {
+      clients.directory = std::move(backends.front());
+    } else if (backends.size() > 1) {
+      clients.directory = std::make_unique<FailoverDirectoryClient>(std::move(backends));
+    } else {
+      logging::getLogger("ServiceClientFactory").warning
+          << "directory providers empty; directory client not created";
+    }
   }
 
   if (!config.registration.base_url.empty()) {

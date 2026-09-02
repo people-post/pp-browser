@@ -111,3 +111,29 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.dht.find_peer_timeout_ms, 8000);
   EXPECT_EQ(parsed.mesh.media_relay_budget.default_per_user_up_bps, 12345);
 }
+
+TEST(ConfigJsonTest, RoundTripsDirectoryProviders) {
+  pbr::AppConfig config;
+  config.directory.base_url = "https://primary.example/api/relay";
+  config.directory.transport = "http";
+  config.directory.providers = {{"https://a.example/api/relay", "http"},
+                                {"https://b.example/api/relay", "http"}};
+
+  const pbr::Object out = pbr::AppConfigToObject(config);
+  const pbr::Object* directory = out.getObject("directory");
+  ASSERT_NE(directory, nullptr);
+  ASSERT_NE(directory->getArray("providers"), nullptr);
+  EXPECT_EQ(directory->getArray("providers")->elements.size(), 2u);
+
+  pbr::AppConfig parsed;
+  pbr::AppConfigFromObject(out, parsed);
+  ASSERT_EQ(parsed.directory.providers.size(), 2u);
+  EXPECT_EQ(parsed.directory.providers[0].base_url, "https://a.example/api/relay");
+  EXPECT_EQ(parsed.directory.base_url, "https://primary.example/api/relay");
+
+  pbr::DirectoryConfig providers_only;
+  providers_only.providers = {{"https://only.example", "http"}};
+  pbr::NormalizeDirectoryConfig(providers_only);
+  EXPECT_EQ(providers_only.base_url, "https://only.example");
+  ASSERT_EQ(pbr::EffectiveDirectoryProviders(providers_only).size(), 1u);
+}

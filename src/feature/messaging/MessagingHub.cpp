@@ -1621,6 +1621,8 @@ void MessagingHub::Apply(const NetworkConfig& next) {
 
   const bool service_urls_changed = next.relay.base_url != config_.relay.base_url ||
                                     next.directory.base_url != config_.directory.base_url ||
+                                    next.directory.transport != config_.directory.transport ||
+                                    next.directory.providers != config_.directory.providers ||
                                     next.registration.base_url != config_.registration.base_url;
   const bool mesh_changed =
       next.node_enabled != config_.mesh.node_enabled ||

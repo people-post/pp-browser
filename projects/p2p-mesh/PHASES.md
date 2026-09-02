@@ -124,10 +124,10 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 
 - [x] **nd1** — `INameDirectory` / `NameRecord` seam (load-bearing for chain swap)
 - [x] **nd2** — Record field fidelity + resolve-by-account on `INameDirectory` (manual Phase E smoke still open)
-- [ ] **nd3** — `directory.providers[]` (or explicit transport on `base_url`)
+- [x] **nd3** — `directory.providers[]` + HTTP failover
 - [ ] **nd4** — Amp directory twin (may trail first release)
-- [~] **nd5** — `ledger_gateway` capability vocab + env/config (hop collector / UI deferred)
-- [ ] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 can trail
+- [x] **nd5** — `ledger_gateway` capability vocab + hop collector (dial path / UI deferred)
+- [ ] First-release bar: **nd1 + nd2** (nd3 preferred); nd4 can trail
 - [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
 
 ## Later horizons

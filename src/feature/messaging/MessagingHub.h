@@ -75,7 +75,7 @@ public:
   /** Hot-reloadable network / mesh slice projected from AppConfig. */
   struct NetworkConfig {
     ServiceEndpointConfig relay;
-    ServiceEndpointConfig directory;
+    DirectoryConfig directory;
     ServiceEndpointConfig registration;
     bool node_enabled = true;
     bool circuit_relay = false;
@@ -84,7 +84,7 @@ public:
     bool prefer_contacts_for_routing = true;
 
     bool operator==(const NetworkConfig& other) const {
-      return relay.base_url == other.relay.base_url && directory.base_url == other.directory.base_url &&
+      return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing;

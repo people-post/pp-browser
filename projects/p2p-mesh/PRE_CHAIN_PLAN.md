@@ -115,7 +115,7 @@ expires_at
 
 **Exit:** Swapping the phone-book backend is a provider entry, not a MessagingHub rewrite.
 
-**Status:** Not started (single `directory.base_url` remains).
+**Status:** Landed — `DirectoryConfig.providers[]`, `EffectiveDirectoryProviders`, `FailoverDirectoryClient`, factory wiring; amp transport skipped until nd4. Settings UI edits `base_url` only (clears providers).
 
 ---
 
@@ -151,7 +151,7 @@ expires_at
 
 **Exit:** Capability bit and hop hook exist so chain enablement is “turn on transport + resolver backend,” not “redesign mesh_node.”
 
-**Status:** Partial — `ledger_gateway` on `MeshCapabilities` / ads / config JSON / `PP_NODE_CAP_LEDGER_GATEWAY` / directory parse + cache fields. Hop collector stub and UI checkbox deferred (N008).
+**Status:** Landed — capability vocab + `CollectLedgerGatewayHopCandidates` (unused by dial paths until ledger transport). UI checkbox still deferred (N008).
 
 ---
 

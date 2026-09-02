@@ -706,6 +706,51 @@ Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& r
 
 HttpDirectoryClient::HttpDirectoryClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
+namespace {
+
+template <typename Fn>
+auto FailoverTry(const std::vector<std::unique_ptr<IDirectoryClient>>& backends, Fn&& fn)
+    -> decltype(fn(*backends.front())) {
+  using Result = decltype(fn(*backends.front()));
+  if (backends.empty()) {
+    return Error("Directory providers empty");
+  }
+  Result last_error = Error("Directory providers empty");
+  for (const std::unique_ptr<IDirectoryClient>& backend : backends) {
+    if (!backend) {
+      continue;
+    }
+    auto result = fn(*backend);
+    if (result) {
+      return result;
+    }
+    last_error = result.error();
+  }
+  return last_error;
+}
+
+} // namespace
+
+FailoverDirectoryClient::FailoverDirectoryClient(std::vector<std::unique_ptr<IDirectoryClient>> backends)
+    : backends_(std::move(backends)) {}
+
+Roe<std::vector<DirectoryHit>> FailoverDirectoryClient::SearchPeople(const std::string& query) {
+  return FailoverTry(backends_, [&](IDirectoryClient& client) { return client.SearchPeople(query); });
+}
+
+Roe<DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
+  return FailoverTry(backends_,
+                     [&](IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
+}
+
+Roe<DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
+  return FailoverTry(backends_, [&](IDirectoryClient& client) { return client.LookupByAccount(account_id); });
+}
+
+Roe<std::vector<MeshNodeHit>> FailoverDirectoryClient::ListMeshNodes() {
+  return FailoverTry(backends_, [](IDirectoryClient& client) { return client.ListMeshNodes(); });
+}
+
 Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::string& query) {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
