@@ -446,7 +446,7 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 ## N028 — AMP-native mesh DHT (FIND_PEER v1)
 
 **Date:** 2026-09-02  
-**Status:** Accepted (spec — **n2-spec**; code **n2-core** next)  
+**Status:** Accepted (implemented through **n2-hard**)  
 **Spec:** [MESH_DHT.md](../../docs/contracts/MESH_DHT.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md)  
 **Amends:** N015 (n2 after n-dir); N027 (bootstrap ∪ directory)
 
