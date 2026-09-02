@@ -15,8 +15,9 @@ namespace pbr {
 enum class MeshHopAffinity {
   Contact = 0,
   DirectoryNode = 1,
-  OrgSeed = 2,
-  Other = 3,
+  DhtDiscovered = 2,
+  OrgSeed = 3,
+  Other = 4,
 };
 
 /** Mirrors ReachabilityStatus for provider caps without requiring libp2p headers in callers. */
@@ -53,18 +54,23 @@ std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::st
 /** Collect infra mesh_node peers from directory cache (N027 / n-dir). */
 std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
 
+/** Collect DHT-discovered infra peers (n2-caps); same node shape as directory. */
+std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+
 /**
  * Circuit hop order (nf / N014): contacts → directory → seeds when `prefer_contacts`;
  * directory → seeds → contacts when false. Dedupes by peer_id (earlier tier wins).
  */
 std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
                                                std::vector<MeshHopCandidate> directory,
+                                               std::vector<MeshHopCandidate> dht,
                                                std::vector<MeshHopCandidate> seeds,
                                                bool prefer_contacts = true);
 
-/** Collect + order circuit/media hop candidates (n-dir). Omits seeds when `include_seeds` is false. */
+/** Collect + order circuit/media hop candidates (n-dir + n2-caps). Omits seeds when `include_seeds` is false. */
 std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
                                                   const std::vector<MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<MeshDirectoryNode>& dht_nodes,
                                                   const std::vector<std::string>& bootstrap_peers,
                                                   bool prefer_contacts, bool include_seeds = true);
 

@@ -16,12 +16,15 @@ double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
   if (prefer_contacts) {
     if (c.affinity == MeshHopAffinity::Contact) {
       score += 25.0;
-    } else if (c.affinity == MeshHopAffinity::DirectoryNode || c.affinity == MeshHopAffinity::OrgSeed) {
+    } else if (c.affinity == MeshHopAffinity::DirectoryNode || c.affinity == MeshHopAffinity::DhtDiscovered ||
+               c.affinity == MeshHopAffinity::OrgSeed) {
       score += 10.0;
     }
   } else {
     if (c.affinity == MeshHopAffinity::OrgSeed || c.affinity == MeshHopAffinity::DirectoryNode) {
       score += 25.0;
+    } else if (c.affinity == MeshHopAffinity::DhtDiscovered) {
+      score += 15.0;
     } else if (c.affinity == MeshHopAffinity::Contact) {
       score += 10.0;
     }
@@ -216,8 +219,17 @@ std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<Me
   return out;
 }
 
+std::vector<MeshHopCandidate> CollectDhtHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
+  auto out = CollectDirectoryHopCandidates(nodes);
+  for (MeshHopCandidate& c : out) {
+    c.affinity = MeshHopAffinity::DhtDiscovered;
+  }
+  return out;
+}
+
 std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
                                                std::vector<MeshHopCandidate> directory,
+                                               std::vector<MeshHopCandidate> dht,
                                                std::vector<MeshHopCandidate> seeds,
                                                bool prefer_contacts) {
   std::vector<MeshHopCandidate> out;
@@ -233,9 +245,11 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
   if (prefer_contacts) {
     append(contacts);
     append(directory);
+    append(dht);
     append(seeds);
   } else {
     append(directory);
+    append(dht);
     append(seeds);
     append(contacts);
   }
@@ -244,13 +258,15 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
 
 std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
                                                   const std::vector<MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<MeshDirectoryNode>& dht_nodes,
                                                   const std::vector<std::string>& bootstrap_peers,
                                                   const bool prefer_contacts, const bool include_seeds) {
   auto contact_hops = CollectContactHopCandidates(contacts);
   auto directory_hops = CollectDirectoryHopCandidates(directory_nodes);
+  auto dht_hops = CollectDhtHopCandidates(dht_nodes);
   auto seed_hops = include_seeds ? CollectSeedHopCandidates(bootstrap_peers) : std::vector<MeshHopCandidate>{};
-  return OrderCircuitHops(std::move(contact_hops), std::move(directory_hops), std::move(seed_hops),
-                          prefer_contacts);
+  return OrderCircuitHops(std::move(contact_hops), std::move(directory_hops), std::move(dht_hops),
+                          std::move(seed_hops), prefer_contacts);
 }
 
 std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,

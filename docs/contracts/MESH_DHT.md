@@ -144,6 +144,19 @@ Validation (implementations MUST):
 5. Reject when `issued_at + ttl_seconds` ≤ now (relay clock skew: allow 60s grace).
 6. Accept only if `seq` ≥ last seen seq for `(peer_id, record_key)`.
 
+### Capabilities (n2-caps)
+
+Optional signed object using the same vocabulary as Brief directory `mesh_node`:
+
+```json
+"capabilities": {
+  "circuit_relay": true,
+  "media_relay": true
+}
+```
+
+When present, capabilities are included in the signing bytes (after multiaddrs). Consumers map them into `MeshHopPolicy` / `FilterHopsByMediaRelayAds` the same way as directory nodes (`MeshHopAffinity::DhtDiscovered`).
+
 ### Signing bytes
 
 Domain-separated canonical payload (before ML-DSA-65 sign):
@@ -157,20 +170,23 @@ seq=<i64 be>
 ttl_seconds=<i64 be>
 issued_at=<i64 be>
 multiaddrs=<count u32 be> then each len-prefixed utf8 multiaddr
+capabilities_present=<u8 0|1>
+[when present: circuit_relay=<u8 0|1>, media_relay=<u8 0|1>]
 ```
 
 (`signature_b64` is standard raw signature encoding used elsewhere in pp-browser.)
 
-## Consumer integration (n2-core)
+## Consumer integration (n2-core / n2-caps)
 
 | Step | Behavior |
 |------|----------|
 | Lookup trigger | Optional prefetch when contact has PeerId but no fresh endpoint; partition escape after directory + seed fail |
 | Merge | `FindPeer` results → `RegisterPeerDirectEndpoint` |
-| Hop policy | Map to `MeshHopAffinity::DhtDiscovered` (new); rank below directory/seed; subject to `MeshHopPolicy` / `FilterHopsByMediaRelayAds` |
+| Hop policy | Map to `MeshHopAffinity::DhtDiscovered`; rank below directory/seed; subject to `MeshHopPolicy` / `FilterHopsByMediaRelayAds` |
+| Caps (n2-caps) | Signed `capabilities` on `peer_routing`; same fields as directory `mesh_node` |
 | Negative cache | Short TTL on failed lookups; never block UI thread (worker + callback) |
 
-Capability records (`circuit_relay`, `media_relay`) are **n2-caps** — same vocabulary as Brief `mesh_node` directory (N027).
+Capability records (`circuit_relay`, `media_relay`) ship in signed `peer_routing.capabilities` (**n2-caps**).
 
 ## Config (schema stub)
 

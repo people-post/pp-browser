@@ -55,6 +55,8 @@ struct CallStackDeps {
 
   /** Cached mesh_node rows from Brief directory (n-dir). */
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+  /** DHT peer_routing cache (n2-caps); directory-shaped nodes. */
+  std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
   /** Reachability seed probe — when false, hop policy skips org seed candidates. */
   std::function<bool()> seed_dial_ok;
 

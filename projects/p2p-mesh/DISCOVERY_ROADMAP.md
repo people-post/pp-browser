@@ -211,8 +211,10 @@ Decisions to lock:
 
 ### Acceptance (n2-caps)
 
-- [ ] FIND_PEER result includes caps; media hop filter respects them.
-- [ ] Directory and DHT records use compatible capability vocabulary.
+- [x] Optional signed `capabilities` on `peer_routing` (`circuit_relay`, `media_relay`)
+- [x] Node publishers include caps from mesh capabilities when DHT enabled
+- [x] `CollectDhtHopCandidates` + `FilterHopsByMediaRelayAds` respect DHT caps
+- [x] Directory and DHT use compatible capability vocabulary (`MeshDirectoryNode` shape)
 
 ---
 

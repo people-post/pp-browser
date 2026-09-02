@@ -45,6 +45,7 @@
 #include "base/mesh/reachability/LanMdnsDiscovery.h"
 #include "base/mesh/l4/shared/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
+#include "base/mesh/dht/DhtRecordCodec.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/mesh/reachability/NatTraversal.h"
 #include "base/mesh/reachability/Reachability.h"
@@ -116,6 +117,12 @@ CallStackDeps MessagingHub::MakeCallStackDeps() {
   deps.config = [this]() -> const AppConfig& { return config_; };
   deps.list_directory_nodes = [this]() {
     return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<MeshDirectoryNode>{};
+  };
+  deps.list_dht_nodes = [this]() {
+    if (!mesh_ || !mesh_->AmpDht()) {
+      return std::vector<MeshDirectoryNode>{};
+    }
+    return MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
   };
   deps.seed_dial_ok = [this]() {
     if (!mesh_) {
@@ -634,6 +641,8 @@ void MessagingHub::ConfigureAmpDhtService() {
   cfg.tunables = config_.mesh.dht;
   cfg.query_peer_keys = CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes);
   cfg.participate = participate;
+  cfg.publish_circuit_relay = participate && config_.mesh.capabilities.circuit_relay;
+  cfg.publish_media_relay = participate && config_.mesh.capabilities.media_relay;
   mesh_->ConfigureAmpDht(std::move(cfg));
   mesh_->RefreshAmpDhtHosting(participate);
 }
@@ -1709,7 +1718,11 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   if (mesh_directory_cache_) {
     directory_nodes = mesh_directory_cache_->Snapshot();
   }
-  auto hops = BuildCircuitHopList(contacts, directory_nodes, mesh_cfg.bootstrap_peers,
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (mesh_ && mesh_->AmpDht()) {
+    dht_nodes = MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
+  }
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
                                  mesh_cfg.prefer_contacts_for_routing, include_seeds);
   if (hops.empty()) {
     return Error("no circuit hop candidates");

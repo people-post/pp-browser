@@ -68,6 +68,8 @@ public:
     bool prefer_contacts = true;
     /** Cached mesh_node listings (n-dir). */
     std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+    /** DHT peer_routing cache (n2-caps). */
+    std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
     /** When false, org seed hops are omitted (bridge score / n-dir). */
     std::function<bool()> seed_dial_ok;
     /**

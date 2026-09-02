@@ -45,6 +45,22 @@ TEST(PeerCapsLogicTest, KeepsDirectoryNodesWithMediaRelay) {
   EXPECT_EQ(ranked[0].peer_id, "12D3KooWNode");
 }
 
+TEST(PeerCapsLogicTest, KeepsDhtNodesWithMediaRelay) {
+  MeshHopCandidate dht;
+  dht.peer_id = "12D3KooWDht";
+  dht.affinity = MeshHopAffinity::DhtDiscovered;
+  dht.advertises_media_relay = true;
+
+  MeshHopCandidate dht_no_media;
+  dht_no_media.peer_id = "12D3KooWOther";
+  dht_no_media.affinity = MeshHopAffinity::DhtDiscovered;
+  dht_no_media.advertises_media_relay = false;
+
+  auto ranked = FilterHopsByMediaRelayAds({dht, dht_no_media}, {});
+  ASSERT_EQ(ranked.size(), 1u);
+  EXPECT_EQ(ranked[0].peer_id, "12D3KooWDht");
+}
+
 TEST(PeerCapsLogicTest, NullAdsKeepsOnlySeeds) {
   MeshHopCandidate contact;
   contact.peer_id = "12D3KooWPhone";

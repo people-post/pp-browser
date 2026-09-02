@@ -66,7 +66,7 @@ TEST(MeshHopPolicyTest, CircuitOrdersContactsBeforeSeeds) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
   auto seeds = CollectSeedHopCandidates(
       {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
-  auto ordered = OrderCircuitHops(contacts, {}, seeds, true);
+  auto ordered = OrderCircuitHops(contacts, {}, {}, seeds, true);
   ASSERT_EQ(ordered.size(), 2u);
   EXPECT_EQ(ordered[0].peer_id, "12D3KooWFriend");
   EXPECT_EQ(ordered[0].affinity, MeshHopAffinity::Contact);
@@ -82,7 +82,7 @@ TEST(MeshHopPolicyTest, CircuitOrdersContactsDirectoryThenSeeds) {
   auto directory = CollectDirectoryHopCandidates({dir});
   auto seeds = CollectSeedHopCandidates(
       {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
-  auto ordered = OrderCircuitHops(contacts, directory, seeds, true);
+  auto ordered = OrderCircuitHops(contacts, directory, {}, seeds, true);
   ASSERT_EQ(ordered.size(), 3u);
   EXPECT_EQ(ordered[0].peer_id, "12D3KooWFriend");
   EXPECT_EQ(ordered[1].peer_id, "12D3KooWNode");
@@ -94,7 +94,7 @@ TEST(MeshHopPolicyTest, BuildCircuitHopListSkipsSeedsWhenRequested) {
   MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWNode";
   dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWNode"};
-  auto hops = BuildCircuitHopList({}, {dir},
+  auto hops = BuildCircuitHopList({}, {dir}, {},
                                   {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"},
                                   true, false);
   ASSERT_EQ(hops.size(), 1u);
@@ -152,7 +152,7 @@ TEST(MeshHopPolicyTest, CircuitPreferContactsOffPutsSeedsFirst) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
   auto seeds = CollectSeedHopCandidates(
       {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
-  auto ordered = OrderCircuitHops(contacts, {}, seeds, false);
+  auto ordered = OrderCircuitHops(contacts, {}, {}, seeds, false);
   ASSERT_EQ(ordered.size(), 2u);
   EXPECT_EQ(ordered[0].affinity, MeshHopAffinity::OrgSeed);
   EXPECT_EQ(ordered[1].peer_id, "12D3KooWFriend");
@@ -224,6 +224,33 @@ TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {
   EXPECT_TRUE(ranked[0].dialable);
   EXPECT_EQ(ranked[0].multiaddr, self_ma);
   EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
+}
+
+TEST(MeshHopPolicyTest, DhtHopCandidatesUseDhtDiscoveredAffinity) {
+  MeshDirectoryNode node;
+  node.peer_id = "12D3KooWDht";
+  node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/12D3KooWDht"};
+  node.media_relay = true;
+  auto dht = CollectDhtHopCandidates({node});
+  ASSERT_EQ(dht.size(), 1u);
+  EXPECT_EQ(dht[0].affinity, MeshHopAffinity::DhtDiscovered);
+  EXPECT_TRUE(dht[0].advertises_media_relay);
+}
+
+TEST(MeshHopPolicyTest, CircuitOrdersDirectoryBeforeDhtBeforeSeed) {
+  MeshDirectoryNode dir;
+  dir.peer_id = "12D3KooWDir";
+  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWDir"};
+  MeshDirectoryNode dht_node;
+  dht_node.peer_id = "12D3KooWDht";
+  dht_node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/12D3KooWDht"};
+  auto hops = BuildCircuitHopList({}, {dir}, {dht_node},
+                                  {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"},
+                                  false, true);
+  ASSERT_EQ(hops.size(), 3u);
+  EXPECT_EQ(hops[0].affinity, MeshHopAffinity::DirectoryNode);
+  EXPECT_EQ(hops[1].affinity, MeshHopAffinity::DhtDiscovered);
+  EXPECT_EQ(hops[2].affinity, MeshHopAffinity::OrgSeed);
 }
 
 } // namespace
