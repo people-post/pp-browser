@@ -2,8 +2,9 @@
 
 **Status:** Draft work plan  
 **Date:** 2026-09-01  
+**Updated:** 2026-09-02 — align with [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now) name-directory north star  
 **Amends:** N015 (delivery order), N027 (mesh directory), n2 in [PHASES.md](PHASES.md)  
-**Related:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../pp-ledger/docs/platform-integration.md) (pp-ledger DHT retired)
+**Related:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../pp-ledger/docs/platform-integration.md) (pp-ledger DHT retired)
 
 ## Context
 
@@ -12,6 +13,8 @@ pp-ledger removed BitTorrent DHT in favor of **curated ADP multiaddrs** for flee
 pp-browser mesh still needs decentralized **PeerId → multiaddr** lookup when contacts and HTTP directory are insufficient. That belongs here (phase **n2**), not in pp-ledger.
 
 **Principle:** finish **directory-backed discovery** before building Kademlia. DHT feeds candidates; **MeshHopPolicy** (N014/N020/N023) still decides who you dial or hop through.
+
+**Name authority (N029):** HTTP `GET /mesh/nodes` and person lookup are the **v1 phone book** behind a stable name-directory port. DHT must **not** become a name registry. On-chain unique names are the **final** phone book (after first release); keep record fields (`entity_kind`, capabilities, `seq`, PeerId-first) mappable 1:1.
 
 ```mermaid
 flowchart TD

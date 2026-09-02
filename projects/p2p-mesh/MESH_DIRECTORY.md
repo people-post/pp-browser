@@ -3,7 +3,8 @@
 **Status:** Accepted for implementation  
 **Date:** 2026-08-30  
 **Repos:** www (`web2/www`), pp-browser (`web3/pp-browser`), app-support DirectoryClient touch-up  
-**Related:** N002/N006/N011, M011/M017, SERVICE_ENDPOINTS.md
+**Related:** N002/N006/N011, M011/M017, SERVICE_ENDPOINTS.md  
+**North star:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md) / [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now) — HTTP directory is the **interim phone book**; chain names are the final authority. Keep this delivery’s schemas aligned with that port.
 
 ## Goals
 
@@ -111,7 +112,8 @@ flowchart LR
 
 ## Non-goals (this delivery)
 
-- Second directory transport (libp2p directory protocol).
+- Second directory transport (libp2p directory protocol). *(Deferred to N029 Phase B — Amp directory mirror behind the same name-directory port.)*
+- On-chain name registry. *(N029 Phase D — not first release.)*
 - Open public relay market / reputation.
 - Removing N002 seed from client defaults.
 - Home Node GUI opt-in mesh publish UI (config flag only if needed later).

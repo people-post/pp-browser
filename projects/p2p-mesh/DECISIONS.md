@@ -465,3 +465,27 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Alternatives rejected:** Revive jech/dht in pp-browser; libp2p Kademlia module; DHT before n-dir (N015 order); DHT on mobile; open STORE without rate limits.
 
 **Cross-link:** N008 (capability checkbox ships with working protocol); media-hop L5 (directory / DHT dial assist).
+
+---
+
+## N029 — Name directory north star (chain later, HTTP now)
+
+**Date:** 2026-09-02  
+**Status:** Accepted (design)  
+**Spec:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)  
+**Amends:** N002 (L0 door only; no unpinned DNS); N027 (HTTP directory = interim phone book behind a stable port); N028 (DHT never stores names); N015 (chain/jobs after directory path).
+
+**Decision:**
+
+1. **North star:** pp-node is the uniform edge router (circuit, media, later ledger RPC). The **chain** is the eventual **name registry** (human name → PeerId[+hints]). Amp is the wire. L0 bootstrap only finds a door to the phone book. HTTP Brief and DHT are caches / reachability — **not** final name authority.
+2. **Stable seam:** All resolve/list/publish flows go through an abstract name-directory port (evolve `IDirectoryClient` / `INameDirectory`). Backends swap: HTTP (v1) → optional Amp mirror → chain as truth. UI and hop policy must not hard-wire Brief URLs or chain tx types.
+3. **Frozen record fields:** `name`/`account_id`, `peer_id`, `endpoints[]` (hints), `entity_kind`, `capabilities` (incl. future `ledger_gateway`), `seq`, `expires_at`. Prefer authoritative **name → PeerId**; multiaddrs remain hints.
+4. **No chain in first release:** Phase A ships N027 HTTP phone book + n-dir + L0 seed + DHT-as-reachability only. Phases B–D (Amp directory, ledger_gateway capability, on-chain names) follow without redesigning the port.
+5. **pp-ledger alignment:** Terminal `pp-beacon` ≠ mesh bootstrap “beacon.” Public chain access is via pp-node **`ledger_gateway`** (opaque upstream). Do not use mesh DHT to discover ledger fleet nodes. On-chain names supersede HTTP as name truth when Phase D ships.
+6. **Anti-blockers:** No unpinned DNS L0; no second display-name system beside Account ID/handle; no documenting HTTP as eternal truth; keep `entity_kind`/capabilities 1:1-mappable to future chain rows.
+
+**Rationale:** Users need memorable join/find UX before chain ships; freezing the phone-book contract now avoids a second discovery stack when ledger names land. pp-node-as-router + chain-as-phone-book is one story across comms and ledger.
+
+**Alternatives rejected:** Unpinned DNS dial as product bootstrap; teaching users PeerIds; making DHT a name registry; putting terminal ledger Beacon on public bootstrap; shipping a divergent “display name” system for v1.
+
+**Cross-link:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [platform-integration](../../../pp-ledger/docs/platform-integration.md).
