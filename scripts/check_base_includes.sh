@@ -42,7 +42,6 @@ LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 ai->messaging
 ai->net
 mesh->media
-mesh->net
 messaging->net
 messaging->people
 net->messaging
@@ -105,6 +104,8 @@ check_absent "mesh must not include people/RelayScope.h (use common/RelayScope.h
   '#include "base/people/RelayScope.h"' src/base/mesh
 check_absent "mesh must not include people/ContactTypes.h (use common/DirectoryTypes.h)" \
   '#include "base/people/ContactTypes.h"' src/base/mesh
+check_absent "mesh production must not include base/net/ (use common/IDirectoryClient.h)" \
+  '#include "base/net/' src/base/mesh/discovery
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/WorkingSetTypes.h)" \
   '#include "base/ui/WorkingSetTypes.h"' src/base/ai
 

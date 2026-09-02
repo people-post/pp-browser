@@ -41,7 +41,7 @@ Cross-module helpers with no domain ownership. Keep these small.
 | `EmojiKey.h` | Emoji key helper |
 | `CodedFailure.h` | `CodedFailure` template — escalation rules in [CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md) |
 | `RelayScope.h` | Relay scope bands / admission helpers (shared by mesh L4 + people hop policy) |
-| `DirectoryTypes.h` / `DirectoryJson.*` | Directory / phone-book vocabulary + JSON (`DirectoryHit`, `MeshNodeHit`, `ContactId`, …) |
+| `DirectoryTypes.h` / `DirectoryJson.*` / `IDirectoryClient.h` | Directory vocabulary, JSON, and client port |
 | `WorkingSetTypes.h` | Working-set candidate DTOs (ai + chat UI) |
 
 ### B. Domain contracts (North Star growth area)

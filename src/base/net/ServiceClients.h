@@ -2,6 +2,7 @@
 
 #include "common/DirectoryTypes.h"
 #include "common/Error.h"
+#include "common/IDirectoryClient.h"
 #include "base/crypto/IDekConsumer.h"
 #include "base/messaging/ThreadTypes.h"
 
@@ -73,18 +74,6 @@ struct RegistrationPublishOpts {
   std::string entity_kind;
   bool has_capabilities = false;
   MeshCapabilitiesAd capabilities;
-};
-
-class IDirectoryClient {
-public:
-  virtual ~IDirectoryClient() = default;
-  virtual Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) = 0;
-  virtual Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) = 0;
-  virtual Roe<DirectoryHit> LookupByAccount(const std::string& account_id) = 0;
-  /** Infra / pp-node listings (N027). Default empty for mocks / older providers. */
-  virtual Roe<std::vector<MeshNodeHit>> ListMeshNodes() {
-    return std::vector<MeshNodeHit>{};
-  }
 };
 
 struct RegistrationResult {
