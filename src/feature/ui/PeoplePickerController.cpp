@@ -10,7 +10,7 @@
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 #include "feature/messaging/ContactReachability.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"

@@ -1,7 +1,7 @@
 #include "feature/chat/ChatWidgetHost.h"
 
 #include "base/ai/StructuredTextParser.h"
-#include "base/ui/ChatFormHelper.h"
+#include "domain/ui/ChatFormHelper.h"
 #include "feature/chat/CalendarHelper.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
 

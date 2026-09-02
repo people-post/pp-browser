@@ -23,7 +23,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>

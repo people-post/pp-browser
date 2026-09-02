@@ -13,7 +13,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ReactionTypes.h"
-#include "base/ui/ChatFormHelper.h"
+#include "domain/ui/ChatFormHelper.h"
 #include "common/EmojiKey.h"
 #include "common/Utilities.h"
 

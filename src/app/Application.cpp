@@ -12,9 +12,9 @@
 #include "base/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
-#include "base/ui/InputCoordinator.h"
-#include "base/ui/ContextMenuHost.h"
-#include "base/ui/ViewCatalog.h"
+#include "domain/ui/InputCoordinator.h"
+#include "domain/ui/ContextMenuHost.h"
+#include "domain/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
@@ -28,7 +28,7 @@
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
-#include "foundation/platform/SdlAppEvents.h"
+#include "foundation/platform/ui/SdlAppEvents.h"
 #include "foundation/platform/WindowIcon.h"
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/messaging/CallFunctionalPorts.h"
@@ -81,7 +81,7 @@
 #include "feature/ui/ShellCallChromePorts.h"
 #include "feature/ui/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
-#include "base/ui/Theme.h"
+#include "domain/ui/Theme.h"
 #include "common/StartupTiming.h"
 #include "base/mesh/reachability/Reachability.h"
 
@@ -91,7 +91,7 @@
 #include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/TextLoupe.h>
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "RmlUi_Renderer_GL3.h"
 #include "TextLoupeRenderer.h"
 #include "FontEngineInterfaceHarfBuzz.h"

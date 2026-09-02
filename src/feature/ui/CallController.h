@@ -2,7 +2,7 @@
 
 #include "common/media/CallMediaHealth.h"
 #include "domain/media/CallRingtone.h"
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/ui/CallChromeSync.h"

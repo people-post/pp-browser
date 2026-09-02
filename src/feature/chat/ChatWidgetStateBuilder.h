@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/StructuredTextParser.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
 #include "common/PbrCompat.h"
 
 #include <RmlUi/Core/DataModelHandle.h>

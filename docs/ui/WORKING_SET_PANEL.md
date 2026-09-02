@@ -57,7 +57,7 @@ Related docs: [WINDOW_SHELL.md](WINDOW_SHELL.md), [CHAT_TEMPLATES.md](CHAT_TEMPL
 
 ### 1. Core types
 
-Add [`src/base/ui/WorkingSetTypes.h`](../../src/base/ui/WorkingSetTypes.h):
+Add [`src/common/ui/WorkingSetTypes.h`](../../src/common/ui/WorkingSetTypes.h):
 
 ```cpp
 enum class WorkingSetKind { LongList, Form, Calendar, Table, Code, KeyValue, Card, None };
@@ -259,7 +259,7 @@ Update [`PromptBuilder::ChatBlocksProfile()`](../../src/base/ai/PromptBuilder.cp
 
 | File | Change |
 |------|--------|
-| `src/base/ui/WorkingSetTypes.h` | Core types |
+| `src/common/ui/WorkingSetTypes.h` | Core types |
 | `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
 | `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
 | `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |

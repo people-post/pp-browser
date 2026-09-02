@@ -20,7 +20,6 @@ set(_pp_platform_gui_sources
   AssetIO.cpp
   DesktopAssetLocator.cpp
   DesktopLocalNotifier.cpp
-  DesktopWindowChrome.cpp
   desktop/LocalNotifierActivation.cpp
   IAssetLocator.cpp
   ILocalNotifier.cpp
@@ -34,14 +33,12 @@ set(_pp_platform_gui_sources
   ProfileIconImagePrep.cpp
   VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
-  PlatformNavigation.cpp
   PlatformOpenUrl.cpp
   PlatformOpenFile.cpp
   PlatformServices.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp
   PushWakeJni.cpp
-  SdlAppEvents.cpp
   SdlAssetFileInterface.cpp
   WindowIcon.cpp
   AndroidLocalNotifier.cpp
@@ -126,16 +123,60 @@ endif()
 # OBJCXX is enabled in the top-level project() for desktop Darwin (required so
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
+# Low-level UI host (window / RmlUi Backend / overlays) — same foundation band.
+# domain/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
+set(_pp_platform_ui_sources
+  ui/DesktopWindowChrome.cpp
+  ui/PlatformNavigation.cpp
+  ui/SdlAppEvents.cpp
+  ui/gl/MobileGlLifecycle.cpp
+  ui/renderer/TextLoupeRenderer.cpp
+  ui/renderer/CallVideoTileRenderer.cpp
+  ui/renderer/ElementCallVideoTile.cpp
+  ui/host/BrowserHost.cpp
+  ui/host/TouchSimOverlay.cpp
+)
+
+include(pp_lib_rmlui)
+
 pp_browser_add_foundation_library(pp_foundation_platform
   SOURCES
     ${_pp_platform_gui_sources}
+    ${_pp_platform_ui_sources}
   PUBLIC_LIBS
     pp_foundation_platform_core
     pp_foundation_runtime
-    pp_base_render
+    pp_ui
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})
+
+target_compile_definitions(pp_foundation_platform PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
+if(RMLUI_BACKEND_SIMULATE_TOUCH)
+  target_compile_definitions(pp_foundation_platform PUBLIC RMLUI_BACKEND_SIMULATE_TOUCH)
+endif()
+if(PP_BROWSER_IS_IOS)
+  # OpenGLES is deprecated on iOS 12+; we still use ES3 via SDL until Metal.
+  target_compile_definitions(pp_foundation_platform PRIVATE GLES_SILENCE_DEPRECATION=1)
+endif()
+
+# Unprefixed includes for host/overlays (CallVideoTileRenderer.h, etc.).
+# Prefixed API: foundation/platform/ui/RmlUi_Backend.h, DesktopWindowChrome.h, …
+target_include_directories(pp_foundation_platform PUBLIC
+  ${PP_LIB_RMLUI_INCLUDE}
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui/gl
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui/renderer
+  ${CMAKE_CURRENT_SOURCE_DIR}/ui/host
+)
+
+pp_browser_link_rmlui_svg_deps(pp_foundation_platform)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(pp_foundation_platform PUBLIC ${CMAKE_DL_LIBS})
+endif()
+if(ANDROID)
+  target_link_libraries(pp_foundation_platform PUBLIC log GLESv3 EGL)
+endif()
 
 # iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios installs a SecTrust verify callback.
 if(PP_BROWSER_IS_IOS)

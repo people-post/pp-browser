@@ -1,8 +1,8 @@
-#include "foundation/platform/PlatformNavigation.h"
+#include "foundation/platform/ui/PlatformNavigation.h"
 
 #include "foundation/platform/Platform.h"
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 
 #include <SDL3/SDL.h>
 

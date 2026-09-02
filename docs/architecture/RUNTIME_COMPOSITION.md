@@ -37,7 +37,7 @@ flowchart TB
   subgraph base_layer["base/"]
     SessionStore["SessionStore<br/><small>base/data/</small>"]
     LocalizationService["LocalizationService<br/><small>base/i18n/</small>"]
-    Theme["Theme<br/><small>base/ui/</small>"]
+    Theme["Theme<br/><small>domain/ui/</small>"]
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
     ThreadStore["SqliteThreadStore<br/><small>base/messaging/</small>"]
     LlmClient["LlmClient<br/><small>base/ai/</small>"]
@@ -106,11 +106,11 @@ flowchart LR
     Mesh["MeshHost<br/><small>base/mesh/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
-    ThemeNode["Theme<br/><small>base/ui/</small>"]
+    ThemeNode["Theme<br/><small>domain/ui/</small>"]
     ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
     ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
     Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
-    Input["InputCoordinator<br/><small>base/ui/</small>"]
+    Input["InputCoordinator<br/><small>domain/ui/</small>"]
     Flow["FlowCoordinator<br/><small>feature/ui/</small>"]
     Call["CallController<br/><small>feature/ui/</small>"]
   end
@@ -312,7 +312,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` via `MessagingFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `feature/ui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
-| **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
+| **InputCoordinator** | `domain/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
 | **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
 | **FlowCoordinatorPorts** | `feature/ui/` | Modal begin/end/dismiss; app-filled from `FlowCoordinator` |
 | **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |

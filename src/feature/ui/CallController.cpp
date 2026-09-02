@@ -13,7 +13,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/ProductBranding.h"
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 #include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallUiBackend.h"

@@ -20,8 +20,7 @@ domain = {
     "pp_base_ai",
     "pp_base_ai_conversation",
     "pp_base_ai_mcp",
-    "pp_base_ui",
-    "pp_base_render",
+    "pp_domain_ui",
 }
 legacy = {
 }
@@ -107,3 +106,14 @@ if rg -n '\bpp_base_mesh_identity\b' \
   exit 1
 fi
 echo "OK: identity foundation lib name"
+
+# ui host lives in foundation/platform; shell is pp_domain_ui (no pp_base_ui / pp_base_render).
+if rg -n '\bpp_base_(ui|render)\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_ui_render_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_ui / pp_base_render (use pp_domain_ui / foundation platform ui):"
+  cat /tmp/pp_ui_render_rename.txt
+  exit 1
+fi
+echo "OK: ui/render lib names"
+

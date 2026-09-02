@@ -3,11 +3,11 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "foundation/platform/DesktopWindowChrome.h"
+#include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/platform/PlatformNavigation.h"
-#include "base/ui/ContextMenuHost.h"
-#include "base/ui/RmlVariantHelpers.h"
+#include "foundation/platform/ui/PlatformNavigation.h"
+#include "domain/ui/ContextMenuHost.h"
+#include "domain/ui/RmlVariantHelpers.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/CallActionsPorts.h"
@@ -18,9 +18,9 @@
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
-#include "base/ui/ViewCatalog.h"
+#include "domain/ui/ViewCatalog.h"
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>

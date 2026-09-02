@@ -13,7 +13,7 @@
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "base/ui/ContextMenuHost.h"
+#include "domain/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/messaging/ContactReachability.h"
@@ -23,7 +23,7 @@
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>

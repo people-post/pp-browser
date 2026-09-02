@@ -18,7 +18,7 @@ Each top-level folder (and `ai/conversation`, `ai/mcp`) builds as its own static
 | Tier | Inside-layer rule | Modules (today under `base/`) |
 |------|-------------------|--------------------------------|
 | **Foundation** | Ordered bands (not fully peer-independent) | `runtime`, `platform`, `error`, `i18n`, `data`, `crypto` (+ thin `mesh/identity` when treated as kernel) |
-| **Domain** | **Strict independence** — no peer→peer includes/links | `people`, `messaging`, `net`, `mesh` (host/L4), `media`, `ai`, `ui`, `render` |
+| **Domain** | **Strict independence** — no peer→peer includes/links | `people`, `messaging`, `net`, `mesh` (host/L4), `media`, `ai` (`ui` → `src/domain/ui/`; host/overlays → `foundation/platform/ui/`) |
 
 Cross-domain need → contract in [`src/common/`](../common/); wire in `feature/` (lifetimes in `app/`).
 
@@ -36,7 +36,7 @@ crypto
 
 ### Domain peers (no edges between these)
 
-`people` · `messaging` · `net` · `mesh` · `media` · `ai` · `ui` · `render`
+`people` · `messaging` · `net` · `mesh` · `media` · `ai` · `ui` (shell in `src/domain/ui/`; host in `foundation/platform/ui/`)
 
 ---
 
@@ -70,8 +70,8 @@ src/base/
 ├── ai/           [domain] LLM client, turn plans, structured parsing, MCP
 │   ├── conversation/
 │   └── mcp/
-├── ui/           [domain] Theme, view catalog, chat widget DTOs, input glue
-└── render/       [domain] Product RmlUi host/overlays (pp_base_render)
+├── ui/           [domain] **moved →** `src/domain/ui/` (`pp_domain_ui` shell)
+└── render/       **moved →** `src/foundation/platform/ui/` (host/overlays in `pp_foundation_platform`)
 ```
 
 Forks live under `src/lib/` (Amp) and pp-cpp-ui (RmlUi), not here.
@@ -81,7 +81,7 @@ Start points:
 - Bootstrap & config → `data/BootstrapTypes.h`, `data/Config.h`
 - Chat persistence → `messaging/IThreadStore.h`, `messaging/SqliteThreadStore.h` (port → `common` over time)
 - Agent transcript → `ai/conversation/Conversation.h`
-- Shell theming → `ui/Theme.h`, `ui/ViewCatalog.h`
+- Shell theming → `domain/ui/Theme.h`, `domain/ui/ViewCatalog.h`
 
 Includes (today): `#include "foundation/data/Config.h"`.
 
@@ -103,7 +103,7 @@ Includes (today): `#include "foundation/data/Config.h"`.
 2. **Shared structs go low** — owner module, or `common` if two domain peers need the name.
 3. **Heavy includes in `.cpp`** — keep headers lean.
 4. **Orchestration stays up** — `AgentSession`, `ShellHost`, `MessagingHub` in `feature/`.
-5. **Fork glue at the edge** — RmlUi in `render/`; Amp product glue in `mesh/`.
+5. **Fork glue at the edge** — RmlUi host in `foundation/platform/ui/`; Amp product glue in `mesh/`.
 
 ### Known shared types (today still in owning modules)
 

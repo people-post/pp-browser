@@ -1,4 +1,4 @@
-#include "base/ui/EmojiCatalog.h"
+#include "domain/ui/EmojiCatalog.h"
 
 #include "common/EmojiKey.h"
 

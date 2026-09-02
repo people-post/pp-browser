@@ -6,7 +6,7 @@ This document orients coding agents working in this repository.
 
 pp-browser is a native AI-oriented UI shell:
 
-- **SDL3 + OpenGL3** — product window host in `src/base/render/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
+- **SDL3 + OpenGL3** — product window host in `src/foundation/platform/ui/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
 - **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
@@ -20,7 +20,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 
 - Edit RmlUi in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific host/overlays stay in [`src/base/render/`](src/base/render/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
+- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/domain/ui/`](src/domain/ui/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
 
 ### Fork features (pp-browser)
 

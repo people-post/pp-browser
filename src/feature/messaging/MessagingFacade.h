@@ -12,7 +12,7 @@
 #include "domain/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "domain/people/ProfileIdentityView.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/MessageRouter.h"

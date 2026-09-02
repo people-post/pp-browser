@@ -1,4 +1,4 @@
-#include "base/ui/InputCoordinator.h"
+#include "domain/ui/InputCoordinator.h"
 
 #include <RmlUi/Core/Context.h>
 

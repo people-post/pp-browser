@@ -44,7 +44,7 @@ check_absent "crypto must not include common/thread/ThreadTypes.h" \
 check_absent "messaging must not include ai/conversation/ConversationTypes.h" \
   '#include "base/ai/conversation/ConversationTypes.h"' src/base/messaging
 check_absent "platform headers must not include ui/" \
-  '#include "base/ui/' src/foundation/platform
+  '#include "domain/ui/' src/foundation/platform
 check_absent "common must not include base/" \
   '#include "base/' src/common
 check_absent "common must not include feature/" \
@@ -57,7 +57,7 @@ LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 EOF
 )
 
-DOMAIN_MODULES=(people messaging net mesh media ai ui render)
+DOMAIN_MODULES=(people messaging net mesh media ai ui)
 
 is_legacy_edge() {
   local edge="$1"
@@ -98,7 +98,7 @@ scan_domain_peer_includes() {
         echo "  Promote a contract to src/common/ or wire in feature/; do not add peer→peer includes."
         FAIL=1
       fi
-    done < <(rg -n '#include "(base|domain)/(people|messaging|net|mesh|media|ai|ui|render)/' "$file" || true)
+    done < <(rg -n '#include "(base|domain)/(people|messaging|net|mesh|media|ai|ui)/' "$file" || true)
   done < <(find "$root_dir" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
     ! -path '*/tests/*' -print0)
 }
@@ -126,7 +126,7 @@ check_absent "mesh production must not include base/net/ (use common/directory/I
 check_absent "mesh must not include domain/media/ (use common/media/CallMediaHealth.h)" \
   '#include "domain/media/' src/base/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
-  '#include "base/ui/WorkingSetTypes.h"' src/base/ai
+  '#include "domain/ui/WorkingSetTypes.h"' src/base/ai
 check_absent "ai must not include messaging/ChatActionTypes.h (use common/chat/)" \
   '#include "base/messaging/ChatActionTypes.h"' src/base/ai
 check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/thread/)" \
@@ -165,6 +165,10 @@ check_absent "must not include base/media/ (moved to domain/media/)" \
   '#include "base/media/' src
 check_absent "must not include base/net/ (moved to domain/net/)" \
   '#include "base/net/' src
+check_absent "must not include base/ui/ (moved to domain/ui/)" \
+  '#include "base/ui/' src
+check_absent "must not include base/render/ (moved to foundation/platform/ui/)" \
+  '#include "base/render/' src
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
 check_absent "domain must not include ChatBlobRequestUtil at old path (use feature/messaging/)" \
@@ -203,6 +207,8 @@ for shim in \
   src/base/media \
   src/base/net \
   src/base/media/CallMediaHealth.h \
+  src/base/ui \
+  src/base/render \
   src/base/ui/WorkingSetTypes.h \
   src/base/messaging/PeopleDiscoveryBlocks.h \
   src/base/runtime \

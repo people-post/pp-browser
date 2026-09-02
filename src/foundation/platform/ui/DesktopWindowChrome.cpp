@@ -1,11 +1,11 @@
-#include "foundation/platform/DesktopWindowChrome.h"
+#include "foundation/platform/ui/DesktopWindowChrome.h"
 
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 
 #include <algorithm>
 #include <cmath>

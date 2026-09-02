@@ -1,4 +1,7 @@
-pp_browser_add_base_library(pp_base_ui
+# Product shell peer (theme, catalogs, input, chat widget types).
+# Window host / RmlUi Backend / overlays live in foundation/platform/ui/.
+
+pp_browser_add_domain_library(pp_domain_ui
   SOURCES
     ChatFormHelper.cpp
     ContextMenuHost.cpp
@@ -10,7 +13,6 @@ pp_browser_add_base_library(pp_base_ui
   PUBLIC_LIBS
     pp_foundation_platform
     pp_foundation_i18n
-    pp_base_render
     RmlUi::Core)
 
 if(PP_BROWSER_BUILD_TESTS)

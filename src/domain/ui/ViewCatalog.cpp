@@ -1,4 +1,4 @@
-#include "base/ui/ViewCatalog.h"
+#include "domain/ui/ViewCatalog.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AssetIO.h"

@@ -13,15 +13,17 @@ OS-specific code has **three homes**, not one folder:
 | Home | What goes there | Test |
 |------|-----------------|------|
 | **`foundation/platform/`** | Cross-cutting OS services many modules need | Paths, files, process, TLS trust, notifications, assets, connectivity, push JNI |
-| **Domain `*_Win32.cpp` / `*_Android.cpp` next to the feature** | Fat OS backends used by one module | H264, camera orientation, VoIP audio session, mDNS sockets, GL lifecycle, net-if enumeration |
+| **`foundation/platform/ui/`** | Low-level window / toolkit host (same foundation band) | `RmlUi_Backend.h`, `BrowserHost`, GL lifecycle, desktop chrome, SDL preprocess, loupe/call-tile overlays |
+| **Domain `*_Win32.cpp` / `*_Android.cpp` next to the feature** | Fat OS backends used by one module | H264, camera orientation, VoIP audio session, mDNS sockets, net-if enumeration |
 | **Runtime dispatch (`Platform::Detect()` / `IsMobile()`)** | Product behavior, not syscalls | Portrait lock, poll intervals, skip stdio MCP |
+| **`domain/ui/`** | Product shell only (not OS/host) | Theme, view catalog, input coordinator, context menu, chat widget types |
 
 Do **not** move media codecs, camera, or call audio-session backends into `foundation/platform/` — that would reverse the module graph (`pp_domain_media` already depends on `pp_foundation_platform`) and mix shared OS services with domain types.
 
 Hard rules:
 
-1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` / `base/render/`. Portable TUs (`CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
-2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `OsFile`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (except render GL integration).
+1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
+2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `OsFile`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
 4. **Process runtime** (threads, lifecycle, branding) lives in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
 5. **Public headers must not expose OS types** (`SOCKET`, `HANDLE`, `NativeSocket`). Hide them in the `.cpp` or a private impl header.
@@ -34,7 +36,8 @@ Hard rules:
 | `foundation/runtime/` | `AppRuntime`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
 | `foundation/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
 | `foundation/platform/PlatformServices.*` | Registers Android/iOS/desktop implementations at startup |
-| `foundation/platform/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` |
+| `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
+| `foundation/platform/ui/` | `RmlUi_Backend.h`, `BrowserHost`, overlays, desktop window chrome, navigation-via-Backend |
 | `foundation/platform/os/` | Low-level OS primitives (`OsFile`, `OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
 | `foundation/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `foundation/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
@@ -48,7 +51,7 @@ Hard rules:
 | `base/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
 | `base/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |
 | `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
-| `base/render/platform/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
+| `foundation/platform/ui/gl/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
 
 ## User-facing OS tips (i18n)
 
@@ -80,8 +83,7 @@ Regressions are caught by [`scripts/check_platform_ifdefs.sh`](../../scripts/che
 
 Allowed paths for OS preprocessor branches:
 
-- `src/foundation/platform/` (including `os/` and `desktop/`)
-- `src/base/render/` (GL/GLES backends)
+- `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
 - Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` and `src/base/mesh/`
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
@@ -95,6 +97,6 @@ Allowed paths for OS preprocessor branches:
 1. If it is a path, notification, credential, or OS tip → extend or add an `I*` interface implementation under `foundation/platform/`.
 2. If it is process threading / lifecycle / scheduling → `foundation/runtime/` (`AppRuntime`, `AppLifecycle`).
 3. If it is a syscall used by many modules (file sync, subprocess) → add to `foundation/platform/os/`. Civil time → `common/CivilTime` (re-exported as `pbr::os::`).
-4. If it is GL/GLES or SDL window backend → pp-cpp-ui `backend/` (shared) or `base/render/` (product-only).
+4. If it is GL/GLES or SDL window backend → pp-cpp-ui `backend/` (shared) or `foundation/platform/ui/` (product host/overlays).
 5. If it is a fat backend used by one module (codec, camera, audio session, raw sockets, net-if) → colocated `*_Win32.cpp` / `*_Android.cpp` / … behind a portable header in that module. Wire with CMake source-selection.
 6. Wire registration in `PlatformServices::Register()` for mobile overrides of `I*` facades; desktop defaults stay in interface singletons.

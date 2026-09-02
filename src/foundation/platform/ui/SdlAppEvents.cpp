@@ -1,11 +1,11 @@
-#include "foundation/platform/SdlAppEvents.h"
+#include "foundation/platform/ui/SdlAppEvents.h"
 
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/platform/PlatformNavigation.h"
+#include "foundation/platform/ui/PlatformNavigation.h"
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 
 #include <RmlUi/Core/Context.h>
 #include <SDL3/SDL.h>

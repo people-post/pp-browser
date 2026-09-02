@@ -99,7 +99,7 @@ crypto
 | Path (today) | Contents |
 |--------------|----------|
 | `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
-| `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
+| `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; `platform/ui/` = window host + RmlUi Backend + overlays. See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
 | `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
@@ -118,8 +118,8 @@ Target path after move: `src/foundation/<module>/`.
 | `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `base/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
-| `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
-| `base/render/` | Product RmlUi host/overlays; reusable SDL/GL in pp-cpp-ui |
+| `domain/ui/` | Theme, view catalog, shell types, input coordinator (product shell) |
+| `foundation/platform/ui/` | Product RmlUi host/overlays; reusable SDL/GL in pp-cpp-ui |
 
 Target path after move: `src/domain/<module>/`.
 
@@ -142,9 +142,9 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 
 | Path (today) | Role |
 |--------------|------|
-| `base/render/platform/` | Mobile GL lifecycle helpers |
-| `base/render/renderer/` | Product overlays (loupe, call video tiles) |
-| `base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
+| `foundation/platform/ui/gl/` | Mobile GL lifecycle helpers |
+| `foundation/platform/ui/renderer/` | Product overlays (loupe, call video tiles) |
+| `foundation/platform/ui/host/` | `BrowserHost` product `Backend::*` bootstrap |
 | `base/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
 
 ```
