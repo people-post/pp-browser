@@ -101,11 +101,11 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 
 ### Acceptance (n-dir)
 
-- [ ] Desktop Node refreshes mesh directory on a sane interval.
-- [ ] Directory nodes appear in circuit hop ordering after contacts, before/alongside seed.
-- [ ] Media hop rank can select directory `mesh_node` with `media_relay` when contacts fail.
-- [ ] pp-browser still does **not** auto-publish as `mesh_node`.
-- [ ] Org seed remains in defaults when directory fetch fails.
+- [x] Desktop Node refreshes mesh directory on a sane interval (`MeshDirectoryCache`, 5m TTL via `TickMesh`)
+- [x] Directory nodes appear in circuit hop ordering after contacts, before/alongside seed (`BuildCircuitHopList`)
+- [x] Media hop rank can select directory `mesh_node` with `media_relay` when contacts fail (`FilterHopsByMediaRelayAds`)
+- [x] pp-browser still does **not** auto-publish as `mesh_node`.
+- [x] Org seed remains in defaults when directory fetch fails; seeds omitted when `seed_dial_ok == false`
 
 ### Estimated touchpoints
 

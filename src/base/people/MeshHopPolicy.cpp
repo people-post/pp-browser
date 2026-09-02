@@ -16,11 +16,11 @@ double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
   if (prefer_contacts) {
     if (c.affinity == MeshHopAffinity::Contact) {
       score += 25.0;
-    } else if (c.affinity == MeshHopAffinity::OrgSeed) {
+    } else if (c.affinity == MeshHopAffinity::DirectoryNode || c.affinity == MeshHopAffinity::OrgSeed) {
       score += 10.0;
     }
   } else {
-    if (c.affinity == MeshHopAffinity::OrgSeed) {
+    if (c.affinity == MeshHopAffinity::OrgSeed || c.affinity == MeshHopAffinity::DirectoryNode) {
       score += 25.0;
     } else if (c.affinity == MeshHopAffinity::Contact) {
       score += 10.0;
@@ -114,7 +114,8 @@ bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multi
 RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
   RelayScopeMask mask = 0;
-  if (candidate.affinity == MeshHopAffinity::OrgSeed) {
+  if (candidate.affinity == MeshHopAffinity::OrgSeed ||
+      candidate.affinity == MeshHopAffinity::DirectoryNode) {
     return static_cast<RelayScopeMask>(RelayScope::Org);
   }
   if (candidate.affinity != MeshHopAffinity::Contact) {
@@ -185,7 +186,38 @@ std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::st
   return out;
 }
 
+std::string PreferredDirectoryMultiaddr(const std::vector<std::string>& multiaddrs) {
+  for (const std::string& ma : multiaddrs) {
+    if (ma.find("/adp/") != std::string::npos) {
+      return ma;
+    }
+  }
+  if (!multiaddrs.empty()) {
+    return multiaddrs.front();
+  }
+  return {};
+}
+
+std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
+  std::vector<MeshHopCandidate> out;
+  std::unordered_set<std::string> seen;
+  for (const MeshDirectoryNode& node : nodes) {
+    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    MeshHopCandidate c;
+    c.peer_id = node.peer_id;
+    c.multiaddr = PreferredDirectoryMultiaddr(node.multiaddrs);
+    c.affinity = MeshHopAffinity::DirectoryNode;
+    c.advertises_media_relay = node.media_relay;
+    c.advertises_circuit_relay = node.circuit_relay;
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
 std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
+                                               std::vector<MeshHopCandidate> directory,
                                                std::vector<MeshHopCandidate> seeds,
                                                bool prefer_contacts) {
   std::vector<MeshHopCandidate> out;
@@ -200,12 +232,25 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
   };
   if (prefer_contacts) {
     append(contacts);
+    append(directory);
     append(seeds);
   } else {
+    append(directory);
     append(seeds);
     append(contacts);
   }
   return out;
+}
+
+std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
+                                                  const std::vector<MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<std::string>& bootstrap_peers,
+                                                  const bool prefer_contacts, const bool include_seeds) {
+  auto contact_hops = CollectContactHopCandidates(contacts);
+  auto directory_hops = CollectDirectoryHopCandidates(directory_nodes);
+  auto seed_hops = include_seeds ? CollectSeedHopCandidates(bootstrap_peers) : std::vector<MeshHopCandidate>{};
+  return OrderCircuitHops(std::move(contact_hops), std::move(directory_hops), std::move(seed_hops),
+                          prefer_contacts);
 }
 
 std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,

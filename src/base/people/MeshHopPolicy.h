@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/data/Config.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/RelayScope.h"
 
@@ -13,8 +14,9 @@ namespace pbr {
 /** Affinity class for hop scoring (N014 / N020). */
 enum class MeshHopAffinity {
   Contact = 0,
-  OrgSeed = 1,
-  Other = 2,
+  DirectoryNode = 1,
+  OrgSeed = 2,
+  Other = 3,
 };
 
 /** Mirrors ReachabilityStatus for provider caps without requiring libp2p headers in callers. */
@@ -34,6 +36,9 @@ struct MeshHopCandidate {
   bool recently_failed = false;
   /** 0..1 residual capacity estimate; 1 = fully free. */
   double residual_capacity = 1.0;
+  /** From mesh directory capabilities (n-dir); used for media/circuit filters. */
+  bool advertises_media_relay = false;
+  bool advertises_circuit_relay = false;
 };
 
 /**
@@ -45,13 +50,23 @@ std::vector<MeshHopCandidate> CollectContactHopCandidates(const std::vector<Cont
 /** Collect org seed peers from configured bootstrap multiaddrs. */
 std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers);
 
+/** Collect infra mesh_node peers from directory cache (N027 / n-dir). */
+std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes);
+
 /**
- * Circuit hop order (nf / N014): contacts first when `prefer_contacts`, then seeds.
- * Dedupes by peer_id (contact wins over seed).
+ * Circuit hop order (nf / N014): contacts → directory → seeds when `prefer_contacts`;
+ * directory → seeds → contacts when false. Dedupes by peer_id (earlier tier wins).
  */
 std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
+                                               std::vector<MeshHopCandidate> directory,
                                                std::vector<MeshHopCandidate> seeds,
                                                bool prefer_contacts = true);
+
+/** Collect + order circuit/media hop candidates (n-dir). Omits seeds when `include_seeds` is false. */
+std::vector<MeshHopCandidate> BuildCircuitHopList(const std::vector<Contact>& contacts,
+                                                  const std::vector<MeshDirectoryNode>& directory_nodes,
+                                                  const std::vector<std::string>& bootstrap_peers,
+                                                  bool prefer_contacts, bool include_seeds = true);
 
 /**
  * Media hop rank (n4 / N020 short-term): filter → score over contacts ∪ seeds only.

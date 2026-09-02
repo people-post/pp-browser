@@ -118,9 +118,13 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
   if (auto listed = contacts_.List()) {
     contacts = std::move(*listed);
   }
-  auto contact_hops = CollectContactHopCandidates(contacts);
-  auto seed_hops = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
-  auto merged = OrderCircuitHops(std::move(contact_hops), std::move(seed_hops), relay_deps_.prefer_contacts);
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (relay_deps_.list_directory_nodes) {
+    directory_nodes = relay_deps_.list_directory_nodes();
+  }
+  const bool include_seeds = !relay_deps_.seed_dial_ok || relay_deps_.seed_dial_ok();
+  auto merged = BuildCircuitHopList(contacts, directory_nodes, relay_deps_.bootstrap_peers,
+                                    relay_deps_.prefer_contacts, include_seeds);
   auto ranked = RankMediaHopsEscalating(std::move(merged), relay_deps_.prefer_contacts,
                                         relay_deps_.local_listen_multiaddr);
   if (relay_deps_.relay) {

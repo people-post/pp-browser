@@ -62,6 +62,14 @@ struct MeshPricingConfig {
   RelayPricingConfig media_relay;
 };
 
+/** Cached infra row from GET /v1/mesh/nodes (N027 / n-dir). */
+struct MeshDirectoryNode {
+  std::string peer_id;
+  std::vector<std::string> multiaddrs;
+  bool circuit_relay = false;
+  bool media_relay = false;
+};
+
 struct MeshConfig {
   /** Desktop opt-out of Node; ignored on mobile (always Client). */
   bool node_enabled = true;

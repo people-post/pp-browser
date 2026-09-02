@@ -29,6 +29,22 @@ TEST(PeerCapsLogicTest, KeepsOrgSeedsDropsUnknownContacts) {
   EXPECT_EQ(ranked[1].peer_id, "12D3KooWDesktop");
 }
 
+TEST(PeerCapsLogicTest, KeepsDirectoryNodesWithMediaRelay) {
+  MeshHopCandidate directory;
+  directory.peer_id = "12D3KooWNode";
+  directory.affinity = MeshHopAffinity::DirectoryNode;
+  directory.advertises_media_relay = true;
+
+  MeshHopCandidate directory_no_media;
+  directory_no_media.peer_id = "12D3KooWOther";
+  directory_no_media.affinity = MeshHopAffinity::DirectoryNode;
+  directory_no_media.advertises_media_relay = false;
+
+  auto ranked = FilterHopsByMediaRelayAds({directory, directory_no_media}, {});
+  ASSERT_EQ(ranked.size(), 1u);
+  EXPECT_EQ(ranked[0].peer_id, "12D3KooWNode");
+}
+
 TEST(PeerCapsLogicTest, NullAdsKeepsOnlySeeds) {
   MeshHopCandidate contact;
   contact.peer_id = "12D3KooWPhone";

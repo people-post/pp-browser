@@ -96,13 +96,13 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 
 ## n-dir — Mesh directory consumers (before n2)
 
-**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md#track-n-dir--wire-mesh-directory-into-consumers). API + pp-node publish landed (N027); consumer wiring open.
+**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md#track-n-dir--wire-mesh-directory-into-consumers). API + pp-node publish landed (N027); **consumer wiring landed**.
 
-- [ ] `MeshDirectoryCache` + periodic `ListMeshNodes` refresh
-- [ ] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
-- [ ] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
-- [ ] Bridge score prefers directory when seed unreachable (ns partial)
-- [ ] Phase E smoke + docs
+- [x] `MeshDirectoryCache` + periodic `ListMeshNodes` refresh
+- [x] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
+- [x] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
+- [x] Bridge score prefers directory when seed unreachable (`seed_dial_ok` → skip seeds)
+- [ ] Phase E smoke + docs (manual)
 
 ## n2 — DHT (later per N015)
 

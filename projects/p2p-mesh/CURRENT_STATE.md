@@ -134,7 +134,7 @@
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
-| Mesh directory consumer | **n-dir** — API landed; hop wiring open — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
+| Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
 | DHT | **n2** (after n-dir; AMP-native per roadmap) |
 | Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 

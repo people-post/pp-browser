@@ -114,6 +114,15 @@ CallStackDeps MessagingHub::MakeCallStackDeps() {
   deps.mesh_messaging = mesh_messaging_.get();
   deps.mesh = [this]() { return mesh_.get(); };
   deps.config = [this]() -> const AppConfig& { return config_; };
+  deps.list_directory_nodes = [this]() {
+    return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<MeshDirectoryNode>{};
+  };
+  deps.seed_dial_ok = [this]() {
+    if (!mesh_) {
+      return true;
+    }
+    return mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  };
   deps.prefetch_peer_reachability = [this](const std::string& identity) {
     PrefetchPeerReachability(identity);
   };
@@ -527,6 +536,19 @@ void MessagingHub::RegisterContactEndpoints() {
   ApplyMeshAdmissionPolicies();
 }
 
+void MessagingHub::RegisterMeshDirectoryEndpoints() {
+  if (!mesh_messaging_ || !mesh_directory_cache_) {
+    return;
+  }
+  for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
+    for (const std::string& ma : node.multiaddrs) {
+      if (ma.empty()) {
+        continue;
+      }
+      mesh_messaging_->RegisterPeerDirectEndpoint(node.peer_id, ma);
+    }
+  }
+}
 
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
   return IsContactReachableForMessaging(contact, relay_ != nullptr);
@@ -636,6 +658,21 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
     }
   });
+
+  if (directory_) {
+    mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
+      if (!directory_) {
+        return std::vector<MeshDirectoryNode>{};
+      }
+      auto hits = directory_->ListMeshNodes();
+      if (!hits) {
+        return hits.error();
+      }
+      return MeshDirectoryNodesFromHits(*hits);
+    });
+    mesh_directory_cache_->SetOnUpdated([this]() { RegisterMeshDirectoryEndpoints(); });
+    mesh_directory_cache_->RequestRefresh();
+  }
 
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
@@ -836,6 +873,9 @@ void MessagingHub::TickMesh() {
   // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
+  }
+  if (mesh_directory_cache_) {
+    mesh_directory_cache_->MaybeRefresh();
   }
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
@@ -1558,8 +1598,13 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   }
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
-  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(mesh_cfg.bootstrap_peers),
-                               mesh_cfg.prefer_contacts_for_routing);
+  const bool include_seeds = !mesh_ || mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, mesh_cfg.bootstrap_peers,
+                                 mesh_cfg.prefer_contacts_for_routing, include_seeds);
   if (hops.empty()) {
     return Error("no circuit hop candidates");
   }
@@ -1703,6 +1748,7 @@ void MessagingHub::Shutdown() {
   inbox_.reset();
   peer_labels_.reset();
   directory_shadows_.reset();
+  mesh_directory_cache_.reset();
   http_relay_.reset();
   http_directory_.reset();
   http_registration_.reset();

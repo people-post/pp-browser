@@ -34,6 +34,7 @@
 #include "base/mesh/reachability/LanMdnsDiscovery.h"
 #include "base/mesh/reachability/Reachability.h"
 #include "base/mesh/reachability/ReachabilityService.h"
+#include "base/mesh/discovery/MeshDirectoryCache.h"
 #include "base/mesh/host/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"
 
@@ -251,6 +252,7 @@ private:
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
   void RegisterContactEndpoints();
+  void RegisterMeshDirectoryEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
@@ -286,6 +288,7 @@ private:
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
+  std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipService> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;

@@ -53,6 +53,11 @@ struct CallStackDeps {
   /** Live AppConfig (libp2p role / caps / bootstrap / listen multiaddr). */
   std::function<const AppConfig&()> config;
 
+  /** Cached mesh_node rows from Brief directory (n-dir). */
+  std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+  /** Reachability seed probe — when false, hop policy skips org seed candidates. */
+  std::function<bool()> seed_dial_ok;
+
   /** Hub-owned mesh glue the call stack cannot own. */
   std::function<void(const std::string& identity)> prefetch_peer_reachability;
   std::function<void()> sync_mobile_ephemeral_listen;
