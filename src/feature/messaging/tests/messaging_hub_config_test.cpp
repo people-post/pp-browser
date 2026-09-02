@@ -1,6 +1,6 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/UserPreferences.h"
-#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "feature/messaging/MessagingHub.h"
 
 #include <gtest/gtest.h>

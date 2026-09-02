@@ -2,7 +2,7 @@
 
 #include "foundation/data/MeshRole.h"
 #include "base/mesh/host/MeshPorts.h"
-#include "base/messaging/CallTypes.h"
+#include "domain/messaging/CallTypes.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactsStore.h"

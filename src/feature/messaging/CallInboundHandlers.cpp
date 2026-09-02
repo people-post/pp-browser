@@ -1,8 +1,8 @@
 #include "feature/messaging/CallSessionManager.h"
 
-#include "base/messaging/CallSessionLogic.h"
-#include "base/messaging/InitiationPricing.h"
-#include "base/messaging/PeerCapsLogic.h"
+#include "domain/messaging/CallSessionLogic.h"
+#include "domain/messaging/InitiationPricing.h"
+#include "domain/messaging/PeerCapsLogic.h"
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"

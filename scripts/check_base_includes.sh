@@ -37,12 +37,14 @@ check_absent_prod() {
 
 # --- Hard bans (keep forever) ---
 check_absent "data must not include ai/" '#include "base/ai/' src/foundation/data
-check_absent "crypto must not include messaging/ThreadTypes.h" \
+check_absent "crypto must not include base/messaging/ThreadTypes.h" \
   '#include "base/messaging/ThreadTypes.h"' src/foundation/crypto
+check_absent "crypto must not include domain/messaging/ThreadTypes.h" \
+  '#include "domain/messaging/ThreadTypes.h"' src/foundation/crypto
 check_absent "crypto must not include common/thread/ThreadTypes.h" \
   '#include "common/thread/ThreadTypes.h"' src/foundation/crypto
 check_absent "messaging must not include ai/conversation/ConversationTypes.h" \
-  '#include "base/ai/conversation/ConversationTypes.h"' src/base/messaging
+  '#include "base/ai/conversation/ConversationTypes.h"' src/domain/messaging
 check_absent "platform headers must not include ui/" \
   '#include "domain/ui/' src/foundation/platform
 check_absent "common must not include base/" \
@@ -127,36 +129,60 @@ check_absent "mesh must not include domain/media/ (use common/media/CallMediaHea
   '#include "domain/media/' src/base/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
   '#include "domain/ui/WorkingSetTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ChatActionTypes.h (use common/chat/)" \
+check_absent "ai must not include base/messaging/ChatActionTypes.h (use common/chat/)" \
   '#include "base/messaging/ChatActionTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/thread/)" \
+check_absent "ai must not include messaging/ChatActionTypes.h (use common/chat/)" \
+  '#include "domain/messaging/ChatActionTypes.h"' src/base/ai
+check_absent "ai must not include base/messaging/ThreadMemoryTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadMemoryTypes.h"' src/base/ai
-check_absent "ai must not include messaging/ThreadTypes.h (use common/thread/)" \
+check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/thread/)" \
+  '#include "domain/messaging/ThreadMemoryTypes.h"' src/base/ai
+check_absent "ai must not include base/messaging/ThreadTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadTypes.h"' src/base/ai
-check_absent "ai must not include messaging/IThreadStore.h (use common/thread/)" \
+check_absent "ai must not include messaging/ThreadTypes.h (use common/thread/)" \
+  '#include "domain/messaging/ThreadTypes.h"' src/base/ai
+check_absent "ai must not include base/messaging/IThreadStore.h (use common/thread/)" \
   '#include "base/messaging/IThreadStore.h"' src/base/ai
-check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/chat/)" \
+check_absent "ai must not include messaging/IThreadStore.h (use common/thread/)" \
+  '#include "domain/messaging/IThreadStore.h"' src/base/ai
+check_absent "ai must not include base/messaging/PeopleDiscoveryBlocks.h (use common/chat/)" \
   '#include "base/messaging/PeopleDiscoveryBlocks.h"' src/base/ai
+check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/chat/)" \
+  '#include "domain/messaging/PeopleDiscoveryBlocks.h"' src/base/ai
 check_absent "ai must not include base/net/ (use common/net/HttpTransport + feature wiring)" \
   '#include "domain/net/' src/base/ai
 check_absent "messaging must not include people/MeshHopPolicy.h (use common/directory/MeshHopTypes.h)" \
-  '#include "domain/people/MeshHopPolicy.h"' src/base/messaging
-check_absent "net must not include messaging/RelayStreamKey.h (use common/chat/)" \
+  '#include "domain/people/MeshHopPolicy.h"' src/domain/messaging
+check_absent "net must not include base/messaging/RelayStreamKey.h (use common/chat/)" \
   '#include "base/messaging/RelayStreamKey.h"' src/domain/net
-check_absent "net must not include messaging/ThreadTypes.h (use common/thread/)" \
+check_absent "net must not include messaging/RelayStreamKey.h (use common/chat/)" \
+  '#include "domain/messaging/RelayStreamKey.h"' src/domain/net
+check_absent "net must not include base/messaging/ThreadTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadTypes.h"' src/domain/net
-check_absent "net must not include messaging/ChatPayloadTypes.h (use common/chat/)" \
+check_absent "net must not include messaging/ThreadTypes.h (use common/thread/)" \
+  '#include "domain/messaging/ThreadTypes.h"' src/domain/net
+check_absent "net must not include base/messaging/ChatPayloadTypes.h (use common/chat/)" \
   '#include "base/messaging/ChatPayloadTypes.h"' src/domain/net
-check_absent "net must not include messaging/IThreadStore.h (use common/thread/)" \
+check_absent "net must not include messaging/ChatPayloadTypes.h (use common/chat/)" \
+  '#include "domain/messaging/ChatPayloadTypes.h"' src/domain/net
+check_absent "net must not include base/messaging/IThreadStore.h (use common/thread/)" \
   '#include "base/messaging/IThreadStore.h"' src/domain/net
-check_absent "net must not include messaging/MessagingJson.h (use common/chat/)" \
+check_absent "net must not include messaging/IThreadStore.h (use common/thread/)" \
+  '#include "domain/messaging/IThreadStore.h"' src/domain/net
+check_absent "net must not include base/messaging/MessagingJson.h (use common/chat/)" \
   '#include "base/messaging/MessagingJson.h"' src/domain/net
-check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
+check_absent "net must not include messaging/MessagingJson.h (use common/chat/)" \
+  '#include "domain/messaging/MessagingJson.h"' src/domain/net
+check_absent "net must not include base/messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
   '#include "base/messaging/EnvelopeSigner.h"' src/domain/net
-check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
+check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
+  '#include "domain/messaging/EnvelopeSigner.h"' src/domain/net
+check_absent "net must not include base/messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/domain/net
+check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
+  '#include "domain/messaging/RelayWirePayload.h"' src/domain/net
 check_absent_prod "messaging must not include domain/people/ (wire via common/feature)" \
-  '#include "domain/people/' src/base/messaging
+  '#include "domain/people/' src/domain/messaging
 check_absent_prod "net must not include domain/people/ (use common/directory + feature wiring)" \
   '#include "domain/people/' src/domain/net
 check_absent "must not include base/people/ (moved to domain/people/)" \
@@ -165,36 +191,41 @@ check_absent "must not include base/media/ (moved to domain/media/)" \
   '#include "base/media/' src
 check_absent "must not include base/net/ (moved to domain/net/)" \
   '#include "base/net/' src
+check_absent "must not include base/messaging/ (moved to domain/messaging/)" \
+  '#include "base/messaging/' src
 check_absent "must not include base/ui/ (moved to domain/ui/)" \
   '#include "base/ui/' src
 check_absent "must not include base/render/ (moved to foundation/platform/ui/)" \
   '#include "base/render/' src
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
-  '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
-check_absent "domain must not include ChatBlobRequestUtil at old path (use feature/messaging/)" \
+  '#include "base/net/AttachmentClientUtil.h"' src/domain/messaging
+check_absent "must not include ChatBlobRequestUtil at base path (use feature/messaging/)" \
   '#include "base/messaging/ChatBlobRequestUtil.h"' src
+check_absent "domain must not include ChatBlobRequestUtil at messaging path (use feature/messaging/)" \
+  '#include "domain/messaging/ChatBlobRequestUtil.h"' src
 check_absent "must not include base/net/ProfileIconClientUtil.h (use feature/messaging/)" \
   '#include "base/net/ProfileIconClientUtil.h"' src
 check_absent "must not include base/net/RegistrationClientUtil.h (use feature/messaging/)" \
   '#include "base/net/RegistrationClientUtil.h"' src
 check_absent "messaging must not include feature/ (domain may not include feature)" \
-  '#include "feature/' src/base/messaging
+  '#include "feature/' src/domain/messaging
 
 # Removed shim paths must stay deleted.
 for shim in \
   src/common/ThreadTypes.h \
   src/common/IThreadStore.h \
   src/common/CallMediaHealth.h \
-  src/base/messaging/ThreadTypes.h \
-  src/base/messaging/IThreadStore.h \
-  src/base/messaging/MessagingJson.h \
-  src/base/messaging/ChatBlobRequestUtil.h \
+  src/base/messaging \
+  src/domain/messaging/ThreadTypes.h \
+  src/domain/messaging/IThreadStore.h \
+  src/domain/messaging/MessagingJson.h \
+  src/domain/messaging/ChatBlobRequestUtil.h \
   src/base/data \
   src/base/crypto \
   src/base/error \
   src/base/i18n \
-  src/base/messaging/PeerBriefRoute.h \
-  src/base/messaging/ChatHistoryResponder.h \
+  src/domain/messaging/PeerBriefRoute.h \
+  src/domain/messaging/ChatHistoryResponder.h \
   src/base/mesh/host/MeshChannelLimits.h \
   src/base/mesh/identity \
   src/base/net/ProfileIconClientUtil.h \
@@ -210,7 +241,7 @@ for shim in \
   src/base/ui \
   src/base/render \
   src/base/ui/WorkingSetTypes.h \
-  src/base/messaging/PeopleDiscoveryBlocks.h \
+  src/domain/messaging/PeopleDiscoveryBlocks.h \
   src/base/runtime \
   src/base/platform
 do

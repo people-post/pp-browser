@@ -1,10 +1,10 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "base/messaging/AtAiParser.h"
-#include "base/messaging/GroupTypes.h"
+#include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "domain/messaging/SendRelayOptions.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/ServiceClients.h"

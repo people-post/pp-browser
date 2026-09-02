@@ -1,6 +1,6 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
-#include "base/messaging/GroupTypes.h"
+#include "domain/messaging/GroupTypes.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "feature/messaging/RegistrationClientUtil.h"

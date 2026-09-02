@@ -15,7 +15,7 @@ domain = {
     "pp_domain_people",
     "pp_domain_media",
     "pp_domain_net",
-    "pp_base_messaging",
+    "pp_domain_messaging",
         "pp_base_mesh",
     "pp_base_ai",
     "pp_base_ai_conversation",
@@ -117,3 +117,13 @@ if rg -n '\bpp_base_(ui|render)\b' \
 fi
 echo "OK: ui/render lib names"
 
+
+# messaging must stay on pp_domain_messaging (no old target name aliases).
+if rg -n '\bpp_base_messaging\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_messaging_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_messaging (use pp_domain_messaging):"
+  cat /tmp/pp_messaging_rename.txt
+  exit 1
+fi
+echo "OK: messaging domain lib name"

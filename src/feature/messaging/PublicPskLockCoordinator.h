@@ -2,7 +2,7 @@
 
 #include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
-#include "base/messaging/PskRotateCodec.h"
+#include "domain/messaging/PskRotateCodec.h"
 #include "common/chat/RelayEnvelope.h"
 
 #include "common/Error.h"

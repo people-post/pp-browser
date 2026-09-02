@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/AtAiParser.h"
+#include "domain/messaging/AtAiParser.h"
 #include "common/thread/IThreadStore.h"
 #include "common/Module.h"
 #include "feature/messaging/InboxController.h"

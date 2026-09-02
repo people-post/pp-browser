@@ -1,9 +1,9 @@
 #include "feature/messaging/GroupMembershipService.h"
 
 #include "domain/people/DirectChatTargetFromContact.h"
-#include "base/messaging/GroupMembershipCodec.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "domain/messaging/GroupMembershipCodec.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactJson.h"
 
 #include "common/Utilities.h"

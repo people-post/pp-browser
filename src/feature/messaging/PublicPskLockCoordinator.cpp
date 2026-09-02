@@ -5,7 +5,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/PskBundleCodec.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"

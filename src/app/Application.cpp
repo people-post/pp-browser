@@ -9,7 +9,7 @@
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "base/messaging/ChatPayloadValidator.h"
+#include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "domain/ui/InputCoordinator.h"

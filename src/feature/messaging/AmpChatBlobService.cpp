@@ -3,7 +3,7 @@
 #include "amp/link/PeerLink.h"
 
 #include "foundation/crypto/CryptoConstants.h"
-#include "base/messaging/ChatBlobResponder.h"
+#include "domain/messaging/ChatBlobResponder.h"
 #include "common/chat/MessagingJson.h"
 #include "base/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"

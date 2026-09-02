@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/GroupRosterStore.h"
+#include "domain/messaging/GroupRosterStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/PeerDisplayLabel.h"

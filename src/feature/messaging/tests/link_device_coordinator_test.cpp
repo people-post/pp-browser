@@ -1,7 +1,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/DataKeyVault.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/messaging/LinkDeviceCoordinator.h"
 #include "feature/messaging/SqlitePskSessionStore.h"

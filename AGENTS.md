@@ -67,7 +67,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s3 landed**; s4 polish next — [DESIGN](projects/network-status-chrome/DESIGN.md) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/domain/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | Profile icons / chat attachments | [projects/relay-blob-upload/](projects/relay-blob-upload/) — **a1–a6 + a5 done** — Smart policy, suppression, peer chat-blob, fetch ladder, outbound peer upload, DEK-wrap, video poster |
-| SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
+| SQLite thread store | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/foundation/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/); PQ natives + libsodium via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) |
 | At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) — **m3 `endpoints[]` landed**; next **m4c** paste contacts (M018) — amends D096 (D099), E025, A010 |

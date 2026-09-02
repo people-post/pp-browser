@@ -2,10 +2,10 @@
 
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/media/CallMediaEngine.h"
-#include "base/messaging/CallControlCodec.h"
-#include "base/messaging/CallSessionStore.h"
+#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
-#include "base/messaging/InitiationBillingStore.h"
+#include "domain/messaging/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"

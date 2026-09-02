@@ -1,10 +1,10 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
-#include "base/messaging/CallControlCodec.h"
-#include "base/messaging/CallSessionStore.h"
-#include "base/messaging/PeerCapsLogic.h"
-#include "base/messaging/SoftMigrateLogic.h"
+#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallSessionStore.h"
+#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/messaging/CallMediaKeyStore.h"

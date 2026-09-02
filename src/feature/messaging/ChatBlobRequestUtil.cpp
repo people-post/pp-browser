@@ -1,7 +1,7 @@
 #include "feature/messaging/ChatBlobRequestUtil.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
-#include "base/messaging/AttachmentCache.h"
+#include "domain/messaging/AttachmentCache.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactJson.h"
 #include "common/PbrCompat.h"

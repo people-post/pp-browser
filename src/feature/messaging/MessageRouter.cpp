@@ -1,9 +1,9 @@
 #include "feature/messaging/MessageRouter.h"
 
 #include "feature/ai/AgentSession.h"
-#include "base/messaging/AtAiParser.h"
+#include "domain/messaging/AtAiParser.h"
 #include "common/thread/IThreadStore.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "domain/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"

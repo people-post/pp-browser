@@ -39,7 +39,7 @@ flowchart TB
     LocalizationService["LocalizationService<br/><small>base/i18n/</small>"]
     Theme["Theme<br/><small>domain/ui/</small>"]
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
-    ThreadStore["SqliteThreadStore<br/><small>base/messaging/</small>"]
+    ThreadStore["SqliteThreadStore<br/><small>domain/messaging/</small>"]
     LlmClient["LlmClient<br/><small>base/ai/</small>"]
     CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
   end

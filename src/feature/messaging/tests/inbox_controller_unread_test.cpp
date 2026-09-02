@@ -1,4 +1,4 @@
-#include "base/messaging/SqliteThreadStore.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "domain/net/ServiceClientsImpl.h"
 #include "domain/people/ContactsStore.h"
 #include "feature/messaging/DirectoryShadowCache.h"

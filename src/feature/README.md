@@ -166,7 +166,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | Agent turns | `AgentSession`, turn pipeline | `base/ai/` (LlmClient, TurnPlan, conversation) |
 | P2P messaging | `MessagingHub`, sync, relay | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) |
 | Window shell | `ShellHost`, document loading | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) |
-| Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `base/messaging/` stores |
+| Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `domain/messaging/` stores |
 | Settings | Section handlers, config merge | `assets/views/settings.rml`, `base/data/Config.h` |
 | At-rest PIN gate | `ProfileUnlockGate` + `PinGateController` UI | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
 

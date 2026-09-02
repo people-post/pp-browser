@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/messaging/GroupMembershipCodec.h"
-#include "base/messaging/GroupRosterStore.h"
+#include "domain/messaging/GroupMembershipCodec.h"
+#include "domain/messaging/GroupRosterStore.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"

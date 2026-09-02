@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/messaging/CallTypes.h"
-#include "base/messaging/GroupTypes.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/ContactTypes.h"
 #include "common/Error.h"

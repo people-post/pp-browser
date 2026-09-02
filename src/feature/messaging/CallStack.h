@@ -2,7 +2,7 @@
 
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
-#include "base/messaging/CallSessionStore.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/messaging/AmpCircuitHopReach.h"

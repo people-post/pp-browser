@@ -2,10 +2,10 @@
 
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/AttachmentDownloadService.h"
-#include "base/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "base/messaging/RelayWirePayload.h"
+#include "domain/messaging/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/ContactsStore.h"

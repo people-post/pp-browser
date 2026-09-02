@@ -1,11 +1,11 @@
 #include "feature/messaging/ChatHistoryResponder.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/EnvelopeSigner.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
-#include "base/messaging/RelayWirePayload.h"
+#include "domain/messaging/RelayWirePayload.h"
 
 #include <algorithm>
 #include <optional>

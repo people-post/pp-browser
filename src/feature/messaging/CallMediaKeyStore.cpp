@@ -6,7 +6,7 @@
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MessageCipher.h"
 #include "foundation/error/AppError.h"
-#include "base/messaging/CallSessionStore.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "common/Utilities.h"
 
 #include <sodium.h>

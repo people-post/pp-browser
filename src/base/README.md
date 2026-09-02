@@ -36,7 +36,7 @@ crypto
 
 ### Domain peers (no edges between these)
 
-`people` · `messaging` · `net` · `mesh` · `media` · `ai` · `ui` (shell in `src/domain/ui/`; host in `foundation/platform/ui/`)
+`people` · `messaging` · `net` · `mesh` · `media` · `ai` · `ui` (messaging/ui under src/domain/) (shell in `src/domain/ui/`; host in `foundation/platform/ui/`)
 
 ---
 
@@ -64,7 +64,7 @@ src/base/
 │
 ├── people/       [domain] **moved →** `src/domain/people/` (`pp_domain_people`)
 ├── net/          [domain] **moved →** `src/domain/net/` (`pp_domain_net`)
-├── messaging/    [domain] Threads, SQLite + JSON stores, relay/group/E2E codecs
+├── messaging/    [domain] **moved →** `src/domain/messaging/` (`pp_domain_messaging`)
 ├── mesh/         [domain] Amp product glue — host, ports, reachability, L4
 ├── media/        [domain] **moved →** `src/domain/media/` (`pp_domain_media`)
 ├── ai/           [domain] LLM client, turn plans, structured parsing, MCP

@@ -5,6 +5,7 @@ add_subdirectory(people)
 # net is available in headless too (mesh PRIVATE-links it; pp-node uses HTTP helpers).
 add_subdirectory(net)
 if(NOT PP_BROWSER_HEADLESS)
+  add_subdirectory(messaging)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/PeerKemKeyStore.h"
+#include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/net/ServiceClients.h"
 #include "common/PbrCompat.h"
 

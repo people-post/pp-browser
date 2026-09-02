@@ -17,7 +17,7 @@
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
 #include "feature/ui/UnlockEnsurePorts.h"
-#include "base/messaging/AtAiParser.h"
+#include "domain/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
 #include "foundation/data/Config.h"

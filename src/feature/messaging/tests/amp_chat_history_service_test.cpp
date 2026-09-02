@@ -2,8 +2,8 @@
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 

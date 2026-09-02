@@ -2,8 +2,8 @@
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "base/messaging/AttachmentCache.h"
-#include "base/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/ChatPayloadCodec.h"
 #include "feature/messaging/AttachmentFetchUtil.h"
 #include "foundation/runtime/AppRuntime.h"
 

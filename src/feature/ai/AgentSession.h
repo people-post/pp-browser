@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/AtAiParser.h"
+#include "domain/messaging/AtAiParser.h"
 #include "base/ai/ToolRegistry.h"
 #include "base/ai/TurnPlan.h"
 #include "base/ai/TurnTrace.h"

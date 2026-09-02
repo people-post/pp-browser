@@ -113,7 +113,7 @@ Target path after move: `src/foundation/<module>/`.
 | Path (today) | Contents |
 |--------------|----------|
 | `domain/people/` | Identity and contacts stores; presentation DTOs |
-| `base/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |

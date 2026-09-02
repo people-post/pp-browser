@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
-#include "base/messaging/CallSessionStore.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallMediaHost.h"

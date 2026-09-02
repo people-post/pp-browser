@@ -2,7 +2,7 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
-#include "base/messaging/CallTypes.h"
+#include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/CallLifecycle.h"
 
