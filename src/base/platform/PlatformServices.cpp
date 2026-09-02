@@ -26,10 +26,23 @@ namespace {
 SdlAssetFileInterface* g_packaged_file_interface = nullptr;
 #endif
 
-DesktopLocalNotifier g_desktop_notifier;
+// Construct Module-backed notifiers lazily inside Register(). A namespace-scope
+// global runs during dynamic init and can call logging::getLogger before the
+// root logger static is initialized (SIOF → smoke-run segfault on Linux).
+DesktopLocalNotifier& DesktopNotifier() {
+  static DesktopLocalNotifier notifier;
+  return notifier;
+}
+
 #if defined(__ANDROID__)
-AndroidLocalNotifier g_android_notifier;
-AndroidPushDeviceRegistrar g_android_push_registrar;
+AndroidLocalNotifier& AndroidNotifier() {
+  static AndroidLocalNotifier notifier;
+  return notifier;
+}
+AndroidPushDeviceRegistrar& AndroidPushRegistrar() {
+  static AndroidPushDeviceRegistrar registrar;
+  return registrar;
+}
 #endif
 
 } // namespace
@@ -44,8 +57,8 @@ void PlatformServices::Register() {
 #if defined(__ANDROID__)
     static SdlAssetFileInterface file_interface;
     g_packaged_file_interface = &file_interface;
-    ILocalNotifier::SetInstance(&g_android_notifier);
-    IPushDeviceRegistrar::SetInstance(&g_android_push_registrar);
+    ILocalNotifier::SetInstance(&AndroidNotifier());
+    IPushDeviceRegistrar::SetInstance(&AndroidPushRegistrar());
 #endif
   } else if (kind == PlatformKind::IOS) {
     static IosPathProvider paths;
@@ -56,9 +69,9 @@ void PlatformServices::Register() {
     static SdlAssetFileInterface file_interface;
     g_packaged_file_interface = &file_interface;
 #endif
-    ILocalNotifier::SetInstance(&g_desktop_notifier);
+    ILocalNotifier::SetInstance(&DesktopNotifier());
   } else {
-    ILocalNotifier::SetInstance(&g_desktop_notifier);
+    ILocalNotifier::SetInstance(&DesktopNotifier());
   }
 }
 
