@@ -231,7 +231,7 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ## Migration order (when coding starts)
 
-1. Enforce domain peer bans in CI (`check_base_includes.sh` → expand; CMake `PUBLIC_LIBS`) for **new** edges.
+1. Enforce domain peer bans in CI (`check_base_includes.sh` + legacy allowlist; CMake `PUBLIC_LIBS` later) for **new** edges. **Started:** script + lint job; `RelayScope` moved to `common/` (mesh no longer includes `people/RelayScope.h`).
 2. Extract hottest cross-peer types into `src/common/` contracts (`net`↔messaging/people, `ai`↔messaging).
 3. Move foundation folders to `src/foundation/`; update includes/CMake.
 4. Move domain folders to `src/domain/`; drop aggregate “base” naming.

@@ -40,6 +40,7 @@ Cross-module helpers with no domain ownership. Keep these small.
 | `ByteRateLimiter.h` | Simple rate limiting |
 | `EmojiKey.h` | Emoji key helper |
 | `CodedFailure.h` | `CodedFailure` template — escalation rules in [CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md) |
+| `RelayScope.h` | Relay scope bands / admission helpers (shared by mesh L4 + people hop policy) |
 
 ### B. Domain contracts (North Star growth area)
 
@@ -47,7 +48,7 @@ pp-browser vocabulary and seams shared across **domain peers** (and used by feat
 
 | Category | Intend to live here | Do not put here |
 |----------|---------------------|-----------------|
-| Identity vocabulary | peer/account id aliases, hop-policy *enums* | `IdentityStore`, contact DB |
+| Identity vocabulary | peer/account id aliases, hop-policy *enums*, `RelayScope` | `IdentityStore`, contact DB |
 | Messaging vocabulary | thread/message/channel ids, narrow store/view ports | `SqliteThreadStore`, full ChatPayload codec |
 | Crypto seams | multi-peer ports (`IDekConsumer`-shaped, etc.) | vault / AEAD implementations |
 | Net seams | blob/relay/directory *interfaces* | HTTP client implementations |
