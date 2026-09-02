@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/net/BlobClient.h"
+#include "domain/net/BlobClient.h"
 #include "common/Error.h"
 
 #include <string>

@@ -1,9 +1,9 @@
-#include "base/net/RegistrationSignPayload.h"
+#include "domain/net/RegistrationSignPayload.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
-#include "base/net/RelaySignBytes.h"
+#include "domain/net/RelaySignBytes.h"
 
 namespace pbr {
 

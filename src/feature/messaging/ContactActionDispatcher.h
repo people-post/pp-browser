@@ -6,7 +6,7 @@
 #include "domain/people/IdentityStore.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/MeshMessagingService.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 
 #include <functional>
 #include <optional>

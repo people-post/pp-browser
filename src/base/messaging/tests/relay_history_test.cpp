@@ -3,7 +3,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 #include "foundation/crypto/MlDsa.h"
 
 #include <gtest/gtest.h>

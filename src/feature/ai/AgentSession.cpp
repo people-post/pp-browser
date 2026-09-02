@@ -18,7 +18,7 @@
 #include "base/ai/conversation/TurnCoordinator.h"
 #include "foundation/error/AppError.h"
 #include "base/ai/mcp/McpClient.h"
-#include "base/net/HttpClient.h"
+#include "domain/net/HttpClient.h"
 
 #include <map>
 #include "base/ai/mcp/McpRuntime.h"

@@ -1,8 +1,8 @@
-#include "base/net/HttpBlobClient.h"
+#include "domain/net/HttpBlobClient.h"
 
 #include "foundation/error/AppError.h"
-#include "base/net/HttpClient.h"
-#include "base/net/RelayBlobSignPayload.h"
+#include "domain/net/HttpClient.h"
+#include "domain/net/RelayBlobSignPayload.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

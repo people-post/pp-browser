@@ -1,9 +1,9 @@
 #pragma once
 
 #include "foundation/data/Config.h"
-#include "base/net/BlobClient.h"
-#include "base/net/ClientCompat.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/BlobClient.h"
+#include "domain/net/ClientCompat.h"
+#include "domain/net/ServiceClients.h"
 
 #include <memory>
 

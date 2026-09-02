@@ -1,4 +1,4 @@
-#include "base/net/RelayInboxCursor.h"
+#include "domain/net/RelayInboxCursor.h"
 
 #include "common/ValueJson.h"
 

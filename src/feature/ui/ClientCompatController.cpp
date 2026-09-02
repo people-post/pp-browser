@@ -2,7 +2,7 @@
 #include "feature/ui/ClientCompatController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "base/net/ClientCompat.h"
+#include "domain/net/ClientCompat.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/PlatformOpenUrl.h"

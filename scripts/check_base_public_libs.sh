@@ -14,9 +14,9 @@ root = Path(sys.argv[1])
 domain = {
     "pp_domain_people",
     "pp_domain_media",
+    "pp_domain_net",
     "pp_base_messaging",
-    "pp_base_net",
-    "pp_base_mesh",
+        "pp_base_mesh",
     "pp_base_ai",
     "pp_base_ai_conversation",
     "pp_base_ai_mcp",
@@ -87,3 +87,13 @@ if rg -n '\bpp_base_media\b' \
   exit 1
 fi
 echo "OK: media domain lib name"
+
+# net must stay on pp_domain_net (no old target name aliases in CMake/code).
+if rg -n '\bpp_base_net\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_net_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_net (use pp_domain_net):"
+  cat /tmp/pp_net_rename.txt
+  exit 1
+fi
+echo "OK: net domain lib name"

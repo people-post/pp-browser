@@ -7,7 +7,7 @@
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
 #include "foundation/data/SessionStore.h"
-#include "base/net/ClientCompat.h"
+#include "domain/net/ClientCompat.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingHub.h"

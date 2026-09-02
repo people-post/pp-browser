@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/thread/ThreadTypes.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 

@@ -63,7 +63,7 @@ src/base/
 ├── crypto/       [foundation] **moved →** `src/foundation/crypto/`
 │
 ├── people/       [domain] **moved →** `src/domain/people/` (`pp_domain_people`)
-├── net/          [domain] HTTP client, relay / registration / directory clients
+├── net/          [domain] **moved →** `src/domain/net/` (`pp_domain_net`)
 ├── messaging/    [domain] Threads, SQLite + JSON stores, relay/group/E2E codecs
 ├── mesh/         [domain] Amp product glue — host, ports, reachability, L4
 ├── media/        [domain] **moved →** `src/domain/media/` (`pp_domain_media`)

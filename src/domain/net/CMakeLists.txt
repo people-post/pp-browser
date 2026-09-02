@@ -1,4 +1,4 @@
-pp_browser_add_base_library(pp_base_net
+pp_browser_add_domain_library(pp_domain_net
   SOURCES
     BlobClient.cpp
     BlobQuotaUtil.cpp
@@ -20,7 +20,7 @@ pp_browser_add_base_library(pp_base_net
     pp_foundation_platform_core
     CURL::libcurl)
 
-target_compile_definitions(pp_base_net PUBLIC
+target_compile_definitions(pp_domain_net PUBLIC
   "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
   "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 

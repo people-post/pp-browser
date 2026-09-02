@@ -1,6 +1,6 @@
 #include "feature/messaging/ProfileIconFetchUtil.h"
 
-#include "base/net/HttpClient.h"
+#include "domain/net/HttpClient.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

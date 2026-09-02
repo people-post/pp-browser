@@ -2,7 +2,7 @@
 
 #include "foundation/platform/os/OsTime.h"
 #include "common/Utilities.h"
-#include "base/net/RegistrationSignPayload.h"
+#include "domain/net/RegistrationSignPayload.h"
 
 #include <cctype>
 #include <cstdio>

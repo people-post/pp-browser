@@ -4,7 +4,7 @@
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "base/messaging/AttachmentCache.h"
 #include "feature/messaging/ChatBlobRequestUtil.h"
-#include "base/net/HttpClient.h"
+#include "domain/net/HttpClient.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

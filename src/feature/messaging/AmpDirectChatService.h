@@ -2,7 +2,7 @@
 
 #include "common/thread/ThreadTypes.h"
 #include "base/mesh/host/MeshPorts.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 #include "feature/messaging/IDirectMessageClient.h"
 
 #include <functional>

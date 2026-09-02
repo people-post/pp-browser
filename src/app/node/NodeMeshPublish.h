@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 #include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"

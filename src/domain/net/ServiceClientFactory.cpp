@@ -1,7 +1,7 @@
-#include "base/net/ServiceClientFactory.h"
+#include "domain/net/ServiceClientFactory.h"
 
-#include "base/net/HttpBlobClient.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/HttpBlobClient.h"
+#include "domain/net/ServiceClientsImpl.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 

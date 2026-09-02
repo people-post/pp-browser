@@ -1,5 +1,5 @@
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 #include "domain/people/ContactsStore.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"

@@ -7,7 +7,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/SyncStateCodec.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"

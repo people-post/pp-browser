@@ -59,7 +59,7 @@
 #include "foundation/data/LlmPreset.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
-#include "base/net/BriefGuestLlmClient.h"
+#include "domain/net/BriefGuestLlmClient.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"

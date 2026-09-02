@@ -1,7 +1,7 @@
-#include "base/net/BriefGuestLlmClient.h"
+#include "domain/net/BriefGuestLlmClient.h"
 
 #include "foundation/error/AppError.h"
-#include "base/net/HttpClient.h"
+#include "domain/net/HttpClient.h"
 #include "common/ValueJson.h"
 
 namespace pbr {

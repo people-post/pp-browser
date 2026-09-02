@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/net/BlobQuotaUtil.h"
+#include "domain/net/BlobQuotaUtil.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "feature/ui/UserFeedback.h"

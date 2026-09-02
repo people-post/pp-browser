@@ -3,8 +3,8 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "base/net/BlobClient.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/BlobClient.h"
+#include "domain/net/ServiceClients.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 

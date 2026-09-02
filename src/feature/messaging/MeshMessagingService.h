@@ -20,7 +20,7 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/mesh/host/MeshPorts.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 
 #include <atomic>
 #include <functional>

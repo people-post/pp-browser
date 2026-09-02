@@ -6,7 +6,7 @@
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "base/net/ClientCompat.h"
+#include "domain/net/ClientCompat.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/ViewCatalog.h"

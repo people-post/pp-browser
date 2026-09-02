@@ -1,7 +1,7 @@
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/BlobClient.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/BlobClient.h"
 #include "foundation/error/AppError.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"

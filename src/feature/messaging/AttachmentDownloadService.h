@@ -6,7 +6,7 @@
 #include "base/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 

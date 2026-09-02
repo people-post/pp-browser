@@ -1,6 +1,6 @@
-#include "base/net/RelayBlobSignPayload.h"
+#include "domain/net/RelayBlobSignPayload.h"
 
-#include "base/net/RelaySignBytes.h"
+#include "domain/net/RelaySignBytes.h"
 
 namespace pbr {
 

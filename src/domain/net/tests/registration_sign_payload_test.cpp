@@ -1,7 +1,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
-#include "base/net/RegistrationSignPayload.h"
+#include "domain/net/RegistrationSignPayload.h"
 
 #include <gtest/gtest.h>
 

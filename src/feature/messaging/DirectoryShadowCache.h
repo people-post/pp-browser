@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/net/ServiceClients.h"
+#include "domain/net/ServiceClients.h"
 #include "domain/people/ContactTypes.h"
 
 #include <functional>

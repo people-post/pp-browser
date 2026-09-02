@@ -11,11 +11,7 @@ add_executable(pp-node
   NodeMeshPublish.cpp
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
-  # Headless has no pp_base_net; compile registration HTTP pieces here (N027).
-  # CurlSsl lives in pp_foundation_platform_core.
-  ${CMAKE_SOURCE_DIR}/src/base/net/HttpClient.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RelaySignBytes.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationSignPayload.cpp
+  # Registration HTTP orchestration (N027); HTTP/sign helpers via pp_domain_net.
   ${CMAKE_SOURCE_DIR}/src/feature/messaging/RegistrationClientUtil.cpp
 )
 
@@ -26,6 +22,7 @@ target_include_directories(pp-node PRIVATE
 target_link_libraries(pp-node PRIVATE
   pp_base_mesh
   pp_domain_people
+  pp_domain_net
   pp_foundation_crypto
   pp_foundation_data
   pp_foundation_platform_core

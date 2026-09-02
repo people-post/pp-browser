@@ -1,6 +1,6 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 
 #include <cstdlib>
 #include <gtest/gtest.h>

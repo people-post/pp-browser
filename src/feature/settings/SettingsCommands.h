@@ -3,8 +3,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/people/ProfileIdentityView.h"
 #include "foundation/data/SessionStore.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/ClientCompat.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 

@@ -1,8 +1,8 @@
 #include "app/node/NodeMeshPublish.h"
 
-#include "base/net/HttpClient.h"
+#include "domain/net/HttpClient.h"
 #include "feature/messaging/RegistrationClientUtil.h"
-#include "base/net/RegistrationSignPayload.h"
+#include "domain/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -12,7 +12,7 @@
 namespace pbr {
 namespace {
 
-/** Headless-safe registration client (no pp_base_net / messaging). */
+/** Headless-safe registration client (no pp_domain_net / messaging). */
 class ThinHttpRegistrationClient : public IRegistrationClient {
 public:
   explicit ThinHttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}

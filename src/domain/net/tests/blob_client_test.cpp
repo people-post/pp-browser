@@ -1,6 +1,6 @@
-#include "base/net/BlobClient.h"
-#include "base/net/ServiceClientFactory.h"
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/BlobClient.h"
+#include "domain/net/ServiceClientFactory.h"
+#include "domain/net/ServiceClientsImpl.h"
 
 #include <gtest/gtest.h>
 

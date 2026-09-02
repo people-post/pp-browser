@@ -1,11 +1,11 @@
 #pragma once
 
 #include "common/directory/DirectoryTypes.h"
-#include "base/net/BlobClient.h"
-#include "base/net/ClientCompat.h"
-#include "base/net/IPushDeviceClient.h"
-#include "base/net/RelayApiSignPayload.h"
-#include "base/net/ServiceClients.h"
+#include "domain/net/BlobClient.h"
+#include "domain/net/ClientCompat.h"
+#include "domain/net/IPushDeviceClient.h"
+#include "domain/net/RelayApiSignPayload.h"
+#include "domain/net/ServiceClients.h"
 
 #include <functional>
 #include <mutex>

@@ -1,4 +1,4 @@
-#include "base/net/ServiceClientsImpl.h"
+#include "domain/net/ServiceClientsImpl.h"
 
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -7,9 +7,9 @@
 #include "common/chat/MessagingJson.h"
 #include "common/ValueJson.h"
 #include "common/chat/RelayStreamKey.h"
-#include "base/net/HttpBlobClient.h"
-#include "base/net/HttpClient.h"
-#include "base/net/RelayApiSignPayload.h"
+#include "domain/net/HttpBlobClient.h"
+#include "domain/net/HttpClient.h"
+#include "domain/net/RelayApiSignPayload.h"
 #include "common/directory/DirectoryJson.h"
 
 #include <algorithm>
