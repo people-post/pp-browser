@@ -9,7 +9,8 @@
 
 namespace pbr {
 
-/** Layer-local coded failure — `Err` enum is defined by the owning class. */
+/** Layer-local coded failure — `Err` enum is defined by the owning class.
+ *  Escalation rules (hierarchical wrap, AppendFrom): docs/contracts/CODED_FAILURE.md */
 template <typename ErrEnum>
 struct CodedFailure : pp::RoeErrorBase {
   static CodedFailure Of(const ErrEnum e, std::string detail) {
