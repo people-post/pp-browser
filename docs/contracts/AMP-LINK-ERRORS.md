@@ -3,6 +3,14 @@
 Stable **`PeerLinkManager::Err`** values (stored in `CodedFailure<Err>::code`).  
 `message` is developer detail only — not normative.
 
+**Escalation rules** (hierarchical wrap, adapter vs owner, Phase 2+ tasks):
+[CODED_FAILURE.md](CODED_FAILURE.md).
+
+**Mesh port:** `IChatPeerLinks::Err` uses the same numeric values. `AmpChatPeerLinks` maps
+`PeerLinkManager::Failure` → `IChatPeerLinks::Failure` without renumbering. Feature/base code
+should inspect **`IChatPeerLinks::Failure::GetCode()`** (or the `Is*` helpers) when using
+`MeshHost::ChatDeps()` — not raw `PeerLinkManager` from feature headers.
+
 | Code | Name | Meaning |
 |------|------|---------|
 | 0 | `Ok` | Success (empty `LinkRoe` / `ChannelRoe`) |
@@ -20,4 +28,4 @@ Stable **`PeerLinkManager::Err`** values (stored in `CodedFailure<Err>::code`).
 | 12 | `ChannelOpenFailed` | L3 OPEN rejected or mux error |
 | 13 | `Generic` | Unclassified (wrap fallback) |
 
-Parent layers should inspect **`PeerLinkManager::Failure::GetCode()`** only — not child-layer codes.
+Parent layers should inspect **`PeerLinkManager::Failure::GetCode()`** (or **`IChatPeerLinks::Failure::GetCode()`** on the mesh port) only — not child-layer codes. When crossing an **owning** L4 boundary, wrap via `WrapLinkFailure` per [CODED_FAILURE.md](CODED_FAILURE.md).

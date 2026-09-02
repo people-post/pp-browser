@@ -52,6 +52,8 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
 | [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
 | [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3); ownership hierarchy [A027] | `channel_frame_version`, `protocol_id` |
+| [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
+| [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 

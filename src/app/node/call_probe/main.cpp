@@ -10,6 +10,7 @@
 #include "base/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "base/mesh/l4/call_media/ICallMediaTransport.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/mesh/identity/PeerIdUtil.h"
 #include "feature/messaging/AmpDirectChatService.h"
 #include "feature/messaging/IDirectMessageClient.h"
@@ -346,12 +347,14 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   circuit->Start();
   circuit->SetServeInbound(false);
 
+  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatService> chat;
   std::atomic<int> chat_received{0};
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
+    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
     chat = std::make_unique<pbr::AmpDirectChatService>(
-        (*peer)->Links(), pbr::AmpDirectChatService::IoPump{pump});
+        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
     chat->Start();
     chat->SetInboundHandler([&](pbr::RelayEnvelope) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
@@ -456,10 +459,12 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   media->Start();
 
   auto pump = [p = offerer->get()]() { p->Pump(); };
+  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatService> chat;
   if (with_chat) {
+    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
     chat = std::make_unique<pbr::AmpDirectChatService>(
-        (*offerer)->Links(), pbr::AmpDirectChatService::IoPump{pump});
+        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
     chat->Start();
   }
 

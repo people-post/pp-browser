@@ -77,7 +77,7 @@ target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
-  pp_common
+  pp_pbr_common
   pp_base_render
   pp_base_mesh
   RmlUi::Core

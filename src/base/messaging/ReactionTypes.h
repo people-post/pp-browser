@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/EmojiKey.h"
+#include "common/EmojiKey.h"
 
 #include <string>
 

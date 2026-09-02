@@ -1,7 +1,7 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
-#include "base/runtime/StartupTiming.h"
+#include "common/StartupTiming.h"
 #include "base/media/CallMediaHealth.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformLogDefaults.h"

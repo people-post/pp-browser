@@ -1,4 +1,4 @@
-#include "base/mesh/l4/shared/LengthPrefixedCodec.h"
+#include "common/LengthPrefixedCodec.h"
 
 #include <cstring>
 

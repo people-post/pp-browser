@@ -4,7 +4,7 @@ function(pp_browser_add_base_library target)
   cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
   add_library(${target} STATIC ${ARG_SOURCES})
   target_include_directories(${target} PUBLIC ${CMAKE_SOURCE_DIR}/src)
-  target_link_libraries(${target} PUBLIC pp_common ${ARG_PUBLIC_LIBS})
+  target_link_libraries(${target} PUBLIC pp_pbr_common ${ARG_PUBLIC_LIBS})
   if(ARG_PRIVATE_LIBS)
     target_link_libraries(${target} PRIVATE ${ARG_PRIVATE_LIBS})
   endif()
@@ -29,7 +29,7 @@ function(pp_browser_add_base_folder_tests lib_target test_target)
     GTest::gtest
     GTest::gtest_main
     ${lib_target}
-    pp_common
+    pp_pbr_common
     ${ARG_LINK_LIBS})
   if(ARG_PRIVATE_DEFINITIONS)
     target_compile_definitions(${test_target} PRIVATE ${ARG_PRIVATE_DEFINITIONS})

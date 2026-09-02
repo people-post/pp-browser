@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/ResultOrError.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -12,16 +13,21 @@
 namespace pbr {
 
 /**
- * One-shot Roe waiter for stream RPCs that hop off the mesh io thread.
- * Copies share state so OpenStream / worker callbacks can Finish without UAF
+ * One-shot ResultOrError waiter for RPCs that hop off the io thread.
+ * Copies share state so OpenChannel / worker callbacks can Finish without UAF
  * if Wait times out first. Finish is CAS-once (timeout vs late callback).
+ *
+ * Default `E = Error` preserves existing `SettledWait<T>` call sites.
+ * L4 coded paths use `SettledWait<T, Module::Failure>`.
  */
-template <typename T>
+template <typename T, typename E = Error>
 class SettledWait {
 public:
+  using RoeT = pp::ResultOrError<T, E>;
+
   SettledWait() : state_(std::make_shared<State>()) {}
 
-  bool Finish(Roe<T> value) const {
+  bool Finish(RoeT value) const {
     if (!state_->settled.exchange(true, std::memory_order_acq_rel)) {
       try {
         state_->promise.set_value(std::move(value));
@@ -37,18 +43,18 @@ public:
   /** True when both handles share the same waiter (circuit-relay inflight table). */
   bool SameAs(const SettledWait& other) const { return state_ == other.state_; }
 
-  Roe<T> Wait(std::chrono::milliseconds timeout, Error timed_out) {
+  RoeT Wait(std::chrono::milliseconds timeout, E timed_out) {
     if (state_->future.wait_for(timeout) != std::future_status::ready) {
-      Finish(std::move(timed_out));
+      Finish(RoeT(std::move(timed_out)));
     }
     return state_->future.get();
   }
 
 private:
   struct State {
-    std::promise<Roe<T>> promise;
+    std::promise<RoeT> promise;
     std::atomic<bool> settled{false};
-    std::future<Roe<T>> future;
+    std::future<RoeT> future;
 
     State() : future(promise.get_future()) {}
   };

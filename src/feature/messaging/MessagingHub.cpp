@@ -43,13 +43,13 @@
 #include "base/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "base/mesh/reachability/LanMdnsDiscovery.h"
-#include "base/mesh/l4/shared/SettledWait.h"
+#include "common/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/mesh/dht/DhtRecordCodec.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/mesh/reachability/NatTraversal.h"
 #include "base/mesh/reachability/Reachability.h"
-#include "base/runtime/StartupTiming.h"
+#include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL_timer.h>
@@ -688,7 +688,7 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   }
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
-    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](Roe<DhtFindPeerResult> result) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
       if (!result) {
         return;
       }
