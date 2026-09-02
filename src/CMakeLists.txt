@@ -1,4 +1,5 @@
-# Source layers: common (via FetchContent pp-cpp-common) → base → feature → app.
+# Source layers: pp_pbr_common + FetchContent pp-cpp-common → base → feature → app.
+add_subdirectory(common)
 add_subdirectory(base)
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

@@ -14,7 +14,7 @@
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ReactionTypes.h"
 #include "base/ui/ChatFormHelper.h"
-#include "base/messaging/EmojiKey.h"
+#include "common/EmojiKey.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

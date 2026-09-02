@@ -3,7 +3,7 @@
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"
-#include "base/mesh/l4/shared/SettledWait.h"
+#include "common/SettledWait.h"
 #include "common/ValueJson.h"
 
 #include <atomic>

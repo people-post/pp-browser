@@ -1,7 +1,7 @@
 #include "base/crypto/ProfileUnlockGate.h"
 
 #include "base/crypto/PinDefaults.h"
-#include "base/runtime/StartupTiming.h"
+#include "common/StartupTiming.h"
 
 #include <stdexcept>
 #include <utility>

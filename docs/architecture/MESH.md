@@ -47,7 +47,7 @@ base/mesh/
   identity/       PeerId derivation (ML-DSA → base58)
   reachability/   Reachability, NAT, LAN mDNS, dial-back
   l4/
-    shared/       LengthPrefixedCodec, ProductChannelPolicies, SettledWait
+    shared/       ProductChannelPolicies
     circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
     media_relay/  AmpMediaRelayCoordinator, MediaRelay*
     call_media/   CallMediaLegCoordinator, ICallMediaTransport

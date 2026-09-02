@@ -8,7 +8,8 @@
 
 | Layer | Path | Role |
 |-------|------|------|
-| Common | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp`; transitional explicit bridge in [`src/common/PbrCompat.h`](../../src/common/PbrCompat.h); JSON helpers in [`src/common/ValueJson.h`](../../src/common/ValueJson.h) (`pp::` directly) |
+| Common (external) | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp` |
+| Common (in-tree) | [`src/common/`](../../src/common/) | pp-browser cross-module helpers (`pp_pbr_common`): JSON bridge (`ValueJson.h`), `PbrCompat.h`, async/sync utilities (`SettledWait`, `StartupTiming`), wire helpers (`LengthPrefixedCodec`), small algorithms (`ByteRateLimiter`, `EmojiKey`, `CodedFailure`) |
 | Crypto | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (pinned tag) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers (`pp_crypto`); product wire helpers stay in `base/crypto` |
 | UI | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3 (`pp_ui` = `pp_ui_rml` + `pp_ui_backend`); product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks (RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
@@ -19,7 +20,7 @@
 ## Dependency rule
 
 ```
-app → feature → base → lib → common
+app → feature → base → lib → pp_pbr_common → pp_common (FetchContent)
 ```
 
 `lib` and `common` may use `third_party`. No upward `#include` across layers.
@@ -59,7 +60,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 
 | Path | Contents |
 |------|----------|
-| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, `StartupTiming`, lifecycle, branding/version |
+| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
 | `base/platform/` | Cross-cutting OS adapters: SDL glue, paths, assets, credentials, notifications (no GL). Domain backends (codecs, sockets) stay with their module — [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `base/mesh/` | Product Amp glue: `host/` (MeshHost, MeshPorts), `identity/` (PeerId), `reachability/`, `l4/` coordinators |
 | `lib/amp/L1/` | Association Datagram Protocol (Asio-free UDP L1: HMAC bind, path migrate, BE+reliable); no libp2p |
@@ -70,7 +71,7 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
-| `base/messaging/` | Thread types, JSON store, parsers, reaction helpers (`EmojiKey`) |
+| `base/messaging/` | Thread types, JSON store, parsers, reaction helpers |
 | `base/media/` | `CallMediaEngine` — Opus + SDL capture/playback + colocated platform HW H264 |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
@@ -101,7 +102,8 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 
 | Target | Layer |
 |--------|-------|
-| `pp_common` | common |
+| `pp_common` | common (FetchContent) |
+| `pp_pbr_common` | common (in-tree) |
 | `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_mesh`, `pp_base_render`) |
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |
@@ -122,7 +124,8 @@ Fork product profiles: `src/lib/pp_lib_paths.cmake`, pp-cpp-ui `PpCppUi.cmake`. 
 
 ## Litmus tests
 
-- **Common:** reusable in another project; no pp-browser domain types.
+- **Common (FetchContent):** reusable in another project; no pp-browser domain types.
+- **Common (in-tree):** cross-module pp-browser helpers with no domain ownership; may depend on `pp_common` only.
 - **Lib:** owned upstream-shaped library; no `base`/`feature`/`app`.
 - **Base:** product-specific but single-purpose (one store, one client, one parser, or one glue module).
 - **Feature:** coordinates multiple base modules into a workflow or screen.

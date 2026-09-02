@@ -31,7 +31,7 @@ target_link_libraries(pp-node PRIVATE
   pp_base_platform_core
   pp_base_runtime_core
   pp_base_error
-  pp_common
+  pp_pbr_common
   Asio::asio
   Threads::Threads
   sodium
@@ -50,7 +50,7 @@ set(_pp_probe_libs
   pp_base_mesh_link
   pp_base_crypto
   pp_base_adp
-  pp_common
+  pp_pbr_common
   Threads::Threads
   sodium
 )
@@ -93,7 +93,7 @@ if(PP_BROWSER_BUILD_TESTS)
   target_link_libraries(pp_browser_pp_node_test PRIVATE
     GTest::gtest
     GTest::gtest_main
-    pp_common
+    pp_pbr_common
   )
   pp_browser_apply_warnings(pp_browser_pp_node_test)
   include(PpBrowserTesting)
