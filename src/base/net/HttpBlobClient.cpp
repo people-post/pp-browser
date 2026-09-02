@@ -1,6 +1,6 @@
 #include "base/net/HttpBlobClient.h"
 
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayBlobSignPayload.h"
 #include "common/Utilities.h"

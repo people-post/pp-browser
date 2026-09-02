@@ -1,6 +1,6 @@
 #include "base/crypto/ProfileSecretsService.h"
 
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <filesystem>

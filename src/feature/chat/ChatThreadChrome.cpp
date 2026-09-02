@@ -2,7 +2,7 @@
 
 #include "feature/chat/ChatDataModel.h"
 #include "base/crypto/CryptoTypes.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "base/people/PeerDisplayLabel.h"

@@ -1,4 +1,5 @@
 set(PP_BASE_PEOPLE_SOURCES
+    DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
   ContactJson.cpp

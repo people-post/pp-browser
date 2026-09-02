@@ -1,6 +1,6 @@
 #include "base/crypto/PinResolver.h"
 
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 
 #include <cstdlib>
 #include "common/PbrCompat.h"

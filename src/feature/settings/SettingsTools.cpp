@@ -3,7 +3,7 @@
 #include "base/data/LlmPreset.h"
 #include "base/data/ToolPermissions.h"
 #include "base/data/UserPreferences.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <algorithm>
 #include <cctype>

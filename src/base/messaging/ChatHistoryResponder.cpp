@@ -4,7 +4,7 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingLimits.h"
-#include "base/messaging/RelayStreamKey.h"
+#include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 
 #include <algorithm>

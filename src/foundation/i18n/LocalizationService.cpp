@@ -1,4 +1,4 @@
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include "base/platform/AssetIO.h"
 #include "base/platform/IAssetLocator.h"

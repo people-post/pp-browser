@@ -1,7 +1,7 @@
 #include <stdexcept>
 #include "feature/ui/CallController.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/media/CallAudioSession.h"
 #include "base/media/CallMediaEngine.h"
 #include "common/media/CallMediaHealth.h"

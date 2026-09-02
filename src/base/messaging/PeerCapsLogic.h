@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/CallTypes.h"
-#include "base/people/MeshHopPolicy.h"
+#include "common/directory/MeshHopTypes.h"
 
 #include <functional>
 #include <string>

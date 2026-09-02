@@ -5,7 +5,7 @@
 #include "base/messaging/InitiationPricing.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/messaging/SfuAttachWaitLogic.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
 #include "base/people/PeerDisplayLabel.h"

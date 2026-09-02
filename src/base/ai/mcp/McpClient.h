@@ -3,6 +3,7 @@
 #include "base/platform/os/OsProcess.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/net/HttpTransport.h"
 #include "common/PbrCompat.h"
 
 #include <string>
@@ -29,6 +30,9 @@ public:
   void Stop();
   bool IsRunning() const { return running_; }
 
+  /** Feature/app wires HttpClient::Post so mcp does not include base/net. */
+  static void SetHttpPost(HttpPostFn post);
+
   Roe<void> Initialize();
   Roe<std::vector<McpTool>> ListTools();
   Roe<Object> CallTool(const std::string& name, const Object& arguments);
@@ -44,6 +48,7 @@ private:
   std::string http_url_;
   int request_id_ = 1;
   os::OsProcessPipe process_;
+  static HttpPostFn& HttpPostSlot();
 };
 
 } // namespace pbr

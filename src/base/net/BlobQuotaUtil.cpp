@@ -1,7 +1,7 @@
 #include "base/net/BlobQuotaUtil.h"
 
 #include "base/people/IdentityStore.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

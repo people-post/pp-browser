@@ -1,11 +1,19 @@
 #include "base/ai/mcp/McpClient.h"
 
-#include "base/net/HttpClient.h"
 #include "base/platform/os/OsProcess.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+HttpPostFn& McpClient::HttpPostSlot() {
+  static HttpPostFn post;
+  return post;
+}
+
+void McpClient::SetHttpPost(HttpPostFn post) {
+  HttpPostSlot() = std::move(post);
+}
 
 namespace {
 
@@ -116,7 +124,10 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params) 
     req.set("params", params);
 
     log().debug << "HTTP MCP request: " << method;
-    auto response = HttpClient::Post(http_url_, DumpJson(req), {{"Content-Type", "application/json"}});
+    if (!HttpPostSlot()) {
+      return Error("MCP HTTP transport is not configured");
+    }
+    auto response = HttpPostSlot()(http_url_, DumpJson(req), {{"Content-Type", "application/json"}});
     if (!response) {
       log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
       return response.error();

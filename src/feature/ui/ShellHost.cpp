@@ -1,7 +1,7 @@
 #include <stdexcept>
 #include "feature/ui/ShellHost.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/Platform.h"

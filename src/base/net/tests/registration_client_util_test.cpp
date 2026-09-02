@@ -1,5 +1,5 @@
 #include "base/net/RegistrationClientUtil.h"
-#include "base/people/IdentityTypes.h"
+#include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
 
 #include <gtest/gtest.h>

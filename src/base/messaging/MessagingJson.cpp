@@ -1,5 +1,7 @@
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/RelayStreamKey.h"
+
+#include "common/thread/ThreadChannel.h"
+#include "common/chat/RelayStreamKey.h"
 
 #include "base/crypto/CryptoUtil.h"
 #include "common/ValueJson.h"
@@ -114,28 +116,6 @@ ThreadKind ThreadKindFromString(const std::string& value) {
     return ThreadKind::Group;
   }
   return ThreadKind::Ai;
-}
-
-std::string ThreadChannelToString(const ThreadChannel channel) {
-  switch (channel) {
-  case ThreadChannel::E2e:
-    return "e2e";
-  case ThreadChannel::E2ePublic:
-    return "e2e_public";
-  case ThreadChannel::None:
-    return "";
-  }
-  return "";
-}
-
-ThreadChannel ThreadChannelFromString(const std::string& value) {
-  if (value == "e2e_public") {
-    return ThreadChannel::E2ePublic;
-  }
-  if (value == "e2e") {
-    return ThreadChannel::E2e;
-  }
-  return ThreadChannel::None;
 }
 
 std::string MessageDeliveryToString(const MessageDelivery delivery) {

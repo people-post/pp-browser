@@ -4,8 +4,6 @@ include(PpBrowserBase)
 # runtime before platform: OS adapters may use AppLifecycle / AppRuntime.
 add_subdirectory(runtime)
 add_subdirectory(platform)
-add_subdirectory(i18n)
-add_subdirectory(error)
 add_subdirectory(data)
 add_subdirectory(crypto)
 # AMP L1–L3 + link: FetchContent pp-cpp-amp (cmake/PpCppAmp.cmake).

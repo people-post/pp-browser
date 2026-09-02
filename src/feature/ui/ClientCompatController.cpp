@@ -1,7 +1,7 @@
 #include <stdexcept>
 #include "feature/ui/ClientCompatController.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
 #include "base/runtime/AppVersion.h"
 #include "base/runtime/AppRuntime.h"

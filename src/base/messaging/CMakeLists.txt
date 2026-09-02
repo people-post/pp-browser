@@ -21,7 +21,6 @@ pp_browser_add_base_library(pp_base_messaging
     PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
-    DirectChatTarget.cpp
     E2eIngestClassifier.cpp
     E2eRelayPayloadCodec.cpp
     EnvelopeSigner.cpp
@@ -39,7 +38,6 @@ pp_browser_add_base_library(pp_base_messaging
     PeerBriefRoute.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
-    RelayStreamKey.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
     TranscriptCipher.cpp

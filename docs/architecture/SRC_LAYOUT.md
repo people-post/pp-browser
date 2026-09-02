@@ -17,7 +17,7 @@
 | Crypto (external) | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers; product wire helpers stay in foundation/domain crypto |
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks / extracted stacks (Amp via FetchContent; RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
-| **Foundation** | `src/foundation/` *(today: subset of `src/base/`)* | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto) |
+| **Foundation** | [`src/foundation/`](../../src/foundation/) *(partial; remainder still under `src/base/`)* | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto) |
 | **Domain** | `src/domain/` *(today: subset of `src/base/`)* | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui, render) — single-purpose engines/stores/clients |
 | Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions, screens; **wires** common contracts to concrete domain types |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
@@ -100,8 +100,8 @@ crypto
 |--------------|----------|
 | `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
 | `base/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
-| `base/error/` | App error categories on top of common |
-| `base/i18n/` | Localization catalogs |
+| `foundation/error/` | App error categories on top of common |
+| `foundation/i18n/` | Localization catalogs |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
 
@@ -231,8 +231,8 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ## Migration order (when coding starts)
 
-1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/messaging`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging`, `messaging→net`.
+1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/messaging`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
-3. Move foundation folders to `src/foundation/`; update includes/CMake.
+3. Move foundation folders to `src/foundation/`; update includes/CMake. **Started:** `error/`, `i18n/`.
 4. Move domain folders to `src/domain/`; drop aggregate “base” naming.
 5. Feature/app wiring absorbs former base↔base orchestration.

@@ -1,6 +1,6 @@
 #include "base/net/RelayApiSignPayload.h"
 
-#include "base/messaging/RelayStreamKey.h"
+#include "common/chat/RelayStreamKey.h"
 #include "base/net/RelaySignBytes.h"
 
 namespace pbr {

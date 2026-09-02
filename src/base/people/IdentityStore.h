@@ -4,7 +4,7 @@
 #include "common/Module.h"
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/IDekConsumer.h"
-#include "base/people/IdentityTypes.h"
+#include "common/directory/IdentityTypes.h"
 
 #include <mutex>
 #include <string>

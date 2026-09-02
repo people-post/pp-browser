@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/SessionKeyDeriver.h"
 #include "base/messaging/CallSessionLogic.h"
-#include "base/messaging/DirectChatTarget.h"
+#include "base/people/DirectChatTargetFromContact.h"
 #include "base/messaging/InitiationPricing.h"
 #include "base/messaging/PeerCapsLogic.h"
 #include "base/messaging/SendRelayOptions.h"

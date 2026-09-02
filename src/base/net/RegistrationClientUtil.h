@@ -2,7 +2,7 @@
 
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
-#include "base/people/IdentityTypes.h"
+#include "common/directory/IdentityTypes.h"
 
 #include <cstdint>
 #include <string>

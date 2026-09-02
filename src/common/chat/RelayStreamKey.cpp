@@ -1,6 +1,4 @@
-#include "base/messaging/RelayStreamKey.h"
-
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/RelayStreamKey.h"
 
 #include <algorithm>
 

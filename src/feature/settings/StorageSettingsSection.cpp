@@ -2,7 +2,7 @@
 
 #include "base/data/AppPaths.h"
 #include "base/data/UserPreferences.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/messaging/AttachmentCache.h"
 
 #include <cstdint>

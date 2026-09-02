@@ -14,9 +14,6 @@ namespace pbr {
 std::string ThreadKindToString(ThreadKind kind);
 ThreadKind ThreadKindFromString(const std::string& value);
 
-std::string ThreadChannelToString(ThreadChannel channel);
-ThreadChannel ThreadChannelFromString(const std::string& value);
-
 std::string MessageDeliveryToString(MessageDelivery delivery);
 MessageDelivery MessageDeliveryFromString(const std::string& value);
 

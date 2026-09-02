@@ -5,7 +5,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/PskBundleCodec.h"
 #include "base/crypto/PskFingerprint.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 
 #include <sodium.h>
 #include <sqlite3.h>

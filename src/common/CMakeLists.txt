@@ -5,6 +5,7 @@ add_library(pp_pbr_common STATIC
   media/CallMediaHealth.cpp
   chat/ChatPayloadTypes.cpp
   chat/PeopleDiscoveryBlocks.cpp
+  chat/RelayStreamKey.cpp
   directory/DirectoryJson.cpp
   LengthPrefixedCodec.cpp
 )

@@ -1,6 +1,6 @@
 #include "feature/messaging/MessagingShellPorts.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "base/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"

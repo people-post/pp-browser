@@ -1,7 +1,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/RelayStreamKey.h"
+#include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/crypto/MlDsa.h"

@@ -5,7 +5,7 @@
 #include "base/crypto/EncryptedPayload.h"
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/MessageCipher.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/messaging/CallSessionStore.h"
 #include "common/Utilities.h"
 

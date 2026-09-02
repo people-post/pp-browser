@@ -1,17 +1,11 @@
 #pragma once
 
-#include "common/Error.h"
+#include "common/net/HttpTransport.h"
 
 #include <map>
 #include <string>
-#include "common/PbrCompat.h"
 
 namespace pbr {
-
-struct HttpResponse {
-  long status_code = 0;
-  std::string body;
-};
 
 class HttpClient {
 public:

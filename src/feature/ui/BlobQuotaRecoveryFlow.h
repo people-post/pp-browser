@@ -5,7 +5,7 @@
 #include "common/Error.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/messaging/AttachmentCache.h"
 
 #include <functional>

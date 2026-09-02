@@ -1,4 +1,4 @@
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingShellPorts.h"
 
 #include <gtest/gtest.h>

@@ -1,9 +1,9 @@
 #include "base/net/BlobQuotaUtil.h"
 #include "base/net/BlobClient.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/people/IdentityStore.h"
-#include "base/people/IdentityTypes.h"
+#include "common/directory/IdentityTypes.h"
 #include "base/crypto/CryptoConstants.h"
 
 #include <filesystem>

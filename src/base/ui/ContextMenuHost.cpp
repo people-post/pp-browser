@@ -1,6 +1,6 @@
 #include "base/ui/ContextMenuHost.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>

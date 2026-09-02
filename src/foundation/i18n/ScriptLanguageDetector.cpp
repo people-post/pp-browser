@@ -1,4 +1,4 @@
-#include "base/i18n/ScriptLanguageDetector.h"
+#include "foundation/i18n/ScriptLanguageDetector.h"
 
 #include <cstdint>
 

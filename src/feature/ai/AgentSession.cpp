@@ -16,8 +16,11 @@
 #include "base/ai/conversation/ThreadCompactionService.h"
 #include "base/ai/conversation/ThreadContextPolicy.h"
 #include "base/ai/conversation/TurnCoordinator.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/ai/mcp/McpClient.h"
+#include "base/net/HttpClient.h"
+
+#include <map>
 #include "base/ai/mcp/McpRuntime.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
@@ -825,6 +828,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     state->llm = std::make_unique<LlmClient>(llm_config);
 
     const AppConfig defaults = Config::DefaultAppConfig();
+    McpClient::SetHttpPost([](const std::string& url, const std::string& body,
+                                  const std::map<std::string, std::string>& headers) {
+      return HttpClient::Post(url, body, headers);
+    });
     state->mcp.Start(state->config, defaults);
 
     std::vector<std::string> custom_prefixes;

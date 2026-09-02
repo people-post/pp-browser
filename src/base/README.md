@@ -58,8 +58,8 @@ src/base/
 ├── runtime/      [foundation] AppRuntime, coordinator, lifecycle, branding/version
 ├── platform/     [foundation] OS adapters — paths, assets, credentials, notifications; SDL glue
 ├── data/         [foundation] Config, profiles, session, schema, atomic file writes
-├── error/        [foundation] App error categories
-├── i18n/         [foundation] Localization catalogs
+├── error/        [foundation] **moved →** `src/foundation/error/`
+├── i18n/         [foundation] **moved →** `src/foundation/i18n/`
 ├── crypto/       [foundation] E2E/at-rest crypto primitives, PIN vault, KEM helpers
 │
 ├── people/       [domain] Identity, contacts

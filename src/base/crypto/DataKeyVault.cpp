@@ -6,7 +6,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/MessageCipher.h"
 #include "base/data/AtomicFileWrite.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 
 #include <cstring>
 #include <filesystem>

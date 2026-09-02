@@ -1,7 +1,7 @@
-#include "base/messaging/DirectChatTarget.h"
+#include "base/people/DirectChatTargetFromContact.h"
 
-#include "base/messaging/MessagingJson.h"
 #include "base/people/ContactIdentity.h"
+#include "common/directory/DirectoryJson.h"
 
 namespace pbr {
 

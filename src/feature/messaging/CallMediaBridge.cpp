@@ -1,6 +1,6 @@
 #include "feature/messaging/CallMediaBridge.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "base/runtime/AppRuntime.h"

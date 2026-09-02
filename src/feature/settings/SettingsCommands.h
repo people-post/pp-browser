@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "base/people/ProfileIdentityView.h"
 #include "base/data/SessionStore.h"
 #include "base/net/BlobQuotaUtil.h"

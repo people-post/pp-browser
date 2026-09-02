@@ -10,7 +10,7 @@
 #include "base/net/ServiceClients.h"
 #include "base/net/BlobQuotaUtil.h"
 #include "base/people/ContactTypes.h"
-#include "base/people/IdentityTypes.h"
+#include "common/directory/IdentityTypes.h"
 #include "base/people/ProfileIdentityView.h"
 #include "base/ui/ChatWidgetTypes.h"
 #include "common/Error.h"

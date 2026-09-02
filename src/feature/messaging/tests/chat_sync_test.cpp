@@ -3,7 +3,7 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/PeerSigningKeyStore.h"
-#include "base/messaging/RelayStreamKey.h"
+#include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/SyncStateCodec.h"

@@ -1,6 +1,6 @@
 #include "base/net/BriefGuestLlmClient.h"
 
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/net/HttpClient.h"
 #include "common/ValueJson.h"
 

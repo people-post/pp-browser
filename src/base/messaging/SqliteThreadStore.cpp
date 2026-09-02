@@ -1,7 +1,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 
 #include "base/crypto/CryptoUtil.h"
-#include "base/error/AppError.h"
+#include "foundation/error/AppError.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "base/messaging/ConversationSummaryCodec.h"

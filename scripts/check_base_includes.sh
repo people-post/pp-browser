@@ -41,7 +41,6 @@ check_absent "common must not include feature/" \
 # Legacy domain→domain edges still present. Remove entries as peels land.
 # Format: from->to (module folder names under src/base/).
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
-ai->net
 messaging->people
 net->messaging
 net->people
@@ -118,6 +117,12 @@ check_absent "ai must not include messaging/IThreadStore.h (use common/thread/)"
   '#include "base/messaging/IThreadStore.h"' src/base/ai
 check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/chat/)" \
   '#include "base/messaging/PeopleDiscoveryBlocks.h"' src/base/ai
+check_absent "ai must not include base/net/ (use common/net/HttpTransport + feature wiring)" \
+  '#include "base/net/' src/base/ai
+check_absent "messaging must not include people/MeshHopPolicy.h (use common/directory/MeshHopTypes.h)" \
+  '#include "base/people/MeshHopPolicy.h"' src/base/messaging
+check_absent "net must not include messaging/RelayStreamKey.h (use common/chat/)" \
+  '#include "base/messaging/RelayStreamKey.h"' src/base/net
 check_absent "net must not include messaging/ThreadTypes.h (use common/thread/)" \
   '#include "base/messaging/ThreadTypes.h"' src/base/net
 check_absent "net must not include messaging/ChatPayloadTypes.h (use common/chat/)" \

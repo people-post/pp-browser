@@ -322,7 +322,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
 | **UnlockEnsurePorts** | `feature/ui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
-| **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
+| **LocalizationService** | `foundation/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
 | **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, **Change PIN** (`change_pin` → app-owned vault), imperative ops; app binds implementations |
 | **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/people-picker; app-filled from `ChatController` |

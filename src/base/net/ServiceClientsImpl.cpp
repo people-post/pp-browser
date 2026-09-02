@@ -7,7 +7,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "common/ValueJson.h"
-#include "base/messaging/RelayStreamKey.h"
+#include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/HttpBlobClient.h"
 #include "base/net/HttpClient.h"
