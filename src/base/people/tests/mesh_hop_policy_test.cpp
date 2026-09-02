@@ -1,5 +1,5 @@
 #include "base/people/MeshHopPolicy.h"
-#include "base/people/RelayScope.h"
+#include "common/RelayScope.h"
 
 #include <gtest/gtest.h>
 

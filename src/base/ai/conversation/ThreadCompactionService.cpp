@@ -1,7 +1,7 @@
 #include "base/ai/conversation/ThreadCompactionService.h"
 
 #include "base/ai/LlmClient.h"
-#include "base/messaging/MessagingLimits.h"
+#include "common/MessagingLimits.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"

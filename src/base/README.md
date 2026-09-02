@@ -1,124 +1,111 @@
 # `src/base`
 
-Product-specific **primitives** for pp-browser: stores, clients, codecs, and UI building blocks that feature code composes into screens and workflows.
+**Transitional home** for what the North Star splits into **foundation** (shared kernel) and **domain** (independent peer libs). Physical folders still live here; target trees are `src/foundation/` and `src/domain/`.
 
 ```
-app        wires startup, profiles, global services
-feature    chat, shell, agent session, messaging hub
-base       ← you are here
-lib        owned hard forks (rmlui, libp2p)
-common     logger, ResultOrError, task runner (app-agnostic)
+app → feature → domain → foundation → common → pp_common
+                 ↑ today’s code paths still use base/…
 ```
 
-**Rule:** dependencies flow downward only. Base may use `lib/` and `common/`; it must not `#include` from `feature/` or `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+**Rule:** dependencies flow downward only. Code here may use `lib/` and `common/`; it must not `#include` from `feature/` or `app/`. Full rules: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
-Each top-level folder (and `ai/conversation`, `ai/mcp`) builds as its own static library — **`pp_base_<module>`** (e.g. `pp_base_data`, `pp_base_ai_conversation`). The aggregate **`pp_base`** (`INTERFACE`; alias `pp_identity`) links all module libraries for feature and app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
+Each top-level folder (and `ai/conversation`, `ai/mcp`) builds as its own static library — **`pp_base_<module>`**. The aggregate **`pp_base`** (`INTERFACE`; alias `pp_identity`) links all module libraries for feature and app code. See [`CMakeLists.txt`](CMakeLists.txt).
+
+---
+
+## Tier map (North Star)
+
+| Tier | Inside-layer rule | Modules (today under `base/`) |
+|------|-------------------|--------------------------------|
+| **Foundation** | Ordered bands (not fully peer-independent) | `runtime`, `platform`, `error`, `i18n`, `data`, `crypto` (+ thin `mesh/identity` when treated as kernel) |
+| **Domain** | **Strict independence** — no peer→peer includes/links | `people`, `messaging`, `net`, `mesh` (host/L4), `media`, `ai`, `ui`, `render` |
+
+Cross-domain need → contract in [`src/common/`](../common/); wire in `feature/` (lifetimes in `app/`).
+
+### Foundation bands (downward only)
+
+```
+runtime, platform(_core)
+  ↑
+error, i18n
+  ↑
+data
+  ↑
+crypto
+```
+
+### Domain peers (no edges between these)
+
+`people` · `messaging` · `net` · `mesh` · `media` · `ai` · `ui` · `render`
 
 ---
 
 ## What belongs here
 
-Base code should be **single-purpose**: one store, one client, one parser, one codec.
+| Put it in foundation when… | Put it in domain when… | Put it in feature when… |
+|----------------------------|----------------------|-------------------------|
+| Every peer may need this **implementation** (paths, config, crypto primitives, runtime) | It owns one product engine/store/client/codec | It coordinates several domain modules into a user flow |
+| It is shared kernel, not messaging/HTTP policy | Heavy, single-purpose product coding | Screen, hub, session lifecycle |
 
-| Put it in base when… | Put it in feature when… |
-|----------------------|---------------------------|
-| It owns a data model or wire format | It coordinates several base modules into a user flow |
-| It talks to one external system (HTTP, SQLite, libsodium) | It implements a screen, controller, or session lifecycle |
-| It is reusable across multiple features | It is only meaningful in one UI context |
-
-If you are unsure, ask: *“Could another feature import this without pulling in a specific screen?”* Yes → base. No → feature.
+If unsure: *“Must every domain peer be allowed to link this?”* → foundation. *“Is this one capability among peers?”* → domain. *“Does it bind several peers together?”* → feature.
 
 ---
 
 ## Module map
 
-Eleven top-level folders (plus `ai/` sub-trees). Forks live under `src/lib/`.
-
 ```
 src/base/
-├── runtime/      Process runtime — AppRuntime, coordinator, lifecycle, branding/version
-├── platform/     OS adapters — SDL glue, paths, assets, credentials, notifications
-├── data/         Config, profiles, session, schema version, atomic file writes
-├── error/        App error categories on top of common/Error.h
-├── i18n/         Localization catalogs (JSON assets)
+├── runtime/      [foundation] AppRuntime, coordinator, lifecycle, branding/version
+├── platform/     [foundation] OS adapters — paths, assets, credentials, notifications; SDL glue
+├── data/         [foundation] Config, profiles, session, schema, atomic file writes
+├── error/        [foundation] App error categories
+├── i18n/         [foundation] Localization catalogs
+├── crypto/       [foundation] E2E/at-rest crypto primitives, PIN vault, KEM helpers
 │
-├── crypto/       E2E message crypto, hybrid KEM, at-rest PIN vault
-├── p2p/          Libp2p product glue — host, mesh, circuit/media relay, streams
-├── people/       Identity, contacts, Ed25519 signing
-├── net/          HTTP client, relay / registration / directory clients
-├── messaging/    Threads, SQLite + JSON stores, relay/group/E2E codecs
-├── media/        Call capture/playback + HW H264
-│
-├── ai/           LLM client, turn plans, structured chat parsing, MCP
-│   ├── conversation/   transcript, context policies, compaction
-│   └── mcp/            MCP client, runtime, schema adapter
-├── ui/           Theme, view catalog, chat widget DTOs/form helpers, input glue
-└── render/       RmlUi SDL/GL backend (pp_base_render)
+├── people/       [domain] Identity, contacts
+├── net/          [domain] HTTP client, relay / registration / directory clients
+├── messaging/    [domain] Threads, SQLite + JSON stores, relay/group/E2E codecs
+├── mesh/         [domain] Amp product glue — host, ports, reachability, L4
+├── media/        [domain] Call capture/playback + HW H264
+├── ai/           [domain] LLM client, turn plans, structured parsing, MCP
+│   ├── conversation/
+│   └── mcp/
+├── ui/           [domain] Theme, view catalog, chat widget DTOs, input glue
+└── render/       [domain] Product RmlUi host/overlays (pp_base_render)
 ```
 
-**Domain grouping (mental model):**
+Forks live under `src/lib/` (Amp) and pp-cpp-ui (RmlUi), not here.
 
-| Domain | Modules | Typical question it answers |
-|--------|---------|----------------------------|
-| **Runtime** | platform, data, error, i18n | Where do files live? What is configured? How do we report errors? |
-| **Identity & trust** | people, crypto | Who am I? How are messages and disk encrypted? |
-| **Connectivity** | p2p, net, messaging, media | How do we reach peers and services? How are threads/calls carried? |
-| **Intelligence & presentation** | ai, ui, render | LLM/context? Shell types? SDL/GL RmlUi backend? |
-
-Start points when exploring:
+Start points:
 
 - Bootstrap & config → `data/BootstrapTypes.h`, `data/Config.h`
-- Chat persistence → `messaging/IThreadStore.h`, `messaging/SqliteThreadStore.h`
+- Chat persistence → `messaging/IThreadStore.h`, `messaging/SqliteThreadStore.h` (port → `common` over time)
 - Agent transcript → `ai/conversation/Conversation.h`
 - Shell theming → `ui/Theme.h`, `ui/ViewCatalog.h`
 
-Includes use the repo root: `#include "base/data/Config.h"`.
+Includes (today): `#include "base/data/Config.h"`.
 
 ---
 
-## Dependency design
+## Dependency design (current → target)
 
-**Goal:** small modules that are as independent as possible, arranged in a **hierarchy without cycles**. Shared types live in the module that owns the data or protocol, not in a consumer.
+**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`. Foundation peel: `CurlSsl` → `platform_core`.
 
-Intended direction:
+**Target:**
 
-```
-common
-  ↑
-platform, i18n
-  ↑
-error (uses i18n for catalogued messages)
-  ↑
-data (includes PlatformDefaults — config defaults keyed by PlatformKind)
-  ↑
-crypto
-  ↑
-p2p
-  ↑
-people
-  ↑
-net
-  ↑
-messaging
-  ↑
-ai, ui, render
-```
+- Foundation: bands above only.
+- Domain: **zero** peer→peer `PUBLIC_LIBS` / includes; use `common` contracts.
+- Feature: bind ports to concrete types (`MessagingHub`, agent session, etc.).
 
-Resolved cycles (2026): `PlatformDefaults` moved from `platform/` to `data/`; contact JSON helpers live in `people/ContactJson.*`; envelope PSK resolution lives in `messaging/AutoKeyEnvelopeResolver.*`.
+### Principles for new code
 
-**Principles for new code:**
+1. **Do not add new domain→domain edges.** Extract a port/DTO to `common` or move orchestration to `feature`.
+2. **Shared structs go low** — owner module, or `common` if two domain peers need the name.
+3. **Heavy includes in `.cpp`** — keep headers lean.
+4. **Orchestration stays up** — `AgentSession`, `ShellHost`, `MessagingHub` in `feature/`.
+5. **Fork glue at the edge** — RmlUi in `render/`; Amp product glue in `mesh/`.
 
-1. **Downward includes only** — when module A needs a type from B, B should not include A’s headers.
-2. **Shared structs go low** — if two modules need the same DTO, move it to the lower owner (or a dedicated `*Types.h` in that owner).
-3. **Headers are contracts** — prefer heavy includes in `.cpp` files; keep headers lean to limit compile-time coupling.
-4. **Orchestration stays up** — multi-module workflows (`AgentSession`, `ShellHost`, `MessagingHub`) belong in `feature/`.
-5. **Fork glue stays at the edge** — RmlUi backend in `base/render/`; libp2p glue in `base/mesh/` (forks under `src/lib/`).
-
----
-
-## Current state
-
-The dependency hierarchy above is **enforced at the header level** for the former cycle points. Shared types live in their owning modules:
+### Known shared types (today still in owning modules)
 
 | Type | Header |
 |------|--------|
@@ -129,31 +116,17 @@ The dependency hierarchy above is **enforced at the header level** for the forme
 | `RelayEnvelope` (+ wire records) | `messaging/RelayEnvelope.h` |
 | `ThreadChannel` | `messaging/ThreadChannel.h` |
 
-**Intentional one-way edges** (not cycles): `ai/` → `messaging/` for thread context and compaction; `messaging/` → `crypto/` for E2E codecs; `crypto/` → `messaging/RelayEnvelope.h` for auto-key establishment.
-
-**Platform / UI:** SDL pre-processing delegates theme sync and context-menu handling via `platform/AppEventHooks.h`, wired from `app/Application.cpp`.
-
-Regressions are caught by [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh).
-
-**Where active development lives**
-
-| Area | Base role | Feature / project pointer |
-|------|-----------|---------------------------|
-| Chat storage | SQLite thread store, codecs | [`projects/chat-storage-and-memory/`](../../projects/chat-storage-and-memory/) |
-| E2E crypto | Message cipher, hybrid KEM, PSK | [`docs/contracts/MESSAGE_ENCRYPTION.md`](../../docs/contracts/MESSAGE_ENCRYPTION.md) |
-| At-rest vault | PIN vault, profile secrets | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
-| Agent turns | LlmClient, TurnPlan, conversation | `feature/ai/` (`AgentSession`, turn pipeline) |
-| Window shell | Theme, view catalog, working-set types | `feature/ui/ShellHost` |
+Candidates to promote into `common` when peeling peer edges: store/client ports, id vocabulary, narrow view DTOs.
 
 ---
 
 ## Adding or changing code
 
-1. Find the module that **owns** the data, protocol, or external integration.
-2. Follow the dependency principles above; if two modules need the same struct, split or move types before adding another cross-include.
-3. Add tests in `src/base/<module>/tests/` (`*_test.cpp` files). One executable per folder is created automatically (`pp_browser_<module>_test`).
+1. Classify the change as **foundation**, **domain**, **common contract**, or **feature** wiring.
+2. Prefer extending foundation bands or an existing domain module over a new cross-peer include.
+3. Add tests under `src/base/<module>/tests/`.
 4. Run [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) before pushing.
-5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) when wire formats, encryption, or on-disk layout change.
+5. Document wire/disk behavior in [`docs/contracts/`](../../docs/contracts/) when formats change.
 
 ---
 
@@ -161,8 +134,8 @@ Regressions are caught by [`scripts/check_base_includes.sh`](../../scripts/check
 
 | Doc | Why |
 |-----|-----|
-| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Five-layer layout (common/lib/base/feature/app), test placement |
-| [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
-| [`docs/contracts/DATA_LAYOUT.md`](../../docs/contracts/DATA_LAYOUT.md) | On-disk paths and profile layout |
-| [`docs/contracts/WIRE_SCHEMAS.md`](../../docs/contracts/WIRE_SCHEMAS.md) | Messaging wire formats |
-| [`AGENTS.md`](../../AGENTS.md) | Agent-oriented map of the whole repo |
+| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | North Star layers, independence, migration order |
+| [`src/common/README.md`](../common/README.md) | Helpers + contracts |
+| [`src/feature/README.md`](../feature/README.md) | Orchestration / wiring |
+| [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview |
+| [`AGENTS.md`](../../AGENTS.md) | Agent-oriented map |

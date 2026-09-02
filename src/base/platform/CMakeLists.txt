@@ -10,6 +10,7 @@ set(_pp_platform_core_sources
   ExecutablePath.cpp
   os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
+  CurlSsl.cpp
 )
 
 set(_pp_platform_gui_sources
@@ -48,10 +49,20 @@ set(_pp_platform_gui_sources
   AndroidSystemChrome.cpp
   os/OsTlsCaPath_Android.cpp
   os/OsTlsCaPath_Default.cpp
-  os/OsTlsPlatformCurl_Android.cpp
-  os/OsTlsPlatformCurl_Default.cpp
-  os/OsTlsPlatformCurl_Ios.cpp
 )
+
+# CurlSsl + ApplyPlatformCurlSsl live in platform_core so ai/net can use TLS
+# defaults without linking the SDL/Rml GUI platform lib.
+if(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources
+    os/OsTlsPlatformCurl_Android.cpp
+    os/OsTlsCaPath_Android.cpp
+  )
+elseif(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp)
+else()
+  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
+endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
@@ -90,15 +101,12 @@ else()
 endif()
 
 # Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_base_error).
-# Desktop AssetIO is ifstream-only; no SDL.
-# CurlSsl (registration HTTP) calls ApplyPlatformCurlSsl — normally in the GUI
-# platform lib; headless only builds platform_core, so pull in the desktop no-op.
+# Desktop AssetIO is ifstream-only; no SDL. CurlSsl TLS defaults already live in core.
 if(PP_BROWSER_HEADLESS)
   list(APPEND _pp_platform_core_sources
     AssetIO.cpp
     IAssetLocator.cpp
     DesktopAssetLocator.cpp
-    os/OsTlsPlatformCurl_Default.cpp
   )
 endif()
 
@@ -107,6 +115,8 @@ endif()
 pp_browser_add_base_library(pp_base_platform_core
   SOURCES
     ${_pp_platform_core_sources}
+  PUBLIC_LIBS
+    CURL::libcurl
 )
 
 if(PP_BROWSER_HEADLESS)

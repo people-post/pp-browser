@@ -1,8 +1,9 @@
 #pragma once
 
+#include "common/DirectoryTypes.h"
 #include "common/Error.h"
+#include "common/IDirectoryClient.h"
 #include "base/crypto/IDekConsumer.h"
-#include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
 
 #include <functional>
@@ -67,47 +68,12 @@ public:
   virtual void SetProfileId(std::string profile_id) = 0;
 };
 
-struct MeshCapabilitiesAd {
-  bool circuit_relay = false;
-  bool media_relay = false;
-  bool dht = false;
-  /** N029 Phase C prep — directory/config only until ledger transport ships. */
-  bool ledger_gateway = false;
-};
-
 /** Optional register/finish extras (N027 mesh_node publish). */
 struct RegistrationPublishOpts {
   /** Empty → omit (server defaults person). Values: person | mesh_node. */
   std::string entity_kind;
   bool has_capabilities = false;
   MeshCapabilitiesAd capabilities;
-};
-
-struct MeshNodeHit {
-  std::string relay_user_id;
-  std::optional<std::string> account_id;
-  std::optional<std::string> nickname;
-  std::vector<DirectoryEndpoint> endpoints;
-  MeshCapabilitiesAd capabilities;
-  std::string expires_at;
-  /** person | mesh_node; default mesh_node for ListMeshNodes rows. */
-  std::string entity_kind;
-  /** Monotonic directory/chain seq; 0 when provider omits (N029). */
-  int64_t seq = 0;
-  std::optional<std::string> signing_public_key_b64;
-  std::optional<std::string> kem_public_key_b64;
-};
-
-class IDirectoryClient {
-public:
-  virtual ~IDirectoryClient() = default;
-  virtual Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) = 0;
-  virtual Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) = 0;
-  virtual Roe<DirectoryHit> LookupByAccount(const std::string& account_id) = 0;
-  /** Infra / pp-node listings (N027). Default empty for mocks / older providers. */
-  virtual Roe<std::vector<MeshNodeHit>> ListMeshNodes() {
-    return std::vector<MeshNodeHit>{};
-  }
 };
 
 struct RegistrationResult {

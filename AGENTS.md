@@ -10,7 +10,7 @@ pp-browser is a native AI-oriented UI shell:
 - **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
 - **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
-- **Five-layer source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
+- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/common/`, `src/base/` (foundation + domain until folder split), `src/feature/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
@@ -90,7 +90,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
-- Respect layer dependencies: `app → feature → base → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)).
+- Respect layer dependencies: `app → feature → domain → foundation → common` (today paths still `base/` for foundation+domain; see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **domain peer → domain peer** edges; put shared seams in `src/common/` and wire in `feature/`.
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).
