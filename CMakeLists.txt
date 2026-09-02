@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 list(APPEND CMAKE_MODULE_PATH
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/lib")
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerCache)
 pp_browser_configure_compiler_cache()
 
@@ -87,7 +86,6 @@ include(PpBrowserWarnings)
 include(PpCppCommon)
 include(PpCppCrypto)
 include(PpCppAmp)
-include(pp_lib_paths)
 
 if(PP_BROWSER_IS_MOBILE)
   set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)
@@ -103,9 +101,6 @@ if(NOT PP_BROWSER_HEADLESS)
 endif()
 include(Progress)
 find_package(Threads REQUIRED)
-
-# Owned forks before layered src/ so base/feature can link them.
-add_subdirectory(src/lib)
 
 if(PP_BROWSER_BUILD_TESTS)
   pp_configure_status("Configuring tests...")

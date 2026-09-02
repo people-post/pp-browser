@@ -1,7 +1,6 @@
 # Product RmlUi host / overlays (base layer).
 # Reusable Platform_SDL + Renderer_GL3 come from pp-cpp-ui (pp_ui_backend).
 
-include(pp_lib_paths)
 include(pp_lib_rmlui)
 
 pp_browser_add_base_library(pp_base_render

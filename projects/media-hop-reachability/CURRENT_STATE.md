@@ -1,5 +1,7 @@
 # Media hop reachability — current state
 
+> **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. libp2p fork removed — see [MESH.md](../../docs/architecture/MESH.md).
+
 **Last updated:** 2026-08-07
 
 ## Direction

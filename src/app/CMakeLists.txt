@@ -69,7 +69,6 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
 endif()
 
-include(pp_lib_paths)
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${PP_LIB_RMLUI_ROOT}/Source/Core/FontEngineHarfBuzz
