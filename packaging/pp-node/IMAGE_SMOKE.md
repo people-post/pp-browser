@@ -10,6 +10,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **L0** | Process up; `/healthz` + `/status`; caps **started** (`circuit_relay` / `media_relay` flags) | `scripts/pp_node_image_smoke.sh` | **Done** |
 | **L1** | From outside the hop: dial peer; **media** `RequestQuote`; **circuit** bridge + payload to a local target | `pp-node-probe` + `scripts/pp_node_relay_smoke.sh` | **Done** (scaffold) |
 | **L2** | **N-FANOUT:** hop in container + two client hosts in probe; attach×2 + frame fan-out | `docker-compose.relay-smoke.yml` + `pp-node-probe --mode media-fanout` + `scripts/pp_node_fanout_smoke.sh` | **Done** (scaffold) |
+| **N-DHT** | Two local `pp-node`s with `PP_NODE_CAP_DHT=1` discover each other’s ADP addrs (no Brief HTTP) | `scripts/pp_node_dht_smoke.sh` | **Done** (lab) |
 | **N-CAP** | Soft media attach capacity curve (N=4 cheap; sweep via `--suite cap`) | `pp-node-probe --mode media-cap` + `scripts/pp_node_cap_smoke.sh` | **Done** (soft SLO N≤8; 12/16 informational) |
 | **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
 | **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |

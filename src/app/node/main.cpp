@@ -56,7 +56,7 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
-      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
+      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT,\n"
       << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
       << "\n"

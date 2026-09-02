@@ -113,7 +113,8 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] **n2-caps:** Signed capability records in DHT
 - [x] **n2-hard:** Rate limits / reputation (trail v1)
 - [ ] Never on Client/mobile
-- [ ] Do not start n2-core until **n-dir** acceptance passes
+- [x] Do not start n2-core until **n-dir** acceptance passes
+- [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
 
 ## Later horizons
 
