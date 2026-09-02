@@ -30,11 +30,11 @@
 #include "base/net/HttpBlobClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
-#include "base/mesh/CircuitRelayTypes.h"
-#include "base/mesh/LanMdnsDiscovery.h"
-#include "base/mesh/Reachability.h"
-#include "base/mesh/ReachabilityService.h"
-#include "base/mesh/MeshHost.h"
+#include "base/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "base/mesh/reachability/LanMdnsDiscovery.h"
+#include "base/mesh/reachability/Reachability.h"
+#include "base/mesh/reachability/ReachabilityService.h"
+#include "base/mesh/host/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"
 
 #include <cstdint>

@@ -9,7 +9,7 @@
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
-#include "base/mesh/PeerIdUtil.h"
+#include "base/mesh/identity/PeerIdUtil.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

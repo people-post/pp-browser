@@ -12,9 +12,9 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "base/mesh/CallMediaAmpTransport.h"
-#include "base/mesh/ICallMediaTransport.h"
-#include "base/mesh/MeshHost.h"
+#include "base/mesh/l4/call_media/CallMediaAmpTransport.h"
+#include "base/mesh/l4/call_media/ICallMediaTransport.h"
+#include "base/mesh/host/MeshHost.h"
 
 #include <functional>
 #include <memory>

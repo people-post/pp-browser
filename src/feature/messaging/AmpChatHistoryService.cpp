@@ -1,5 +1,7 @@
 #include "feature/messaging/AmpChatHistoryService.h"
 
+#include "amp/link/PeerLink.h"
+
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
@@ -50,7 +52,7 @@ struct AmpChatHistoryService::Impl {
   IThreadStore& store;
   IdentityStore& identity;
   IPskSessionStore& psk_store;
-  pp::amp::PeerLinkManager* links = nullptr;
+  IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   std::atomic<bool> stopped{false};
@@ -109,7 +111,7 @@ struct AmpChatHistoryService::Impl {
   }
 };
 
-AmpChatHistoryService::AmpChatHistoryService(pp::amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store,
+AmpChatHistoryService::AmpChatHistoryService(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                              IdentityStore& identity, IPskSessionStore& psk_store,
                                              WorkerPost post_worker)
     : impl_(std::make_unique<Impl>(store, identity, psk_store)), links_(links), io_pump_(std::move(io_pump)),
@@ -180,14 +182,14 @@ Roe<ChatHistoryResponse> AmpChatHistoryService::FetchChatHistory(const ChatHisto
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session, deadline,
-                                      read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
+                                      read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
       finish(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatHistoryProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
                        [this, peer_key, request_json, finish, settled, session, deadline,
-                        read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+                        read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
                            finish(Error(channel.error().message));
                            return;

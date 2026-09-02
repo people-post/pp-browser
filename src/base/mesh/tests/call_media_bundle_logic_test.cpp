@@ -1,5 +1,5 @@
-#include "base/mesh/CallMediaBundleLogic.h"
-#include "base/mesh/CallMediaSessionLogic.h"
+#include "base/mesh/l4/call_media/CallMediaBundleLogic.h"
+#include "base/mesh/l4/call_media/CallMediaSessionLogic.h"
 
 #include <gtest/gtest.h>
 

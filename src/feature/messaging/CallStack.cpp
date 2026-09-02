@@ -1,15 +1,15 @@
 #include "feature/messaging/CallStack.h"
 
 #include "base/data/MeshRole.h"
-#include "amp/link/AdpMultiaddr.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/messaging/CallTypes.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/mesh/AmpCircuitHopRegistry.h"
-#include "base/mesh/Reachability.h"
+#include "base/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "base/mesh/reachability/Reachability.h"
 #include "base/runtime/AppRuntime.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -158,16 +158,21 @@ void CallStack::WireMediaRelayDeps() {
   if (!dial_registry_) {
     dial_registry_ = std::make_unique<PeerSessionDialRegistry>();
   }
-  dial_registry_->SetAmpLinks(use_amp_relay && m->Amp() ? &m->Amp()->Links() : nullptr);
+  dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
   dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
   const bool use_amp_circuit =
       use_amp_relay && m->AmpCircuitTunnel() && m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
   if (config().mesh.capabilities.circuit_relay) {
     if (use_amp_circuit) {
-      circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
-          *m->AmpCircuitTunnel(), *m->AmpCircuitHops(), m->Amp()->Links(), [m]() { m->Tick(); },
-          [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); });
-      log().info << "circuit-hop reach=amp";
+      auto circuit = m->CircuitDeps();
+      if (!circuit) {
+        circuit_hop_reach_.reset();
+      } else {
+        circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
+            circuit->tunnel, circuit->hops, circuit->links, [m]() { m->Tick(); },
+            [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); });
+        log().info << "circuit-hop reach=amp";
+      }
     } else {
       circuit_hop_reach_.reset();
     }
@@ -376,7 +381,12 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
 std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const {
   std::vector<std::string> relay_ids;
   MeshHost* m = mesh();
-  pp::amp::PeerLinkManager* amp_links = (m && m->Amp()) ? &m->Amp()->Links() : nullptr;
+  IChatPeerLinks* amp_links = nullptr;
+  if (m) {
+    if (auto chat = m->ChatDeps()) {
+      amp_links = &chat->links;
+    }
+  }
   AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
   if (!amp_links && !amp_hops) {
     return relay_ids;
@@ -397,7 +407,7 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
-    if (!hop.multiaddr.empty() && amp_links && pp::amp::ParseAdpMultiaddr(hop.multiaddr)) {
+    if (!hop.multiaddr.empty() && amp_links && IsAdpMultiaddr(hop.multiaddr)) {
       (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
     } else if (hop.multiaddr.empty() && amp_links) {
       if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {

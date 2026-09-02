@@ -88,7 +88,6 @@ include(PpCppCommon)
 include(PpCppCrypto)
 include(PpCppAmp)
 include(pp_lib_paths)
-include(pp_lib_libp2p)
 
 if(PP_BROWSER_IS_MOBILE)
   set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)

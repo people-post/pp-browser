@@ -1,9 +1,11 @@
 #include "feature/messaging/AmpChatBlobService.h"
 
+#include "amp/link/PeerLink.h"
+
 #include "base/crypto/CryptoConstants.h"
 #include "base/messaging/ChatBlobResponder.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/mesh/ProductChannelPolicies.h"
+#include "base/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"
 
@@ -93,7 +95,7 @@ struct AmpChatBlobService::Impl {
   std::string profile_id;
   ByteVector dek;
   mutable std::mutex dek_mutex;
-  pp::amp::PeerLinkManager* links = nullptr;
+  IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   std::atomic<bool> stopped{false};
@@ -208,7 +210,7 @@ struct AmpChatBlobService::Impl {
   }
 };
 
-AmpChatBlobService::AmpChatBlobService(pp::amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store,
+AmpChatBlobService::AmpChatBlobService(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                        IdentityStore& identity, WorkerPost post_worker)
     : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)) {
@@ -301,14 +303,14 @@ Roe<std::vector<uint8_t>> AmpChatBlobService::FetchChatBlob(const ChatBlobReques
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session, deadline,
-                                      read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
+                                      read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
       finish(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatBlobProtocolId, pp::amp::ChatBlobChannelPolicy(/*read_once=*/true),
                        [this, peer_key, request_json, finish, settled, session, deadline,
-                        read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+                        read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
                            finish(Error(channel.error().message));
                            return;
@@ -394,7 +396,7 @@ Roe<void> AmpChatBlobService::PushChatBlob(const ChatBlobRequest& request,
 
   links_.EnsureAssociation(
       peer_key, [this, peer_key, request_json, ciphertext, finish, settled, session, deadline,
-                 read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
+                 read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
         if (!assoc) {
           finish(Error(assoc.error().message));
           return;
@@ -402,7 +404,7 @@ Roe<void> AmpChatBlobService::PushChatBlob(const ChatBlobRequest& request,
         links_.OpenChannel(
             peer_key, kChatBlobProtocolId, pp::amp::ChatBlobChannelPolicy(/*read_once=*/true),
             [this, peer_key, request_json, ciphertext, finish, settled, session, deadline,
-             read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+             read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
               if (!channel) {
                 finish(Error(channel.error().message));
                 return;

@@ -1,58 +1,48 @@
-# Mesh / L4 organization (post-rename)
+# Mesh / L4 organization
 
-**Status:** Landed on `cursor/mesh-rename-p2p-to-mesh-69f5`  
+**Status:** Consolidated on `cursor/mesh-consolidation-69f5`  
 **Context:** AMP L1–L3 + link in `pp-cpp-amp`; product mesh is Amp-only (D10).
-
-## What changed
-
-### Directory
-
-- `src/base/p2p/` → **`src/base/mesh/`**
-- CMake target `pp_base_p2p` → **`pp_base_mesh`**
-
-### Config (JSON + C++)
-
-| Before | After |
-|--------|-------|
-| `"libp2p": { ... }` in config.json | `"mesh": { ... }` (primary) |
-| `AppConfig.libp2p` | `AppConfig.mesh` |
-| `Libp2pConfig` | `MeshConfig` |
-| `Libp2pRole` | `MeshRole` |
-
-**Compat:** `ConfigJson` still reads legacy `"libp2p"` key when `"mesh"` is absent.
-
-### API renames
-
-| Before | After |
-|--------|-------|
-| `Libp2pHostConfig` | `MeshIdentityConfig` |
-| `P2pMessagingService` | `MeshMessagingService` |
-| `CallLibp2pMediaBridge` | `CallMediaBridge` |
-| `MessagingHub::StartLibp2p()` | `StartMesh()` |
-| `MessagingHub::P2p()` | `MeshMessaging()` |
-| `LastLibp2pError()` | `LastMeshError()` |
-| `libp2p_status_message` (UI) | `mesh_status_message` |
-
-### Unchanged (wire / fork)
-
-- Multiaddr `/p2p/<PeerId>` wire format
-- Call control JSON field `libp2p_peer_id`
-- Vendored fork `src/lib/libp2p/` and CMake targets `p2p_peer_id`, `p2p_wire`
 
 ## Layer map
 
 ```
 pp-cpp-amp (L1–L3 + link)
      ↑
-src/lib/libp2p (PeerId only)
+src/base/mesh/identity (PeerId — native, no libp2p fork)
      ↑
-src/base/mesh (MeshHost + L4 coordinators + reachability)
+src/base/mesh (host + reachability + l4 coordinators)
      ↑
 src/feature/messaging (MeshMessagingService, CallMediaBridge, hub)
 ```
 
-## Future (optional)
+Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media_relay,call_media}/`.
 
-- Subdivide `base/mesh/` into `host/`, `reachability/`, `l4/`, `codec/`
-- Add `docs/architecture/MESH.md` index doc
-- Extract shrunk libp2p fork to tiny `pp-peer-id` repo
+## Identity
+
+- libp2p fork **deleted**; PeerId in `base/mesh/identity/`
+- CMake: `pp_base_mesh_identity` (+ `pp_base_mesh`)
+- Golden ML-DSA → PeerId tests in `peer_id_util_test.cpp`
+
+## Feature ports
+
+- `MeshHost::ChatDeps()` / `CircuitDeps()` expose `IChatPeerLinks` (adapter over Amp `PeerLinkManager`)
+- Feature headers must not include `amp/link/*`
+
+## Config / API (from mesh rename)
+
+| Item | Value |
+|------|-------|
+| Config JSON key | `"mesh"` (legacy `"libp2p"` still read) |
+| Host type | `MeshHost` |
+| Messaging service | `MeshMessagingService` |
+| Call bridge | `CallMediaBridge` |
+
+## Wire names (unchanged)
+
+- Multiaddr `/p2p/<PeerId>`
+- Call JSON `libp2p_peer_id`
+
+## Docs
+
+- [docs/architecture/MESH.md](../../docs/architecture/MESH.md)
+- [docs/architecture/MESH_IDENTITY.md](../../docs/architecture/MESH_IDENTITY.md)

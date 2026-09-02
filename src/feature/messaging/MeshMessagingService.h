@@ -19,8 +19,7 @@
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
-#include "amp/link/PeerLinkManager.h"
-#include "amp/link/Types.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClients.h"
 
 #include <atomic>
@@ -43,7 +42,7 @@ class IChatBlobPeerClient;
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
-  pp::amp::PeerLinkPhase phase = pp::amp::PeerLinkPhase::Unavailable;
+  MeshPeerLinkPhase phase = MeshPeerLinkPhase::Unavailable;
   std::string status_label;
   std::string banner_message;
   bool show_banner = false;
@@ -61,7 +60,7 @@ public:
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      pp::amp::PeerLinkManager* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                      IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
@@ -215,7 +214,7 @@ private:
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  pp::amp::PeerLinkManager* amp_links_ = nullptr;
+  IChatPeerLinks* amp_links_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;

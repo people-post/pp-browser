@@ -1,5 +1,7 @@
 # P2P mesh — current state
 
+> **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `base/mesh/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
+
 **Last updated:** 2026-08-07
 
 ## Landed

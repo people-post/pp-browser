@@ -38,16 +38,16 @@
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
-#include "base/mesh/CircuitBridgeTarget.h"
-#include "base/mesh/CircuitRelayTypes.h"
-#include "base/mesh/MediaRelayTypes.h"
-#include "base/mesh/CircuitTunnelCoordinator.h"
-#include "base/mesh/LanMdnsDiscovery.h"
-#include "base/mesh/SettledWait.h"
+#include "base/mesh/l4/circuit/CircuitBridgeTarget.h"
+#include "base/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "base/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "base/mesh/reachability/LanMdnsDiscovery.h"
+#include "base/mesh/l4/shared/SettledWait.h"
 #include "base/people/MeshHopPolicy.h"
-#include "amp/link/AdpMultiaddr.h"
-#include "base/mesh/NatTraversal.h"
-#include "base/mesh/Reachability.h"
+#include "base/mesh/host/MeshPorts.h"
+#include "base/mesh/reachability/NatTraversal.h"
+#include "base/mesh/reachability/Reachability.h"
 #include "base/runtime/StartupTiming.h"
 #include "common/Utilities.h"
 
@@ -330,8 +330,8 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
 
   const std::string peer_id = mesh_->Amp()->LocalPeerId();
   int amp_udp = 0;
-  if (auto parsed = pp::amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
-    amp_udp = static_cast<int>(parsed->endpoint.port);
+  if (auto port = UdpPortFromAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
+    amp_udp = static_cast<int>(*port);
   }
   if (peer_id.empty() || amp_udp <= 0) {
     lan_mdns_->SetAdvertisement({}, 0, {});
@@ -709,16 +709,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                   << " (direct P2P unavailable; relay messaging may still work)";
   }
 
-  pp::amp::PeerLinkManager* amp_links = nullptr;
+  IChatPeerLinks* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
-  if (mesh_ && mesh_->Amp()) {
-    amp_links = &mesh_->Amp()->Links();
-    amp_pump = [this]() {
-      if (mesh_) {
-        mesh_->Tick();
-      }
-    };
+  if (auto chat = mesh_ ? mesh_->ChatDeps() : std::nullopt; chat) {
+    amp_links = &chat->links;
+    amp_pump = std::move(chat->io.io_pump);
+    amp_worker = std::move(chat->io.post_worker);
+  }
+  if (mesh_ && amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) {
       AppRuntime::PostWorkerNormal(std::move(task));
     };
@@ -1572,7 +1571,11 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   CircuitRelayBridgeResult last;
   last.error = "all hops failed";
 
-  pp::amp::PeerLinkManager& links = mesh_->Amp()->Links();
+  auto circuit_deps = mesh_->CircuitDeps();
+  if (!circuit_deps) {
+    return Error("Amp circuit deps unavailable");
+  }
+  IChatPeerLinks& links = circuit_deps->links;
   for (const MeshHopCandidate& hop : hops) {
     const std::string key = hop.peer_id;
     if (!target.target_peer_id.empty() && key == target.target_peer_id) {

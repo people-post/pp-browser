@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/messaging/ThreadTypes.h"
-#include "amp/link/PeerLinkManager.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClients.h"
 #include "feature/messaging/IDirectMessageClient.h"
 
@@ -22,7 +22,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpDirectChatService(pp::amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpDirectChatService(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {});
   ~AmpDirectChatService() override;
 
   AmpDirectChatService(const AmpDirectChatService&) = delete;
@@ -39,7 +39,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  pp::amp::PeerLinkManager& links_;
+  IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;
