@@ -176,7 +176,7 @@ L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` t
 src/lib/amp/L1/          → L1 (exists; no libp2p)
 src/lib/amp/L2/ → L2 MSH, Session, rekey
 src/lib/amp/L3/ → L3 mux, frag, ChannelSession
-src/base/mesh/          → PeerLinkManager, reachability; libp2p glue shrinks
+src/domain/mesh/          → PeerLinkManager, reachability; libp2p glue shrinks
 ```
 
 Acyclic: `crypto` → `adp` → `mesh` → `p2p` → `people`. `mesh` must not link libp2p ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)).

@@ -13,7 +13,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
-#include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>

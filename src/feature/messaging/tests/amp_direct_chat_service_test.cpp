@@ -2,7 +2,7 @@
 
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
-#include "base/mesh/tests/support/mesh_test_harness.h"
+#include "domain/mesh/tests/support/mesh_test_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>

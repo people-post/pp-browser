@@ -23,11 +23,11 @@ ML-DSA-65 keys always take the SHA-256 path (`Qm…` prefix).
 |--------|--------|
 | `foundation/identity/PeerIdUtil.h` | `PeerIdFromMlDsaPublicKey()` |
 
-CMake target: `pp_foundation_identity` (linked by `pp_base_mesh` and `pp_domain_people`).
+CMake target: `pp_foundation_identity` (linked by `pp_domain_mesh` and `pp_domain_people`).
 
 ## Golden vectors
 
-Fixed tests in `src/base/mesh/tests/peer_id_util_test.cpp` gate byte-compat before any identity change:
+Fixed tests in `src/domain/mesh/tests/peer_id_util_test.cpp` gate byte-compat before any identity change:
 
 | Key fixture | Expected PeerId |
 |-------------|-----------------|

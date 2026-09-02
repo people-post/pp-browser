@@ -44,7 +44,7 @@ Pattern: `vMAJOR.MINOR.PATCH` with optional suffixes (`-rc1`, `-beta1`, …).
 | `pp-node/v0.1.0` | Stable node / GHCR release |
 | `pp-node/v0.1.0-rc1` | Pre-release (no `:latest` image tag) |
 
-Independent semver from the app. Breaking mesh/wire protocols still need a coordinated bump (or dual-protocol support) — see [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) and protocol IDs under `src/base/mesh/`.
+Independent semver from the app. Breaking mesh/wire protocols still need a coordinated bump (or dual-protocol support) — see [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) and protocol IDs under `src/domain/mesh/`.
 
 ## Maintainer flow
 

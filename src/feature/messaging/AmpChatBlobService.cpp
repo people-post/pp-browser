@@ -5,7 +5,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/ChatBlobResponder.h"
 #include "common/chat/MessagingJson.h"
-#include "base/mesh/l4/shared/ProductChannelPolicies.h"
+#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"
 

@@ -5,7 +5,7 @@
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
-#include "base/mesh/host/MeshHost.h"
+#include "domain/mesh/host/MeshHost.h"
 
 #include <memory>
 #include <string>

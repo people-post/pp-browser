@@ -56,7 +56,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_domain_media
     pp_domain_messaging
     pp_base_mesh_link
-    pp_base_mesh
+    pp_domain_mesh
     pp_domain_net
     pp_domain_people
     pp_foundation_platform_core

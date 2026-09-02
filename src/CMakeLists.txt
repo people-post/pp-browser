@@ -1,5 +1,5 @@
-# Source layers: common → foundation → domain → base(remaining peers) → feature → app.
-# PeerId lives in foundation/identity, so domain can build before remaining base peers.
+# Source layers: common → foundation → domain → base(thin pp_base aggregate) → feature → app.
+# PeerId lives in foundation/identity, so domain can build before the thin pp_base aggregate.
 add_subdirectory(common)
 add_subdirectory(foundation)
 add_subdirectory(domain)
@@ -28,6 +28,9 @@ if(TARGET pp_base AND TARGET pp_domain_ai_conversation)
 endif()
 if(TARGET pp_base AND TARGET pp_domain_ai_mcp)
   target_link_libraries(pp_base INTERFACE pp_domain_ai_mcp)
+endif()
+if(TARGET pp_base AND TARGET pp_domain_mesh)
+  target_link_libraries(pp_base INTERFACE pp_domain_mesh)
 endif()
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

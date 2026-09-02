@@ -12,11 +12,11 @@ Independent **product peer** libraries (North Star). Peers must not `#include` o
 | ui | `domain/ui/` | `pp_domain_ui` (product shell: theme/catalogs/input) |
 | messaging | `domain/messaging/` | `pp_domain_messaging` |
 | ai | `domain/ai/` | `pp_domain_ai` (+ conversation/mcp sublibs) |
-| mesh | still under `src/base/` | `pp_base_*` (rename with move) |
+| mesh | `domain/mesh/` | `pp_domain_mesh` |
 
 Window host / RmlUi Backend / overlays live in `foundation/platform/ui/` (not a domain peer).
 
-Includes: `#include "domain/people/…"`, `#include "domain/media/…"`, `#include "domain/net/…"`, `#include "domain/ui/…"`, `#include "domain/messaging/…"`, `#include "domain/ai/…"`.
-Old `src/base/{people,media,net,ui,render,messaging,ai}/` stay deleted.
+Includes: `#include "domain/people/…"`, `#include "domain/media/…"`, `#include "domain/net/…"`, `#include "domain/ui/…"`, `#include "domain/messaging/…"`, `#include "domain/ai/…"`, `#include "domain/mesh/…"`.
+Old `src/base/{people,media,net,ui,render,messaging,ai,mesh}/` stay deleted.
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).

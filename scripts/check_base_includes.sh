@@ -115,19 +115,19 @@ check_absent "common must not include domain/" \
   '#include "domain/' src/common
 
 check_absent "must not include base/mesh/identity/ (moved to foundation/identity/)" \
-  '#include "base/mesh/identity/' src
+  '#include "domain/mesh/identity/' src
 check_absent "common must not include foundation/" \
   '#include "foundation/' src/common
 
 # Peeled paths must stay peeled (old locations / shims removed).
 check_absent "mesh must not include people/RelayScope.h (use common/directory/RelayScope.h)" \
-  '#include "domain/people/RelayScope.h"' src/base/mesh
+  '#include "domain/people/RelayScope.h"' src/domain/mesh
 check_absent "mesh must not include people/ContactTypes.h (use common/directory/DirectoryTypes.h)" \
-  '#include "domain/people/ContactTypes.h"' src/base/mesh
+  '#include "domain/people/ContactTypes.h"' src/domain/mesh
 check_absent "mesh production must not include base/net/ (use common/directory/IDirectoryClient.h)" \
-  '#include "domain/net/' src/base/mesh/discovery
+  '#include "domain/net/' src/domain/mesh/discovery
 check_absent "mesh must not include domain/media/ (use common/media/CallMediaHealth.h)" \
-  '#include "domain/media/' src/base/mesh
+  '#include "domain/media/' src/domain/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
   '#include "domain/ui/WorkingSetTypes.h"' src/domain/ai
 check_absent "ai must not include base/messaging/ChatActionTypes.h (use common/chat/)" \
@@ -196,6 +196,8 @@ check_absent "must not include base/messaging/ (moved to domain/messaging/)" \
   '#include "base/messaging/' src
 check_absent "must not include base/ai/ (moved to domain/ai/)" \
   '#include "base/ai/' src
+check_absent "must not include base/mesh/ (moved to domain/mesh/; identity → foundation/identity/)" \
+  '#include "base/mesh/' src
 check_absent "must not include base/ui/ (moved to domain/ui/)" \
   '#include "base/ui/' src
 check_absent "must not include base/render/ (moved to foundation/platform/ui/)" \
@@ -230,8 +232,8 @@ for shim in \
   src/base/i18n \
   src/domain/messaging/PeerBriefRoute.h \
   src/domain/messaging/ChatHistoryResponder.h \
-  src/base/mesh/host/MeshChannelLimits.h \
-  src/base/mesh/identity \
+  src/domain/mesh/host/MeshChannelLimits.h \
+  src/domain/mesh/identity \
   src/base/net/ProfileIconClientUtil.h \
   src/base/net/ProfileIconFetchUtil.h \
   src/base/net/RegistrationClientUtil.h \

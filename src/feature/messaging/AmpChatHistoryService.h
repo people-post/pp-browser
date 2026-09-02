@@ -3,7 +3,7 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/mesh/host/MeshPorts.h"
+#include "domain/mesh/host/MeshPorts.h"
 #include "domain/net/ServiceClients.h"
 #include "domain/people/IdentityStore.h"
 

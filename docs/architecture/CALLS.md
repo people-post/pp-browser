@@ -432,8 +432,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/messaging/CallMediaHost.h` | Narrow host façade for mesh media side effects |
 | `src/feature/messaging/CallMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
-| `src/base/mesh/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
-| `src/base/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
+| `src/domain/mesh/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
+| `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
@@ -447,7 +447,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
 | `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
-| `src/base/mesh/MediaRelayService.*` | Blind SFU |
+| `src/domain/mesh/MediaRelayService.*` | Blind SFU |
 
 ---
 

@@ -35,7 +35,7 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "feature/messaging/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
-#include "base/mesh/host/MeshPorts.h"
+#include "domain/mesh/host/MeshPorts.h"
 #include "domain/net/ServiceClientsImpl.h"
 #include "domain/net/RelayInboxCursor.h"
 #include "domain/people/ContactIdentity.h"

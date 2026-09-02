@@ -54,7 +54,7 @@
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/UserFeedback.h"
 #include "feature/ui/BlobQuotaRecoveryFlow.h"
-#include "base/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/Reachability.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/data/SessionStore.h"

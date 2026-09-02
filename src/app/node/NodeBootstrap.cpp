@@ -8,8 +8,8 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
-#include "base/mesh/dht/DhtTypes.h"
-#include "base/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/dht/DhtTypes.h"
+#include "domain/mesh/discovery/AmpDirectoryService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 

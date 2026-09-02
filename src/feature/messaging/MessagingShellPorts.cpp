@@ -3,9 +3,9 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/MeshMessagingService.h"
-#include "base/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
-#include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
-#include "base/mesh/host/MeshHost.h"
+#include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
+#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/host/MeshHost.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

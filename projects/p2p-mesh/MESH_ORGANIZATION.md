@@ -20,7 +20,7 @@ Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media
 ## Identity
 
 - libp2p fork **deleted**; PeerId in `foundation/identity/`
-- CMake: `pp_foundation_identity` (+ `pp_base_mesh`)
+- CMake: `pp_foundation_identity` (+ `pp_domain_mesh`)
 - Golden ML-DSA → PeerId tests in `peer_id_util_test.cpp`
 
 ## Feature ports

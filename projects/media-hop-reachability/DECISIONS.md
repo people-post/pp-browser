@@ -7,7 +7,7 @@ Call: [V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--lib
 ## H001 — Separate project; implementation in libp2p
 
 **Status:** Accepted (updated 2026-07-31)  
-**Decision:** This project owns the **program and consume contract**. **Implementation of reachability** lives in the **vendored libp2p fork** and `src/base/mesh/` (Identify, addr book, DialBack, circuit, later hole punch). Calls/mesh **consume** dialability; they do not reimplement NAT traversal.  
+**Decision:** This project owns the **program and consume contract**. **Implementation of reachability** lives in the **vendored libp2p fork** and `src/domain/mesh/` (Identify, addr book, DialBack, circuit, later hole punch). Calls/mesh **consume** dialability; they do not reimplement NAT traversal.  
 **Rationale:** One peer stack (N022/V026); app ICE-alikes diverge and rot.  
 **Alternatives:** Forever SoftMigrate-only multiaddr glue (rejected — H007).
 

@@ -20,7 +20,7 @@
 #include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
 #include "feature/messaging/PskSessionCoordinator.h"
-#include "base/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/Reachability.h"
 
 #include <cstdint>
 #include <functional>

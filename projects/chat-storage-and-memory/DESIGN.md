@@ -901,7 +901,7 @@ libp2p stream protocol **`/pp-browser/chat-history/1.0.0`**. Semantics mirror D0
 
 **Requester rules:** Verify envelope signatures; ingest via receive pipeline; set `transport=direct` on persisted rows.
 
-Implementation lives in `src/base/mesh/` + `MeshMessagingService` — not in `IThreadStore`.
+Implementation lives in `src/domain/mesh/` + `MeshMessagingService` — not in `IThreadStore`.
 
 ### Within-epoch sender contract (E2E only)
 

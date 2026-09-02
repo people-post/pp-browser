@@ -115,7 +115,7 @@ Target path after move: `src/foundation/<module>/`.
 | `domain/people/` | Identity and contacts stores; presentation DTOs |
 | `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
-| `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
+| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
 | `domain/ui/` | Theme, view catalog, shell types, input coordinator (product shell) |
@@ -125,7 +125,7 @@ Target path after move: `src/domain/<module>/`.
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `identity` (foundation); historical `adp` → `mesh` (domain); Mesh/link **tests** may link `pp_foundation_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `identity` (foundation); historical `adp` → `mesh` (domain); Mesh/link **tests** may link `pp_foundation_identity` without full `pp_domain_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
 
@@ -145,7 +145,7 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 | `foundation/platform/ui/gl/` | Mobile GL lifecycle helpers |
 | `foundation/platform/ui/renderer/` | Product overlays (loupe, call video tiles) |
 | `foundation/platform/ui/host/` | `BrowserHost` product `Backend::*` bootstrap |
-| `base/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
+| `domain/mesh/` | `MeshHost`, reachability, L4 coordinators — see [MESH.md](MESH.md) |
 
 ```
 domain/render → pp-cpp-ui `pp_ui` / PP_LIB_RMLUI_INCLUDE
@@ -184,7 +184,7 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_pbr_common` | common (in-tree) |
 | `pp_foundation_*` | foundation modules under `src/foundation/` (e.g. `pp_foundation_data`) |
 | `pp_domain_*` | migrated domain peers under `src/domain/` (today: `pp_domain_people`, `pp_domain_media`, `pp_domain_net`) |
-| `pp_base_*` | remaining domain modules under `src/base/` (e.g. `pp_base_mesh`) — rename to `pp_domain_*` when folders move |
+| `pp_base_*` | remaining domain modules under `src/base/` (e.g. `pp_domain_mesh`) — rename to `pp_domain_*` when folders move |
 | `pp_base` | aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
@@ -197,7 +197,7 @@ Fork product profiles: `src/lib/pp_lib_paths.cmake`, pp-cpp-ui `PpCppUi.cmake`. 
 ## Test placement
 
 - Fork-level RmlUi tests live in pp-cpp-ui `rmlui/Tests/` and run in that repo’s CI (`PP_UI_BUILD_TESTS`), not under pp-browser ctest.
-- Mesh glue tests live under [`src/base/mesh/tests/`](../../src/base/mesh/tests/).
+- Mesh glue tests live under [`src/domain/mesh/tests/`](../../src/domain/mesh/tests/).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under the owning module’s `tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (foundation/domain tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on.
@@ -209,7 +209,7 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 ```cpp
 #include "common/ValueJson.h"
 #include "foundation/data/Config.h"              // foundation (today)
-#include "base/mesh/host/MeshHost.h"       // domain (today)
+#include "domain/mesh/host/MeshHost.h"       // domain (today)
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```

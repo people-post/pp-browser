@@ -48,8 +48,8 @@ Hard rules:
 | `domain/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
 | `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
 | `domain/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
-| `base/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
-| `base/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |
+| `domain/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
+| `domain/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |
 | `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
 | `foundation/platform/ui/gl/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
 
@@ -84,7 +84,7 @@ Regressions are caught by [`scripts/check_platform_ifdefs.sh`](../../scripts/che
 Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
-- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` and `src/base/mesh/`
+- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` and `src/domain/mesh/`
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)

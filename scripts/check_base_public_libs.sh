@@ -16,7 +16,7 @@ domain = {
     "pp_domain_media",
     "pp_domain_net",
     "pp_domain_messaging",
-        "pp_base_mesh",
+        "pp_domain_mesh",
     "pp_domain_ai",
     "pp_domain_ui",
 }
@@ -135,3 +135,14 @@ if rg -n '\bpp_base_ai(_conversation|_mcp)?\b' \
   exit 1
 fi
 echo "OK: ai domain lib names"
+
+# Product mesh target must stay pp_domain_mesh (Amp L2/L3 aliases remain pp_base_mesh_*).
+if rg -n '\bpp_base_mesh\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  --glob '!docs/**' --glob '!projects/**' --glob '!AGENTS.md' \
+  "$ROOT" >/tmp/pp_mesh_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_mesh (use pp_domain_mesh):"
+  cat /tmp/pp_mesh_rename.txt
+  exit 1
+fi
+echo "OK: mesh domain lib name"

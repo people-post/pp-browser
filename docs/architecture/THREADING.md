@@ -149,7 +149,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 ### Libp2p integration executors
 
-Integration services under `src/base/mesh/` use three executor classes via `Libp2pScheduler`:
+Integration services under `src/domain/mesh/` use three executor classes via `Libp2pScheduler`:
 
 | Class | Dispatch | Examples |
 |-------|----------|------------|

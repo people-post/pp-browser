@@ -2,7 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/SfuAttachFanout.h"
-#include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
