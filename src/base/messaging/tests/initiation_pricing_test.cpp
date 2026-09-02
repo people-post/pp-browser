@@ -1,7 +1,7 @@
 #include "base/messaging/InitiationBillingCodec.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/InitiationPricing.h"
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

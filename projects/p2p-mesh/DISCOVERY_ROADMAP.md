@@ -197,7 +197,7 @@ Decisions to lock:
 
 - New: `src/base/mesh/dht/*`
 - `src/base/mesh/host/MeshHost.{h,cpp}`
-- `src/base/data/Config.h`, config merge
+- `src/foundation/data/Config.h`, config merge
 - `src/feature/settings/` Network UI
 - Tests: `dht_routing_test`, two-host mesh test
 

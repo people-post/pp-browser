@@ -1,10 +1,10 @@
 #include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
-#include "base/data/AppPaths.h"
-#include "base/data/LlmPreset.h"
-#include "base/data/SchemaVersion.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
 #include "foundation/runtime/AppRuntime.h"

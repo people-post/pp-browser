@@ -57,7 +57,7 @@ If unsure: *“Must every domain peer be allowed to link this?”* → foundatio
 src/base/
 ├── runtime/      [foundation] **moved →** `src/foundation/runtime/`
 ├── platform/     [foundation] **moved →** `src/foundation/platform/`
-├── data/         [foundation] Config, profiles, session, schema, atomic file writes
+├── data/         [foundation] **moved →** `src/foundation/data/`
 ├── error/        [foundation] **moved →** `src/foundation/error/`
 ├── i18n/         [foundation] **moved →** `src/foundation/i18n/`
 ├── crypto/       [foundation] E2E/at-rest crypto primitives, PIN vault, KEM helpers
@@ -83,13 +83,13 @@ Start points:
 - Agent transcript → `ai/conversation/Conversation.h`
 - Shell theming → `ui/Theme.h`, `ui/ViewCatalog.h`
 
-Includes (today): `#include "base/data/Config.h"`.
+Includes (today): `#include "foundation/data/Config.h"`.
 
 ---
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** remaining allowlisted edge is `messaging`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration / chat-blob orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` / `platform` → `src/foundation/`.
+**Current (domain peers):** **zero** allowlisted peer→peer edges (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment / profile-icon / registration / chat-blob orchestration in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` / `platform` / `data` → `src/foundation/`. Cleared domain peer allowlist (no messaging→people).
 
 **Target:**
 
@@ -109,7 +109,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 | Type | Header |
 |------|--------|
-| `LlmConfig` | `data/LlmConfig.h` |
+| `LlmConfig` | `foundation/data/LlmConfig.h` |
 | Relay / blob helpers still coupling (feature orchestration) | `feature/messaging` ProfileIcon* / RegistrationClientUtil; net `BlobQuotaUtil` is IdentityStore-free |
 
 Candidates to promote into `common` when peeling peer edges: people/net helper ports, narrow view DTOs. Remaining messaging vocab lives in [`src/common/`](../common/) (`ThreadTypes`, `IThreadStore`, `RelayEnvelope`, …).

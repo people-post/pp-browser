@@ -6,7 +6,7 @@
 #include "app/PeoplePickerShellBridge.h"
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/SessionStore.h"
 #include "base/net/ClientCompat.h"
 #include "common/Error.h"
 #include "common/Module.h"

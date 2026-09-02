@@ -5,7 +5,6 @@ pp_browser_add_base_library(pp_base_messaging
     AttachmentSuppressionStore.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
-    ChatHistoryResponder.cpp
     ChatBlobResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
@@ -33,7 +32,6 @@ pp_browser_add_base_library(pp_base_messaging
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp
-    PeerBriefRoute.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
@@ -45,7 +43,6 @@ pp_browser_add_base_library(pp_base_messaging
     pp_base_error
     pp_base_data
     pp_base_crypto
-    pp_base_people
     pp_base_platform
     sodium
     SQLite::SQLite3)

@@ -2,7 +2,7 @@
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| `AtomicFileWrite` | **Yes** | `src/base/data/AtomicFileWrite.*` |
+| `AtomicFileWrite` | **Yes** | `src/foundation/data/AtomicFileWrite.*` |
 | JSON writers atomic | **Yes** | Config, prefs, registry, manifest, contacts, JsonThreadStore |
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/base/crypto/` |
 | `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |

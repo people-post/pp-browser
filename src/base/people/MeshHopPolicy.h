@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 #include "base/people/ContactTypes.h"
 #include "common/directory/MeshHopTypes.h"
 #include "common/directory/RelayScope.h"

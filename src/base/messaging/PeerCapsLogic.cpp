@@ -1,6 +1,6 @@
 #include "base/messaging/PeerCapsLogic.h"
 
-#include "base/data/MeshRole.h"
+#include "foundation/data/MeshRole.h"
 
 #include <unordered_set>
 

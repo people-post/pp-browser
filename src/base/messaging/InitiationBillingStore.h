@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
 

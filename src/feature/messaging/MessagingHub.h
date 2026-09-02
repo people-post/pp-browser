@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/data/Config.h"
-#include "base/data/MeshRole.h"
-#include "base/data/SessionStore.h"
-#include "base/data/UserPreferences.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/UserPreferences.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"

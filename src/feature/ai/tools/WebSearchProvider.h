@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/IToolProvider.h"
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 
 namespace pbr {
 

@@ -4,7 +4,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "common/thread/IThreadStore.h"
 #include "base/people/ContactsStore.h"

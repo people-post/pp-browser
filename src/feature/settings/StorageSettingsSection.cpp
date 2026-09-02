@@ -1,7 +1,7 @@
 #include "feature/settings/StorageSettingsSection.h"
 
-#include "base/data/AppPaths.h"
-#include "base/data/UserPreferences.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/messaging/AttachmentCache.h"
 

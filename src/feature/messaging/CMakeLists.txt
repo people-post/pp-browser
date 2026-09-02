@@ -13,6 +13,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     CallStack.cpp
     CallTopologyController.cpp
     ChatBlobRequestUtil.cpp
+    ChatHistoryResponder.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
@@ -36,6 +37,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MeshMessagingService.cpp
+    PeerBriefRoute.cpp
     PeerDisplayResolver.cpp
     ProfileIconClientUtil.cpp
     ProfileIconFetchUtil.cpp
@@ -52,6 +54,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_feature_ai
     pp_base_crypto
     pp_base_media
+    pp_base_messaging
     pp_base_mesh_link
     pp_base_mesh
     pp_base_net

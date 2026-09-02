@@ -1,6 +1,6 @@
 #include "base/messaging/JsonThreadStore.h"
 
-#include "base/data/AtomicFileWrite.h"
+#include "foundation/data/AtomicFileWrite.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"

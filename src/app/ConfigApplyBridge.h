@@ -3,7 +3,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/ShellHost.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <functional>

@@ -1,5 +1,5 @@
-#include "base/data/Config.h"
-#include "base/data/UserPreferences.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/UserPreferences.h"
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "feature/messaging/MessagingHub.h"
 

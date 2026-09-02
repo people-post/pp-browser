@@ -25,7 +25,6 @@ domain = {
     "pp_base_render",
 }
 legacy = {
-    "pp_base_messaging->pp_base_people",
 }
 
 fail = 0

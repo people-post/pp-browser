@@ -302,7 +302,7 @@ Full model: [THREADING.md](THREADING.md).
 | Class | Location | Role |
 |-------|----------|------|
 | **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
-| **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
+| **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
 | **MeshHost** | `base/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |

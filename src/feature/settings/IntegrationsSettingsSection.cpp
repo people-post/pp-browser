@@ -1,7 +1,7 @@
 #include "feature/settings/IntegrationsSettingsSection.h"
 
-#include "base/data/Config.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"

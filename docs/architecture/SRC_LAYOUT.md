@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation already holds `runtime/`, `platform/`, `error/`, `i18n/`; `data/` and `crypto/` remain under [`src/base/`](../../src/base/) for now. Domain peers still live under `src/base/` with `#include "base/…"`.
+> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation already holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`; `crypto/` remains under [`src/base/`](../../src/base/) for now. Domain peers still live under `src/base/` with `#include "base/…"`.
 
 ## Layers
 
@@ -102,7 +102,7 @@ crypto
 | `foundation/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
-| `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
+| `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
 
 Target path after move: `src/foundation/<module>/`.
@@ -124,7 +124,7 @@ Target path after move: `src/domain/<module>/`.
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
 
@@ -205,7 +205,7 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 
 ```cpp
 #include "common/ValueJson.h"
-#include "base/data/Config.h"              // foundation (today)
+#include "foundation/data/Config.h"              // foundation (today)
 #include "base/mesh/host/MeshHost.h"       // domain (today)
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
@@ -225,7 +225,7 @@ When a type lives in a **legal dependency** (same layer / lower layer / allowed 
 | The type is on an **allowed** same-layer / intra-feature edge | Incomplete type is enough **and** the include would force a forbidden module edge |
 | You need the full definition for members, nested types, or `sizeof` | Breaking a temporary compile cycle while a ports/DTO extraction is planned |
 
-Examples: feature/app headers that hold `SessionStore*` should `#include "base/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
+Examples: feature/app headers that hold `SessionStore*` should `#include "foundation/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
 

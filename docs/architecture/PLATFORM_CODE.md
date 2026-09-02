@@ -88,7 +88,7 @@ Allowed paths for OS preprocessor branches:
 - `pp-cpp-ui rmlui/` (upstream; not product policy)
 - `src/lib/libp2p/` (upstream; not product policy)
 
-**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/base/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
+**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/foundation/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
 
 ## Adding new platform behavior
 

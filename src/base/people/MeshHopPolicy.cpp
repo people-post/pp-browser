@@ -1,6 +1,6 @@
 #include "base/people/MeshHopPolicy.h"
 
-#include "base/data/MeshRole.h"
+#include "foundation/data/MeshRole.h"
 
 #include <algorithm>
 #include <array>

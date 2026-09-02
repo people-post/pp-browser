@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/crypto/ProfileSecretsService.h"
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 #include "base/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"

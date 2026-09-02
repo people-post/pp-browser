@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/ToolPermissions.h"
+#include "foundation/data/ToolPermissions.h"
 #include "base/ai/ToolRegistry.h"
 
 #include <string>

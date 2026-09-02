@@ -1,6 +1,6 @@
 #include "feature/messaging/MessagingFacade.h"
 
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/InitiationPricing.h"

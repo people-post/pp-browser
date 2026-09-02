@@ -1,8 +1,8 @@
 #include "feature/settings/SettingsTools.h"
 
-#include "base/data/LlmPreset.h"
-#include "base/data/ToolPermissions.h"
-#include "base/data/UserPreferences.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/ToolPermissions.h"
+#include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <algorithm>

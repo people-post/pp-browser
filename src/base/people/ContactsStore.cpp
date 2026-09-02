@@ -1,6 +1,6 @@
 #include "base/people/ContactsStore.h"
 
-#include "base/data/AtomicFileWrite.h"
+#include "foundation/data/AtomicFileWrite.h"
 #include "base/people/ContactJson.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

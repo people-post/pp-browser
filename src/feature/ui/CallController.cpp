@@ -24,7 +24,7 @@
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 
 #include "common/Utilities.h"
 

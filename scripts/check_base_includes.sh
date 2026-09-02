@@ -23,8 +23,20 @@ check_absent() {
   fi
 }
 
+# Same as check_absent but ignore tests/ (production domain sources only).
+check_absent_prod() {
+  local label="$1"
+  local pattern="$2"
+  local path="$3"
+  if rg -q "$pattern" "$ROOT/$path" -g '!**/tests/**' 2>/dev/null; then
+    echo "FAIL: $label"
+    rg -n "$pattern" "$ROOT/$path" -g '!**/tests/**' || true
+    FAIL=1
+  fi
+}
+
 # --- Hard bans (keep forever) ---
-check_absent "data must not include ai/" '#include "base/ai/' src/base/data
+check_absent "data must not include ai/" '#include "base/ai/' src/foundation/data
 check_absent "crypto must not include messaging/ThreadTypes.h" \
   '#include "base/messaging/ThreadTypes.h"' src/base/crypto
 check_absent "crypto must not include common/thread/ThreadTypes.h" \
@@ -40,8 +52,8 @@ check_absent "common must not include feature/" \
 
 # Legacy domain→domain edges still present. Remove entries as peels land.
 # Format: from->to (module folder names under src/base/).
+# (empty — all historical domain peer edges cleared)
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
-messaging->people
 EOF
 )
 
@@ -133,7 +145,9 @@ check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignB
   '#include "base/messaging/EnvelopeSigner.h"' src/base/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/base/net
-check_absent "net must not include base/people/ (use common/directory + feature wiring)" \
+check_absent_prod "messaging must not include base/people/ (wire via common/feature)" \
+  '#include "base/people/' src/base/messaging
+check_absent_prod "net must not include base/people/ (use common/directory + feature wiring)" \
   '#include "base/people/' src/base/net
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
@@ -155,6 +169,9 @@ for shim in \
   src/base/messaging/IThreadStore.h \
   src/base/messaging/MessagingJson.h \
   src/base/messaging/ChatBlobRequestUtil.h \
+  src/base/data \
+  src/base/messaging/PeerBriefRoute.h \
+  src/base/messaging/ChatHistoryResponder.h \
   src/base/net/ProfileIconClientUtil.h \
   src/base/net/ProfileIconFetchUtil.h \
   src/base/net/RegistrationClientUtil.h \

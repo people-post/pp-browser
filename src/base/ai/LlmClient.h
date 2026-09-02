@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/LlmConfig.h"
+#include "foundation/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/PbrCompat.h"

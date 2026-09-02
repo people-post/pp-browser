@@ -2,7 +2,7 @@
 
 #include "base/ai/ToolRegistry.h"
 #include "base/ai/mcp/McpClient.h"
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 
 #include <string>
 #include <vector>

@@ -1,6 +1,6 @@
 #include "feature/ui/ProfileSettingsSection.h"
 
-#include "base/data/SessionStore.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/people/AvatarGlyph.h"
 #include "common/PbrCompat.h"

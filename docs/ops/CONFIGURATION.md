@@ -15,7 +15,7 @@ There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config
 
 **Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
 
-Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
+Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
 ### `pp-node` deploy overlays
 
@@ -48,7 +48,7 @@ JSON remains the durable seed profile (caps, budgets, pricing). Env is for secre
 
 ## Runtime session state
 
-After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`SessionStore`](../../src/base/data/SessionStore.h) (`BootstrapResult`: config, profile prefs, paths). Settings and chat read/write through injected store / ports; saves reload from disk before notifying listeners.
+After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`SessionStore`](../../src/foundation/data/SessionStore.h) (`BootstrapResult`: config, profile prefs, paths). Settings and chat read/write through injected store / ports; saves reload from disk before notifying listeners.
 
 **Disk DTOs vs service slices:** `AppConfig` / `ProfilePreferences` are persistence schemas. Hot-reload does **not** pass those blobs straight into services. [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (composition root) projects nested service types and calls `Apply` only when a slice changes. Diagrams: [architecture/RUNTIME_COMPOSITION.md](../architecture/RUNTIME_COMPOSITION.md).
 
@@ -71,7 +71,7 @@ Slice types are **nested on the owning service class**. Settings section flush o
 
 ## LLM presets
 
-`config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
+`config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/foundation/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
 `NormalizeLlmConfig` is the single write-boundary translator: it turns preset intent into precise `base_url`, `model` (wire id), and auth flags. Settings flush and config load both call it. Runtime Brief chat only overlays `identity.brief_llm_api_key` — it does not re-interpret model/preset. See **Settings: normalize at write boundary** below.
 
@@ -98,7 +98,7 @@ Machine and profile settings should follow the same shape as LLM config:
 - Re-encode the same denylist / “fixup” in `ChatController`, `LlmClient`, and settings
 - Persist ambiguous values (`model: "brief"`) and hope every reader guesses
 
-When adding a new Me-tab section, add its normalizer next to the domain types under `src/base/data/` or `src/feature/settings/`, wire it from that section’s `Flush` + the relevant load path, and document the precise on-disk fields here.
+When adding a new Me-tab section, add its normalizer next to the domain types under `src/foundation/data/` or `src/feature/settings/`, wire it from that section’s `Flush` + the relevant load path, and document the precise on-disk fields here.
 
 ## Theme and appearance (runtime)
 
@@ -160,7 +160,7 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 ```
 
 - **`llm`** — default preset is **Brief** (API key issued on Profile registration, stored in `identity.enc`). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
-- **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/base/data/PlatformDefaults.cpp).
+- **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/foundation/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP seed (`/udp/443/adp/1.0.0/…`) for SoftMigrate + dial-back. LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`). Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.

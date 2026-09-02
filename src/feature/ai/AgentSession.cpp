@@ -22,8 +22,8 @@
 
 #include <map>
 #include "base/ai/mcp/McpRuntime.h"
-#include "base/data/Config.h"
-#include "base/data/LlmPreset.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
 #include "common/Logger.h"
 #include "common/Module.h"
 #include "common/Utilities.h"

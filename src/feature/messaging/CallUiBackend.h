@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "common/Error.h"

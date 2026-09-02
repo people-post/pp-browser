@@ -3,9 +3,9 @@
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/crypto/ProfileUnlockGate.h"
-#include "base/data/AppPaths.h"
-#include "base/data/SchemaVersion.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"

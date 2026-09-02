@@ -1,6 +1,6 @@
 #include "feature/messaging/CallStack.h"
 
-#include "base/data/MeshRole.h"
+#include "foundation/data/MeshRole.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/DirectChatTargetFromContact.h"

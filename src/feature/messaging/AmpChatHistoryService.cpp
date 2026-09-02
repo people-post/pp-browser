@@ -2,7 +2,7 @@
 
 #include "amp/link/PeerLink.h"
 
-#include "base/messaging/ChatHistoryResponder.h"
+#include "feature/messaging/ChatHistoryResponder.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 
 #include <optional>
 #include <string>

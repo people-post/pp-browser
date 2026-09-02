@@ -20,8 +20,8 @@
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
-#include "base/data/Config.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
 #include "common/Module.h"
 #include "base/ui/ChatWidgetTypes.h"
 

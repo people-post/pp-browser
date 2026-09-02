@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/mcp/McpClient.h"
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 
 #include <memory>
 #include <vector>
