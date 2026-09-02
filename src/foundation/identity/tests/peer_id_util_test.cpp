@@ -1,6 +1,6 @@
 #include "foundation/crypto/MlDsa.h"
-#include "base/mesh/identity/PeerId.h"
-#include "base/mesh/identity/PeerIdUtil.h"
+#include "foundation/identity/PeerId.h"
+#include "foundation/identity/PeerIdUtil.h"
 
 #include <gtest/gtest.h>
 

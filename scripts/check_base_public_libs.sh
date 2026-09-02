@@ -97,3 +97,13 @@ if rg -n '\bpp_base_net\b' \
   exit 1
 fi
 echo "OK: net domain lib name"
+
+# identity must stay on pp_foundation_identity (no pp_base_mesh_identity aliases).
+if rg -n '\bpp_base_mesh_identity\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_identity_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_mesh_identity (use pp_foundation_identity):"
+  cat /tmp/pp_identity_rename.txt
+  exit 1
+fi
+echo "OK: identity foundation lib name"

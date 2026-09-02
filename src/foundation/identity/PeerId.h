@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/mesh/identity/Multihash.h"
+#include "foundation/identity/Multihash.h"
 
 #include <cstddef>
 #include <span>

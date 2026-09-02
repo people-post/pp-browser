@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`. **Started domain move:** `people`, `media`, and `net` live under `src/domain/` (`#include "domain/…"`, `pp_domain_*`). Remaining peers still under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
+> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`, `identity/`. **Started domain move:** `people`, `media`, and `net` live under `src/domain/` (`#include "domain/…"`, `pp_domain_*`). Remaining peers still under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
 
 ## Layers
 
@@ -17,7 +17,7 @@
 | Crypto (external) | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers; product wire helpers stay in foundation/domain crypto |
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks / extracted stacks (Amp via FetchContent; RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
-| **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto) |
+| **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
 | **Domain** | `src/domain/` *(today: subset of `src/base/`)* | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui, render) — single-purpose engines/stores/clients |
 | Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions, screens; **wires** common contracts to concrete domain types |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
@@ -104,6 +104,7 @@ crypto
 | `foundation/i18n/` | Localization catalogs |
 | `foundation/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `foundation/crypto/` | E2E/at-rest crypto primitives, vault, KEM helpers (not messaging policy) |
+| `foundation/identity/` | PeerId derivation (ML-DSA public key → PeerId) |
 
 Target path after move: `src/foundation/<module>/`.
 
@@ -124,7 +125,7 @@ Target path after move: `src/domain/<module>/`.
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `identity` (foundation); historical `adp` → `mesh` (domain); Mesh/link **tests** may link `pp_foundation_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
 

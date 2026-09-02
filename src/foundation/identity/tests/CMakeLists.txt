@@ -1,0 +1,3 @@
+pp_browser_add_foundation_folder_tests(
+  pp_foundation_identity
+  pp_browser_identity_test)

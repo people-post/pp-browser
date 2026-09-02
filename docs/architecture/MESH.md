@@ -1,7 +1,7 @@
 # Mesh layer
 
 **Location:** `src/base/mesh/`  
-**CMake:** `pp_base_mesh`, `pp_base_mesh_identity`
+**CMake:** `pp_base_mesh`, `pp_foundation_identity`
 
 The mesh layer is the product peer-network runtime: identity, Amp composition, reachability, and L4 protocol hosting. It is not chat UX, HTTP Brief, or hop-ranking policy (those live in `feature/`).
 

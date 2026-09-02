@@ -1,10 +1,10 @@
-# Source layers: common → foundation → base(remaining domain peers) → domain → feature → app.
-# `domain/` is added after `base/` while mesh identity still lives under base/mesh.
+# Source layers: common → foundation → domain → base(remaining peers) → feature → app.
+# PeerId lives in foundation/identity, so domain can build before remaining base peers.
 add_subdirectory(common)
 add_subdirectory(foundation)
-add_subdirectory(base)
 add_subdirectory(domain)
-# Migrated domain peers attach after their targets exist (base/ still owns pp_base).
+add_subdirectory(base)
+# Migrated domain peers attach onto pp_base after both trees exist.
 if(TARGET pp_base AND TARGET pp_domain_people)
   target_link_libraries(pp_base INTERFACE pp_domain_people)
 endif()

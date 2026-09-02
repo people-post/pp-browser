@@ -6,7 +6,7 @@
 # 1) Hard bans (historical cycle points) — always fail.
 # 2) Domain peers must not include each other unless the edge is on the
 #    LEGACY_DOMAIN_EDGES allowlist (peel over time; do not add new edges).
-# 3) base/mesh/identity/ is treated as foundation (PeerId) — people may include it.
+# 3) PeerId lives in foundation/identity/ (not under mesh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -82,11 +82,6 @@ scan_domain_peer_includes() {
       [[ -n "$dest" ]] || continue
       [[ "$dest" != "$from" ]] || continue
 
-      # mesh/identity is foundation vocabulary for PeerId.
-      if [[ "$dest" == "mesh" ]] && grep -qE '(base|domain)/mesh/identity/' <<<"$line"; then
-        continue
-      fi
-
       is_domain_dest=0
       for d in "${DOMAIN_MODULES[@]}"; do
         if [[ "$dest" == "$d" ]]; then
@@ -115,6 +110,11 @@ fi
 
 check_absent "common must not include domain/" \
   '#include "domain/' src/common
+
+check_absent "must not include base/mesh/identity/ (moved to foundation/identity/)" \
+  '#include "base/mesh/identity/' src
+check_absent "common must not include foundation/" \
+  '#include "foundation/' src/common
 
 # Peeled paths must stay peeled (old locations / shims removed).
 check_absent "mesh must not include people/RelayScope.h (use common/directory/RelayScope.h)" \
@@ -192,6 +192,7 @@ for shim in \
   src/base/messaging/PeerBriefRoute.h \
   src/base/messaging/ChatHistoryResponder.h \
   src/base/mesh/host/MeshChannelLimits.h \
+  src/base/mesh/identity \
   src/base/net/ProfileIconClientUtil.h \
   src/base/net/ProfileIconFetchUtil.h \
   src/base/net/RegistrationClientUtil.h \

@@ -10,7 +10,7 @@
 #include "base/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "base/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "base/mesh/identity/PeerIdUtil.h"
+#include "foundation/identity/PeerIdUtil.h"
 
 #include "common/Logger.h"
 

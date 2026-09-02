@@ -18,7 +18,7 @@ pp_browser_add_domain_library(pp_domain_people
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
-    pp_base_mesh_identity
+    pp_foundation_identity
     sodium)
 
 if(PP_BROWSER_BUILD_TESTS)

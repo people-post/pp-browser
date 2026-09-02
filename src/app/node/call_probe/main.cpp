@@ -11,7 +11,7 @@
 #include "base/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "base/mesh/l4/call_media/ICallMediaTransport.h"
 #include "base/mesh/host/MeshPorts.h"
-#include "base/mesh/identity/PeerIdUtil.h"
+#include "foundation/identity/PeerIdUtil.h"
 #include "feature/messaging/AmpDirectChatService.h"
 #include "feature/messaging/IDirectMessageClient.h"
 

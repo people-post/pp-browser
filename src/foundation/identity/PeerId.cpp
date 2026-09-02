@@ -1,6 +1,6 @@
-#include "base/mesh/identity/PeerId.h"
+#include "foundation/identity/PeerId.h"
 
-#include "base/mesh/identity/Base58.h"
+#include "foundation/identity/Base58.h"
 
 #include <openssl/sha.h>
 

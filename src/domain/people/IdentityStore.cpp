@@ -9,7 +9,7 @@
 #include "foundation/data/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
-#include "base/mesh/identity/PeerIdUtil.h"
+#include "foundation/identity/PeerIdUtil.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
