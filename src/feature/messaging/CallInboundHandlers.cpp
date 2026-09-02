@@ -6,7 +6,7 @@
 #include "base/people/ContactIdentity.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

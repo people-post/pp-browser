@@ -4,11 +4,9 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
 #include "base/crypto/MlDsa.h"
-#include "base/messaging/EnvelopeSigner.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/ValueJson.h"
 #include "common/chat/RelayStreamKey.h"
-#include "base/messaging/RelayWirePayload.h"
 #include "base/net/HttpBlobClient.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
@@ -203,11 +201,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   std::lock_guard lock(mutex_);
   pending_.push_back(envelope);
 
-  auto reply_text = RelayWirePayload::EncodePlaintextText("Mock reply");
-  if (!reply_text) {
-    return reply_text.error();
-  }
-
+  // Echo inbound payload so mock replies stay valid ChatPayload without messaging codecs.
   RelayEnvelope reply;
   reply.envelope_version = kRelayEnvelopeVersion;
   reply.message_id = util::GenerateUuid();
@@ -215,7 +209,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   reply.sender_contact_id = reply.sender_relay_id;
   reply.route.kind = "direct";
   reply.route.channel = envelope.route.channel;
-  reply.body.e2e.payload_b64 = *reply_text;
+  reply.body.e2e.payload_b64 = envelope.body.e2e.payload_b64;
   reply.sender_seq = envelope.sender_seq + 1;
   reply.order_key = reply.sender_seq;
   reply.session_epoch = envelope.session_epoch;
@@ -223,7 +217,10 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   reply.timestamp = util::NowUnixMs();
 
   if (!reply_signing_private_key_.empty()) {
-    auto sign_bytes = EnvelopeSigner::BuildSignBytes(reply);
+    if (!build_sign_bytes_) {
+      return Error("Mock reply signing requires SetBuildSignBytesFn");
+    }
+    auto sign_bytes = build_sign_bytes_(reply);
     if (sign_bytes) {
       auto signature = MlDsa::Sign(reply_signing_private_key_, *sign_bytes);
       if (signature) {

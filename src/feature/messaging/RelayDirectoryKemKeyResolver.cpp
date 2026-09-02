@@ -1,6 +1,6 @@
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

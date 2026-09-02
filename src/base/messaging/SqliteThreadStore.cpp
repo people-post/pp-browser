@@ -7,7 +7,7 @@
 #include "base/messaging/ConversationSummaryCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/CallSessionStore.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "base/messaging/TranscriptBodyCodec.h"

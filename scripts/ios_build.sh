@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Sync with pbr::kProductBundleName in src/base/runtime/ProductBranding.h
+# Sync with pbr::kProductBundleName in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
 # Remember whether the caller set IOS_PLATFORM before our default (used by resolve_ios_platform).

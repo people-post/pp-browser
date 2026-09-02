@@ -91,7 +91,7 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 **Dedup:** relay unique key `(sender_contact_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
 
-**Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `base/messaging/MessagingJson.*`.
+**Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `common/chat/MessagingJson.*`.
 
 ---
 

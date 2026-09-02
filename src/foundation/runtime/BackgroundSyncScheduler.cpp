@@ -1,8 +1,8 @@
-#include "base/runtime/BackgroundSyncScheduler.h"
+#include "foundation/runtime/BackgroundSyncScheduler.h"
 
 #include "common/chat/MessagingLimits.h"
-#include "base/runtime/AppLifecycle.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

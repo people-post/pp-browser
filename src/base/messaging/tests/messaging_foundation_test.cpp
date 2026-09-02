@@ -1,5 +1,5 @@
 #include "base/messaging/AtAiParser.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "base/messaging/JsonThreadStore.h"
 #include "base/messaging/RelayWirePayload.h"

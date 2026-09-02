@@ -1,7 +1,5 @@
 #pragma once
 
-#include "base/people/ContactJson.h"
-#include "base/people/ContactTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
 #include "common/Value.h"

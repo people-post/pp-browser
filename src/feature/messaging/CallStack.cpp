@@ -10,7 +10,7 @@
 #include "base/people/MeshHopPolicy.h"
 #include "base/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "base/mesh/reachability/Reachability.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 

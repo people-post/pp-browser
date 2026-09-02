@@ -1,5 +1,5 @@
 #include "base/people/DirectChatTargetFromContact.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "base/people/ContactTypes.h"
 
 #include <gtest/gtest.h>

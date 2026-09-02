@@ -55,7 +55,7 @@ If unsure: *“Must every domain peer be allowed to link this?”* → foundatio
 
 ```
 src/base/
-├── runtime/      [foundation] AppRuntime, coordinator, lifecycle, branding/version
+├── runtime/      [foundation] **moved →** `src/foundation/runtime/`
 ├── platform/     [foundation] OS adapters — paths, assets, credentials, notifications; SDL glue
 ├── data/         [foundation] Config, profiles, session, schema, atomic file writes
 ├── error/        [foundation] **moved →** `src/foundation/error/`
@@ -89,7 +89,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. role ports); attachment utils in `feature/messaging`. Foundation peel: `CurlSsl` → `platform_core`.
+**Current (legacy DAG inside `base/`):** remaining allowlisted edges are `messaging`→`people` and `net`→`people` (`LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh)) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. `MessagingJson`, role ports); attachment utils in `feature/messaging`. Foundation peels: `CurlSsl` → `platform_core`; `error` / `i18n` / `runtime` → `src/foundation/`.
 
 **Target:**
 
@@ -110,7 +110,7 @@ Includes (today): `#include "base/data/Config.h"`.
 | Type | Header |
 |------|--------|
 | `LlmConfig` | `data/LlmConfig.h` |
-| Relay / blob helpers still coupling net↔messaging | `ChatBlobRequestUtil.h`, `AttachmentCache.h`, `MessagingJson.h`, `ServiceClientsImpl` |
+| Relay / blob helpers still coupling net↔people | `ProfileIcon*`, `RegistrationClientUtil`, `BlobQuotaUtil` |
 
 Candidates to promote into `common` when peeling peer edges: people/net helper ports, narrow view DTOs. Remaining messaging vocab lives in [`src/common/`](../common/) (`ThreadTypes`, `IThreadStore`, `RelayEnvelope`, …).
 

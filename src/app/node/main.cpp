@@ -6,7 +6,7 @@
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/platform/DeploymentProfile.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"
 #include "base/mesh/reachability/Reachability.h"

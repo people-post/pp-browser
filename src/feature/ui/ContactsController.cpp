@@ -6,7 +6,7 @@
 #include "base/crypto/PskFingerprint.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/people/DirectChatTargetFromContact.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/thread/ThreadTypes.h"
 #include "base/people/AvatarGlyph.h"
 #include "base/people/ContactTypes.h"

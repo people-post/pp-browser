@@ -46,7 +46,7 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 
 | Layer | Inside-layer rule |
 |-------|-------------------|
-| **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ other common headers). |
+| **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
 | **domain** | **Strict independence.** Peers must not `#include` or `PUBLIC_LIBS`-link each other. Cross-need → contract/DTO in `common`; wire in `feature` (or `app` for lifetimes). |
 | **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. |
@@ -73,7 +73,7 @@ Two buckets only:
 
 Guardrails:
 
-1. Common may include only `pp_common` / STL / other `common/` headers — **never** `base/*`, `foundation/*`, `domain/*`, `feature/*`.
+1. Common may include only `pp_common` / `pp_crypto` (Base64) / STL / other `common/` headers — **never** `base/*`, `foundation/*`, `domain/*`, `feature/*`.
 2. Prefer pure headers for contracts (virtual iface + POD/DTO). No orchestration `.cpp`.
 3. Promote a type to common only when a **second domain peer** must compile against it without linking the owner. Otherwise keep it in the owning foundation/domain module.
 
@@ -98,7 +98,7 @@ crypto
 
 | Path (today) | Contents |
 |--------------|----------|
-| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
+| `foundation/runtime/` | Process runtime: `AppRuntime`, coordinator, `WorkerDispatch`, lifecycle, branding/version |
 | `base/platform/` | OS adapters: paths, assets, credentials, notifications; SDL glue (no GL). See [PLATFORM_CODE.md](PLATFORM_CODE.md) |
 | `foundation/error/` | App error categories on top of common |
 | `foundation/i18n/` | Localization catalogs |
@@ -124,7 +124,7 @@ Target path after move: `src/domain/<module>/`.
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`; `net` → `people`/`messaging`; `ai` → `messaging`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Historical **acyclic** edges inside today’s `base/` (to peel during migration): `crypto` → `adp` → `mesh_identity` → `mesh` → `people`; `messaging` → `people`; `net` → `people`. Mesh/link **tests** may link `pp_base_mesh_identity` without full `pp_base_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 Module maps and current CMake names: [`src/base/README.md`](../../src/base/README.md).
 

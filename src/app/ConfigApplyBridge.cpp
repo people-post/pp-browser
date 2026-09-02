@@ -1,6 +1,6 @@
 #include "app/ConfigApplyBridge.h"
 
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "base/ui/Theme.h"
 
 #include <RmlUi/Core/Context.h>

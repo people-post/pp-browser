@@ -1,7 +1,7 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
 #include "base/messaging/GroupTypes.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactIdentity.h"
 #include "base/people/ContactTypes.h"

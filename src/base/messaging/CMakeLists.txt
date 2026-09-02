@@ -33,7 +33,6 @@ pp_browser_add_base_library(pp_base_messaging
     InitiationBillingStore.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
-    MessagingJson.cpp
     PskRotateCodec.cpp
     PeerBriefRoute.cpp
     PeerKemKeyStore.cpp

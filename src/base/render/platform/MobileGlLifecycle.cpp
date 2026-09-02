@@ -1,7 +1,7 @@
 #include "MobileGlLifecycle.h"
 
 #include "GlBackend.h"
-#include "base/runtime/ProductBranding.h"
+#include "foundation/runtime/ProductBranding.h"
 
 #include <cstdio>
 #include <string>

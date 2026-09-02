@@ -1,6 +1,6 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/EnvelopeSigner.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientsImpl.h"
@@ -15,6 +15,9 @@ TEST(RelayHistoryTest, MockFetchFiltersBySeqRange) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(keys));
   relay.SetReplySigningPrivateKey(keys->secret_key);
+  relay.SetBuildSignBytesFn([](const RelayEnvelope& envelope) {
+    return EnvelopeSigner::BuildSignBytes(envelope);
+  });
 
   auto make_envelope = [&](uint64_t seq, const std::string& text) {
     RelayEnvelope envelope;

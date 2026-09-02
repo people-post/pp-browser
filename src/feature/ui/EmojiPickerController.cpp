@@ -1,6 +1,6 @@
 #include "feature/ui/EmojiPickerController.h"
 
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "base/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
 #include "feature/ui/DataModelHost.h"

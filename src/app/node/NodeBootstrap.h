@@ -3,7 +3,7 @@
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/Config.h"
 #include "base/people/IdentityStore.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "base/mesh/host/MeshHost.h"
 

@@ -5,7 +5,7 @@
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, and bounded worker pool.
 
-**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/base/runtime/`, `src/common/`.
+**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/foundation/runtime/`, `src/common/`.
 
 ---
 

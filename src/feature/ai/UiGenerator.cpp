@@ -2,7 +2,7 @@
 
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/RmlValidator.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>

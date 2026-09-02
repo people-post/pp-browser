@@ -4,8 +4,8 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "base/platform/CurlSsl.h"
-#include "base/runtime/AppVersion.h"
-#include "base/runtime/ProductBranding.h"
+#include "foundation/runtime/AppVersion.h"
+#include "foundation/runtime/ProductBranding.h"
 
 #include <curl/curl.h>
 #include "common/ValueJson.h"

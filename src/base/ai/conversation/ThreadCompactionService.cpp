@@ -4,7 +4,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/thread/ThreadMemoryTypes.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <sstream>

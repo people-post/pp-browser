@@ -42,7 +42,6 @@ check_absent "common must not include feature/" \
 # Format: from->to (module folder names under src/base/).
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 messaging->people
-net->messaging
 net->people
 EOF
 )
@@ -129,6 +128,12 @@ check_absent "net must not include messaging/ChatPayloadTypes.h (use common/chat
   '#include "base/messaging/ChatPayloadTypes.h"' src/base/net
 check_absent "net must not include messaging/IThreadStore.h (use common/thread/)" \
   '#include "base/messaging/IThreadStore.h"' src/base/net
+check_absent "net must not include messaging/MessagingJson.h (use common/chat/)" \
+  '#include "base/messaging/MessagingJson.h"' src/base/net
+check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
+  '#include "base/messaging/EnvelopeSigner.h"' src/base/net
+check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
+  '#include "base/messaging/RelayWirePayload.h"' src/base/net
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
 check_absent "messaging must not include feature/ (domain may not include feature)" \
@@ -141,12 +146,14 @@ for shim in \
   src/common/CallMediaHealth.h \
   src/base/messaging/ThreadTypes.h \
   src/base/messaging/IThreadStore.h \
+  src/base/messaging/MessagingJson.h \
   src/base/data/ContextBudget.h \
   src/base/people/RelayScope.h \
   src/base/net/CurlSsl.h \
   src/base/media/CallMediaHealth.h \
   src/base/ui/WorkingSetTypes.h \
-  src/base/messaging/PeopleDiscoveryBlocks.h
+  src/base/messaging/PeopleDiscoveryBlocks.h \
+  src/base/runtime
 do
   if [[ -e "$ROOT/$shim" ]]; then
     echo "FAIL: shim path still exists: $shim"

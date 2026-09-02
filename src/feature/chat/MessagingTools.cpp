@@ -2,7 +2,7 @@
 
 #include "feature/messaging/MessagingFacade.h"
 
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

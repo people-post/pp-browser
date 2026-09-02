@@ -8,7 +8,7 @@
 #include "base/messaging/SoftMigrateLogic.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/ContactsStore.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <filesystem>

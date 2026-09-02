@@ -29,7 +29,7 @@
 #include "common/Utilities.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <atomic>
 #include <chrono>

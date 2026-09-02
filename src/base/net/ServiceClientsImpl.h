@@ -64,10 +64,14 @@ private:
 
 class MockRelayClient : public IRelayClient {
 public:
+  using BuildSignBytesFn = std::function<Roe<std::vector<uint8_t>>(const RelayEnvelope&)>;
+
   void SetNextReplySenderId(std::string sender_id) { next_reply_sender_id_ = std::move(sender_id); }
   void SetReplySigningPrivateKey(std::vector<uint8_t> private_key) {
     reply_signing_private_key_ = std::move(private_key);
   }
+  /** Optional: wire EnvelopeSigner::BuildSignBytes from messaging tests without net→messaging. */
+  void SetBuildSignBytesFn(BuildSignBytesFn fn) { build_sign_bytes_ = std::move(fn); }
   void AddDeliveredEnvelope(RelayEnvelope envelope) {
     std::lock_guard lock(mutex_);
     delivered_.push_back(std::move(envelope));
@@ -89,6 +93,7 @@ private:
   size_t poll_index_ = 0;
   std::string next_reply_sender_id_;
   std::vector<uint8_t> reply_signing_private_key_;
+  BuildSignBytesFn build_sign_bytes_;
   std::string fetch_history_error_;
 };
 

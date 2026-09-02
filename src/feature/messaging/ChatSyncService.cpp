@@ -3,7 +3,7 @@
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/people/ContactTypes.h"

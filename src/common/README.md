@@ -6,7 +6,7 @@ pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabula
 app → feature → domain → foundation → common → pp_common
 ```
 
-**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`) and other `common/` headers. It must **never** `#include` `base/`, `foundation/`, `domain/`, `feature/`, or `app/`.
+**Rule:** common may depend only on FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`pp_common`), FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`pp_crypto`, for shared Base64 in wire JSON), and other `common/` headers. It must **never** `#include` `base/`, `foundation/`, `domain/`, `feature/`, or `app/`.
 
 Repo-wide North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
@@ -22,7 +22,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
 | [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `IdentityTypes` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |
-| [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, messaging limits, people-discovery blocks |
+| [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, people-discovery blocks |
 | [`media/`](media/) | `CallMediaHealth` |
 | [`ui/`](ui/) | `WorkingSetTypes` |
 

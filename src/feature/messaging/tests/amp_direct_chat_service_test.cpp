@@ -1,6 +1,6 @@
 #include "feature/messaging/AmpDirectChatService.h"
 
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/mesh/tests/support/mesh_test_harness.h"
 

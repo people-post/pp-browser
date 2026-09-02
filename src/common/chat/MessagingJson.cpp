@@ -1,13 +1,13 @@
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 
 #include "common/thread/ThreadChannel.h"
 #include "common/chat/RelayStreamKey.h"
-
-#include "base/crypto/CryptoUtil.h"
 #include "common/ValueJson.h"
+#include "crypto/SodiumUtil.h"
 
 #include <map>
 #include <sstream>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -502,7 +502,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   }
   const uint64_t index_key = envelope.order_key != 0 ? envelope.order_key : envelope.sender_seq;
   const std::string serialized = DumpJson(RelayEnvelopeToApplicationJson(envelope));
-  const ByteVector bytes(serialized.begin(), serialized.end());
+  const ::pp::ByteVector bytes(serialized.begin(), serialized.end());
   RelayWireSendRecord record;
   // HTTP routing / auth id is always the relay registration id (WIRE_SCHEMAS RelayWireRecord).
   // Application blob keeps Account ID in envelope.sender_contact_id (D079).
@@ -510,7 +510,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.recipient_contact_id = *envelope.recipient_contact_id;
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;
-  record.blob_b64 = Base64Encode(bytes);
+  record.blob_b64 = ::pp::Base64Encode(bytes);
   return record;
 }
 
@@ -543,7 +543,7 @@ Roe<RelayInboundRecord> ParseRelayInboundRecord(const Object& json) {
 }
 
 Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& record) {
-  auto decoded = Base64Decode(record.blob_b64);
+  auto decoded = ::pp::Base64Decode(record.blob_b64);
   if (!decoded) {
     return decoded.error();
   }

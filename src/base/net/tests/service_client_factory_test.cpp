@@ -1,5 +1,4 @@
-#include "base/messaging/MessagingJson.h"
-#include "base/messaging/RelayWirePayload.h"
+#include "common/chat/MessagingJson.h"
 #include "base/net/ServiceClientFactory.h"
 #include "base/net/ServiceClientsImpl.h"
 
@@ -20,9 +19,6 @@ TEST(ServiceClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   ASSERT_TRUE(static_cast<bool>(clients.blob));
   ASSERT_TRUE(static_cast<bool>(clients.client_compat));
 
-  auto payload_b64 = pbr::RelayWirePayload::EncodePlaintextText("hello");
-  ASSERT_TRUE(static_cast<bool>(payload_b64));
-
   pbr::RelayEnvelope envelope;
   envelope.envelope_version = pbr::kRelayEnvelopeVersion;
   envelope.message_id = "msg-1";
@@ -30,7 +26,7 @@ TEST(ServiceClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   envelope.sender_contact_id = "relay:self";
   envelope.route.kind = "direct";
   envelope.route.channel = pbr::ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.body.e2e.payload_b64 = "dGVzdA==";
   envelope.sender_seq = 1;
   envelope.order_key = 1;
   envelope.stream_key = "v1:e2e:1:relay:peer:relay:self";
@@ -120,8 +116,6 @@ TEST(ServiceClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
 
 TEST(ServiceClientFactoryTest, MockClientsRemainAvailableForTests) {
   pbr::MockRelayClient mock_relay;
-  auto payload_b64 = pbr::RelayWirePayload::EncodePlaintextText("hello");
-  ASSERT_TRUE(static_cast<bool>(payload_b64));
 
   pbr::RelayEnvelope envelope;
   envelope.envelope_version = pbr::kRelayEnvelopeVersion;
@@ -130,7 +124,7 @@ TEST(ServiceClientFactoryTest, MockClientsRemainAvailableForTests) {
   envelope.sender_contact_id = "relay:self";
   envelope.route.kind = "direct";
   envelope.route.channel = pbr::ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.body.e2e.payload_b64 = "dGVzdA==";
   envelope.sender_seq = 1;
   envelope.order_key = 1;
   envelope.stream_key = "v1:e2e:1:relay:peer:relay:self";

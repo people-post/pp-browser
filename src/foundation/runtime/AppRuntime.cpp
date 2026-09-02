@@ -1,7 +1,7 @@
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 
-#include "base/runtime/ThreadRuntime.h"
-#include "base/runtime/WorkerDispatch.h"
+#include "foundation/runtime/ThreadRuntime.h"
+#include "foundation/runtime/WorkerDispatch.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

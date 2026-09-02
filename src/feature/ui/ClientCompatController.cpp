@@ -3,8 +3,8 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
-#include "base/runtime/AppVersion.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppVersion.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "base/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "feature/ui/UserFeedback.h"

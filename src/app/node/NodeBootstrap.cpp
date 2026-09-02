@@ -10,7 +10,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/mesh/dht/DhtTypes.h"
 #include "base/mesh/discovery/AmpDirectoryService.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <cstdlib>

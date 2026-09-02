@@ -1,4 +1,4 @@
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/SyncStateCodec.h"
 

@@ -13,7 +13,7 @@
 #include "base/messaging/InitiationBillingCodec.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/InitiationPricing.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupRosterStore.h"

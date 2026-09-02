@@ -7,7 +7,7 @@
 #include "base/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"

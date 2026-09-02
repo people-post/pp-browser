@@ -1,6 +1,6 @@
 #include "base/platform/PlatformLogSink.h"
 
-#include "base/runtime/ProductBranding.h"
+#include "foundation/runtime/ProductBranding.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 

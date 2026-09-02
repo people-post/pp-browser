@@ -46,9 +46,9 @@ check_tree "base/crypto/ must not use OS #ifdefs" src/base/crypto
 check_tree "base/messaging/ must not use OS #ifdefs" src/base/messaging
 check_tree "base/people/ must not use OS #ifdefs" src/base/people
 check_tree "base/ui/ must not use OS #ifdefs" src/base/ui
-check_tree "base/error/ must not use OS #ifdefs" src/base/error
-check_tree "base/i18n/ must not use OS #ifdefs" src/base/i18n
-check_tree "base/runtime/ must not use OS #ifdefs" src/base/runtime
+check_tree "foundation/error/ must not use OS #ifdefs" src/foundation/error
+check_tree "foundation/i18n/ must not use OS #ifdefs" src/foundation/i18n
+check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
 check_tree "base/media/ portable TUs must not use OS #ifdefs" src/base/media \
   "${BACKEND_GLOBS[@]}"

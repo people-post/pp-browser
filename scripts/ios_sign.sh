@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Sync with pbr::kProductBundleName / kProductSlug in src/base/runtime/ProductBranding.h
+# Sync with pbr::kProductBundleName / kProductSlug in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"
 DEFAULT_ENTITLEMENTS="${ROOT}/packaging/ios/${PRODUCT_SLUG}.entitlements"

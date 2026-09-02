@@ -12,8 +12,8 @@ data
 crypto
 ```
 
-Today this tree holds `error/` and `i18n/`. Remaining foundation modules still live under [`src/base/`](../base/) until follow-up moves.
+Today this tree holds `runtime/`, `error/`, and `i18n/`. Remaining foundation modules still live under [`src/base/`](../base/) until follow-up moves.
 
-CMake targets keep transitional `pp_base_error` / `pp_base_i18n` names until the broader `pp_foundation_*` rename.
+CMake targets keep transitional `pp_base_runtime*` / `pp_base_error` / `pp_base_i18n` names until the broader `pp_foundation_*` rename.
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).

@@ -2,7 +2,7 @@
 #include "feature/ui/ShellHost.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformNavigation.h"

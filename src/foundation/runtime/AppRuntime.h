@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/runtime/CoordinatorThread.h"
-#include "base/runtime/WorkerDispatch.h"
+#include "foundation/runtime/CoordinatorThread.h"
+#include "foundation/runtime/WorkerDispatch.h"
 #include "common/WorkerPool.h"
 
 #include <chrono>

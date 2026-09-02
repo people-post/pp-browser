@@ -9,7 +9,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/people/DirectChatTargetFromContact.h"
 #include "base/messaging/GroupMembershipCodec.h"
-#include "base/messaging/MessagingJson.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/ReactionTypes.h"

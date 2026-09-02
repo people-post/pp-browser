@@ -5,7 +5,7 @@
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "feature/messaging/AttachmentFetchUtil.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <sodium.h>
 #include "common/PbrCompat.h"

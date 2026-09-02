@@ -1,7 +1,7 @@
 #include "feature/messaging/CallLifecycle.h"
 
 #include "feature/messaging/CallSessionManager.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
