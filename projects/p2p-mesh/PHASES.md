@@ -94,11 +94,26 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [ ] Bonds / reputation / anti-capture (N020 long)
 - [ ] Blockchain rails / accept_paid_jobs later (secondary)
 
+## n-dir — Mesh directory consumers (before n2)
+
+**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md#track-n-dir--wire-mesh-directory-into-consumers). API + pp-node publish landed (N027); consumer wiring open.
+
+- [ ] `MeshDirectoryCache` + periodic `ListMeshNodes` refresh
+- [ ] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
+- [ ] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
+- [ ] Bridge score prefers directory when seed unreachable (ns partial)
+- [ ] Phase E smoke + docs
+
 ## n2 — DHT (later per N015)
 
-- [ ] Kademlia when `Node && capabilities.dht`
+**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md#track-n2-core--dht-v1-find_peer-only). AMP-native Kademlia; not pp-ledger BitTorrent DHT.
+
+- [ ] **n2-spec:** ADR N028 + `docs/contracts/MESH_DHT.md`
+- [ ] **n2-core:** FIND_PEER when `Node && capabilities.dht` (default off)
+- [ ] **n2-caps:** Signed capability records in DHT
+- [ ] **n2-hard:** Rate limits / reputation (trail v1)
 - [ ] Never on Client/mobile
-- [ ] Do not jump here immediately after n1
+- [ ] Do not start n2-core until **n-dir** acceptance passes
 
 ## Later horizons
 
