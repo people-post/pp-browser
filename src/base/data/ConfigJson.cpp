@@ -329,6 +329,7 @@ Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
   Object object;
   object.set("circuit_relay", caps.circuit_relay);
   object.set("media_relay", caps.media_relay);
+  object.set("dht", caps.dht);
   return object;
 }
 
@@ -338,6 +339,33 @@ void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
   }
   if (auto media_relay = object.getIf<bool>("media_relay")) {
     caps.media_relay = *media_relay;
+  }
+  if (auto dht = object.getIf<bool>("dht")) {
+    caps.dht = *dht;
+  }
+}
+
+Object MeshDhtConfigToObject(const MeshDhtConfig& config) {
+  Object object;
+  object.set("record_ttl_seconds", static_cast<int64_t>(config.record_ttl_seconds));
+  object.set("find_peer_timeout_ms", static_cast<int64_t>(config.find_peer_timeout_ms));
+  object.set("max_concurrent_lookups", static_cast<int64_t>(config.max_concurrent_lookups));
+  object.set("k_bucket_size", static_cast<int64_t>(config.k_bucket_size));
+  return object;
+}
+
+void MeshDhtConfigFromObject(const Object& object, MeshDhtConfig& config) {
+  if (auto ttl = object.getNonNegInt("record_ttl_seconds")) {
+    config.record_ttl_seconds = static_cast<int>(*ttl);
+  }
+  if (auto timeout = object.getNonNegInt("find_peer_timeout_ms")) {
+    config.find_peer_timeout_ms = static_cast<int>(*timeout);
+  }
+  if (auto max_lookup = object.getNonNegInt("max_concurrent_lookups")) {
+    config.max_concurrent_lookups = static_cast<int>(*max_lookup);
+  }
+  if (auto k = object.getNonNegInt("k_bucket_size")) {
+    config.k_bucket_size = static_cast<int>(*k);
   }
 }
 
@@ -362,6 +390,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("capabilities", MeshCapabilitiesToObject(config.capabilities));
+  object.set("dht", MeshDhtConfigToObject(config.dht));
   object.set("pricing", MeshPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
   return object;
@@ -401,6 +430,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (const Object* capabilities = object.getObject("capabilities")) {
     MeshCapabilitiesFromObject(*capabilities, config.capabilities);
+  }
+  if (const Object* dht = object.getObject("dht")) {
+    MeshDhtConfigFromObject(*dht, config.dht);
   }
   if (const Object* pricing = object.getObject("pricing")) {
     MeshPricingFromObject(*pricing, config.pricing);

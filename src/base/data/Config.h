@@ -37,6 +37,20 @@ struct MeshCapabilities {
   bool circuit_relay = false;
   /** Host blind media forwarder (n4-media / N018). Default on for Node hosts. */
   bool media_relay = true;
+  /** Participate in AMP Kademlia peer routing (n2). Default off; Node only. */
+  bool dht = false;
+};
+
+/** Tunables for mesh DHT (n2). Ignored when capabilities.dht is false. */
+struct MeshDhtConfig {
+  /** TTL for self peer_routing records (seconds). Re-publish at ttl/2. */
+  int record_ttl_seconds = 3600;
+  /** FIND_PEER RPC timeout (milliseconds). */
+  int find_peer_timeout_ms = 5000;
+  /** Max in-flight FIND_PEER lookups per process. */
+  int max_concurrent_lookups = 4;
+  /** Kademlia k (bucket size target). Wire default 20 — override for lab only. */
+  int k_bucket_size = 20;
 };
 
 /** ↑/↓ ceilings for media_relay (N019). 0 = unbounded / ops default. */
@@ -101,6 +115,7 @@ struct MeshConfig {
   /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
   int amp_udp_port = 0;
   MeshCapabilities capabilities;
+  MeshDhtConfig dht;
   MeshPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;
 };

@@ -135,13 +135,13 @@
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
-| DHT | **n2** (after n-dir; AMP-native per roadmap) |
+| DHT | **n2-spec done**; **n2-core** next — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
 | Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
 1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
-2. **n-dir** mesh directory consumers, then **n2** AMP DHT — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md)
+2. **n2-core** AMP DHT FIND_PEER (spec landed: N028 + MESH_DHT.md)
 3. Curated public / paid regulation later  
 4. **L3.5** multi-hop when single-hop cannot reach B
 

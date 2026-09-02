@@ -440,3 +440,28 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Rationale:** Customers pin Account ID / org handle, not Peer ID; durable volume (or org master seed) keeps Peer ID across container redeploys; people search stays clean; decentralization needs swappable registries.
 
 **Alternatives rejected:** Overloading person register for seeds; sidecar publish scripts as steady-state; removing bootstrap seed immediately; auto mesh-listing every desktop Node.
+
+---
+
+## N028 — AMP-native mesh DHT (FIND_PEER v1)
+
+**Date:** 2026-09-02  
+**Status:** Accepted (spec — **n2-spec**; code **n2-core** next)  
+**Spec:** [MESH_DHT.md](../../docs/contracts/MESH_DHT.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md)  
+**Amends:** N015 (n2 after n-dir); N027 (bootstrap ∪ directory)
+
+**Decision:**
+
+1. **Separate from pp-ledger DHT:** BitTorrent `DhtRunner` is retired on standalone fleet nodes (curated ADP multiaddrs). Mesh DHT is a **new** Kademlia layer on AMP — no shared code or keys with pp-ledger fleet.
+2. **Transport:** `/pp-mesh/dht/1.0.0` control channel on existing Amp associations (JSON request/response per DATA frame). No parallel UDP DHT socket.
+3. **v1 record type:** Signed `peer_routing` only (`PeerId`, `multiaddrs[]`, `seq`, `ttl`, ML-DSA-65). Capability fields deferred to **n2-caps** with the same vocabulary as directory `mesh_node`.
+4. **Participation:** `Node && mesh.capabilities.dht && reachability != Blocked`. Mobile Client never runs DHT. Default **off**.
+5. **Bootstrap:** `bootstrap_peers` ∪ `MeshDirectoryCache` snapshot (n-dir). Org seed remains L0 emergency dial; directory preferred when seed unreachable (existing n-dir bridge score).
+6. **Policy:** DHT hits enter hop/dial candidate pools as `MeshHopAffinity::DhtDiscovered` — **always** filtered by `MeshHopPolicy`, relay scope (N020/N023), and media ad filters. DHT does not bypass contact-first rules.
+7. **Non-goals v1:** content routing, pubsub, third-party STORE, ledger fleet discovery, libp2p Kademlia import.
+
+**Rationale:** Decentralized PeerId lookup helps partition escape and scale after contacts/directory; doing it on AMP keeps one stack post-libp2p retirement. Shipping spec before code avoids another transport fork.
+
+**Alternatives rejected:** Revive jech/dht in pp-browser; libp2p Kademlia module; DHT before n-dir (N015 order); DHT on mobile; open STORE without rate limits.
+
+**Cross-link:** N008 (capability checkbox ships with working protocol); media-hop L5 (directory / DHT dial assist).

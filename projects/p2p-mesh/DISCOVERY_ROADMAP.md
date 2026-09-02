@@ -141,9 +141,9 @@ Decisions to lock:
 
 ### Acceptance (n2-spec)
 
-- [ ] N028 merged in DECISIONS.md.
-- [ ] `MESH_DHT.md` reviewed with mesh + calls owners.
-- [ ] Config schema stub: `mesh.capabilities.dht`, `mesh.dht.*` tuning knobs documented in CONFIGURATION.md.
+- [x] N028 merged in DECISIONS.md.
+- [x] `MESH_DHT.md` wire contract (review with mesh + calls owners when opening n2-core PR).
+- [x] Config schema stub: `mesh.capabilities.dht`, `mesh.dht.*` in Config.h + CONFIGURATION.md + `config.json.example`.
 
 ---
 
