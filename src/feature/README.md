@@ -81,7 +81,7 @@ app → feature → domain → foundation → common
 
 (Today: `app → feature → base → common` with foundation+domain still under `base/`.)
 
-Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `base/` does not include `feature/`, and `feature/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
+Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, and `feature/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 
@@ -191,5 +191,5 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |
 | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) | Shell layout and document hosting |
-| [`src/base/README.md`](../base/README.md) | Base-layer primitives and dependency rules |
+| [`src/foundation/README.md`](../foundation/README.md) / [`src/domain/README.md`](../domain/README.md) | Foundation + domain primitives and dependency rules |
 | [`AGENTS.md`](../../AGENTS.md) | Agent-oriented map of the whole repo |

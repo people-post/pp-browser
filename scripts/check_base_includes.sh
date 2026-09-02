@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Guard foundation/domain include edges (North Star).
-# See docs/architecture/SRC_LAYOUT.md and src/base/README.md.
+# See docs/architecture/SRC_LAYOUT.md and src/foundation/README.md / src/domain/README.md.
 #
 # Rules:
 # 1) Hard bans (historical cycle points) — always fail.
@@ -54,7 +54,7 @@ check_absent "common must not include feature/" \
   '#include "feature/' src/common
 
 # Legacy domain→domain edges still present. Remove entries as peels land.
-# Format: from->to (module folder names under src/base/ or src/domain/).
+# Format: from->to (module folder names under src/domain/).
 # (empty — all historical domain peer edges cleared)
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 EOF
@@ -106,9 +106,13 @@ scan_domain_peer_includes() {
     ! -path '*/tests/*' -print0)
 }
 
-scan_domain_peer_includes "$ROOT/src/base"
+# Domain peers live under src/domain/ only (src/base/ retired).
 if [[ -d "$ROOT/src/domain" ]]; then
   scan_domain_peer_includes "$ROOT/src/domain"
+fi
+if [[ -d "$ROOT/src/base" ]]; then
+  echo "FAIL: src/base/ must remain deleted (see src/CMakeLists.txt pp_base aggregate)"
+  FAIL=1
 fi
 
 check_absent "common must not include domain/" \
@@ -217,6 +221,7 @@ check_absent "messaging must not include feature/ (domain may not include featur
 
 # Removed shim paths must stay deleted.
 for shim in \
+  src/base \
   src/common/ThreadTypes.h \
   src/common/IThreadStore.h \
   src/common/CallMediaHealth.h \

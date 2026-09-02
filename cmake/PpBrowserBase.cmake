@@ -1,6 +1,6 @@
 include(PpBrowserWarnings)
 
-# Shared static-lib helper for foundation (`pp_foundation_*`) and domain (`pp_base_*`) modules.
+# Shared static-lib helper for foundation (`pp_foundation_*`) and domain (`pp_domain_*`) modules.
 function(pp_browser_add_base_library target)
   cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
   add_library(${target} STATIC ${ARG_SOURCES})

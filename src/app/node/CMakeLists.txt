@@ -44,9 +44,9 @@ install(TARGETS pp-node RUNTIME DESTINATION bin)
 # Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
   pp_domain_mesh
-  pp_base_mesh_link
+  pp_amp_link
   pp_foundation_crypto
-  pp_base_adp
+  pp_amp_l1
   pp_pbr_common
   Threads::Threads
   sodium

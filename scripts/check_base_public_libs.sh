@@ -136,7 +136,7 @@ if rg -n '\bpp_base_ai(_conversation|_mcp)?\b' \
 fi
 echo "OK: ai domain lib names"
 
-# Product mesh target must stay pp_domain_mesh (Amp L2/L3 aliases remain pp_base_mesh_*).
+# Product mesh target must stay pp_domain_mesh (no pp_base_mesh product target).
 if rg -n '\bpp_base_mesh\b' \
   --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
   --glob '!docs/**' --glob '!projects/**' --glob '!AGENTS.md' \
@@ -146,3 +146,22 @@ if rg -n '\bpp_base_mesh\b' \
   exit 1
 fi
 echo "OK: mesh domain lib name"
+
+# Amp FetchContent targets use pp_amp_* (no legacy pp_base_adp / pp_base_mesh_* aliases).
+if rg -n '\bpp_base_(adp|mesh_session|mesh_channel|mesh_link)\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  --glob '!docs/**' --glob '!projects/**' --glob '!AGENTS.md' \
+  "$ROOT" >/tmp/pp_amp_alias_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover Amp pp_base_* aliases (use pp_amp_l1/l2/l3/link):"
+  cat /tmp/pp_amp_alias_rename.txt
+  exit 1
+fi
+echo "OK: Amp pp_amp_* target names"
+
+# Thin src/base/ aggregate must stay deleted (pp_base is defined in src/CMakeLists.txt).
+if [[ -d "$ROOT/src/base" ]]; then
+  echo "FAIL: src/base/ must remain deleted (aggregate is src/CMakeLists.txt pp_base)"
+  ls -la "$ROOT/src/base" || true
+  exit 1
+fi
+echo "OK: src/base/ retired"
