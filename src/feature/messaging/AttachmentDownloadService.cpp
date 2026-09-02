@@ -4,7 +4,7 @@
 #include "base/crypto/CryptoConstants.h"
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
-#include "base/net/AttachmentFetchUtil.h"
+#include "feature/messaging/AttachmentFetchUtil.h"
 #include "base/runtime/AppRuntime.h"
 
 #include <sodium.h>

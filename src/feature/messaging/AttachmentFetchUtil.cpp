@@ -1,4 +1,4 @@
-#include "base/net/AttachmentFetchUtil.h"
+#include "feature/messaging/AttachmentFetchUtil.h"
 
 #include "base/crypto/AttachmentContentCipher.h"
 #include "base/crypto/AttachmentContentHash.h"

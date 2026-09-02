@@ -5,7 +5,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/ChatPayloadCodec.h"
-#include "base/net/AttachmentClientUtil.h"
+#include "common/chat/MessagingLimits.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

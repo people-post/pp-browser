@@ -1,5 +1,5 @@
 #include "base/messaging/AttachmentDownloadPolicy.h"
-#include "base/net/AttachmentClientUtil.h"
+#include "common/chat/MessagingLimits.h"
 
 #include <gtest/gtest.h>
 

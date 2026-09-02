@@ -1,8 +1,9 @@
 #include "base/ai/conversation/ThreadCompactionService.h"
 
 #include "base/ai/LlmClient.h"
-#include "common/MessagingLimits.h"
-#include "common/ThreadTypes.h"
+#include "common/chat/MessagingLimits.h"
+#include "common/thread/ThreadMemoryTypes.h"
+#include "common/thread/ThreadRecordTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
@@ -34,8 +35,9 @@ std::string BuildCompactionPrompt(const std::vector<ThreadMessage>& messages,
 
 } // namespace
 
-ThreadCompactionService::ThreadCompactionService(IThreadStore& store, LlmClient* llm)
-    : store_(store), llm_(llm) {
+ThreadCompactionService::ThreadCompactionService(IThreadCatalog& catalog, IThreadTranscript& transcript,
+                                                 IThreadMemory& memory, LlmClient* llm)
+    : catalog_(catalog), transcript_(transcript), memory_(memory), llm_(llm) {
   redirectLogger("ThreadCompactionService");
 }
 
@@ -62,25 +64,25 @@ void ThreadCompactionService::MaybeCompactAsync(const std::string& thread_id) {
 }
 
 void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
-  auto thread = store_.GetThread(thread_id);
+  auto thread = catalog_.GetThread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Ai) {
     return;
   }
 
   const int64_t cursor = [&]() -> int64_t {
-    auto memory = store_.GetThreadMemory(thread_id);
+    auto memory = memory_.GetThreadMemory(thread_id);
     if (!memory || !memory->has_value()) {
       return 0;
     }
     return memory->value().compacted_through_display_order.value_or(0);
   }();
 
-  auto eligible_count = store_.CountContextEligibleMessagesAfter(thread_id, cursor);
+  auto eligible_count = transcript_.CountContextEligibleMessagesAfter(thread_id, cursor);
   if (!eligible_count || *eligible_count <= kCompactionTurnThreshold) {
     return;
   }
 
-  auto messages = store_.GetContextEligibleMessagesAfter(thread_id, cursor);
+  auto messages = transcript_.GetContextEligibleMessagesAfter(thread_id, cursor);
   if (!messages || messages->size() <= static_cast<size_t>(kCompactionMinTurnsKept * 2)) {
     return;
   }
@@ -95,7 +97,7 @@ void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
   const int64_t compacted_through = to_compact.back().display_order;
 
   std::optional<ConversationSummary> existing;
-  if (auto memory = store_.GetThreadMemory(thread_id)) {
+  if (auto memory = memory_.GetThreadMemory(thread_id)) {
     existing = *memory;
   }
 
@@ -119,7 +121,7 @@ void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
   summary.compacted_through_display_order = compacted_through;
   summary.updated_at = util::NowUnixMs();
 
-  if (auto saved = store_.SetThreadMemory(thread_id, summary); !saved) {
+  if (auto saved = memory_.SetThreadMemory(thread_id, summary); !saved) {
     log().warning << "Failed to persist summary for thread " << thread_id << ": " << saved.error().message;
   }
 }

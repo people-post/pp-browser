@@ -2,8 +2,8 @@
 
 #include "base/ai/conversation/ConversationTypes.h"
 #include "base/ai/LlmClient.h"
-#include "common/ThreadMemoryTypes.h"
-#include "common/ThreadTypes.h"
+#include "common/thread/ThreadMemoryTypes.h"
+#include "common/thread/ThreadRecordTypes.h"
 
 #include <string>
 #include <vector>

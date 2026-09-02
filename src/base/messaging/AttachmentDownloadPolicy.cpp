@@ -1,5 +1,7 @@
 #include "base/messaging/AttachmentDownloadPolicy.h"
 
+#include "common/chat/MessagingLimits.h"
+
 namespace pbr {
 
 std::string AttachmentDownloadPolicyToString(const AttachmentDownloadPolicy policy) {

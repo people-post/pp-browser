@@ -1,6 +1,7 @@
 #pragma once
 
-#include "common/ThreadTypes.h"
+#include "common/thread/ChatHistoryTypes.h"
+#include "common/chat/RelayEnvelope.h"
 
 #include <cstdint>
 #include <optional>

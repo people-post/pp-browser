@@ -791,7 +791,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) {
   if (state->thread_store && state->llm) {
-    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, state->llm.get());
+    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, *state->thread_store, *state->thread_store, state->llm.get());
   } else {
     state->compaction.reset();
   }

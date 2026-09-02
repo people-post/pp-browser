@@ -1,6 +1,8 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
+    AttachmentClientUtil.cpp
     AttachmentDownloadService.cpp
+    AttachmentFetchUtil.cpp
     CallMediaKeyStore.cpp
     AmpCircuitHopReach.cpp
     AmpMediaRelayClient.cpp

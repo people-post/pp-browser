@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/LlmClient.h"
-#include "common/ContextBudget.h"
+#include "common/thread/ContextBudget.h"
 #include "common/ChatActionTypes.h"
 
 #include <optional>

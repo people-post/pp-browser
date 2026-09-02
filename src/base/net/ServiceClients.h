@@ -1,10 +1,11 @@
 #pragma once
 
-#include "common/DirectoryTypes.h"
+#include "common/directory/DirectoryTypes.h"
 #include "common/Error.h"
-#include "common/IDirectoryClient.h"
+#include "common/directory/IDirectoryClient.h"
 #include "base/crypto/IDekConsumer.h"
-#include "common/ThreadTypes.h"
+#include "common/thread/ChatBlobTypes.h"
+#include "common/thread/ChatHistoryTypes.h"
 
 #include <functional>
 #include <memory>

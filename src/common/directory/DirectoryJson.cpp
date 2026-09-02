@@ -1,4 +1,4 @@
-#include "common/DirectoryJson.h"
+#include "common/directory/DirectoryJson.h"
 
 #include "common/PbrCompat.h"
 

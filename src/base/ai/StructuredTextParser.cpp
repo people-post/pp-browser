@@ -1,7 +1,7 @@
 #include "base/ai/StructuredTextParser.h"
 
 #include "base/ai/WorkingSetPolicy.h"
-#include "common/PeopleDiscoveryBlocks.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
 
 #include "common/ValueJson.h"
 #include <algorithm>

@@ -16,7 +16,9 @@ jobs:
       - name: Feature include edges
         run: ./scripts/check_feature_includes.sh
       - name: Base/domain include edges
-        run: ./scripts/check_base_includes.sh
+        run: |
+          ./scripts/check_base_includes.sh
+          ./scripts/check_base_public_libs.sh
       - name: Platform ifdef locations
         run: ./scripts/check_platform_ifdefs.sh
 

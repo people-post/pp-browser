@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/ChatPayloadTypes.h"
-#include "common/ThreadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
+#include "common/chat/MessagingLimits.h"
+#include "common/thread/ThreadRecordTypes.h"
 #include "base/net/BlobClient.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/ContactsStore.h"
@@ -15,8 +16,6 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
-
-inline constexpr uint64_t kMaxChatAttachmentPlaintextBytes = 4ULL * 1024ULL * 1024ULL;
 
 struct PreparedChatAttachment {
   ChatAttachmentFields fields;

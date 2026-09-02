@@ -1,6 +1,6 @@
-#include "common/PeopleDiscoveryBlocks.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
 
-#include "common/DirectoryJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

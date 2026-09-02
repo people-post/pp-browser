@@ -1,4 +1,4 @@
-#include "common/ChatPayloadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
 
 namespace pbr {
 

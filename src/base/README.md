@@ -89,7 +89,7 @@ Includes (today): `#include "base/data/Config.h"`.
 
 ## Dependency design (current → target)
 
-**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary (`ThreadChannel`, `ChatPayloadTypes`, `RelayEnvelope`, `ThreadTypes`, `SyncStateTypes`, `IThreadStore`, `ContextBudget`, `PeopleDiscoveryBlocks`). Foundation peel: `CurlSsl` → `platform_core`.
+**Current (legacy DAG inside `base/`):** many one-way edges still exist (`messaging`→`people`, `net`→`messaging`/`people`, `ai`→`messaging`, …). They are listed as `LEGACY_DOMAIN_EDGES` in [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) — **new** peer→peer edges fail CI. Peeled into `common/`: `RelayScope`, directory vocabulary (`DirectoryTypes`/`DirectoryJson`/`IDirectoryClient`), `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, `MessagingLimits`, messaging vocabulary under `common/thread` + `common/chat` (incl. role ports); attachment utils in `feature/messaging`. Foundation peel: `CurlSsl` → `platform_core`.
 
 **Target:**
 
@@ -110,7 +110,7 @@ Includes (today): `#include "base/data/Config.h"`.
 | Type | Header |
 |------|--------|
 | `LlmConfig` | `data/LlmConfig.h` |
-| Attachment / relay helpers used by net | `messaging/ChatBlobRequestUtil.h`, `AttachmentCache.h`, `MessagingJson.h`, … |
+| Relay / blob helpers still coupling net↔messaging | `ChatBlobRequestUtil.h`, `AttachmentCache.h`, `MessagingJson.h`, `ServiceClientsImpl` |
 
 Candidates to promote into `common` when peeling peer edges: people/net helper ports, narrow view DTOs. Remaining messaging vocab lives in [`src/common/`](../common/) (`ThreadTypes`, `IThreadStore`, `RelayEnvelope`, …).
 

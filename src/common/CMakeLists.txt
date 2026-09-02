@@ -2,10 +2,10 @@ include(PpBrowserWarnings)
 
 # pp-browser cross-module utilities (FetchContent pp_common is the external common layer).
 add_library(pp_pbr_common STATIC
-  CallMediaHealth.cpp
-  ChatPayloadTypes.cpp
-  PeopleDiscoveryBlocks.cpp
-  DirectoryJson.cpp
+  media/CallMediaHealth.cpp
+  chat/ChatPayloadTypes.cpp
+  chat/PeopleDiscoveryBlocks.cpp
+  directory/DirectoryJson.cpp
   LengthPrefixedCodec.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)

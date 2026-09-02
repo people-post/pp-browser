@@ -1,8 +1,7 @@
 #pragma once
 
-#include "common/ChatPayloadTypes.h"
-#include "common/IThreadStore.h"
-#include "common/ThreadTypes.h"
+#include "common/chat/ChatPayloadTypes.h"
+#include "common/thread/IThreadCatalog.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
@@ -17,7 +16,7 @@ namespace pbr {
 
 struct AttachmentFetchContext {
   std::string thread_id;
-  IThreadStore* store = nullptr;
+  IThreadCatalog* store = nullptr;
   ContactsStore* contacts = nullptr;
   IdentityStore* identity = nullptr;
   IChatBlobPeerClient* peer_client = nullptr;

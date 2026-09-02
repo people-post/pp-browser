@@ -1,7 +1,5 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
-    AttachmentFetchUtil.cpp
-    AttachmentClientUtil.cpp
     BlobClient.cpp
     BlobQuotaUtil.cpp
     BriefGuestLlmClient.cpp

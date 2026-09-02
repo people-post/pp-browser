@@ -22,7 +22,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
-#include "base/net/AttachmentClientUtil.h"
+#include "feature/messaging/AttachmentClientUtil.h"
 #include "base/net/BlobQuotaUtil.h"
 #include "base/net/HttpClient.h"
 #include "base/net/ProfileIconClientUtil.h"

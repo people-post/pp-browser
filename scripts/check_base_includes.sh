@@ -40,7 +40,6 @@ check_absent "common must not include feature/" \
 # Format: from->to (module folder names under src/base/).
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 ai->net
-messaging->net
 messaging->people
 net->messaging
 net->people
@@ -124,6 +123,10 @@ check_absent "net must not include messaging/ChatPayloadTypes.h (use common/)" \
   '#include "base/messaging/ChatPayloadTypes.h"' src/base/net
 check_absent "net must not include messaging/IThreadStore.h (use common/)" \
   '#include "base/messaging/IThreadStore.h"' src/base/net
+check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
+  '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
+check_absent "messaging must not include feature/ (domain may not include feature)" \
+  '#include "feature/' src/base/messaging
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1
