@@ -41,7 +41,6 @@ check_absent "common must not include feature/" \
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 ai->messaging
 ai->net
-mesh->media
 messaging->net
 messaging->people
 net->messaging
@@ -106,8 +105,14 @@ check_absent "mesh must not include people/ContactTypes.h (use common/DirectoryT
   '#include "base/people/ContactTypes.h"' src/base/mesh
 check_absent "mesh production must not include base/net/ (use common/IDirectoryClient.h)" \
   '#include "base/net/' src/base/mesh/discovery
+check_absent "mesh must not include base/media/ (use common/CallMediaHealth.h)" \
+  '#include "base/media/' src/base/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/WorkingSetTypes.h)" \
   '#include "base/ui/WorkingSetTypes.h"' src/base/ai
+check_absent "ai must not include messaging/ChatActionTypes.h (use common/)" \
+  '#include "base/messaging/ChatActionTypes.h"' src/base/ai
+check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/)" \
+  '#include "base/messaging/ThreadMemoryTypes.h"' src/base/ai
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

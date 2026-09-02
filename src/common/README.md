@@ -42,7 +42,8 @@ Cross-module helpers with no domain ownership. Keep these small.
 | `CodedFailure.h` | `CodedFailure` template — escalation rules in [CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md) |
 | `RelayScope.h` | Relay scope bands / admission helpers (shared by mesh L4 + people hop policy) |
 | `DirectoryTypes.h` / `DirectoryJson.*` / `IDirectoryClient.h` | Directory vocabulary, JSON, and client port |
-| `WorkingSetTypes.h` | Working-set candidate DTOs (ai + chat UI) |
+| `CallMediaHealth.*` | Call path / hop health DTOs + pure evaluation (mesh L4 + UI) |
+| `ChatActionTypes.h` / `ThreadMemoryTypes.h` | Transcript action + conversation summary DTOs |
 
 ### B. Domain contracts (North Star growth area)
 

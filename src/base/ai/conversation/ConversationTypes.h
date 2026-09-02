@@ -2,7 +2,7 @@
 
 #include "base/ai/LlmClient.h"
 #include "base/data/ContextBudget.h"
-#include "base/messaging/ChatActionTypes.h"
+#include "common/ChatActionTypes.h"
 
 #include <optional>
 #include <string>

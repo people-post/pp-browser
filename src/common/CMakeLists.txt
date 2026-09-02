@@ -2,6 +2,7 @@ include(PpBrowserWarnings)
 
 # pp-browser cross-module utilities (FetchContent pp_common is the external common layer).
 add_library(pp_pbr_common STATIC
+  CallMediaHealth.cpp
   DirectoryJson.cpp
   LengthPrefixedCodec.cpp
 )

@@ -2,7 +2,7 @@
 
 #include "base/ai/conversation/ConversationTypes.h"
 #include "base/ai/LlmClient.h"
-#include "base/messaging/ThreadMemoryTypes.h"
+#include "common/ThreadMemoryTypes.h"
 #include "base/messaging/ThreadTypes.h"
 
 #include <string>
