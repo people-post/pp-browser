@@ -5,7 +5,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/people/PeerDisplayLabel.h"
+#include "domain/people/PeerDisplayLabel.h"
 
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/SystemInterface.h>

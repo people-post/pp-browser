@@ -1,5 +1,5 @@
-#include "base/people/ContactsStore.h"
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/ContactTypes.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

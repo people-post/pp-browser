@@ -1,7 +1,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/DataKeyVault.h"
-#include "base/people/IdentityStore.h"
-#include "base/people/LinkDeviceExchange.h"
+#include "domain/people/IdentityStore.h"
+#include "domain/people/LinkDeviceExchange.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

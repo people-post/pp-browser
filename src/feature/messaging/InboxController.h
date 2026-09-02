@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/people/ContactsStore.h"
+#include "domain/people/ContactsStore.h"
 #include "base/ui/ChatWidgetTypes.h"
 #include "base/messaging/CallTypes.h"
 #include "common/thread/IThreadStore.h"

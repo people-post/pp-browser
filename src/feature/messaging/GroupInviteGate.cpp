@@ -1,6 +1,6 @@
 #include "feature/messaging/GroupInviteGate.h"
 
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

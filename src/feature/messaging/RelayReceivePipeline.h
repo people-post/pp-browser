@@ -9,7 +9,7 @@
 #include "common/thread/IThreadStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 #include "common/Module.h"
 
 #include <optional>

@@ -3,7 +3,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/MessagingUiPorts.h"
 

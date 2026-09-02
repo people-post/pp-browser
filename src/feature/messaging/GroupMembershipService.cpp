@@ -1,10 +1,10 @@
 #include "feature/messaging/GroupMembershipService.h"
 
-#include "base/people/DirectChatTargetFromContact.h"
+#include "domain/people/DirectChatTargetFromContact.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
-#include "base/people/ContactJson.h"
+#include "domain/people/ContactJson.h"
 
 #include "common/Utilities.h"
 

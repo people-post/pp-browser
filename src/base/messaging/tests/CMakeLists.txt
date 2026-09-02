@@ -3,4 +3,4 @@ pp_browser_add_base_folder_tests(
   pp_browser_messaging_test
   LINK_LIBS
     pp_base_net
-    pp_base_people)
+    pp_domain_people)

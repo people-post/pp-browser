@@ -1,6 +1,6 @@
-#include "base/people/ProfileIconCache.h"
+#include "domain/people/ProfileIconCache.h"
 
-#include "base/people/ContactIdentity.h"
+#include "domain/people/ContactIdentity.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 

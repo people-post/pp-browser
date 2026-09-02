@@ -5,7 +5,7 @@
 #include "feature/ai/ToolPermissionPolicy.h"
 #include "base/ai/ToolRegistry.h"
 #include "common/Error.h"
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 #include "common/thread/ThreadTypes.h"
 
 #include <functional>

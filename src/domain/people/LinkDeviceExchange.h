@@ -3,7 +3,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/LinkDeviceCodec.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 

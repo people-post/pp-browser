@@ -3,7 +3,7 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

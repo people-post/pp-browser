@@ -2,9 +2,9 @@ include(PpBrowserBase)
 
 # Acyclic module order: each library links only lower layers.
 # foundation bands (runtime/platform/error/i18n/data/crypto) live under src/foundation/.
+# people lives under src/domain/ (pp_domain_people); remaining peers still here.
 # AMP L1–L3 + link: FetchContent pp-cpp-amp (cmake/PpCppAmp.cmake).
 add_subdirectory(mesh)
-add_subdirectory(people)
 
 if(PP_BROWSER_HEADLESS)
   # Node-only: no messaging/media/net/ai/ui/render aggregate.
@@ -18,8 +18,8 @@ add_subdirectory(ai)
 add_subdirectory(ui)
 add_subdirectory(render)
 
-# Foundation targets live under src/foundation/; listed here so pp_base still
-# aggregates the full product stack until a dedicated pp_foundation INTERFACE.
+# Foundation + migrated domain targets listed here so pp_base still aggregates
+# the full product stack until dedicated INTERFACE libs land.
 set(PP_FOUNDATION_MODULE_LIBS
   pp_foundation_error
   pp_foundation_runtime_core
@@ -39,7 +39,6 @@ set(PP_BASE_MODULE_LIBS
   pp_base_mesh_link
   pp_base_mesh_identity
   pp_base_mesh
-  pp_base_people
   pp_base_messaging
   pp_base_media
   pp_base_net

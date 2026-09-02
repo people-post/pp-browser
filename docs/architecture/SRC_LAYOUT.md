@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`. Domain peers still live under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
+> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation holds `runtime/`, `platform/`, `error/`, `i18n/`, `data/`, `crypto/`. **Started domain move:** `people` lives under `src/domain/people/` (`#include "domain/people/…"`, `pp_domain_people`). Remaining peers still under `src/base/` with `#include "base/…"`. Domain peer allowlist is empty.
 
 ## Layers
 
@@ -111,7 +111,7 @@ Target path after move: `src/foundation/<module>/`.
 
 | Path (today) | Contents |
 |--------------|----------|
-| `base/people/` | Identity and contacts stores; presentation DTOs |
+| `domain/people/` | Identity and contacts stores; presentation DTOs |
 | `base/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
 | `base/net/` | HTTP client, service clients (no people/messaging policy) |
 | `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
@@ -182,7 +182,8 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_common` | common (FetchContent) |
 | `pp_pbr_common` | common (in-tree) |
 | `pp_foundation_*` | foundation modules under `src/foundation/` (e.g. `pp_foundation_data`) |
-| `pp_base_*` | today’s domain modules under `src/base/` (e.g. `pp_base_mesh`) — rename to `pp_domain_*` when folders move |
+| `pp_domain_*` | migrated domain peers under `src/domain/` (today: `pp_domain_people`) |
+| `pp_base_*` | remaining domain modules under `src/base/` (e.g. `pp_base_mesh`) — rename to `pp_domain_*` when folders move |
 | `pp_base` | aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |

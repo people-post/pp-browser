@@ -1,4 +1,4 @@
-#include "base/people/AvatarGlyph.h"
+#include "domain/people/AvatarGlyph.h"
 
 #include <cstdint>
 

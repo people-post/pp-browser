@@ -1,5 +1,5 @@
-#include "base/people/ContactsStore.h"
-#include "base/people/PeerDisplayLabel.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/PeerDisplayLabel.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

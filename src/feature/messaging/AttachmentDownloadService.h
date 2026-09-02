@@ -7,8 +7,8 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "base/net/ServiceClients.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 

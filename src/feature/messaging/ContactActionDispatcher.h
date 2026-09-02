@@ -2,8 +2,8 @@
 
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "base/net/ServiceClients.h"

@@ -4,7 +4,7 @@
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "base/people/ContactJson.h"
+#include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

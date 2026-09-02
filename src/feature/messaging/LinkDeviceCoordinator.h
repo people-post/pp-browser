@@ -4,8 +4,8 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "foundation/crypto/LinkDeviceCodec.h"
 #include "foundation/crypto/ProfileSecretsService.h"
-#include "base/people/IdentityStore.h"
-#include "base/people/LinkDeviceExchange.h"
+#include "domain/people/IdentityStore.h"
+#include "domain/people/LinkDeviceExchange.h"
 
 #include "common/Error.h"
 

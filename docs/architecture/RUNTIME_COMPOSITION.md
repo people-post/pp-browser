@@ -329,7 +329,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ContactsNotifyPorts** | `feature/ui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
 | **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
 | **CallActionsPorts** | `feature/ui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
-| **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
+| **ProfileIdentityView** | `domain/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |

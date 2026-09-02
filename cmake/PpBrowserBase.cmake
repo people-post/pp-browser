@@ -17,6 +17,11 @@ function(pp_browser_add_foundation_library target)
   pp_browser_add_base_library(${target} ${ARGN})
 endfunction()
 
+# Prefer this name under src/domain/ (same implementation as pp_browser_add_base_library).
+function(pp_browser_add_domain_library target)
+  pp_browser_add_base_library(${target} ${ARGN})
+endfunction()
+
 function(pp_browser_add_base_folder_tests lib_target test_target)
   cmake_parse_arguments(ARG "" "" "EXTRA_SOURCES;PRIVATE_DEFINITIONS;LINK_LIBS" ${ARGN})
   if(NOT PP_BROWSER_BUILD_TESTS)
@@ -45,5 +50,9 @@ function(pp_browser_add_base_folder_tests lib_target test_target)
 endfunction()
 
 function(pp_browser_add_foundation_folder_tests lib_target test_target)
+  pp_browser_add_base_folder_tests(${lib_target} ${test_target} ${ARGN})
+endfunction()
+
+function(pp_browser_add_domain_folder_tests lib_target test_target)
   pp_browser_add_base_folder_tests(${lib_target} ${test_target} ${ARGN})
 endfunction()

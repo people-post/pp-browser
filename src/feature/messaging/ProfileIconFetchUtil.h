@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/people/ContactTypes.h"
-#include "base/people/ProfileIconCache.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ProfileIconCache.h"
 
 #include "common/Error.h"
 

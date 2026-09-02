@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "common/thread/IThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/GroupRosterStore.h"

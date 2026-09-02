@@ -1,6 +1,6 @@
 #include "feature/messaging/PeerBriefRoute.h"
 
-#include "base/people/ContactIdentity.h"
+#include "domain/people/ContactIdentity.h"
 
 namespace pbr {
 

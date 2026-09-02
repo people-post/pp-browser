@@ -71,7 +71,7 @@
 #include "feature/ui/ShellSetupPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingCompatPorts.h"
 #include "feature/messaging/MessagingContactsPorts.h"

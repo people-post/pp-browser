@@ -1,5 +1,5 @@
-set(PP_BASE_PEOPLE_SOURCES
-    DirectChatTargetFromContact.cpp
+set(PP_DOMAIN_PEOPLE_SOURCES
+  DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
   ContactJson.cpp
@@ -12,8 +12,8 @@ set(PP_BASE_PEOPLE_SOURCES
   PeerDisplayLabel.cpp
 )
 
-pp_browser_add_base_library(pp_base_people
-  SOURCES ${PP_BASE_PEOPLE_SOURCES}
+pp_browser_add_domain_library(pp_domain_people
+  SOURCES ${PP_DOMAIN_PEOPLE_SOURCES}
   PUBLIC_LIBS
     pp_foundation_error
     pp_foundation_data

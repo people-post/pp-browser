@@ -2,8 +2,8 @@
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "base/messaging/AttachmentCache.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/ContactJson.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ContactJson.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

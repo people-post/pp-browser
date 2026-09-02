@@ -2,8 +2,8 @@
 
 #include "base/messaging/GroupRosterStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/PeerDisplayLabel.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/PeerDisplayLabel.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 
 namespace pbr {

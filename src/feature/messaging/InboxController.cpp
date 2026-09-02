@@ -7,7 +7,7 @@
 #include "base/messaging/AttachmentCache.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/ChatPayloadCodec.h"
-#include "base/people/DirectChatTargetFromContact.h"
+#include "domain/people/DirectChatTargetFromContact.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"

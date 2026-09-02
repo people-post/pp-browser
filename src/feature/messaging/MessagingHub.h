@@ -5,9 +5,9 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "base/messaging/GroupTypes.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
-#include "base/people/ProfileIdentityView.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
+#include "domain/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/DirectoryShadowCache.h"
@@ -38,7 +38,7 @@
 #include "base/mesh/discovery/NameDirectory.h"
 #include "base/mesh/dht/DhtTypes.h"
 #include "base/mesh/host/MeshHost.h"
-#include "base/people/MeshHopPolicy.h"
+#include "domain/people/MeshHopPolicy.h"
 
 #include <cstdint>
 #include <functional>

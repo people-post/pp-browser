@@ -3,7 +3,7 @@
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "base/messaging/JsonThreadStore.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/people/Ed25519Signer.h"
+#include "domain/people/Ed25519Signer.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

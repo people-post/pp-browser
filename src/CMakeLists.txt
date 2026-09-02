@@ -1,7 +1,13 @@
-# Source layers: common → foundation → base(domain) → feature → app.
+# Source layers: common → foundation → base(remaining domain peers) → domain → feature → app.
+# `domain/` is added after `base/` while mesh identity still lives under base/mesh.
 add_subdirectory(common)
 add_subdirectory(foundation)
 add_subdirectory(base)
+add_subdirectory(domain)
+# people moved to domain/; attach after the target exists (base/ still owns pp_base).
+if(TARGET pp_base AND TARGET pp_domain_people)
+  target_link_libraries(pp_base INTERFACE pp_domain_people)
+endif()
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)
 endif()

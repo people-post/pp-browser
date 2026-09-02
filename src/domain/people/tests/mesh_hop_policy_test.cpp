@@ -1,4 +1,4 @@
-#include "base/people/MeshHopPolicy.h"
+#include "domain/people/MeshHopPolicy.h"
 #include "common/directory/RelayScope.h"
 
 #include <gtest/gtest.h>

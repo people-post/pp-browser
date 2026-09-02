@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/thread/ThreadTypes.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 

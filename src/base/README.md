@@ -62,7 +62,7 @@ src/base/
 ├── i18n/         [foundation] **moved →** `src/foundation/i18n/`
 ├── crypto/       [foundation] **moved →** `src/foundation/crypto/`
 │
-├── people/       [domain] Identity, contacts
+├── people/       [domain] **moved →** `src/domain/people/` (`pp_domain_people`)
 ├── net/          [domain] HTTP client, relay / registration / directory clients
 ├── messaging/    [domain] Threads, SQLite + JSON stores, relay/group/E2E codecs
 ├── mesh/         [domain] Amp product glue — host, ports, reachability, L4

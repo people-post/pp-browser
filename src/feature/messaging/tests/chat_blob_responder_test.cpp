@@ -7,7 +7,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

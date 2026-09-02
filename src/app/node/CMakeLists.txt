@@ -25,7 +25,7 @@ target_include_directories(pp-node PRIVATE
 
 target_link_libraries(pp-node PRIVATE
   pp_base_mesh
-  pp_base_people
+  pp_domain_people
   pp_foundation_crypto
   pp_foundation_data
   pp_foundation_platform_core

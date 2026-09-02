@@ -1,6 +1,6 @@
 #include "feature/messaging/PeerBriefRoute.h"
 
-#include "base/people/ContactsStore.h"
+#include "domain/people/ContactsStore.h"
 
 #include <filesystem>
 #include <memory>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 
 #include "common/Error.h"
 

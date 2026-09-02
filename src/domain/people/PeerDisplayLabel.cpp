@@ -1,4 +1,4 @@
-#include "base/people/PeerDisplayLabel.h"
+#include "domain/people/PeerDisplayLabel.h"
 
 namespace pbr {
 

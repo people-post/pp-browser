@@ -2,8 +2,8 @@
 
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/GroupTypes.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/ContactsStore.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ContactsStore.h"
 
 #include "common/Error.h"
 

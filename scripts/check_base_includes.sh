@@ -51,7 +51,7 @@ check_absent "common must not include feature/" \
   '#include "feature/' src/common
 
 # Legacy domain→domain edges still present. Remove entries as peels land.
-# Format: from->to (module folder names under src/base/).
+# Format: from->to (module folder names under src/base/ or src/domain/).
 # (empty — all historical domain peer edges cleared)
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 EOF
@@ -64,53 +64,63 @@ is_legacy_edge() {
   printf '%s\n' "$LEGACY_DOMAIN_EDGES" | grep -qx "$edge"
 }
 
-# Scan production sources (exclude tests/) for domain→domain includes.
-while IFS= read -r -d '' file; do
-  rel="${file#"$ROOT/"}"
-  from=""
-  for d in "${DOMAIN_MODULES[@]}"; do
-    case "$rel" in
-      src/base/"$d"/*) from="$d"; break ;;
-    esac
-  done
-  [[ -n "$from" ]] || continue
-
-  while IFS= read -r line; do
-    dest=$(sed -n 's/.*#include "base\/\([^/]*\)\/.*/\1/p' <<<"$line")
-    [[ -n "$dest" ]] || continue
-    [[ "$dest" != "$from" ]] || continue
-
-    # mesh/identity is foundation vocabulary for PeerId.
-    if [[ "$dest" == "mesh" ]] && grep -q 'base/mesh/identity/' <<<"$line"; then
-      continue
-    fi
-
-    # Only enforce among domain peers.
-    is_domain_dest=0
+# Scan production sources under src/base and src/domain for domain→domain includes.
+scan_domain_peer_includes() {
+  local root_dir="$1"
+  while IFS= read -r -d '' file; do
+    rel="${file#"$ROOT/"}"
+    from=""
     for d in "${DOMAIN_MODULES[@]}"; do
-      if [[ "$dest" == "$d" ]]; then
-        is_domain_dest=1
-        break
-      fi
+      case "$rel" in
+        src/base/"$d"/*|src/domain/"$d"/*) from="$d"; break ;;
+      esac
     done
-    [[ "$is_domain_dest" -eq 1 ]] || continue
+    [[ -n "$from" ]] || continue
 
-    edge="$from->$dest"
-    if ! is_legacy_edge "$edge"; then
-      echo "FAIL: new domain peer edge $edge (not on legacy allowlist)"
-      echo "  $rel: $line"
-      echo "  Promote a contract to src/common/ or wire in feature/; do not add peer→peer includes."
-      FAIL=1
-    fi
-  done < <(rg -n '#include "base/(people|messaging|net|mesh|media|ai|ui|render)/' "$file" || true)
-done < <(find "$ROOT/src/base" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
-  ! -path '*/tests/*' -print0)
+    while IFS= read -r line; do
+      dest=$(sed -n 's/.*#include "\(base\|domain\)\/\([^/]*\)\/.*/\2/p' <<<"$line")
+      [[ -n "$dest" ]] || continue
+      [[ "$dest" != "$from" ]] || continue
+
+      # mesh/identity is foundation vocabulary for PeerId.
+      if [[ "$dest" == "mesh" ]] && grep -qE '(base|domain)/mesh/identity/' <<<"$line"; then
+        continue
+      fi
+
+      is_domain_dest=0
+      for d in "${DOMAIN_MODULES[@]}"; do
+        if [[ "$dest" == "$d" ]]; then
+          is_domain_dest=1
+          break
+        fi
+      done
+      [[ "$is_domain_dest" -eq 1 ]] || continue
+
+      edge="$from->$dest"
+      if ! is_legacy_edge "$edge"; then
+        echo "FAIL: new domain peer edge $edge (not on legacy allowlist)"
+        echo "  $rel: $line"
+        echo "  Promote a contract to src/common/ or wire in feature/; do not add peer→peer includes."
+        FAIL=1
+      fi
+    done < <(rg -n '#include "(base|domain)/(people|messaging|net|mesh|media|ai|ui|render)/' "$file" || true)
+  done < <(find "$root_dir" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
+    ! -path '*/tests/*' -print0)
+}
+
+scan_domain_peer_includes "$ROOT/src/base"
+if [[ -d "$ROOT/src/domain" ]]; then
+  scan_domain_peer_includes "$ROOT/src/domain"
+fi
+
+check_absent "common must not include domain/" \
+  '#include "domain/' src/common
 
 # Peeled paths must stay peeled (old locations / shims removed).
 check_absent "mesh must not include people/RelayScope.h (use common/directory/RelayScope.h)" \
-  '#include "base/people/RelayScope.h"' src/base/mesh
+  '#include "domain/people/RelayScope.h"' src/base/mesh
 check_absent "mesh must not include people/ContactTypes.h (use common/directory/DirectoryTypes.h)" \
-  '#include "base/people/ContactTypes.h"' src/base/mesh
+  '#include "domain/people/ContactTypes.h"' src/base/mesh
 check_absent "mesh production must not include base/net/ (use common/directory/IDirectoryClient.h)" \
   '#include "base/net/' src/base/mesh/discovery
 check_absent "mesh must not include base/media/ (use common/media/CallMediaHealth.h)" \
@@ -130,7 +140,7 @@ check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/
 check_absent "ai must not include base/net/ (use common/net/HttpTransport + feature wiring)" \
   '#include "base/net/' src/base/ai
 check_absent "messaging must not include people/MeshHopPolicy.h (use common/directory/MeshHopTypes.h)" \
-  '#include "base/people/MeshHopPolicy.h"' src/base/messaging
+  '#include "domain/people/MeshHopPolicy.h"' src/base/messaging
 check_absent "net must not include messaging/RelayStreamKey.h (use common/chat/)" \
   '#include "base/messaging/RelayStreamKey.h"' src/base/net
 check_absent "net must not include messaging/ThreadTypes.h (use common/thread/)" \
@@ -145,10 +155,12 @@ check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignB
   '#include "base/messaging/EnvelopeSigner.h"' src/base/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/base/net
-check_absent_prod "messaging must not include base/people/ (wire via common/feature)" \
-  '#include "base/people/' src/base/messaging
-check_absent_prod "net must not include base/people/ (use common/directory + feature wiring)" \
-  '#include "base/people/' src/base/net
+check_absent_prod "messaging must not include domain/people/ (wire via common/feature)" \
+  '#include "domain/people/' src/base/messaging
+check_absent_prod "net must not include domain/people/ (use common/directory + feature wiring)" \
+  '#include "domain/people/' src/base/net
+check_absent "must not include base/people/ (moved to domain/people/)" \
+  '#include "base/people/' src
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/base/messaging
 check_absent "domain must not include ChatBlobRequestUtil at old path (use feature/messaging/)" \
@@ -180,6 +192,7 @@ for shim in \
   src/base/net/ProfileIconFetchUtil.h \
   src/base/net/RegistrationClientUtil.h \
   src/base/data/ContextBudget.h \
+  src/base/people \
   src/base/people/RelayScope.h \
   src/base/net/CurlSsl.h \
   src/base/media/CallMediaHealth.h \

@@ -3,8 +3,8 @@
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "common/thread/IThreadStore.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/MeshMessagingService.h"
 

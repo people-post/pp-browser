@@ -5,8 +5,8 @@
 #include "base/messaging/CallSessionStore.h"
 #include "base/messaging/PeerCapsLogic.h"
 #include "base/messaging/SoftMigrateLogic.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/MeshHopPolicy.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/MeshHopPolicy.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 

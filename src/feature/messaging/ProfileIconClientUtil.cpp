@@ -1,6 +1,6 @@
 #include "feature/messaging/ProfileIconClientUtil.h"
 
-#include "base/people/ProfileIconCache.h"
+#include "domain/people/ProfileIconCache.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 

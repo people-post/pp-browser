@@ -1,4 +1,4 @@
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"

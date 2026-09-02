@@ -4,7 +4,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FAIL=0
 
 python3 - "$ROOT" <<'PY'
 import re
@@ -13,7 +12,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 domain = {
-    "pp_base_people",
+    "pp_domain_people",
     "pp_base_messaging",
     "pp_base_net",
     "pp_base_mesh",
@@ -28,29 +27,33 @@ legacy = {
 }
 
 fail = 0
-for cmake in sorted((root / "src" / "base").rglob("CMakeLists.txt")):
-    text = cmake.read_text()
-    for m in re.finditer(
-        r"pp_browser_add_base_library\(\s*(pp_base_[A-Za-z0-9_]+)\s*(.*?)^\s*\)",
-        text,
-        re.S | re.M,
-    ):
-        target, body = m.group(1), m.group(2)
-        if target not in domain:
-            continue
-        libs_m = re.search(r"PUBLIC_LIBS\s*(.*?)(?=PRIVATE_LIBS|\Z)", body, re.S)
-        if not libs_m:
-            continue
-        libs = re.findall(r"(pp_base_[A-Za-z0-9_]+)", libs_m.group(1))
-        for lib in libs:
-            if lib not in domain or lib == target:
+cmake_roots = [root / "src" / "base", root / "src" / "domain"]
+lib_helpers = (
+    r"pp_browser_add_(?:base|domain)_library\(\s*(pp_(?:base|domain)_[A-Za-z0-9_]+)\s*(.*?)^\s*\)"
+)
+
+for cmake_root in cmake_roots:
+    if not cmake_root.is_dir():
+        continue
+    for cmake in sorted(cmake_root.rglob("CMakeLists.txt")):
+        text = cmake.read_text()
+        for m in re.finditer(lib_helpers, text, re.S | re.M):
+            target, body = m.group(1), m.group(2)
+            if target not in domain:
                 continue
-            edge = f"{target}->{lib}"
-            if edge not in legacy:
-                print(f"FAIL: new domain peer PUBLIC_LIBS edge {edge}")
-                print(f"  {cmake.relative_to(root)}")
-                print("  Wire via common ports / feature; do not add peer→peer links.")
-                fail = 1
+            libs_m = re.search(r"PUBLIC_LIBS\s*(.*?)(?=PRIVATE_LIBS|\Z)", body, re.S)
+            if not libs_m:
+                continue
+            libs = re.findall(r"(pp_(?:base|domain)_[A-Za-z0-9_]+)", libs_m.group(1))
+            for lib in libs:
+                if lib not in domain or lib == target:
+                    continue
+                edge = f"{target}->{lib}"
+                if edge not in legacy:
+                    print(f"FAIL: new domain peer PUBLIC_LIBS edge {edge}")
+                    print(f"  {cmake.relative_to(root)}")
+                    print("  Wire via common ports / feature; do not add peer→peer links.")
+                    fail = 1
 sys.exit(fail)
 PY
 
@@ -64,3 +67,13 @@ if rg -n '\bpp_base_(error|i18n|runtime(_core)?|platform(_core)?|data|crypto)\b'
   exit 1
 fi
 echo "OK: foundation lib names"
+
+# people must stay on pp_domain_people (no old target name aliases in CMake/code).
+if rg -n '\bpp_base_people\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_people_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_people (use pp_domain_people):"
+  cat /tmp/pp_people_rename.txt
+  exit 1
+fi
+echo "OK: people domain lib name"

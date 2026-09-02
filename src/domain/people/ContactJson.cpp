@@ -1,4 +1,4 @@
-#include "base/people/ContactJson.h"
+#include "domain/people/ContactJson.h"
 
 #include "common/PbrCompat.h"
 

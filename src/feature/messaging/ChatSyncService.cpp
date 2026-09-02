@@ -7,8 +7,8 @@
 #include "common/directory/DirectoryJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/ContactsStore.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ContactsStore.h"
 
 #include <algorithm>
 #include "common/PbrCompat.h"

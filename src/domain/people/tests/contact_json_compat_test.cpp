@@ -1,4 +1,4 @@
-#include "base/people/ContactJson.h"
+#include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>

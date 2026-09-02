@@ -5,8 +5,8 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/people/Ed25519Signer.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/Ed25519Signer.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>

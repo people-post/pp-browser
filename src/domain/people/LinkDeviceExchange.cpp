@@ -1,4 +1,4 @@
-#include "base/people/LinkDeviceExchange.h"
+#include "domain/people/LinkDeviceExchange.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"

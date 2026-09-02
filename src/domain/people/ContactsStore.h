@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "base/people/ContactTypes.h"
+#include "domain/people/ContactTypes.h"
 
 #include <mutex>
 #include <optional>

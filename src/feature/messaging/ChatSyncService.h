@@ -3,7 +3,7 @@
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 
 #include <cstdint>

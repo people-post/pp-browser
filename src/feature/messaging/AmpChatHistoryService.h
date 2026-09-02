@@ -5,7 +5,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClients.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 
 #include <functional>
 #include <memory>

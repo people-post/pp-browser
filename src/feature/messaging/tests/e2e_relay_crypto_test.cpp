@@ -6,7 +6,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/MlDsa.h"
-#include "base/people/IdentityStore.h"
+#include "domain/people/IdentityStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"

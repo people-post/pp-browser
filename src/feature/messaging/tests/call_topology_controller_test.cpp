@@ -7,7 +7,7 @@
 #include "base/messaging/SfuAttachFanout.h"
 #include "base/messaging/SoftMigrateLogic.h"
 #include "base/messaging/SqliteThreadStore.h"
-#include "base/people/ContactsStore.h"
+#include "domain/people/ContactsStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
