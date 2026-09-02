@@ -220,10 +220,11 @@ Decisions to lock:
 
 ## Track n2-hard — Hardening (can trail v1)
 
-- Rate limit FIND_PEER / STORE per peer.
-- Reject records with bad signature, expired TTL, or seq regression.
-- Optional soft reputation (N020 long): deprioritize peers that serve stale routes.
-- Metrics / debug: Me → Network or `pp-node --status` DHT bucket summary (ops).
+- [x] Rate limit FIND_PEER / STORE per peer (`DhtRateLimiter`, config window)
+- [x] Reject STORE with bad signature, expired TTL, seq regression, not-self (typed error codes)
+- [x] Soft reputation: skip query peers after bad FIND_PEER replies (cooldown)
+- [x] Ops: `AmpDhtService::FormatOpsStatusJson` + pp-node `/status` `dht` / `dht_stats`
+- [x] Enforce `max_concurrent_lookups` on outbound FIND_PEER
 
 ---
 

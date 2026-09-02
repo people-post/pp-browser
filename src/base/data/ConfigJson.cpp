@@ -351,6 +351,13 @@ Object MeshDhtConfigToObject(const MeshDhtConfig& config) {
   object.set("find_peer_timeout_ms", static_cast<int64_t>(config.find_peer_timeout_ms));
   object.set("max_concurrent_lookups", static_cast<int64_t>(config.max_concurrent_lookups));
   object.set("k_bucket_size", static_cast<int64_t>(config.k_bucket_size));
+  object.set("inbound_ops_per_peer_per_window",
+             static_cast<int64_t>(config.inbound_ops_per_peer_per_window));
+  object.set("inbound_rate_window_seconds", static_cast<int64_t>(config.inbound_rate_window_seconds));
+  object.set("soft_reputation_penalty_threshold",
+             static_cast<int64_t>(config.soft_reputation_penalty_threshold));
+  object.set("soft_reputation_cooldown_seconds",
+             static_cast<int64_t>(config.soft_reputation_cooldown_seconds));
   return object;
 }
 
@@ -366,6 +373,18 @@ void MeshDhtConfigFromObject(const Object& object, MeshDhtConfig& config) {
   }
   if (auto k = object.getNonNegInt("k_bucket_size")) {
     config.k_bucket_size = static_cast<int>(*k);
+  }
+  if (auto ops = object.getNonNegInt("inbound_ops_per_peer_per_window")) {
+    config.inbound_ops_per_peer_per_window = static_cast<int>(*ops);
+  }
+  if (auto window = object.getNonNegInt("inbound_rate_window_seconds")) {
+    config.inbound_rate_window_seconds = static_cast<int>(*window);
+  }
+  if (auto threshold = object.getNonNegInt("soft_reputation_penalty_threshold")) {
+    config.soft_reputation_penalty_threshold = static_cast<int>(*threshold);
+  }
+  if (auto cooldown = object.getNonNegInt("soft_reputation_cooldown_seconds")) {
+    config.soft_reputation_cooldown_seconds = static_cast<int>(*cooldown);
   }
 }
 

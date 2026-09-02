@@ -194,8 +194,19 @@ See [CONFIGURATION.md](../ops/CONFIGURATION.md#mesh-dht-n2). Implementation read
 
 - `mesh.capabilities.dht` (bool, default `false`)
 - `mesh.dht.record_ttl_seconds`, `find_peer_timeout_ms`, `max_concurrent_lookups`, `k_bucket_size`
+- `mesh.dht.inbound_ops_per_peer_per_window`, `inbound_rate_window_seconds` (n2-hard)
+- `mesh.dht.soft_reputation_penalty_threshold`, `soft_reputation_cooldown_seconds` (n2-hard)
 
-UI checkbox ships with **n2-core** (N008 — no inert controls).
+UI checkbox ships with **n2-core** (N008 — no inert controls). Ops: `pp-node --status` / `/status` include `dht` + `dht_stats`.
+
+## Hardening (n2-hard)
+
+| Control | Behavior |
+|---------|----------|
+| Inbound rate limit | Per remote PeerId sliding window on FIND_PEER + STORE |
+| STORE validation | Reject `not_self`, `expired`, `bad_signature`, `seq_regression` with typed `error` responses |
+| Soft reputation | Skip bootstrap/query peers that return malformed/expired FIND_PEER records (cooldown) |
+| Concurrency | Cap outbound FIND_PEER by `max_concurrent_lookups` |
 
 ## Non-goals (v1)
 

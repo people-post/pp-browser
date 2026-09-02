@@ -8,6 +8,7 @@
 #include "base/platform/DeploymentProfile.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
+#include "common/ValueJson.h"
 #include "base/mesh/reachability/Reachability.h"
 
 #include <atomic>
@@ -94,7 +95,11 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
                          boot.mesh->AmpCircuitTunnel()->ServeInbound();
     snap.media_relay = boot.mesh->AmpMediaRelayCoord() && boot.mesh->AmpMediaRelayCoord()->IsStarted() &&
                        boot.mesh->AmpMediaRelayCoord()->ServeInbound();
+    snap.dht = boot.mesh->AmpDht() && boot.mesh->AmpDht()->IsStarted();
     snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
+    if (boot.mesh->AmpDht()) {
+      snap.dht_json = boot.mesh->AmpDht()->FormatOpsStatusJson();
+    }
   }
   return snap;
 }
@@ -169,7 +174,17 @@ int main(int argc, char** argv) {
 
   if (print_status) {
     boot->mesh->RunReachabilityProbeBlocking(/*try_upnp_first=*/false);
-    std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
+    auto snap = MakeSnapshot(*boot);
+    auto root_obj = pbr::TryParseObject(snap.reachability_json);
+    pbr::Object out = root_obj ? std::move(*root_obj) : pbr::Object{};
+    out.set("host_running", snap.host_running);
+    out.set("dht", snap.dht);
+    if (!snap.dht_json.empty()) {
+      if (auto dht = pbr::TryParseObject(snap.dht_json)) {
+        out.set("dht_stats", *dht);
+      }
+    }
+    std::cout << pbr::DumpJson(out) << std::endl;
     ShutdownNode(*boot);
     return 0;
   }

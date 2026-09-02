@@ -236,6 +236,12 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     }
     reach.set("circuit_relay", snap.circuit_relay);
     reach.set("media_relay", snap.media_relay);
+    reach.set("dht", snap.dht);
+    if (!snap.dht_json.empty()) {
+      if (auto dht = TryParseObject(snap.dht_json)) {
+        reach.set("dht_stats", *dht);
+      }
+    }
     return JsonResponse(200, reach);
   }
 

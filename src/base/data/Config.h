@@ -51,6 +51,14 @@ struct MeshDhtConfig {
   int max_concurrent_lookups = 4;
   /** Kademlia k (bucket size target). Wire default 20 — override for lab only. */
   int k_bucket_size = 20;
+  /** Inbound FIND_PEER/STORE grants per remote peer per window (n2-hard). */
+  int inbound_ops_per_peer_per_window = 60;
+  /** Sliding window length for inbound rate limit (seconds). */
+  int inbound_rate_window_seconds = 60;
+  /** Soft-reputation: skip query peers after this many bad FIND_PEER replies. */
+  int soft_reputation_penalty_threshold = 3;
+  /** Soft-reputation cooldown after penalty (seconds). */
+  int soft_reputation_cooldown_seconds = 300;
 };
 
 /** ↑/↓ ceilings for media_relay (N019). 0 = unbounded / ops default. */

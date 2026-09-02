@@ -135,15 +135,15 @@
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
-| DHT | **n2-caps landed** — signed caps in `peer_routing`; **n2-hard** next — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
+| DHT | **n2-hard landed** (rate limits, soft reputation, ops stats) — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
 | Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
 1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
-2. **n2-hard** — rate limits / reputation hooks (as needed)  
-3. Curated public / paid regulation later  
-4. **L3.5** multi-hop when single-hop cannot reach B
+2. Curated public / paid regulation later  
+3. **L3.5** multi-hop when single-hop cannot reach B  
+4. Optional DHT lab smoke (two Nodes, DHT on)
 
 ## Follow-ups
 

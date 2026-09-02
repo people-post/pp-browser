@@ -165,15 +165,19 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 
 ### Mesh DHT (n2)
 
-Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1). **Not implemented yet** — config stub only until n2-core.
+Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1). Implemented through **n2-hard**.
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `mesh.capabilities.dht` | `false` | Node-only; mobile ignores. UI checkbox ships with n2-core (N008). |
+| `mesh.capabilities.dht` | `false` | Node-only; mobile ignores. UI checkbox (N008). |
 | `mesh.dht.record_ttl_seconds` | `3600` | Self `peer_routing` record TTL; re-publish at ttl/2 when enabled. |
 | `mesh.dht.find_peer_timeout_ms` | `5000` | Consumer FIND_PEER timeout. |
 | `mesh.dht.max_concurrent_lookups` | `4` | In-flight lookup cap. |
 | `mesh.dht.k_bucket_size` | `20` | Kademlia *k*; wire default matches [MESH_DHT.md](../contracts/MESH_DHT.md). |
+| `mesh.dht.inbound_ops_per_peer_per_window` | `60` | Inbound FIND_PEER/STORE grants per remote peer per window. |
+| `mesh.dht.inbound_rate_window_seconds` | `60` | Sliding window for inbound rate limit. |
+| `mesh.dht.soft_reputation_penalty_threshold` | `3` | Bad FIND_PEER replies before cooldown. |
+| `mesh.dht.soft_reputation_cooldown_seconds` | `300` | Skip query peer after soft-reputation penalty. |
 
 DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
 
