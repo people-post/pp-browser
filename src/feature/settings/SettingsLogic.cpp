@@ -96,6 +96,7 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   config.mesh.node_enabled = (state.node_enabled != "off");
   config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
   config.mesh.capabilities.media_relay = (state.media_relay_enabled == "on");
+  config.mesh.capabilities.dht = (state.dht_enabled == "on");
   config.mesh.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
   NormalizeMeshConfig(config.mesh);
   return config;

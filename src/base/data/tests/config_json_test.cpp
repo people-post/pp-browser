@@ -65,6 +65,9 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.amp_udp_port = 18518;
   config.mesh.capabilities.circuit_relay = true;
   config.mesh.capabilities.media_relay = false;
+  config.mesh.capabilities.dht = true;
+  config.mesh.dht.record_ttl_seconds = 7200;
+  config.mesh.dht.find_peer_timeout_ms = 8000;
   config.mesh.pricing.media_relay.mode = "volunteer";
   config.mesh.media_relay_budget.default_per_user_up_bps = 12345;
 
@@ -85,6 +88,10 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   ASSERT_NE(caps, nullptr);
   EXPECT_EQ(caps->getIf<bool>("circuit_relay"), true);
   EXPECT_EQ(caps->getIf<bool>("media_relay"), false);
+  EXPECT_EQ(caps->getIf<bool>("dht"), true);
+  const pbr::Object* dht = mesh->getObject("dht");
+  ASSERT_NE(dht, nullptr);
+  EXPECT_EQ(dht->getNonNegInt("record_ttl_seconds"), 7200);
 
   pbr::AppConfig parsed;
   pbr::AppConfigFromObject(out, parsed);
@@ -96,5 +103,8 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
   EXPECT_TRUE(parsed.mesh.capabilities.circuit_relay);
   EXPECT_FALSE(parsed.mesh.capabilities.media_relay);
+  EXPECT_TRUE(parsed.mesh.capabilities.dht);
+  EXPECT_EQ(parsed.mesh.dht.record_ttl_seconds, 7200);
+  EXPECT_EQ(parsed.mesh.dht.find_peer_timeout_ms, 8000);
   EXPECT_EQ(parsed.mesh.media_relay_budget.default_per_user_up_bps, 12345);
 }

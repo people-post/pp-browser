@@ -97,6 +97,11 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
       config.mesh.capabilities.media_relay = *parsed;
     }
   }
+  if (const char* dht = EnvOrNull("PP_NODE_CAP_DHT")) {
+    if (auto parsed = ParsePpNodeBoolEnv(dht)) {
+      config.mesh.capabilities.dht = *parsed;
+    }
+  }
   if (const char* advertise = EnvOrNull("PP_NODE_ADVERTISE_MULTIADDRS")) {
     config.mesh.advertise_multiaddrs = ParsePpNodeBootstrapPeersCsv(advertise);
   }

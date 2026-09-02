@@ -37,6 +37,28 @@ struct MeshCapabilities {
   bool circuit_relay = false;
   /** Host blind media forwarder (n4-media / N018). Default on for Node hosts. */
   bool media_relay = true;
+  /** Participate in AMP Kademlia peer routing (n2). Default off; Node only. */
+  bool dht = false;
+};
+
+/** Tunables for mesh DHT (n2). Ignored when capabilities.dht is false. */
+struct MeshDhtConfig {
+  /** TTL for self peer_routing records (seconds). Re-publish at ttl/2. */
+  int record_ttl_seconds = 3600;
+  /** FIND_PEER RPC timeout (milliseconds). */
+  int find_peer_timeout_ms = 5000;
+  /** Max in-flight FIND_PEER lookups per process. */
+  int max_concurrent_lookups = 4;
+  /** Kademlia k (bucket size target). Wire default 20 — override for lab only. */
+  int k_bucket_size = 20;
+  /** Inbound FIND_PEER/STORE grants per remote peer per window (n2-hard). */
+  int inbound_ops_per_peer_per_window = 60;
+  /** Sliding window length for inbound rate limit (seconds). */
+  int inbound_rate_window_seconds = 60;
+  /** Soft-reputation: skip query peers after this many bad FIND_PEER replies. */
+  int soft_reputation_penalty_threshold = 3;
+  /** Soft-reputation cooldown after penalty (seconds). */
+  int soft_reputation_cooldown_seconds = 300;
 };
 
 /** ↑/↓ ceilings for media_relay (N019). 0 = unbounded / ops default. */
@@ -60,6 +82,14 @@ struct RelayPricingConfig {
 
 struct MeshPricingConfig {
   RelayPricingConfig media_relay;
+};
+
+/** Cached infra row from GET /v1/mesh/nodes (N027 / n-dir). */
+struct MeshDirectoryNode {
+  std::string peer_id;
+  std::vector<std::string> multiaddrs;
+  bool circuit_relay = false;
+  bool media_relay = false;
 };
 
 struct MeshConfig {
@@ -93,6 +123,7 @@ struct MeshConfig {
   /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
   int amp_udp_port = 0;
   MeshCapabilities capabilities;
+  MeshDhtConfig dht;
   MeshPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;
 };

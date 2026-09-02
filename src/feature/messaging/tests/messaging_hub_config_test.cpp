@@ -13,6 +13,7 @@ TEST(MessagingHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
   config.mesh.node_enabled = false;
   config.mesh.capabilities.circuit_relay = true;
   config.mesh.capabilities.media_relay = false;
+  config.mesh.capabilities.dht = true;
   config.mesh.prefer_contacts_for_routing = false;
   config.llm.model = "ignored-by-network-slice";
 
@@ -23,6 +24,7 @@ TEST(MessagingHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
   EXPECT_FALSE(slice.node_enabled);
   EXPECT_TRUE(slice.circuit_relay);
   EXPECT_FALSE(slice.media_relay);
+  EXPECT_TRUE(slice.dht);
   EXPECT_FALSE(slice.prefer_contacts_for_routing);
 
   pbr::AppConfig other = config;

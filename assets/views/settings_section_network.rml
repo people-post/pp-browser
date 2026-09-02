@@ -66,6 +66,16 @@
         </div>
         <p class="text muted settings-help" data-if="show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
 
+        <div class="settings-toggle-row row" data-if="show_dht_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.dht}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="dht_enabled == 'on'"
+                  data-event-click="toggle_dht()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_dht_toggle">{{i18n:settings.network.dht_hint}}</p>
+
         <div class="settings-toggle-row row" data-if="show_prefer_contacts_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.prefer_contacts}}</span>
           <button class="settings-switch" type="button"
