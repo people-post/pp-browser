@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/mesh/Reachability.h"
-#include "base/mesh/RelayRuntimeStats.h"
+#include "base/mesh/reachability/Reachability.h"
+#include "base/mesh/l4/shared/RelayRuntimeStats.h"
 
 #include <cstddef>
 #include <functional>

@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/MlDsa.h"
-#include "base/mesh/PeerIdUtil.h"
+#include "base/mesh/identity/PeerIdUtil.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

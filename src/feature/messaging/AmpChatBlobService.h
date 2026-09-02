@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
-#include "amp/link/PeerLinkManager.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
 
@@ -25,7 +25,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpChatBlobService(pp::amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
+  AmpChatBlobService(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
                      WorkerPost post_worker = {});
   ~AmpChatBlobService() override;
 
@@ -47,7 +47,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  pp::amp::PeerLinkManager& links_;
+  IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;

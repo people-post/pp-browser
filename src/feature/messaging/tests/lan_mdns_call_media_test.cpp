@@ -1,6 +1,6 @@
-#include "base/mesh/AmpCircuitHopRegistry.h"
-#include "base/mesh/CallMediaFrameCrypto.h"
-#include "base/mesh/LanMdnsDiscovery.h"
+#include "base/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "base/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "base/mesh/reachability/LanMdnsDiscovery.h"
 
 #include <gtest/gtest.h>
 

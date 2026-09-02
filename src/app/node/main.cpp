@@ -8,7 +8,7 @@
 #include "base/platform/DeploymentProfile.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "base/mesh/Reachability.h"
+#include "base/mesh/reachability/Reachability.h"
 
 #include <atomic>
 #include <chrono>

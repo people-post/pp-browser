@@ -34,7 +34,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/PeerBriefRoute.h"
 #include "base/messaging/SyncStateTypes.h"
-#include "amp/link/AdpMultiaddr.h"
+#include "base/mesh/host/MeshPorts.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
 #include "base/people/ContactIdentity.h"
@@ -115,7 +115,7 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
-                                         pp::amp::PeerLinkManager* amp_links, std::function<void()> amp_io_pump,
+                                         IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
@@ -252,7 +252,7 @@ void MeshMessagingService::PersistRelayCursor(const std::string& relay_user_id) 
 
 void MeshMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  const bool is_adp = static_cast<bool>(pp::amp::ParseAdpMultiaddr(multiaddr));
+  const bool is_adp = IsAdpMultiaddr(multiaddr);
   if (amp_links_ && is_adp) {
     (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
   } else if (amp_links_) {
@@ -463,7 +463,7 @@ void MeshMessagingService::WarmPeerForThread(const std::string& thread_id) {
   }
   amp_links_->MarkWarm(peer);
   if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](pp::amp::PeerLinkManager::LinkRoe) {});
+    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
   }
 }
 
@@ -505,7 +505,7 @@ ThreadPeerLinkView MeshMessagingService::GetThreadPeerLink(const std::string& th
   }
 
   if (peer.empty()) {
-    view.phase = pp::amp::PeerLinkPhase::Unavailable;
+    view.phase = MeshPeerLinkPhase::Unavailable;
     view.status_label = "Can't connect";
     view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
     view.show_banner = true;
@@ -513,21 +513,21 @@ ThreadPeerLinkView MeshMessagingService::GetThreadPeerLink(const std::string& th
   }
 
   if (amp_links_) {
-    const pp::amp::PeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+    const MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
     view.phase = snap.phase;
     view.has_direct_endpoint = snap.has_endpoint;
     view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
     switch (snap.phase) {
-    case pp::amp::PeerLinkPhase::Connected:
+    case MeshPeerLinkPhase::Connected:
       view.status_label = "Direct";
       break;
-    case pp::amp::PeerLinkPhase::Dialing:
-    case pp::amp::PeerLinkPhase::Handshaking:
+    case MeshPeerLinkPhase::Dialing:
+    case MeshPeerLinkPhase::Handshaking:
       view.status_label = "Connecting…";
       view.banner_message = "Trying a direct link…";
       view.show_banner = true;
       break;
-    case pp::amp::PeerLinkPhase::Backoff:
+    case MeshPeerLinkPhase::Backoff:
       view.status_label = view.backoff_seconds > 0
                               ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
                               : "Retrying soon";
@@ -540,10 +540,10 @@ ThreadPeerLinkView MeshMessagingService::GetThreadPeerLink(const std::string& th
       view.show_banner = true;
       view.show_retry = true;
       break;
-    case pp::amp::PeerLinkPhase::Idle:
+    case MeshPeerLinkPhase::Idle:
       view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
       break;
-    case pp::amp::PeerLinkPhase::Unavailable:
+    case MeshPeerLinkPhase::Unavailable:
     default:
       if (view.relay_available) {
         view.status_label = "Via relay";
@@ -561,7 +561,7 @@ ThreadPeerLinkView MeshMessagingService::GetThreadPeerLink(const std::string& th
     return view;
   }
 
-  view.phase = pp::amp::PeerLinkPhase::Unavailable;
+  view.phase = MeshPeerLinkPhase::Unavailable;
   if (view.relay_available) {
     view.status_label = "Via relay";
   } else {
@@ -593,7 +593,7 @@ void MeshMessagingService::RetryPeerDial(const std::string& thread_id) {
   }
   amp_links_->MarkWarm(peer);
   if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](pp::amp::PeerLinkManager::LinkRoe) {});
+    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
   }
 }
 

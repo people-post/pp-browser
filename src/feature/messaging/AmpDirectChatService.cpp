@@ -1,5 +1,7 @@
 #include "feature/messaging/AmpDirectChatService.h"
 
+#include "amp/link/PeerLink.h"
+
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
@@ -36,7 +38,7 @@ void RunWorker(const AmpDirectChatService::WorkerPost& post_worker, std::functio
 } // namespace
 
 struct AmpDirectChatService::Impl {
-  pp::amp::PeerLinkManager* links = nullptr;
+  IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   std::mutex handler_mutex;
@@ -97,7 +99,7 @@ struct AmpDirectChatService::Impl {
   }
 };
 
-AmpDirectChatService::AmpDirectChatService(pp::amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker)
+AmpDirectChatService::AmpDirectChatService(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)), post_worker_(std::move(post_worker)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
@@ -168,7 +170,7 @@ Roe<void> AmpDirectChatService::SendEnvelope(const std::string& peer_relay_user_
   const std::string peer_key = peer_relay_user_id;
   links_.OpenChannel(peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
                      [this, peer_key, envelope_json, finish, settled, session,
-                      deadline](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+                      deadline](IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
                          finish(Error(channel.error().message));
                          return;
