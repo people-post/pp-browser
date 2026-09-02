@@ -78,8 +78,8 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
   pp_pbr_common
-  pp_base_render
-  pp_base_mesh
+  pp_domain_ui
+  pp_domain_mesh
   RmlUi::Core
   CURL::libcurl
   Threads::Threads

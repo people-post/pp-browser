@@ -226,7 +226,7 @@ Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu:
 ./scripts/check_platform_ifdefs.sh
 ```
 
-OS `#ifdef`s belong in `src/base/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
+OS `#ifdef`s belong in `src/foundation/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
 
 ## Tests
 

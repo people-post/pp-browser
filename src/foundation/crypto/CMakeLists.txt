@@ -1,0 +1,32 @@
+pp_browser_add_foundation_library(pp_foundation_crypto
+  SOURCES
+    AttachmentContentHash.cpp
+    AttachmentContentCipher.cpp
+    AutoKeyEstablishment.cpp
+    CanonicalAad.cpp
+    CryptoUtil.cpp
+    DataKeyVault.cpp
+    EncryptedPayload.cpp
+    FileCipher.cpp
+    HybridKem.cpp
+    IdentitySeedDeriver.cpp
+    MlDsa.cpp
+    MessageCipher.cpp
+    PinKeyDeriver.cpp
+    PinResolver.cpp
+    ProfileSecretsService.cpp
+    ProfileUnlockGate.cpp
+    PskBundleCodec.cpp
+    LinkDeviceCodec.cpp
+    PskFingerprint.cpp
+    ReplayWindow.cpp
+    SessionKeyDeriver.cpp
+  PUBLIC_LIBS
+    pp_foundation_error
+    pp_foundation_data
+    pp_crypto
+    sodium)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

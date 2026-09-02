@@ -1,8 +1,8 @@
 #include "feature/settings/SettingsLogic.h"
 
-#include "base/data/Config.h"
-#include "base/data/MeshRole.h"
-#include "base/data/LlmPreset.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/LlmPreset.h"
 #include "feature/settings/SettingsUiState.h"
 
 #include <sstream>

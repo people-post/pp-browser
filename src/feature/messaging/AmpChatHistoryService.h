@@ -1,11 +1,11 @@
 #pragma once
 
-#include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/mesh/host/MeshPorts.h"
-#include "base/net/ServiceClients.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/people/IdentityStore.h"
 
 #include <functional>
 #include <memory>

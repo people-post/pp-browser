@@ -24,7 +24,7 @@ DHT **feeds candidates** only. [`MeshHopPolicy`](../../src/base/people/MeshHopPo
 | Mobile / Client | Never participates (consume-only) |
 | Default | `capabilities.dht = false` |
 | Publish gate | Reachability ≠ `Blocked`; advertise dialable ADP multiaddrs only |
-| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](../../src/base/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
+| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](../../src/domain/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
 
 ## Transport
 

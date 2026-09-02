@@ -1,11 +1,11 @@
 #include "feature/messaging/AmpChatHistoryService.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "base/mesh/tests/support/mesh_test_harness.h"
+#include "domain/mesh/tests/support/mesh_test_harness.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

@@ -1,7 +1,7 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>

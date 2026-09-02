@@ -1,6 +1,6 @@
 # Mesh identity (PeerId)
 
-**Status:** Native implementation in `src/base/mesh/identity/` (libp2p fork deleted).
+**Status:** Native implementation in `src/foundation/identity/` (libp2p fork deleted).
 
 ## Scope
 
@@ -21,13 +21,13 @@ ML-DSA-65 keys always take the SHA-256 path (`Qm…` prefix).
 
 | Header | Symbol |
 |--------|--------|
-| `base/mesh/identity/PeerIdUtil.h` | `PeerIdFromMlDsaPublicKey()` |
+| `foundation/identity/PeerIdUtil.h` | `PeerIdFromMlDsaPublicKey()` |
 
-CMake target: `pp_base_mesh_identity` (linked by `pp_base_mesh` and `pp_base_people`).
+CMake target: `pp_foundation_identity` (linked by `pp_domain_mesh` and `pp_domain_people`).
 
 ## Golden vectors
 
-Fixed tests in `src/base/mesh/tests/peer_id_util_test.cpp` gate byte-compat before any identity change:
+Fixed tests in `src/domain/mesh/tests/peer_id_util_test.cpp` gate byte-compat before any identity change:
 
 | Key fixture | Expected PeerId |
 |-------------|-----------------|

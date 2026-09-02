@@ -1,7 +1,7 @@
 #include "feature/messaging/PeerDisplayResolver.h"
 
-#include "base/people/ContactJson.h"
-#include "base/runtime/ProductBranding.h"
+#include "domain/people/ContactJson.h"
+#include "foundation/runtime/ProductBranding.h"
 
 namespace pbr {
 

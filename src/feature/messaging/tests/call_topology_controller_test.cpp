@@ -1,14 +1,14 @@
 #include "feature/messaging/CallTopologyController.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 
-#include "base/media/CallMediaEngine.h"
-#include "base/messaging/CallControlCodec.h"
-#include "base/messaging/CallSessionStore.h"
-#include "base/messaging/SfuAttachFanout.h"
-#include "base/messaging/SoftMigrateLogic.h"
-#include "base/messaging/SqliteThreadStore.h"
-#include "base/people/ContactsStore.h"
-#include "base/runtime/AppRuntime.h"
+#include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallSessionStore.h"
+#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/SoftMigrateLogic.h"
+#include "domain/messaging/SqliteThreadStore.h"
+#include "domain/people/ContactsStore.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <filesystem>

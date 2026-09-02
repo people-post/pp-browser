@@ -1,7 +1,7 @@
 #include "feature/ai/tools/McpToolAdapter.h"
 
-#include "base/ai/LlmClient.h"
-#include "base/ai/mcp/SchemaAdapter.h"
+#include "domain/ai/LlmClient.h"
+#include "domain/ai/mcp/SchemaAdapter.h"
 #include "common/ValueJson.h"
 
 #include <unordered_set>

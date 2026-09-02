@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/CallControlCodec.h"
+#include "domain/messaging/CallControlCodec.h"
 
 #include "common/Error.h"
 

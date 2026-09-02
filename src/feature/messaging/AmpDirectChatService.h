@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
-#include "base/mesh/host/MeshPorts.h"
-#include "base/net/ServiceClients.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/net/ServiceClients.h"
 #include "feature/messaging/IDirectMessageClient.h"
 
 #include <functional>

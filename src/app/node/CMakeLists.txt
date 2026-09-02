@@ -11,12 +11,8 @@ add_executable(pp-node
   NodeMeshPublish.cpp
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
-  # Headless has no pp_base_net; compile registration HTTP pieces here (N027).
-  ${CMAKE_SOURCE_DIR}/src/base/net/HttpClient.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/CurlSsl.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RelaySignBytes.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationSignPayload.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/net/RegistrationClientUtil.cpp
+  # Registration HTTP orchestration (N027); HTTP/sign helpers via pp_domain_net.
+  ${CMAKE_SOURCE_DIR}/src/feature/messaging/RegistrationClientUtil.cpp
 )
 
 target_include_directories(pp-node PRIVATE
@@ -24,13 +20,14 @@ target_include_directories(pp-node PRIVATE
 )
 
 target_link_libraries(pp-node PRIVATE
-  pp_base_mesh
-  pp_base_people
-  pp_base_crypto
-  pp_base_data
-  pp_base_platform_core
-  pp_base_runtime_core
-  pp_base_error
+  pp_domain_mesh
+  pp_domain_people
+  pp_domain_net
+  pp_foundation_crypto
+  pp_foundation_data
+  pp_foundation_platform_core
+  pp_foundation_runtime_core
+  pp_foundation_error
   pp_pbr_common
   Asio::asio
   Threads::Threads
@@ -46,10 +43,10 @@ install(TARGETS pp-node RUNTIME DESTINATION bin)
 
 # Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
-  pp_base_mesh
-  pp_base_mesh_link
-  pp_base_crypto
-  pp_base_adp
+  pp_domain_mesh
+  pp_amp_link
+  pp_foundation_crypto
+  pp_amp_l1
   pp_pbr_common
   Threads::Threads
   sodium
@@ -65,7 +62,7 @@ pp_browser_apply_warnings(pp-node-probe)
 install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
 
 # call_probe needs AmpDirectChatService (--with-chat); skip in headless (no messaging).
-if(TARGET pp_feature_messaging OR TARGET pp_base_messaging)
+if(TARGET pp_feature_messaging OR TARGET pp_domain_messaging)
   add_executable(pp-call-probe call_probe/main.cpp)
   target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
   target_link_libraries(pp-call-probe PRIVATE ${_pp_probe_libs})
@@ -74,7 +71,7 @@ if(TARGET pp_feature_messaging OR TARGET pp_base_messaging)
   else()
     target_sources(pp-call-probe PRIVATE
       ${CMAKE_SOURCE_DIR}/src/feature/messaging/AmpDirectChatService.cpp)
-    target_link_libraries(pp-call-probe PRIVATE pp_base_messaging)
+    target_link_libraries(pp-call-probe PRIVATE pp_domain_messaging)
   endif()
   pp_browser_apply_warnings(pp-call-probe)
   install(TARGETS pp-call-probe RUNTIME DESTINATION bin)

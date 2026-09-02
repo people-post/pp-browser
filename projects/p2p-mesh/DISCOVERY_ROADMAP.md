@@ -75,7 +75,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 
 #### n-dir-1 — Mesh node cache + refresh
 
-- Add `MeshDirectoryCache` (or extend existing directory client usage) under `src/base/mesh/discovery/`:
+- Add `MeshDirectoryCache` (or extend existing directory client usage) under `src/domain/mesh/discovery/`:
   - Periodic refresh from configured directory provider(s) (same order as `directory.providers[]`).
   - TTL + backoff on failure; stale cache OK short-term.
   - Parse `MeshNodeHit` → `{ peer_id, endpoints[], capabilities, expires_at }`.
@@ -118,7 +118,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 - `src/feature/messaging/MessagingHub.cpp`
 - `src/feature/messaging/CallStack.cpp`, `CallTopologyController.cpp`
 - `src/base/net/ServiceClients*`
-- New: `src/base/mesh/discovery/MeshDirectoryCache.{h,cpp}`
+- New: `src/domain/mesh/discovery/MeshDirectoryCache.{h,cpp}`
 - Tests: `mesh_hop_policy_test`, new `mesh_directory_cache_test`
 
 ---
@@ -158,7 +158,7 @@ Decisions to lock:
 
 ### n2-core-1 — Module skeleton
 
-- `src/base/mesh/dht/`:
+- `src/domain/mesh/dht/`:
   - `DhtNode` — bucket table, routing table, bootstrap.
   - `DhtRecordStore` — local signed records for self when publishing.
   - `DhtClient` — FIND_PEER for consumers (MessagingHub / reachability).
@@ -195,9 +195,9 @@ Decisions to lock:
 
 ### Estimated touchpoints
 
-- New: `src/base/mesh/dht/*`
-- `src/base/mesh/host/MeshHost.{h,cpp}`
-- `src/base/data/Config.h`, config merge
+- New: `src/domain/mesh/dht/*`
+- `src/domain/mesh/host/MeshHost.{h,cpp}`
+- `src/foundation/data/Config.h`, config merge
 - `src/feature/settings/` Network UI
 - Tests: `dht_routing_test`, two-host mesh test
 

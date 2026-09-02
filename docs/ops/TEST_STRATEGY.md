@@ -12,7 +12,7 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 1. **Purpose-first** — pick the question, then the cheapest layer that can answer it.
 2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node.
-3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/base/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
 4. **Three kinds of testing** (orthogonal to tiers):
 
 | Kind | Question |
@@ -144,10 +144,10 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_direct_service_test` — [`src/base/mesh/tests/call_media_direct_service_test.cpp`](../../src/base/mesh/tests/call_media_direct_service_test.cpp) |
-| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/base/mesh/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/base/mesh/tests/circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/base/mesh/tests/circuit_media_relay_compose_test.cpp) |
+| Direct call-media | `call_media_direct_service_test` — [`src/domain/mesh/tests/call_media_direct_service_test.cpp`](../../src/domain/mesh/tests/call_media_direct_service_test.cpp) |
+| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
+| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/circuit_media_relay_compose_test.cpp) |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/messaging/tests/call_lifecycle_test.cpp`](../../src/feature/messaging/tests/call_lifecycle_test.cpp) |
 

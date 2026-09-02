@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/crypto/IDekConsumer.h"
-#include "base/crypto/IPskSessionStore.h"
-#include "base/crypto/CryptoTypes.h"
+#include "foundation/crypto/IDekConsumer.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "foundation/crypto/CryptoTypes.h"
 
 #include "common/Module.h"
 

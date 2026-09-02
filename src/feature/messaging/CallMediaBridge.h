@@ -1,12 +1,12 @@
 #pragma once
 
-#include "base/media/CallMediaEngine.h"
-#include "base/messaging/CallSessionStore.h"
+#include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
-#include "base/mesh/l4/call_media/ICallMediaTransport.h"
+#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
 

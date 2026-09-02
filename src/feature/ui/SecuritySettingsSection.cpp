@@ -1,8 +1,8 @@
 #include "feature/ui/SecuritySettingsSection.h"
 
-#include "base/data/SessionStore.h"
-#include "base/data/ToolPermissions.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/ToolPermissions.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

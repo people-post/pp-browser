@@ -1,6 +1,6 @@
 #include "feature/messaging/CallUiBackend.h"
 
-#include "base/media/CallMediaEngine.h"
+#include "domain/media/CallMediaEngine.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallStack.h"
 

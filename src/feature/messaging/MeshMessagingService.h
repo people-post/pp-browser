@@ -1,15 +1,15 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/InitiationBillingStore.h"
-#include "base/messaging/GroupRosterStore.h"
-#include "base/messaging/PeerKemKeyStore.h"
-#include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/PeerSigningKeyStore.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/messaging/InitiationBillingStore.h"
+#include "domain/messaging/GroupRosterStore.h"
+#include "domain/messaging/PeerKemKeyStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
+#include "domain/messaging/SendRelayOptions.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
@@ -19,8 +19,8 @@
 #include "feature/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/GroupInviteGate.h"
-#include "base/mesh/host/MeshPorts.h"
-#include "base/net/ServiceClients.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/net/ServiceClients.h"
 
 #include <atomic>
 #include <functional>

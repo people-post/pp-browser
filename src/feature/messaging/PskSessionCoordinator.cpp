@@ -1,9 +1,9 @@
 #include "feature/messaging/PskSessionCoordinator.h"
 
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/PskBundleCodec.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/ThreadTypes.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PskBundleCodec.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

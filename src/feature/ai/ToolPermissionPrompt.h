@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/TurnPlan.h"
+#include "domain/ai/TurnPlan.h"
 
 #include <string>
 #include <vector>

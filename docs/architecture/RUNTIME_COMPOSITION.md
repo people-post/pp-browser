@@ -37,10 +37,10 @@ flowchart TB
   subgraph base_layer["base/"]
     SessionStore["SessionStore<br/><small>base/data/</small>"]
     LocalizationService["LocalizationService<br/><small>base/i18n/</small>"]
-    Theme["Theme<br/><small>base/ui/</small>"]
+    Theme["Theme<br/><small>domain/ui/</small>"]
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
-    ThreadStore["SqliteThreadStore<br/><small>base/messaging/</small>"]
-    LlmClient["LlmClient<br/><small>base/ai/</small>"]
+    ThreadStore["SqliteThreadStore<br/><small>domain/messaging/</small>"]
+    LlmClient["LlmClient<br/><small>domain/ai/</small>"]
     CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
   end
 
@@ -103,14 +103,14 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["MessagingHub<br/><small>feature/messaging/</small>"]
-    Mesh["MeshHost<br/><small>base/mesh/ — shared w/ pp-node</small>"]
+    Mesh["MeshHost<br/><small>domain/mesh/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
-    ThemeNode["Theme<br/><small>base/ui/</small>"]
+    ThemeNode["Theme<br/><small>domain/ui/</small>"]
     ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
     ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
     Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
-    Input["InputCoordinator<br/><small>base/ui/</small>"]
+    Input["InputCoordinator<br/><small>domain/ui/</small>"]
     Flow["FlowCoordinator<br/><small>feature/ui/</small>"]
     Call["CallController<br/><small>feature/ui/</small>"]
   end
@@ -279,13 +279,13 @@ flowchart TB
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
-| **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **libp2p IO** | `Libp2pHost` | `base/mesh/` | `asio::io_context` run loop |
-| **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
-| **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
-| **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
+| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
+| **libp2p IO** | `Libp2pHost` | `domain/mesh/` | `asio::io_context` run loop |
+| **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
+| **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread |
+| **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
 ### Cross-thread rules of thumb
 
@@ -302,36 +302,36 @@ Full model: [THREADING.md](THREADING.md).
 | Class | Location | Role |
 |-------|----------|------|
 | **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
-| **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
+| **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
-| **MeshHost** | `base/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **MeshHost** | `domain/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
 | **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
 | **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` via `MessagingFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `feature/ui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
-| **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
+| **InputCoordinator** | `domain/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
 | **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
 | **FlowCoordinatorPorts** | `feature/ui/` | Modal begin/end/dismiss; app-filled from `FlowCoordinator` |
 | **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
 | **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
 | **PinGateActionPorts** | `feature/ui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
-| **ProfileSecretsService** | `base/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
-| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
+| **ProfileSecretsService** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
+| **ProfileUnlockGate** | `foundation/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
 | **UnlockEnsurePorts** | `feature/ui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
-| **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
+| **LocalizationService** | `foundation/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
 | **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, **Change PIN** (`change_pin` → app-owned vault), imperative ops; app binds implementations |
 | **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/people-picker; app-filled from `ChatController` |
 | **ContactsNotifyPorts** | `feature/ui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
 | **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
 | **CallActionsPorts** | `feature/ui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
-| **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
+| **ProfileIdentityView** | `domain/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
-| **AppRuntime** | `base/runtime/` | UI mailbox + worker pool + coordinator |
-| **Libp2pHost** | `base/mesh/` | Vendored host + asio IO thread |
-| **CallMediaEngine** | `base/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
+| **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
+| **Libp2pHost** | `domain/mesh/` | Vendored host + asio IO thread |
+| **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

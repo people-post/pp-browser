@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/PskRotateCodec.h"
-#include "base/messaging/RelayEnvelope.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/messaging/PskRotateCodec.h"
+#include "common/chat/RelayEnvelope.h"
 
 #include "common/Error.h"
 

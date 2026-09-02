@@ -39,7 +39,7 @@ pp_browser_add_feature_library(pp_feature_ui
   PUBLIC_LIBS
     pp_feature_settings
     pp_feature_messaging
-    pp_base_render
+    pp_domain_ui
     RmlUi::Core)
 
 if(PP_BROWSER_BUILD_TESTS)

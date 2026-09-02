@@ -1,15 +1,15 @@
 # `src/feature`
 
-Product **orchestration** for pp-browser: screens, controllers, sessions, and hubs that compose base primitives into user-facing workflows.
+Product **orchestration** for pp-browser: screens, controllers, sessions, and hubs that **wire** domain peers (and foundation) into user-facing workflows.
 
 ```
-app        wires startup, profiles, global services
+app → feature → domain → foundation → common → pp_common
 feature    ← you are here
-base       stores, clients, codecs, UI building blocks
-common     logger, ResultOrError, task runner (app-agnostic)
 ```
 
-**Rule:** dependencies flow downward only. Feature may use `base/` and `common/`; it must not `#include` from `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md). Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
+Today’s includes still use `base/` for foundation + domain modules; see the North Star in [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+
+**Rule:** dependencies flow downward only. Feature may use `base/` (foundation/domain), `common/`, and `lib/`; it must not `#include` from `app/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
 Each top-level folder (and `ai/tools`, `ai/bindings`) builds as its own static library — **`pp_feature_<module>`** (e.g. `pp_feature_messaging`, `pp_feature_chat`). The aggregate **`pp_feature`** (`INTERFACE`) links all module libraries for app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
 
@@ -19,13 +19,14 @@ Each top-level folder (and `ai/tools`, `ai/bindings`) builds as its own static l
 
 Feature code should **coordinate** multiple base modules into a screen, session, or workflow.
 
-| Put it in feature when… | Put it in base when… |
-|-------------------------|----------------------|
-| It coordinates several base modules into a user flow | It owns a data model or wire format |
-| It implements a screen, controller, or session lifecycle | It talks to one external system (HTTP, SQLite, libsodium) |
-| It is only meaningful in one UI context | It is reusable across multiple features |
+| Put it in feature when… | Put it in domain / foundation when… |
+|-------------------------|-------------------------------------|
+| It coordinates several domain modules into a user flow | It owns a data model, store, client, or codec |
+| It **binds** `common` contracts to concrete types | It talks to one external system (HTTP, SQLite, libsodium) |
+| It implements a screen, controller, or session lifecycle | It is reusable across multiple features without UI |
+| It is only meaningful in one UI context | Foundation: shared kernel every peer may link |
 
-If you are unsure, ask: *"Could another feature import this without pulling in a specific screen?"* No → feature. Yes → base.
+If you are unsure, ask: *"Could another feature import this without pulling in a specific screen?"* No → feature. Yes → domain (or foundation if every peer needs the impl).
 
 ---
 
@@ -44,7 +45,7 @@ src/feature/
 └── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```
 
-`IToolProvider` / `ToolRegistry` live in `base/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
+`IToolProvider` / `ToolRegistry` live in `domain/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
 
 **Domain grouping (mental model):**
 
@@ -75,10 +76,12 @@ Includes use the repo root: `#include "feature/chat/ChatController.h"`.
 ### Cross-layer direction
 
 ```
-app → feature → base → common
+app → feature → domain → foundation → common
 ```
 
-Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `base/` does not include `feature/`, and `feature/` does not include `app/`.
+(Today: `app → feature → base → common` with foundation+domain still under `base/`.)
+
+Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, and `feature/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 
@@ -102,7 +105,7 @@ chat
 2. **Shared structs go low** — if feature and base both need a DTO, move it to the owning base module (or a dedicated `*Types.h` there).
 3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `base/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 4. **Cross-controller wiring stays in app** — tool registration, tab ticks, and `ActionRouter` model-dirty callbacks belong in `src/app/`, not feature headers.
-5. **Fork glue stays at the edge** — RmlUi via `pp_base_render` in `ui/`, `chat/`, and `ai/bindings/`; libp2p via `pp_base_mesh` in `messaging/` (forks under `src/lib/`).
+5. **Fork glue stays at the edge** — RmlUi via `pp_foundation_platform` in `ui/`, `chat/`, and `ai/bindings/`; libp2p via `pp_domain_mesh` in `messaging/` (forks under `src/lib/`).
 
 ---
 
@@ -160,10 +163,10 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 
 | Area | Feature role | Base / project pointer |
 |------|--------------|------------------------|
-| Agent turns | `AgentSession`, turn pipeline | `base/ai/` (LlmClient, TurnPlan, conversation) |
+| Agent turns | `AgentSession`, turn pipeline | `domain/ai/` (LlmClient, TurnPlan, conversation) |
 | P2P messaging | `MessagingHub`, sync, relay | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) |
 | Window shell | `ShellHost`, document loading | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) |
-| Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `base/messaging/` stores |
+| Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `domain/messaging/` stores |
 | Settings | Section handlers, config merge | `assets/views/settings.rml`, `base/data/Config.h` |
 | At-rest PIN gate | `ProfileUnlockGate` + `PinGateController` UI | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
 
@@ -188,5 +191,5 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |
 | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) | Shell layout and document hosting |
-| [`src/base/README.md`](../base/README.md) | Base-layer primitives and dependency rules |
+| [`src/foundation/README.md`](../foundation/README.md) / [`src/domain/README.md`](../domain/README.md) | Foundation + domain primitives and dependency rules |
 | [`AGENTS.md`](../../AGENTS.md) | Agent-oriented map of the whole repo |

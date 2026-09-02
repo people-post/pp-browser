@@ -2,12 +2,13 @@
 
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/AttachmentDownloadService.h"
-#include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/MessagingJson.h"
-#include "base/messaging/RelayWirePayload.h"
-#include "base/messaging/MessagingLimits.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/ContactsStore.h"
+#include "domain/messaging/ChatPayloadCodec.h"
+#include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "domain/messaging/RelayWirePayload.h"
+#include "common/chat/MessagingLimits.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ContactsStore.h"
 
 #include <algorithm>
 #include "common/PbrCompat.h"

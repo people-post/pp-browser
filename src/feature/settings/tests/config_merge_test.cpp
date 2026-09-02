@@ -1,5 +1,5 @@
-#include "base/data/Config.h"
-#include "base/data/LlmPreset.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
 #include "feature/settings/SettingsLogic.h"
 #include "feature/settings/SettingsUiState.h"
 

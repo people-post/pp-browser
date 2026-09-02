@@ -1,11 +1,11 @@
 #include "feature/messaging/SqlitePskSessionStore.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/FileCipher.h"
-#include "base/crypto/PskBundleCodec.h"
-#include "base/crypto/PskFingerprint.h"
-#include "base/error/AppError.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/PskBundleCodec.h"
+#include "foundation/crypto/PskFingerprint.h"
+#include "foundation/error/AppError.h"
 
 #include <sodium.h>
 #include <sqlite3.h>

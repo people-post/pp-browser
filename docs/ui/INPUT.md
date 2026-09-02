@@ -11,22 +11,22 @@ SDL events
   → integration/platform/RmlSDL::InputEventHandler  (translate only)
   → Rml::Context::Process*                    (focus, hover, click, keyboard, touch gestures)
   → SelectionController (selectable="text")   (static text selection)
-  → base/ui/ContextMenuHost                   (right-click / long-press edit menu)
-  → base/ui/InputCoordinator                  (global keyboard shortcuts)
+  → domain/ui/ContextMenuHost                   (right-click / long-press edit menu)
+  → domain/ui/InputCoordinator                  (global keyboard shortcuts)
 ```
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| Platform | `src/base/render/` host + pp-cpp-ui `backend/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
+| Platform | `src/foundation/platform/ui/` host + pp-cpp-ui `backend/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
 | RmlUi core | `pp-cpp-ui rmlui/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; iOS-aligned touch deferral for static text; long-press callback |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide selection; desktop drag-select; touch word select via long-press / double-tap |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
-| Context menu | `src/base/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
-| Base UI | `src/base/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
+| Context menu | `src/domain/ui/ContextMenuHost.*` | Extensible Copy / Select All / Paste panel; desktop right-click; mobile long-press |
+| Base UI | `src/domain/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
-`pp-cpp-ui rmlui/reference/backends/` backs RmlUi unit-test shell. The running app uses pp-cpp-ui `backend/` plus product `BrowserHost` in `src/base/render/host/`. Edit product host for app runtime behavior; edit pp-cpp-ui `backend/` for shared Platform_SDL / Renderer_GL3.
+`pp-cpp-ui rmlui/reference/backends/` backs RmlUi unit-test shell. The running app uses pp-cpp-ui `backend/` plus product `BrowserHost` in `src/foundation/platform/ui/host/`. Edit product host for app runtime behavior; edit pp-cpp-ui `backend/` for shared Platform_SDL / Renderer_GL3.
 
 ## Event flow (keyboard)
 
@@ -109,7 +109,7 @@ cmake --build build -j
 ./build/src/app/pp-browser
 ```
 
-Implementation: [`TouchSimOverlay`](src/base/render/host/TouchSimOverlay.cpp) in `pp_base_render` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.
+Implementation: [`TouchSimOverlay`](src/foundation/platform/ui/host/TouchSimOverlay.cpp) in `pp_foundation_platform` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.
 
 ## Context menu
 

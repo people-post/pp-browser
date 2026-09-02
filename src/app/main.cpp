@@ -2,13 +2,13 @@
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
-#include "base/media/CallMediaHealth.h"
-#include "base/platform/Platform.h"
-#include "base/platform/PlatformLogDefaults.h"
-#include "base/platform/PlatformLogSink.h"
-#include "base/platform/PlatformStartupHints.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/runtime/ProductBranding.h"
+#include "common/media/CallMediaHealth.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformLogDefaults.h"
+#include "foundation/platform/PlatformLogSink.h"
+#include "foundation/platform/PlatformStartupHints.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/runtime/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 

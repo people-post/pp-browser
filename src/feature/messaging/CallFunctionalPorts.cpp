@@ -1,7 +1,7 @@
 #include "feature/messaging/CallFunctionalPorts.h"
 
-#include "base/data/SessionStore.h"
-#include "base/media/CallMediaHealth.h"
+#include "foundation/data/SessionStore.h"
+#include "common/media/CallMediaHealth.h"
 #include "feature/messaging/CallUiBackend.h"
 #include "feature/messaging/MessagingHub.h"
 

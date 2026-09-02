@@ -1,7 +1,7 @@
-#include "base/messaging/GroupRosterStore.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/SqliteThreadStore.h"
-#include "base/people/ContactsStore.h"
+#include "domain/messaging/GroupRosterStore.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/SqliteThreadStore.h"
+#include "domain/people/ContactsStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 
 #include "common/Utilities.h"

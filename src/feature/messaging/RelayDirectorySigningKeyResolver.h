@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/messaging/PeerSigningKeyStore.h"
-#include "base/net/ServiceClients.h"
-#include "base/people/ContactTypes.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/people/ContactTypes.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"

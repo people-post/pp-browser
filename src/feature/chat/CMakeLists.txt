@@ -10,11 +10,11 @@ pp_browser_add_feature_library(pp_feature_chat
     MessagingTools.cpp
     WorkingSetController.cpp
   PUBLIC_LIBS
-    pp_base_platform
+    pp_foundation_platform
     pp_feature_ai
     pp_feature_messaging
     pp_feature_ui
-    pp_base_render
+    pp_domain_ui
     RmlUi::Core)
 
 if(PP_BROWSER_BUILD_TESTS)

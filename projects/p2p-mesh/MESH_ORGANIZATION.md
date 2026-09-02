@@ -8,7 +8,7 @@
 ```
 pp-cpp-amp (L1–L3 + link)
      ↑
-src/base/mesh/identity (PeerId — native, no libp2p fork)
+src/foundation/identity (PeerId — native, no libp2p fork)
      ↑
 src/base/mesh (host + reachability + l4 coordinators)
      ↑
@@ -19,8 +19,8 @@ Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media
 
 ## Identity
 
-- libp2p fork **deleted**; PeerId in `base/mesh/identity/`
-- CMake: `pp_base_mesh_identity` (+ `pp_base_mesh`)
+- libp2p fork **deleted**; PeerId in `foundation/identity/`
+- CMake: `pp_foundation_identity` (+ `pp_domain_mesh`)
 - Golden ML-DSA → PeerId tests in `peer_id_util_test.cpp`
 
 ## Feature ports

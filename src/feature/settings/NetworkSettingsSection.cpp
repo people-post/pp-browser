@@ -1,9 +1,9 @@
 #include "feature/settings/NetworkSettingsSection.h"
 
-#include "base/data/Config.h"
-#include "base/data/SessionStore.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/platform/Platform.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
 

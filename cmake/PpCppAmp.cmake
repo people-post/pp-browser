@@ -2,6 +2,9 @@
 #
 # Prefer a local sibling checkout when present. Otherwise pin a release tag
 # (PP_CPP_AMP_GIT_TAG). AMP unit/integration tests run in pp-cpp-amp CI.
+#
+# Public CMake target names match pp-cpp-amp: pp_amp_l1, pp_amp_l2, pp_amp_l3,
+# pp_amp_link. Do not reintroduce pp_base_* aliases for these.
 
 include(FetchContent)
 
@@ -43,17 +46,3 @@ foreach(_layer pp_amp_l1 pp_amp_l2 pp_amp_l3 pp_amp_link)
     message(FATAL_ERROR "pp-cpp-amp did not define target ${_layer}")
   endif()
 endforeach()
-
-# Legacy pp-browser target names (src/base/CMakeLists, feature links).
-if(NOT TARGET pp_base_adp)
-  add_library(pp_base_adp ALIAS pp_amp_l1)
-endif()
-if(NOT TARGET pp_base_mesh_session)
-  add_library(pp_base_mesh_session ALIAS pp_amp_l2)
-endif()
-if(NOT TARGET pp_base_mesh_channel)
-  add_library(pp_base_mesh_channel ALIAS pp_amp_l3)
-endif()
-if(NOT TARGET pp_base_mesh_link)
-  add_library(pp_base_mesh_link ALIAS pp_amp_link)
-endif()

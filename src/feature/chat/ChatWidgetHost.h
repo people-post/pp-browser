@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/ai/StructuredTextParser.h"
-#include "base/ai/conversation/ConversationTypes.h"
-#include "base/messaging/ChatActionTypes.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "domain/ai/StructuredTextParser.h"
+#include "domain/ai/conversation/ConversationTypes.h"
+#include "common/chat/ChatActionTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
 
 #include <map>
 #include <optional>
