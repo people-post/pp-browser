@@ -67,9 +67,7 @@ src/base/
 ├── messaging/    [domain] **moved →** `src/domain/messaging/` (`pp_domain_messaging`)
 ├── mesh/         [domain] Amp product glue — host, ports, reachability, L4
 ├── media/        [domain] **moved →** `src/domain/media/` (`pp_domain_media`)
-├── ai/           [domain] LLM client, turn plans, structured parsing, MCP
-│   ├── conversation/
-│   └── mcp/
+├── ai/           [domain] **moved →** `src/domain/ai/` (`pp_domain_ai` + conversation/mcp)
 ├── ui/           [domain] **moved →** `src/domain/ui/` (`pp_domain_ui` shell)
 └── render/       **moved →** `src/foundation/platform/ui/` (host/overlays in `pp_foundation_platform`)
 ```
@@ -79,8 +77,8 @@ Forks live under `src/lib/` (Amp) and pp-cpp-ui (RmlUi), not here.
 Start points:
 
 - Bootstrap & config → `data/BootstrapTypes.h`, `data/Config.h`
-- Chat persistence → `messaging/IThreadStore.h`, `messaging/SqliteThreadStore.h` (port → `common` over time)
-- Agent transcript → `ai/conversation/Conversation.h`
+- Chat persistence → `domain/messaging/` stores (ported toward `common` over time)
+- Agent transcript → `domain/ai/conversation/Conversation.h`
 - Shell theming → `domain/ui/Theme.h`, `domain/ui/ViewCatalog.h`
 
 Includes (today): `#include "foundation/data/Config.h"`.
