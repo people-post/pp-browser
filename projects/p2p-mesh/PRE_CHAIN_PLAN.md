@@ -43,8 +43,8 @@ Stale note: DISCOVERY_ROADMAP “Current state” table still said n-dir unwired
 ### nd0 — Doc / tracker hygiene (this PR family)
 
 - [x] N029 + NAME_DIRECTORY_NORTH_STAR
-- [ ] Keep DISCOVERY_ROADMAP n-dir “current state” table honest (done / remaining)
-- [ ] PHASES.md: add **nd** track pointing here; do not reopen finished n-dir/n2 checklists
+- [x] Keep DISCOVERY_ROADMAP n-dir “current state” table honest (done / remaining)
+- [x] PHASES.md: add **nd** track pointing here; do not reopen finished n-dir/n2 checklists
 - [ ] Mark MESH_DIRECTORY Phase E smoke items still open vs done
 
 **Exit:** Engineers open this file first for “what’s left before chain.”
@@ -85,6 +85,8 @@ expires_at
 
 **Anti-scope:** no Amp protocol, no chain, no DNS dial.
 
+**Status:** Landed — `INameDirectory` + `DirectoryClientNameDirectory` + `NameRecord` in `src/base/mesh/discovery/NameDirectory.*`; MessagingHub cache fetcher uses `ListService("mesh_node")`.
+
 ---
 
 ### nd2 — Complete Phase A phone-book UX & data fidelity
@@ -99,6 +101,8 @@ expires_at
 
 **Exit:** First-release user story works: join via defaults, find org node / person by handle, dial without typing PeerId.
 
+**Status:** Landed for cache/parse fidelity (`MeshDirectoryNode` + `MeshNodeHit`/`DirectoryHit` fields; optional `seq`/`entity_kind`/extended caps). Manual Phase E smoke still open. Person Account-ID UX largely pre-existing.
+
 ---
 
 ### nd3 — Provider config hygiene (still Phase A)
@@ -110,6 +114,8 @@ expires_at
 3. Docs: CONFIGURATION.md — “directory provider (HTTP now; Amp/chain later)”
 
 **Exit:** Swapping the phone-book backend is a provider entry, not a MessagingHub rewrite.
+
+**Status:** Not started (single `directory.base_url` remains).
 
 ---
 
@@ -127,6 +133,8 @@ expires_at
 
 **Anti-scope:** fog anycast, root-signed epoch manifests, invite sponsorship (theory only until scheduled).
 
+**Status:** Not started.
+
 ---
 
 ### nd5 — `ledger_gateway` capability prep (Phase C, no chain runtime)
@@ -142,6 +150,8 @@ expires_at
 5. Explicit non-goals: embedding `pp-beacon`, ledger RPC dial, settle UI
 
 **Exit:** Capability bit and hop hook exist so chain enablement is “turn on transport + resolver backend,” not “redesign mesh_node.”
+
+**Status:** Partial — `ledger_gateway` on `MeshCapabilities` / ads / config JSON / `PP_NODE_CAP_LEDGER_GATEWAY` / directory parse + cache fields. Hop collector stub and UI checkbox deferred (N008).
 
 ---
 

@@ -102,6 +102,11 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
       config.mesh.capabilities.dht = *parsed;
     }
   }
+  if (const char* ledger = EnvOrNull("PP_NODE_CAP_LEDGER_GATEWAY")) {
+    if (auto parsed = ParsePpNodeBoolEnv(ledger)) {
+      config.mesh.capabilities.ledger_gateway = *parsed;
+    }
+  }
   if (const char* advertise = EnvOrNull("PP_NODE_ADVERTISE_MULTIADDRS")) {
     config.mesh.advertise_multiaddrs = ParsePpNodeBootstrapPeersCsv(advertise);
   }

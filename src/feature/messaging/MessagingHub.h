@@ -35,6 +35,7 @@
 #include "base/mesh/reachability/Reachability.h"
 #include "base/mesh/reachability/ReachabilityService.h"
 #include "base/mesh/discovery/MeshDirectoryCache.h"
+#include "base/mesh/discovery/NameDirectory.h"
 #include "base/mesh/dht/DhtTypes.h"
 #include "base/mesh/host/MeshHost.h"
 #include "base/people/MeshHopPolicy.h"

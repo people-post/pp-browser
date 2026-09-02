@@ -788,6 +788,8 @@ void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& p
     Object caps;
     caps.set("circuit_relay", publish.capabilities.circuit_relay);
     caps.set("media_relay", publish.capabilities.media_relay);
+    caps.set("dht", publish.capabilities.dht);
+    caps.set("ledger_gateway", publish.capabilities.ledger_gateway);
     body.set("capabilities", std::move(caps));
   }
 }
@@ -862,6 +864,15 @@ Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
     if (auto expires = obj->getString("expires_at")) {
       hit.expires_at = *expires;
     }
+    if (auto kind = obj->getString("entity_kind")) {
+      hit.entity_kind = *kind;
+    }
+    if (hit.entity_kind.empty()) {
+      hit.entity_kind = "mesh_node";
+    }
+    if (auto seq = obj->getIf<int64_t>("seq")) {
+      hit.seq = *seq;
+    }
     if (auto pk = obj->getString("signing_public_key_b64")) {
       hit.signing_public_key_b64 = *pk;
     }
@@ -874,6 +885,12 @@ Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
       }
       if (auto media = caps->getIf<bool>("media_relay")) {
         hit.capabilities.media_relay = *media;
+      }
+      if (auto dht = caps->getIf<bool>("dht")) {
+        hit.capabilities.dht = *dht;
+      }
+      if (auto ledger = caps->getIf<bool>("ledger_gateway")) {
+        hit.capabilities.ledger_gateway = *ledger;
       }
     }
     if (const Array* endpoints = obj->getArray("endpoints")) {

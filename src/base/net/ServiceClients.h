@@ -70,6 +70,9 @@ public:
 struct MeshCapabilitiesAd {
   bool circuit_relay = false;
   bool media_relay = false;
+  bool dht = false;
+  /** N029 Phase C prep — directory/config only until ledger transport ships. */
+  bool ledger_gateway = false;
 };
 
 /** Optional register/finish extras (N027 mesh_node publish). */
@@ -87,6 +90,10 @@ struct MeshNodeHit {
   std::vector<DirectoryEndpoint> endpoints;
   MeshCapabilitiesAd capabilities;
   std::string expires_at;
+  /** person | mesh_node; default mesh_node for ListMeshNodes rows. */
+  std::string entity_kind;
+  /** Monotonic directory/chain seq; 0 when provider omits (N029). */
+  int64_t seq = 0;
   std::optional<std::string> signing_public_key_b64;
   std::optional<std::string> kem_public_key_b64;
 };

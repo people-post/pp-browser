@@ -142,6 +142,8 @@ private:
       Object caps;
       caps.set("circuit_relay", publish.capabilities.circuit_relay);
       caps.set("media_relay", publish.capabilities.media_relay);
+      caps.set("dht", publish.capabilities.dht);
+      caps.set("ledger_gateway", publish.capabilities.ledger_gateway);
       body.set("capabilities", std::move(caps));
     }
   }
@@ -169,6 +171,8 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   publish.has_capabilities = true;
   publish.capabilities.circuit_relay = config.mesh.capabilities.circuit_relay;
   publish.capabilities.media_relay = config.mesh.capabilities.media_relay;
+  publish.capabilities.dht = config.mesh.capabilities.dht;
+  publish.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
 
   std::string nick = nickname;
   if (nick.empty()) {

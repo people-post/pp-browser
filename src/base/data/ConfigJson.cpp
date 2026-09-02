@@ -330,6 +330,7 @@ Object MeshCapabilitiesToObject(const MeshCapabilities& caps) {
   object.set("circuit_relay", caps.circuit_relay);
   object.set("media_relay", caps.media_relay);
   object.set("dht", caps.dht);
+  object.set("ledger_gateway", caps.ledger_gateway);
   return object;
 }
 
@@ -342,6 +343,9 @@ void MeshCapabilitiesFromObject(const Object& object, MeshCapabilities& caps) {
   }
   if (auto dht = object.getIf<bool>("dht")) {
     caps.dht = *dht;
+  }
+  if (auto ledger_gateway = object.getIf<bool>("ledger_gateway")) {
+    caps.ledger_gateway = *ledger_gateway;
   }
 }
 

@@ -769,11 +769,12 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       if (!directory_) {
         return std::vector<MeshDirectoryNode>{};
       }
-      auto hits = directory_->ListMeshNodes();
-      if (!hits) {
-        return hits.error();
+      DirectoryClientNameDirectory names(*directory_);
+      auto records = names.ListService("mesh_node");
+      if (!records) {
+        return records.error();
       }
-      return MeshDirectoryNodesFromHits(*hits);
+      return MeshDirectoryNodesFromNameRecords(*records);
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();
