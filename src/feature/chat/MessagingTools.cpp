@@ -3,6 +3,8 @@
 #include "feature/messaging/MessagingFacade.h"
 
 #include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "base/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 

@@ -4,6 +4,7 @@
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
 #include "base/people/ContactTypes.h"

@@ -25,6 +25,7 @@
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "base/messaging/ReactionTypes.h"
 #include "base/messaging/PskRotateCodec.h"
 #include "base/messaging/SendRelayOptions.h"

@@ -1,6 +1,7 @@
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 
 #include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
