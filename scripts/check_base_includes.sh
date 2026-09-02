@@ -39,7 +39,6 @@ check_absent "common must not include feature/" \
 # Legacy domain→domain edges still present. Remove entries as peels land.
 # Format: from->to (module folder names under src/base/).
 LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
-ai->messaging
 ai->net
 messaging->net
 messaging->people
@@ -113,6 +112,18 @@ check_absent "ai must not include messaging/ChatActionTypes.h (use common/)" \
   '#include "base/messaging/ChatActionTypes.h"' src/base/ai
 check_absent "ai must not include messaging/ThreadMemoryTypes.h (use common/)" \
   '#include "base/messaging/ThreadMemoryTypes.h"' src/base/ai
+check_absent "ai must not include messaging/ThreadTypes.h (use common/)" \
+  '#include "base/messaging/ThreadTypes.h"' src/base/ai
+check_absent "ai must not include messaging/IThreadStore.h (use common/)" \
+  '#include "base/messaging/IThreadStore.h"' src/base/ai
+check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/)" \
+  '#include "base/messaging/PeopleDiscoveryBlocks.h"' src/base/ai
+check_absent "net must not include messaging/ThreadTypes.h (use common/)" \
+  '#include "base/messaging/ThreadTypes.h"' src/base/net
+check_absent "net must not include messaging/ChatPayloadTypes.h (use common/)" \
+  '#include "base/messaging/ChatPayloadTypes.h"' src/base/net
+check_absent "net must not include messaging/IThreadStore.h (use common/)" \
+  '#include "base/messaging/IThreadStore.h"' src/base/net
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

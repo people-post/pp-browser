@@ -10,7 +10,6 @@ pp_browser_add_base_library(pp_base_messaging
     ChatBlobResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
-    ChatPayloadTypes.cpp
     CallControlCodec.cpp
     CallSessionLogic.cpp
     CallSessionStore.cpp
@@ -40,7 +39,6 @@ pp_browser_add_base_library(pp_base_messaging
     PeerBriefRoute.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
-    PeopleDiscoveryBlocks.cpp
     RelayStreamKey.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp

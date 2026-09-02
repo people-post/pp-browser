@@ -1,17 +1,35 @@
 #pragma once
 
+// Compatibility shim — prefer `#include "common/PeopleDiscoveryBlocks.h"`.
+#include "common/PeopleDiscoveryBlocks.h"
 #include "base/people/ContactTypes.h"
 
-#include <string>
 #include <vector>
 
 namespace pbr {
 
-// Builds structured blocks JSON ({"blocks":[...]}) for people-discovery tool results.
-std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
-                                           const std::vector<Contact>& contacts);
+inline PeopleDiscoveryContactView ToPeopleDiscoveryContactView(const Contact& contact) {
+  return PeopleDiscoveryContactView{
+      .id = contact.id,
+      .display_name = contact.display_name,
+      .server_nickname = contact.server_nickname,
+      .ids = contact.ids,
+  };
+}
 
-// If raw text is a directory-hits or contacts JSON array, build blocks JSON; otherwise empty.
-std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json);
+inline std::vector<PeopleDiscoveryContactView> ToPeopleDiscoveryContactViews(
+    const std::vector<Contact>& contacts) {
+  std::vector<PeopleDiscoveryContactView> views;
+  views.reserve(contacts.size());
+  for (const Contact& contact : contacts) {
+    views.push_back(ToPeopleDiscoveryContactView(contact));
+  }
+  return views;
+}
+
+inline std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
+                                                  const std::vector<Contact>& contacts) {
+  return BuildPeopleDiscoveryBlocksJson(directory_hits, ToPeopleDiscoveryContactViews(contacts));
+}
 
 } // namespace pbr

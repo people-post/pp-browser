@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
+#include "common/ThreadTypes.h"
 
 #include <cstdint>
 #include <optional>

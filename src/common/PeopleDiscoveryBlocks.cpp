@@ -1,6 +1,6 @@
-#include "base/messaging/PeopleDiscoveryBlocks.h"
+#include "common/PeopleDiscoveryBlocks.h"
 
-#include "base/people/ContactJson.h"
+#include "common/DirectoryJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
@@ -50,7 +50,7 @@ Value DirectoryHitItemActions(const DirectoryHit& hit) {
   return ArrayValue(std::move(actions));
 }
 
-Value ContactItemActions(const Contact& contact) {
+Value ContactItemActions(const PeopleDiscoveryContactView& contact) {
   std::vector<Value> actions;
 
   Object message_payload;
@@ -88,10 +88,31 @@ std::string BuildBlocksJson(std::vector<Value> blocks) {
   return DumpJson(root);
 }
 
+PeopleDiscoveryContactView ContactViewFromJson(const Object& json) {
+  PeopleDiscoveryContactView contact;
+  if (const Value* id = json.find("id")) {
+    if (const auto* s = asString(*id)) {
+      contact.id = *s;
+    }
+  }
+  if (const Value* display_name = json.find("display_name")) {
+    if (const auto* s = asString(*display_name)) {
+      contact.display_name = *s;
+    }
+  }
+  if (const Value* server_nickname = json.find("server_nickname")) {
+    if (const auto* s = asString(*server_nickname)) {
+      contact.server_nickname = *s;
+    }
+  }
+  AppendContactIdsFromJson(json, contact.ids);
+  return contact;
+}
+
 } // namespace
 
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
-                                           const std::vector<Contact>& contacts) {
+                                           const std::vector<PeopleDiscoveryContactView>& contacts) {
   std::vector<Value> blocks;
 
   if (!directory_hits.empty()) {
@@ -122,7 +143,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
     blocks.push_back(ObjectValue(std::move(paragraph)));
 
     std::vector<Value> items;
-    for (const Contact& contact : contacts) {
+    for (const PeopleDiscoveryContactView& contact : contacts) {
       Object item;
       item.set("title", contact.display_name);
       item.set("actions", ContactItemActions(contact));
@@ -157,7 +178,7 @@ std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
   }
 
   std::vector<DirectoryHit> hits;
-  std::vector<Contact> contacts;
+  std::vector<PeopleDiscoveryContactView> contacts;
   for (const Value& item_value : doc->elements) {
     const Object* item = asObject(item_value);
     if (!item) {
@@ -166,7 +187,7 @@ std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
     if (item->contains("hit_id")) {
       hits.push_back(DirectoryHitFromJson(*item));
     } else if (item->contains("id") && item->contains("display_name")) {
-      contacts.push_back(ContactFromJson(*item));
+      contacts.push_back(ContactViewFromJson(*item));
     }
   }
 

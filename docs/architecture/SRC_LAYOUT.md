@@ -231,8 +231,8 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ## Migration order (when coding starts)
 
-1. Enforce domain peer bans in CI (`check_base_includes.sh` + legacy allowlist; CMake `PUBLIC_LIBS` later) for **new** edges. **Started:** peels into `common/`: `RelayScope`, directory vocab + `IDirectoryClient`, `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes` (removed `mesh→people`, `mesh→net`, `mesh→media`, `ai→ui` legacy edges; `ai→messaging` reduced).
-2. Extract hottest cross-peer types into `src/common/` contracts (`net`↔messaging/people, `ai`↔messaging).
+1. Enforce domain peer bans in CI (`check_base_includes.sh` + legacy allowlist; CMake `PUBLIC_LIBS` later) for **new** edges. **Started:** peels into `common/`: `RelayScope`, directory vocab + `IDirectoryClient`, `WorkingSetTypes`, `CallMediaHealth`, `ChatActionTypes` / `ThreadMemoryTypes`, messaging vocab (`ThreadChannel` / `ChatPayloadTypes` / `RelayEnvelope` / `ThreadTypes` / `SyncStateTypes` / `IThreadStore` / `ContextBudget` / `PeopleDiscoveryBlocks`) (removed `mesh→people`, `mesh→net`, `mesh→media`, `ai→ui`, `ai→messaging` legacy edges; `net→messaging` reduced).
+2. Extract remaining cross-peer types into `src/common/` contracts (`net`↔messaging/people helpers and people stores).
 3. Move foundation folders to `src/foundation/`; update includes/CMake.
 4. Move domain folders to `src/domain/`; drop aggregate “base” naming.
 5. Feature/app wiring absorbs former base↔base orchestration.

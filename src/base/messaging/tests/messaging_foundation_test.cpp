@@ -1,6 +1,6 @@
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/messaging/PeopleDiscoveryBlocks.h"
+#include "common/PeopleDiscoveryBlocks.h"
 #include "base/messaging/JsonThreadStore.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/people/Ed25519Signer.h"
@@ -76,7 +76,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   hit.display_name = "Alice Example";
   hit.nickname = "alice";
   hit.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
-  const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, {});
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, std::vector<PeopleDiscoveryContactView>{});
   EXPECT_NE(blocks.find("long_list"), std::string::npos);
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
   EXPECT_NE(blocks.find("start_conversation"), std::string::npos);

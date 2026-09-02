@@ -44,6 +44,7 @@ Cross-module helpers with no domain ownership. Keep these small.
 | `DirectoryTypes.h` / `DirectoryJson.*` / `IDirectoryClient.h` | Directory vocabulary, JSON, and client port |
 | `CallMediaHealth.*` | Call path / hop health DTOs + pure evaluation (mesh L4 + UI) |
 | `MessagingLimits.h` | Shared size / poll / compaction limits |
+| `ContextBudget.h` | LLM context window budget (store + conversation) |
 
 ### B. Domain contracts (North Star growth area)
 
@@ -52,7 +53,7 @@ pp-browser vocabulary and seams shared across **domain peers** (and used by feat
 | Category | Intend to live here | Do not put here |
 |----------|---------------------|-----------------|
 | Identity vocabulary | peer/account id aliases, hop-policy *enums*, `RelayScope` | `IdentityStore`, contact DB |
-| Messaging vocabulary | thread/message/channel ids, narrow store/view ports | `SqliteThreadStore`, full ChatPayload codec |
+| Messaging vocabulary | `ThreadChannel`, `ThreadTypes`, `ChatPayloadTypes`, `RelayEnvelope`, `SyncStateTypes`, `IThreadStore`, `PeopleDiscoveryBlocks`, chat action/memory DTOs | `SqliteThreadStore`, full ChatPayload codec, relay sign helpers |
 | Crypto seams | multi-peer ports (`IDekConsumer`-shaped, etc.) | vault / AEAD implementations |
 | Net seams | blob/relay/directory *interfaces* | HTTP client implementations |
 | Compat / versions | shared schema tokens needed by multiple peers | UI strings, Rml |

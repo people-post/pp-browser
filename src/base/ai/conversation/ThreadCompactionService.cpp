@@ -2,7 +2,7 @@
 
 #include "base/ai/LlmClient.h"
 #include "common/MessagingLimits.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/ThreadTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 

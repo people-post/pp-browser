@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/messaging/IThreadStore.h"
+#include "common/IThreadStore.h"
 #include "common/Module.h"
 
 #include <atomic>

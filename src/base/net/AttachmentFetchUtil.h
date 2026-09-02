@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/messaging/ChatPayloadTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/ChatPayloadTypes.h"
+#include "common/IThreadStore.h"
+#include "common/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"

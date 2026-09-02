@@ -1,7 +1,7 @@
 #include "base/ai/ToolResultFormatter.h"
 
 #include "base/ai/PromptBuilder.h"
-#include "base/messaging/PeopleDiscoveryBlocks.h"
+#include "common/PeopleDiscoveryBlocks.h"
 
 namespace pbr {
 

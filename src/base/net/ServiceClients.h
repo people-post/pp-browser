@@ -4,7 +4,7 @@
 #include "common/Error.h"
 #include "common/IDirectoryClient.h"
 #include "base/crypto/IDekConsumer.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/ThreadTypes.h"
 
 #include <functional>
 #include <memory>

@@ -3,7 +3,7 @@
 #include "base/ai/conversation/ConversationTypes.h"
 #include "base/ai/LlmClient.h"
 #include "common/ThreadMemoryTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/ThreadTypes.h"
 
 #include <string>
 #include <vector>
