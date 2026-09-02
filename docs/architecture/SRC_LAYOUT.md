@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Today, foundation + domain code still lives under [`src/base/`](../../src/base/) with `#include "base/…"`. Treat the tables below as the **intended** split; physical moves come in follow-up PRs. Until then, map mentally: **foundation** and **domain** are *tiers inside today’s `base/`*, not yet separate trees.
+> **Migration note (paths):** Target top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation already holds `runtime/`, `platform/`, `error/`, `i18n/`; `data/` and `crypto/` remain under [`src/base/`](../../src/base/) for now. Domain peers still live under `src/base/` with `#include "base/…"`.
 
 ## Layers
 
