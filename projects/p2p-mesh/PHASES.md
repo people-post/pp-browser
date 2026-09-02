@@ -117,6 +117,17 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] **n2-hard:** Rate limits / reputation (trail v1)
 - [ ] Never on Client/mobile
 - [x] Do not start n2-core until **n-dir** acceptance passes
+
+## nd — Pre-chain name directory (N029 Phases A–C)
+
+**Work plan:** [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md). Do **before** on-chain names (Phase D). n-dir/n2 consumer tracks are largely done; this hardens the phone-book seam.
+
+- [ ] **nd1** — `INameDirectory` / `NameRecord` seam (load-bearing for chain swap)
+- [ ] **nd2** — Record field fidelity + first-release resolve-by-account UX
+- [ ] **nd3** — `directory.providers[]` (or explicit transport on `base_url`)
+- [ ] **nd4** — Amp directory twin (may trail first release)
+- [ ] **nd5** — `ledger_gateway` capability + hop stub (no chain runtime)
+- [ ] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 can trail
 - [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
 
 ## Later horizons
