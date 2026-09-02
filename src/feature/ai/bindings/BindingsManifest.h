@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/RmlValidator.h"
+#include "domain/ai/RmlValidator.h"
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 

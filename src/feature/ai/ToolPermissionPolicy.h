@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/data/ToolPermissions.h"
-#include "base/ai/ToolRegistry.h"
+#include "domain/ai/ToolRegistry.h"
 
 #include <string>
 #include <unordered_set>

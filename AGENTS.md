@@ -45,7 +45,7 @@ AI-generated UI and chat output must follow:
 - [docs/ui/RML_PROFILE.md](docs/ui/RML_PROFILE.md) — allowed RML elements, structured JSON chat blocks
 - [docs/ui/RCSS_PROFILE.md](docs/ui/RCSS_PROFILE.md) — supported RCSS properties
 
-Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/PromptBuilder.cpp).
+Prompt text for LLMs is built in [`src/domain/ai/PromptBuilder.cpp`](src/domain/ai/PromptBuilder.cpp).
 
 ## Common tasks
 
@@ -56,8 +56,8 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) — auxiliary pane design |
 | Theme / layout | `assets/themes/base.rcss` |
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/feature/chat/ChatController.cpp` |
-| Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
+| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Libp2p stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/base/mesh/StreamFrameIo.*` |

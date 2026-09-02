@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/ToolRegistry.h"
+#include "domain/ai/ToolRegistry.h"
 #include "foundation/data/Config.h"
 #include "common/Error.h"
 #include "common/PbrCompat.h"

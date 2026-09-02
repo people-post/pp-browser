@@ -6,6 +6,7 @@ add_subdirectory(people)
 add_subdirectory(net)
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(messaging)
+  add_subdirectory(ai)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "domain/messaging/AtAiParser.h"
-#include "base/ai/ToolRegistry.h"
-#include "base/ai/TurnPlan.h"
-#include "base/ai/TurnTrace.h"
-#include "base/ai/conversation/ConversationTypes.h"
-#include "base/ai/mcp/McpClient.h"
+#include "domain/ai/ToolRegistry.h"
+#include "domain/ai/TurnPlan.h"
+#include "domain/ai/TurnTrace.h"
+#include "domain/ai/conversation/ConversationTypes.h"
+#include "domain/ai/mcp/McpClient.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"

@@ -2,7 +2,7 @@
 
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/AttachmentDownloadService.h"
-#include "base/ai/StructuredTextParser.h"
+#include "domain/ai/StructuredTextParser.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/CallControlCodec.h"

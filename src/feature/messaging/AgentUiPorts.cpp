@@ -1,6 +1,6 @@
 #include "feature/messaging/AgentUiPorts.h"
 
-#include "base/ai/conversation/Conversation.h"
+#include "domain/ai/conversation/Conversation.h"
 #include "common/thread/IThreadStore.h"
 
 namespace pbr {

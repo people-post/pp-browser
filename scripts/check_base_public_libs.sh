@@ -17,9 +17,7 @@ domain = {
     "pp_domain_net",
     "pp_domain_messaging",
         "pp_base_mesh",
-    "pp_base_ai",
-    "pp_base_ai_conversation",
-    "pp_base_ai_mcp",
+    "pp_domain_ai",
     "pp_domain_ui",
 }
 legacy = {
@@ -127,3 +125,13 @@ if rg -n '\bpp_base_messaging\b' \
   exit 1
 fi
 echo "OK: messaging domain lib name"
+
+# ai must stay on pp_domain_ai* (no old pp_base_ai* target aliases).
+if rg -n '\bpp_base_ai(_conversation|_mcp)?\b' \
+  --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
+  "$ROOT" >/tmp/pp_ai_rename.txt 2>/dev/null; then
+  echo "FAIL: leftover pp_base_ai* (use pp_domain_ai*):"
+  cat /tmp/pp_ai_rename.txt
+  exit 1
+fi
+echo "OK: ai domain lib names"

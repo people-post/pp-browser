@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/StructuredTextParser.h"
+#include "domain/ai/StructuredTextParser.h"
 #include "domain/ui/ChatWidgetTypes.h"
 #include "common/PbrCompat.h"
 

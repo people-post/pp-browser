@@ -41,7 +41,7 @@ check_tree "feature/ must not use OS #ifdefs" src/feature
 check_tree "app/ must not use OS #ifdefs" src/app
 check_tree "base/data/ must not use OS #ifdefs" src/foundation/data
 check_tree "domain/net/ must not use OS #ifdefs" src/domain/net
-check_tree "base/ai/ must not use OS #ifdefs" src/base/ai
+check_tree "domain/ai/ must not use OS #ifdefs" src/domain/ai
 check_tree "base/crypto/ must not use OS #ifdefs" src/foundation/crypto
 check_tree "domain/messaging/ must not use OS #ifdefs" src/domain/messaging
 check_tree "domain/people/ must not use OS #ifdefs" src/domain/people

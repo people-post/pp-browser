@@ -117,7 +117,7 @@ Target path after move: `src/foundation/<module>/`.
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `base/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `base/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
+| `domain/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
 | `domain/ui/` | Theme, view catalog, shell types, input coordinator (product shell) |
 | `foundation/platform/ui/` | Product RmlUi host/overlays; reusable SDL/GL in pp-cpp-ui |
 

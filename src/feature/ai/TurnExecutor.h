@@ -1,9 +1,9 @@
 #pragma once
 
-#include "base/ai/LlmClient.h"
-#include "base/ai/TurnPlan.h"
+#include "domain/ai/LlmClient.h"
+#include "domain/ai/TurnPlan.h"
 #include "feature/ai/ToolPermissionPolicy.h"
-#include "base/ai/ToolRegistry.h"
+#include "domain/ai/ToolRegistry.h"
 #include "common/Error.h"
 #include "domain/people/ContactTypes.h"
 #include "common/thread/ThreadTypes.h"

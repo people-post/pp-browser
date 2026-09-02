@@ -40,7 +40,7 @@ flowchart TB
     Theme["Theme<br/><small>domain/ui/</small>"]
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
     ThreadStore["SqliteThreadStore<br/><small>domain/messaging/</small>"]
-    LlmClient["LlmClient<br/><small>base/ai/</small>"]
+    LlmClient["LlmClient<br/><small>domain/ai/</small>"]
     CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
   end
 

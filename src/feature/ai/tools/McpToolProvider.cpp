@@ -1,6 +1,6 @@
 #include "feature/ai/tools/McpToolProvider.h"
 
-#include "base/ai/mcp/McpClient.h"
+#include "domain/ai/mcp/McpClient.h"
 
 namespace pbr {
 

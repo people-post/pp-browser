@@ -17,9 +17,9 @@
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PlatformOpenFile.h"
 
-#include "base/ai/StructuredTextParser.h"
-#include "base/ai/WorkingSetPolicy.h"
-#include "base/ai/conversation/Conversation.h"
+#include "domain/ai/StructuredTextParser.h"
+#include "domain/ai/WorkingSetPolicy.h"
+#include "domain/ai/conversation/Conversation.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "domain/ui/ContextMenuHost.h"
 #include "domain/ui/InputCoordinator.h"
