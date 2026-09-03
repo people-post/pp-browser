@@ -4,6 +4,7 @@ pp_browser_add_feature_folder_tests(
   EXTRA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/domain/mesh/tests/support/mesh_harness_support.cpp
     ${CMAKE_SOURCE_DIR}/src/domain/mesh/tests/support/mesh_test_harness.cpp
+    ${CMAKE_SOURCE_DIR}/src/domain/mesh/tests/support/mesh_triple_harness.cpp
   LINK_LIBS pp_foundation_identity
   PRIVATE_DEFINITIONS
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

@@ -20,6 +20,22 @@ This is **complete risk accounting**, not line-coverage at every tier. A behavio
 2. **Push complexity down** — prefer seams in `common` / `foundation` / `domain` that unit tests can almost fully cover. If an integration path is too expensive or flaky to own, first ask whether a real lower-layer seam would make the behavior unit-testable.
 3. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.
 4. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/domain (or owned `src/lib/` / FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
+5. **Promote failures downward** — when a higher tier (integration / smoke / hard lab) finds a bug, ask whether a cheaper gtest can lock the invariant before relying on Docker. See [When a higher tier finds a bug](#when-a-higher-tier-finds-a-bug).
+
+---
+
+## When a higher tier finds a bug
+
+Smoke and hard-lab are **discovery** tools for deploy/topology reality. They are **not** the preferred long-term sole guard for product policy bugs.
+
+**Agent checklist** after a failure at integration / smoke / hard lab:
+
+1. **Reproduce cheaper?** Can the same failure mode be shown with in-process loopback, a feature gtest, or a domain unit test?
+2. **If yes** — fix the code **and** add/extend the lower-tier test in the same change set (or immediately after). Keep the higher-tier scenario as packaging/topology evidence (`covered-above` for the env part; policy owned below).
+3. **If no** — document why (`covered-above`, `cost/flake`, or true multi-netns-only) in the purpose inventory / suite ledger.
+4. **Do not** leave “only `--suite hard` catches this” for a one-line reachability/policy mistake that loopback can prove.
+
+**Worked example:** hard-lab `B-HARD-MSG+CALL` failed because `AmpDirectChatService::IsPeerReachable` required `has_endpoint` and ignored nested-circuit `IsConnected`. Fix landed in the service; regression locked by in-process `AmpDirectChatCircuitNestedTest.NestedConnectedWithoutEndpointIsReachableAndSends` (A→R→B nested, **no** `RegisterEndpoint` for B). Hard lab remains the gate that A↛B namespaces still exercise the product path.
 
 ---
 
@@ -141,6 +157,7 @@ Cross-cutting product journeys (calls, hop, messaging across processes) keep **p
 
 - GUI as the default correctness vehicle
 - Smoke that asserts unit-level codec/SM detail
+- Leaving a policy bug guarded **only** by Docker/hard-lab when an in-process gtest can reproduce it
 - Integration sprawl because domain peers are not independent ([SRC_LAYOUT.md](SRC_LAYOUT.md))
 - Line-coverage % as a gate instead of behavior accounting
 - Test-only abstractions that violate layer include rules

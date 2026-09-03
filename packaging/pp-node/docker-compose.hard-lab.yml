@@ -1,0 +1,77 @@
+# Hard lab Wave 1: forced hop — peers on isolated nets (no A↔B route).
+#
+#   peer-a ── net_a ── hop ── net_b ── peer-b
+#                └── net_ops (status HTTP to host)
+#
+# Host ports default 18617/18618 so relay-smoke (18517/18518) can coexist.
+# Driver: scripts/pp_hard_force_smoke.sh / pp_local_test.sh --suite hard
+# Design: HARD_LAB.md
+#
+# Build context for hop: ../../dist/pp-node/docker (package first).
+# Peer image: Dockerfile.hard-peer (Debian trixie + libstdc++ for host probes).
+
+name: pp-hard-lab
+
+services:
+  hop:
+    build:
+      context: ../../dist/pp-node/docker
+      dockerfile: Dockerfile
+    image: pp-node:local
+    container_name: pp-hard-lab-hop
+    restart: unless-stopped
+    environment:
+      PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
+      PP_NODE_AMP_UDP_PORT: ${PP_NODE_AMP_UDP_PORT:-18517}
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
+      PP_NODE_CAP_CIRCUIT_RELAY: ${PP_NODE_CAP_CIRCUIT_RELAY:-1}
+      PP_NODE_CAP_MEDIA_RELAY: ${PP_NODE_CAP_MEDIA_RELAY:-1}
+    volumes:
+      - pp-hard-lab-hop-data:/var/lib/pp-node
+    networks:
+      net_a:
+      net_b:
+      net_ops:
+    ports:
+      # Ops-only publish for host /healthz (Amp UDP is not published — peers use net_a/net_b).
+      - "${PP_HARD_STATUS_HOST_PORT:-18618}:18518"
+
+  peer-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-peer
+    image: pp-hard-peer:local
+    container_name: pp-hard-lab-peer-a
+    networks:
+      - net_a
+    volumes:
+      - ${PP_HARD_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+      - ${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-share}:/share
+    command: ["sleep", "infinity"]
+
+  peer-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-peer
+    image: pp-hard-peer:local
+    container_name: pp-hard-lab-peer-b
+    networks:
+      - net_b
+    volumes:
+      - ${PP_HARD_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+      - ${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-share}:/share
+    command: ["sleep", "infinity"]
+
+networks:
+  net_a:
+    name: pp-hard-lab-net-a
+    internal: false
+  net_b:
+    name: pp-hard-lab-net-b
+    internal: false
+  net_ops:
+    name: pp-hard-lab-net-ops
+
+volumes:
+  pp-hard-lab-hop-data:

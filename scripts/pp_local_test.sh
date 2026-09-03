@@ -5,17 +5,22 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
 # --suite mix is nightly: browser parallel + shrunk hop parallel + same-session hop chat.
+# --suite hard is Wave 1 forced-hop (isolated nets; separate compose/ports 18618).
 #
-# See docs/ops/TEST_STRATEGY.md and packaging/pp-node/IMAGE_SMOKE.md
+# See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${PP_LOCAL_COMPOSE_FILE:-${ROOT}/packaging/pp-node/docker-compose.relay-smoke.yml}"
 COMPOSE_PROJECT="${PP_LOCAL_COMPOSE_PROJECT:-pp-local-test}"
 DOGFOOD_COMPOSE="${PP_LOCAL_DOGFOOD_COMPOSE:-${ROOT}/packaging/pp-node/docker-compose.yml}"
+HARD_COMPOSE_FILE="${PP_HARD_COMPOSE_FILE:-${ROOT}/packaging/pp-node/docker-compose.hard-lab.yml}"
+HARD_COMPOSE_PROJECT="${PP_HARD_COMPOSE_PROJECT:-pp-hard-lab}"
+HARD_STATUS_URL="${PP_HARD_STATUS_URL:-http://127.0.0.1:18618}"
+HARD_HOP_CONTAINER="${PP_HARD_HOP_CONTAINER:-pp-hard-lab-hop}"
 HOP_CONTAINER="${PP_LOCAL_HOP_CONTAINER:-pp-node-relay-smoke-hop}"
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 BUILD_DIR="${PP_LOCAL_BUILD_DIR:-${ROOT}/build}"
@@ -37,13 +42,13 @@ Commands:
             unless --down.
   up        Stop other hops on 18517/18518, start relay-smoke hop, wait /healthz
   stop      Stop relay-smoke hop (volume kept)
-  clear     down -v relay-smoke + dogfood pp-node-local; remove ready-file
-            --images also removes image pp-node:local
-  status    compose ps + /healthz + /status
+  clear     down -v relay-smoke + dogfood pp-node-local + hard-lab; remove ready-file
+            --images also removes image pp-node:local / pp-hard-peer:local
+  status    compose ps + /healthz + /status (relay-smoke; hard if up)
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -55,6 +60,7 @@ Environment:
   PP_NODE_CAP_SWEEP (default 4,8,12,16 for --suite cap)
   PP_NODE_PROBE_BRIDGES / PP_NODE_SOAK_SEC (default 120; weekly 3600)
   PP_MIX_BRIDGES (default 2) / PP_MIX_CALL_HOP_CYCLES (default 2)
+  PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
 
 Examples:
   $(basename "$0") run --suite unit
@@ -65,6 +71,7 @@ Examples:
   $(basename "$0") run --suite cap
   $(basename "$0") run --suite mix
   $(basename "$0") run --suite msg-call-hop
+  $(basename "$0") run --suite hard
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -83,6 +90,14 @@ need_cmd() {
 compose() {
   need_cmd docker
   docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" "$@"
+}
+
+hard_compose() {
+  need_cmd docker
+  mkdir -p /tmp/pp-hard-lab-share
+  PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node" \
+    PP_HARD_SHARE_DIR="${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-share}" \
+    docker compose -p "${HARD_COMPOSE_PROJECT}" -f "${HARD_COMPOSE_FILE}" "$@"
 }
 
 dogfood_compose() {
@@ -220,6 +235,8 @@ cmd_clear() {
   done
   echo "compose down -v project=${COMPOSE_PROJECT}"
   compose down -v --remove-orphans || true
+  echo "compose down -v hard-lab project=${HARD_COMPOSE_PROJECT}"
+  hard_compose down -v --remove-orphans || true
   if [[ -f "${DOGFOOD_COMPOSE}" ]]; then
     echo "compose down dogfood (${DOGFOOD_COMPOSE})"
     dogfood_compose down --remove-orphans >/dev/null 2>&1 || true
@@ -227,8 +244,10 @@ cmd_clear() {
     docker rm pp-node-local >/dev/null 2>&1 || true
   fi
   rm -f "${READY_FILE}"
+  rm -rf /tmp/pp-hard-lab-share
   if [[ "${remove_images}" -eq 1 ]]; then
     docker image rm pp-node:local 2>/dev/null || true
+    docker image rm pp-hard-peer:local 2>/dev/null || true
   fi
   echo "pp-local-test clear done"
 }
@@ -241,6 +260,11 @@ cmd_status() {
   echo
   echo "=== ${STATUS_URL}/status ==="
   curl -fsS -m 5 "${STATUS_URL}/status" || echo "(unreachable)"
+  echo
+  echo "=== hard-lab compose ps (${HARD_COMPOSE_PROJECT}) ==="
+  hard_compose ps || true
+  echo "=== ${HARD_STATUS_URL}/healthz ==="
+  curl -fsS -m 5 "${HARD_STATUS_URL}/healthz" || echo "(unreachable)"
   echo
 }
 
@@ -340,6 +364,24 @@ run_mix() {
   bash "${ROOT}/scripts/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
 }
 
+run_hard() {
+  cmake_build_probes
+  stage_hop_binary_if_newer
+  ensure_docker_context
+  echo "=== suite hard (Wave 1: N-HARD-FORCE + B-HARD-CALL + B-HARD-MSG+CALL) ==="
+  export PP_HARD_STATUS_URL="${HARD_STATUS_URL}"
+  export PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node"
+  export PP_HARD_SHARE_DIR="${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-share}"
+  local args=(up -d --force-recreate)
+  if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
+    args+=(--build)
+  fi
+  hard_compose "${args[@]}"
+  bash "${ROOT}/scripts/pp_hard_force_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
+  bash "${ROOT}/scripts/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
+  bash "${ROOT}/scripts/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --with-chat
+}
+
 cmd_run() {
   case "${SUITE}" in
     unit) run_unit ;;
@@ -353,6 +395,7 @@ cmd_run() {
     call-hop) run_call_hop ;;
     msg-call-hop) run_msg_call_hop ;;
     mix) run_mix ;;
+    hard) run_hard ;;
     all)
       run_unit
       run_call
@@ -360,12 +403,19 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
-    cmd_stop
+    if [[ "${SUITE}" == "hard" ]]; then
+      echo "hard-lab compose stop project=${HARD_COMPOSE_PROJECT}"
+      hard_compose stop
+    else
+      cmd_stop
+    fi
   elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)$ ]]; then
     echo "hop left running; $(basename "$0") stop | clear when done"
+  elif [[ "${SUITE}" == "hard" ]]; then
+    echo "hard-lab left running; $(basename "$0") clear when done (or: docker compose -p ${HARD_COMPOSE_PROJECT} -f ${HARD_COMPOSE_FILE} stop)"
   fi
   echo "pp-local-test run PASSED suite=${SUITE}"
 }

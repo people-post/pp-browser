@@ -15,7 +15,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
 | **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |
 | **N-MIX / B-MIX** | Parallel allowlisted smokes (interference) | `--suite mix` | **Done** (nightly; not in `all`) |
-| **Hard lab** | Forced A↛B nets + impairments / discovery (Tier C) | [HARD_LAB.md](HARD_LAB.md) | **Design** — [projects/hard-lab/](../../projects/hard-lab/) |
+| **Hard lab** | Forced A↛B nets + impairments / discovery (Tier C) | [HARD_LAB.md](HARD_LAB.md) + `--suite hard` | **Wave 1 scaffold** (force + call + msg-call); Wave 2+ open |
 
 ## CI / release
 

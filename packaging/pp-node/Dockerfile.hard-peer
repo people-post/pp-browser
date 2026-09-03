@@ -1,0 +1,16 @@
+# Hard-lab peer sidecar (probe runner).
+# glibc must match the host-built pp-node-probe / pp-call-probe.
+# Default: Debian trixie (matches current dogfood hosts). Override image in compose if needed.
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      iproute2 \
+      iputils-ping \
+      libstdc++6 \
+      python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Probes and shared ready files are bind-mounted at runtime.
+WORKDIR /work
+CMD ["sleep", "infinity"]

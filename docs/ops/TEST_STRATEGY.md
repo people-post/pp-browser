@@ -4,8 +4,8 @@
 
 How we stress and qualify **pp-node** (hop services) and **pp-browser** (product actions). Purpose IDs (`N-*`, `B-*`) are the vocabulary for multi-process work. Deploy smoke layers L0–L2 live in [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md).
 
-**Doctrine** (tiers vs layers, push-down seams, skip taxonomy, where suite ledgers live): [TESTING.md](../architecture/TESTING.md).  
-**Hard lab** (forced A↛B / impairment ladder — design): [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+**Doctrine** (tiers vs layers, push-down seams, promote failures downward, skip taxonomy, doc homes): [TESTING.md](../architecture/TESTING.md).  
+**Hard lab** (forced A↛B / impairment ladder): [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING.md](../architecture/NETWORKING.md).
 
@@ -16,10 +16,11 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This file applies them to hop/browser qualification:
 
 1. **Purpose-first** — pick the question, then the cheapest layer that can answer it.
-2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node.
+2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
 3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
-4. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
-5. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
+4. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
+5. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
+6. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
 
 ---
 
@@ -222,7 +223,8 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/pp_node_soak_smoke.sh`](../../scripts/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
 | N-CHAOS | **Covered** (scaffold) | [`scripts/pp_node_chaos_smoke.sh`](../../scripts/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
 | N-MIX | **Covered** (scaffold) | [`scripts/pp_mix_hop_smoke.sh`](../../scripts/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
-| N-HARD-* / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) — no compose yet |
+| N-HARD-FORCE | **Scaffold** | [`docker-compose.hard-lab.yml`](../../packaging/pp-node/docker-compose.hard-lab.yml) + [`scripts/pp_hard_force_smoke.sh`](../../scripts/pp_hard_force_smoke.sh); driver `--suite hard`. Isolation + circuit + media via hop. |
+| N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---
 
@@ -252,7 +254,9 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/pp_call_hop_msg_smoke.sh`](../../scripts/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
-| B-HARD-* | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
+| B-HARD-CALL | **Scaffold** | [`scripts/pp_hard_call_smoke.sh`](../../scripts/pp_hard_call_smoke.sh); driver `--suite hard` |
+| B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
+| B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 
 **Product-glue hole:** `CallMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
 
@@ -297,7 +301,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ## Soft designs — hard lab (Gate F)
 
-**Status:** Design only — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+**Status:** Wave 1 **N-HARD-FORCE** scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 **Problem:** Relay-smoke + host probes do not force **A↛B**. Deployment risk needs isolated nets + optional impairments.
 
@@ -305,7 +309,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ```text
 Wave 0  loopback + L0–L2 + B-CALL-HOP     (keep green)
-Wave 1  forced hop clean                  N-HARD-FORCE, B-HARD-CALL, B-HARD-MSG+CALL
+Wave 1  forced hop clean                  N-HARD-FORCE + B-HARD-CALL + B-HARD-MSG+CALL (**scaffold**)
 Wave 2  lossy / asym / bw
 Wave 3  stale / seed / dir / DHT / admit
 Wave 4  multi-hop circuit                 (after media-hop L3.5)
@@ -314,9 +318,10 @@ Wave 6  product stress on hard topo
 Wave 7  horizons                          (placeholders)
 ```
 
-**Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable.
+**Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable in CI.
 
-**Driver sketch:** `pp_local_test.sh run --suite hard` (Wave 1 only at first). Do not conflate with `--suite node` / relay-smoke ports.
+**Driver:** `pp_local_test.sh run --suite hard` (Wave 1 trio; ports **18618**). Do not conflate with `--suite node` / relay-smoke (**18518**).
+
 
 ---
 
@@ -368,4 +373,4 @@ Later work is intentionally underspecified until evidence exists:
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
 5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — design in [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); implement Wave 1+ per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) (not started).
+6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); **N-HARD-FORCE** scaffold via `--suite hard`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

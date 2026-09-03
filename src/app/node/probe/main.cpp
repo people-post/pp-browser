@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -35,14 +36,25 @@ namespace {
 
 constexpr const char* kProbeBridgeProtocol = "/pp-browser/pp-node-probe-bridge/1.0.0";
 
-enum class ProbeMode { L1, MediaFanout, MediaCap, CircuitCap, MediaSoak };
+enum class ProbeMode {
+  L1,
+  MediaFanout,
+  MediaCap,
+  CircuitCap,
+  MediaSoak,
+  BridgeTarget,
+  BridgeViaHop,
+  MediaRecv,
+  MediaSend
+};
 
 void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0
-      << " --hop <adp-multiaddr-with-p2p> [--mode l1|media-fanout|media-cap|circuit-cap|media-soak]\n"
+      << " [--hop <adp-multiaddr-with-p2p>] [--mode MODE]\n"
       << "       [--advertise-host <ip>] [--attachers N|N,N,...] [--sweep A:B:S]\n"
       << "       [--bridges M|M,M,...] [--duration SEC] [--churn N]\n"
+      << "       [--ready-file PATH] [--target-file PATH] [--call-id ID] [--hold-seconds N]\n"
       << "\n"
       << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
       << "Hop example: /ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/<PeerId>\n"
@@ -53,11 +65,16 @@ void PrintUsage(const char* argv0) {
       << "  media-cap (N-CAP-MEDIA) attach N clients; print n attached success_rate p50_ms p95_ms\n"
       << "  circuit-cap (N-CAP-CIRCUIT) M concurrent bridges + payload; print circuit_curve\n"
       << "  media-soak (N-SOAK)     attach/detach/fan-out loop for --duration (default 120s)\n"
+      << "  bridge-target          hard-lab: listen; write ready-file; wait circuit payload\n"
+      << "  bridge-via-hop         hard-lab: StartBridge via hop using target-file; send payload\n"
+      << "  media-recv             hard-lab: quote/attach/subscribe; wait one frame\n"
+      << "  media-send             hard-lab: quote/attach; send frames until recv ack or timeout\n"
       << "\n"
       << "When the hop runs in Docker, pass --advertise-host for circuit dial-back\n"
       << "(e.g. docker0 bridge 172.17.0.1), not 127.0.0.1.\n"
+      << "Hard-lab peers in containers should bind LAN (bridge-*/media-* use 0.0.0.0).\n"
       << "\n"
-      << "See packaging/pp-node/IMAGE_SMOKE.md and docs/ops/TEST_STRATEGY.md\n";
+      << "See packaging/pp-node/IMAGE_SMOKE.md, HARD_LAB.md, docs/ops/TEST_STRATEGY.md\n";
 }
 
 double PercentileMs(std::vector<double> samples, double pct) {
@@ -259,8 +276,33 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeLocalClient() {
   return MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
 }
 
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeLanClient() {
+  // Bind all interfaces so Docker/netns peers can dial the hop on a bridge IP.
+  return MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), false);
+}
+
 pbr::Roe<std::unique_ptr<AmpPeer>> MakeAdvertisableTarget() {
   return MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
+}
+
+bool WriteReadyFile(const std::string& path, const std::string& peer_id, const std::string& multiaddr) {
+  std::ofstream out(path, std::ios::trunc);
+  if (!out) {
+    return false;
+  }
+  out << peer_id << "\n" << multiaddr << "\n";
+  return static_cast<bool>(out);
+}
+
+bool ReadTargetFile(const std::string& path, std::string& peer_id, std::string& multiaddr) {
+  std::ifstream in(path);
+  if (!in) {
+    return false;
+  }
+  if (!std::getline(in, peer_id) || !std::getline(in, multiaddr)) {
+    return false;
+  }
+  return !peer_id.empty() && !multiaddr.empty();
 }
 
 template <typename Result>
@@ -871,6 +913,264 @@ int RunMediaSoak(const std::string& hop_ma, int duration_sec, int churn) {
   return 0;
 }
 
+int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_file,
+                    const int hold_seconds) {
+  if (ready_file.empty()) {
+    std::cerr << "error: --ready-file required for bridge-target\n";
+    return 2;
+  }
+  auto target = MakeAdvertisableTarget();
+  if (!target) {
+    std::cerr << "error: target amp start: " << target.error().message << "\n";
+    return 1;
+  }
+  std::string target_ma = RewriteListenHost((*target)->listen_ma, advertise_host);
+  if (!WriteReadyFile(ready_file, (*target)->peer_id, target_ma)) {
+    std::cerr << "error: write ready-file " << ready_file << "\n";
+    return 1;
+  }
+  std::cout << "pp-node bridge-target ready peer=" << (*target)->peer_id << " ma=" << target_ma
+            << "\n";
+
+  std::mutex target_mu;
+  bool target_got = false;
+  std::vector<uint8_t> target_payload;
+  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload);
+
+  const std::vector<AmpPeer*> pumps = {target->get()};
+  const int wait_ms = std::max(5, hold_seconds) * 1000;
+  if (!PumpUntil(
+          pumps,
+          [&] {
+            std::lock_guard lock(target_mu);
+            return target_got;
+          },
+          wait_ms)) {
+    std::cerr << "error: bridge-target timed out waiting for payload\n";
+    return 1;
+  }
+  {
+    std::lock_guard lock(target_mu);
+    const std::vector<uint8_t> expect = {'p', 'r', 'o', 'b', 'e'};
+    if (target_payload != expect) {
+      std::cerr << "error: bridge-target payload mismatch\n";
+      return 1;
+    }
+  }
+  (*target)->stack->Stop();
+  std::cout << "ok  bridge-target received payload\n";
+  std::cout << "pp-node bridge-target PASSED\n";
+  return 0;
+}
+
+int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file) {
+  if (target_file.empty()) {
+    std::cerr << "error: --target-file required for bridge-via-hop\n";
+    return 2;
+  }
+  std::string target_peer;
+  std::string target_ma;
+  if (!ReadTargetFile(target_file, target_peer, target_ma)) {
+    std::cerr << "error: read target-file " << target_file << "\n";
+    return 1;
+  }
+
+  auto client = MakeLanClient();
+  if (!client) {
+    std::cerr << "error: client amp start: " << client.error().message << "\n";
+    return 1;
+  }
+  if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
+    std::cerr << "error: register hop: " << reg.error().message << "\n";
+    return 1;
+  }
+
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  circuit->Start();
+  circuit->SetServeInbound(false);
+  const std::vector<AmpPeer*> pumps = {client->get()};
+
+  std::cout << "pp-node bridge-via-hop hop=" << hop_ma << " target=" << target_peer << "\n";
+
+  pbr::CircuitBridgeTarget bridge_target;
+  bridge_target.target_peer_id = target_peer;
+  bridge_target.target_multiaddr = target_ma;
+  bridge_target.target_protocol = kProbeBridgeProtocol;
+
+  AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+  auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 15000);
+  if (!tunnel_id) {
+    std::cerr << "error: circuit_relay bridge start failed\n";
+    return 1;
+  }
+  if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
+    std::cerr << "error: circuit_relay bridge: "
+              << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+    return 1;
+  }
+  if (!wait.result->ok || !wait.result->session) {
+    std::cerr << "error: circuit_relay bridge rejected: " << wait.result->error << "\n";
+    return 1;
+  }
+  const std::vector<uint8_t> payload = {'p', 'r', 'o', 'b', 'e'};
+  if (!wait.result->session->EnqueueOutbound(payload)) {
+    std::cerr << "error: circuit bridge write failed\n";
+    return 1;
+  }
+  for (int i = 0; i < 200; ++i) {
+    PumpPeers(pumps);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  circuit->Stop();
+  (*client)->stack->Stop();
+  std::cout << "ok  bridge-via-hop StartBridge + payload\n";
+  std::cout << "pp-node bridge-via-hop PASSED\n";
+  return 0;
+}
+
+int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const int hold_seconds,
+                 const std::string& ready_file) {
+  auto peer = MakeLanClient();
+  if (!peer) {
+    std::cerr << "error: media-recv amp start: " << peer.error().message << "\n";
+    return 1;
+  }
+  if (auto reg = (*peer)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
+    std::cerr << "error: register hop: " << reg.error().message << "\n";
+    return 1;
+  }
+  auto relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*peer)->Runtime());
+  relay->Start();
+  relay->SetServeInbound(false);
+  const std::vector<AmpPeer*> pumps = {peer->get()};
+
+  pbr::MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  AsyncWait<pbr::MediaRelayQuote> quote;
+  if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {
+    std::cerr << "error: media-recv quote start failed\n";
+    return 1;
+  }
+  if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
+    std::cerr << "error: media-recv quote: "
+              << (quote.result ? quote.result->error : quote.result.error().message) << "\n";
+    return 1;
+  }
+
+  std::atomic<bool> got{false};
+  pbr::MediaDataFrame received;
+  AsyncWait<pbr::MediaRelayAttachResult> attach;
+  if (!relay->StartAttach(
+          "hop", quote.result->quote_id, call_id, call_id,
+          [&](pbr::MediaDataFrame frame) {
+            received = std::move(frame);
+            got.store(true, std::memory_order_release);
+          },
+          attach.Fn(), 10000)) {
+    std::cerr << "error: media-recv attach start failed\n";
+    return 1;
+  }
+  if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
+    std::cerr << "error: media-recv attach: "
+              << (attach.result ? attach.result->error : attach.result.error().message) << "\n";
+    return 1;
+  }
+  relay->StartClientFrameReader();
+  if (auto sub = relay->Subscribe(1, 0); !sub) {
+    std::cerr << "error: media-recv subscribe: " << sub.error().message << "\n";
+    return 1;
+  }
+  if (!ready_file.empty()) {
+    std::ofstream out(ready_file, std::ios::trunc);
+    if (!out) {
+      std::cerr << "error: write media-recv ready-file " << ready_file << "\n";
+      return 1;
+    }
+    out << "attached\n";
+  }
+  std::cout << "pp-node media-recv attached call_id=" << call_id << "\n";
+
+  const int wait_ms = std::max(5, hold_seconds) * 1000;
+  if (!PumpUntil(pumps, [&] { return got.load(std::memory_order_acquire); }, wait_ms)) {
+    std::cerr << "error: media-recv timed out waiting for frame\n";
+    return 1;
+  }
+  if (received.stream_id != 1u ||
+      received.payload != std::vector<uint8_t>{'f', 'a', 'n', 'o', 'u', 't'}) {
+    std::cerr << "error: media-recv frame mismatch\n";
+    return 1;
+  }
+  relay->Stop();
+  (*peer)->stack->Stop();
+  std::cout << "ok  media-recv frame\n";
+  std::cout << "pp-node media-recv PASSED\n";
+  return 0;
+}
+
+int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const int hold_seconds) {
+  auto peer = MakeLanClient();
+  if (!peer) {
+    std::cerr << "error: media-send amp start: " << peer.error().message << "\n";
+    return 1;
+  }
+  if (auto reg = (*peer)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
+    std::cerr << "error: register hop: " << reg.error().message << "\n";
+    return 1;
+  }
+  auto relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*peer)->Runtime());
+  relay->Start();
+  relay->SetServeInbound(false);
+  const std::vector<AmpPeer*> pumps = {peer->get()};
+
+  pbr::MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  AsyncWait<pbr::MediaRelayQuote> quote;
+  if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {
+    std::cerr << "error: media-send quote start failed\n";
+    return 1;
+  }
+  if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
+    std::cerr << "error: media-send quote: "
+              << (quote.result ? quote.result->error : quote.result.error().message) << "\n";
+    return 1;
+  }
+  AsyncWait<pbr::MediaRelayAttachResult> attach;
+  if (!relay->StartAttach("hop", quote.result->quote_id, call_id, call_id, [](pbr::MediaDataFrame) {},
+                          attach.Fn(), 10000)) {
+    std::cerr << "error: media-send attach start failed\n";
+    return 1;
+  }
+  if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
+    std::cerr << "error: media-send attach: "
+              << (attach.result ? attach.result->error : attach.result.error().message) << "\n";
+    return 1;
+  }
+  relay->StartClientFrameReader();
+  std::cout << "pp-node media-send attached call_id=" << call_id << "\n";
+
+  pbr::MediaDataFrame sent;
+  sent.stream_id = 1;
+  sent.channel_id = 0;
+  sent.channel_type = pbr::MediaChannelType::LatestLossy;
+  sent.payload = {'f', 'a', 'n', 'o', 'u', 't'};
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(std::max(5, hold_seconds));
+  uint32_t seq = 1;
+  while (std::chrono::steady_clock::now() < deadline) {
+    sent.seq = seq++;
+    (void)relay->SendFrame(sent);
+    PumpPeers(pumps);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  relay->Stop();
+  (*peer)->stack->Stop();
+  std::cout << "ok  media-send frames sent\n";
+  std::cout << "pp-node media-send PASSED\n";
+  return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -881,6 +1181,10 @@ int main(int argc, char** argv) {
   std::string bridges_spec = "4";
   int duration_sec = 120;
   int churn = 4;
+  std::string ready_file;
+  std::string target_file;
+  std::string call_id = "pp-hard-force";
+  int hold_seconds = 30;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -901,6 +1205,14 @@ int main(int argc, char** argv) {
       duration_sec = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--churn") == 0 && i + 1 < argc) {
       churn = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--ready-file") == 0 && i + 1 < argc) {
+      ready_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--target-file") == 0 && i + 1 < argc) {
+      target_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--call-id") == 0 && i + 1 < argc) {
+      call_id = argv[++i];
+    } else if (std::strcmp(argv[i], "--hold-seconds") == 0 && i + 1 < argc) {
+      hold_seconds = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
       ++i;
       if (std::strcmp(argv[i], "l1") == 0) {
@@ -913,6 +1225,14 @@ int main(int argc, char** argv) {
         mode = ProbeMode::CircuitCap;
       } else if (std::strcmp(argv[i], "media-soak") == 0) {
         mode = ProbeMode::MediaSoak;
+      } else if (std::strcmp(argv[i], "bridge-target") == 0) {
+        mode = ProbeMode::BridgeTarget;
+      } else if (std::strcmp(argv[i], "bridge-via-hop") == 0) {
+        mode = ProbeMode::BridgeViaHop;
+      } else if (std::strcmp(argv[i], "media-recv") == 0) {
+        mode = ProbeMode::MediaRecv;
+      } else if (std::strcmp(argv[i], "media-send") == 0) {
+        mode = ProbeMode::MediaSend;
       } else {
         std::cerr << "Unknown --mode: " << argv[i] << "\n";
         PrintUsage(argv[0]);
@@ -945,6 +1265,14 @@ int main(int argc, char** argv) {
       mode = ProbeMode::MediaSoak;
     } else if (std::strcmp(env, "l1") == 0) {
       mode = ProbeMode::L1;
+    } else if (std::strcmp(env, "bridge-target") == 0) {
+      mode = ProbeMode::BridgeTarget;
+    } else if (std::strcmp(env, "bridge-via-hop") == 0) {
+      mode = ProbeMode::BridgeViaHop;
+    } else if (std::strcmp(env, "media-recv") == 0) {
+      mode = ProbeMode::MediaRecv;
+    } else if (std::strcmp(env, "media-send") == 0) {
+      mode = ProbeMode::MediaSend;
     }
   }
   if (const char* env = std::getenv("PP_NODE_PROBE_ATTACHERS")) {
@@ -967,6 +1295,14 @@ int main(int argc, char** argv) {
       churn = std::atoi(env);
     }
   }
+
+  auto root = pbr::logging::getRootLogger();
+  root.setLevel(pbr::logging::Level::INFO);
+
+  if (mode == ProbeMode::BridgeTarget) {
+    return RunBridgeTarget(advertise_host, ready_file, hold_seconds);
+  }
+
   if (hop_ma.empty() || !HasP2pSuffix(hop_ma)) {
     std::cerr << "error: --hop Amp multiaddr with /p2p/<PeerId> required\n";
     PrintUsage(argv[0]);
@@ -979,9 +1315,15 @@ int main(int argc, char** argv) {
   }
   hop_ma = RewriteWildcardListenHost(std::move(hop_ma));
 
-  auto root = pbr::logging::getRootLogger();
-  root.setLevel(pbr::logging::Level::INFO);
-
+  if (mode == ProbeMode::BridgeViaHop) {
+    return RunBridgeViaHop(hop_ma, target_file);
+  }
+  if (mode == ProbeMode::MediaRecv) {
+    return RunMediaRecv(hop_ma, call_id, hold_seconds, ready_file);
+  }
+  if (mode == ProbeMode::MediaSend) {
+    return RunMediaSend(hop_ma, call_id, hold_seconds);
+  }
   if (mode == ProbeMode::MediaFanout) {
     return RunMediaFanout(hop_ma);
   }

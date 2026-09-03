@@ -1,6 +1,6 @@
 # Hard lab — forced-hop / NAT / impairment design
 
-**Status:** Design only — **not implemented** (no compose file or `--suite hard` yet)  
+**Status:** Wave 1 scaffold green (**N-HARD-FORCE** + **B-HARD-CALL** + **B-HARD-MSG+CALL**) — compose + probes + `--suite hard`; Wave 2+ open  
 **Tier:** ops / Tier C (multi-netns smoke)  
 **Doctrine:** [TESTING.md](../../docs/architecture/TESTING.md)  
 **Purposes / CI:** [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (`N-HARD-*`, `B-HARD-*`)  
@@ -200,16 +200,20 @@ Everything else: weekly, manual, or on-demand.
 2. Binary product outcomes first; capacity curves stay `N-CAP-*`.
 3. Do not re-assert codec/SM detail already covered in gtests (`covered-below`).
 4. Do not claim “NAT tested” because a hop port is published to the host.
-5. Pass/fail and cadence for purposes live in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md); this file owns topology/profiles/ladder detail.
+5. When hard lab finds a **policy** bug (not pure netns/packaging), promote a cheaper gtest — [TESTING.md § When a higher tier finds a bug](../../docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug). Example: nested-chat reachability → `AmpDirectChatCircuitNestedTest`.
+6. Pass/fail and cadence for purposes live in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md); this file owns topology/profiles/ladder detail.
 
 ---
 
 ## Implementation sketch (carry out later)
 
 ```text
-packaging/pp-node/docker-compose.hard-lab.yml   # nets + hop (+ optional R2)
-scripts/pp_hard_lab_*.sh                        # scenario runners
+packaging/pp-node/docker-compose.hard-lab.yml   # nets + hop + peer-a/b
+packaging/pp-node/Dockerfile.hard-peer          # Debian peer sidecar for host probes
+scripts/pp_hard_force_smoke.sh                  # N-HARD-FORCE runner
 scripts/pp_local_test.sh run --suite hard       # Wave 1 entry
+pp-node-probe --mode bridge-target|bridge-via-hop|media-recv|media-send
 ```
 
-Status until then: **Design** — see [projects/hard-lab/CURRENT_STATE.md](../../projects/hard-lab/CURRENT_STATE.md).
+**Landed (Wave 1):** isolation + circuit/media force + product call + chat-during-call on forced nets.  
+**Next:** Wave 2 netem — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

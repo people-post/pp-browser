@@ -11,13 +11,12 @@ Ordering only. Ladder detail: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)
 
 ## h1 — Wave 1 forced hop (clean)
 
-- [ ] `docker-compose.hard-lab.yml` (net-a / net-hop / net-b; hop dual-homed; no A↔B)
-- [ ] Scenario runner(s) for **N-HARD-FORCE**
-- [ ] **B-HARD-CALL** via `pp-call-probe` (or equivalent) in peer containers
-- [ ] **B-HARD-MSG+CALL** on forced topo
-- [ ] `pp_local_test.sh run --suite hard` entry (Wave 1 only)
-- [ ] Inventory status → scaffold in TEST_STRATEGY
-
+- [x] `docker-compose.hard-lab.yml` (net-a / net-hop / net-b; hop dual-homed; no A↔B)
+- [x] Scenario runner(s) for **N-HARD-FORCE** (`pp_hard_force_smoke.sh`)
+- [x] **B-HARD-CALL** via `pp-call-probe` in peer containers (`pp_hard_call_smoke.sh`)
+- [x] **B-HARD-MSG+CALL** on forced topo (`pp_hard_call_smoke.sh --with-chat`)
+- [x] `pp_local_test.sh run --suite hard` entry (force + call + msg-call)
+- [x] Inventory status → scaffold in TEST_STRATEGY
 ## h2 — Wave 2 path quality
 
 - [ ] `tc netem` / `tbf` profile hooks (`lossy`, `asym`, `bw`)

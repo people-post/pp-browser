@@ -135,7 +135,10 @@ void AmpDirectChatService::SetInboundHandler(InboundHandler handler) {
 }
 
 bool AmpDirectChatService::IsPeerReachable(const std::string& peer_identity_value) const {
-  return links_.GetLinkSnapshot(peer_identity_value).has_endpoint;
+  // Nested circuit links are Connected without a registered dial endpoint (same as
+  // AmpChatBlobService / CallMediaLegCoordinator).
+  return links_.GetLinkSnapshot(peer_identity_value).has_endpoint ||
+         links_.IsConnected(peer_identity_value);
 }
 
 Roe<void> AmpDirectChatService::SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) {

@@ -91,7 +91,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
-| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, skip taxonomy, doc homes |
+| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, **promote failures downward**, skip taxonomy, doc homes |
 | Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
 | Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/) |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
@@ -106,6 +106,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
 - Respect layer dependencies: `app → feature → domain → foundation → common` (today paths still `base/` for foundation+domain; see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **domain peer → domain peer** edges; put shared seams in `src/common/` and wire in `feature/`.
+- **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).

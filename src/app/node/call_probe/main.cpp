@@ -277,7 +277,11 @@ pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
 
 bool SendProbeChat(pbr::AmpDirectChatService& chat, const std::string& peer_key, const int cycle) {
   auto sent = chat.SendEnvelope(peer_key, MakeProbeChatEnvelope(cycle));
-  return static_cast<bool>(sent);
+  if (!sent) {
+    std::cerr << "error: chat send: " << sent.error().message << "\n";
+    return false;
+  }
+  return true;
 }
 
 pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
@@ -444,7 +448,9 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     return 1;
   }
 
-  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
+  // Bind all interfaces so Docker/netns offerers can dial a hop on a bridge IP
+  // (127.0.0.1-bound UDP cannot sendto non-loopback destinations).
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), false);
   if (!offerer) {
     std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
     return 1;
