@@ -59,7 +59,7 @@ Do not promote **blocked** → domain to “clean the folder.”
 
 **Decision:**
 
-1. **f4v1:** nest under `feature/calls/` (same conversations target) — discoverability only.
+1. **f4v1:** nest under `feature/conversations/calls/` (same conversations target) — discoverability only.
 2. **Soft ports, then lift:** `CallDeliveryPorts` + `CallControlInboundPorts` make the edge one-way (`conversations → calls`); top-level `feature/calls/` + `pp_feature_calls` landed. Hub may still own `CallStack` until a later app-ownership move.
 3. End-state name for the module is **`calls`** (call **session**), not `av` or `media` — see [F007](#f007--vocabulary--end-state-feature-names).
 
