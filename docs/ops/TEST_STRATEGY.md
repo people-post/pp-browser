@@ -1,26 +1,23 @@
-# Test strategy (tiers, purposes, inventory)
+# Test strategy (purposes, inventory, CI)
 
 **Tier:** ops
 
 How we stress and qualify **pp-node** (hop services) and **pp-browser** (product actions). Purpose IDs (`N-*`, `B-*`) are the vocabulary for multi-process work. Deploy smoke layers L0–L2 live in [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md).
 
+**Doctrine** (tiers vs layers, push-down seams, skip taxonomy, where suite ledgers live): [TESTING.md](../architecture/TESTING.md).
+
 Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING.md](../architecture/NETWORKING.md).
 
 ---
 
-## Principles
+## Principles (ops)
+
+Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This file applies them to hop/browser qualification:
 
 1. **Purpose-first** — pick the question, then the cheapest layer that can answer it.
 2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node.
 3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
-4. **Three kinds of testing** (orthogonal to tiers):
-
-| Kind | Question |
-|------|----------|
-| **Correctness** | Right outcomes / state transitions |
-| **Reliability / soak** | No hang, leak, or deadlock over time |
-| **Capacity / SLO** | How much before quality or success rate collapses |
-
+4. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
 5. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
 
 ---
@@ -88,7 +85,9 @@ Per-operation SQLite helpers (e.g. `CallMediaKeyStore::OpenDb()`) close after ea
 
 ---
 
-## Tiers
+## Tiers (ops labels)
+
+Same pyramid as [TESTING.md](../architecture/TESTING.md); labels used in this inventory:
 
 ```text
 Tier A  Unit              logic, codecs, SMs, QoS rules

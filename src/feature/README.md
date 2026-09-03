@@ -97,3 +97,9 @@ Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke d
 
 - [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths
 - [`scripts/check_gui_includes.sh`](../../scripts/check_gui_includes.sh) — bans `gui → app`
+
+---
+
+## Testing
+
+Primary home for **integration** of typical valuable paths (real collaborators; fakes only at true ports). If a path is too expensive to cover here, prefer pushing a seam into domain/foundation rather than growing a mega-suite. Product multi-process purposes (`B-*`) live in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md). Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).

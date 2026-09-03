@@ -21,3 +21,5 @@ CMake targets: `pp_foundation_runtime(_core)`, `pp_foundation_platform(_core)`, 
 Includes: `#include "foundation/…"`. Aggregate `pp_foundation` is defined in this folder’s [`CMakeLists.txt`](CMakeLists.txt). Product-stack convenience `pp_base` is in [`src/CMakeLists.txt`](../CMakeLists.txt).
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+
+**Testing:** aim for near-full **unit** coverage of band logic. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md). SQLite/temp-dir conventions: [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md#unit-test-conventions).

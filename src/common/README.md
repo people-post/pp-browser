@@ -52,6 +52,8 @@ Thin type headers (prefer over the umbrella): `ThreadRecordTypes`, `ChatHistoryT
 
 Litmus: *“Could two domain peers compile against this without linking each other?”* Yes → common.
 
+**Testing:** prefer **unit** coverage for helpers and pure contract adapters. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).
+
 ---
 
 ## Independence

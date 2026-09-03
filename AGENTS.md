@@ -91,7 +91,8 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
-| Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures |
+| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, skip taxonomy, doc homes |
+| Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
 | Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md), [projects/feature-layer-reorg/](projects/feature-layer-reorg/) |
 | UI vs functional decoupling | [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](docs/architecture/RUNTIME_COMPOSITION.md) |

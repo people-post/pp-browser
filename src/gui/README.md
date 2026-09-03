@@ -25,3 +25,5 @@ src/gui/
 ```
 
 Bands share one CMake target for now; split later only if the include graph warrants.
+
+**Testing:** sparse unit/chrome checks; not the default correctness vehicle. Prefer feature/domain coverage; reserve GUI E2E for rare `B-UI`-style checks. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md).

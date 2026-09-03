@@ -261,3 +261,8 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_domain` in `domain/CMakeLists.txt`; `pp_base` convenience INTERFACE in `src/CMakeLists.txt`).
 5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; remaining: app-owned `CallStack`, optional gui bands, inbox presentation.
+
+## Related
+
+- [TESTING.md](TESTING.md) — tiers mapped to these layers; push-down seams; where suite ledgers live
+- [TEST_STRATEGY.md](../ops/TEST_STRATEGY.md) — purpose IDs, CI ladder, inventory
