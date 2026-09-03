@@ -1,4 +1,4 @@
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/calls/CallSessionManager.h"
 
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/InitiationPricing.h"

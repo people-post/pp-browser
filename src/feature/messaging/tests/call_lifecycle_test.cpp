@@ -1,4 +1,4 @@
-#include "feature/messaging/CallLifecycle.h"
+#include "feature/messaging/calls/CallLifecycle.h"
 
 #include "foundation/runtime/AppRuntime.h"
 

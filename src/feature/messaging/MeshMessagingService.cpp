@@ -1,5 +1,5 @@
 #include "domain/people/ContactTypes.h"
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/calls/CallSessionManager.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/AmpChatBlobService.h"

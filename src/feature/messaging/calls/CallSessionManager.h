@@ -10,9 +10,9 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/messaging/CallMediaBridge.h"
-#include "feature/messaging/CallMediaHost.h"
-#include "feature/messaging/CallTopologyController.h"
+#include "feature/messaging/calls/CallMediaBridge.h"
+#include "feature/messaging/calls/CallMediaHost.h"
+#include "feature/messaging/calls/CallTopologyController.h"
 #include "feature/messaging/MeshMessagingService.h"
 
 #include "common/Module.h"

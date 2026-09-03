@@ -47,4 +47,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [relay-blob-upload](relay-blob-upload/) | **a1–a3 landed** — **a4** quota next; **a6** peer-first planned | Profile icons done; attachments through CDN receive; R019–R021 locked — [CURRENT_STATE](relay-blob-upload/CURRENT_STATE.md) |
 | [libp2p-pq-transport](libp2p-pq-transport/) | **Phases 0–5 landed** | Full-PQ Noise (ML-KEM-768) + device PeerId (ML-DSA-65) hard cut — [CURRENT_STATE](libp2p-pq-transport/CURRENT_STATE.md) |
 | [adp](adp/) | **L1 done; AMP spec locked (D0)** | ADP L1 + four-layer **AMP** stack spec — replace TCP/Noise/Yamux — [STACK](adp/STACK.md) |
-| [feature-layer-reorg](feature-layer-reorg/) | **f3 + F007 names** — f4v1 next | Conversations/calls vocabulary; no top-level chat module — [F007](feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names) |
+| [feature-layer-reorg](feature-layer-reorg/) | **f4v1 calls band** — f5 next | Nested `messaging/calls/`; F007 conversations/calls names — [CURRENT_STATE](feature-layer-reorg/CURRENT_STATE.md) |

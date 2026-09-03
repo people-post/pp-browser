@@ -1,6 +1,6 @@
 # Feature / app layer reorg
 
-**Status:** **f3 landed** — f4v1 nested calls band next  
+**Status:** **f4v1 calls band landed** — f5 next (absorb chat into ui)  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md), [`src/feature/README.md`](../../src/feature/README.md)  

@@ -1,46 +1,35 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** f3 landed; **F007 names locked** → **f4v1 nested calls band next**
+**Phase:** **f4v1 nested calls band landed** → f5 (shell/contacts + absorb chat) or top-level calls when unblocked
 
 ## What already shipped
 
-- `src/base/` retired → `src/foundation/` + `src/domain/`
-- Domain peers strictly independent; cross-need via `common/` + feature wiring
-- Feature module libs acyclic (today): `settings → ai → messaging → ui → chat`
-- **f0–f3** peels + docs; **F004/F006/F007** naming & peer rules
+- Foundation/domain split; f1–f3 sure peels; **F004/F006/F007** naming
+- **f4v1:** `feature/messaging/calls/` band (same `pp_feature_messaging`) — CallStack, CSM, lifecycle, topology, CallUiBackend, Amp circuit/media façades
 
 ## Locked naming ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
 
 | End-state folder | Today | Role |
 |------------------|-------|------|
-| `conversations/` | `feature/messaging` | Conversations hub + delivery |
-| `calls/` | Call\* under messaging | Call **session** (nest first per F004) |
-| `ui/` (+ shell/contacts) | `feature/ui` + **`feature/chat`** | Presenters; **no top-level chat/** |
-| `domain/messaging` | same | Record/codec engines (keep name) |
+| `conversations/` | `feature/messaging` (parent) | Conversations hub + delivery |
+| `calls/` | `feature/messaging/calls/` | Call **session** (nested; top-level later) |
+| `ui/` (+ shell/contacts) | `feature/ui` + `feature/chat` | Presenters; no top-level chat/ |
+| `domain/messaging` | same | Record/codec engines |
 
-Vocabulary: **delivery** / **conversations** / **call session** / **call media**; “chat” = UI copy only.
-
-## Snapshot (paths today)
+## Snapshot
 
 | Area | Notes |
 |------|-------|
-| `feature/messaging` | Legacy path for conversations + still owns call session |
-| `feature/chat` | Legacy top-level screen module — to fold into ui |
-| `feature/ui` | Grab-bag + presenters |
-| `domain/messaging` | Stores/codecs + history responder + PSK/call-key peels |
+| `feature/messaging/` | Conversations hub + delivery; Call\* moved under `calls/` |
+| `feature/messaging/calls/` | Call session orchestration (f4v1) |
+| `feature/chat` | Still top-level — absorb in f5 |
+| `feature/ui` | Grab-bag + `CallController` |
 
 ## Next agent — start here
 
-1. **f4v1:** nest `feature/messaging/calls/` (same CMake target); move Call\* only.
-2. Do **not** add top-level `pp_feature_calls` until the Hub↔MeshMessagingService cycle is broken.
-3. Do **not** introduce a new top-level `feature/chat` in any plan — absorb into ui/shell (f5).
+1. **f5:** split shell/contacts from ui; move `ChatController` into ui/shell; retire top-level `feature/chat`.
+2. Or port MeshMessagingService edge and lift `calls/` to top-level `pp_feature_calls`.
+3. Optional: app named wirers (`WireConversations` / `WireCalls`).
 
-## Related docs still slightly stale
-
-| Doc | Stale bit |
-|-----|-----------|
-| `RUNTIME_COMPOSITION.md` | May still say `base/`; diagrams use MessagingHub |
-| `SRC_LAYOUT` feature table | Still lists `feature/chat` as current — update when f5 ships |
-
-Opportunistic fixes OK; F007 is the planning source of truth until paths move.
+Do **not** invent `domain/calls`. Do **not** reintroduce top-level `feature/chat` in the plan.

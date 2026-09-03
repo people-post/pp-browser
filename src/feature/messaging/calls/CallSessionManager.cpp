@@ -1,4 +1,4 @@
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/calls/CallSessionManager.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"

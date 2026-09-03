@@ -3,14 +3,14 @@ pp_browser_add_feature_library(pp_feature_messaging
     AttachmentClientUtil.cpp
     AttachmentDownloadService.cpp
     AttachmentFetchUtil.cpp
-    AmpCircuitHopReach.cpp
-    AmpMediaRelayClient.cpp
-    CallMediaBridge.cpp
-    CallLifecycle.cpp
-    CallInboundHandlers.cpp
-    CallSessionManager.cpp
-    CallStack.cpp
-    CallTopologyController.cpp
+    calls/AmpCircuitHopReach.cpp
+    calls/AmpMediaRelayClient.cpp
+    calls/CallMediaBridge.cpp
+    calls/CallLifecycle.cpp
+    calls/CallInboundHandlers.cpp
+    calls/CallSessionManager.cpp
+    calls/CallStack.cpp
+    calls/CallTopologyController.cpp
     ChatBlobRequestUtil.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
@@ -25,8 +25,8 @@ pp_browser_add_feature_library(pp_feature_messaging
     MessagingHub.cpp
     MessagingContactsPorts.cpp
     MessagingFacade.cpp
-    CallFunctionalPorts.cpp
-    CallUiBackend.cpp
+    calls/CallFunctionalPorts.cpp
+    calls/CallUiBackend.cpp
     MessagingShellPorts.cpp
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp

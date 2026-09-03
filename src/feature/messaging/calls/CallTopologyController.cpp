@@ -1,4 +1,4 @@
-#include "feature/messaging/CallTopologyController.h"
+#include "feature/messaging/calls/CallTopologyController.h"
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/HopHintLogic.h"

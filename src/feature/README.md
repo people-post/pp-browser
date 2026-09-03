@@ -40,7 +40,8 @@ src/feature/
 ├── ai/           Agent session, turn pipeline, UI generation; BuildToolRegistryFromConfig
 │   ├── tools/        Web search, MCP tool adapters
 │   └── bindings/     RmlUi action routing, bindings manifest
-├── messaging/    MessagingHub (MessagingCore assembler), MeshHost consumer, CallStack, MessagingFacade
+├── messaging/    MessagingHub (conversations hub), MeshHost consumer, MessagingFacade; call session under messaging/calls/
+│   └── calls/        CallStack, CSM, lifecycle, topology, CallUiBackend (f4v1 band → future feature/calls)
 ├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
 └── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
 ```

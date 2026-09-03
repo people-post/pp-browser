@@ -60,7 +60,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Move | Depends on | Notes |
 |------|------------|-------|
-| Nest `feature/messaging/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | Same CMake target |
+| Nest `feature/messaging/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
 | Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
 | Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
 | Extract `feature/shell` / `contacts` | f5 | From ui grab-bag |

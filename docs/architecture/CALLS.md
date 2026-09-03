@@ -21,7 +21,7 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 ## Call lifecycle
 
-1:1 call phases are owned by [`CallLifecycle`](../../src/feature/messaging/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
+1:1 call phases are owned by [`CallLifecycle`](../../src/feature/messaging/calls/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
 
 | Owner | Responsibility |
 |-------|----------------|
@@ -427,15 +427,15 @@ Landed (behavior-preserving + who-picks fix):
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
-| `src/feature/messaging/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
-| `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
-| `src/feature/messaging/CallMediaHost.h` | Narrow host façade for mesh media side effects |
-| `src/feature/messaging/CallMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
+| `src/feature/messaging/calls/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
+| `src/feature/messaging/calls/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
+| `src/feature/messaging/calls/CallSessionManager.*` | Façade — session + thin inbound dispatch |
+| `src/feature/messaging/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
+| `src/feature/messaging/calls/CallMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
 | `src/domain/mesh/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
-| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
-| `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
+| `src/feature/messaging/calls/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
+| `src/feature/messaging/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/ui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
