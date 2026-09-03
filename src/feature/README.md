@@ -169,7 +169,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `domain/messaging/` stores |
 | Settings | Section handlers, config merge | `assets/views/settings.rml`, `foundation/data/Config.h` |
 | At-rest PIN gate | `ProfileUnlockGate` + `PinGateController` UI | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
-| Feature/app reorg | Peels + module splits | [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) |
+| Feature/app reorg | Peels + module splits; end-state **conversations** / **calls** (no top-level **chat/**) | [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)) |
 
 ---
 

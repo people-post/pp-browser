@@ -1,99 +1,114 @@
 # Working North Star — feature / app
 
-**Status:** working hypothesis (revise freely; promote slices into [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md) when proven)  
-**Not normative** until an ADR marks a slice locked.
+**Status:** end-state names locked in [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names); paths migrate in phases  
+**Promote** folder renames into [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md) when they ship.
 
 Layer north star from SRC_LAYOUT still holds:
 
 > `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
 
-This file only refines **feature** and **app**.
+This file refines **feature** and **app**.
 
 ---
 
-## Domain peer set (stable for sure peels)
+## Vocabulary ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
 
-Do **not** add peers for f1–f3 ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)). Existing peers already match the sure inventory:
+| Term | Means |
+|------|--------|
+| **Delivery** | Envelope/stream send–receive |
+| **Conversations** | Threads, sync, attachments, groups — product hub |
+| **Call session** | Ring → accept → keys → topology → leave |
+| **Call media** | A/V frames, codecs, legs |
+| **Chat** | User-facing screen label only — **not** a top-level feature folder |
 
-| Peer | Role for peels |
-|------|----------------|
-| `messaging` | Thread/PSK/call **session** stores, codecs, pure messaging policy (flat) |
-| `people` | Contacts/identity helpers, reachability eligibility, icon fetch policy (flat) |
-| `mesh` | Listen/reach predicates → prefer existing `mesh/reachability/` |
-| `media` | Capture/playback/codecs only — **not** call key vault |
+**conversations ∥ call session** → both use **delivery**; call session drives **call media**.
+
+---
+
+## Domain peer set ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers))
+
+| Peer | Role |
+|------|------|
+| `messaging` | Conversation/call **record & codec** engines (keep name; not the product hub) |
+| `people` | Contacts/identity helpers |
+| `mesh` | Amp host, reachability, L4 call-media / media-relay |
+| `media` | Call-media capture/playback/codecs only |
 | `ui` | Pure presentation policy (no Rml controllers) |
+| `net` / `ai` | Unchanged |
 
-Optional later: band `domain/messaging/` into internal subfolders for readability — after peels, not before.
+Do **not** add `domain/calls`.
 
-## Litmus (stable enough to use now)
+---
+
+## Litmus
 
 | Layer | Put it here when… | Not when… |
 |-------|-------------------|-----------|
-| **domain** | Owns one store, codec, client, or pure policy; reusable without a screen | It coordinates several peers or owns UI lifecycle |
-| **feature** | Coordinates multiple domain/foundation modules into a workflow or screen | It is a single-purpose engine another feature would want alone |
-| **app** | Owns lifetimes and cross-controller / SessionStore wiring | It contains product policy or I/O engines |
-| **common** | A second domain peer must compile against the name without linking the owner | Only one peer needs it |
+| **domain** | Owns one store, codec, client, or pure policy | Coordinates several peers or owns UI lifecycle |
+| **feature** | Coordinates workflows or screens | Single-purpose engine another feature would want alone |
+| **app** | Lifetimes + cross-controller wiring | Product policy or I/O engines |
+| **common** | Second domain peer must compile against the name | Only one peer needs it |
 
-**Cross-peer rule:** if a type needs two of `{people, messaging, net, mesh, media, ui}`, it stays in **feature** (or peels via **common** contracts) — never create a domain→domain edge.
+**Cross-peer rule:** two of `{people, messaging, net, mesh, media, ui}` → feature or `common` contracts — never domain→domain.
 
 ---
 
-## Working feature map (hypothesis)
+## End-state feature map ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
 
 ```
 feature/
-  settings/     # config apply + settings section handlers (incl. profile/security UI sections eventually)
-  ai/           # agent session, turn pipeline, tools, bindings
-  messaging/    # hub, sync, groups, relay pipeline, façade, Amp *chat* adapters
-  calls/        # (candidate) CallStack, CSM, lifecycle, topology, CallUiBackend, call ports
-  shell/        # (candidate) ShellHost, gestures, feedback, RmlMount, DocumentLoader, chrome sync
-  contacts/     # (candidate) ContactsController, PeoplePicker*, related ports/chrome
-  ui/           # residual shared presenters/ports OR fold into shell over time
-  chat/         # chat screen only; shrink ChatController surface
+  settings/        # config apply + section handlers
+  ai/              # agent session, turn pipeline, tools, bindings
+  conversations/   # TODAY: feature/messaging — hub, delivery, sync, groups, façade
+  calls/           # call session — f4v1 nested as messaging/calls/; later top-level
+  shell/           # ShellHost, gestures, feedback, RmlMount, chrome sync (from ui)
+  contacts/        # Contacts + PeoplePicker (from ui)
+  ui/              # shared ports + presenters; ABSORBS today’s feature/chat (ChatController)
+                   # NO top-level feature/chat/
 ```
 
-Intended link order (if/when splits land):
+### Legacy → end-state
+
+| Today | End state | Notes |
+|-------|-----------|-------|
+| `feature/messaging` | `feature/conversations` | Rename when hub ownership is clean |
+| `feature/messaging` Call\* | `feature/calls` | [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level): nest first |
+| `feature/chat` | fold into `feature/ui` | Presenter stays; folder name drops |
+| `feature/ui` | `shell` + `contacts` + residual `ui` | f5 |
+
+Intended link order (end state):
 
 ```
-settings → ai → messaging → calls → shell / contacts / ui → chat
+settings → ai → conversations → calls → shell / contacts / ui
 ```
 
-### Mental model (names today vs intent)
+(`chat` is not a link node.)
 
-| Today | Intent |
-|-------|--------|
-| `feature/messaging` | Connectivity **product hub** — not a twin of `domain/messaging` |
-| `domain/messaging` | Stores, codecs, validators, call types/session store |
-| `feature/chat` | Chat **screen** |
-| `feature/ui` | Temporary grab-bag: shell + many screens — to be split when peels settle |
-| Call\* | Domain: media engine + codecs; feature/messaging (today): CSM/lifecycle; feature/ui: chrome |
+Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversations does **not** own call session long-term.
 
 ---
 
 ## Working app map
 
-- Keep **ownership** in `Application` (composition root).
-- Prefer **named wirers** over one monolithic `Initialize` (`WireShell`, `WireMessaging`, `WireCalls`, …).
+- Keep **ownership** in `Application` (composition root) ([F003](DECISIONS.md#f003--app-stays-composition-root)).
+- Prefer **named wirers** (`WireShell`, `WireConversations`, `WireCalls`, …).
 - Keep thin `*Bridge` helpers for cycle breaks / chrome apply.
-- Do not invent a presenter registry framework unless a wirer split proves insufficient.
 
 ---
 
-## Open until peels teach us
+## Still open
 
-Record answers in [DECISIONS.md](DECISIONS.md) when evidence lands; until then leave open:
-
-1. Exact folder names (`shell` vs `ui/shell`, `calls` vs `messaging/calls`).
-2. Whether Amp chat adapters move to `domain/mesh` or stay feature adapters.
+1. Exact f5 split names (`shell` vs `ui/shell`).
+2. Whether Amp *chat* delivery adapters stay under conversations or move to mesh after audit.
 3. Whether `BadgeAggregator` lives with shell or contacts.
-4. How far to push Inbox row-building out of messaging (presenter ownership).
-5. Whether messaging→ai becomes an inbound port in app, or stays a one-way feature edge.
+4. Inbox row-building vs presenter ownership.
+5. Conversations→ai inbound port vs one-way edge.
 
 ---
 
-## Success criteria (for this project)
+## Success criteria
 
-- Feature messaging file count and hub include surface drop after peels.
-- UI no longer includes messaging **engines** (only ports/façades) for reachability/call policy once those peels land.
-- Domain peers remain independent; CI include/public-lib checks stay green.
-- SRC_LAYOUT + `src/feature/README.md` match reality after each structural phase.
+- Vocabulary used consistently in new docs/PRs (delivery / conversations / call session / call media).
+- No new top-level `feature/chat` dependency in the plan.
+- Domain peers stay independent; CI include checks green.
+- SRC_LAYOUT + `src/feature/README.md` updated when folders actually rename/move.

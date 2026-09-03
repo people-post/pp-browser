@@ -10,18 +10,16 @@
 
 Shrink and clarify `feature/` and `app/` by moving **sure** engines into domain, carving oversized folders only when ownership is clear, and treating the final module map as a **working North Star** until peels prove it.
 
-## Approach (locked method, open map)
+## Approach (locked method + locked names, phased paths)
 
-We are **not** locking the final `feature/*` folder tree yet. We **are** locking the delivery method:
+| Lock now | Keep revisable / phased |
+|----------|-------------------------|
+| Layer litmus; domain peer independence; sure peels first | When folders physically rename |
+| Vocabulary + end-state names ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) | Exact f5 `shell` vs `ui/shell` |
+| Calls: nested band first ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | Top-level `pp_feature_calls` timing |
+| No top-level `feature/chat` in the end state | `ChatController` class rename |
 
-| Lock now | Keep revisable |
-|----------|----------------|
-| Layer litmus (domain = engine; feature = workflow/screen; app = graph) | Exact names: `calls/`, `shell/`, `contacts/`, … |
-| Domain peer independence + `common` contracts for cross-peer needs | Which Amp adapters land in mesh vs stay feature |
-| Sure peels before folder splits | Final `Application` wirer shape |
-| Each phase leaves CI green and the tree strictly better | ChatController / Inbox presentation extraction details |
-
-See [NORTH_STAR.md](NORTH_STAR.md) (working) and [DECISIONS.md](DECISIONS.md) (method ADRs).
+See [NORTH_STAR.md](NORTH_STAR.md) and [DECISIONS.md](DECISIONS.md) (F001–F007).
 
 ## Why this order
 
@@ -46,7 +44,7 @@ See [NORTH_STAR.md](NORTH_STAR.md) (working) and [DECISIONS.md](DECISIONS.md) (m
 | [NORTH_STAR.md](NORTH_STAR.md) | Working target map — revise as peels teach |
 | [PHASES.md](PHASES.md) | f0–f6 delivery order (sure → structural) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the tree looks like today vs gaps |
-| [DECISIONS.md](DECISIONS.md) | Method ADRs (F001+) |
+| [DECISIONS.md](DECISIONS.md) | Method + naming ADRs (F001–F007) |
 | [CANDIDATES.md](CANDIDATES.md) | Peel / split inventory with confidence tags |
 
 ## Promote when settled

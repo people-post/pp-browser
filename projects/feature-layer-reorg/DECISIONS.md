@@ -50,11 +50,18 @@ Do not promote **blocked** → domain to “clean the folder.”
 
 ---
 
-## F004 — (reserved) calls module home
+## F004 — Calls home: nested band first, then top-level
 
-**Status:** deferred until f4
+**Date:** 2026-09-03  
+**Status:** accepted (path); top-level lib still deferred
 
-Choose among: top-level `feature/calls/`, nested `feature/messaging/calls/`, or keep flat under messaging with clearer naming only. Decide with evidence from f1–f2 file counts and include edges.
+**Context:** Separating call session from conversations is desired, but `CallSessionManager` ↔ `MeshMessagingService` would cycle if `pp_feature_calls` and `pp_feature_messaging` both exist today.
+
+**Decision:**
+
+1. **f4v1:** nest under `feature/messaging/calls/` (same `pp_feature_messaging` target) — discoverability only.
+2. **Later:** top-level `feature/calls/` + `pp_feature_calls` only after ownership is one-way (call session uses delivery ports; conversations hub does **not** own `CallStack`).
+3. End-state name for the module is **`calls`** (call **session**), not `av` or `media` — see [F007](#f007--vocabulary--end-state-feature-names).
 
 ---
 
@@ -62,7 +69,7 @@ Choose among: top-level `feature/calls/`, nested `feature/messaging/calls/`, or 
 
 **Status:** deferred until f5
 
-Choose folder names and whether residual `feature/ui` remains.
+Choose folder names and whether residual `feature/ui` remains. End state prefers presenters (including today’s `ChatController`) under **ui/shell/contacts**, not a top-level `chat` module ([F007](#f007--vocabulary--end-state-feature-names)).
 
 ---
 
@@ -92,3 +99,55 @@ Choose folder names and whether residual `feature/ui` remains.
 | `PeoplePickerLogic`, `CallConflictCopy` | `domain/ui/` (flat) |
 
 **Consequences:** f1–f3 are path/CMake moves into known peers. Messaging stays a large flat folder for now; revisit internal banding only if navigation pain remains after peels.
+
+---
+
+## F007 — Vocabulary + end-state feature names
+
+**Date:** 2026-09-03  
+**Status:** accepted
+
+**Context:** “Messaging” and “call” are overloaded (transport vs product; media plane vs session). Top-level `feature/chat` next to a future `conversations` module would keep the synonym problem.
+
+**Vocabulary (docs / comments):**
+
+| Term | Means |
+|------|--------|
+| **Delivery** | Envelope/stream send–receive (relay, Amp chat channel, inbox) |
+| **Conversations** | Threads, sync, attachments, groups, PSK-for-chat — product hub |
+| **Call session** | Ring → accept → keys → topology → leave |
+| **Call media** | Audio/video frames, codecs, legs (`domain/media` + mesh L4) |
+| **Chat** (UI copy) | User-facing label for the conversation screen — **not** a layer folder name |
+
+Slogan: **conversations ∥ call session**, both use **delivery**; call session drives **call media**.
+
+**End-state feature folders:**
+
+```
+feature/
+  settings/
+  ai/
+  conversations/   # rename from today’s feature/messaging (hub + delivery)
+  calls/           # call session (after f4 cycle break; f4v1 nested under messaging/calls/)
+  shell/           # window host, chrome, gestures (from ui split)
+  contacts/        # contacts + people-picker (from ui split)
+  ui/              # shared presenters/ports; absorbs today’s ChatController (no top-level chat/)
+```
+
+| Today (legacy path) | End-state name | Role |
+|---------------------|----------------|------|
+| `feature/messaging` | `feature/conversations` | Conversations hub + delivery adapters |
+| `feature/messaging` Call\* (banded) | `feature/calls` | Call **session** orchestration |
+| `feature/chat` | **removed** as top-level | `ChatController` → `feature/ui` (or shell) with other presenters |
+| `domain/messaging` | **keep** | Conversation/call **record & codec** engines (not the product hub) |
+| `domain/media` | **keep** | Call **media** engines only |
+
+**Explicit non-goals for naming:**
+
+- Do **not** add `domain/calls` ([F006](#f006--sure-peels-use-existing-domain-peers-no-new-peers)).
+- Do **not** keep top-level `feature/chat` once `conversations` exists.
+- Do **not** rename `domain/messaging` to `domain/chat` (call control types stay in the messaging peer).
+
+**Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`MessagingHub` → `ConversationsHub`) track the folder rename, not f4v1.
+
+**Consequences:** f4/f5/f6 plan toward this map; promote into SRC_LAYOUT / `src/feature/README.md` when folders actually move.

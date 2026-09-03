@@ -1,46 +1,46 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** f3 landed → **f4v1 nested calls band next**
+**Phase:** f3 landed; **F007 names locked** → **f4v1 nested calls band next**
 
-## What already shipped (prior work)
+## What already shipped
 
 - `src/base/` retired → `src/foundation/` + `src/domain/`
 - Domain peers strictly independent; cross-need via `common/` + feature wiring
-- Feature module libs acyclic: `settings → ai → messaging → ui → chat`
-- Ports + app bridges break UI↔functional cycles ([UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md))
-- Include guard: [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh)
-- **f0** project docs + **F006** (sure peels use existing peers, no new top-level domain peers)
-- **f1+f2** sure peels into `domain/{messaging,people,mesh/reachability,ui}` (Hub still owns `unique_ptr`s)
-- **f3** `IDirectMessageClient` → `common/chat/`; `ChatHistoryResponder` → `domain/messaging` with sign callback
+- Feature module libs acyclic (today): `settings → ai → messaging → ui → chat`
+- **f0–f3** peels + docs; **F004/F006/F007** naming & peer rules
 
-## Snapshot (approx.)
+## Locked naming ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
+
+| End-state folder | Today | Role |
+|------------------|-------|------|
+| `conversations/` | `feature/messaging` | Conversations hub + delivery |
+| `calls/` | Call\* under messaging | Call **session** (nest first per F004) |
+| `ui/` (+ shell/contacts) | `feature/ui` + **`feature/chat`** | Presenters; **no top-level chat/** |
+| `domain/messaging` | same | Record/codec engines (keep name) |
+
+Vocabulary: **delivery** / **conversations** / **call session** / **call media**; “chat” = UI copy only.
+
+## Snapshot (paths today)
 
 | Area | Notes |
 |------|-------|
-| `feature/messaging` | Hub/sync/calls/Amp adapters; stores/PSK/reach/history responder peeled |
-| `feature/ui` | Uses `domain/people` for reachability |
-| `domain/messaging` | + PSK/call-key/epoch + `ChatHistoryResponder` |
-| `common/chat` | + `IDirectMessageClient` |
-
-## Pain points (remaining)
-
-1. Calls still under `feature/messaging` — **f4v1 nested band** (avoid `pp_feature_calls` cycle with MeshMessagingService).
-2. `feature/ui` grab-bag — f5.
-3. Inbox presentation / ChatController — f6.
-4. messaging → ai hard-includes `AgentSession`.
-5. Cross-peer utils still blocked.
+| `feature/messaging` | Legacy path for conversations + still owns call session |
+| `feature/chat` | Legacy top-level screen module — to fold into ui |
+| `feature/ui` | Grab-bag + presenters |
+| `domain/messaging` | Stores/codecs + history responder + PSK/call-key peels |
 
 ## Next agent — start here
 
-1. **f4v1:** ADR F004 = nest `feature/messaging/calls/` (same CMake target); move Call* files; no new lib yet.
-2. Do not add top-level `pp_feature_calls` until MeshMessagingService edge is ported.
-3. Optional parallel: app named wirers.
+1. **f4v1:** nest `feature/messaging/calls/` (same CMake target); move Call\* only.
+2. Do **not** add top-level `pp_feature_calls` until the Hub↔MeshMessagingService cycle is broken.
+3. Do **not** introduce a new top-level `feature/chat` in any plan — absorb into ui/shell (f5).
 
 ## Related docs still slightly stale
 
 | Doc | Stale bit |
 |-----|-----------|
-| `RUNTIME_COMPOSITION.md` | Diagrams may still say `base/` |
+| `RUNTIME_COMPOSITION.md` | May still say `base/`; diagrams use MessagingHub |
+| `SRC_LAYOUT` feature table | Still lists `feature/chat` as current — update when f5 ships |
 
-Fix those opportunistically when touching layout.
+Opportunistic fixes OK; F007 is the planning source of truth until paths move.

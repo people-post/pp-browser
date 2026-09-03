@@ -52,29 +52,33 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 ## f4 — Structural: extract calls (banded first)
 
-Mechanical move after f1–f3. Prefer **nested band** before a new library (avoids messaging↔calls cycle via MeshMessagingService).
+Per [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): call **session** module named `calls`; nest before new lib.
 
-- [ ] ADR F004: nested `feature/messaging/calls/` (same `pp_feature_messaging`) — no new target yet
+- [ ] Nest `feature/messaging/calls/` (same `pp_feature_messaging`) — no new target yet
 - [ ] Move CallStack / CSM / Lifecycle / Topology / CallUiBackend / CallFunctionalPorts / Amp call façades into band
 - [ ] Update includes only; `check_feature_includes.sh` unchanged for module edges
-- [ ] Update NORTH_STAR + SRC_LAYOUT feature table if names lock
-- [ ] (Later) top-level `pp_feature_calls` only after MeshMessagingService port breaks the cycle
+- [ ] (Later) top-level `feature/calls` + `pp_feature_calls` after MeshMessagingService port breaks the cycle
+- [ ] (Later) rename parent `feature/messaging` → `feature/conversations` when hub ownership is clean
 
-## f5 — Structural: split shell / contacts from `feature/ui`
+## f5 — Structural: split shell / contacts; absorb chat UI
 
-- [ ] Extract shell host + chrome sync (+ optional `feature/shell`)
-- [ ] Extract contacts + people-picker (+ optional `feature/contacts`)
+Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-level `feature/chat`** in the end state.
+
+- [ ] Extract shell host + chrome sync (`feature/shell` or equivalent)
+- [ ] Extract contacts + people-picker (`feature/contacts` or equivalent)
+- [ ] Move `ChatController` (+ chat screen helpers) from `feature/chat` into `feature/ui` (or shell) with other presenters
+- [ ] Retire `pp_feature_chat` / top-level `feature/chat` once presenters land
 - [ ] Consolidate settings UI sections toward `feature/settings` where cheap
-- [ ] Update ports homes only as needed; prefer move-with-owner over new ports
-- [ ] ADR lock for folder names; promote to SRC_LAYOUT / feature README
+- [ ] ADR lock residual `ui/` vs fold into shell; promote to SRC_LAYOUT / feature README
 
 ## f6 — App wirers + soft edges (ongoing / last)
 
-- [ ] Split `Application::Initialize` into named wirers (no behavior change)
-- [ ] Soften messaging→ai via inbound agent port if touching MessageRouter anyway
-- [ ] ChatController / Inbox presentation extraction (highest product risk — last)
+- [ ] Split `Application::Initialize` into named wirers (`WireConversations`, `WireCalls`, …) — no behavior change
+- [ ] Soften conversations→ai via inbound agent port if touching MessageRouter anyway
+- [ ] Inbox presentation extraction (highest product risk — last)
 - [ ] Demote or schedule remaining cross-peer utils only after `common` contracts exist
 - [ ] Archive or freeze this project when layout matches promoted docs
+- [x] Vocabulary / end-state names locked ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
 
 ---
 

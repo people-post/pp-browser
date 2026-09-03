@@ -56,15 +56,17 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `AmpDirectChatService.*`, `AmpChatHistoryService.*`, `AmpChatBlobService.*` | product Amp adapters (unless audit proves mesh-only) |
 | Hubs / pipelines / routers / controllers / ports | orchestration or UI seams |
 
-## structural — folder splits (f4–f5)
+## structural — folder splits (f4–f6)
 
 | Move | Depends on | Notes |
 |------|------------|-------|
-| Extract `feature/calls` | f1–f2; [F004](DECISIONS.md#f004--reserved-calls-module-home) | CallStack, CSM, Lifecycle, Topology, CallUiBackend, ports |
-| Extract `feature/shell` | f2 optional; [F005](DECISIONS.md#f005--reserved-shell--contacts-split) | ShellHost, gestures, feedback, RmlMount, chrome sync |
-| Extract `feature/contacts` | f2 (`ContactReachability`) | Contacts + PeoplePicker |
-| App named wirers | anytime after f0 | No behavior change |
-| ChatController / Inbox presentation split | f6 last | Highest product risk |
+| Nest `feature/messaging/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | Same CMake target |
+| Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
+| Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
+| Extract `feature/shell` / `contacts` | f5 | From ui grab-bag |
+| Absorb `feature/chat` → `feature/ui` | f5 | **No** top-level chat in end state ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) |
+| App named wirers | anytime | `WireConversations` / `WireCalls` |
+| Inbox presentation split | f6 last | Highest product risk |
 
 ## stay feature (orchestration) — do not lower
 
