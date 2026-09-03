@@ -7,9 +7,9 @@ app → feature → domain → foundation → common → pp_common
 feature    ← you are here
 ```
 
-Today’s includes still use `base/` for foundation + domain modules; see the North Star in [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md)). Ongoing feature/app cleanup: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) (sure peels first; working North Star).
 
-**Rule:** dependencies flow downward only. Feature may use `base/` (foundation/domain), `common/`, and `lib/`; it must not `#include` from `app/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
+**Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
 Each top-level folder (and `ai/tools`, `ai/bindings`) builds as its own static library — **`pp_feature_<module>`** (e.g. `pp_feature_messaging`, `pp_feature_chat`). The aggregate **`pp_feature`** (`INTERFACE`) links all module libraries for app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
 
@@ -78,8 +78,6 @@ Includes use the repo root: `#include "feature/chat/ChatController.h"`.
 ```
 app → feature → domain → foundation → common
 ```
-
-(Today: `app → feature → base → common` with foundation+domain still under `base/`.)
 
 Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, and `feature/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 

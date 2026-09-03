@@ -241,4 +241,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app wiring absorbs former base↔base orchestration.
+5. Feature/app cleanup (peel domain leftovers; split oversized feature modules; app wirers). **In progress:** living plan in [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — sure peels first; working North Star revisable until ADRs lock slices.
