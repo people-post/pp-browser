@@ -27,7 +27,9 @@ bool MessagingFacade::IsMessagingReady() { return hub_.IsMessagingReady(); }
 
 IThreadStore* MessagingFacade::ThreadStore() { return &hub_.Store(); }
 
-void MessagingFacade::BindAgent(AgentSession& agent) { hub_.BindAgent(agent); }
+void MessagingFacade::BindAgentInbound(AgentInboundPorts ports) {
+  hub_.BindAgentInbound(std::move(ports));
+}
 
 Roe<bool> MessagingFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);

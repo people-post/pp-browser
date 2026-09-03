@@ -99,9 +99,9 @@ One aggregate `pp_gui` first; split libs later only if cycles allow.
 Intended link order (end state):
 
 ```
-feature:  settings → ai → conversations → calls
+feature:  settings, ai, conversations, calls — no conversations→ai CMake/include edge
 gui:      → feature (aggregate or bands); never the reverse
-app:      → gui + feature
+app:      → gui + feature; fills AgentInboundPorts / AgentUiPorts
 ```
 
 Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversations does **not** own call session long-term. **App** owns GUI controllers; GUI binds feature facades through ports.
@@ -122,7 +122,7 @@ Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversat
 2. Whether Amp *chat* delivery adapters stay under conversations or move to mesh after audit.
 3. Whether `BadgeAggregator` lives under `gui/shell` or `gui/shared`.
 4. Inbox row-building vs presenter ownership.
-5. Conversations→ai inbound port vs one-way edge.
+5. Conversations→ai inbound port vs one-way edge — **done** (`AgentInboundPorts`; no `pp_feature_messaging` → `pp_feature_ai`).
 
 ---
 

@@ -75,7 +75,7 @@ Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-lev
 ## f6 — App wirers + soft edges (ongoing)
 
 - [x] Split `Application::Initialize` into named wirers (`WireSettings`, `WireShellPresenters`, `WireCalls`, …) — no behavior change
-- [ ] Soften conversations→ai via inbound agent port if touching MessageRouter anyway
+- [x] Soften conversations→ai via `AgentInboundPorts` (`MessageRouter` / hub / facade; `AgentUiPorts` moved to `feature/ai/`)
 - [ ] Inbox presentation extraction (highest product risk — last / after gui lift if cheaper)
 - [ ] Demote or schedule remaining cross-peer utils only after `common` contracts exist
 - [x] Vocabulary / end-state names locked ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))

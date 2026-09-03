@@ -14,6 +14,7 @@
 #include "domain/people/ProfileIdentityView.h"
 #include "domain/ui/ChatWidgetTypes.h"
 #include "common/Error.h"
+#include "feature/messaging/AgentInboundPorts.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/MessagingUiPorts.h"
@@ -31,7 +32,6 @@
 
 namespace pbr {
 
-class AgentSession;
 class MessagingHub;
 
 /**
@@ -51,7 +51,7 @@ public:
   bool IsInitialized();
   bool IsMessagingReady();
   IThreadStore* ThreadStore();
-  void BindAgent(AgentSession& agent);
+  void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices(bool show_notifications);
   Roe<std::string> ExportLinkDevice();

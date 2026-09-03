@@ -2581,9 +2581,6 @@ void ChatController::WireMessagingBindings() {
       agent_ports_.set_thread_store(store);
     }
   }
-  if (facade_ && agent_ports_.with_session) {
-    agent_ports_.with_session([&](AgentSession& agent) { facade_->BindAgent(agent); });
-  }
   chat_.compose_disabled = false;
   DirtyChatChrome();
   facade_->SetOnMessagesChanged([this]() {

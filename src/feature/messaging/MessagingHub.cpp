@@ -9,7 +9,6 @@
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "feature/messaging/PushDeviceCoordinator.h"
-#include "feature/ai/AgentSession.h"
 #include "foundation/crypto/ProfileSecretsService.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -1076,8 +1075,8 @@ Roe<void> MessagingHub::BuildMessagingStack() {
     group_membership_->SetInboundPolicy(policy);
   }
   RegisterContactEndpoints();
-  if (agent_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, *agent_, *store_);
+  if (agent_inbound_.IsBound()) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
   return {};
 }
@@ -1132,10 +1131,10 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
   return {};
 }
 
-void MessagingHub::BindAgent(AgentSession& agent) {
-  agent_ = &agent;
-  if (mesh_messaging_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent, *store_);
+void MessagingHub::BindAgentInbound(AgentInboundPorts ports) {
+  agent_inbound_ = std::move(ports);
+  if (mesh_messaging_ && agent_inbound_.IsBound()) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
 }
 
@@ -1992,7 +1991,7 @@ void MessagingHub::Shutdown() {
 
   on_messaging_ready_ = nullptr;
   on_reachability_updated_ = nullptr;
-  agent_ = nullptr;
+  agent_inbound_ = {};
 
   if (router_) {
     router_->SetOnLocalAction(nullptr);

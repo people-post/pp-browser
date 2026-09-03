@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/messaging/AgentUiPorts.h"
+#include "feature/ai/AgentUiPorts.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"

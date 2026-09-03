@@ -28,7 +28,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     calls/CallFunctionalPorts.cpp
     calls/CallUiBackend.cpp
     MessagingShellPorts.cpp
-    AgentUiPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MeshMessagingService.cpp
@@ -42,7 +41,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
   PUBLIC_LIBS
-    pp_feature_ai
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging

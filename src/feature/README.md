@@ -83,15 +83,17 @@ Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_featu
 
 ### Intra-feature direction
 
-Intended link order (each `PUBLIC_LIBS` only lower feature modules):
+Feature modules do **not** link each other for AI/conversations. Conversations invoke the agent through `AgentInboundPorts` (app-filled from `AgentSession`); `pp_feature_messaging` must not `#include "feature/ai/"` or `PUBLIC_LIBS pp_feature_ai`.
 
 ```
-settings → ai/tools → ai/bindings → ai → messaging
+settings    (no feature-module PUBLIC_LIBS)
+ai/tools → ai/bindings → ai
+messaging   (no pp_feature_ai)
 ```
 
-(`gui` is a separate layer that links `pp_feature_*` as needed.)
+(`gui` / `app` link `pp_feature_*` as needed and wire ports.)
 
 ### Guards
 
-- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, retired `feature/ui` and `feature/chat`
+- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `messaging → feature/ai`, retired `feature/ui` and `feature/chat`
 - [`scripts/check_gui_includes.sh`](../../scripts/check_gui_includes.sh) — bans `gui → app`

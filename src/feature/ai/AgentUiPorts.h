@@ -40,7 +40,6 @@ struct AgentUiPorts {
   std::function<void()> cancel;
   std::function<void(std::vector<AgentEvent>& out)> poll_events;
   std::function<void()> wait_for_configure_idle;
-  std::function<void(std::function<void(AgentSession&)> callback)> with_session;
   std::function<bool()> has_conversation_entries;
   std::function<std::optional<std::string>()> last_conversation_entry_id;
   std::function<void(const std::string& entry_id, const std::string& message)> complete_assistant_message;

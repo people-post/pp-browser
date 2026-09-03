@@ -1,4 +1,4 @@
-#include "feature/messaging/AgentUiPorts.h"
+#include "feature/ai/AgentUiPorts.h"
 
 #include "domain/ai/conversation/Conversation.h"
 #include "common/thread/IThreadStore.h"
@@ -34,7 +34,6 @@ AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
   ports.cancel = [&agent]() { agent.Cancel(); };
   ports.poll_events = [&agent](std::vector<AgentEvent>& out) { agent.PollEvents(out); };
   ports.wait_for_configure_idle = [&agent]() { agent.WaitForConfigureIdle(); };
-  ports.with_session = [&agent](std::function<void(AgentSession&)> callback) { callback(agent); };
   ports.has_conversation_entries = [&agent]() { return !agent.conversation().Entries().empty(); };
   ports.last_conversation_entry_id = [&agent]() -> std::optional<std::string> {
     const auto& entries = agent.conversation().Entries();

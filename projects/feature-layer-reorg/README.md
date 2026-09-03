@@ -1,6 +1,6 @@
 # Feature / app layer reorg
 
-**Status:** **f7v1 done** — `src/gui/` above feature ([F008](DECISIONS.md#f008--gui-layer-above-feature))  
+**Status:** **f7v1 + f6 soft edge** — `src/gui/` above feature; conversations→ai via `AgentInboundPorts`  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md), [`src/feature/README.md`](../../src/feature/README.md)  

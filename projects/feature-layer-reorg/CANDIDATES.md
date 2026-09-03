@@ -68,6 +68,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | **Done (f7v1)** — `pp_gui`; ban feature→gui |
 | Top-level `pp_feature_shell` / `contacts` | — | **Superseded** by `src/gui/` bands |
 | App named wirers | f6 | **Done (f6v1)** |
+| Conversations→ai inbound port | f6 | **Done** — `AgentInboundPorts`; `AgentUiPorts` in `feature/ai/` |
 | Inbox presentation split | last | Highest product risk |
 
 ## stay feature (orchestration) — do not lower

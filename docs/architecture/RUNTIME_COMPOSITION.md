@@ -13,7 +13,7 @@ For **what UI may call** (state / config / actions / events, facades vs ports), 
 app → feature → base → common
 ```
 
-Feature libraries link acyclically: `settings → ai → messaging → ui → chat`. Cross-controller wiring and SessionStore fan-out live in `src/app/` ([`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h)).
+Feature libraries stay acyclic: settings / ai / messaging do not form a CMake chain; conversations invoke AI through `AgentInboundPorts`. Cross-controller wiring and SessionStore fan-out live in `src/app/` ([`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h)).
 
 ```mermaid
 flowchart TB
@@ -145,6 +145,7 @@ flowchart LR
   Chat -->|MessagingFacade| Hub
   App --> Agent
   App -->|BindAgentPorts| Chat
+  App -->|BindAgentInbound| Hub
   Chat -->|BindInputCoordinator| Input
   App -->|BindBadgeNotify BadgeNotifyPorts| Chat
   App -->|BindCallActions CallActionsPorts| Chat
@@ -331,7 +332,7 @@ Full model: [THREADING.md](THREADING.md).
 | **CallActionsPorts** | `gui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
 | **ProfileIdentityView** | `domain/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
-| **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
+| **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | `domain/mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

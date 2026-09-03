@@ -1,6 +1,5 @@
 #include "feature/messaging/MessageRouter.h"
 
-#include "feature/ai/AgentSession.h"
 #include "domain/messaging/AtAiParser.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/SendRelayOptions.h"
@@ -10,8 +9,9 @@
 
 namespace pbr {
 
-MessageRouter::MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging, AgentSession& agent, IThreadStore& store)
-    : mesh_messaging_(mesh_messaging), agent_(agent), store_(store) {
+MessageRouter::MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging,
+                             AgentInboundPorts agent, IThreadStore& store)
+    : mesh_messaging_(mesh_messaging), agent_(std::move(agent)), store_(store) {
   (void)inbox;
   redirectLogger("MessageRouter");
 }
@@ -33,7 +33,12 @@ bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
   return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
 }
 
-Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt, const AtAiMode mode) {
+Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt,
+                                       const AtAiMode mode) {
+  if (!agent_.submit_scoped_assist) {
+    return Error("Agent not bound");
+  }
+
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return Error("Thread not found");
@@ -55,7 +60,7 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
     }
   }
 
-  agent_.SubmitScopedAssist(thread_id, prompt, {}, mode);
+  agent_.submit_scoped_assist(thread_id, prompt, {}, mode);
   return {};
 }
 
@@ -97,7 +102,10 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
       }
       return RouteSharedAi(thread_id, at_ai.prompt, at_ai.mode);
     }
-    agent_.SubmitScopedAssist(thread_id, at_ai.prompt, {}, AtAiMode::Local);
+    if (!agent_.submit_scoped_assist) {
+      return Error("Agent not bound");
+    }
+    agent_.submit_scoped_assist(thread_id, at_ai.prompt, {}, AtAiMode::Local);
     return {};
   }
 
@@ -119,7 +127,10 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return {};
   }
 
-  agent_.SubmitToThread(thread_id, text, std::move(user_payload));
+  if (!agent_.submit_to_thread) {
+    return Error("Agent not bound");
+  }
+  agent_.submit_to_thread(thread_id, text, std::move(user_payload));
   return {};
 }
 

@@ -30,7 +30,8 @@
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
 #include "foundation/platform/WindowIcon.h"
-#include "feature/messaging/AgentUiPorts.h"
+#include "feature/ai/AgentUiPorts.h"
+#include "feature/messaging/AgentInboundPorts.h"
 #include "feature/messaging/calls/CallFunctionalPorts.h"
 #include "feature/messaging/calls/CallUiBackend.h"
 #include "feature/messaging/MessagingFacade.h"
@@ -895,6 +896,22 @@ void Application::WireAgentAndConfig() {
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (messaging_facade_) {
+    AgentInboundPorts inbound;
+    inbound.submit_scoped_assist = [this](const std::string& thread_id, const std::string& prompt,
+                                          std::optional<std::string> user_payload, AtAiMode mode) {
+      if (agent_session_) {
+        agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
+      }
+    };
+    inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
+                                      std::optional<std::string> user_payload) {
+      if (agent_session_) {
+        agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
+      }
+    };
+    messaging_facade_->BindAgentInbound(std::move(inbound));
+  }
   if (agent_session_) {
     agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
     agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
@@ -993,6 +1010,9 @@ bool Application::MountPresenters(Rml::Context* context) {
     chat_->BindShellSetup({});
     chat_->BindMessagingFacade(nullptr);
     chat_->BindAgentPorts({});
+    if (messaging_facade_) {
+      messaging_facade_->BindAgentInbound({});
+    }
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
     chat_->BindEmojiPickerNotify({});
@@ -1299,6 +1319,9 @@ void Application::Shutdown() {
   chat_->BindShellSetup({});
   chat_->BindMessagingFacade(nullptr);
   chat_->BindAgentPorts({});
+  if (messaging_facade_) {
+    messaging_facade_->BindAgentInbound({});
+  }
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
   chat_->BindEmojiPickerNotify({});

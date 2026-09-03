@@ -3,6 +3,7 @@
 #include "domain/messaging/AtAiParser.h"
 #include "common/thread/IThreadStore.h"
 #include "common/Module.h"
+#include "feature/messaging/AgentInboundPorts.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/MeshMessagingService.h"
 
@@ -14,11 +15,10 @@
 
 namespace pbr {
 
-class AgentSession;
-
 class MessageRouter : public Module {
 public:
-  MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging, AgentSession& agent, IThreadStore& store);
+  MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging, AgentInboundPorts agent,
+                IThreadStore& store);
 
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);
@@ -39,7 +39,7 @@ private:
   bool NeedsSharedAiConfirm(const std::string& thread_id) const;
 
   MeshMessagingService& mesh_messaging_;
-  AgentSession& agent_;
+  AgentInboundPorts agent_;
   IThreadStore& store_;
   std::function<void(const std::string&, const std::optional<std::string>&)> on_local_action_;
   SharedAiConfirmCallback shared_ai_confirm_;

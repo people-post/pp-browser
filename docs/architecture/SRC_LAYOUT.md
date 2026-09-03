@@ -173,10 +173,12 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/messaging/calls/` | Call session band (f4v1) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 
-Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
+Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_messaging` does not link `pp_feature_ai`:
 
 ```
-settings → ai/tools → ai/bindings → ai → messaging
+settings
+ai/tools → ai/bindings → ai
+messaging
 ```
 
 ## GUI subfolders
@@ -257,4 +259,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); remaining: soft edges, `conversations`/`calls` renames ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).
+5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge shipped (`AgentInboundPorts`); remaining: `conversations`/`calls` renames ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).

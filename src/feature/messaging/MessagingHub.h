@@ -23,6 +23,7 @@
 #include "feature/messaging/calls/CallStack.h"
 #include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
+#include "feature/messaging/AgentInboundPorts.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "domain/net/BlobClient.h"
@@ -50,7 +51,6 @@
 
 namespace pbr {
 
-class AgentSession;
 class IPskSessionStore;
 class ProfileSecretsService;
 class RelayDirectoryKemKeyResolver;
@@ -227,7 +227,7 @@ public:
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
-  void BindAgent(AgentSession& agent);
+  void BindAgentInbound(AgentInboundPorts ports);
   PeerSigningKeyStore& SigningKeys();
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is TickAmpMesh. */
@@ -280,7 +280,7 @@ private:
   std::string data_dir_;
   std::string profile_id_;
   AppConfig config_;
-  AgentSession* agent_ = nullptr;
+  AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsService* secrets_ = nullptr;
 

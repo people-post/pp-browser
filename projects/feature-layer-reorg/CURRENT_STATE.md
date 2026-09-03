@@ -1,7 +1,7 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** **f7v1 landed** (`src/gui/` above feature) → soft edges / calls rename later
+**Phase:** **f6 soft edge landed** (`AgentInboundPorts`) → calls rename / gui bands later
 
 ## Shipped this stream
 
@@ -10,6 +10,7 @@
 - f5v1: nested ui bands (staging)
 - f6v1: named Application wirers
 - **F008 / f7v1:** lifted `feature/ui/**` → `src/gui/**`; `pp_gui`; retired `pp_feature_ui`
+- **f6 soft edge:** conversations invoke AI via `AgentInboundPorts`; `AgentUiPorts` lives in `feature/ai/`
 
 ## Paths today
 
@@ -23,10 +24,10 @@
 | `gui/chat/` | ChatController + screen helpers |
 | `domain/ui/` | Non-Rml presentation policy (not the GUI layer) |
 
-Link order: `app → gui → feature` (`settings → ai → messaging` inside feature).
+Link order: `app → gui → feature`. Feature modules do not link each other for AI; app fills `AgentInboundPorts`.
 
 ## Next
 
-1. Optional f6 soft edge: conversations→ai inbound port.
-2. Later: top-level `feature/calls` / rename messaging→conversations when cycles allow.
-3. Optional `gui/` band nesting (`call/`, `settings/`, `shared/`).
+1. Later: top-level `feature/calls` / rename messaging→conversations when cycles allow.
+2. Optional `gui/` band nesting (`call/`, `settings/`, `shared/`).
+3. Inbox presentation extraction (highest product risk).

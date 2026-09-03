@@ -36,6 +36,8 @@ check_absent "ai must not include retired feature/ui/" \
 check_absent "ai must not include gui/" \
   '#include "gui/' src/feature/ai
 
+check_absent "messaging must not include feature/ai/" \
+  '#include "feature/ai/' src/feature/messaging
 check_absent "messaging must not include retired feature/ui/" \
   '#include "feature/ui/' src/feature/messaging
 check_absent "messaging must not include gui/" \
