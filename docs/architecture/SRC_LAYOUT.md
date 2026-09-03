@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; **`gui` presents** them; `app` constructs the graph.
 
-> **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. GUI uses `#include "gui/…"`, `pp_gui`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
+> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_domain`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). Domain peer allowlist is empty.
 
 ## Layers
 
@@ -35,7 +35,7 @@ app → gui → feature → domain → foundation → common → pp_common (Fetc
 Convenience link aggregate (not a folder layer):
 
 ```
-pp_base INTERFACE = pp_foundation + pp_amp_{l1,l2,l3,link} + pp_domain_*
+pp_base INTERFACE = pp_foundation + pp_amp_{l1,l2,l3,link} + pp_domain
 ```
 
 Foundation uses `pp_foundation_*` and `#include "foundation/…"`. Domain uses `pp_domain_*` and `#include "domain/…"`. Amp uses FetchContent targets `pp_amp_*`.
@@ -206,9 +206,9 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_foundation_*` | foundation modules under `src/foundation/` |
 | `pp_foundation` | foundation aggregate (`INTERFACE`) |
 | `pp_domain_*` | domain peers under `src/domain/` |
-| `pp_domain` | domain aggregate (`INTERFACE`; peers present for this build) |
+| `pp_domain` | domain aggregate (`INTERFACE` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt); peers for this build) |
 | `pp_amp_l1` / `pp_amp_l2` / `pp_amp_l3` / `pp_amp_link` | Amp (FetchContent pp-cpp-amp) |
-| `pp_base` | convenience product stack (`INTERFACE` = foundation + Amp + domain) |
+| `pp_base` | convenience product stack (`INTERFACE` = foundation + Amp + `pp_domain`) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
 | `pp_gui` | gui layer aggregate (presenters + shell) |
@@ -259,5 +259,5 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/conversations`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
-4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
+4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_domain` in `domain/CMakeLists.txt`; `pp_base` convenience INTERFACE in `src/CMakeLists.txt`).
 5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; remaining: app-owned `CallStack`, optional gui bands, inbox presentation.

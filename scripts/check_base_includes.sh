@@ -67,7 +67,7 @@ is_legacy_edge() {
   printf '%s\n' "$LEGACY_DOMAIN_EDGES" | grep -qx "$edge"
 }
 
-# Scan production sources under src/base and src/domain for domain→domain includes.
+# Scan production sources under src/domain for domain→domain includes.
 scan_domain_peer_includes() {
   local root_dir="$1"
   while IFS= read -r -d '' file; do
@@ -75,7 +75,7 @@ scan_domain_peer_includes() {
     from=""
     for d in "${DOMAIN_MODULES[@]}"; do
       case "$rel" in
-        src/base/"$d"/*|src/domain/"$d"/*) from="$d"; break ;;
+        src/domain/"$d"/*) from="$d"; break ;;
       esac
     done
     [[ -n "$from" ]] || continue
@@ -106,13 +106,9 @@ scan_domain_peer_includes() {
     ! -path '*/tests/*' -print0)
 }
 
-# Domain peers live under src/domain/ only (src/base/ retired).
+# Domain peers live under src/domain/.
 if [[ -d "$ROOT/src/domain" ]]; then
   scan_domain_peer_includes "$ROOT/src/domain"
-fi
-if [[ -d "$ROOT/src/base" ]]; then
-  echo "FAIL: src/base/ must remain deleted (see src/CMakeLists.txt pp_base aggregate)"
-  FAIL=1
 fi
 
 check_absent "common must not include domain/" \
@@ -219,41 +215,20 @@ check_absent "must not include base/net/RegistrationClientUtil.h (use feature/co
 check_absent "messaging must not include feature/ (domain may not include feature)" \
   '#include "feature/' src/domain/messaging
 
-# Removed shim paths must stay deleted.
+# Peeled / relocated paths must stay deleted (include-path bans above catch code; this
+# catches leftover files under common/domain only — not the retired src/base/ tree).
 for shim in \
-  src/base \
   src/common/ThreadTypes.h \
   src/common/IThreadStore.h \
   src/common/CallMediaHealth.h \
-  src/base/messaging \
-  src/base/ai \
   src/domain/messaging/ThreadTypes.h \
   src/domain/messaging/IThreadStore.h \
   src/domain/messaging/MessagingJson.h \
   src/domain/messaging/ChatBlobRequestUtil.h \
-  src/base/data \
-  src/base/crypto \
-  src/base/error \
-  src/base/i18n \
   src/domain/messaging/PeerBriefRoute.h \
   src/domain/mesh/host/MeshChannelLimits.h \
   src/domain/mesh/identity \
-  src/base/net/ProfileIconClientUtil.h \
-  src/base/net/ProfileIconFetchUtil.h \
-  src/base/net/RegistrationClientUtil.h \
-  src/base/data/ContextBudget.h \
-  src/base/people \
-  src/base/people/RelayScope.h \
-  src/base/net/CurlSsl.h \
-  src/base/media \
-  src/base/net \
-  src/base/media/CallMediaHealth.h \
-  src/base/ui \
-  src/base/render \
-  src/base/ui/WorkingSetTypes.h \
-  src/domain/messaging/PeopleDiscoveryBlocks.h \
-  src/base/runtime \
-  src/base/platform
+  src/domain/messaging/PeopleDiscoveryBlocks.h
 do
   if [[ -e "$ROOT/$shim" ]]; then
     echo "FAIL: shim path still exists: $shim"

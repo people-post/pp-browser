@@ -17,6 +17,6 @@ Independent **product peer** libraries (North Star). Peers must not `#include` o
 Window host / RmlUi Backend / overlays live in `foundation/platform/ui/` (not a domain peer).
 
 Includes: `#include "domain/people/…"`, `#include "domain/media/…"`, `#include "domain/net/…"`, `#include "domain/ui/…"`, `#include "domain/messaging/…"`, `#include "domain/ai/…"`, `#include "domain/mesh/…"`.
-Old `src/base/` peer folders stay deleted. Convenience aggregates: `pp_domain` and product-stack `pp_base` in [`src/CMakeLists.txt`](../CMakeLists.txt).
+Aggregate `pp_domain` is defined in this folder’s [`CMakeLists.txt`](CMakeLists.txt). Product-stack convenience `pp_base` (foundation + Amp + `pp_domain`) is in [`src/CMakeLists.txt`](../CMakeLists.txt).
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).

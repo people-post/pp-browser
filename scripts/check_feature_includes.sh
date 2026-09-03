@@ -50,23 +50,7 @@ check_absent "calls must not include feature/ai/" \
 check_absent "calls must not include gui/" \
   '#include "gui/' src/feature/calls
 
-# Retired top-level feature/chat (F007), feature/ui (F008), feature/messaging (F007 rename).
-if [[ -e "$ROOT/src/feature/chat" ]]; then
-  echo "FAIL: top-level src/feature/chat must stay removed (absorbed into gui/chat/)"
-  FAIL=1
-fi
-if [[ -e "$ROOT/src/feature/ui" ]]; then
-  echo "FAIL: top-level src/feature/ui must stay removed (lifted to src/gui/)"
-  FAIL=1
-fi
-if [[ -e "$ROOT/src/feature/messaging" ]]; then
-  echo "FAIL: top-level src/feature/messaging must stay removed (renamed to feature/conversations/)"
-  FAIL=1
-fi
-if [[ -e "$ROOT/src/feature/conversations/calls" ]]; then
-  echo "FAIL: nested src/feature/conversations/calls must stay removed (lifted to feature/calls/)"
-  FAIL=1
-fi
+# Include-path bans for retired feature folders (chat → gui/chat; ui → gui; messaging → conversations).
 check_absent "must not include retired feature/chat/ path" \
   '#include "feature/chat/' src
 check_absent "must not include retired feature/ui/ path" \

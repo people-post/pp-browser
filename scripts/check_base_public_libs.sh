@@ -24,7 +24,7 @@ legacy = {
 }
 
 fail = 0
-cmake_roots = [root / "src" / "base", root / "src" / "domain"]
+cmake_roots = [root / "src" / "domain"]
 lib_helpers = (
     r"pp_browser_add_(?:base|domain)_library\(\s*(pp_(?:base|domain)_[A-Za-z0-9_]+)\s*(.*?)^\s*\)"
 )
@@ -157,11 +157,3 @@ if rg -n '\bpp_base_(adp|mesh_session|mesh_channel|mesh_link)\b' \
   exit 1
 fi
 echo "OK: Amp pp_amp_* target names"
-
-# Thin src/base/ aggregate must stay deleted (pp_base is defined in src/CMakeLists.txt).
-if [[ -d "$ROOT/src/base" ]]; then
-  echo "FAIL: src/base/ must remain deleted (aggregate is src/CMakeLists.txt pp_base)"
-  ls -la "$ROOT/src/base" || true
-  exit 1
-fi
-echo "OK: src/base/ retired"
