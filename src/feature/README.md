@@ -100,10 +100,12 @@ chat
 **Principles for new code:**
 
 1. **Downward includes only** — when module A needs a type from B, B should not include A's headers. Within feature: `settings` must not include `messaging/`, `ui/`, or `chat/`; `messaging` must not include `ui/` or `chat/`.
-2. **Shared structs go low** — if feature and base both need a DTO, move it to the owning base module (or a dedicated `*Types.h` there).
-3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `base/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
+2. **Shared structs go low** — if feature and domain both need a DTO, move it to the owning domain module (or a dedicated `*Types.h` there / `common` if two peers need it).
+3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `foundation/`/`domain/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 4. **Cross-controller wiring stays in app** — tool registration, tab ticks, and `ActionRouter` model-dirty callbacks belong in `src/app/`, not feature headers.
-5. **Fork glue stays at the edge** — RmlUi via `pp_foundation_platform` in `ui/`, `chat/`, and `ai/bindings/`; libp2p via `pp_domain_mesh` in `messaging/` (forks under `src/lib/`).
+5. **Fork glue stays at the edge** — RmlUi via `pp_foundation_platform` in `ui/`, `chat/`, and `ai/bindings/`; Amp/mesh via `pp_domain_mesh` in `messaging/` (forks under `src/lib/` / FetchContent).
+
+Feature/app cleanup tracking: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/).
 
 ---
 
@@ -134,7 +136,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; app-owned presenters + ports |
 | App-owned presenters | `app/Application.cpp` | `unique_ptr` for shell + all presenters; `InstallInstance` for RmlUi static callbacks |
-| `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
+| `ProfileIdentityView` | `domain/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
 | SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |
 | Hub-and-spoke within messaging | `MessagingHub` (`MessagingCore`) owns stores/inbox/P2P + `MeshHost` + `CallStack` | Assembler inside `pp_feature_messaging`; mesh shared with `pp-node` via MeshHost |
 | App-level wiring | `app/Application.cpp`, `app/ConfigApplyBridge.cpp` | Cross-controller callbacks and SessionStore → slice fan-out stay in `app/` per SRC_LAYOUT |
@@ -165,8 +167,9 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | P2P messaging | `MessagingHub`, sync, relay | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) |
 | Window shell | `ShellHost`, document loading | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) |
 | Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `domain/messaging/` stores |
-| Settings | Section handlers, config merge | `assets/views/settings.rml`, `base/data/Config.h` |
+| Settings | Section handlers, config merge | `assets/views/settings.rml`, `foundation/data/Config.h` |
 | At-rest PIN gate | `ProfileUnlockGate` + `PinGateController` UI | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
+| Feature/app reorg | Peels + module splits | [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) |
 
 ---
 
@@ -184,7 +187,8 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 
 | Doc | Why |
 |-----|-----|
-| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Five-layer layout (common/lib/base/feature/app), test placement |
+| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Five-layer layout (common/foundation/domain/feature/app), test placement |
+| [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) | Feature/app cleanup: sure peels, working North Star, phases |
 | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state, config, actions, events; app-owned presenters |
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |
