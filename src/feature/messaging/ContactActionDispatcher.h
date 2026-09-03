@@ -1,12 +1,12 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/P2pMessagingService.h"
-#include "base/net/ServiceClients.h"
+#include "feature/messaging/MeshMessagingService.h"
+#include "domain/net/ServiceClients.h"
 
 #include <functional>
 #include <optional>
@@ -21,7 +21,7 @@ class ContactActionDispatcher : public Module {
 public:
   ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity,
                           IThreadStore& store, GroupMembershipService* groups,
-                          IRegistrationClient* registration, P2pMessagingService* p2p = nullptr);
+                          IRegistrationClient* registration, MeshMessagingService* mesh_messaging = nullptr);
 
   Roe<std::optional<std::string>> Dispatch(const std::string& payload_json);
   void SetRegistrationClient(IRegistrationClient* registration);
@@ -35,7 +35,7 @@ private:
   IThreadStore& store_;
   GroupMembershipService* groups_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
-  P2pMessagingService* p2p_ = nullptr;
+  MeshMessagingService* mesh_messaging_ = nullptr;
   std::function<void(const std::string&)> on_action_message_;
 };
 

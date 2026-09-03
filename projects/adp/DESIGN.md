@@ -49,7 +49,7 @@ L2 opaque payload (Noise / AEAD / RPC / Opus)
 
 Fixed header without HMAC = 28 bytes; max datagram = 28 + 1200 + 16 = 1244.
 
-## API (namespace `pbr::adp`)
+## API (namespace `pp::adp`)
 
 - `Connection::Open` / `Close`
 - `SetPeerEndpoint` / `PeerEndpoint` (path migrate)

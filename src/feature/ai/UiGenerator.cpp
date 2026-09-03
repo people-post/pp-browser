@@ -1,8 +1,8 @@
 #include "feature/ai/UiGenerator.h"
 
-#include "base/ai/PromptBuilder.h"
-#include "base/ai/RmlValidator.h"
-#include "base/runtime/AppRuntime.h"
+#include "domain/ai/PromptBuilder.h"
+#include "domain/ai/RmlValidator.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>

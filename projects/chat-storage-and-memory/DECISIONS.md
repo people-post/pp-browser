@@ -1325,7 +1325,7 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 ---
 
-## D097 — Shared libp2p host + on-demand session policy + direct chat protocol
+## D097 — Shared mesh host + on-demand session policy + direct chat protocol
 
 **Date:** 2026-07-09  
 **Decision:**

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/messaging/ThreadTypes.h"
-#include "base/mesh/link/PeerLinkManager.h"
-#include "base/net/ServiceClients.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/net/ServiceClients.h"
 #include "feature/messaging/IDirectMessageClient.h"
 
 #include <functional>
@@ -14,7 +14,7 @@ namespace pbr {
 
 /**
  * `/pp-browser/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
- * Product single-entry when MeshHost Amp is attached ([A020]/ libp2p path remains for tests/fallback.
+ * Product single-entry when MeshHost Amp is attached ([A020]/ legacy path remains for tests/fallback.
  */
 class AmpDirectChatService : public IDirectMessageClient {
 public:
@@ -22,7 +22,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpDirectChatService(amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpDirectChatService(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {});
   ~AmpDirectChatService() override;
 
   AmpDirectChatService(const AmpDirectChatService&) = delete;
@@ -39,7 +39,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  amp::PeerLinkManager& links_;
+  IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;

@@ -1,7 +1,7 @@
 #include "feature/messaging/PushDeviceCoordinator.h"
 
-#include "base/net/IPushDeviceClient.h"
-#include "base/platform/IPushDeviceRegistrar.h"
+#include "domain/net/IPushDeviceClient.h"
+#include "foundation/platform/IPushDeviceRegistrar.h"
 #include "feature/messaging/MessagingHub.h"
 #include "common/PbrCompat.h"
 

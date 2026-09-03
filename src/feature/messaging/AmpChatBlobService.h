@@ -1,11 +1,11 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/mesh/link/PeerLinkManager.h"
-#include "base/net/ServiceClients.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
 
@@ -25,7 +25,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
 
-  AmpChatBlobService(amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
+  AmpChatBlobService(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
                      WorkerPost post_worker = {});
   ~AmpChatBlobService() override;
 
@@ -47,7 +47,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  amp::PeerLinkManager& links_;
+  IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   bool started_ = false;

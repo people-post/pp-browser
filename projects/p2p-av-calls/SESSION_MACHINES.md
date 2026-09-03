@@ -8,7 +8,7 @@
 **Mesh twin (media-relay attach):** [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md)  
 **Threads:** [THREADING.md](../../docs/architecture/THREADING.md)
 
-Design for making **long-lived** libp2p host protocol sessions robust at the architecture level. The working dogfood path took hard-won patches; this doc captures the intended machines **before** structural edits.
+Design for making **long-lived** mesh host protocol sessions robust at the architecture level. The working dogfood path took hard-won patches; this doc captures the intended machines **before** structural edits.
 
 ---
 
@@ -50,7 +50,7 @@ Product UX already has [`CallLifecycle`](../../src/feature/messaging/CallLifecyc
 flowchart TB
   subgraph feature [feature/messaging — product]
     Life[CallLifecycle<br/>CallPhase]
-    Bridge[CallLibp2pMediaBridge]
+    Bridge[CallMediaBridge]
     Topo[CallTopologyController]
   end
   subgraph host [base/p2p — transport]
@@ -129,9 +129,9 @@ Cancel flags without `reset()` are insufficient while `libp2p::read`/`write` is 
 
 ## Call-media session machine
 
-**Code today:** [`CallMediaDirectService`](../../src/base/p2p/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
+**Code today:** [`CallMediaDirectService`](../../src/domain/mesh/CallMediaDirectService.cpp) — **s2a landed** (`CallMediaSessionPhase` + INFO logs). Flag soup collapsed (`outbound_hello_inflight` / `pump_running` / `session_ready` → phase); `connect_settled` remains as the SM-owned Connect waiter token; `offerer_glare` is the Dialing/HelloOutbound glare bit. Phase moves go through **`ApplyLocked(event)`** (CallLifecycle-style); `SetPhaseLocked` is the logger/atomic only.  
 **Policy rows:** [HOST_RECEIVE_POLICY — 1:1 media](HOST_RECEIVE_POLICY.md#11-media-host-call-media).  
-**Product reporter:** `CallLibp2pMediaBridge` → `CallLifecycle` (`DirectConnected` / `ConnectFailed`).
+**Product reporter:** `CallMediaBridge` → `CallLifecycle` (`DirectConnected` / `ConnectFailed`).
 
 ### Phases
 
@@ -241,7 +241,7 @@ stateDiagram-v2
 
 | Item | Why not done yet |
 |------|------------------|
-| **Async `Connect(cb)` API** | Bridge (`CallLibp2pMediaBridge`) still uses blocking `Connect()` on a worker for retry loops. Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler (s1 freeze kept blocking Connect for s2). |
+| **Async `Connect(cb)` API** | Bridge (`CallMediaBridge`) still uses blocking `Connect()` on a worker for retry loops. Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler (s1 freeze kept blocking Connect for s2). |
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Other protocols still on `Blocking*`** | Dial-back, some circuit / media-relay attach JSON still use WorkerPool `BlockingRead`/`Write`. Migrate when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |

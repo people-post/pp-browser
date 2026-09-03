@@ -1,0 +1,183 @@
+#include "domain/people/ContactJson.h"
+#include "common/ValueJson.h"
+
+#include <gtest/gtest.h>
+#include "common/PbrCompat.h"
+
+namespace {
+
+using namespace pbr;
+
+Object MustParseObject(const std::string& json_utf8) {
+  auto parsed = TryParseObject(json_utf8);
+  EXPECT_TRUE(parsed.has_value()) << json_utf8;
+  return parsed.value_or(Object{});
+}
+
+TEST(ContactJsonCompat, ParsesLegacyFlatContactFields) {
+  const Object json = MustParseObject(R"({
+    "id": "c1",
+    "display_name": "Alice",
+    "nickname": "alice",
+    "relay_user_id": "relay:alice123",
+    "peer_id": "12D3KooWPeer",
+    "multiaddr": "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer",
+    "trust": "friendly"
+  })");
+
+  const Contact contact = ContactFromJson(json);
+  EXPECT_EQ(contact.id, "c1");
+  EXPECT_EQ(contact.display_name, "Alice");
+  EXPECT_EQ(contact.local.display_name, "Alice");
+  EXPECT_EQ(contact.server_nickname, "alice");
+  EXPECT_EQ(contact.remote.nickname, "alice");
+  EXPECT_EQ(contact.trust, TrustLevel::Friendly);
+  EXPECT_EQ(contact.local.trust, TrustLevel::Friendly);
+  ASSERT_EQ(contact.ids.size(), 2u);
+  EXPECT_EQ(contact.ids[0].kind, ContactIdKind::RelayUser);
+  EXPECT_EQ(contact.ids[0].value, "relay:alice123");
+  EXPECT_TRUE(contact.ids[0].primary);
+  EXPECT_EQ(contact.ids[1].kind, ContactIdKind::PeerId);
+  EXPECT_EQ(contact.ids[1].value, "12D3KooWPeer");
+  ASSERT_EQ(contact.multiaddrs.size(), 1u);
+  EXPECT_EQ(contact.multiaddrs[0], "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer");
+  EXPECT_EQ(contact.remote.fetched_at, 0);
+}
+
+TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
+  Contact contact;
+  contact.id = "c2";
+  contact.local.display_name = "Local Alice";
+  contact.local.trust = TrustLevel::Friendly;
+  contact.remote.nickname = "alice";
+  contact.remote.ids = {{ContactIdKind::RelayUser, "relay:alice", true}};
+  contact.remote.multiaddrs = {"/ip4/1.2.3.4/tcp/1/p2p/12D3"};
+  contact.remote.fetched_at = 1700000000000;
+  SyncContactMirrors(contact);
+
+  const Contact again = ContactFromJson(ContactToJson(contact));
+  EXPECT_EQ(again.local.display_name, "Local Alice");
+  EXPECT_EQ(again.remote.nickname, "alice");
+  EXPECT_EQ(again.remote.fetched_at, 1700000000000);
+  ASSERT_EQ(again.remote.ids.size(), 1u);
+  EXPECT_EQ(again.remote.multiaddrs.size(), 1u);
+  EXPECT_EQ(again.display_name, "Local Alice");
+  const Object dumped = ContactToJson(again);
+  ASSERT_TRUE(dumped.contains("overrides"));
+  const Object* overrides = dumped.getObject("overrides");
+  ASSERT_NE(overrides, nullptr);
+  EXPECT_TRUE(overrides->empty());
+}
+
+TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:demon",
+    "nickname": "demon",
+    "signing_public_key_b64": "sigkey",
+    "kem_public_key_b64": "kemkey"
+  })");
+
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  EXPECT_EQ(hit.hit_id, "relay:demon");
+  EXPECT_EQ(hit.nickname, "demon");
+  EXPECT_EQ(hit.display_name, "demon");
+  ASSERT_EQ(hit.ids.size(), 1u);
+  EXPECT_EQ(hit.ids[0].value, "relay:demon");
+  EXPECT_TRUE(hit.ids[0].primary);
+  ASSERT_TRUE(hit.signing_public_key_b64.has_value());
+  EXPECT_EQ(*hit.signing_public_key_b64, "sigkey");
+  ASSERT_TRUE(hit.kem_public_key_b64.has_value());
+  EXPECT_EQ(*hit.kem_public_key_b64, "kemkey");
+}
+
+TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
+  DirectoryHit hit;
+  hit.hit_id = "relay:x";
+  hit.display_name = "X";
+  hit.nickname = "x";
+  hit.ids = {{ContactIdKind::RelayUser, "relay:x", true}};
+  hit.signing_public_key_b64 = "sig";
+  hit.kem_public_key_b64 = "kem";
+  hit.initiation_floor = 55;
+  hit.endpoints = {{"12D3KooWX", {"/ip4/1.2.3.4/tcp/1/p2p/12D3KooWX"}, 99}};
+
+  const DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  EXPECT_EQ(again.hit_id, hit.hit_id);
+  ASSERT_TRUE(again.signing_public_key_b64.has_value());
+  EXPECT_EQ(*again.signing_public_key_b64, "sig");
+  ASSERT_TRUE(again.kem_public_key_b64.has_value());
+  EXPECT_EQ(*again.kem_public_key_b64, "kem");
+  EXPECT_EQ(again.initiation_floor, 55);
+  ASSERT_EQ(again.endpoints.size(), 1u);
+  EXPECT_EQ(again.endpoints[0].peer_id, "12D3KooWX");
+  EXPECT_EQ(again.endpoints[0].updated_at, 99);
+  ASSERT_EQ(again.multiaddrs.size(), 1u);
+}
+
+TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:y",
+    "nickname": "y",
+    "peer_id": "12D3Legacy",
+    "multiaddrs": ["/ip4/9.9.9.9/tcp/1"],
+    "endpoints": [{
+      "peer_id": "12D3New",
+      "multiaddrs": ["/ip4/1.1.1.1/tcp/1"],
+      "updated_at": 5
+    }]
+  })");
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  ASSERT_EQ(hit.endpoints.size(), 1u);
+  EXPECT_EQ(hit.endpoints[0].peer_id, "12D3New");
+  ASSERT_EQ(hit.multiaddrs.size(), 1u);
+  EXPECT_EQ(hit.multiaddrs[0], "/ip4/1.1.1.1/tcp/1");
+  bool saw_legacy = false;
+  for (const ContactId& id : hit.ids) {
+    if (id.kind == ContactIdKind::PeerId && id.value == "12D3Legacy") {
+      saw_legacy = true;
+    }
+  }
+  EXPECT_FALSE(saw_legacy);
+}
+
+TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
+  const Object json = MustParseObject(R"({"relay_user_id":"relay:y","nickname":"y"})");
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  EXPECT_EQ(hit.initiation_floor, 0);
+}
+
+TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
+  const Object json = MustParseObject(R"({
+    "relay_user_id": "relay:alice",
+    "nickname": "alice",
+    "icon": {
+      "url": "https://cdn.example/icon.jpg",
+      "blob_id": "blob-1",
+      "kind": "image/jpeg"
+    }
+  })");
+
+  const DirectoryHit hit = DirectoryHitFromJson(json);
+  ASSERT_TRUE(hit.icon.has_value());
+  EXPECT_EQ(hit.icon->url, "https://cdn.example/icon.jpg");
+  EXPECT_EQ(hit.icon->blob_id, "blob-1");
+  EXPECT_EQ(hit.icon->kind, "image/jpeg");
+
+  Contact contact;
+  contact.id = "c-icon";
+  contact.remote.nickname = hit.nickname;
+  contact.remote.ids = hit.ids;
+  contact.remote.icon = hit.icon;
+  SyncContactMirrors(contact);
+
+  const Contact again = ContactFromJson(ContactToJson(contact));
+  ASSERT_TRUE(again.remote.icon.has_value());
+  EXPECT_EQ(again.remote.icon->url, hit.icon->url);
+  EXPECT_EQ(again.remote.icon->blob_id, hit.icon->blob_id);
+
+  const DirectoryHit hit_again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  ASSERT_TRUE(hit_again.icon.has_value());
+  EXPECT_EQ(hit_again.icon->url, hit.icon->url);
+}
+
+} // namespace

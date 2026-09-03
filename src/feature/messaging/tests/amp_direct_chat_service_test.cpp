@@ -1,8 +1,8 @@
 #include "feature/messaging/AmpDirectChatService.h"
 
-#include "base/messaging/MessagingJson.h"
-#include "base/messaging/RelayWirePayload.h"
-#include "base/mesh/link/tests/mesh_test_harness.h"
+#include "common/chat/MessagingJson.h"
+#include "domain/messaging/RelayWirePayload.h"
+#include "domain/mesh/tests/support/mesh_test_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -33,15 +33,15 @@ class AmpDirectChatServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = test::AmpMeshHarness::Create();
+    auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
-    ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b", harness_->ma_b)));
-    ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("a", harness_->ma_a)));
+    ASSERT_TRUE(static_cast<bool>(harness_->chat_a().RegisterEndpoint("b", harness_->ma_b)));
+    ASSERT_TRUE(static_cast<bool>(harness_->chat_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_chat_ = std::make_unique<AmpDirectChatService>(harness_->mgr_a(), [this] { harness_->PumpBoth(); });
-    b_chat_ = std::make_unique<AmpDirectChatService>(harness_->mgr_b(), [this] { harness_->PumpBoth(); });
+    a_chat_ = std::make_unique<AmpDirectChatService>(harness_->chat_a(), [this] { harness_->PumpBoth(); });
+    b_chat_ = std::make_unique<AmpDirectChatService>(harness_->chat_b(), [this] { harness_->PumpBoth(); });
     a_chat_->Start();
     b_chat_->Start();
   }
@@ -54,7 +54,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<test::AmpMeshHarness> harness_;
+  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   std::unique_ptr<AmpDirectChatService> a_chat_;
   std::unique_ptr<AmpDirectChatService> b_chat_;
 };

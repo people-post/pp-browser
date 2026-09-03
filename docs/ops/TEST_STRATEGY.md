@@ -12,7 +12,7 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 1. **Purpose-first** — pick the question, then the cheapest layer that can answer it.
 2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node.
-3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/base/p2p/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
 4. **Three kinds of testing** (orthogonal to tiers):
 
 | Kind | Question |
@@ -104,6 +104,14 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 | Deploy smoke | Image/env/caps/reach from outside hop | Medium | Low–medium |
 | Tier C | Topology, process isolation, capacity, long soak | Highest | Highest |
 
+**AMP test suites (Tier A + B):**
+
+| Target | Tier | Role |
+|--------|------|------|
+| `pp_amp_l1_test` … `pp_amp_integration_test` | A/B | AMP L1–link + integration — **pp-cpp-amp** CI (not built in pp-browser) |
+
+**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** owned by **pp-cpp-amp** (`pp_amp_integration_test`). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Per-layer Tier A matrices: [projects/adp/L1_TEST_MATRIX.md](../../projects/adp/L1_TEST_MATRIX.md) and siblings under `projects/adp/`.
+
 ---
 
 ## Product split
@@ -136,10 +144,10 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_direct_service_test` — [`src/base/p2p/tests/call_media_direct_service_test.cpp`](../../src/base/p2p/tests/call_media_direct_service_test.cpp) |
-| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/base/p2p/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/base/p2p/tests/circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/base/p2p/tests/circuit_media_relay_compose_test.cpp) |
+| Direct call-media | `call_media_direct_service_test` — [`src/domain/mesh/tests/call_media_direct_service_test.cpp`](../../src/domain/mesh/tests/call_media_direct_service_test.cpp) |
+| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
+| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/circuit_media_relay_compose_test.cpp) |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/messaging/tests/call_lifecycle_test.cpp`](../../src/feature/messaging/tests/call_lifecycle_test.cpp) |
 
@@ -222,7 +230,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/pp_call_direct_smoke.sh`](../../scripts/pp_call_direct_smoke.sh); product `CallLibp2pMediaBridge` still untested as a unit |
+| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/pp_call_direct_smoke.sh`](../../scripts/pp_call_direct_smoke.sh); product `CallMediaBridge` still untested as a unit |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/pp_call_hop_smoke.sh`](../../scripts/pp_call_hop_smoke.sh); driver `--suite call-hop` |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/pp_call_conflict_smoke.sh`](../../scripts/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
@@ -230,7 +238,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
 
-**Product-glue hole:** `CallLibp2pMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
+**Product-glue hole:** `CallMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
 
 ---
 
@@ -296,7 +304,7 @@ Later work is intentionally underspecified until evidence exists:
 | **B** | After `N-FANOUT` green | `N-ADMIT` vs `N-CAP-*` vs browser `B-CALL-HOP` — **done:** soft N-CAP-MEDIA next |
 | **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
 | **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
-| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallLibp2pMediaBridge` glue and GUI remain deferred. |
+| **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallMediaBridge` glue and GUI remain deferred. |
 
 ---
 

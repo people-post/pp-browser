@@ -1,15 +1,15 @@
 #pragma once
 
-#include "base/crypto/ReplayWindow.h"
-#include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/E2eIngestClassifier.h"
+#include "foundation/crypto/ReplayWindow.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "domain/messaging/E2eIngestClassifier.h"
 #include "feature/messaging/PublicPskLockCoordinator.h"
-#include "base/messaging/GroupE2ePayloadCodec.h"
-#include "base/messaging/GroupRosterStore.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/PeerSigningKeyStore.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/people/IdentityStore.h"
+#include "domain/messaging/GroupE2ePayloadCodec.h"
+#include "domain/messaging/GroupRosterStore.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/people/IdentityStore.h"
 #include "common/Module.h"
 
 #include <optional>

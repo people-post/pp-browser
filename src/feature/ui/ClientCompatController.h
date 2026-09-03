@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/net/ClientCompat.h"
+#include "domain/net/ClientCompat.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingCompatPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"

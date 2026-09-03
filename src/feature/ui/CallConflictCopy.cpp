@@ -1,6 +1,6 @@
 #include "feature/ui/CallConflictCopy.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 
 namespace pbr {
 

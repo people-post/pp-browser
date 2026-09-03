@@ -1,11 +1,11 @@
 #include "feature/messaging/AmpChatHistoryService.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
-#include "base/mesh/link/tests/mesh_test_harness.h"
+#include "domain/mesh/tests/support/mesh_test_harness.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -100,16 +100,16 @@ protected:
     ASSERT_GE(sodium_init(), 0);
     data_ = std::make_unique<HistoryHarness>("svc");
 
-    auto created = test::AmpMeshHarness::Create();
+    auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     mesh_ = std::move(*created);
 
     responder_history_ = std::make_unique<AmpChatHistoryService>(
-        mesh_->mgr_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
+        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
     client_history_ = std::make_unique<AmpChatHistoryService>(
-        mesh_->mgr_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
+        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
 
-    ASSERT_TRUE(static_cast<bool>(mesh_->mgr_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
+    ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
 
     responder_history_->Start();
     client_history_->Start();
@@ -125,7 +125,7 @@ protected:
   }
 
   std::unique_ptr<HistoryHarness> data_;
-  std::unique_ptr<test::AmpMeshHarness> mesh_;
+  std::unique_ptr<pbr::test::AmpMeshHarness> mesh_;
   std::unique_ptr<AmpChatHistoryService> responder_history_;
   std::unique_ptr<AmpChatHistoryService> client_history_;
 };

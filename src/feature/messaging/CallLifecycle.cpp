@@ -1,7 +1,7 @@
 #include "feature/messaging/CallLifecycle.h"
 
 #include "feature/messaging/CallSessionManager.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
@@ -200,7 +200,7 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
-  // StopLibp2pMedia aborts Connect via connect_generation_.
+  // StopMeshMedia aborts Connect via connect_generation_.
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Critical, 
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {

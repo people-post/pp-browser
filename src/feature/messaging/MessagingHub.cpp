@@ -10,45 +10,48 @@
 
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/data/LlmPreset.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/error/AppError.h"
-#include "base/data/Libp2pRole.h"
-#include "base/data/SessionStore.h"
-#include "base/data/UserPreferences.h"
-#include "base/messaging/AttachmentCache.h"
-#include "base/messaging/DirectChatTarget.h"
-#include "base/messaging/ChatPayloadCodec.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/SendRelayOptions.h"
-#include "base/net/AttachmentClientUtil.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/HttpClient.h"
-#include "base/net/ProfileIconClientUtil.h"
-#include "base/net/ProfileIconFetchUtil.h"
-#include "base/net/RegistrationClientUtil.h"
-#include "base/people/ProfileIconCache.h"
-#include "base/platform/ProfileIconImagePrep.h"
-#include "base/people/ContactIdentity.h"
-#include "base/people/ContactTypes.h"
-#include "base/runtime/AppLifecycle.h"
-#include "base/runtime/BackgroundSyncScheduler.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/platform/NetworkConnectivity.h"
-#include "base/platform/Platform.h"
-#include "base/data/PlatformDefaults.h"
-#include "base/p2p/CircuitBridgeTarget.h"
-#include "base/p2p/CircuitRelayTypes.h"
-#include "base/p2p/MediaRelayTypes.h"
-#include "base/p2p/CircuitTunnelCoordinator.h"
-#include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/SettledWait.h"
-#include "base/people/MeshHopPolicy.h"
-#include "base/mesh/link/AdpMultiaddr.h"
-#include "base/p2p/NatTraversal.h"
-#include "base/p2p/Reachability.h"
-#include "base/runtime/StartupTiming.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/error/AppError.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/UserPreferences.h"
+#include "domain/messaging/AttachmentCache.h"
+#include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/SendRelayOptions.h"
+#include "feature/messaging/AttachmentClientUtil.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/HttpClient.h"
+#include "feature/messaging/ProfileIconClientUtil.h"
+#include "feature/messaging/ProfileIconFetchUtil.h"
+#include "feature/messaging/RegistrationClientUtil.h"
+#include "domain/people/ProfileIconCache.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
+#include "domain/people/ContactIdentity.h"
+#include "domain/people/ContactTypes.h"
+#include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/BackgroundSyncScheduler.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/NetworkConnectivity.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/data/PlatformDefaults.h"
+#include "domain/mesh/l4/circuit/CircuitBridgeTarget.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/reachability/LanMdnsDiscovery.h"
+#include "common/SettledWait.h"
+#include "domain/people/MeshHopPolicy.h"
+#include "domain/mesh/dht/DhtRecordCodec.h"
+#include "domain/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/discovery/NameDirectory.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/mesh/reachability/NatTraversal.h"
+#include "domain/mesh/reachability/Reachability.h"
+#include "common/StartupTiming.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL_timer.h>
@@ -111,9 +114,24 @@ CallStackDeps MessagingHub::MakeCallStackDeps() {
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
   deps.psk = psk_store_.get();
-  deps.p2p = p2p_.get();
+  deps.mesh_messaging = mesh_messaging_.get();
   deps.mesh = [this]() { return mesh_.get(); };
   deps.config = [this]() -> const AppConfig& { return config_; };
+  deps.list_directory_nodes = [this]() {
+    return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<MeshDirectoryNode>{};
+  };
+  deps.list_dht_nodes = [this]() {
+    if (!mesh_ || !mesh_->AmpDht()) {
+      return std::vector<MeshDirectoryNode>{};
+    }
+    return MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
+  };
+  deps.seed_dial_ok = [this]() {
+    if (!mesh_) {
+      return true;
+    }
+    return mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  };
   deps.prefetch_peer_reachability = [this](const std::string& identity) {
     PrefetchPeerReachability(identity);
   };
@@ -178,14 +196,42 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     log().warning << "relay.base_url is empty; relay client disabled";
   }
 
-  if (!directory_url.empty()) {
-    if (!http_directory_ || http_directory_url_ != directory_url) {
-      http_directory_url_ = directory_url;
-      http_directory_ = std::make_unique<HttpDirectoryClient>(http_directory_url_);
+  if (!directory_url.empty() || !config.directory.providers.empty()) {
+    DirectoryConfig dir_cfg = config.directory;
+    if (dir_cfg.base_url.empty()) {
+      dir_cfg.base_url = directory_url;
     }
-    directory_ = http_directory_.get();
+    NormalizeDirectoryConfig(dir_cfg);
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(dir_cfg);
+    std::vector<std::unique_ptr<IDirectoryClient>> backends;
+    backends.reserve(providers.size());
+    std::string fingerprint;
+    for (const ServiceEndpointConfig& provider : providers) {
+      const std::string transport = provider.transport.empty() ? "http" : provider.transport;
+      if (transport != "http") {
+        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryService +
+        // MeshDirectoryCache Amp-first fetcher (N029 nd4). Factory skips the same way.
+        continue;
+      }
+      fingerprint.append(provider.base_url).push_back('|');
+      backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
+    }
+    if (backends.empty()) {
+      directory_owned_.reset();
+      http_directory_url_.clear();
+      directory_ = nullptr;
+      log().warning << "directory providers empty; directory client disabled";
+    } else if (!directory_owned_ || http_directory_url_ != fingerprint) {
+      http_directory_url_ = std::move(fingerprint);
+      if (backends.size() == 1) {
+        directory_owned_ = std::move(backends.front());
+      } else {
+        directory_owned_ = std::make_unique<FailoverDirectoryClient>(std::move(backends));
+      }
+      directory_ = directory_owned_.get();
+    }
   } else {
-    http_directory_.reset();
+    directory_owned_.reset();
     http_directory_url_.clear();
     directory_ = nullptr;
     log().warning << "directory.base_url is empty; directory client disabled";
@@ -214,14 +260,14 @@ void MessagingHub::InstallServiceClients(const AppConfig& config) {
   UpdateServiceClients(config);
 }
 
-Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
-  StartupPhase phase("MessagingHub::StartLibp2p");
-  StopLibp2p();
-  libp2p_last_error_.clear();
+Roe<void> MessagingHub::StartMesh(const AppConfig& config) {
+  StartupPhase phase("MessagingHub::StartMesh");
+  StopMesh();
+  mesh_last_error_.clear();
 
-  Libp2pConfig libp2p_cfg = config.libp2p;
-  NormalizeLibp2pConfig(libp2p_cfg);
-  const Libp2pRole role = ResolveLibp2pRole(libp2p_cfg);
+  MeshConfig product_mesh_cfg = config.mesh;
+  NormalizeMeshConfig(product_mesh_cfg);
+  const MeshRole role = ResolveMeshRole(product_mesh_cfg);
 
   MeshHostConfig mesh_cfg;
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
@@ -230,12 +276,15 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  mesh_cfg.host_circuit_relay = role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay;
-  mesh_cfg.host_media_relay = role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay;
-  mesh_cfg.media_relay_budget = config_.libp2p.media_relay_budget;
-  mesh_cfg.media_relay_pricing = config_.libp2p.pricing.media_relay;
-  mesh_cfg.start_reachability_probe = role == Libp2pRole::Node;
-  if (role == Libp2pRole::Node) {
+  mesh_cfg.host_circuit_relay = role == MeshRole::Node && config_.mesh.capabilities.circuit_relay;
+  mesh_cfg.host_media_relay = role == MeshRole::Node && config_.mesh.capabilities.media_relay;
+  mesh_cfg.host_dht = role == MeshRole::Node && config_.mesh.capabilities.dht;
+  // Org seed / desktop Node: serve Amp directory twin (N029 nd4).
+  mesh_cfg.host_directory = role == MeshRole::Node;
+  mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
+  mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
+  mesh_cfg.start_reachability_probe = role == MeshRole::Node;
+  if (role == MeshRole::Node) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
@@ -247,16 +296,16 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
       on_reachability_updated_();
     }
   };
-  mesh_cfg.mesh_enabled = libp2p_cfg.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
+  mesh_cfg.mesh_enabled = product_mesh_cfg.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
                           mesh_cfg.host.device_ml_dsa_public_key;
   mesh_cfg.amp_udp_port =
-      libp2p_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(libp2p_cfg.amp_udp_port);
-  mesh_cfg.bootstrap_peers = libp2p_cfg.bootstrap_peers;
+      product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
+  mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<MeshHost>();
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
-    libp2p_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
+    mesh_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
     mesh_.reset();
     return started.error();
   }
@@ -266,6 +315,11 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
+  ConfigureAmpDhtService();
+  ConfigureAmpDirectoryService();
+  if (mesh_directory_cache_) {
+    mesh_directory_cache_->RequestRefresh();
+  }
   return {};
 }
 
@@ -320,8 +374,8 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
     return;
   }
 
-  const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
-  const bool node_listen = role == Libp2pRole::Node;
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool node_listen = role == MeshRole::Node;
   const bool ephemeral = Platform::IsMobile() && call_stack_ && call_stack_->WantEphemeralListen();
   if (!node_listen && !ephemeral) {
     lan_mdns_->SetAdvertisement({}, 0, {});
@@ -330,8 +384,8 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
 
   const std::string peer_id = mesh_->Amp()->LocalPeerId();
   int amp_udp = 0;
-  if (auto parsed = amp::ParseAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
-    amp_udp = static_cast<int>(parsed->endpoint.port);
+  if (auto port = UdpPortFromAdpMultiaddr(mesh_->AmpListenMultiaddr())) {
+    amp_udp = static_cast<int>(*port);
   }
   if (peer_id.empty() || amp_udp <= 0) {
     lan_mdns_->SetAdvertisement({}, 0, {});
@@ -362,18 +416,18 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
       log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << probe_ma;
       return;
     }
-    if (!(p2p_ && (adp || ma))) {
+    if (!(mesh_messaging_ && (adp || ma))) {
       return;
     }
     log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58
                << " ma=" << (ma ? *ma : "") << " adp=" << (adp ? *adp : "");
-    if (p2p_) {
+    if (mesh_messaging_) {
       if (ma) {
-        p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
+        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
       }
       if (adp) {
         log().info << "LAN mDNS amp dial peer=" << peer.peer_id_base58 << " ma=" << *adp;
-        p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
+        mesh_messaging_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *adp);
       }
     }
     if (contacts_) {
@@ -388,12 +442,12 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
               target.peer_identity_value == peer.peer_id_base58) {
             continue;
           }
-          if (p2p_) {
+          if (mesh_messaging_) {
             if (ma) {
-              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
             }
             if (auto adp2 = LanMdnsDiscovery::BuildAdpMultiaddr(peer)) {
-              p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp2);
+              mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp2);
             }
           }
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
@@ -406,8 +460,8 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
 
 
 void MessagingHub::ApplyMeshAdmissionPolicies() {
-  const bool prefer = config_.libp2p.prefer_contacts_for_routing;
-  const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  const bool prefer = config_.mesh.prefer_contacts_for_routing;
+  const bool node = ResolveMeshRole(config_.mesh) == MeshRole::Node;
   // A017: Amp listen is always on; treat mobile in-call as link-scope hosting.
   const bool mobile_ephemeral = Platform::IsMobile() && call_stack_ && call_stack_->WantEphemeralListen();
   std::unordered_set<std::string> contact_ids;
@@ -470,7 +524,7 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
 }
 
 
-void MessagingHub::StopLibp2p() {
+void MessagingHub::StopMesh() {
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;
@@ -488,7 +542,7 @@ void MessagingHub::StopLibp2p() {
     lan_mdns_.reset();
   }
   // MeshHost::Stop tears down media_relay, circuit, dial-back, and runtime (in that order).
-  // Keep bridge + dial registry alive until the libp2p host joins its workers — inbound
+  // Keep bridge + dial registry alive until the mesh host joins its workers — inbound
   // CallMediaKey wait and OpenStream completions may still touch them.
   if (mesh_) {
     mesh_->Stop();
@@ -502,7 +556,7 @@ void MessagingHub::AbortCallMediaForShutdown() {
 }
 
 void MessagingHub::RegisterContactEndpoints() {
-  if (!p2p_ || !contacts_) {
+  if (!mesh_messaging_ || !contacts_) {
     return;
   }
   auto listed = contacts_->List();
@@ -511,13 +565,13 @@ void MessagingHub::RegisterContactEndpoints() {
   }
   lan_mdns_contact_peer_ids_.clear();
   for (const Contact& contact : *listed) {
-    p2p_->RegisterContactDirectEndpoints(contact);
+    mesh_messaging_->RegisterContactDirectEndpoints(contact);
     const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
     if (target.peer_identity_value.empty()) {
       continue;
     }
     for (const std::string& ma : contact.multiaddrs) {
-      p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
+      mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
     const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
     for (const std::string& peer_id : peer_ids) {
@@ -527,6 +581,243 @@ void MessagingHub::RegisterContactEndpoints() {
   ApplyMeshAdmissionPolicies();
 }
 
+void MessagingHub::RegisterMeshDirectoryEndpoints() {
+  if (!mesh_messaging_ || !mesh_directory_cache_) {
+    return;
+  }
+  for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
+    for (const std::string& ma : node.multiaddrs) {
+      if (ma.empty()) {
+        continue;
+      }
+      mesh_messaging_->RegisterPeerDirectEndpoint(node.peer_id, ma);
+    }
+  }
+}
+
+namespace {
+
+std::vector<std::string> CollectDhtQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
+                                                 const std::vector<MeshDirectoryNode>& directory_nodes) {
+  std::vector<std::string> keys;
+  std::unordered_set<std::string> seen;
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    keys.push_back(peer_id);
+  }
+  for (const MeshDirectoryNode& node : directory_nodes) {
+    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    keys.push_back(node.peer_id);
+  }
+  return keys;
+}
+
+} // namespace
+
+void MessagingHub::RegisterDhtBootstrapEndpoints() {
+  if (!mesh_messaging_) {
+    return;
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const std::string& ma : mesh_cfg.bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+  RegisterMeshDirectoryEndpoints();
+}
+
+void MessagingHub::ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record) {
+  if (!mesh_messaging_ || peer_id.empty()) {
+    return;
+  }
+  for (const std::string& ma : record.multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
+  }
+}
+
+void MessagingHub::ConfigureAmpDhtService() {
+  if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
+    return;
+  }
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool participate = role == MeshRole::Node && config_.mesh.capabilities.dht;
+
+  RegisterDhtBootstrapEndpoints();
+
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+
+  AmpDhtServiceConfig cfg;
+  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
+  if (!mesh_->AmpListenMultiaddr().empty()) {
+    cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
+  }
+  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
+    cfg.device_signing_secret = *priv;
+  }
+  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
+    cfg.device_signing_public = *pub;
+  }
+  cfg.tunables = config_.mesh.dht;
+  cfg.query_peer_keys = CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes);
+  cfg.participate = participate;
+  cfg.publish_circuit_relay = participate && config_.mesh.capabilities.circuit_relay;
+  cfg.publish_media_relay = participate && config_.mesh.capabilities.media_relay;
+  mesh_->ConfigureAmpDht(std::move(cfg));
+  mesh_->RefreshAmpDhtHosting(participate);
+}
+
+namespace {
+
+std::string AmpDirectoryPeerKeyFromBaseUrl(const std::string& base_url) {
+  if (base_url.empty()) {
+    return {};
+  }
+  if (base_url.find('/') != std::string::npos) {
+    return PeerIdFromMultiaddr(base_url);
+  }
+  return base_url;
+}
+
+MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const MeshConfig& mesh_cfg) {
+  MeshNodeHit hit;
+  hit.entity_kind = "mesh_node";
+  if (auto loaded = identity.Get()) {
+    hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
+    if (!loaded->account_id.empty()) {
+      hit.account_id = loaded->account_id;
+    }
+    if (!loaded->nickname.empty()) {
+      hit.nickname = loaded->nickname;
+    }
+    if (!loaded->public_key_b64.empty()) {
+      hit.signing_public_key_b64 = loaded->public_key_b64;
+    }
+    if (!loaded->kem_public_key_b64.empty()) {
+      hit.kem_public_key_b64 = loaded->kem_public_key_b64;
+    }
+  }
+  if (hit.relay_user_id.empty() && mesh.Amp()) {
+    hit.relay_user_id = mesh.Amp()->LocalPeerId();
+  }
+  hit.capabilities.circuit_relay = mesh_cfg.capabilities.circuit_relay;
+  hit.capabilities.media_relay = mesh_cfg.capabilities.media_relay;
+  hit.capabilities.dht = mesh_cfg.capabilities.dht;
+  hit.capabilities.ledger_gateway = mesh_cfg.capabilities.ledger_gateway;
+  DirectoryEndpoint ep;
+  if (mesh.Amp()) {
+    ep.peer_id = mesh.Amp()->LocalPeerId();
+  }
+  if (!mesh.AmpListenMultiaddr().empty()) {
+    ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
+  }
+  for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
+    if (!ma.empty() &&
+        std::find(ep.multiaddrs.begin(), ep.multiaddrs.end(), ma) == ep.multiaddrs.end()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  if (!ep.peer_id.empty()) {
+    hit.endpoints.push_back(std::move(ep));
+  }
+  return hit;
+}
+
+} // namespace
+
+void MessagingHub::ConfigureAmpDirectoryService() {
+  if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDirectory() || !identity_) {
+    return;
+  }
+  const MeshRole role = ResolveMeshRole(config_.mesh);
+  const bool host_directory = role == MeshRole::Node;
+
+  RegisterDhtBootstrapEndpoints();
+
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+
+  std::vector<std::string> query_keys;
+  std::unordered_set<std::string> seen;
+  DirectoryConfig dir_cfg = config_.directory;
+  NormalizeDirectoryConfig(dir_cfg);
+  for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(dir_cfg)) {
+    const std::string transport = provider.transport.empty() ? "http" : provider.transport;
+    if (transport != "amp") {
+      continue;
+    }
+    const std::string key = AmpDirectoryPeerKeyFromBaseUrl(provider.base_url);
+    if (key.empty() || !seen.insert(key).second) {
+      continue;
+    }
+    query_keys.push_back(key);
+  }
+  for (const std::string& key : CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, {})) {
+    if (key.empty() || !seen.insert(key).second) {
+      continue;
+    }
+    query_keys.push_back(key);
+  }
+
+  AmpDirectoryServiceConfig cfg;
+  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
+  cfg.query_peer_keys = std::move(query_keys);
+  mesh_->ConfigureAmpDirectory(std::move(cfg));
+  mesh_->RefreshAmpDirectoryHosting(host_directory);
+
+  if (host_directory) {
+    mesh_->AmpDirectory()->SetNodesProvider([this, mesh_cfg]() {
+      std::vector<MeshNodeHit> nodes;
+      if (identity_ && mesh_) {
+        nodes.push_back(BuildLocalMeshNodeHit(*identity_, *mesh_, mesh_cfg));
+      }
+      if (mesh_directory_cache_) {
+        for (const MeshDirectoryNode& row : mesh_directory_cache_->Snapshot()) {
+          if (row.peer_id.empty()) {
+            continue;
+          }
+          MeshNodeHit hit;
+          hit.relay_user_id = row.account_id.empty() ? row.peer_id : row.account_id;
+          if (!row.account_id.empty()) {
+            hit.account_id = row.account_id;
+          }
+          if (!row.nickname.empty()) {
+            hit.nickname = row.nickname;
+          }
+          hit.entity_kind = row.entity_kind.empty() ? "mesh_node" : row.entity_kind;
+          hit.seq = row.seq;
+          hit.expires_at = row.expires_at;
+          hit.capabilities.circuit_relay = row.circuit_relay;
+          hit.capabilities.media_relay = row.media_relay;
+          hit.capabilities.dht = row.dht;
+          hit.capabilities.ledger_gateway = row.ledger_gateway;
+          DirectoryEndpoint ep;
+          ep.peer_id = row.peer_id;
+          ep.multiaddrs = row.multiaddrs;
+          hit.endpoints.push_back(std::move(ep));
+          nodes.push_back(std::move(hit));
+        }
+      }
+      return nodes;
+    });
+  }
+}
 
 bool MessagingHub::IsContactReachable(const Contact& contact) const {
   return IsContactReachableForMessaging(contact, relay_ != nullptr);
@@ -534,7 +825,7 @@ bool MessagingHub::IsContactReachable(const Contact& contact) const {
 
 
 void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
-  if (!messaging_ready_ || identity.empty() || !p2p_) {
+  if (!messaging_ready_ || identity.empty() || !mesh_messaging_) {
     return;
   }
   // Warm Brief route cache for Account→relay: (non-contact call accept / leave).
@@ -567,7 +858,15 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
-  (void)peer_id;
+  if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
+      config_.mesh.capabilities.dht) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
+      if (!result) {
+        return;
+      }
+      ApplyDhtFindPeerResult(peer_id, result->record);
+    });
+  }
 }
 
 
@@ -637,6 +936,36 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     }
   });
 
+  if (directory_) {
+    mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
+      // N029 nd4: Amp directory twin first, then HTTP INameDirectory.
+      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+        auto amp_nodes = mesh_->AmpDirectory()->ListMeshNodes();
+        if (amp_nodes) {
+          auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
+          if (!rows.empty()) {
+            return rows;
+          }
+        }
+      }
+      if (!directory_) {
+        return std::vector<MeshDirectoryNode>{};
+      }
+      DirectoryClientNameDirectory names(*directory_);
+      auto records = names.ListService("mesh_node");
+      if (!records) {
+        return records.error();
+      }
+      return MeshDirectoryNodesFromNameRecords(*records);
+    });
+    mesh_directory_cache_->SetOnUpdated([this]() {
+      RegisterMeshDirectoryEndpoints();
+      ConfigureAmpDhtService();
+      ConfigureAmpDirectoryService();
+    });
+    mesh_directory_cache_->RequestRefresh();
+  }
+
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
     secrets_->RegisterDekConsumer(psk_store_.get());
@@ -647,23 +976,23 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
-  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
-  p2p_->SetProfileDataDir(data_dir_);
-  p2p_->SetInitiationBillingStore(initiation_billing_.get());
-  p2p_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
+  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *p2p_);
+                                                               *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
-  p2p_->SetGroupMembership(group_membership_.get());
+  mesh_messaging_->SetGroupMembership(group_membership_.get());
   call_stack_->BuildSessions(MakeCallStackDeps());
   if (auto* calls = call_stack_->Calls()) {
     calls->SetInitiationBillingStore(initiation_billing_.get());
   }
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, p2p_.get());
+                                                       group_membership_.get(), registration_, mesh_messaging_.get());
 
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     group_invite_gate_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
@@ -704,44 +1033,43 @@ void MessagingHub::NotifyMessagingReady() {
 Roe<void> MessagingHub::BuildMessagingStack() {
   WireRelayAuthSigner();
 
-  if (auto libp2p = StartLibp2p(config_); !libp2p) {
-    log().warning << "libp2p host start failed: " << libp2p.error().message
+  if (auto mesh_start = StartMesh(config_); !mesh_start) {
+    log().warning << "mesh host start failed: " << mesh_start.error().message
                   << " (direct P2P unavailable; relay messaging may still work)";
   }
 
-  amp::PeerLinkManager* amp_links = nullptr;
+  IChatPeerLinks* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
-  if (mesh_ && mesh_->Amp()) {
-    amp_links = &mesh_->Amp()->Links();
-    amp_pump = [this]() {
-      if (mesh_) {
-        mesh_->Tick();
-      }
-    };
+  if (auto chat = mesh_ ? mesh_->ChatDeps() : std::nullopt; chat) {
+    amp_links = &chat->links;
+    amp_pump = std::move(chat->io.io_pump);
+    amp_worker = std::move(chat->io.post_worker);
+  }
+  if (mesh_ && amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) {
       AppRuntime::PostWorkerNormal(std::move(task));
     };
   }
 
-  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links,
                                                 std::move(amp_pump), std::move(amp_worker));
-  p2p_->SetProfileDataDir(data_dir_);
-  p2p_->SetInitiationBillingStore(initiation_billing_.get());
-  p2p_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
+  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *p2p_);
+                                                               *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
-  p2p_->SetGroupMembership(group_membership_.get());
+  mesh_messaging_->SetGroupMembership(group_membership_.get());
   call_stack_->BuildSessions(MakeCallStackDeps());
   if (auto* calls = call_stack_->Calls()) {
     calls->SetInitiationBillingStore(initiation_billing_.get());
   }
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, p2p_.get());
+                                                       group_membership_.get(), registration_, mesh_messaging_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
@@ -749,7 +1077,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   }
   RegisterContactEndpoints();
   if (agent_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, *agent_, *store_);
+    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, *agent_, *store_);
   }
   return {};
 }
@@ -795,8 +1123,8 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
 
   config_ = config;
   UpdateServiceClients(config);
-  if (p2p_) {
-    p2p_->SetRelayClient(relay_);
+  if (mesh_messaging_) {
+    mesh_messaging_->SetRelayClient(relay_);
   }
   if (actions_) {
     actions_->SetRegistrationClient(registration_);
@@ -806,8 +1134,8 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
 
 void MessagingHub::BindAgent(AgentSession& agent) {
   agent_ = &agent;
-  if (p2p_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent, *store_);
+  if (mesh_messaging_) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent, *store_);
   }
 }
 
@@ -830,13 +1158,19 @@ void MessagingHub::TickAmpMesh() {
   mesh_->Tick();
 }
 
-void MessagingHub::TickLibp2p() {
+void MessagingHub::TickMesh() {
   if (!messaging_ready_) {
     return;
   }
   // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
-  if (p2p_) {
-    p2p_->TickLibp2p();
+  if (mesh_messaging_) {
+    mesh_messaging_->TickMesh();
+  }
+  if (mesh_directory_cache_) {
+    mesh_directory_cache_->MaybeRefresh();
+  }
+  if (mesh_ && mesh_->AmpDht()) {
+    mesh_->AmpDht()->Tick();
   }
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
@@ -858,7 +1192,7 @@ void MessagingHub::StartCoordinatorTimers() {
   }
   if (hub_policy_timer_id_ == 0) {
     hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
-      TickLibp2p();
+      TickMesh();
     });
   }
   // Relay poll must not depend on ChatController::WireMessagingBindings (can skip if UI
@@ -872,8 +1206,8 @@ void MessagingHub::StartCoordinatorTimers() {
         }
       });
     }
-    if (p2p_) {
-      p2p_->SyncInboxFromWake(force);
+    if (mesh_messaging_) {
+      mesh_messaging_->SyncInboxFromWake(force);
     }
   });
   BackgroundSyncScheduler::Instance().RequestWakeSync();
@@ -896,7 +1230,7 @@ ReachabilitySnapshot MessagingHub::Reachability() const {
 }
 
 bool MessagingHub::IsHelpNetworkEnabled() const {
-  return ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  return ResolveMeshRole(config_.mesh) == MeshRole::Node;
 }
 
 void MessagingHub::SetOnReachabilityUpdated(std::function<void()> callback) {
@@ -1161,7 +1495,14 @@ Roe<BlobQuotaRecoveryPlan> MessagingHub::PlanRelayQuotaRecovery() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return PlanOldestRelayBlobDeletion(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
@@ -1174,7 +1515,14 @@ Roe<void> MessagingHub::FreeOldestRelayBlobSlot() {
   if (!blob_) {
     return Error("Blob client not configured");
   }
-  return pbr::FreeOldestRelayBlobSlot(*blob_, Identity(), ProtectedRelayBlobId(data_dir_));
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered || identity->relay_user_id.empty()) {
+    return Error("Register on the network before using relay blob storage");
+  }
+  return pbr::FreeOldestRelayBlobSlot(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
 }
 
 Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
@@ -1207,7 +1555,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   }
 
   ChatAttachmentUploadOptions upload_opts;
-  upload_opts.peer_client = p2p_ ? p2p_->PeerBlobClient() : nullptr;
+  upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
   upload_opts.contacts = contacts_.get();
   upload_opts.thread = &active;
   upload_opts.thread_id = thread_id;
@@ -1225,7 +1573,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
   const ByteVector* attachment_dek_ptr = attachment_dek.empty() ? nullptr : &attachment_dek;
 
   if (active.kind == ThreadKind::Group) {
-    auto sent = P2p().SendGroupMessage(thread_id, display, opts);
+    auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
     if (sent) {
       (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
       Attachments().MaybeBuildPoster(thread_id, *fields);
@@ -1235,7 +1583,7 @@ Roe<ThreadMessage> MessagingHub::SendAttachmentFromPath(const std::string& threa
     }
     return sent;
   }
-  auto sent = P2p().SendUserMessage(thread_id, display, opts);
+  auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
   if (sent) {
     (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
     Attachments().MaybeBuildPoster(thread_id, *fields);
@@ -1267,23 +1615,23 @@ void MessagingHub::WireAttachmentDownloads() {
   attachment_downloads_->SetProfileDataDir(data_dir_);
   attachment_downloads_->SetProfileId(profile_id_);
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
-                                                  p2p_ ? p2p_->PeerBlobClient() : nullptr);
+                                                  mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     attachment_downloads_->SetDownloadPolicy(AttachmentDownloadPolicyFromString(prefs->attachment_download_policy));
   }
   attachment_downloads_->SetOnChanged([this]() {
-    if (p2p_) {
-      p2p_->NotifyMessagesChanged();
+    if (mesh_messaging_) {
+      mesh_messaging_->NotifyMessagesChanged();
     }
   });
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
   }
-  if (p2p_) {
-    p2p_->SetAttachmentDownloads(attachment_downloads_.get());
-    if (auto* peer_blob = p2p_->PeerBlobService()) {
+  if (mesh_messaging_) {
+    mesh_messaging_->SetAttachmentDownloads(attachment_downloads_.get());
+    if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
       peer_blob->SetProfileId(profile_id_);
       if (secrets_ != nullptr) {
         secrets_->RegisterDekConsumer(peer_blob);
@@ -1320,18 +1668,18 @@ Roe<void> MessagingHub::ClearDownloadedAttachments() {
     return Error("Messaging hub not initialized");
   }
   auto cleared = Attachments().ClearAllDownloadedMedia(Store());
-  if (cleared && p2p_) {
-    p2p_->NotifyMessagesChanged();
+  if (cleared && mesh_messaging_) {
+    mesh_messaging_->NotifyMessagesChanged();
   }
   return cleared;
 }
 
 Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
                                            const std::optional<int64_t> floor_minor) {
-  if (!IsInitialized() || !IsMessagingReady() || !p2p_) {
+  if (!IsInitialized() || !IsMessagingReady() || !mesh_messaging_) {
     return Error("Messaging not ready");
   }
-  return p2p_->SendChargeRequired(peer_identity, floor_minor);
+  return mesh_messaging_->SendChargeRequired(peer_identity, floor_minor);
 }
 
 Roe<void> MessagingHub::RotateBriefLlmKey() {
@@ -1415,7 +1763,7 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
 }
 
 void MessagingHub::TickReachabilityUx() {
-  if (!config_.libp2p.node_enabled || Platform::IsMobile()) {
+  if (!config_.mesh.node_enabled || Platform::IsMobile()) {
     return;
   }
   const ReachabilitySnapshot snap = Reachability();
@@ -1442,19 +1790,21 @@ void MessagingHub::RefreshMeshCapabilities() {
     return;
   }
   if (session_store_ && session_store_->IsInitialized()) {
-    config_.libp2p = session_store_->Snapshot().config.libp2p;
+    config_.mesh = session_store_->Snapshot().config.mesh;
   }
-  const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
+  const MeshRole role = ResolveMeshRole(config_.mesh);
   // Amp L4 inbound hosting is gated via SetServeInbound (no TCP CircuitRelay/MediaRelay).
   if (mesh_->AmpCircuitTunnel()) {
-    mesh_->AmpCircuitTunnel()->SetServeInbound(role == Libp2pRole::Node &&
-                                               config_.libp2p.capabilities.circuit_relay);
+    mesh_->AmpCircuitTunnel()->SetServeInbound(role == MeshRole::Node &&
+                                               config_.mesh.capabilities.circuit_relay);
   }
   call_stack_->ResetRelayClients();
   if (mesh_->AmpMediaRelayCoord()) {
-    mesh_->AmpMediaRelayCoord()->SetServeInbound(role == Libp2pRole::Node &&
-                                                 config_.libp2p.capabilities.media_relay);
+    mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
+                                                 config_.mesh.capabilities.media_relay);
   }
+  ConfigureAmpDhtService();
+  ConfigureAmpDirectoryService();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1469,25 +1819,29 @@ void MessagingHub::Apply(const NetworkConfig& next) {
 
   const bool service_urls_changed = next.relay.base_url != config_.relay.base_url ||
                                     next.directory.base_url != config_.directory.base_url ||
+                                    next.directory.transport != config_.directory.transport ||
+                                    next.directory.providers != config_.directory.providers ||
                                     next.registration.base_url != config_.registration.base_url;
   const bool mesh_changed =
-      next.node_enabled != config_.libp2p.node_enabled ||
-      next.circuit_relay != config_.libp2p.capabilities.circuit_relay ||
-      next.media_relay != config_.libp2p.capabilities.media_relay ||
-      next.prefer_contacts_for_routing != config_.libp2p.prefer_contacts_for_routing;
+      next.node_enabled != config_.mesh.node_enabled ||
+      next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
+      next.media_relay != config_.mesh.capabilities.media_relay ||
+      next.dht != config_.mesh.capabilities.dht ||
+      next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing;
 
   config_.relay = next.relay;
   config_.directory = next.directory;
   config_.registration = next.registration;
-  config_.libp2p.node_enabled = next.node_enabled;
-  config_.libp2p.capabilities.circuit_relay = next.circuit_relay;
-  config_.libp2p.capabilities.media_relay = next.media_relay;
-  config_.libp2p.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
+  config_.mesh.node_enabled = next.node_enabled;
+  config_.mesh.capabilities.circuit_relay = next.circuit_relay;
+  config_.mesh.capabilities.media_relay = next.media_relay;
+  config_.mesh.capabilities.dht = next.dht;
+  config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
 
   if (service_urls_changed) {
     UpdateServiceClients(config_);
-    if (p2p_) {
-      p2p_->SetRelayClient(relay_);
+    if (mesh_messaging_) {
+      mesh_messaging_->SetRelayClient(relay_);
     }
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
@@ -1525,10 +1879,11 @@ MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config
   out.relay = config.relay;
   out.directory = config.directory;
   out.registration = config.registration;
-  out.node_enabled = config.libp2p.node_enabled;
-  out.circuit_relay = config.libp2p.capabilities.circuit_relay;
-  out.media_relay = config.libp2p.capabilities.media_relay;
-  out.prefer_contacts_for_routing = config.libp2p.prefer_contacts_for_routing;
+  out.node_enabled = config.mesh.node_enabled;
+  out.circuit_relay = config.mesh.capabilities.circuit_relay;
+  out.media_relay = config.mesh.capabilities.media_relay;
+  out.dht = config.mesh.capabilities.dht;
+  out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   return out;
 }
 
@@ -1557,10 +1912,19 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
       contacts = std::move(*listed);
     }
   }
-  Libp2pConfig libp2p = config_.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(libp2p.bootstrap_peers),
-                               libp2p.prefer_contacts_for_routing);
+  MeshConfig mesh_cfg = config_.mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  const bool include_seeds = !mesh_ || mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (mesh_ && mesh_->AmpDht()) {
+    dht_nodes = MeshDirectoryNodesFromDhtRecords(mesh_->AmpDht()->SnapshotRecords());
+  }
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
+                                 mesh_cfg.prefer_contacts_for_routing, include_seeds);
   if (hops.empty()) {
     return Error("no circuit hop candidates");
   }
@@ -1572,7 +1936,11 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   CircuitRelayBridgeResult last;
   last.error = "all hops failed";
 
-  amp::PeerLinkManager& links = mesh_->Amp()->Links();
+  auto circuit_deps = mesh_->CircuitDeps();
+  if (!circuit_deps) {
+    return Error("Amp circuit deps unavailable");
+  }
+  IChatPeerLinks& links = circuit_deps->links;
   for (const MeshHopCandidate& hop : hops) {
     const std::string key = hop.peer_id;
     if (!target.target_peer_id.empty() && key == target.target_peer_id) {
@@ -1612,7 +1980,7 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
 }
 
 
-void MessagingHub::SuspendLibp2pColdPeers() {
+void MessagingHub::SuspendMeshColdPeers() {
   SyncMobileEphemeralListen();
 }
 
@@ -1636,11 +2004,11 @@ void MessagingHub::Shutdown() {
   if (inbox_) {
     inbox_->SetOnThreadChanged(nullptr);
   }
-  if (p2p_) {
-    p2p_->SetOnMessagesChanged(nullptr);
-    p2p_->SetOnDeliveryNotice(nullptr);
-    p2p_->SetOnBackgroundUnread(nullptr);
-    p2p_->SetGroupMembership(nullptr);
+  if (mesh_messaging_) {
+    mesh_messaging_->SetOnMessagesChanged(nullptr);
+    mesh_messaging_->SetOnDeliveryNotice(nullptr);
+    mesh_messaging_->SetOnBackgroundUnread(nullptr);
+    mesh_messaging_->SetGroupMembership(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
@@ -1660,21 +2028,21 @@ void MessagingHub::Shutdown() {
   }
   actions_.reset();
   // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
-  StopLibp2p();
-  // Drop the call session manager before P2P — CSM holds a P2pMessagingService& reference.
+  StopMesh();
+  // Drop the call session manager before P2P — CSM holds a MeshMessagingService& reference.
   call_stack_->ResetSessions();
   if (secrets_ != nullptr) {
     if (attachment_downloads_) {
       secrets_->UnregisterDekConsumer(attachment_downloads_.get());
     }
-    if (p2p_) {
-      if (auto* peer_blob = p2p_->PeerBlobService()) {
+    if (mesh_messaging_) {
+      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
         secrets_->UnregisterDekConsumer(peer_blob);
       }
     }
   }
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
-  p2p_.reset();
+  mesh_messaging_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
@@ -1700,8 +2068,9 @@ void MessagingHub::Shutdown() {
   inbox_.reset();
   peer_labels_.reset();
   directory_shadows_.reset();
+  mesh_directory_cache_.reset();
   http_relay_.reset();
-  http_directory_.reset();
+  directory_owned_.reset();
   http_registration_.reset();
   http_push_devices_.reset();
   http_client_compat_.reset();
@@ -1726,8 +2095,8 @@ InboxController& MessagingHub::Inbox() {
   return *inbox_;
 }
 
-P2pMessagingService& MessagingHub::P2p() {
-  return *p2p_;
+MeshMessagingService& MessagingHub::MeshMessaging() {
+  return *mesh_messaging_;
 }
 
 GroupMembershipService& MessagingHub::Groups() {

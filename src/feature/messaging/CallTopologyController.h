@@ -1,12 +1,12 @@
 #pragma once
 
-#include "base/media/CallMediaEngine.h"
-#include "base/messaging/CallControlCodec.h"
-#include "base/messaging/CallSessionStore.h"
-#include "base/messaging/PeerCapsLogic.h"
-#include "base/messaging/SoftMigrateLogic.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/MeshHopPolicy.h"
+#include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallSessionStore.h"
+#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/messaging/SoftMigrateLogic.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/MeshHopPolicy.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 
@@ -66,6 +66,12 @@ public:
     ICircuitHopReach* circuit_reach = nullptr;
     std::vector<std::string> bootstrap_peers;
     bool prefer_contacts = true;
+    /** Cached mesh_node listings (n-dir). */
+    std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+    /** DHT peer_routing cache (n2-caps). */
+    std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
+    /** When false, org seed hops are omitted (bridge score / n-dir). */
+    std::function<bool()> seed_dial_ok;
     /**
      * PreferLocalMediaHop / AttachAsLocalHop — durable Node only (desktop/org).
      * Must stay false for mobile ephemeral media_relay (V027): phones must not SoftMigrate

@@ -1,26 +1,26 @@
 #pragma once
 
-#include "base/crypto/CryptoTypes.h"
-#include "base/messaging/AtAiParser.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/SendRelayOptions.h"
-#include "base/messaging/SyncStateTypes.h"
-#include "base/messaging/ThreadTypes.h"
-#include "base/net/ServiceClients.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/IdentityTypes.h"
-#include "base/people/ProfileIdentityView.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/GroupTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/messaging/SendRelayOptions.h"
+#include "common/thread/SyncStateTypes.h"
+#include "common/thread/ThreadTypes.h"
+#include "domain/net/ServiceClients.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/people/ContactTypes.h"
+#include "common/directory/IdentityTypes.h"
+#include "domain/people/ProfileIdentityView.h"
+#include "domain/ui/ChatWidgetTypes.h"
 #include "common/Error.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/MessagingUiPorts.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
 #include "feature/messaging/PskSessionCoordinator.h"
-#include "base/p2p/Reachability.h"
+#include "domain/mesh/reachability/Reachability.h"
 
 #include <cstdint>
 #include <functional>
@@ -56,7 +56,7 @@ public:
   Roe<void> SyncPushDevices(bool show_notifications);
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
-  void SuspendLibp2pColdPeers();
+  void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------
   const std::string& ActiveThreadId();
@@ -187,7 +187,7 @@ public:
   ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
-  std::string LastLibp2pError();
+  std::string LastMeshError();
   /** Desktop Node "Help the network" posture (for mesh UX projections). */
   bool IsHelpNetworkEnabled();
 

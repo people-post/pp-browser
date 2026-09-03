@@ -1,7 +1,7 @@
 #include "feature/ui/DocumentLoader.h"
 
-#include "base/i18n/LocalizationService.h"
-#include "base/platform/AssetIO.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/AssetIO.h"
 #include "feature/ui/RmlMount.h"
 
 #include <RmlUi/Core/Context.h>

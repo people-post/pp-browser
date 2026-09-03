@@ -13,7 +13,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
 2. else client left unset (should not happen after defaults / empty coalesce)
 
-Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+Native messaging code (`MeshMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
 **Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
@@ -204,11 +204,11 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | Path | Role |
 |------|------|
 | `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
-| `src/base/p2p/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
 | `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/P2pMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/messaging/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/messaging/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
 | `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |

@@ -73,7 +73,7 @@
 ## N011 — Separate `pp-node` binary for org / headless servers
 
 **Date:** 2026-07-26  
-**Decision:** Dedicated infrastructure (Brief org seeds, datacenter nodes, systemd/Docker daemons) runs **`pp-node`**, a headless binary that links the shared node runtime (libp2p host, bootstrap, later capabilities) **without** SDL/RmlUi. End-user apps remain **`pp-browser`** with in-process Client/Node (N009). Rejected as the production server path: `pp-browser --headless` / `--node-only` alone (GUI dependency weight, PIN/window coupling, poor ops images). Optional GUI `--node-only` may exist later for local dogfood only. Org seed listen stays **tcp/443**; in-app desktop Node preferred listen stays **18517** (N003). One core, two entrypoints — do not maintain a second networking stack.  
+**Decision:** Dedicated infrastructure (Brief org seeds, datacenter nodes, systemd/Docker daemons) runs **`pp-node`**, a headless binary that links the shared node runtime (mesh host, bootstrap, later capabilities) **without** SDL/RmlUi. End-user apps remain **`pp-browser`** with in-process Client/Node (N009). Rejected as the production server path: `pp-browser --headless` / `--node-only` alone (GUI dependency weight, PIN/window coupling, poor ops images). Optional GUI `--node-only` may exist later for local dogfood only. Org seed listen stays **tcp/443**; in-app desktop Node preferred listen stays **18517** (N003). One core, two entrypoints — do not maintain a second networking stack.  
 **Rationale:** Seed `3.208.41.58:443` and future org nodes need a small, non-interactive process; user desktops need a GUI. Same mesh protocols and PeerId model for both.
 
 ## N012 — Reachability status + guided network help
@@ -440,3 +440,52 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Rationale:** Customers pin Account ID / org handle, not Peer ID; durable volume (or org master seed) keeps Peer ID across container redeploys; people search stays clean; decentralization needs swappable registries.
 
 **Alternatives rejected:** Overloading person register for seeds; sidecar publish scripts as steady-state; removing bootstrap seed immediately; auto mesh-listing every desktop Node.
+
+---
+
+## N028 — AMP-native mesh DHT (FIND_PEER v1)
+
+**Date:** 2026-09-02  
+**Status:** Accepted (implemented through **n2-hard**)  
+**Spec:** [MESH_DHT.md](../../docs/contracts/MESH_DHT.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md)  
+**Amends:** N015 (n2 after n-dir); N027 (bootstrap ∪ directory)
+
+**Decision:**
+
+1. **Separate from pp-ledger DHT:** BitTorrent `DhtRunner` is retired on standalone fleet nodes (curated ADP multiaddrs). Mesh DHT is a **new** Kademlia layer on AMP — no shared code or keys with pp-ledger fleet.
+2. **Transport:** `/pp-mesh/dht/1.0.0` control channel on existing Amp associations (JSON request/response per DATA frame). No parallel UDP DHT socket.
+3. **v1 record type:** Signed `peer_routing` only (`PeerId`, `multiaddrs[]`, `seq`, `ttl`, ML-DSA-65). Capability fields deferred to **n2-caps** with the same vocabulary as directory `mesh_node`.
+4. **Participation:** `Node && mesh.capabilities.dht && reachability != Blocked`. Mobile Client never runs DHT. Default **off**.
+5. **Bootstrap:** `bootstrap_peers` ∪ `MeshDirectoryCache` snapshot (n-dir). Org seed remains L0 emergency dial; directory preferred when seed unreachable (existing n-dir bridge score).
+6. **Policy:** DHT hits enter hop/dial candidate pools as `MeshHopAffinity::DhtDiscovered` — **always** filtered by `MeshHopPolicy`, relay scope (N020/N023), and media ad filters. DHT does not bypass contact-first rules.
+7. **Non-goals v1:** content routing, pubsub, third-party STORE, ledger fleet discovery, libp2p Kademlia import.
+
+**Rationale:** Decentralized PeerId lookup helps partition escape and scale after contacts/directory; doing it on AMP keeps one stack post-libp2p retirement. Shipping spec before code avoids another transport fork.
+
+**Alternatives rejected:** Revive jech/dht in pp-browser; libp2p Kademlia module; DHT before n-dir (N015 order); DHT on mobile; open STORE without rate limits.
+
+**Cross-link:** N008 (capability checkbox ships with working protocol); media-hop L5 (directory / DHT dial assist).
+
+---
+
+## N029 — Name directory north star (chain later, HTTP now)
+
+**Date:** 2026-09-02  
+**Status:** Accepted (design)  
+**Spec:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)  
+**Amends:** N002 (L0 door only; no unpinned DNS); N027 (HTTP directory = interim phone book behind a stable port); N028 (DHT never stores names); N015 (chain/jobs after directory path).
+
+**Decision:**
+
+1. **North star:** pp-node is the uniform edge router (circuit, media, later ledger RPC). The **chain** is the eventual **name registry** (human name → PeerId[+hints]). Amp is the wire. L0 bootstrap only finds a door to the phone book. HTTP Brief and DHT are caches / reachability — **not** final name authority.
+2. **Stable seam:** All resolve/list/publish flows go through an abstract name-directory port (evolve `IDirectoryClient` / `INameDirectory`). Backends swap: HTTP (v1) → optional Amp mirror → chain as truth. UI and hop policy must not hard-wire Brief URLs or chain tx types.
+3. **Frozen record fields:** `name`/`account_id`, `peer_id`, `endpoints[]` (hints), `entity_kind`, `capabilities` (incl. future `ledger_gateway`), `seq`, `expires_at`. Prefer authoritative **name → PeerId**; multiaddrs remain hints.
+4. **No chain in first release:** Phase A ships N027 HTTP phone book + n-dir + L0 seed + DHT-as-reachability only. Phases B–D (Amp directory, ledger_gateway capability, on-chain names) follow without redesigning the port.
+5. **pp-ledger alignment:** Terminal `pp-beacon` ≠ mesh bootstrap “beacon.” Public chain access is via pp-node **`ledger_gateway`** (opaque upstream). Do not use mesh DHT to discover ledger fleet nodes. On-chain names supersede HTTP as name truth when Phase D ships.
+6. **Anti-blockers:** No unpinned DNS L0; no second display-name system beside Account ID/handle; no documenting HTTP as eternal truth; keep `entity_kind`/capabilities 1:1-mappable to future chain rows.
+
+**Rationale:** Users need memorable join/find UX before chain ships; freezing the phone-book contract now avoids a second discovery stack when ledger names land. pp-node-as-router + chain-as-phone-book is one story across comms and ledger.
+
+**Alternatives rejected:** Unpinned DNS dial as product bootstrap; teaching users PeerIds; making DHT a name registry; putting terminal ledger Beacon on public bootstrap; shipping a divergent “display name” system for v1.
+
+**Cross-link:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [platform-integration](../../../pp-ledger/docs/platform-integration.md).

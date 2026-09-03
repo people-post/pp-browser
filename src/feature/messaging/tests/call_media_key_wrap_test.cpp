@@ -1,7 +1,7 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -114,7 +114,7 @@ protected:
 
 /**
  * Product media-key defer path (B-CALL-DIRECT Tier B): answerer LoadEpochKey must see the
- * offerer's PutEpochKey after vault unlock — without this, CallLibp2pMediaBridge stays MediaPending.
+ * offerer's PutEpochKey after vault unlock — without this, CallMediaBridge stays MediaPending.
  */
 TEST_F(CallMediaKeyStoreEpochTest, PutLoadEpochKeyRoundTrip) {
   ASSERT_TRUE(keys_->SetDek(TestDek()));

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/Config.h"
+#include "foundation/data/Config.h"
 
 #include <optional>
 #include <string>
@@ -25,6 +25,7 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   PP_NODE_BOOTSTRAP_PEERS   (comma-separated multiaddrs)
  *   PP_NODE_CAP_CIRCUIT_RELAY
  *   PP_NODE_CAP_MEDIA_RELAY
+ *   PP_NODE_CAP_DHT
  *   PP_NODE_ADVERTISE_MULTIADDRS
  *   PP_NODE_MESH_PUBLISH
  *   PP_NODE_REGISTRATION_BASE_URL

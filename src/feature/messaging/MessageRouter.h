@@ -1,10 +1,10 @@
 #pragma once
 
-#include "base/messaging/AtAiParser.h"
-#include "base/messaging/IThreadStore.h"
+#include "domain/messaging/AtAiParser.h"
+#include "common/thread/IThreadStore.h"
 #include "common/Module.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 
 #include <functional>
 #include <optional>
@@ -18,7 +18,7 @@ class AgentSession;
 
 class MessageRouter : public Module {
 public:
-  MessageRouter(InboxController& inbox, P2pMessagingService& p2p, AgentSession& agent, IThreadStore& store);
+  MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging, AgentSession& agent, IThreadStore& store);
 
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);
@@ -38,7 +38,7 @@ private:
   Roe<void> RouteSharedAi(const std::string& thread_id, const std::string& prompt, AtAiMode mode);
   bool NeedsSharedAiConfirm(const std::string& thread_id) const;
 
-  P2pMessagingService& p2p_;
+  MeshMessagingService& mesh_messaging_;
   AgentSession& agent_;
   IThreadStore& store_;
   std::function<void(const std::string&, const std::optional<std::string>&)> on_local_action_;

@@ -1,19 +1,19 @@
 #pragma once
 
-#include "base/crypto/IPskSessionStore.h"
-#include "base/media/CallMediaEngine.h"
-#include "base/messaging/CallControlCodec.h"
-#include "base/messaging/CallSessionStore.h"
-#include "base/data/PricingTypes.h"
-#include "base/messaging/InitiationBillingStore.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
+#include "foundation/crypto/IPskSessionStore.h"
+#include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallSessionStore.h"
+#include "foundation/data/PricingTypes.h"
+#include "domain/messaging/InitiationBillingStore.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
-#include "feature/messaging/CallLibp2pMediaBridge.h"
+#include "feature/messaging/CallMediaBridge.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyController.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 
 #include "common/Module.h"
 
@@ -28,7 +28,7 @@ namespace pbr {
 
 /**
  * Call session lifecycle façade (a2 / V014 / a4).
- * Topology + libp2p media live in CallTopologyController / CallLibp2pMediaBridge.
+ * Topology + mesh media live in CallTopologyController / CallMediaBridge.
  */
 class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
 public:
@@ -36,7 +36,7 @@ public:
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, P2pMessagingService& p2p,
+                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, MeshMessagingService& mesh_messaging,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
@@ -50,24 +50,24 @@ public:
   /** Local capability ads for invite/accept (V030). */
   using LocalPeerCapsFn = std::function<CallPeerCaps()>;
   void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
-  /** Local libp2p PeerId (base58) for invite/accept — PeerId→relay without contacts. */
-  using LocalLibp2pPeerIdFn = std::function<std::string()>;
-  void SetLocalLibp2pPeerIdProvider(LocalLibp2pPeerIdFn callback);
+  /** Local mesh PeerId (base58) for invite/accept — PeerId→relay without contacts. */
+  using LocalMeshPeerIdFn = std::function<std::string()>;
+  void SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback);
   /** Register peer listen multiaddrs from invite/accept into the dial registry. */
   using RegisterPeerListenMultiaddrsFn =
       std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
   void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
-  /** Cache media_relay ads from invite/accept caps (keyed by libp2p PeerId). */
+  /** Cache media_relay ads from invite/accept caps (keyed by mesh PeerId). */
   void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
   /**
-   * Remember libp2p PeerId ↔ relay: for call-media stream ids (contacts often lack PeerId —
+   * Remember mesh PeerId ↔ relay: for call-media stream ids (contacts often lack PeerId —
    * PreferLocal dogfood: Moto contact had only relay: so inbound hashed PeerId ≠ SFU stream).
    */
-  void NoteLibp2pPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id);
+  void NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id);
   bool PeerHasMediaRelayCap(const std::string& peer_id) const;
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
-  void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
+  void SetCallMediaBridge(CallMediaBridge* bridge);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
@@ -160,7 +160,7 @@ private:
   void P2pNotifyRingChanged() override;
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
-  Roe<std::optional<std::string>> P2pRelayIdentityForLibp2pPeerId(const std::string& call_id,
+  Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                                   const std::string& peer_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
   bool P2pExpectGroupSfuMigration(const std::string& call_id) const override;
@@ -215,11 +215,11 @@ private:
   IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
-  P2pMessagingService& p2p_;
+  MeshMessagingService& mesh_messaging_;
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
-  CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
+  CallMediaBridge* call_media_bridge_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
@@ -228,11 +228,11 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
-  LocalLibp2pPeerIdFn local_libp2p_peer_id_;
+  LocalMeshPeerIdFn local_mesh_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
-  /** libp2p PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
+  /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
   std::unordered_map<std::string, std::string> peer_id_to_relay_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;

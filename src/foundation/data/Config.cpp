@@ -1,0 +1,189 @@
+#include "foundation/data/Config.h"
+
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/AtomicFileWrite.h"
+#include "foundation/data/ConfigJson.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/PlatformDefaults.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/Platform.h"
+#include "common/ValueJson.h"
+
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+namespace {
+
+void ApplySandboxBriefUrlRewrites(AppConfig& config) {
+  if (!SandboxMode()) {
+    return;
+  }
+  config.llm.base_url = RewriteBriefOriginUrl(config.llm.base_url);
+  config.promoted_mcp.url = RewriteBriefOriginUrl(config.promoted_mcp.url);
+  config.relay.base_url = RewriteBriefOriginUrl(config.relay.base_url);
+  config.directory.base_url = RewriteBriefOriginUrl(config.directory.base_url);
+  for (ServiceEndpointConfig& provider : config.directory.providers) {
+    provider.base_url = RewriteBriefOriginUrl(provider.base_url);
+  }
+  config.registration.base_url = RewriteBriefOriginUrl(config.registration.base_url);
+}
+
+} // namespace
+
+std::vector<ServiceEndpointConfig> EffectiveDirectoryProviders(const DirectoryConfig& config) {
+  if (!config.providers.empty()) {
+    std::vector<ServiceEndpointConfig> out;
+    out.reserve(config.providers.size());
+    for (const ServiceEndpointConfig& provider : config.providers) {
+      if (provider.base_url.empty()) {
+        continue;
+      }
+      ServiceEndpointConfig row = provider;
+      if (row.transport.empty()) {
+        row.transport = "http";
+      }
+      out.push_back(std::move(row));
+    }
+    return out;
+  }
+  if (config.base_url.empty()) {
+    return {};
+  }
+  ServiceEndpointConfig row;
+  row.base_url = config.base_url;
+  row.transport = config.transport.empty() ? "http" : config.transport;
+  return {std::move(row)};
+}
+
+void NormalizeDirectoryConfig(DirectoryConfig& config) {
+  if (config.base_url.empty() && !config.providers.empty()) {
+    for (const ServiceEndpointConfig& provider : config.providers) {
+      if (provider.base_url.empty()) {
+        continue;
+      }
+      config.base_url = provider.base_url;
+      config.transport = provider.transport.empty() ? "http" : provider.transport;
+      break;
+    }
+  }
+  if (config.transport.empty()) {
+    config.transport = "http";
+  }
+}
+McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
+  if (config.promoted_mcp.IsConfigured()) {
+    return config.promoted_mcp;
+  }
+  return defaults.promoted_mcp;
+}
+
+Config::Config() {
+  redirectLogger("Config");
+}
+
+Config& Config::Instance() {
+  static Config config;
+  return config;
+}
+
+AppConfig Config::DefaultAppConfig() {
+  AppConfig config = PlatformDefaults::For(Platform::Detect());
+  NormalizeMeshConfig(config.mesh);
+  return config;
+}
+
+std::string Config::DiscoverConfigPath(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+      return argv[i + 1];
+    }
+  }
+
+  if (const char* env = std::getenv("PP_BROWSER_CONFIG")) {
+    return env;
+  }
+
+  const std::string canonical = AppPaths::ConfigFilePath();
+  if (std::filesystem::exists(canonical)) {
+    return canonical;
+  }
+
+  return {};
+}
+
+Roe<AppConfig> Config::Load(int argc, char** argv) {
+  auto& logger = Instance().log();
+  AppConfig config = DefaultAppConfig();
+
+  const std::string path = DiscoverConfigPath(argc, argv);
+  if (path.empty()) {
+    logger.info << "No config file found; using platform defaults (model: " << config.llm.model << ")";
+    return config;
+  }
+
+  auto loaded = LoadFromFile(path);
+  if (!loaded) {
+    return loaded.error();
+  }
+
+  logger.info << "Loaded config from " << path << " (model: " << loaded->llm.model << ")";
+  return loaded.value();
+}
+
+Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) {
+    return Error("Failed to open config file: " + path);
+  }
+
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto root = TryParseObject(text);
+  if (!root) {
+    return Error("Failed to parse config: " + path);
+  }
+
+  if (auto version = root->getIf<int64_t>("config_version")) {
+    if (*version > kConfigVersion) {
+      return Error("Unsupported config version " + std::to_string(*version) + " in " + path);
+    }
+  } else if (auto version_u = root->getNonNegInt("config_version")) {
+    if (*version_u > static_cast<uint64_t>(kConfigVersion)) {
+      return Error("Unsupported config version " + std::to_string(*version_u) + " in " + path);
+    }
+  }
+
+  AppConfig config = MergeConfig(DefaultAppConfig(), *root);
+  ApplySandboxBriefUrlRewrites(config);
+  const AppConfig defaults = DefaultAppConfig();
+  if (config.relay.base_url.empty()) {
+    config.relay.base_url = defaults.relay.base_url;
+  }
+  if (config.directory.base_url.empty()) {
+    config.directory.base_url = defaults.directory.base_url;
+  }
+  NormalizeDirectoryConfig(config.directory);
+  if (config.registration.base_url.empty()) {
+    config.registration.base_url = defaults.registration.base_url;
+  }
+  ResolveConfigCredentials(config);
+  NormalizeLlmConfig(config);
+  NormalizeMeshConfig(config.mesh);
+  return config;
+}
+
+Roe<void> Config::SaveToFile(const std::string& path, const AppConfig& config) {
+  const Object root = ConfigToObject(config, kConfigVersion);
+
+  std::error_code ec;
+  std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+
+  return AtomicFileWrite::Write(path, DumpJson(root, 2));
+}
+
+} // namespace pbr

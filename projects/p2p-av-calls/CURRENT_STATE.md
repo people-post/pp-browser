@@ -78,14 +78,14 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Wrong | Right |
 |-------|-------|
 | Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
-| Extend libdatachannel for 1:1 | Removed in m2 — libp2p media only |
+| Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
 | Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |
 | Always-mounted `data-if` + Dirty for Accept layer | Presence mount via `RemountCallChrome`; Dirty only for labels/pulse inside a mounted layer |
-| Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
+| Recreate `CallMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
 | `BlockingRead` hello/ack on WorkerPool; trust peer FIN | Async hello + handshake deadline + Yamux `reset()` — [SESSION_MACHINES peer honesty](SESSION_MACHINES.md#peer-honesty-rule-stream-waits) |
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |

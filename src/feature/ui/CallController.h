@@ -1,8 +1,8 @@
 #pragma once
 
-#include "base/media/CallMediaHealth.h"
-#include "base/media/CallRingtone.h"
-#include "base/ui/ShellTypes.h"
+#include "common/media/CallMediaHealth.h"
+#include "domain/media/CallRingtone.h"
+#include "domain/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/ui/CallChromeSync.h"

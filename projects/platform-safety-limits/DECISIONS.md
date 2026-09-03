@@ -24,7 +24,7 @@
 
 | ID | Question | Options |
 |----|----------|---------|
-| O001 | `PlatformLimits.h` location | `src/common/` vs `src/base/platform/` |
+| O001 | `PlatformLimits.h` location | `src/common/` vs `src/foundation/platform/` |
 | O002 | Oversize LLM response behavior | Hard error vs truncate with user-visible notice |
 | O003 | When to land vs chat v2a | Parallel track vs after SqliteThreadStore |
 

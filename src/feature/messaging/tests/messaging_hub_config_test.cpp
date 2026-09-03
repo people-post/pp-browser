@@ -1,6 +1,6 @@
-#include "base/data/Config.h"
-#include "base/data/UserPreferences.h"
-#include "base/messaging/AttachmentDownloadPolicy.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/UserPreferences.h"
+#include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "feature/messaging/MessagingHub.h"
 
 #include <gtest/gtest.h>
@@ -10,10 +10,11 @@ TEST(MessagingHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
   config.relay.base_url = "https://relay.example";
   config.directory.base_url = "https://dir.example";
   config.registration.base_url = "https://reg.example";
-  config.libp2p.node_enabled = false;
-  config.libp2p.capabilities.circuit_relay = true;
-  config.libp2p.capabilities.media_relay = false;
-  config.libp2p.prefer_contacts_for_routing = false;
+  config.mesh.node_enabled = false;
+  config.mesh.capabilities.circuit_relay = true;
+  config.mesh.capabilities.media_relay = false;
+  config.mesh.capabilities.dht = true;
+  config.mesh.prefer_contacts_for_routing = false;
   config.llm.model = "ignored-by-network-slice";
 
   const pbr::MessagingHub::NetworkConfig slice = pbr::MessagingHub::ProjectNetwork(config);
@@ -23,13 +24,14 @@ TEST(MessagingHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
   EXPECT_FALSE(slice.node_enabled);
   EXPECT_TRUE(slice.circuit_relay);
   EXPECT_FALSE(slice.media_relay);
+  EXPECT_TRUE(slice.dht);
   EXPECT_FALSE(slice.prefer_contacts_for_routing);
 
   pbr::AppConfig other = config;
   other.llm.model = "different-llm";
   EXPECT_EQ(pbr::MessagingHub::ProjectNetwork(other), slice);
 
-  other.libp2p.node_enabled = true;
+  other.mesh.node_enabled = true;
   EXPECT_NE(pbr::MessagingHub::ProjectNetwork(other), slice);
 }
 

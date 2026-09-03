@@ -1,10 +1,10 @@
 #pragma once
 
-#include "base/i18n/LocalizationService.h"
-#include "base/people/ProfileIdentityView.h"
-#include "base/data/SessionStore.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/ClientCompat.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/people/ProfileIdentityView.h"
+#include "foundation/data/SessionStore.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
 
@@ -55,7 +55,7 @@ struct SettingsCommands {
 
   /** Messaging status without holding MessagingHub*. */
   std::function<bool()> messaging_ready;
-  std::function<std::string()> last_libp2p_error;
+  std::function<std::string()> last_mesh_error;
   /** Runtime Amp listen multiaddr (empty when mesh is down). */
   std::function<std::string()> amp_listen_multiaddr;
   std::function<SettingsReachabilityView()> load_reachability;

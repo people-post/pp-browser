@@ -1,10 +1,10 @@
 #include "feature/messaging/GroupMembershipService.h"
 
-#include "base/messaging/DirectChatTarget.h"
-#include "base/messaging/GroupMembershipCodec.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/SendRelayOptions.h"
-#include "base/people/ContactJson.h"
+#include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/messaging/GroupMembershipCodec.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/SendRelayOptions.h"
+#include "domain/people/ContactJson.h"
 
 #include "common/Utilities.h"
 
@@ -18,8 +18,8 @@ namespace pbr {
 
 GroupMembershipService::GroupMembershipService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                                GroupRosterStore& roster, GroupInviteGate& invite_gate,
-                                               P2pMessagingService& p2p)
-    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate), p2p_(p2p) {
+                                               MeshMessagingService& mesh_messaging)
+    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate), mesh_messaging_(mesh_messaging) {
   redirectLogger("GroupMembershipService");
 }
 
@@ -111,7 +111,7 @@ Roe<void> GroupMembershipService::SendInviteDirectMessage(const GroupInvitePaylo
   opts.content_type = ChatContentType::System;
   opts.payload_json = payload_json;
   opts.sender_contact_id = *local;
-  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }
@@ -264,7 +264,7 @@ Roe<void> GroupMembershipService::SendInviteResponseDirectMessage(const std::str
   opts.content_type = ChatContentType::System;
   opts.payload_json = payload_json;
   opts.sender_contact_id = *local;
-  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }
@@ -461,7 +461,7 @@ Roe<void> GroupMembershipService::SendMembershipDirectMessage(const std::string&
   opts.content_type = ChatContentType::System;
   opts.payload_json = payload_json;
   opts.sender_contact_id = *local;
-  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }

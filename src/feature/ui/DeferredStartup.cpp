@@ -1,10 +1,10 @@
 #include "feature/ui/DeferredStartup.h"
 
-#include "base/i18n/LocalizationService.h"
-#include "base/platform/IAssetLocator.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/IAssetLocator.h"
 #include "common/Logger.h"
-#include "base/runtime/StartupTiming.h"
-#include "base/crypto/ProfileUnlockGate.h"
+#include "common/StartupTiming.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ClientCompatController.h"
 #include "feature/ui/ShellNavigationPorts.h"
 

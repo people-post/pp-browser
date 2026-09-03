@@ -1,11 +1,13 @@
 #include "feature/messaging/AmpChatHistoryService.h"
 
-#include "base/messaging/ChatHistoryResponder.h"
-#include "base/messaging/MessagingJson.h"
-#include "base/messaging/MessagingLimits.h"
-#include "base/mesh/channel/ChannelPolicy.h"
-#include "base/mesh/channel/ChannelSession.h"
-#include "base/mesh/channel/Types.h"
+#include "amp/link/PeerLink.h"
+
+#include "feature/messaging/ChatHistoryResponder.h"
+#include "common/chat/MessagingJson.h"
+#include "common/chat/MessagingLimits.h"
+#include "amp/L3/ChannelPolicy.h"
+#include "amp/L3/ChannelSession.h"
+#include "amp/L3/Types.h"
 
 #include <atomic>
 #include <chrono>
@@ -50,7 +52,7 @@ struct AmpChatHistoryService::Impl {
   IThreadStore& store;
   IdentityStore& identity;
   IPskSessionStore& psk_store;
-  amp::PeerLinkManager* links = nullptr;
+  IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   std::atomic<bool> stopped{false};
@@ -63,12 +65,12 @@ struct AmpChatHistoryService::Impl {
     }
   }
 
-  void HandleInboundChannel(amp::PeerLink& link, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire)) {
       return;
     }
-    auto session = std::make_shared<amp::ChannelSession>();
-    session->Bind(*link.Mux(), channel_id, amp::ControlJsonChannelPolicy(),
+    auto session = std::make_shared<pp::amp::ChannelSession>();
+    session->Bind(*link.Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
                   [this, session](Roe<std::vector<uint8_t>> frame) {
                     if (!frame || stopped.load(std::memory_order_acquire)) {
                       return false;
@@ -109,7 +111,7 @@ struct AmpChatHistoryService::Impl {
   }
 };
 
-AmpChatHistoryService::AmpChatHistoryService(amp::PeerLinkManager& links, IoPump io_pump, IThreadStore& store,
+AmpChatHistoryService::AmpChatHistoryService(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                              IdentityStore& identity, IPskSessionStore& psk_store,
                                              WorkerPost post_worker)
     : impl_(std::make_unique<Impl>(store, identity, psk_store)), links_(links), io_pump_(std::move(io_pump)),
@@ -129,7 +131,7 @@ void AmpChatHistoryService::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kChatHistoryProtocolId, [impl = impl_.get()](amp::PeerLink& link, const uint32_t channel_id) {
+  links_.SetProtocolHandler(kChatHistoryProtocolId, [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
     impl->HandleInboundChannel(link, channel_id);
   });
 }
@@ -162,7 +164,7 @@ Roe<ChatHistoryResponse> AmpChatHistoryService::FetchChatHistory(const ChatHisto
   auto result_promise = std::make_shared<std::promise<Roe<std::string>>>();
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto session = std::make_shared<amp::ChannelSession>();
+  auto session = std::make_shared<pp::amp::ChannelSession>();
 
   auto finish = [settled, result_promise, session](Roe<std::string> value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
@@ -180,32 +182,32 @@ Roe<ChatHistoryResponse> AmpChatHistoryService::FetchChatHistory(const ChatHisto
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session, deadline,
-                                      read_timeout](Roe<void> assoc) mutable {
+                                      read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
-      finish(assoc.error());
+      finish(Error(assoc.error().message));
       return;
     }
-    links_.OpenChannel(peer_key, kChatHistoryProtocolId, amp::ControlJsonChannelPolicy(read_timeout),
+    links_.OpenChannel(peer_key, kChatHistoryProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
                        [this, peer_key, request_json, finish, settled, session, deadline,
-                        read_timeout](Roe<uint32_t> channel) mutable {
+                        read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
-                           finish(channel.error());
+                           finish(Error(channel.error().message));
                            return;
                          }
                          impl_->IoPumpUntil(
                              [&] {
                                auto* link = links_.FindLink(peer_key);
                                return link && link->Mux() &&
-                                      link->Mux()->State(*channel) == amp::ChannelState::Open;
+                                      link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
                              },
                              deadline);
                          auto* link = links_.FindLink(peer_key);
-                         if (!link || !link->Mux() || link->Mux()->State(*channel) != amp::ChannelState::Open) {
+                         if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
                            finish(Error("amp chat-history: channel open failed"));
                            return;
                          }
 
-                         session->Bind(*link->Mux(), *channel, amp::ControlJsonChannelPolicy(read_timeout),
+                         session->Bind(*link->Mux(), *channel, pp::amp::ControlJsonChannelPolicy(read_timeout),
                                        [finish](Roe<std::vector<uint8_t>> frame) {
                                          if (!frame) {
                                            finish(Error("Failed to read chat-history response"));

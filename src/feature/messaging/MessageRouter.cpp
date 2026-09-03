@@ -1,17 +1,17 @@
 #include "feature/messaging/MessageRouter.h"
 
 #include "feature/ai/AgentSession.h"
-#include "base/messaging/AtAiParser.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "domain/messaging/AtAiParser.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
-#include "base/messaging/ThreadTypes.h"
+#include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-MessageRouter::MessageRouter(InboxController& inbox, P2pMessagingService& p2p, AgentSession& agent, IThreadStore& store)
-    : p2p_(p2p), agent_(agent), store_(store) {
+MessageRouter::MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging, AgentSession& agent, IThreadStore& store)
+    : mesh_messaging_(mesh_messaging), agent_(agent), store_(store) {
   (void)inbox;
   redirectLogger("MessageRouter");
 }
@@ -49,7 +49,7 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
     user_opts.generation = "user";
     user_opts.ai_invoke_mode = "shared_full";
     user_opts.seq_owner_contact_id = seq_owner;
-    auto sent = p2p_.SendUserMessage(thread_id, prompt, user_opts);
+    auto sent = mesh_messaging_.SendUserMessage(thread_id, prompt, user_opts);
     if (!sent) {
       return sent.error();
     }
@@ -103,7 +103,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
 
   if ((*thread)->kind == ThreadKind::Direct) {
     SendRelayOptions opts;
-    auto sent = p2p_.SendUserMessage(thread_id, text, opts);
+    auto sent = mesh_messaging_.SendUserMessage(thread_id, text, opts);
     if (!sent) {
       return sent.error();
     }
@@ -112,7 +112,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
 
   if ((*thread)->kind == ThreadKind::Group) {
     SendRelayOptions group_opts;
-    auto sent = p2p_.SendGroupMessage(thread_id, text, group_opts);
+    auto sent = mesh_messaging_.SendGroupMessage(thread_id, text, group_opts);
     if (!sent) {
       return sent.error();
     }

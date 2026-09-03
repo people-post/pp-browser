@@ -5,5 +5,5 @@ pp_browser_add_feature_library(pp_feature_ai_tools
     WebSearchProvider.cpp
     WebSearchTool.cpp
   PUBLIC_LIBS
-    pp_base_net
+    pp_domain_net
     CURL::libcurl)

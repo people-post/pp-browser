@@ -1,10 +1,10 @@
 #pragma once
 
-#include "base/mesh/link/AdpMultiaddr.h"
-#include "base/mesh/link/PeerLinkManager.h"
-#include "base/p2p/AmpCircuitHopRegistry.h"
-#include "base/p2p/ICallMediaTransport.h"
-#include "base/p2p/MediaRelayTypes.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "common/media/CallMediaHealth.h"
 
 #include "common/Error.h"
 
@@ -34,7 +34,7 @@ public:
   virtual void StartClientFrameReader() = 0;
   /**
    * Unexpected guest duplex death (not Detach). Default no-op for fakes that never lose transport.
-   * Handler may be invoked on the libp2p io thread.
+   * Handler may be invoked on the mesh io thread.
    */
   virtual void SetClientTransportLostHandler(std::function<void()> /*handler*/) {}
   /** In-call hop: join local HostSession without dialing self. */
@@ -79,15 +79,15 @@ class PeerSessionDialRegistry final : public IDialRegistry {
 public:
   PeerSessionDialRegistry() = default;
 
-  void SetAmpLinks(amp::PeerLinkManager* amp_links) { amp_links_ = amp_links; }
+  void SetAmpLinks(IChatPeerLinks* amp_links) { amp_links_ = amp_links; }
   void SetAmpCircuitHops(AmpCircuitHopRegistry* hops) { amp_hops_ = hops; }
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     if (amp_links_) {
-      if (auto parsed = amp::ParseAdpMultiaddr(multiaddr)) {
+      if (IsAdpMultiaddr(multiaddr)) {
         (void)amp_links_->RegisterEndpoint(peer_key, multiaddr);
-        if (!parsed->peer_id.empty() && parsed->peer_id != peer_key) {
-          (void)amp_links_->RegisterEndpoint(parsed->peer_id, multiaddr);
+        if (auto peer_id = PeerIdFromAdpMultiaddr(multiaddr); peer_id && *peer_id != peer_key) {
+          (void)amp_links_->RegisterEndpoint(*peer_id, multiaddr);
         }
         return {};
       }
@@ -125,7 +125,7 @@ public:
   }
 
 private:
-  amp::PeerLinkManager* amp_links_ = nullptr;
+  IChatPeerLinks* amp_links_ = nullptr;
   AmpCircuitHopRegistry* amp_hops_ = nullptr;
 };
 

@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 list(APPEND CMAKE_MODULE_PATH
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/lib")
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerCache)
 pp_browser_configure_compiler_cache()
 
@@ -86,8 +85,7 @@ include(Platform)
 include(PpBrowserWarnings)
 include(PpCppCommon)
 include(PpCppCrypto)
-include(pp_lib_paths)
-include(pp_lib_libp2p)
+include(PpCppAmp)
 
 if(PP_BROWSER_IS_MOBILE)
   set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)
@@ -104,14 +102,15 @@ endif()
 include(Progress)
 find_package(Threads REQUIRED)
 
-# Owned forks before layered src/ so base/feature can link them.
-add_subdirectory(src/lib)
-
 if(PP_BROWSER_BUILD_TESTS)
   pp_configure_status("Configuring tests...")
   include(PpBrowserTesting)
   enable_testing()
   pp_browser_enable_googletest()
 endif()
+
+# Runtime asset paths: read by foundation/platform/DesktopPathProvider.cpp and the app
+# target, so it must be declared before add_subdirectory(src).
+option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
 
 add_subdirectory(src)

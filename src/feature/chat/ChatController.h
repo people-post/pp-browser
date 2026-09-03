@@ -17,13 +17,13 @@
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
 #include "feature/ui/UnlockEnsurePorts.h"
-#include "base/messaging/AtAiParser.h"
-#include "base/ai/StructuredTextParser.h"
-#include "base/ai/TurnPlan.h"
-#include "base/data/Config.h"
-#include "base/data/SessionStore.h"
+#include "domain/messaging/AtAiParser.h"
+#include "domain/ai/StructuredTextParser.h"
+#include "domain/ai/TurnPlan.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
 #include "common/Module.h"
-#include "base/ui/ChatWidgetTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>

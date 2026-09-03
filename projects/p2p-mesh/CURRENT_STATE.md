@@ -1,5 +1,7 @@
 # P2P mesh — current state
 
+> **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `foundation/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
+
 **Last updated:** 2026-08-07
 
 ## Landed
@@ -7,12 +9,14 @@
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–**N027** in [DECISIONS.md](DECISIONS.md) (N027 = mesh directory) |
+| ADRs | N001–**N029** in [DECISIONS.md](DECISIONS.md) (N027 = mesh directory; N028 = DHT; N029 = name-directory north star) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `MeshHost` + dial-back + circuit/media relay + reachability |
-| **N027** | Mesh directory `entity_kind` / pluggable providers / bootstrap→directory ([MESH_DIRECTORY.md](MESH_DIRECTORY.md)) — implementing |
+| **N027** | Mesh directory `entity_kind` / pluggable providers / bootstrap→directory ([MESH_DIRECTORY.md](MESH_DIRECTORY.md)) — implementing; interim phone book under [N029](NAME_DIRECTORY_NORTH_STAR.md) |
+| **N029** | Name directory north star — HTTP now, chain later; pp-node as edge router ([NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)) — design accepted |
+| **nd (pre-chain)** | nd1–nd5 landed — [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md); Amp twin [`MESH_DIRECTORY_AMP.md`](../../docs/contracts/MESH_DIRECTORY_AMP.md) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
 | **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
@@ -23,20 +27,20 @@
 
 | Area | State |
 |------|-------|
-| `Libp2pConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
-| Role | `ResolveLibp2pRole` — mobile Client; desktop × `node_enabled` |
+| `MeshConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
+| Role | `ResolveMeshRole` — mobile Client; desktop × `node_enabled` |
 | Listen | Client skips `host->listen`; Node tries **18517–18526** then `/tcp/0`; persist bound addr |
-| Errors | `MessagingHub::LastLibp2pError` surfaced in Me → Network |
+| Errors | `MessagingHub::LastMeshError` surfaced in Me → Network |
 | UI | Desktop **Help the network** toggle + actual listen multiaddr |
-| Tests | `Libp2pRole` helpers + ConfigJson / settings merge |
+| Tests | `MeshRole` helpers + ConfigJson / settings merge |
 
 ## np in code
 
 | Area | State |
 |------|-------|
-| Platform split | `pp_base_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_base_platform` |
-| Shared runtime | `base/p2p/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
-| Shared mesh host | `base/p2p/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
+| Platform split | `pp_foundation_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_foundation_platform` |
+| Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
+| Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use MessagingHub / inbox / calls |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
@@ -132,14 +136,16 @@
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
-| DHT | **n2** (later per N015) |
+| Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
+| DHT | **n2-hard landed** (rate limits, soft reputation, ops stats) — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |
 | Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
 1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
-2. Curated public / paid regulation / **n2 DHT** later  
-3. **L3.5** multi-hop when single-hop cannot reach B
+2. Curated public / paid regulation later  
+3. **L3.5** multi-hop when single-hop cannot reach B  
+4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/pp_node_dht_smoke.sh`)
 
 ## Follow-ups
 

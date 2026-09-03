@@ -1,11 +1,11 @@
 #pragma once
 
 #include "common/Module.h"
-#include "base/people/ContactsStore.h"
-#include "base/ui/ChatWidgetTypes.h"
-#include "base/messaging/CallTypes.h"
-#include "base/messaging/IThreadStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/ui/ChatWidgetTypes.h"
+#include "domain/messaging/CallTypes.h"
+#include "common/thread/IThreadStore.h"
+#include "common/thread/ThreadTypes.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/PeerDisplayResolver.h"

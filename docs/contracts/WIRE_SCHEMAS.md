@@ -91,7 +91,7 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 **Dedup:** relay unique key `(sender_contact_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
 
-**Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `base/messaging/MessagingJson.*`.
+**Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `common/chat/MessagingJson.*`.
 
 ---
 
@@ -398,7 +398,7 @@ Chat-shaped response (libp2p / documentation):
 | `has_more` | boolean | yes | |
 | `cursor` | object | yes | Pagination hints for caller |
 
-**Implementation:** one C++ struct pair (`ChatHistoryRequest`, `ChatHistoryResponse`) shared by `IRelayClient` and libp2p host glue — do not fork field names per transport (D072).
+**Implementation:** one C++ struct pair (`ChatHistoryRequest`, `ChatHistoryResponse`) shared by `IRelayClient` and mesh host glue — do not fork field names per transport (D072).
 
 ---
 

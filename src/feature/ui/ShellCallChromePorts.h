@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 #include "feature/ui/CallChromeSync.h"
 
 #include <functional>

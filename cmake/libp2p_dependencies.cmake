@@ -102,32 +102,10 @@ set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(fmt)
 pp_libp2p_alias(fmt fmt::fmt)
 
-# --- yaml-cpp (soralog) ---
-set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(yaml-cpp)
-pp_libp2p_alias(yaml-cpp yaml-cpp::yaml-cpp)
-
-# --- standalone Outcome (before qtils) ---
+# --- standalone Outcome ---
 pp_libp2p_add_vendored(outcome)
 if(NOT TARGET Outcome::outcome)
   message(FATAL_ERROR "Outcome::outcome target not found")
 endif()
-
-# --- qtils ---
-set(QTILS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(FORMAT_ERROR_WITH_FULLTYPE ON CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(qtils)
-pp_libp2p_alias(qtils qtils::qtils)
-
-# --- soralog ---
-set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(EXAMPLES OFF CACHE BOOL "" FORCE)
-set(CLANG_FORMAT OFF CACHE BOOL "" FORCE)
-set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
-set(CMAKE_CXX_STANDARD 20)
-pp_libp2p_add_vendored(soralog)
-pp_libp2p_alias(soralog soralog::soralog)
 
 pp_configure_status("libp2p third_party dependencies ready")

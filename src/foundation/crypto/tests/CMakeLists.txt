@@ -1,0 +1,1 @@
+pp_browser_add_foundation_folder_tests(pp_foundation_crypto pp_browser_crypto_test)

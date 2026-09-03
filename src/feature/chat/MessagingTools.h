@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/ToolRegistry.h"
+#include "domain/ai/ToolRegistry.h"
 
 namespace pbr {
 

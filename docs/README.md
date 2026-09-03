@@ -20,7 +20,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | Doc | Topic |
 |-----|--------|
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
-| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | `app → feature → base → common` |
+| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → foundation → common` (today: foundation+domain still under `base/`) |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
@@ -48,9 +48,13 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |
 | [contracts/SERVICE_ENDPOINTS.md](contracts/SERVICE_ENDPOINTS.md) | HTTP relay / directory / registration | `/v1/…` surface |
+| [contracts/MESH_DHT.md](contracts/MESH_DHT.md) | AMP Kademlia peer routing (n2 draft) | wire `version` 1, `protocol_id` `/pp-mesh/dht/1.0.0` |
+| [contracts/MESH_DIRECTORY_AMP.md](contracts/MESH_DIRECTORY_AMP.md) | Amp directory twin of HTTP phone book (N029 nd4) | `/pp-mesh/directory/1.0.0`, Amp-first then HTTP |
 | [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
 | [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
 | [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3); ownership hierarchy [A027] | `channel_frame_version`, `protocol_id` |
+| [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
+| [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 

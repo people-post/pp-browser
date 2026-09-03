@@ -1,12 +1,14 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
-#include "base/messaging/GroupTypes.h"
-#include "base/messaging/MessagingJson.h"
-#include "base/net/RegistrationClientUtil.h"
-#include "base/people/ContactIdentity.h"
-#include "base/people/ContactTypes.h"
+#include "domain/messaging/GroupTypes.h"
+#include "common/chat/MessagingJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "feature/messaging/RegistrationClientUtil.h"
+#include "domain/people/ContactIdentity.h"
+#include "domain/people/ContactJson.h"
+#include "domain/people/ContactTypes.h"
 #include "feature/messaging/GroupMembershipService.h"
-#include "feature/messaging/P2pMessagingService.h"
+#include "feature/messaging/MeshMessagingService.h"
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -16,9 +18,9 @@ namespace pbr {
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
                                                  IdentityStore& identity, IThreadStore& store,
                                                  GroupMembershipService* groups, IRegistrationClient* registration,
-                                                 P2pMessagingService* p2p)
+                                                 MeshMessagingService* mesh_messaging)
     : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
-      registration_(registration), p2p_(p2p) {
+      registration_(registration), mesh_messaging_(mesh_messaging) {
   redirectLogger("ContactActionDispatcher");
 }
 
@@ -36,8 +38,8 @@ void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::s
 
 namespace {
 
-void RegisterKeysFromHit(P2pMessagingService* p2p, const DirectoryHit& hit) {
-  if (!p2p) {
+void RegisterKeysFromHit(MeshMessagingService* mesh_messaging, const DirectoryHit& hit) {
+  if (!mesh_messaging) {
     return;
   }
   const auto account_id = PrimaryAccountIdFromHit(hit);
@@ -45,11 +47,11 @@ void RegisterKeysFromHit(P2pMessagingService* p2p, const DirectoryHit& hit) {
     return;
   }
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
-    p2p->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *account_id,
+    mesh_messaging->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *account_id,
                                 *hit.signing_public_key_b64, "directory");
   }
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
-    p2p->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
+    mesh_messaging->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *account_id, *hit.kem_public_key_b64,
                             "directory");
   }
 }
@@ -70,13 +72,13 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       contact_id = *cid;
     } else if (const Object* hit_obj = payload->getObject("directory_hit")) {
       const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
-      RegisterKeysFromHit(p2p_, hit);
+      RegisterKeysFromHit(mesh_messaging_, hit);
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
         return contact.error();
       }
-      if (p2p_) {
-        p2p_->RegisterContactDirectEndpoints(*contact);
+      if (mesh_messaging_) {
+        mesh_messaging_->RegisterContactDirectEndpoints(*contact);
       }
       contact_id = contact->id;
     } else {
@@ -86,12 +88,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!thread) {
       return thread.error();
     }
-    if (p2p_) {
+    if (mesh_messaging_) {
       auto contact = contacts_.Get(contact_id);
       if (contact && *contact) {
-        p2p_->RegisterContactDirectEndpoints(**contact);
+        mesh_messaging_->RegisterContactDirectEndpoints(**contact);
       }
-      p2p_->WarmPeerForThread(thread->id);
+      mesh_messaging_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
       on_action_message_("Opened conversation with " + thread->title);
@@ -108,13 +110,13 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!thread) {
       return thread.error();
     }
-    if (p2p_) {
+    if (mesh_messaging_) {
       auto contact = contacts_.Get(*contact_id);
       if (contact && *contact) {
-        p2p_->RegisterContactDirectEndpoints(**contact);
+        mesh_messaging_->RegisterContactDirectEndpoints(**contact);
       }
-      (void)p2p_->EnsurePskGenerated(thread->id);
-      p2p_->WarmPeerForThread(thread->id);
+      (void)mesh_messaging_->EnsurePskGenerated(thread->id);
+      mesh_messaging_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
       on_action_message_("Opened secure conversation with " + thread->title);
@@ -128,13 +130,13 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       return Error("Missing directory_hit");
     }
     const DirectoryHit hit = DirectoryHitFromJson(*hit_obj);
-    RegisterKeysFromHit(p2p_, hit);
+    RegisterKeysFromHit(mesh_messaging_, hit);
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
       return contact.error();
     }
-    if (p2p_) {
-      p2p_->RegisterContactDirectEndpoints(*contact);
+    if (mesh_messaging_) {
+      mesh_messaging_->RegisterContactDirectEndpoints(*contact);
     }
     if (on_action_message_) {
       on_action_message_("Added " + contact->display_name + " to contacts");

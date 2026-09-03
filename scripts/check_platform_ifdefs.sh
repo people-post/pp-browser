@@ -39,20 +39,20 @@ check_tree() {
 
 check_tree "feature/ must not use OS #ifdefs" src/feature
 check_tree "app/ must not use OS #ifdefs" src/app
-check_tree "base/data/ must not use OS #ifdefs" src/base/data
-check_tree "base/net/ must not use OS #ifdefs" src/base/net
-check_tree "base/ai/ must not use OS #ifdefs" src/base/ai
-check_tree "base/crypto/ must not use OS #ifdefs" src/base/crypto
-check_tree "base/messaging/ must not use OS #ifdefs" src/base/messaging
-check_tree "base/people/ must not use OS #ifdefs" src/base/people
-check_tree "base/ui/ must not use OS #ifdefs" src/base/ui
-check_tree "base/error/ must not use OS #ifdefs" src/base/error
-check_tree "base/i18n/ must not use OS #ifdefs" src/base/i18n
-check_tree "base/runtime/ must not use OS #ifdefs" src/base/runtime
+check_tree "base/data/ must not use OS #ifdefs" src/foundation/data
+check_tree "domain/net/ must not use OS #ifdefs" src/domain/net
+check_tree "domain/ai/ must not use OS #ifdefs" src/domain/ai
+check_tree "base/crypto/ must not use OS #ifdefs" src/foundation/crypto
+check_tree "domain/messaging/ must not use OS #ifdefs" src/domain/messaging
+check_tree "domain/people/ must not use OS #ifdefs" src/domain/people
+check_tree "domain/ui/ must not use OS #ifdefs" src/domain/ui
+check_tree "foundation/error/ must not use OS #ifdefs" src/foundation/error
+check_tree "foundation/i18n/ must not use OS #ifdefs" src/foundation/i18n
+check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
-check_tree "base/media/ portable TUs must not use OS #ifdefs" src/base/media \
+check_tree "domain/media/ portable TUs must not use OS #ifdefs" src/domain/media \
   "${BACKEND_GLOBS[@]}"
-check_tree "base/p2p/ portable TUs must not use OS #ifdefs" src/base/p2p \
+check_tree "domain/mesh/ portable TUs must not use OS #ifdefs" src/domain/mesh \
   "${BACKEND_GLOBS[@]}"
 
 check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cpp, Logger.h)" src/common \
@@ -60,7 +60,7 @@ check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cp
 
 if [[ "$FAIL" -ne 0 ]]; then
   echo ""
-  echo "Move OS-specific code to src/base/platform/, or a dedicated"
+  echo "Move OS-specific code to src/foundation/platform/, or a dedicated"
   echo "*_{Win32,Posix,Darwin,Linux,Android,Ios,Default} backend next to the module."
   echo "See docs/architecture/PLATFORM_CODE.md"
   exit 1

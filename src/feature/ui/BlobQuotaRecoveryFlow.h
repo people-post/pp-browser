@@ -1,12 +1,12 @@
 #pragma once
 
-#include "base/net/BlobQuotaUtil.h"
-#include "base/runtime/AppRuntime.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/i18n/LocalizationService.h"
-#include "base/messaging/AttachmentCache.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/messaging/AttachmentCache.h"
 
 #include <functional>
 #include <utility>

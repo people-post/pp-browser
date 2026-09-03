@@ -152,8 +152,8 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 
 | Concern | Location |
 |---------|----------|
-| Frame IO | `src/base/p2p/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
-| JSON frames | `src/base/p2p/StreamJsonFrame.*` |
+| Frame IO | `src/domain/mesh/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
+| JSON frames | `src/domain/mesh/StreamJsonFrame.*` |
 | Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
 | Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
 | Chat blob | `src/feature/messaging/Libp2pChatBlobService.*` |

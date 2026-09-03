@@ -1,5 +1,5 @@
-#include "base/data/Config.h"
-#include "base/data/LlmPreset.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
 #include "feature/settings/SettingsLogic.h"
 #include "feature/settings/SettingsUiState.h"
 
@@ -113,11 +113,11 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   EXPECT_EQ(network.relay.base_url, defaults.relay.base_url);
   EXPECT_EQ(network.directory.base_url, defaults.directory.base_url);
   EXPECT_EQ(network.registration.base_url, defaults.registration.base_url);
-  EXPECT_FALSE(network.libp2p.node_enabled);
-  EXPECT_FALSE(network.libp2p.bootstrap_peers.empty());
+  EXPECT_FALSE(network.mesh.node_enabled);
+  EXPECT_FALSE(network.mesh.bootstrap_peers.empty());
 
   pbr::SettingsUiState reset_node = network_state;
   reset_node.node_enabled = "on";
   const pbr::AppConfig after_reset = pbr::ApplyNetworkSettingsDraft(defaults, reset_node);
-  EXPECT_TRUE(after_reset.libp2p.node_enabled);
+  EXPECT_TRUE(after_reset.mesh.node_enabled);
 }

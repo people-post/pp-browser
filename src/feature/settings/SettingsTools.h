@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/ToolRegistry.h"
+#include "domain/ai/ToolRegistry.h"
 #include "feature/settings/SettingsCommands.h"
 
 namespace pbr {
@@ -16,7 +16,7 @@ struct SettingsToolPorts {
   std::function<void(const std::string& appearance_pref)> apply_appearance;
   std::function<SessionStore&()> session_store;
   std::function<bool()> messaging_ready;
-  std::function<std::string()> last_libp2p_error;
+  std::function<std::string()> last_mesh_error;
   std::function<SettingsReachabilityView()> load_reachability;
   std::function<PinProtectionView()> load_pin_protection;
   std::function<void(bool try_upnp)> run_reachability_probe;

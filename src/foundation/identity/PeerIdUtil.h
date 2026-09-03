@@ -1,0 +1,14 @@
+#pragma once
+
+#include "common/Error.h"
+
+#include <string>
+#include <vector>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+/** Derive mesh PeerId (base58) from a raw ML-DSA-65 public key (1952 bytes). */
+Roe<std::string> PeerIdFromMlDsaPublicKey(const std::vector<uint8_t>& public_key);
+
+} // namespace pbr

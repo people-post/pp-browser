@@ -2,7 +2,7 @@
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/ShellNavigationPorts.h"
-#include "base/ui/ShellTypes.h"
+#include "domain/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>
 #include <string>

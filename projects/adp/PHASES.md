@@ -50,7 +50,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D1 — L2 Session (MSH + full AEAD)
 
-- [x] `src/base/mesh/session/` + `pp_base_mesh_session`
+- [x] `src/lib/amp/L2/` + `pp_base_mesh_session`
 - [x] MSH v1 state machine + KDF (`K_assoc`, `K_session`)
 - [x] Seal/open with AAD (`session_epoch`, `channel_id`, `channel_seq`)
 - [x] Rekey (epoch bump; `k_assoc` stable, send/recv rotate)
@@ -58,7 +58,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D2 — L3 Channel mux
 
-- [x] `src/base/mesh/channel/` + `pp_base_mesh_channel`
+- [x] `src/lib/amp/L3/` + `pp_base_mesh_channel`
 - [x] OPEN/ACK/DATA/CLOSE/RESET
 - [x] Channel 0 capability plane
 - [x] QoS map (channel class → ADP Reliable/BE)
@@ -72,7 +72,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D4 — PeerLinkManager
 
-- [x] `src/base/mesh/link/` + `pp_base_mesh_link`
+- [x] `src/lib/amp/link/` + `pp_base_mesh_link`
 - [x] `EnsureAssociation` + `OpenChannel` API
 - [x] Multiaddr `/ip4/.../udp/.../adp/1.0.0/p2p/...`
 - [x] Warm/cold, backoff (ported from `PeerSessionManager` shape)
@@ -106,7 +106,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 - [x] **D7a** Channel tunnel — `ChannelBridge` splice + **`CircuitTunnelCoordinator`** / `CircuitBundleLogic` on `MeshRuntime` ([A022](DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)); non-blocking `StartBridge` (no `IoPumpUntil`)
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
-- [x] `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
+- [x] `pp_browser_mesh_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 - [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
 - [x] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
 
@@ -149,9 +149,10 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ```bash
 cmake -S . -B build -DPP_BROWSER_BUILD_TESTS=ON
-cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_p2p_test -j
-./build/src/base/adp/tests/pp_browser_adp_test
-./build/src/base/mesh/session/tests/pp_browser_amp_session_test
-./build/src/base/mesh/channel/tests/pp_browser_amp_channel_test
-./build/src/base/mesh/link/tests/pp_browser_amp_link_test
+cmake --build build --target pp_browser_adp_test pp_browser_amp_session_test pp_browser_amp_channel_test pp_browser_amp_link_test pp_browser_amp_integration_test pp_browser_mesh_test -j
+./build/src/lib/amp/L1/tests/pp_browser_adp_test
+./build/src/lib/amp/L2/tests/pp_browser_amp_session_test
+./build/src/lib/amp/L3/tests/pp_browser_amp_channel_test
+./build/src/lib/amp/link/tests/pp_browser_amp_link_test
+./build/src/lib/amp/tests/integration/pp_browser_amp_integration_test
 ```

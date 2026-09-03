@@ -1,13 +1,13 @@
 # Current state — ADP / AMP
 
-**As of:** 2026-08-31
+**As of:** 2026-09-01
 
 ## Landed (L1)
 
 - Project docs + ADRs A001–A020
-- `src/base/adp/` → `pp_base_adp` (Asio-free)
+- `src/lib/amp/L1/` → `pp_base_adp` (Asio-free)
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
-- `pp_browser_adp_test` (26 tests)
+- `pp_browser_adp_test` (40 tests)
 - Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
 
 ## Landed (stack spec — D0)
@@ -25,26 +25,28 @@
 
 ## Landed (L2 — D1)
 
-- `src/base/mesh/session/` → `pp_base_mesh_session`
+- `src/lib/amp/L2/` → `pp_base_mesh_session`
 - MSH v1 handshake (ML-KEM + ML-DSA identity bind), session key derivation
 - `Session` seal/open (XChaCha20-Poly1305 + AAD), rekey
-- `pp_browser_amp_session_test` (8 tests, green)
+- `pp_browser_amp_session_test` (46 tests, green)
 
 ## Landed (L3 — D2)
 
-- `src/base/mesh/channel/` → `pp_base_mesh_channel`
+- `src/lib/amp/L3/` → `pp_base_mesh_channel`
 - L3 wire codec, `ChannelMux`, `ChannelSession`, channel 0 capability plane
 - FRAG reassembly for large payloads; QoS class → ADP Reliable/BestEffort
 - D3 fragmentation edge tests (reorder, loss, dup, timeout)
-- `pp_browser_amp_channel_test` (14 tests, green)
+- `pp_browser_amp_channel_test` (16 tests, green)
 
 ## Landed (link layer — D4)
 
-- `src/base/mesh/link/` → `pp_base_mesh_link`
+- `src/lib/amp/link/` → `pp_base_mesh_link`
 - ADP multiaddr parse/format, MSH-over-ADP (chunked), `PeerLinkManager`, `MeshPump`, **`MeshRuntime`**
 - PeerId from MSH identity; inbound link adopt/rekey to registered alias
 - `EnsureAssociation` + `OpenChannel` over `MemoryDatagramIo`
-- `pp_browser_amp_link_test` (5 tests, green)
+- `pp_browser_amp_link_test` (9 link unit tests, green)
+- `pp_browser_amp_integration_test` (15 Tier B tests, green)
+- Shared harness: `src/lib/amp/tests/support/` (AMP tests); L4 compose: `src/domain/mesh/tests/support/`
 
 ## Landed (L4 chat — D5)
 
@@ -62,8 +64,8 @@
 - SoftMigrate audio reopen gated to Android settle (`CaptureReopenSettleDelayMs() > 0`)
 - Connect timeout does not `Detach()` when inbound already `IsActive()`
 - Optional `WorkerPost` for inbound hello (matches libp2p worker-lane stall tests)
-- `pp_browser_p2p_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
-- Shared AMP test harness: `mesh_test_harness.h` + `MeshRuntime`
+- `pp_browser_mesh_test` — `CallMediaBundleLogicTest` + `CallMediaLeg*` cases
+- Shared AMP test harness: `src/lib/amp/tests/support/mesh_test_harness.h` + `MeshRuntime`
 
 ### LAN dogfood checklist (call-media / A026)
 
@@ -78,13 +80,13 @@
 - `CircuitTunnelCoordinator` — non-blocking `StartBridge` on `MeshRuntime` (callbacks + `PostToIo`; no nested `Pump`)
 - `ChannelBridge` — io-thread DATA splice armed after handshake
 - Bridge JSON + admission parity with libp2p circuit; parallel stack only ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
-- `pp_browser_p2p_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
+- `pp_browser_mesh_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 
 ## Landed (L4 media-relay — D7b / A022)
 
 - `MediaRelayBundleLogic` — admit / ack / default quote helpers (reuses `MediaRelayAttachSm` + `MediaRelayLogic`)
 - `AmpMediaRelayCoordinator` — non-blocking `StartQuote` / `StartAttach` on `MeshRuntime`
-- `pp_browser_p2p_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
+- `pp_browser_mesh_test` — `MediaRelayBundleLogicTest` + `AmpMediaRelayCoordinatorTest`
 - Fan-out SoftMigrate / MeshHost wire deferred
 
 ## Landed (D8 ch0 — partial)
@@ -101,12 +103,12 @@
 
 - `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer
 - **`MeshHost` Amp underlay** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys) / D10): `mesh_enabled` / `AttachAmpStack`; hard-require Amp; `Tick` pumps Amp
-- **Product wiring:** `libp2p.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickLibp2p` calls `mesh_->Tick()` so Amp pumps
-- `pp_browser_p2p_test` — `MeshHostAmpTest.AttachAmpStackParallelNoLibp2p`
+- **Product wiring:** `mesh.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickMesh` calls `mesh_->Tick()` so Amp pumps
+- `pp_browser_mesh_test` — `MeshHostAmpTest.AttachAmpStackParallelNoMeshHost`
 
 ## Landed (D9 step 3 — chat/history single entry)
 
-- **Composition cutover:** when `MeshHost::Amp()` is up, `P2pMessagingService` constructs `AmpDirectChatService` + `AmpChatHistoryService` only (no dual chat handlers; [A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
+- **Composition cutover:** when `MeshHost::Amp()` is up, `MeshMessagingService` constructs `AmpDirectChatService` + `AmpChatHistoryService` only (no dual chat handlers; [A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - Blob / call-media / circuit / dial-back remain on libp2p
 - ADP endpoints registered from contacts, ch0 ingest, Identify Amp listen push, and LAN mDNS TXT `amp_udp=`
 - Without an ADP multiaddr, direct chat falls back to relay (TCP-only contacts)
@@ -149,7 +151,7 @@
 - **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
 - **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link
 - **MeshHost** enables nested carrier accept whenever Amp L4 is up
-- `pp_browser_p2p_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
+- `pp_browser_mesh_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)
 
 ## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
 
@@ -200,11 +202,27 @@
 - **Default Brief bootstrap** — ADP MA `/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooW…`
 - Product TCP L4 sources deleted earlier in A017 wave
 
+## Landed (Track A — integration matrix + wire rekey)
+
+- [TEST_MATRIX.md](TEST_MATRIX.md) — `A-INT-01` … `A-INT-09` mapped to STACK failure rows
+- `amp_integration_harness.h` + `amp_integration_test.cpp` in `pp_browser_amp_link_test` (9 Tier-B tests)
+- `SessionControl` codec (wire v2 on ch0) + `Session::ApplyRekey` grace window (1000 ms)
+- `PeerLink::RequestSessionRekey()` — coordinated rekey over ch0 after capability exchange
+- `pp_browser_amp_session_test` — `SessionControlCodecTest`, `SessionRekeyGraceTest`
+
+## Landed (Track A-adv — adversarial hardening)
+
+- `PeerLinkConfig::dial_timeout` enforced in `PeerLinkManager::Tick` (Handshaking/Dialing)
+- `PeerLinkConfig::max_links` enforced on outbound dial + inbound accept
+- `A-ADV-02` … `A-ADV-08` integration tests (see [TEST_MATRIX.md](TEST_MATRIX.md))
+- `ChannelMux::InjectSealedForTest` — harness hook for sealed FRAG injection
+
 ## Next (implementation)
 
 1. **Listen policy polish** / mDNS-only edge cases (D8 follow-on)
 2. **Org seed deploy** — ship `pp-node` with `PP_NODE_AMP_UDP_PORT=443` so default ADP bootstrap dials succeed
 3. **A027 follow-on** — migrate L4 TearDown-from-`on_frame_` to signal → parent drop after dispatch (call-media / media-relay / circuit); see repo [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md)
+4. **A-INT-10** (stretch) — MSH chunk loss + ADP rtx during handshake
 
 ### D9 cutover checklist
 

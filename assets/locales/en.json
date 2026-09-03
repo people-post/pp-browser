@@ -164,6 +164,8 @@
     "settings.network.circuit_relay_hint": "Let other people reach each other through this computer.",
     "settings.network.media_relay": "Help host calls",
     "settings.network.media_relay_hint": "Forward call audio/video for others (you can't listen in).",
+    "settings.network.dht": "Peer discovery (DHT)",
+    "settings.network.dht_hint": "Help peers find each other on the mesh. Uses extra bandwidth when enabled.",
     "settings.network.prefer_contacts": "Friends first",
     "settings.network.prefer_contacts_hint": "Prefer your contacts when connecting, and when helping. Turn off to help the wider network too.",
 

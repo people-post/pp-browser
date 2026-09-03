@@ -1,2 +1,0 @@
-pp_browser_add_base_folder_tests(pp_base_mesh_session pp_browser_amp_session_test
-  LINK_LIBS pp_base_adp)

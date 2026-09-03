@@ -10,7 +10,7 @@
 4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and tier-specific ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
 6. **Storage abstraction** — `IPskSessionStore` seam; v1 backing store is `profile.db` `chat_targets` (E008/D084); keychain backend later.
-7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `P2pMessagingService` dependencies.
+7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `MeshMessagingService` dependencies.
 
 ## Three chat tiers (E021 / D089)
 
@@ -129,7 +129,7 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 |------|----------|
 | `IPeerSigningKeyResolver` | `src/base/messaging/` |
 | `PeerSigningKeyStore` | `src/base/messaging/` or `src/base/people/` |
-| `AutoKeyEstablishment` | `src/base/crypto/` |
+| `AutoKeyEstablishment` | `src/foundation/crypto/` |
 | Ingest wiring | `src/feature/messaging/` receive pipeline step 2 + 7 |
 
 ### Session key derivation (E015)

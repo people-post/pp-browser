@@ -1,19 +1,19 @@
 #include "feature/messaging/CallTopologyController.h"
 
-#include "base/media/CallMediaAdaptation.h"
-#include "base/messaging/HopHintLogic.h"
-#include "base/messaging/InitiationPricing.h"
-#include "base/messaging/SfuAttachFanout.h"
-#include "base/messaging/SfuAttachWaitLogic.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/people/ContactTypes.h"
-#include "base/people/MeshHopPolicy.h"
-#include "base/people/PeerDisplayLabel.h"
-#include "base/platform/PlatformUserHints.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/runtime/ProductBranding.h"
+#include "domain/media/CallMediaAdaptation.h"
+#include "domain/messaging/HopHintLogic.h"
+#include "domain/messaging/InitiationPricing.h"
+#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/SfuAttachWaitLogic.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/MeshHopPolicy.h"
+#include "domain/people/PeerDisplayLabel.h"
+#include "foundation/platform/PlatformUserHints.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
-#include "base/p2p/CallMediaFrameCrypto.h"
+#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -118,9 +118,17 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
   if (auto listed = contacts_.List()) {
     contacts = std::move(*listed);
   }
-  auto contact_hops = CollectContactHopCandidates(contacts);
-  auto seed_hops = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
-  auto merged = OrderCircuitHops(std::move(contact_hops), std::move(seed_hops), relay_deps_.prefer_contacts);
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (relay_deps_.list_directory_nodes) {
+    directory_nodes = relay_deps_.list_directory_nodes();
+  }
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (relay_deps_.list_dht_nodes) {
+    dht_nodes = relay_deps_.list_dht_nodes();
+  }
+  const bool include_seeds = !relay_deps_.seed_dial_ok || relay_deps_.seed_dial_ok();
+  auto merged = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, relay_deps_.bootstrap_peers,
+                                    relay_deps_.prefer_contacts, include_seeds);
   auto ranked = RankMediaHopsEscalating(std::move(merged), relay_deps_.prefer_contacts,
                                         relay_deps_.local_listen_multiaddr);
   if (relay_deps_.relay) {
@@ -248,7 +256,7 @@ void CallTopologyController::PollPendingSfuAttach() {
   if (auto joined = sessions_.CountJoined(call_id)) {
     in.joined_count = *joined;
   }
-  in.media_active_p2p_for_call =
+  in.media_active_mesh_for_call =
       media_.IsActive() && media_.ActiveCallId() == call_id && !media_.IsSfuMode();
 
   switch (PollSfuAttachWait(in)) {

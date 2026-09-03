@@ -1,19 +1,19 @@
 #include <stdexcept>
 #include "feature/ui/CallController.h"
 
-#include "base/i18n/LocalizationService.h"
-#include "base/media/CallAudioSession.h"
-#include "base/media/CallMediaEngine.h"
-#include "base/media/CallMediaHealth.h"
-#include "base/messaging/CallTypes.h"
-#include "base/messaging/SfuAttachFanout.h"
-#include "base/people/AvatarGlyph.h"
-#include "base/people/ContactTypes.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/platform/ILocalNotifier.h"
-#include "base/platform/PlatformUserHints.h"
-#include "base/runtime/ProductBranding.h"
-#include "base/ui/ShellTypes.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/media/CallAudioSession.h"
+#include "domain/media/CallMediaEngine.h"
+#include "common/media/CallMediaHealth.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/people/AvatarGlyph.h"
+#include "domain/people/ContactTypes.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/PlatformUserHints.h"
+#include "foundation/runtime/ProductBranding.h"
+#include "domain/ui/ShellTypes.h"
 #include "feature/messaging/CallFunctionalPorts.h"
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallUiBackend.h"
@@ -24,7 +24,7 @@
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "base/data/PricingTypes.h"
+#include "foundation/data/PricingTypes.h"
 
 #include "common/Utilities.h"
 
@@ -655,10 +655,10 @@ void CallController::RefreshPendingRing() {
     }
     in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
-    const bool p2p_failed = backend->IsP2pConnectFailed();
+    const bool mesh_messaging_failed = backend->IsP2pConnectFailed();
     const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
                                     backend->IsAwaitingSfuRecovery() || backend->Media().IsSfuMode();
-    in_call.show_retry = p2p_failed && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode();
+    in_call.show_retry = mesh_messaging_failed && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode();
 
     // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
     // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
@@ -667,7 +667,7 @@ void CallController::RefreshPendingRing() {
     const bool media_connected = backend->Media().IsConnected() ||
                                  (backend->Phase() == CallPhase::InCall && backend->Media().IsActive());
     const std::string activity = backend->PeekMediaActivity();
-    if (p2p_failed) {
+    if (mesh_messaging_failed) {
       in_call.elapsed = {};
       in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       in_call.status_hint =
@@ -1079,11 +1079,11 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool expect_remote_video = !have_peer_video_flag || peer_camera_on;
   const bool missing_after_video =
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
-  const bool p2p_failed =
+  const bool mesh_messaging_failed =
       backend && backend->Available() && backend->IsP2pConnectFailed() &&
       !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode();
   const bool media_reconnect =
-      !p2p_failed && (stalling || missing_after_video || conn == "disconnected");
+      !mesh_messaging_failed && (stalling || missing_after_video || conn == "disconnected");
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1176,7 +1176,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.remote_placeholder = "";
   } else if (have_peer_video_flag && !peer_camera_on) {
     in_call.remote_placeholder = Tr("call.placeholder.camera_off").c_str();
-  } else if (p2p_failed) {
+  } else if (mesh_messaging_failed) {
     in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
   } else if (media_reconnect) {
     in_call.remote_placeholder = Tr("call.status.reconnecting").c_str();
@@ -1188,7 +1188,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
   in_call.mic_hint = LevelHint(in_call.mic_level, false, muted).c_str();
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false).c_str();
-  if (p2p_failed) {
+  if (mesh_messaging_failed) {
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
   } else if (media_reconnect && !media.IsConnected()) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
@@ -1205,7 +1205,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
 
-  ApplyMediaHealth(media, backend, media_reconnect || p2p_failed);
+  ApplyMediaHealth(media, backend, media_reconnect || mesh_messaging_failed);
 }
 
 CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,

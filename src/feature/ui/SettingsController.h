@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/data/SessionStore.h"
+#include "foundation/data/SessionStore.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
@@ -104,7 +104,7 @@ private:
     Rml::String node_enabled = "on";
     bool show_node_toggle = true;
     Rml::String amp_listen_multiaddr;
-    Rml::String libp2p_status_message;
+    Rml::String mesh_status_message;
     Rml::String reachability_status_label;
     Rml::String reachability_summary;
     Rml::String reachability_help_kind;
@@ -114,6 +114,8 @@ private:
     bool show_circuit_relay_toggle = false;
     Rml::String media_relay_enabled = "on";
     bool show_media_relay_toggle = false;
+    Rml::String dht_enabled = "off";
+    bool show_dht_toggle = false;
     Rml::String prefer_contacts_for_routing = "on";
     bool show_prefer_contacts_toggle = false;
     Rml::String profile_nickname;
@@ -193,6 +195,7 @@ private:
   static void DismissReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCircuitRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleMediaRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleDhtCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TogglePreferContactsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

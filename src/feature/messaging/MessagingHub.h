@@ -1,41 +1,44 @@
 #pragma once
 
-#include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
-#include "base/data/SessionStore.h"
-#include "base/data/UserPreferences.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/people/ContactsStore.h"
-#include "base/people/IdentityStore.h"
-#include "base/people/ProfileIdentityView.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/data/UserPreferences.h"
+#include "domain/messaging/GroupTypes.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
+#include "domain/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/PeerDisplayResolver.h"
-#include "base/messaging/PeerKemKeyStore.h"
-#include "base/messaging/GroupRosterStore.h"
-#include "base/messaging/PeerSigningKeyStore.h"
+#include "domain/messaging/PeerKemKeyStore.h"
+#include "domain/messaging/GroupRosterStore.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
-#include "base/messaging/SqliteThreadStore.h"
-#include "base/messaging/InitiationBillingStore.h"
+#include "domain/messaging/SqliteThreadStore.h"
+#include "domain/messaging/InitiationBillingStore.h"
 #include "feature/messaging/CallStack.h"
-#include "base/messaging/AttachmentDownloadPolicy.h"
-#include "base/messaging/AttachmentSuppressionStore.h"
+#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
-#include "feature/messaging/P2pMessagingService.h"
-#include "base/net/BlobClient.h"
-#include "base/net/BlobQuotaUtil.h"
-#include "base/net/HttpBlobClient.h"
-#include "base/net/ServiceClientsImpl.h"
-#include "base/net/IPushDeviceClient.h"
-#include "base/p2p/CircuitRelayTypes.h"
-#include "base/p2p/LanMdnsDiscovery.h"
-#include "base/p2p/Reachability.h"
-#include "base/p2p/ReachabilityService.h"
-#include "base/p2p/MeshHost.h"
-#include "base/people/MeshHopPolicy.h"
+#include "feature/messaging/MeshMessagingService.h"
+#include "domain/net/BlobClient.h"
+#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/HttpBlobClient.h"
+#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/IPushDeviceClient.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "domain/mesh/reachability/LanMdnsDiscovery.h"
+#include "domain/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/ReachabilityService.h"
+#include "domain/mesh/discovery/MeshDirectoryCache.h"
+#include "domain/mesh/discovery/NameDirectory.h"
+#include "domain/mesh/dht/DhtTypes.h"
+#include "domain/mesh/host/MeshHost.h"
+#include "domain/people/MeshHopPolicy.h"
 
 #include <cstdint>
 #include <functional>
@@ -72,17 +75,18 @@ public:
   /** Hot-reloadable network / mesh slice projected from AppConfig. */
   struct NetworkConfig {
     ServiceEndpointConfig relay;
-    ServiceEndpointConfig directory;
+    DirectoryConfig directory;
     ServiceEndpointConfig registration;
     bool node_enabled = true;
     bool circuit_relay = false;
     bool media_relay = true;
+    bool dht = false;
     bool prefer_contacts_for_routing = true;
 
     bool operator==(const NetworkConfig& other) const {
-      return relay.base_url == other.relay.base_url && directory.base_url == other.directory.base_url &&
+      return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
-             circuit_relay == other.circuit_relay && media_relay == other.media_relay &&
+             circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
              prefer_contacts_for_routing == other.prefer_contacts_for_routing;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
@@ -141,7 +145,7 @@ public:
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
-  P2pMessagingService& P2p();
+  MeshMessagingService& MeshMessaging();
   GroupMembershipService& Groups();
   /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
   CallStack& CallStackRef() { return *call_stack_; }
@@ -166,9 +170,9 @@ public:
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
-  const std::string& LastLibp2pError() const { return libp2p_last_error_; }
+  const std::string& LastMeshError() const { return mesh_last_error_; }
 
-  /** Desktop Node "Help the network" posture (node_enabled → Libp2pRole::Node). */
+  /** Desktop Node "Help the network" posture (node_enabled → MeshRole::Node). */
   bool IsHelpNetworkEnabled() const;
 
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
@@ -227,9 +231,9 @@ public:
   PeerSigningKeyStore& SigningKeys();
 
   /** Idle sweep / session policy tick (coordinator ~1s). Amp UDP is TickAmpMesh. */
-  void TickLibp2p();
+  void TickMesh();
   /** Drop cold peer connections (Android background). */
-  void SuspendLibp2pColdPeers();
+  void SuspendMeshColdPeers();
 
   void SetOnMessagingReady(std::function<void()> callback);
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
@@ -242,8 +246,8 @@ private:
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);
   void WireRelayAuthSigner();
-  Roe<void> StartLibp2p(const AppConfig& config);
-  void StopLibp2p();
+  Roe<void> StartMesh(const AppConfig& config);
+  void StopMesh();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
   void ApplyMeshAdmissionPolicies();
@@ -251,6 +255,11 @@ private:
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
   void RegisterContactEndpoints();
+  void RegisterMeshDirectoryEndpoints();
+  void RegisterDhtBootstrapEndpoints();
+  void ConfigureAmpDhtService();
+  void ConfigureAmpDirectoryService();
+  void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
@@ -286,6 +295,7 @@ private:
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
+  std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipService> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
@@ -298,7 +308,8 @@ private:
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
-  std::unique_ptr<HttpDirectoryClient> http_directory_;
+  /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
+  std::unique_ptr<IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
@@ -308,7 +319,7 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<P2pMessagingService> p2p_;
+  std::unique_ptr<MeshMessagingService> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
@@ -318,7 +329,7 @@ private:
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
-  std::string libp2p_last_error_;
+  std::string mesh_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;

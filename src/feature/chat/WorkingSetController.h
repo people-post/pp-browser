@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/ui/ChatWidgetTypes.h"
-#include "base/ui/WorkingSetTypes.h"
+#include "domain/ui/ChatWidgetTypes.h"
+#include "common/ui/WorkingSetTypes.h"
 #include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/Types.h>

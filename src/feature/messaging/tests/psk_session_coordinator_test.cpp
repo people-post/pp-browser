@@ -1,8 +1,8 @@
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/PskBundleCodec.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
-#include "base/messaging/SqliteThreadStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PskBundleCodec.h"
+#include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/SqliteThreadStore.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 

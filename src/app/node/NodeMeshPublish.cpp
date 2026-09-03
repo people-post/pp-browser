@@ -1,8 +1,8 @@
 #include "app/node/NodeMeshPublish.h"
 
-#include "base/net/HttpClient.h"
-#include "base/net/RegistrationClientUtil.h"
-#include "base/net/RegistrationSignPayload.h"
+#include "domain/net/HttpClient.h"
+#include "feature/messaging/RegistrationClientUtil.h"
+#include "domain/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -12,7 +12,7 @@
 namespace pbr {
 namespace {
 
-/** Headless-safe registration client (no pp_base_net / messaging). */
+/** Headless-safe registration client (no pp_domain_net / messaging). */
 class ThinHttpRegistrationClient : public IRegistrationClient {
 public:
   explicit ThinHttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
@@ -142,6 +142,8 @@ private:
       Object caps;
       caps.set("circuit_relay", publish.capabilities.circuit_relay);
       caps.set("media_relay", publish.capabilities.media_relay);
+      caps.set("dht", publish.capabilities.dht);
+      caps.set("ledger_gateway", publish.capabilities.ledger_gateway);
       body.set("capabilities", std::move(caps));
     }
   }
@@ -153,22 +155,24 @@ private:
 
 Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity,
                                         const std::string& nickname) {
-  if (!config.libp2p.mesh_publish) {
+  if (!config.mesh.mesh_publish) {
     return false;
   }
   if (config.registration.base_url.empty()) {
     return Error("mesh_publish requires registration.base_url");
   }
-  if (config.libp2p.advertise_multiaddrs.empty()) {
-    return Error("mesh_publish requires libp2p.advertise_multiaddrs (public multiaddrs)");
+  if (config.mesh.advertise_multiaddrs.empty()) {
+    return Error("mesh_publish requires mesh.advertise_multiaddrs (public multiaddrs)");
   }
 
   ThinHttpRegistrationClient registration(config.registration.base_url);
   RegistrationPublishOpts publish;
   publish.entity_kind = "mesh_node";
   publish.has_capabilities = true;
-  publish.capabilities.circuit_relay = config.libp2p.capabilities.circuit_relay;
-  publish.capabilities.media_relay = config.libp2p.capabilities.media_relay;
+  publish.capabilities.circuit_relay = config.mesh.capabilities.circuit_relay;
+  publish.capabilities.media_relay = config.mesh.capabilities.media_relay;
+  publish.capabilities.dht = config.mesh.capabilities.dht;
+  publish.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
 
   std::string nick = nickname;
   if (nick.empty()) {
@@ -181,7 +185,7 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   }
 
   auto persisted =
-      FinishAndPersistRegistration(registration, identity, nick, config.libp2p.advertise_multiaddrs, publish);
+      FinishAndPersistRegistration(registration, identity, nick, config.mesh.advertise_multiaddrs, publish);
   if (!persisted) {
     return persisted.error();
   }

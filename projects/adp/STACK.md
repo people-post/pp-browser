@@ -8,7 +8,7 @@
 
 | Name | Scope |
 |------|--------|
-| **ADP** | L1 wire only — Association Datagram Protocol (`src/base/adp/`, `pp_base_adp`) |
+| **ADP** | L1 wire only — Association Datagram Protocol (`src/lib/amp/L1/`, `pp_base_adp`) |
 | **AMP** | Full four-layer peer mesh stack built on ADP — **A**ssociation **M**esh **P**rotocol |
 
 When migrating off TCP/QUIC/Yamux, say **AMP** or **ADP stack**. Reserve **ADP** for the UDP datagram layer.
@@ -76,6 +76,11 @@ Carry forward the three-object discipline from [LIBP2P_STREAMS.md](../../docs/ar
 | **Endpoint stop** | Everything on that socket |
 
 Domain state (call roster, SQLite, jitter buffers) lives on L4 consumers — not on Channel/Session objects.
+
+**Error escalation** follows the same hierarchy: each owner wraps its immediate child's
+`CodedFailure` (code remap + `AppendFrom` on `message`). See
+[CODED_FAILURE.md](../../docs/contracts/CODED_FAILURE.md); link-level code table in
+[AMP-LINK-ERRORS.md](../../docs/contracts/AMP-LINK-ERRORS.md).
 
 ## One association per peer pair (default)
 
@@ -163,15 +168,15 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 
 L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
 
-**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickLibp2p` (coordinator) may both call Tick without racing PeerLink/Mux.
+**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
 
 ## Code layout (planned)
 
 ```text
-src/base/adp/          → L1 (exists; no libp2p)
-src/base/mesh/session/ → L2 MSH, Session, rekey
-src/base/mesh/channel/ → L3 mux, frag, ChannelSession
-src/base/p2p/          → PeerLinkManager, reachability; libp2p glue shrinks
+src/lib/amp/L1/          → L1 (exists; no libp2p)
+src/lib/amp/L2/ → L2 MSH, Session, rekey
+src/lib/amp/L3/ → L3 mux, frag, ChannelSession
+src/domain/mesh/          → PeerLinkManager, reachability; libp2p glue shrinks
 ```
 
 Acyclic: `crypto` → `adp` → `mesh` → `p2p` → `people`. `mesh` must not link libp2p ([A017](DECISIONS.md#a017--libp2p-shrink-retain-crypto--peerid-only)).

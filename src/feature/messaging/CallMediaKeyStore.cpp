@@ -1,12 +1,12 @@
 #include "feature/messaging/CallMediaKeyStore.h"
 
-#include "base/crypto/CryptoConstants.h"
-#include "base/crypto/CryptoUtil.h"
-#include "base/crypto/EncryptedPayload.h"
-#include "base/crypto/FileCipher.h"
-#include "base/crypto/MessageCipher.h"
-#include "base/error/AppError.h"
-#include "base/messaging/CallSessionStore.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/EncryptedPayload.h"
+#include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/MessageCipher.h"
+#include "foundation/error/AppError.h"
+#include "domain/messaging/CallSessionStore.h"
 #include "common/Utilities.h"
 
 #include <sodium.h>

@@ -10,7 +10,7 @@ pp-browser uses **HTTP** plus a **peer mesh**. Product peer mesh is **AMP** (UDP
 | Plane | Preferred role |
 |-------|----------------|
 | **HTTP** | Contact **org backends** when reachable: Brief APIs, relay store/history, client-compat, quotes/billing UX, settlement orchestration |
-| **Peer mesh (AMP)** | **Peer data exchange** when `libp2p.mesh_enabled` (default true): messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Amp bind failure **fails mesh start** (D10 — no TCP underlay fallback). `mesh_enabled=false` leaves peer mesh off |
+| **Peer mesh (AMP)** | **Peer data exchange** when `mesh.mesh_enabled` (default true): messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Amp bind failure **fails mesh start** (D10 — no TCP underlay fallback). `mesh_enabled=false` leaves peer mesh off |
 
 ## Settlement (pricing)
 

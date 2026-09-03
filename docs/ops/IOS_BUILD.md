@@ -271,7 +271,7 @@ No iOS release workflow is wired yet — macOS release CI remains in [`.github/w
 |-----------|--------------|
 | Renderer | OpenGL ES 3 via SDL (same pattern as Android) |
 | Assets | `PP.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
-| Paths | [`IosPathProvider`](../../src/base/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
+| Paths | [`IosPathProvider`](../../src/foundation/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
 | MCP | HTTP URL only — no subprocess on mobile |
 | libp2p | PeerId + key wire only (A017); no Host/protoc bootstrap |
 | Keychain / APNs | Placeholder entitlements; implementation deferred |

@@ -15,7 +15,7 @@ There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config
 
 **Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
 
-Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
+Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
 ### `pp-node` deploy overlays
 
@@ -32,6 +32,8 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/1.0.0/p2p/…`) |
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
+| `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
+| `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
 | `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. sandbox `https://www-en.qa.peoplepost.org/api/relay`) |
@@ -46,7 +48,7 @@ JSON remains the durable seed profile (caps, budgets, pricing). Env is for secre
 
 ## Runtime session state
 
-After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`SessionStore`](../../src/base/data/SessionStore.h) (`BootstrapResult`: config, profile prefs, paths). Settings and chat read/write through injected store / ports; saves reload from disk before notifying listeners.
+After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`SessionStore`](../../src/foundation/data/SessionStore.h) (`BootstrapResult`: config, profile prefs, paths). Settings and chat read/write through injected store / ports; saves reload from disk before notifying listeners.
 
 **Disk DTOs vs service slices:** `AppConfig` / `ProfilePreferences` are persistence schemas. Hot-reload does **not** pass those blobs straight into services. [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (composition root) projects nested service types and calls `Apply` only when a slice changes. Diagrams: [architecture/RUNTIME_COMPOSITION.md](../architecture/RUNTIME_COMPOSITION.md).
 
@@ -59,7 +61,7 @@ After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`Se
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
 | `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/base/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`MessagingHub`](../../src/feature/messaging/MessagingHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`MessagingHub`](../../src/feature/messaging/MessagingHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
 
 | SessionStore listener | Used by |
 |-----------------------|---------|
@@ -69,7 +71,7 @@ Slice types are **nested on the owning service class**. Settings section flush o
 
 ## LLM presets
 
-`config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
+`config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/foundation/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
 `NormalizeLlmConfig` is the single write-boundary translator: it turns preset intent into precise `base_url`, `model` (wire id), and auth flags. Settings flush and config load both call it. Runtime Brief chat only overlays `identity.brief_llm_api_key` — it does not re-interpret model/preset. See **Settings: normalize at write boundary** below.
 
@@ -96,7 +98,7 @@ Machine and profile settings should follow the same shape as LLM config:
 - Re-encode the same denylist / “fixup” in `ChatController`, `LlmClient`, and settings
 - Persist ambiguous values (`model: "brief"`) and hope every reader guesses
 
-When adding a new Me-tab section, add its normalizer next to the domain types under `src/base/data/` or `src/feature/settings/`, wire it from that section’s `Flush` + the relevant load path, and document the precise on-disk fields here.
+When adding a new Me-tab section, add its normalizer next to the domain types under `src/foundation/data/` or `src/feature/settings/`, wire it from that section’s `Flush` + the relevant load path, and document the precise on-disk fields here.
 
 ## Theme and appearance (runtime)
 
@@ -158,10 +160,28 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 ```
 
 - **`llm`** — default preset is **Brief** (API key issued on Profile registration, stored in `identity.enc`). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
-- **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/base/data/PlatformDefaults.cpp).
+- **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/foundation/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
-- **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
-- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP seed (`/udp/443/adp/1.0.0/…`) for SoftMigrate + dial-back. LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`).
+- **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP seed (`/udp/443/adp/1.0.0/…`) for SoftMigrate + dial-back. LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`). Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
+
+### Mesh DHT (n2)
+
+Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1). Implemented through **n2-hard**.
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `mesh.capabilities.dht` | `false` | Node-only; mobile ignores. UI checkbox (N008). |
+| `mesh.dht.record_ttl_seconds` | `3600` | Self `peer_routing` record TTL; re-publish at ttl/2 when enabled. |
+| `mesh.dht.find_peer_timeout_ms` | `5000` | Consumer FIND_PEER timeout. |
+| `mesh.dht.max_concurrent_lookups` | `4` | In-flight lookup cap. |
+| `mesh.dht.k_bucket_size` | `20` | Kademlia *k*; wire default matches [MESH_DHT.md](../contracts/MESH_DHT.md). |
+| `mesh.dht.inbound_ops_per_peer_per_window` | `60` | Inbound FIND_PEER/STORE grants per remote peer per window. |
+| `mesh.dht.inbound_rate_window_seconds` | `60` | Sliding window for inbound rate limit. |
+| `mesh.dht.soft_reputation_penalty_threshold` | `3` | Bad FIND_PEER replies before cooldown. |
+| `mesh.dht.soft_reputation_cooldown_seconds` | `300` | Skip query peer after soft-reputation penalty. |
+
+DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
@@ -177,7 +197,7 @@ The on-disk model should match what you set.
 
 ## Platform layer
 
-Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../architecture/PLATFORMS.md):
+Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../architecture/PLATFORMS.md):
 
 - `IPathProvider` / `IAssetLocator` — desktop paths vs APK/bundle assets
 - `AssetIO` / `SdlAssetFileInterface` — unified bundle reads for UI and RmlUi

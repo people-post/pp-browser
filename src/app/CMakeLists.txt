@@ -26,8 +26,6 @@ else()
 endif()
 pp_browser_apply_warnings(${PP_BROWSER_APP_TARGET})
 
-option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
-
 set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
 if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
   list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
@@ -69,7 +67,6 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
 endif()
 
-include(pp_lib_paths)
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${PP_LIB_RMLUI_ROOT}/Source/Core/FontEngineHarfBuzz
@@ -78,9 +75,9 @@ target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_feature
   pp_base
-  pp_common
-  pp_base_render
-  pp_base_p2p
+  pp_pbr_common
+  pp_domain_ui
+  pp_domain_mesh
   RmlUi::Core
   CURL::libcurl
   Threads::Threads

@@ -1,6 +1,6 @@
 #include "feature/chat/WorkingSetController.h"
 
-#include "base/ui/ChatFormHelper.h"
+#include "domain/ui/ChatFormHelper.h"
 #include "feature/ui/DataModelHost.h"
 
 #include "common/ValueJson.h"

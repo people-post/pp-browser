@@ -1,15 +1,19 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
+    AttachmentClientUtil.cpp
     AttachmentDownloadService.cpp
+    AttachmentFetchUtil.cpp
     CallMediaKeyStore.cpp
     AmpCircuitHopReach.cpp
     AmpMediaRelayClient.cpp
-    CallLibp2pMediaBridge.cpp
+    CallMediaBridge.cpp
     CallLifecycle.cpp
     CallInboundHandlers.cpp
     CallSessionManager.cpp
     CallStack.cpp
     CallTopologyController.cpp
+    ChatBlobRequestUtil.cpp
+    ChatHistoryResponder.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
@@ -32,25 +36,32 @@ pp_browser_add_feature_library(pp_feature_messaging
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
-    P2pMessagingService.cpp
+    MeshMessagingService.cpp
+    PeerBriefRoute.cpp
     PeerDisplayResolver.cpp
+    ProfileIconClientUtil.cpp
+    ProfileIconFetchUtil.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
+    RegistrationClientUtil.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
     SqlitePskSessionStore.cpp
   PUBLIC_LIBS
     pp_feature_ai
-    pp_base_crypto
-    pp_base_media
-    pp_base_mesh_link
-    pp_base_p2p
-    pp_base_platform_core
-    pp_base_runtime_core
-    pp_base_runtime
+    pp_foundation_crypto
+    pp_domain_media
+    pp_domain_messaging
+    pp_amp_link
+    pp_domain_mesh
+    pp_domain_net
+    pp_domain_people
+    pp_foundation_platform_core
+    pp_foundation_runtime_core
+    pp_foundation_runtime
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)
