@@ -2,7 +2,6 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   DirectChatTargetFromContact.cpp
   AvatarGlyph.cpp
   ProfileIconCache.cpp
-  ProfileIconFetchUtil.cpp
   ContactJson.cpp
   ContactIdentity.cpp
   ContactReachability.cpp

@@ -37,7 +37,7 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 - [x] `ContactReachability` → `domain/people`
 - [x] `PeerBriefRoute` → `domain/people`
-- [x] `ProfileIconFetchUtil` → `domain/people`
+- [ ] `ProfileIconFetchUtil` — **stays feature** (HTTP → would be people→net; demoted)
 - [x] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
 - [x] `PeoplePickerLogic` → `domain/ui` (optional same batch)
 - [x] `CallConflictCopy` → `domain/ui` (optional same batch)

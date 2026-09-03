@@ -15,10 +15,15 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `domain/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Done |
 | `domain/people/ContactReachability.*` | `domain/people/` | Done |
 | `domain/people/PeerBriefRoute.*` | `domain/people/` | Done |
-| `domain/people/ProfileIconFetchUtil.*` | `domain/people/` | Done |
 | `domain/mesh/reachability/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Done |
 | `domain/ui/PeoplePickerLogic.h` | `domain/ui/` | Done |
 | `domain/ui/CallConflictCopy.*` | `domain/ui/` | Done |
+
+### Demoted during f2
+
+| Files | Why |
+|-------|-----|
+| `feature/messaging/ProfileIconFetchUtil.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
 
 **Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
 
@@ -38,6 +43,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `GroupInviteGate.*` | people + messaging stores |
 | `PeerDisplayResolver.*` | people + roster + shadow cache |
 | `RegistrationClientUtil.*` | net + people (+ UI labels) |
+| `ProfileIconFetchUtil.*` | people cache + `HttpClient` (people→net) |
 | `AttachmentClientUtil.*`, `AttachmentFetchUtil.*`, `ChatBlobRequestUtil.*` | multi-peer ladders |
 | `AttachmentDownloadService.*` | orchestration queue |
 | `ProfileIconClientUtil.*` | blob upload + identity |

@@ -35,6 +35,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     MeshMessagingService.cpp
     PeerDisplayResolver.cpp
     ProfileIconClientUtil.cpp
+    ProfileIconFetchUtil.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
     RegistrationClientUtil.cpp

@@ -26,7 +26,7 @@
 #include "domain/net/BlobQuotaUtil.h"
 #include "domain/net/HttpClient.h"
 #include "feature/messaging/ProfileIconClientUtil.h"
-#include "domain/people/ProfileIconFetchUtil.h"
+#include "feature/messaging/ProfileIconFetchUtil.h"
 #include "feature/messaging/RegistrationClientUtil.h"
 #include "domain/people/ProfileIconCache.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
