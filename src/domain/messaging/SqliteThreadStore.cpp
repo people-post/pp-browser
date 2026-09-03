@@ -296,6 +296,20 @@ Roe<void> SqliteThreadStore::OpenProfileDb() const {
   if (profile_db_) {
     return {};
   }
+  auto opened = OpenProfileDbUnguarded();
+  if (!opened && profile_db_) {
+    // sqlite3_open() hands back a handle even when it fails, and every later
+    // step leaves it assigned too. Leaving it set would make the next call take
+    // the early return above and skip the schema-version check entirely, so the
+    // store would go on to read an incompatible database. profile_db_ stays
+    // non-null only once the database is fully usable.
+    sqlite3_close(profile_db_);
+    profile_db_ = nullptr;
+  }
+  return opened;
+}
+
+Roe<void> SqliteThreadStore::OpenProfileDbUnguarded() const {
   const bool created = !std::filesystem::exists(ProfileDbFile(data_dir_));
   if (sqlite3_open(ProfileDbFile(data_dir_).c_str(), &profile_db_) != SQLITE_OK) {
     return Error("Failed to open profile.db");
