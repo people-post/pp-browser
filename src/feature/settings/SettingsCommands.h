@@ -53,7 +53,7 @@ struct SettingsCommands {
   std::function<SessionStore&()> session_store;
   std::function<Roe<void>()> reload_from_disk;
 
-  /** Messaging status without holding MessagingHub*. */
+  /** Messaging status without holding ConversationsHub*. */
   std::function<bool()> messaging_ready;
   std::function<std::string()> last_mesh_error;
   /** Runtime Amp listen multiaddr (empty when mesh is down). */

@@ -1,6 +1,6 @@
 #include "gui/chat/MessagingTools.h"
 
-#include "feature/messaging/MessagingFacade.h"
+#include "feature/conversations/ConversationsFacade.h"
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
@@ -60,7 +60,7 @@ ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
 
 } // namespace
 
-MessagingToolProvider::MessagingToolProvider(MessagingFacade& messaging) : messaging_(messaging) {}
+MessagingToolProvider::MessagingToolProvider(ConversationsFacade& messaging) : messaging_(messaging) {}
 
 std::string MessagingToolProvider::Id() const {
   return "messaging";
@@ -69,7 +69,7 @@ std::string MessagingToolProvider::Id() const {
 std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   // Capture the long-lived facade, not `this` — providers are often stack-temporaries
   // during RegisterProvider.
-  MessagingFacade& messaging = messaging_;
+  ConversationsFacade& messaging = messaging_;
   std::vector<ToolDescriptor> tools;
 
   {
@@ -236,7 +236,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
   return tools;
 }
 
-void RegisterMessagingTools(ToolRegistry& registry, MessagingFacade& messaging) {
+void RegisterMessagingTools(ToolRegistry& registry, ConversationsFacade& messaging) {
   MessagingToolProvider provider(messaging);
   registry.RegisterProvider(provider);
 }

@@ -130,7 +130,7 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 | `IPeerSigningKeyResolver` | `src/base/messaging/` |
 | `PeerSigningKeyStore` | `src/base/messaging/` or `src/base/people/` |
 | `AutoKeyEstablishment` | `src/foundation/crypto/` |
-| Ingest wiring | `src/feature/messaging/` receive pipeline step 2 + 7 |
+| Ingest wiring | `src/feature/conversations/` receive pipeline step 2 + 7 |
 
 ### Session key derivation (E015)
 
@@ -460,7 +460,7 @@ If peer rotated more than **8** times before import, epochs outside the retired 
 | `EncryptedPayload.h/.cpp` | Blob codec + base64 |
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
 | `IPskSessionStore.h` | Session CRUD + **`GenerateMasterPsk()`** (E011) + `ResolveMasterPskForEpoch(epoch)` (E018) + **`ImportPskBundle` / `ExportPskBundle`** (E020) + **`MarkPskVerified()`** / **`IsPskVerified()`** (E011) — interface in `base/crypto` |
-| `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/messaging/` — reads/writes `chat_targets` PSK columns (E008/D084) |
+| `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/conversations/` — reads/writes `chat_targets` PSK columns (E008/D084) |
 
 **Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.
 

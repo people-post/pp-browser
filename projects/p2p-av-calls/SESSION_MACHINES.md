@@ -16,7 +16,7 @@ Design for making **long-lived** mesh host protocol sessions robust at the archi
 
 1:1 call-media and group `media_relay` work on device, but host session code is fragile by construction: boolean soup, timeout vs late-callback races, glare rules in comments, teardown order only experts know.
 
-Product UX already has [`CallLifecycle`](../../src/feature/messaging/calls/CallLifecycle.h) (`CallPhase` + `Apply(event)`). **Transport** sessions under it do not.
+Product UX already has [`CallLifecycle`](../../src/feature/calls/CallLifecycle.h) (`CallPhase` + `Apply(event)`). **Transport** sessions under it do not.
 
 **Rule:** design thoroughly → freeze V033 / N026 → refactor **one** machine at a time behind behavior-preserving tests → dogfood. No drive-by cleanup of working paths.
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/ui/ChatWidgetTypes.h"
-#include "feature/messaging/MessagingFacade.h"
+#include "feature/conversations/ConversationsFacade.h"
 
 #include <RmlUi/Core/Types.h>
 
@@ -29,7 +29,7 @@ public:
   };
 
   ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready);
-  void BindMessagingFacade(MessagingFacade* facade);
+  void BindConversationsFacade(ConversationsFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
 
@@ -92,7 +92,7 @@ private:
   std::optional<float> pending_scroll_top_before_;
   float last_messages_scroll_height_ = 0.f;
   int unread_while_scrolled_ = 0;
-  MessagingFacade* facade_ = nullptr;
+  ConversationsFacade* facade_ = nullptr;
 };
 
 } // namespace pbr

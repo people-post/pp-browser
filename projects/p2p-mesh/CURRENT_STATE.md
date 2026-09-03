@@ -30,7 +30,7 @@
 | `MeshConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
 | Role | `ResolveMeshRole` — mobile Client; desktop × `node_enabled` |
 | Listen | Client skips `host->listen`; Node tries **18517–18526** then `/tcp/0`; persist bound addr |
-| Errors | `MessagingHub::LastMeshError` surfaced in Me → Network |
+| Errors | `ConversationsHub::LastMeshError` surfaced in Me → Network |
 | UI | Desktop **Help the network** toggle + actual listen multiaddr |
 | Tests | `MeshRole` helpers + ConfigJson / settings merge |
 
@@ -40,9 +40,9 @@
 |------|-------|
 | Platform split | `pp_foundation_platform_core` (paths/OS/env, no SDL/RmlUi) vs GUI `pp_foundation_platform` |
 | Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
-| Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `MessagingHub` and `pp-node` (`NodeBootstrap`) |
+| Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `ConversationsHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
-| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use MessagingHub / inbox / calls |
+| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
@@ -75,7 +75,7 @@
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
 | UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
-| Auto-route | **nf** — `MessagingHub::RequestCircuitBridgePreferred` |
+| Auto-route | **nf** — `ConversationsHub::RequestCircuitBridgePreferred` |
 
 ## nf in code
 
@@ -83,7 +83,7 @@
 |------|-------|
 | Config | `prefer_contacts_for_routing` (default on) |
 | Pick | `MeshHopPolicy` — contacts → seed for circuit (`OrderCircuitHops`) |
-| API | `MessagingHub::RequestCircuitBridgePreferred` |
+| API | `ConversationsHub::RequestCircuitBridgePreferred` |
 | Provider | Circuit (and media) admission prefers contacts on volunteer desktop when contacts known; org seed with empty contacts serves all |
 | UI | **Friends first** toggle |
 
@@ -113,7 +113,7 @@
 | Hardcoded N014 stages for media | Outer scope bands + inner N020 scorer — not fixed stage list |
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
-| Link `MessagingHub` into `pp-node` | Shared `MeshHost` + identity/crypto only (no chat/UI stack) |
+| Link `ConversationsHub` into `pp-node` | Shared `MeshHost` + identity/crypto only (no chat/UI stack) |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
 | libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
 | Relay decodes Opus/H264 | Blind forward + `channel_type` only (N021) |

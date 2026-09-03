@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
-#include "feature/messaging/MessagingContactsPorts.h"
+#include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/contacts/ContactsSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"

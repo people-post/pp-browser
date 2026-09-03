@@ -22,26 +22,35 @@ check_absent "feature must not include app/" \
 check_absent "feature must not include gui/" \
   '#include "gui/' src/feature
 
-check_absent "settings must not include messaging/" \
-  '#include "feature/messaging/' src/feature/settings
+check_absent "settings must not include conversations/" \
+  '#include "feature/conversations/' src/feature/settings
 check_absent "settings must not include retired feature/ui/" \
   '#include "feature/ui/' src/feature/settings
 check_absent "settings must not include gui/" \
   '#include "gui/' src/feature/settings
 
-check_absent "ai must not include messaging/" \
-  '#include "feature/messaging/' src/feature/ai
+check_absent "ai must not include conversations/" \
+  '#include "feature/conversations/' src/feature/ai
 check_absent "ai must not include retired feature/ui/" \
   '#include "feature/ui/' src/feature/ai
 check_absent "ai must not include gui/" \
   '#include "gui/' src/feature/ai
 
-check_absent "messaging must not include retired feature/ui/" \
-  '#include "feature/ui/' src/feature/messaging
-check_absent "messaging must not include gui/" \
-  '#include "gui/' src/feature/messaging
+check_absent "conversations must not include feature/ai/" \
+  '#include "feature/ai/' src/feature/conversations
+check_absent "conversations must not include retired feature/ui/" \
+  '#include "feature/ui/' src/feature/conversations
+check_absent "conversations must not include gui/" \
+  '#include "gui/' src/feature/conversations
 
-# Retired top-level feature/chat (F007) and feature/ui (F008) — must stay gone.
+check_absent "calls must not include conversations/" \
+  '#include "feature/conversations/' src/feature/calls
+check_absent "calls must not include feature/ai/" \
+  '#include "feature/ai/' src/feature/calls
+check_absent "calls must not include gui/" \
+  '#include "gui/' src/feature/calls
+
+# Retired top-level feature/chat (F007), feature/ui (F008), feature/messaging (F007 rename).
 if [[ -e "$ROOT/src/feature/chat" ]]; then
   echo "FAIL: top-level src/feature/chat must stay removed (absorbed into gui/chat/)"
   FAIL=1
@@ -50,10 +59,22 @@ if [[ -e "$ROOT/src/feature/ui" ]]; then
   echo "FAIL: top-level src/feature/ui must stay removed (lifted to src/gui/)"
   FAIL=1
 fi
+if [[ -e "$ROOT/src/feature/messaging" ]]; then
+  echo "FAIL: top-level src/feature/messaging must stay removed (renamed to feature/conversations/)"
+  FAIL=1
+fi
+if [[ -e "$ROOT/src/feature/conversations/calls" ]]; then
+  echo "FAIL: nested src/feature/conversations/calls must stay removed (lifted to feature/calls/)"
+  FAIL=1
+fi
 check_absent "must not include retired feature/chat/ path" \
   '#include "feature/chat/' src
 check_absent "must not include retired feature/ui/ path" \
   '#include "feature/ui/' src
+check_absent "must not include retired feature/messaging/ path" \
+  '#include "feature/messaging/' src
+check_absent "must not include retired nested conversations/calls/ path" \
+  '#include "feature/conversations/calls/' src
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

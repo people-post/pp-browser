@@ -54,11 +54,12 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 Per [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): call **session** module named `calls`; nest before new lib.
 
-- [x] Nest `feature/messaging/calls/` (same `pp_feature_messaging`) — no new target yet
+- [x] Nest `feature/conversations/calls/` (same `pp_feature_conversations`) — no new target yet
 - [x] Move CallStack / CSM / Lifecycle / Topology / CallUiBackend / CallFunctionalPorts / Amp call façades into band
 - [x] Update includes only; `check_feature_includes.sh` unchanged for module edges
-- [ ] (Later) top-level `feature/calls` + `pp_feature_calls` after MeshMessagingService port breaks the cycle
-- [ ] (Later) rename parent `feature/messaging` → `feature/conversations` when hub ownership is clean
+- [x] Top-level `feature/calls` + `pp_feature_calls` after soft delivery/inbound ports break the CMake cycle
+- [x] Rename parent `feature/messaging` → `feature/conversations` (`ConversationsHub` / `ConversationsFacade` / `pp_feature_conversations`)
+- [ ] App-owned `CallStack` (hub stops owning call lifecycle) — soft ports already allow one-way `conversations → calls`
 
 ## f5 — Structural: split shell / contacts; absorb chat UI
 
@@ -75,7 +76,7 @@ Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-lev
 ## f6 — App wirers + soft edges (ongoing)
 
 - [x] Split `Application::Initialize` into named wirers (`WireSettings`, `WireShellPresenters`, `WireCalls`, …) — no behavior change
-- [ ] Soften conversations→ai via inbound agent port if touching MessageRouter anyway
+- [x] Soften conversations→ai via `AgentInboundPorts` (`MessageRouter` / hub / facade; `AgentUiPorts` moved to `feature/ai/`)
 - [ ] Inbox presentation extraction (highest product risk — last / after gui lift if cheaper)
 - [ ] Demote or schedule remaining cross-peer utils only after `common` contracts exist
 - [x] Vocabulary / end-state names locked ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))

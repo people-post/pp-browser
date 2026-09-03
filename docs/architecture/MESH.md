@@ -22,7 +22,7 @@ flowchart TB
   end
 
   subgraph feature [feature/messaging]
-    Hub[MessagingHub]
+    Hub[ConversationsHub]
     MMS[MeshMessagingService]
     Chat[Amp chat services]
     Bridge[CallMediaBridge]

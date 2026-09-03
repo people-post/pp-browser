@@ -53,14 +53,14 @@ Do not promote **blocked** → domain to “clean the folder.”
 ## F004 — Calls home: nested band first, then top-level
 
 **Date:** 2026-09-03  
-**Status:** accepted (path); top-level lib still deferred
+**Status:** accepted; **top-level path shipped** (hub still owns `CallStack` until app ownership move)
 
-**Context:** Separating call session from conversations is desired, but `CallSessionManager` ↔ `MeshMessagingService` would cycle if `pp_feature_calls` and `pp_feature_messaging` both exist today.
+**Context:** Separating call session from conversations is desired, but `CallSessionManager` ↔ `MeshMessagingService` would cycle if both were hard-linked without ports.
 
 **Decision:**
 
-1. **f4v1:** nest under `feature/messaging/calls/` (same `pp_feature_messaging` target) — discoverability only.
-2. **Later:** top-level `feature/calls/` + `pp_feature_calls` only after ownership is one-way (call session uses delivery ports; conversations hub does **not** own `CallStack`).
+1. **f4v1:** nest under `feature/conversations/calls/` (same conversations target) — discoverability only.
+2. **Soft ports, then lift:** `CallDeliveryPorts` + `CallControlInboundPorts` make the edge one-way (`conversations → calls`); top-level `feature/calls/` + `pp_feature_calls` landed. Hub may still own `CallStack` until a later app-ownership move.
 3. End-state name for the module is **`calls`** (call **session**), not `av` or `media` — see [F007](#f007--vocabulary--end-state-feature-names).
 
 ---
@@ -152,7 +152,7 @@ feature/
 - Do **not** rename `domain/messaging` to `domain/chat` (call control types stay in the messaging peer).
 - Do **not** name the product UI layer `src/ui/` — that collides with `domain/ui` ([F008](#f008--gui-layer-above-feature)).
 
-**Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`MessagingHub` → `ConversationsHub`) track the folder rename, not f4v1. `feature/ui/**` lifted to `src/gui/**` (f7v1).
+**Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`ConversationsHub` → `ConversationsHub`) track the folder rename, not f4v1. `feature/ui/**` lifted to `src/gui/**` (f7v1).
 
 **Consequences:** f4/f5/f6 plan toward conversations/calls; **f7** lifts presenters into `src/gui/`. Promote into SRC_LAYOUT when folders actually move.
 

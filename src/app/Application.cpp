@@ -30,11 +30,13 @@
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/SdlAppEvents.h"
 #include "foundation/platform/WindowIcon.h"
-#include "feature/messaging/AgentUiPorts.h"
-#include "feature/messaging/calls/CallFunctionalPorts.h"
-#include "feature/messaging/calls/CallUiBackend.h"
-#include "feature/messaging/MessagingFacade.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/ai/AgentUiPorts.h"
+#include "feature/conversations/AgentInboundPorts.h"
+#include "feature/conversations/MakeCallFunctionalPorts.h"
+#include "feature/calls/CallFunctionalPorts.h"
+#include "feature/calls/CallUiBackend.h"
+#include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/ConversationsHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -73,11 +75,11 @@
 #include "gui/UserFeedback.h"
 #include "domain/people/ContactTypes.h"
 #include "common/Utilities.h"
-#include "feature/messaging/MessagingCompatPorts.h"
-#include "feature/messaging/MessagingContactsPorts.h"
-#include "feature/messaging/MessagingShellPorts.h"
-#include "feature/messaging/MessagingPeoplePickerPorts.h"
-#include "feature/messaging/MessagingUiPorts.h"
+#include "feature/conversations/MessagingCompatPorts.h"
+#include "feature/conversations/MessagingContactsPorts.h"
+#include "feature/conversations/MessagingShellPorts.h"
+#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/conversations/MessagingUiPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
@@ -190,10 +192,10 @@ Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
   secrets_ = std::make_unique<ProfileSecretsService>();
-  messaging_ = std::make_unique<MessagingHub>();
+  messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
-  messaging_facade_ = std::make_unique<MessagingFacade>(*messaging_);
+  messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -232,7 +234,7 @@ Application::~Application() {
   messaging_.reset();
 }
 
-MessagingHub& Application::Messaging() {
+ConversationsHub& Application::Conversations() {
   return *messaging_;
 }
 
@@ -249,7 +251,7 @@ void Application::ShutdownMessaging() {
     return;
   }
   {
-    StartupPhase phase("Shutdown::MessagingHub");
+    StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
   if (secrets_ && secrets_->IsInitialized()) {
@@ -414,7 +416,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
-  MessagingFacade& facade = *messaging_facade_;
+  ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() {
     return facade.LoadProfileIdentityView();
@@ -578,7 +580,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
       if (contact.local.display_name != display_name) {
         contact.local.display_name = display_name;
         SyncContactMirrors(contact);
-        auto saved = Messaging().Contacts().Upsert(contact);
+        auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
           return saved.error();
         }
@@ -593,7 +595,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
       contact.local.trust = TrustLevel::Unknown;
       contact.remote.ids.push_back({ContactIdKind::Account, account_id, true});
       SyncContactMirrors(contact);
-      auto saved = Messaging().Contacts().Upsert(contact);
+      auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
         return saved.error();
       }
@@ -630,8 +632,8 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
 }
 
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
-  MessagingHub& messaging = Messaging();
-  MessagingFacade& facade = *messaging_facade_;
+  ConversationsHub& messaging = Conversations();
+  ConversationsFacade& facade = *messaging_facade_;
   ShellHost& shell = *shell_;
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
@@ -656,7 +658,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
-  chat_->BindMessagingFacade(messaging_facade_.get());
+  chat_->BindConversationsFacade(messaging_facade_.get());
   chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
     RegisterSettingsTools(tools, settings_tool_ports);
@@ -779,8 +781,8 @@ void Application::WireCalls() {
 }
 
 void Application::WireUnlockPinAndFlow() {
-  MessagingHub& messaging = Messaging();
-  MessagingFacade& facade = *messaging_facade_;
+  ConversationsHub& messaging = Conversations();
+  ConversationsFacade& facade = *messaging_facade_;
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
@@ -890,11 +892,27 @@ void Application::WireUnlockPinAndFlow() {
 }
 
 void Application::WireAgentAndConfig() {
-  MessagingHub& messaging = Messaging();
+  ConversationsHub& messaging = Conversations();
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (messaging_facade_) {
+    AgentInboundPorts inbound;
+    inbound.submit_scoped_assist = [this](const std::string& thread_id, const std::string& prompt,
+                                          std::optional<std::string> user_payload, AtAiMode mode) {
+      if (agent_session_) {
+        agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
+      }
+    };
+    inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
+                                      std::optional<std::string> user_payload) {
+      if (agent_session_) {
+        agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
+      }
+    };
+    messaging_facade_->BindAgentInbound(std::move(inbound));
+  }
   if (agent_session_) {
     agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
     agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
@@ -991,8 +1009,11 @@ bool Application::MountPresenters(Rml::Context* context) {
       chat_shell_bridge_->Clear();
     }
     chat_->BindShellSetup({});
-    chat_->BindMessagingFacade(nullptr);
+    chat_->BindConversationsFacade(nullptr);
     chat_->BindAgentPorts({});
+    if (messaging_facade_) {
+      messaging_facade_->BindAgentInbound({});
+    }
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
     chat_->BindEmojiPickerNotify({});
@@ -1073,7 +1094,7 @@ bool Application::MountPresenters(Rml::Context* context) {
 }
 
 void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap) {
-  MessagingHub& messaging = Messaging();
+  ConversationsHub& messaging = Conversations();
   ShellHost& shell = *shell_;
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
@@ -1297,8 +1318,11 @@ void Application::Shutdown() {
     chat_shell_bridge_->Clear();
   }
   chat_->BindShellSetup({});
-  chat_->BindMessagingFacade(nullptr);
+  chat_->BindConversationsFacade(nullptr);
   chat_->BindAgentPorts({});
+  if (messaging_facade_) {
+    messaging_facade_->BindAgentInbound({});
+  }
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
   chat_->BindEmojiPickerNotify({});
@@ -1405,7 +1429,7 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
 
-    // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
+    // Abort Connect / circuit waits, then join workers while ConversationsHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
     if (messaging_) {
       StartupPhase phase("Shutdown::AbortCallMedia");

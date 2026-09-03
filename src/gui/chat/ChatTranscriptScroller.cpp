@@ -16,7 +16,7 @@
 
 namespace pbr {
 
-void ChatTranscriptScroller::BindMessagingFacade(MessagingFacade* facade) {
+void ChatTranscriptScroller::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
 }
 

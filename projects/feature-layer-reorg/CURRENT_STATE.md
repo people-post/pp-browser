@@ -1,32 +1,31 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** **f7v1 landed** (`src/gui/` above feature) → soft edges / calls rename later
+**Phase:** **top-level `feature/calls` landed** → gui bands / hub CallStack ownership later
 
 ## Shipped this stream
 
 - f1–f3 peels; F004/F006/F007 naming
-- f4v1: `feature/messaging/calls/`
-- f5v1: nested ui bands (staging)
-- f6v1: named Application wirers
-- **F008 / f7v1:** lifted `feature/ui/**` → `src/gui/**`; `pp_gui`; retired `pp_feature_ui`
+- f4v1 nested calls → **lifted to `feature/calls/` + `pp_feature_calls`**
+- f5v1 / f7v1: `src/gui/`
+- f6 soft edge: `AgentInboundPorts`
+- F007 rename: `feature/conversations`
+- Call soft edges: `CallDeliveryPorts` + `CallControlInboundPorts`
 
 ## Paths today
 
 | Path | Role |
 |------|------|
-| `feature/messaging/` | Conversations hub + delivery (legacy name) |
-| `feature/messaging/calls/` | Call session |
-| `gui/` | Product presenters (settings, call, pin, emoji, …) |
-| `gui/shell/` | ShellHost, mount, shell ports |
-| `gui/contacts/` | Contacts + people-picker |
-| `gui/chat/` | ChatController + screen helpers |
-| `domain/ui/` | Non-Rml presentation policy (not the GUI layer) |
+| `feature/conversations/` | Conversations hub + delivery |
+| `feature/calls/` | Call session (`pp_feature_calls`) |
+| `gui/` | Product presenters |
+| `domain/messaging/` | Record/codec engines (unchanged) |
 
-Link order: `app → gui → feature` (`settings → ai → messaging` inside feature).
+Link order: `conversations → calls`; app fills AI inbound ports; hub fills call delivery/inbound ports.
 
 ## Next
 
-1. Optional f6 soft edge: conversations→ai inbound port.
-2. Later: top-level `feature/calls` / rename messaging→conversations when cycles allow.
-3. Optional `gui/` band nesting (`call/`, `settings/`, `shared/`).
+1. Optional: move `CallStack` ownership from hub to app.
+2. Optional `gui/` band nesting (`call/`, `settings/`, `shared/`).
+3. Inbox presentation extraction.
+4. Optional rename residual `Messaging*Ports` / `MeshMessagingService` names.

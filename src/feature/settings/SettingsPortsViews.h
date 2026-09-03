@@ -12,7 +12,7 @@ struct PinProtectionView {
 
 /**
  * Reachability card projection for Me → Network.
- * App maps MessagingHub::Reachability(); settings must not include libp2p.
+ * App maps ConversationsHub::Reachability(); settings must not include libp2p.
  */
 struct SettingsReachabilityView {
   enum class Status {

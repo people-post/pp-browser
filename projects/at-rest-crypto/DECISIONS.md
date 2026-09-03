@@ -51,14 +51,14 @@
 **Decision:** At-rest stores that need the profile DEK implement `IDekConsumer` (`SetDek` / `ClearDek`). Registry and fan-out live on the profile secrets service (see A009).  
 **Rationale:** Avoids hand-wiring each new encrypted store into unlock; lock zeroing stays consistent.  
 **Alternatives:** Keep manual `identity_->SetDek` / `psk_store_->SetDek` calls; shared DEK pointer (rejected — copies keep lifetime simple and match existing test injection).  
-**Superseded in part by:** A009 (registry owner moved off MessagingHub).
+**Superseded in part by:** A009 (registry owner moved off ConversationsHub).
 
 ## A009 — ProfileSecretsService (app-wide vault owner)
 
 **Date:** 2026-07-12  
-**Decision:** Move `vault.bin`, PIN unlock, and `IDekConsumer` fan-out from `MessagingHub` to `ProfileSecretsService` (`base/crypto`). Bootstrap initializes the profile service before the hub. `MessagingHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P after `ProfileSecretsService::IsUnlocked()`. UI/settings use the profile service for vault state and Change PIN; messaging features use `IsMessagingReady()`.  
+**Decision:** Move `vault.bin`, PIN unlock, and `IDekConsumer` fan-out from `ConversationsHub` to `ProfileSecretsService` (`base/crypto`). Bootstrap initializes the profile service before the hub. `ConversationsHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P after `ProfileSecretsService::IsUnlocked()`. UI/settings use the profile service for vault state and Change PIN; messaging features use `IsMessagingReady()`.  
 **Rationale:** Profile PIN/DEK is app-wide infrastructure, not messaging-specific; enables future non-messaging encrypted stores without depending on the hub.  
-**Alternatives:** Keep vault in MessagingHub with `IDekConsumer` only (A008); fat `Application` owner (rejected — app wires, base owns domain).
+**Alternatives:** Keep vault in ConversationsHub with `IDekConsumer` only (A008); fat `Application` owner (rejected — app wires, base owns domain).
 
 ---
 

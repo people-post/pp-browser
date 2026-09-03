@@ -7,7 +7,7 @@
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/foundation/crypto/` |
 | `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
 | `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK + transcript store |
-| `EnsureMessagingReady` | **Yes** | `MessagingHub` after profile unlock |
+| `EnsureMessagingReady` | **Yes** | `ConversationsHub` after profile unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
 | Three-way chooser (A007) | **Yes** | After identity fork **I'm new**: Set PIN / default / Not now |
 | Identity fork (M012) | **Yes** | I'm new vs I already have an account on first secrets use |

@@ -51,7 +51,8 @@ pp_browser_add_feature_library(pp_gui
   PUBLIC_LIBS
     pp_feature_settings
     pp_feature_ai
-    pp_feature_messaging
+    pp_feature_calls
+    pp_feature_conversations
     pp_foundation_platform
     pp_domain_ui
     RmlUi::Core)

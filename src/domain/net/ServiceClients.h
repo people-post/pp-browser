@@ -61,7 +61,7 @@ public:
   virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
 };
 
-/** Product blob entry (Amp or libp2p) — DEK + profile wiring for MessagingHub. */
+/** Product blob entry (Amp or libp2p) — DEK + profile wiring for ConversationsHub. */
 class IChatBlobPeerService : public IChatBlobPeerClient, public IDekConsumer {
 public:
   ~IChatBlobPeerService() override = default;

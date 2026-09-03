@@ -37,7 +37,7 @@ Omit or `enabled: false` → hide Support entry.
 
 - www client-compat `support` field (done)
 - PP Support Account provisioned
-- Existing Direct `e2e_public` + MessagingHub / InboxController
+- Existing Direct `e2e_public` + ConversationsHub / InboxController
 
 ## Implementation checklist
 

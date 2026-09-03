@@ -154,9 +154,9 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 |---------|----------|
 | Frame IO | `src/domain/mesh/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
 | JSON frames | `src/domain/mesh/StreamJsonFrame.*` |
-| Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
-| Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
-| Chat blob | `src/feature/messaging/Libp2pChatBlobService.*` |
+| Direct chat | `src/feature/conversations/Libp2pDirectChatService.*` |
+| Chat history | `src/feature/conversations/Libp2pChatHistoryService.*` |
+| Chat blob | `src/feature/conversations/Libp2pChatBlobService.*` |
 | Limits | `src/base/messaging/MessagingLimits.h` |
 | Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
 | Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |

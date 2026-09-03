@@ -8,7 +8,7 @@
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "domain/ui/ContextMenuHost.h"
 #include "domain/ui/RmlVariantHelpers.h"
-#include "feature/messaging/MessagingShellPorts.h"
+#include "feature/conversations/MessagingShellPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/FlowCoordinatorPorts.h"

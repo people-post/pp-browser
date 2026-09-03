@@ -68,7 +68,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 | pp-node `mesh_node` register/renew | Shipped (`NodeMeshPublish`) |
 | `MeshDirectoryCache` + `TickMesh` refresh | Shipped |
 | Hop policy `DirectoryNode` + `CollectDirectoryHopCandidates` | Shipped |
-| Endpoint registration from directory snapshot | Shipped (via MessagingHub / hop build) |
+| Endpoint registration from directory snapshot | Shipped (via ConversationsHub / hop build) |
 | **Remaining pre-chain** | See [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) (N029 nd1–nd5) — name port, record fidelity, Amp twin, `ledger_gateway` prep |
 
 ### Work items
@@ -79,7 +79,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
   - Periodic refresh from configured directory provider(s) (same order as `directory.providers[]`).
   - TTL + backoff on failure; stale cache OK short-term.
   - Parse `MeshNodeHit` → `{ peer_id, endpoints[], capabilities, expires_at }`.
-- Trigger refresh from `MessagingHub::TickMesh` (or `ReachabilityService` tick) when Node enabled or when circuit/media hop selection runs.
+- Trigger refresh from `ConversationsHub::TickMesh` (or `ReachabilityService` tick) when Node enabled or when circuit/media hop selection runs.
 - Unit tests: parse fixtures, TTL expiry, provider failover.
 
 #### n-dir-2 — Hop policy integration
@@ -91,7 +91,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 - Update ordering helpers:
   - `OrderCircuitHops`: contacts → directory → seed (directory before seed when both exist).
   - `RankMediaHops` / `RankMediaHopsEscalating`: directory nodes eligible as **OrgSeed-class** infra (not contacts); still closed-set until N020 mid opens wider scopes.
-- Wire in `MessagingHub`, `CallStack`, `CallTopologyController` alongside existing `CollectSeedHopCandidates`.
+- Wire in `ConversationsHub`, `CallStack`, `CallTopologyController` alongside existing `CollectSeedHopCandidates`.
 
 #### n-dir-3 — Endpoint registration
 
@@ -115,8 +115,8 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 ### Estimated touchpoints
 
 - `src/base/people/MeshHopPolicy.{h,cpp}`
-- `src/feature/messaging/MessagingHub.cpp`
-- `src/feature/messaging/CallStack.cpp`, `CallTopologyController.cpp`
+- `src/feature/conversations/ConversationsHub.cpp`
+- `src/feature/conversations/CallStack.cpp`, `CallTopologyController.cpp`
 - `src/base/net/ServiceClients*`
 - New: `src/domain/mesh/discovery/MeshDirectoryCache.{h,cpp}`
 - Tests: `mesh_hop_policy_test`, new `mesh_directory_cache_test`
@@ -161,7 +161,7 @@ Decisions to lock:
 - `src/domain/mesh/dht/`:
   - `DhtNode` — bucket table, routing table, bootstrap.
   - `DhtRecordStore` — local signed records for self when publishing.
-  - `DhtClient` — FIND_PEER for consumers (MessagingHub / reachability).
+  - `DhtClient` — FIND_PEER for consumers (ConversationsHub / reachability).
 - Integrate with `MeshHost` lifecycle: start/stop with Node role; no second UDP stack beyond AMP.
 
 ### n2-core-2 — Publish path
@@ -187,7 +187,7 @@ Decisions to lock:
 ### Acceptance (n2-core)
 
 - [x] v1 `AmpDhtService` on `/pp-mesh/dht/1.0.0` — self STORE + bootstrap FIND_PEER fan-out
-- [x] `MeshHost` + `MessagingHub` wiring; Me → Network DHT checkbox (Node only, default off)
+- [x] `MeshHost` + `ConversationsHub` wiring; Me → Network DHT checkbox (Node only, default off)
 - [x] Unit tests: `dht_record_codec_test`, `amp_dht_service_test` (incl. mutual discover)
 - [x] Two desktop Nodes with DHT enabled discover each other’s ADP addrs without Brief HTTP — `scripts/pp_node_dht_smoke.sh` + pp-node `ConfigureAmpDht` / warm FIND_PEER
 - [x] Mobile Client never runs DHT (`ResolveMeshRole` gate)
@@ -259,7 +259,7 @@ ns bridge score ────────► n-dir-4 (partial; can parallel n2-sp
 | PR | Track | Summary |
 |----|-------|---------|
 | 1 | n-dir-1,2 | `MeshDirectoryCache` + `CollectDirectoryHopCandidates` + tests |
-| 2 | n-dir-3,4 | MessagingHub wiring, bridge score hook, docs |
+| 2 | n-dir-3,4 | ConversationsHub wiring, bridge score hook, docs |
 | 3 | n2-spec | N028 + `MESH_DHT.md` + config schema |
 | 4 | n2-core-1,2 | DHT module + self-publish |
 | 5 | n2-core-3,4 | FIND_PEER consumer + UI checkbox |

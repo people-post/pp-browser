@@ -1,10 +1,10 @@
 # Feature / app layer reorg
 
-**Status:** **f7v1 done** — `src/gui/` above feature ([F008](DECISIONS.md#f008--gui-layer-above-feature))  
+**Status:** **calls lift + conversations rename + f7v1** — `feature/calls`/`pp_feature_calls`; `feature/conversations`; `src/gui/`; soft ports  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md), [`src/feature/README.md`](../../src/feature/README.md)  
-**Prerequisite:** `src/base/` → `foundation` + `domain` (**done**). This project continues with `src/feature/`, `src/app/`, and the planned **`src/gui/`** layer.
+**Prerequisite:** `src/base/` → `foundation` + `domain` (**done**). This project continues with `src/feature/`, `src/gui/`, and `src/app/`.
 
 ## One-line goal
 
@@ -16,7 +16,7 @@ Shrink and clarify `feature/` and `app/` by moving **sure** engines into domain,
 |----------|-------------------------|
 | Layer litmus; domain peer independence; sure peels first | When folders physically rename |
 | Vocabulary + end-state names ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) | Exact bands under `gui/` |
-| Calls: nested band first ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | Top-level `pp_feature_calls` timing |
+| Calls: nested then top-level ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | App-owned `CallStack` timing |
 | No top-level `feature/chat` | `ChatController` class rename |
 | Product UI layer = **`gui`** above feature ([F008](DECISIONS.md#f008--gui-layer-above-feature)) | When `feature/ui` physically moves |
 
@@ -25,7 +25,7 @@ See [NORTH_STAR.md](NORTH_STAR.md) and [DECISIONS.md](DECISIONS.md) (F001–F008
 ## Why this order
 
 1. **Foundation/domain peels taught ownership.** Feature still holds stores and pure helpers that already match domain litmus.
-2. **Folder splits without peels just move the god-objects.** `MessagingHub` stays hard until mass drops; UI nesting (f5) was staging only.
+2. **Folder splits without peels just move the god-objects.** `ConversationsHub` stays hard until mass drops; UI nesting (f5) was staging only.
 3. **Presenters are not feature peers.** `gui` above feature matches [UI_FUNCTIONAL_BOUNDARY](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md); name **`gui`** avoids clash with `domain/ui`.
 
 ## Scope

@@ -122,7 +122,7 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 - [x] `AmpStack` composition helper (`Endpoint` + `MeshRuntime`)
 - [x] Attach `AmpStack` to `MeshHost` (`mesh_enabled` / `AttachAmpStack`; [A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys))
-- [x] Enable Amp in product node/MessagingHub start (default on; soft-fail)
+- [x] Enable Amp in product node/ConversationsHub start (default on; soft-fail)
 - [x] Chat + history single transport entry via Amp when `MeshHost::Amp()` is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Call-media single transport entry via `CallMediaAmpTransport` / `CallMediaLegCoordinator` when Amp is up; `kCallMediaAdpOpusDogfood=false`
 - [x] Circuit / media-relay Amp ownership on MeshHost (step 5a) — hosting + admission

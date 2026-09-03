@@ -168,7 +168,7 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 
 L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
 
-**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
+**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `ConversationsHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
 
 ## Code layout (planned)
 

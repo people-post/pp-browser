@@ -31,7 +31,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.dht_enabled = bootstrap.config.mesh.capabilities.dht ? "on" : "off";
   state.prefer_contacts_for_routing = bootstrap.config.mesh.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
-  // amp_listen_multiaddr is filled by SettingsController from MessagingHub runtime.
+  // amp_listen_multiaddr is filled by SettingsController from ConversationsHub runtime.
 }
 
 bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {

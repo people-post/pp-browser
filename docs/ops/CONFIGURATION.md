@@ -54,14 +54,14 @@ After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`Se
 
 | Disk DTO | Projector | Service slice | Apply |
 |----------|-----------|---------------|-------|
-| `AppConfig` | `MessagingHub::ProjectNetwork` | `MessagingHub::NetworkConfig` | `MessagingHub::Apply` |
+| `AppConfig` | `ConversationsHub::ProjectNetwork` | `ConversationsHub::NetworkConfig` | `ConversationsHub::Apply` |
 | `AppConfig` | `ChatController::ProjectAgent` | `ChatController::AgentConfig` | `ChatController::Apply` |
-| `ProfilePreferences` | `MessagingHub::ProjectPolicy` | `MessagingHub::PolicyPrefs` | `MessagingHub::Apply` |
-| `ProfilePreferences` | `MessagingHub::ProjectNotifications` | `MessagingHub::NotificationPrefs` | `MessagingHub::Apply` |
+| `ProfilePreferences` | `ConversationsHub::ProjectPolicy` | `ConversationsHub::PolicyPrefs` | `ConversationsHub::Apply` |
+| `ProfilePreferences` | `ConversationsHub::ProjectNotifications` | `ConversationsHub::NotificationPrefs` | `ConversationsHub::Apply` |
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
 | `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`MessagingHub`](../../src/feature/messaging/MessagingHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
 
 | SessionStore listener | Used by |
 |-----------------------|---------|

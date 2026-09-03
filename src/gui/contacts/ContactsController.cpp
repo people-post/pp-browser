@@ -17,7 +17,7 @@
 #include "common/Utilities.h"
 #include "gui/ChatSessionPorts.h"
 #include "domain/people/ContactReachability.h"
-#include "feature/messaging/MessagingContactsPorts.h"
+#include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/UiEditSession.h"

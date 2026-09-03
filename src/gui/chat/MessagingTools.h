@@ -4,21 +4,21 @@
 
 namespace pbr {
 
-class MessagingFacade;
+class ConversationsFacade;
 
 // Native messaging / people / identity tools as an MCP-shaped provider.
 class MessagingToolProvider : public IToolProvider {
 public:
-  explicit MessagingToolProvider(MessagingFacade& messaging);
+  explicit MessagingToolProvider(ConversationsFacade& messaging);
 
   std::string Id() const override;
   std::vector<ToolDescriptor> ListTools() override;
 
 private:
-  MessagingFacade& messaging_;
+  ConversationsFacade& messaging_;
 };
 
 // Convenience: register MessagingToolProvider into an existing registry.
-void RegisterMessagingTools(ToolRegistry& registry, MessagingFacade& messaging);
+void RegisterMessagingTools(ToolRegistry& registry, ConversationsFacade& messaging);
 
 } // namespace pbr

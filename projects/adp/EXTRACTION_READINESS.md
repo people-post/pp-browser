@@ -11,7 +11,7 @@
 | L2 MSH session | `src/lib/amp/L2/` | `pp_base_mesh_session` | [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) |
 | L3 channel mux | `src/lib/amp/L3/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) |
 | Link (horizontal) | `src/lib/amp/link/` | `pp_base_mesh_link` | [STACK.md](STACK.md) |
-| L4 product | `src/domain/mesh/`, `src/feature/messaging/` | `pp_domain_mesh`, … | stays in pp-browser |
+| L4 product | `src/domain/mesh/`, `src/feature/conversations/` | `pp_domain_mesh`, … | stays in pp-browser |
 
 ## Shared helpers (colocated in `src/lib/amp/`)
 

@@ -1,7 +1,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include "gui/chat/ChatController.h"
-#include "feature/messaging/MessagingFacade.h"
+#include "feature/conversations/ConversationsFacade.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -33,7 +33,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/people/ContactJson.h"
-#include "feature/messaging/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClientUtil.h"
 #include "domain/messaging/AtAiParser.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
@@ -317,10 +317,10 @@ ChatController::ChatController()
       });
 }
 
-void ChatController::BindMessagingFacade(MessagingFacade* facade) {
+void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
-  scroller_.BindMessagingFacade(facade);
-  chrome_.BindMessagingFacade(facade);
+  scroller_.BindConversationsFacade(facade);
+  chrome_.BindConversationsFacade(facade);
 }
 
 void ChatController::BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook) {
@@ -2581,9 +2581,6 @@ void ChatController::WireMessagingBindings() {
       agent_ports_.set_thread_store(store);
     }
   }
-  if (facade_ && agent_ports_.with_session) {
-    agent_ports_.with_session([&](AgentSession& agent) { facade_->BindAgent(agent); });
-  }
   chat_.compose_disabled = false;
   DirtyChatChrome();
   facade_->SetOnMessagesChanged([this]() {
@@ -2609,8 +2606,8 @@ void ChatController::WireMessagingBindings() {
       OnSelectThread(thread_id);
     }
   });
-  // Relay poll is armed by MessagingHub::StartCoordinatorTimers (not here). Call-wake UI
-  // refresh is wired via MessagingHub::SetOnCallWake from Application.
+  // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
+  // refresh is wired via ConversationsHub::SetOnCallWake from Application.
   IPushDeviceRegistrar::SetTokenChangedHandler([this](const std::string& /*token*/) {
     AppRuntime::PostUI([this]() {
       if (!MessagingReady()) {
@@ -3078,7 +3075,7 @@ void ChatController::Shutdown() {
     if (agent_ports_.cancel) {
       agent_ports_.cancel();
     }
-    // ConfigureOnIO may still be running (and used to touch MessagingHub via the
+    // ConfigureOnIO may still be running (and used to touch ConversationsHub via the
     // tool hook). Wait before Application tears the hub down.
     if (agent_ports_.wait_for_configure_idle) {
       agent_ports_.wait_for_configure_idle();
