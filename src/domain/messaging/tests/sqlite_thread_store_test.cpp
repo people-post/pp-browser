@@ -223,5 +223,41 @@ TEST(ChatPayloadCodecTest, VectorATextRoundTrip) {
   EXPECT_EQ(message.text, "Hello");
 }
 
+TEST(SqliteThreadStoreTest, IncompatibleProfileDbFailsEveryCallNotJustTheFirst) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_profile_version_guard_test";
+  std::filesystem::remove_all(data_dir);
+
+  {
+    SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
+    ASSERT_TRUE(store.ListThreads());
+    store.Flush();
+  }
+
+  const std::filesystem::path profile_db = data_dir / "threads" / "profile.db";
+  ASSERT_TRUE(std::filesystem::exists(profile_db));
+  {
+    sqlite3* db = nullptr;
+    ASSERT_EQ(sqlite3_open(profile_db.string().c_str(), &db), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(db, "PRAGMA user_version = 1;", nullptr, nullptr, nullptr), SQLITE_OK);
+    sqlite3_close(db);
+  }
+
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+
+  auto first = store.ListThreads();
+  ASSERT_FALSE(first);
+  EXPECT_NE(first.error().message.find("Incompatible"), std::string::npos);
+
+  // The guard must fire on every call. A failed open still assigned profile_db_,
+  // so the early return in OpenProfileDb() skipped the version check from the
+  // second call on and the store went on to read an incompatible database.
+  auto second = store.ListThreads();
+  ASSERT_FALSE(second);
+  EXPECT_NE(second.error().message.find("Incompatible"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

@@ -83,6 +83,7 @@ private:
 
   Roe<void> EnsureInitialized() const;
   Roe<void> OpenProfileDb() const;
+  Roe<void> OpenProfileDbUnguarded() const;
   Roe<sqlite3*> OpenThreadDb(const std::string& thread_id) const;
   void CloseThreadDb(const std::string& thread_id) const;
   void TouchThreadLru(const std::string& thread_id) const;
