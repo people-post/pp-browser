@@ -1,7 +1,7 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** f0 done → **f1 next**
+**Phase:** f1+f2 peels landed → **f3 next**
 
 ## What already shipped (prior work)
 
@@ -10,40 +10,39 @@
 - Feature module libs acyclic: `settings → ai → messaging → ui → chat`
 - Ports + app bridges break UI↔functional cycles ([UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md))
 - Include guard: [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh)
+- **f0** project docs + **F006** (sure peels use existing peers, no new top-level domain peers)
+- **f1+f2** sure peels into `domain/{messaging,people,mesh/reachability,ui}` (Hub still owns `unique_ptr`s)
 
 ## Snapshot (approx. non-test `.h`/`.cpp`)
 
-| Area | Count | Notes |
-|------|------:|-------|
-| `feature/messaging` | ~127 | Hub ~2.2k LOC; owns call stack + some stores |
-| `feature/ui` | ~105 | Shell + many screens + ~20 ports |
-| `feature/chat` | ~20 | `ChatController` ~3k LOC |
-| `feature/ai` | ~35 | Healthier |
-| `feature/settings` | ~28 | Healthier; profile/security UI still partly in ui |
-| `app` | ~28 | `Application::Initialize` ~850 LOC of wiring |
+| Area | Notes |
+|------|-------|
+| `feature/messaging` | Still hub/sync/calls; stores/PSK/reach helpers peeled |
+| `feature/ui` | No longer includes messaging `ContactReachability`; uses `domain/people` |
+| `domain/messaging` | + PSK store/coordinators, `CallMediaKeyStore`, epoch bump |
+| `domain/people` | + reachability, brief route, profile icon fetch |
+| `domain/mesh/reachability` | + `MobileEphemeralListenGate` |
+| `domain/ui` | + `PeoplePickerLogic`, `CallConflictCopy` |
 
-## Pain points (today)
+## Pain points (remaining)
 
-1. Feature messaging holds domain-grade stores (`SqlitePskSessionStore`, `CallMediaKeyStore`) and pure helpers.
-2. Calls have no module: SM under messaging, chrome under ui.
-3. `feature/ui` is a grab-bag; cross-deps look worse than link order alone shows.
-4. Inbox builds presentation rows inside messaging (`domain/ui/ChatWidgetTypes`).
-5. messaging → ai hard-includes `AgentSession`.
-6. ~28 ports; Application is the only complete wiring map.
+1. Calls still under `feature/messaging` (SM) vs `feature/ui` (chrome) — f4.
+2. `feature/ui` still a grab-bag — f5.
+3. Inbox presentation leak / ChatController size — f6.
+4. messaging → ai hard-includes `AgentSession`.
+5. Cross-peer utils still blocked (`DirectoryShadowCache`, etc.).
 
 ## Next agent — start here
 
-1. **f1:** move `SqlitePskSessionStore` (+ ideally `CallMediaKeyStore` in the same or follow-up PR) to **`domain/messaging/` flat** ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)).
-2. Keep Hub ownership; update includes/CMake/tests only. **No new domain peers / no messaging subfolder migration in f1.**
-3. Mark PHASES checkboxes.
-4. Do **not** start `feature/calls` folder split until f1–f2 peels land (or an ADR explicitly overrides).
+1. **f3:** `ChatHistoryResponder` identity peel → `domain/messaging`; `IDirectMessageClient` → `common/`.
+2. Or start **f4** `feature/calls` extraction if preferred after reviewing file counts.
+3. Do not add new domain peers without an ADR overriding [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers).
 
 ## Related docs still slightly stale
 
 | Doc | Stale bit |
 |-----|-----------|
-| `src/feature/README.md` | Still mentions `base/` includes in places |
-| `RUNTIME_COMPOSITION.md` | Diagrams still say `base/` |
-| `docs/README.md` | SRC_LAYOUT blurb may still say foundation+domain under `base/` |
+| `RUNTIME_COMPOSITION.md` | Diagrams may still say `base/` |
+| Feature README / CALLS | Prefer opportunistic path fixes when touching those areas |
 
-Fix those opportunistically when touching layout (prefer same PR as structural moves).
+Fix those opportunistically when touching layout.

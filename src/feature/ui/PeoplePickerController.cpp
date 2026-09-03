@@ -11,7 +11,7 @@
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/ui/ShellTypes.h"
-#include "feature/messaging/ContactReachability.h"
+#include "domain/people/ContactReachability.h"
 #include "feature/ui/CallActionsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"

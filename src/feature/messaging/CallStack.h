@@ -9,7 +9,7 @@
 #include "feature/messaging/AmpMediaRelayClient.h"
 #include "feature/messaging/CallMediaBridge.h"
 #include "feature/messaging/CallLifecycle.h"
-#include "feature/messaging/CallMediaKeyStore.h"
+#include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"

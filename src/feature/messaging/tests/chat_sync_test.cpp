@@ -17,7 +17,7 @@
 #include "feature/messaging/PeerDisplayResolver.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

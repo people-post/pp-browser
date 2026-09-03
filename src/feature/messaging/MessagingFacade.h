@@ -19,7 +19,7 @@
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/messaging/MeshMessagingService.h"
 #include "feature/messaging/PeerDisplayResolver.h"
-#include "feature/messaging/PskSessionCoordinator.h"
+#include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
 
 #include <cstdint>

@@ -12,7 +12,7 @@
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "feature/messaging/MeshMessagingService.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <vector>
 #include "common/PbrCompat.h"

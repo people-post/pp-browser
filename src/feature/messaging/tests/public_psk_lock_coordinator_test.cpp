@@ -8,8 +8,8 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/messaging/LinkDeviceCoordinator.h"
-#include "feature/messaging/PublicPskLockCoordinator.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
 

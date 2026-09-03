@@ -436,7 +436,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
-| `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
+| `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/ui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |

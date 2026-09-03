@@ -1,4 +1,4 @@
-#include "feature/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/PublicPskLockCoordinator.h"
 
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoConstants.h"

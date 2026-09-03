@@ -1,4 +1,4 @@
-#include "feature/messaging/PeerBriefRoute.h"
+#include "domain/people/PeerBriefRoute.h"
 
 #include "domain/people/ContactsStore.h"
 

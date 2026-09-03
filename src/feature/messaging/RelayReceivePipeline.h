@@ -3,7 +3,7 @@
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/messaging/E2eIngestClassifier.h"
-#include "feature/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "common/thread/IThreadStore.h"

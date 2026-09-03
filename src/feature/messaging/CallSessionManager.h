@@ -9,7 +9,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/messaging/CallMediaKeyStore.h"
+#include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallMediaBridge.h"
 #include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyController.h"

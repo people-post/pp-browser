@@ -7,7 +7,7 @@
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "feature/messaging/CallMediaKeyStore.h"
+#include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"

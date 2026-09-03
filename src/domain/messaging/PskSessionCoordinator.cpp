@@ -1,4 +1,4 @@
-#include "feature/messaging/PskSessionCoordinator.h"
+#include "domain/messaging/PskSessionCoordinator.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PskBundleCodec.h"

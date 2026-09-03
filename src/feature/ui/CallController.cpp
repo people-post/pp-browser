@@ -18,7 +18,7 @@
 #include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallUiBackend.h"
 #include "feature/ui/CallChromeSync.h"
-#include "feature/ui/CallConflictCopy.h"
+#include "domain/ui/CallConflictCopy.h"
 #include "feature/ui/PaymentFeedback.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"

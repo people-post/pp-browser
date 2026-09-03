@@ -1,4 +1,4 @@
-#include "feature/ui/PeoplePickerLogic.h"
+#include "domain/ui/PeoplePickerLogic.h"
 
 #include <gtest/gtest.h>
 

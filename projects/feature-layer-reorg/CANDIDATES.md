@@ -2,23 +2,23 @@
 
 Confidence tags per [F002](DECISIONS.md#f002--confidence-tags-for-moves). Update when a peel lands or a candidate is demoted.
 
-## sure — peel to domain (f1–f3)
+## sure — peeled to domain (f1–f2 done)
 
 Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers): **no new top-level peers**; flat drop unless the peer already nests.
 
-| Files (today) | Target path | Notes |
-|---------------|-------------|-------|
-| `feature/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Next to `SqliteThreadStore` / `PeerKemKeyStore` |
-| `feature/messaging/CallMediaKeyStore.*` | `domain/messaging/` | Next to `CallSessionStore` — **not** `domain/media` |
-| `feature/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Next to `PskRotateCodec` |
-| `feature/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Rotate plan/commit |
-| `feature/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Thin thread-store policy |
-| `feature/messaging/ContactReachability.*` | `domain/people/` | Next to `ContactTypes` / `ContactsStore` |
-| `feature/messaging/PeerBriefRoute.*` | `domain/people/` | People-centric route helpers |
-| `feature/messaging/ProfileIconFetchUtil.*` | `domain/people/` | Next to `ProfileIconCache` |
-| `feature/messaging/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Only nested home — mesh already bands |
-| `feature/ui/PeoplePickerLogic.h` | `domain/ui/` | Pure logic |
-| `feature/ui/CallConflictCopy.*` | `domain/ui/` | Copy/CTA policy |
+| Files (now) | Home | Notes |
+|-------------|------|-------|
+| `domain/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Done |
+| `domain/messaging/CallMediaKeyStore.*` | `domain/messaging/` | Done — not `domain/media` |
+| `domain/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Done |
+| `domain/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Done; feature test still covers LinkDevice export case |
+| `domain/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Done |
+| `domain/people/ContactReachability.*` | `domain/people/` | Done |
+| `domain/people/PeerBriefRoute.*` | `domain/people/` | Done |
+| `domain/people/ProfileIconFetchUtil.*` | `domain/people/` | Done |
+| `domain/mesh/reachability/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Done |
+| `domain/ui/PeoplePickerLogic.h` | `domain/ui/` | Done |
+| `domain/ui/CallConflictCopy.*` | `domain/ui/` | Done |
 
 **Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
 

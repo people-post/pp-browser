@@ -3,8 +3,8 @@
 #include "foundation/crypto/PskBundleCodec.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "feature/messaging/PskSessionCoordinator.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/PskSessionCoordinator.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

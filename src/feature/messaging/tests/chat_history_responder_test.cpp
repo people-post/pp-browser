@@ -7,7 +7,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/Ed25519Signer.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

@@ -16,7 +16,7 @@
 #include "domain/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
-#include "feature/messaging/ContactReachability.h"
+#include "domain/people/ContactReachability.h"
 #include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/UnlockEnsurePorts.h"

@@ -18,30 +18,30 @@
 - [x] README / NORTH_STAR / PHASES / CURRENT_STATE / DECISIONS / CANDIDATES
 - [x] Index in [projects/README.md](../README.md)
 - [x] Point SRC_LAYOUT migration step 5 at this project
-- [ ] Agree working North Star is revisable (method locked in [F001](DECISIONS.md#f001--sure-things-first-revisable-north-star))
+- [x] Agree working North Star is revisable (method locked in [F001](DECISIONS.md#f001--sure-things-first-revisable-north-star))
 
 ## f1 — Safe domain peels (messaging stores / policy)
 
 Single-peer or foundation+common-only. Hub keeps owning `unique_ptr`; only the **definition** moves.
 
-- [ ] `SqlitePskSessionStore` → `domain/messaging`
-- [ ] `CallMediaKeyStore` → `domain/messaging` (flat; [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers) — not `domain/media`)
-- [ ] `PskSessionCoordinator` → `domain/messaging`
-- [ ] `PublicPskLockCoordinator` → `domain/messaging`
-- [ ] `EpochBumpCoordinator` → `domain/messaging`
-- [ ] Update domain CMake + tests colocation; Hub includes new paths
+- [x] `SqlitePskSessionStore` → `domain/messaging`
+- [x] `CallMediaKeyStore` → `domain/messaging` (flat; [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers) — not `domain/media`)
+- [x] `PskSessionCoordinator` → `domain/messaging`
+- [x] `PublicPskLockCoordinator` → `domain/messaging`
+- [x] `EpochBumpCoordinator` → `domain/messaging`
+- [x] Update domain CMake + tests colocation; Hub includes new paths
 
 ## f2 — People / mesh pure helpers
 
 Clears sharp `feature/ui` → messaging engine includes.
 
-- [ ] `ContactReachability` → `domain/people`
-- [ ] `PeerBriefRoute` → `domain/people`
-- [ ] `ProfileIconFetchUtil` → `domain/people`
-- [ ] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
-- [ ] `PeoplePickerLogic` → `domain/ui` (optional same batch)
-- [ ] `CallConflictCopy` → `domain/ui` (optional same batch)
-- [ ] UI includes ports/people/domain only — no `ContactReachability` from messaging
+- [x] `ContactReachability` → `domain/people`
+- [x] `PeerBriefRoute` → `domain/people`
+- [x] `ProfileIconFetchUtil` → `domain/people`
+- [x] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
+- [x] `PeoplePickerLogic` → `domain/ui` (optional same batch)
+- [x] `CallConflictCopy` → `domain/ui` (optional same batch)
+- [x] UI includes ports/people/domain only — no `ContactReachability` from messaging
 
 ## f3 — Responder / contract tidy
 

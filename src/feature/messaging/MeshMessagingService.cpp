@@ -6,7 +6,7 @@
 #include "feature/messaging/AmpChatHistoryService.h"
 #include "feature/messaging/AmpDirectChatService.h"
 #include "feature/messaging/MeshMessagingService.h"
-#include "feature/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/PublicPskLockCoordinator.h"
 
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoTypes.h"
@@ -33,7 +33,7 @@
 #include "common/EmojiKey.h"
 #include "common/chat/RelayStreamKey.h"
 #include "domain/messaging/RelayWirePayload.h"
-#include "feature/messaging/PeerBriefRoute.h"
+#include "domain/people/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/net/ServiceClientsImpl.h"

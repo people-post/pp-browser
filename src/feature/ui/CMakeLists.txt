@@ -2,7 +2,6 @@ pp_browser_add_feature_library(pp_feature_ui
   SOURCES
     BadgeAggregator.cpp
     CallChromeSync.cpp
-    CallConflictCopy.cpp
     CallController.cpp
     ContactsChromeSync.cpp
     ContactsController.cpp

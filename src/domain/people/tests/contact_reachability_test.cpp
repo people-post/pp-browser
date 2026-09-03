@@ -1,4 +1,4 @@
-#include "feature/messaging/ContactReachability.h"
+#include "domain/people/ContactReachability.h"
 
 #include "domain/people/ContactTypes.h"
 

@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-/** D014/D068/D085 — local epoch bump and compromised resolution (feature layer). */
+/** D014/D068/D085 — local epoch bump and compromised resolution (domain messaging). */
 class EpochBumpCoordinator {
 public:
   explicit EpochBumpCoordinator(IThreadStore& store);
