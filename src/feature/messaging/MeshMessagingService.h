@@ -14,7 +14,7 @@
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "domain/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
-#include "feature/messaging/IDirectMessageClient.h"
+#include "common/chat/IDirectMessageClient.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"

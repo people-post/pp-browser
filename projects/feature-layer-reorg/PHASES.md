@@ -45,19 +45,20 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 ## f3 — Responder / contract tidy
 
-- [ ] Peel `ChatHistoryResponder` identity coupling; move → `domain/messaging` (mirror `ChatBlobResponder`)
-- [ ] `IDirectMessageClient` → `common/` (iface only; Amp impl stays)
-- [ ] Revisit [CANDIDATES.md](CANDIDATES.md) “needs common peel” list; promote any newly unblocked items
+- [x] Peel `ChatHistoryResponder` identity coupling; move → `domain/messaging` (mirror `ChatBlobResponder`)
+- [x] `IDirectMessageClient` → `common/chat/` (iface only; Amp impl stays)
+- [x] Revisit [CANDIDATES.md](CANDIDATES.md) “needs common peel” list; promote any newly unblocked items
+  - No promotions this batch; Amp façades / ProfileIconFetchUtil remain blocked/demoted
 
-## f4 — Structural: extract `feature/calls`
+## f4 — Structural: extract calls (banded first)
 
-Mechanical move after f1–f2 reduce call-related store noise.
+Mechanical move after f1–f3. Prefer **nested band** before a new library (avoids messaging↔calls cycle via MeshMessagingService).
 
-- [ ] New `pp_feature_calls` (or nested `messaging/calls` if ADR chooses nesting)
-- [ ] Move CallStack / CSM / Lifecycle / Topology / CallUiBackend / CallFunctionalPorts
-- [ ] CMake `PUBLIC_LIBS` + `check_feature_includes.sh` edges
+- [ ] ADR F004: nested `feature/messaging/calls/` (same `pp_feature_messaging`) — no new target yet
+- [ ] Move CallStack / CSM / Lifecycle / Topology / CallUiBackend / CallFunctionalPorts / Amp call façades into band
+- [ ] Update includes only; `check_feature_includes.sh` unchanged for module edges
 - [ ] Update NORTH_STAR + SRC_LAYOUT feature table if names lock
-- [ ] ADR: folder name + link order ([F00x](DECISIONS.md) when chosen)
+- [ ] (Later) top-level `pp_feature_calls` only after MeshMessagingService port breaks the cycle
 
 ## f5 — Structural: split shell / contacts from `feature/ui`
 

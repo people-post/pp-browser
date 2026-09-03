@@ -1,4 +1,4 @@
-#include "feature/messaging/ChatHistoryResponder.h"
+#include "domain/messaging/ChatHistoryResponder.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
@@ -17,18 +17,16 @@ namespace {
 
 Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const Thread& thread,
                                              const std::string& local_relay_user_id,
-                                             const std::string& peer_relay_user_id, IdentityStore& identity,
-                                             IPskSessionStore& psk_store) {
+                                             const std::string& peer_relay_user_id,
+                                             const std::string& local_account_id,
+                                             IPskSessionStore& psk_store,
+                                             const ChatHistoryResponder::SignBytesFn& sign_bytes) {
   if (!message.sender_seq || !message.session_epoch) {
     return Error("History row missing seq fields");
   }
 
-  auto local = identity.Get();
-  if (!local) {
-    return local.error();
-  }
-  const std::string local_account_id =
-      !local->account_id.empty() ? local->account_id : local_relay_user_id;
+  const std::string sender_contact_id =
+      !local_account_id.empty() ? local_account_id : local_relay_user_id;
   const std::string peer_communicating_id =
       !thread.peer_identity_value.empty() ? thread.peer_identity_value : peer_relay_user_id;
 
@@ -47,7 +45,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
     params.text = message.text;
     params.channel = E2eRelayPayloadCodec::ChannelFromThread(thread.channel);
     params.peer_contact_id = peer_communicating_id;
-    params.sender_contact_id = local_account_id;
+    params.sender_contact_id = sender_contact_id;
     params.message_id = message.id;
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
@@ -69,7 +67,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
   envelope.sender_relay_id = local_relay_user_id;
-  envelope.sender_contact_id = local_account_id;
+  envelope.sender_contact_id = sender_contact_id;
   envelope.route.kind = "direct";
   envelope.route.channel = thread.channel;
   envelope.body.e2e.payload_b64 = *payload_b64;
@@ -81,11 +79,14 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.recipient_contact_id = peer_relay_user_id;
   envelope.timestamp = message.timestamp;
 
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  if (!sign_bytes) {
-    return sign_bytes.error();
+  auto sign_payload = EnvelopeSigner::BuildSignBytes(envelope);
+  if (!sign_payload) {
+    return sign_payload.error();
   }
-  auto signature = identity.SignBytes(*sign_bytes);
+  if (!sign_bytes) {
+    return Error("History responder missing sign callback");
+  }
+  auto signature = sign_bytes(*sign_payload);
   if (!signature) {
     return signature.error();
   }
@@ -95,10 +96,11 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
 
 } // namespace
 
-Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IdentityStore& identity,
-                                                     IPskSessionStore& psk_store,
+Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSessionStore& psk_store,
                                                      const ChatHistoryRequest& request,
-                                                     const std::string& local_relay_user_id) {
+                                                     const std::string& local_relay_user_id,
+                                                     const std::string& local_account_id,
+                                                     const SignBytesFn& sign_bytes) {
   if (local_relay_user_id.empty()) {
     return Error("Local relay identity missing");
   }
@@ -151,7 +153,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, Identi
 
   for (const ThreadMessage& message : *rows) {
     auto envelope = OutboundMessageToEnvelope(message, **thread, local_relay_user_id, request.requester_identity_value,
-                                              identity, psk_store);
+                                              local_account_id, psk_store, sign_bytes);
     if (!envelope) {
       return envelope.error();
     }

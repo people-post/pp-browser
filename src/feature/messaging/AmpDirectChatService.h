@@ -3,7 +3,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/net/ServiceClients.h"
-#include "feature/messaging/IDirectMessageClient.h"
+#include "common/chat/IDirectMessageClient.h"
 
 #include <functional>
 #include <memory>

@@ -1,6 +1,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "feature/messaging/ChatHistoryResponder.h"
+#include "domain/messaging/ChatHistoryResponder.h"
 #include "domain/messaging/ChatHistoryStreamCodec.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/EnvelopeSigner.h"
@@ -112,8 +112,10 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   request.limit = 10;
   request.order = "asc";
 
-  auto response =
-      ChatHistoryResponder::Serve(harness.store, harness.identity, harness.psk_store, request, harness.local_relay_id);
+  auto response = ChatHistoryResponder::Serve(
+      harness.store, harness.psk_store, request, harness.local_relay_id,
+      harness.identity.Get()->account_id.empty() ? harness.local_relay_id : harness.identity.Get()->account_id,
+      [&](const std::vector<uint8_t>& bytes) { return harness.identity.SignBytes(bytes); });
   ASSERT_TRUE(static_cast<bool>(response));
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
@@ -133,8 +135,9 @@ TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
 
-  auto response =
-      ChatHistoryResponder::Serve(harness.store, harness.identity, harness.psk_store, request, harness.local_relay_id);
+  auto response = ChatHistoryResponder::Serve(
+      harness.store, harness.psk_store, request, harness.local_relay_id, harness.local_relay_id,
+      [&](const std::vector<uint8_t>& bytes) { return harness.identity.SignBytes(bytes); });
   EXPECT_FALSE(static_cast<bool>(response));
 }
 

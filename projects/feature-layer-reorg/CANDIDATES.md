@@ -31,9 +31,14 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Files | Target | Blocker |
 |-------|--------|---------|
-| `feature/messaging/ChatHistoryResponder.*` | `domain/messaging` | Drop / inject identity params (mirror `ChatBlobResponder`) |
-| `feature/messaging/IDirectMessageClient.h` | `common/` | Iface only; impl stays |
-| Amp mesh-only façades (`AmpCircuitHopReach`, `AmpMediaRelayClient`) | `domain/mesh` | Audit: no messaging-store includes |
+| Amp mesh-only façades (`AmpCircuitHopReach`, `AmpMediaRelayClient`) | `domain/mesh` | Audit: no messaging-store includes; better with f4v1 calls band |
+
+### Done in f3
+
+| Files | Home | Notes |
+|-------|------|-------|
+| `common/chat/IDirectMessageClient.h` | `common/chat/` | Dropped unused `domain/net` include |
+| `domain/messaging/ChatHistoryResponder.*` | `domain/messaging/` | `IdentityStore` replaced by account id + `SignBytesFn` |
 
 ## blocked — stay feature (or need common first)
 

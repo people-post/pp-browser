@@ -1,7 +1,7 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** f1+f2 peels landed → **f3 next**
+**Phase:** f3 landed → **f4v1 nested calls band next**
 
 ## What already shipped (prior work)
 
@@ -12,37 +12,35 @@
 - Include guard: [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh)
 - **f0** project docs + **F006** (sure peels use existing peers, no new top-level domain peers)
 - **f1+f2** sure peels into `domain/{messaging,people,mesh/reachability,ui}` (Hub still owns `unique_ptr`s)
+- **f3** `IDirectMessageClient` → `common/chat/`; `ChatHistoryResponder` → `domain/messaging` with sign callback
 
-## Snapshot (approx. non-test `.h`/`.cpp`)
+## Snapshot (approx.)
 
 | Area | Notes |
 |------|-------|
-| `feature/messaging` | Still hub/sync/calls; stores/PSK/reach helpers peeled |
-| `feature/ui` | No longer includes messaging `ContactReachability`; uses `domain/people` |
-| `domain/messaging` | + PSK store/coordinators, `CallMediaKeyStore`, epoch bump |
-| `domain/people` | + reachability, brief route (`ProfileIconFetchUtil` stayed in feature — HTTP) |
-| `domain/mesh/reachability` | + `MobileEphemeralListenGate` |
-| `domain/ui` | + `PeoplePickerLogic`, `CallConflictCopy` |
+| `feature/messaging` | Hub/sync/calls/Amp adapters; stores/PSK/reach/history responder peeled |
+| `feature/ui` | Uses `domain/people` for reachability |
+| `domain/messaging` | + PSK/call-key/epoch + `ChatHistoryResponder` |
+| `common/chat` | + `IDirectMessageClient` |
 
 ## Pain points (remaining)
 
-1. Calls still under `feature/messaging` (SM) vs `feature/ui` (chrome) — f4.
-2. `feature/ui` still a grab-bag — f5.
-3. Inbox presentation leak / ChatController size — f6.
+1. Calls still under `feature/messaging` — **f4v1 nested band** (avoid `pp_feature_calls` cycle with MeshMessagingService).
+2. `feature/ui` grab-bag — f5.
+3. Inbox presentation / ChatController — f6.
 4. messaging → ai hard-includes `AgentSession`.
-5. Cross-peer utils still blocked (`DirectoryShadowCache`, etc.).
+5. Cross-peer utils still blocked.
 
 ## Next agent — start here
 
-1. **f3:** `ChatHistoryResponder` identity peel → `domain/messaging`; `IDirectMessageClient` → `common/`.
-2. Or start **f4** `feature/calls` extraction if preferred after reviewing file counts.
-3. Do not add new domain peers without an ADR overriding [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers).
+1. **f4v1:** ADR F004 = nest `feature/messaging/calls/` (same CMake target); move Call* files; no new lib yet.
+2. Do not add top-level `pp_feature_calls` until MeshMessagingService edge is ported.
+3. Optional parallel: app named wirers.
 
 ## Related docs still slightly stale
 
 | Doc | Stale bit |
 |-----|-----------|
 | `RUNTIME_COMPOSITION.md` | Diagrams may still say `base/` |
-| Feature README / CALLS | Prefer opportunistic path fixes when touching those areas |
 
 Fix those opportunistically when touching layout.

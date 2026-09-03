@@ -1,7 +1,6 @@
 #pragma once
 
-#include "common/thread/ThreadTypes.h"
-#include "domain/net/ServiceClients.h"
+#include "common/chat/RelayEnvelope.h"
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 

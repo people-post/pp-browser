@@ -2,7 +2,7 @@
 
 #include "amp/link/PeerLink.h"
 
-#include "feature/messaging/ChatHistoryResponder.h"
+#include "domain/messaging/ChatHistoryResponder.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
@@ -93,8 +93,12 @@ struct AmpChatHistoryService::Impl {
                       if (!local_identity) {
                         return;
                       }
-                      auto response = ChatHistoryResponder::Serve(store, identity, psk_store, *request,
-                                                                  local_identity->relay_user_id);
+                      const std::string local_account_id = !local_identity->account_id.empty()
+                                                               ? local_identity->account_id
+                                                               : local_identity->relay_user_id;
+                      auto response = ChatHistoryResponder::Serve(
+                          store, psk_store, *request, local_identity->relay_user_id, local_account_id,
+                          [this](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); });
                       if (!response) {
                         return;
                       }

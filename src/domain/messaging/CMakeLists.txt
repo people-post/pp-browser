@@ -6,6 +6,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
+    ChatHistoryResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     CallControlCodec.cpp

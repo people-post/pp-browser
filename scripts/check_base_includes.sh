@@ -236,7 +236,6 @@ for shim in \
   src/base/error \
   src/base/i18n \
   src/domain/messaging/PeerBriefRoute.h \
-  src/domain/messaging/ChatHistoryResponder.h \
   src/domain/mesh/host/MeshChannelLimits.h \
   src/domain/mesh/identity \
   src/base/net/ProfileIconClientUtil.h \
