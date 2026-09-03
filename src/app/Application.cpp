@@ -304,29 +304,8 @@ std::string Application::AssetsPath(const std::string& relative) {
   return IAssetLocator::Instance().Resolve(relative);
 }
 
-bool Application::Initialize(const char* window_title) {
-  if (initialized_) {
-    return true;
-  }
-
-  if (!store_.IsInitialized()) {
-    log().error << "SessionStore not initialized";
-    return false;
-  }
-
-  const BootstrapResult& bootstrap = store_.Snapshot();
-
-  const int width = bootstrap.machine_prefs.window.width;
-  const int height = bootstrap.machine_prefs.window.height;
-
-  int window_width = width;
-  int window_height = height;
-  if (Platform::IsMobile()) {
-    ResolveMobileWindowSize(window_width, window_height);
-  }
-
-  log().info << "Initializing (" << window_width << "x" << window_height << ")";
-
+bool Application::InitializeUiHost(const char* window_title, int window_width, int window_height,
+                                   const BootstrapResult& bootstrap, Rml::Context*& context) {
   AppRuntime::InitializeUI();
 
   if (![&] {
@@ -395,7 +374,7 @@ bool Application::Initialize(const char* window_title) {
     LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
   }
 
-  auto* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
+  context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
   if (!context) {
     log().error << "Rml::CreateContext failed";
     Rml::Shutdown();
@@ -427,7 +406,10 @@ bool Application::Initialize(const char* window_title) {
   SdlAppEvents::Install();
 
   ContextMenuHost::Instance().Install(context);
+  return true;
+}
 
+SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   action_router_->Attach(context);
   action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
@@ -645,7 +627,12 @@ bool Application::Initialize(const char* window_title) {
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
   settings_->RefreshLocalizedChrome();
+  return settings_tool_ports;
+}
 
+void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
+  MessagingHub& messaging = Messaging();
+  MessagingFacade& facade = *messaging_facade_;
   ShellHost& shell = *shell_;
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
@@ -754,6 +741,9 @@ bool Application::Initialize(const char* window_title) {
     chat_->BindBadgeNotify(std::move(badge_notify));
   }
   chat_->BindInputCoordinator(*input_);
+}
+
+void Application::WireCalls() {
   {
     CallActionsPorts call_actions;
     call_actions.start_call = [this](const std::string& thread_id, const bool video_allowed) {
@@ -787,7 +777,11 @@ bool Application::Initialize(const char* window_title) {
     shell_->BindCallActions(call_actions);
     people_picker_->BindCallActions(std::move(call_actions));
   }
+}
 
+void Application::WireUnlockPinAndFlow() {
+  MessagingHub& messaging = Messaging();
+  MessagingFacade& facade = *messaging_facade_;
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
@@ -894,7 +888,10 @@ bool Application::Initialize(const char* window_title) {
     people_picker_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
+}
 
+void Application::WireAgentAndConfig() {
+  MessagingHub& messaging = Messaging();
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_session_.emplace();
@@ -913,7 +910,9 @@ bool Application::Initialize(const char* window_title) {
       }
     });
   }
+}
 
+bool Application::MountPresenters(Rml::Context* context) {
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";
     return false;
@@ -1071,7 +1070,12 @@ bool Application::Initialize(const char* window_title) {
     Backend::Shutdown();
     return false;
   }
+  return true;
+}
 
+void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap) {
+  MessagingHub& messaging = Messaging();
+  ShellHost& shell = *shell_;
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
@@ -1151,6 +1155,45 @@ bool Application::Initialize(const char* window_title) {
                                   bootstrap.profile_prefs.compact_chrome_frost);
 
   ApplyUiDocumentLanguage(context);
+}
+
+bool Application::Initialize(const char* window_title) {
+  if (initialized_) {
+    return true;
+  }
+
+  if (!store_.IsInitialized()) {
+    log().error << "SessionStore not initialized";
+    return false;
+  }
+
+  const BootstrapResult& bootstrap = store_.Snapshot();
+
+  const int width = bootstrap.machine_prefs.window.width;
+  const int height = bootstrap.machine_prefs.window.height;
+
+  int window_width = width;
+  int window_height = height;
+  if (Platform::IsMobile()) {
+    ResolveMobileWindowSize(window_width, window_height);
+  }
+
+  log().info << "Initializing (" << window_width << "x" << window_height << ")";
+
+  Rml::Context* context = nullptr;
+  if (!InitializeUiHost(window_title, window_width, window_height, bootstrap, context)) {
+    return false;
+  }
+
+  const SettingsToolPorts settings_tool_ports = WireSettings(context);
+  WireShellPresenters(settings_tool_ports);
+  WireCalls();
+  WireUnlockPinAndFlow();
+  WireAgentAndConfig();
+  if (!MountPresenters(context)) {
+    return false;
+  }
+  WireHubLifecycle(context, bootstrap);
 
   log().info << "Initialization complete";
   initialized_ = true;

@@ -63,8 +63,8 @@ feature/
   calls/           # call session — f4v1 nested as messaging/calls/; later top-level
   shell/           # ShellHost, gestures, feedback, RmlMount, chrome sync (from ui)
   contacts/        # Contacts + PeoplePicker (from ui)
-  ui/              # shared ports + presenters; ABSORBS today’s feature/chat (ChatController)
-                   # NO top-level feature/ui/chat/
+  ui/              # shared ports + presenters; includes nested chat/ band (shipped f5v1)
+                   # no top-level feature/chat/
 ```
 
 ### Legacy → end-state

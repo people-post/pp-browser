@@ -74,7 +74,7 @@ Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-lev
 
 ## f6 — App wirers + soft edges (ongoing / last)
 
-- [ ] Split `Application::Initialize` into named wirers (`WireConversations`, `WireCalls`, …) — no behavior change
+- [x] Split `Application::Initialize` into named wirers (`WireSettings`, `WireShellPresenters`, `WireCalls`, …) — no behavior change
 - [ ] Soften conversations→ai via inbound agent port if touching MessageRouter anyway
 - [ ] Inbox presentation extraction (highest product risk — last)
 - [ ] Demote or schedule remaining cross-peer utils only after `common` contracts exist
