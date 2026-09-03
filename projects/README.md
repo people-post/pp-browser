@@ -55,6 +55,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-mesh](p2p-mesh/) | Mesh deepen, relay scope, name directory / pre-chain |
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [media-hop-reachability](media-hop-reachability/) | Circuit hop dial / SoftMigrate consume |
+| [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment scenarios (design) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |
 | [multi-device-account](multi-device-account/) | Account ID, shared DEK, link-device |
 | [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |

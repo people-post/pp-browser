@@ -4,7 +4,8 @@
 
 How we stress and qualify **pp-node** (hop services) and **pp-browser** (product actions). Purpose IDs (`N-*`, `B-*`) are the vocabulary for multi-process work. Deploy smoke layers L0–L2 live in [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md).
 
-**Doctrine** (tiers vs layers, push-down seams, skip taxonomy, where suite ledgers live): [TESTING.md](../architecture/TESTING.md).
+**Doctrine** (tiers vs layers, push-down seams, skip taxonomy, where suite ledgers live): [TESTING.md](../architecture/TESTING.md).  
+**Hard lab** (forced A↛B / impairment ladder — design): [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING.md](../architecture/NETWORKING.md).
 
@@ -196,6 +197,17 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | **N-SOAK** | Long-run stability | hop + churning clients | T hours: 0 fatal; FD/RSS bounded; dials still accepted | Weekly / pre-release |
 | **N-CHAOS** | Process/network faults | kill/pause/restart | Survivors recover or fail cleanly; hop accepts new work | Manual / weekly |
 | **N-MIX** | Hop interference (existing smokes in parallel) | 1 hop + allowlisted children | Each child keeps its own criteria; hop `/healthz` after | Nightly |
+| **N-HARD-FORCE** | Forced hop: no A↔B route | A \| hop \| B isolated nets | Circuit + media via hop; direct fails | Nightly (when scaffolded) |
+| **N-HARD-LOSSY** | Forced hop + link impairment | Wave 1 + netem | Wave 1 still completes; no hop fatal | Nightly / weekly |
+| **N-HARD-ASYM** | Asymmetric / outbound-only path | Wave 1 + asym profile | Completes via circuit/dial-back story | Nightly / weekly |
+| **N-HARD-STALE-ADDR** | Unusable advertised listen | Forced topo + bad advertise | Hop/book path succeeds; stale direct fails | Nightly |
+| **N-HARD-SEED-ONLY** | PeerId + seed/hop only | No peer multiaddr | Dial-by-PeerId via hop/circuit | Nightly |
+| **N-HARD-DIR** | Directory resolve under partition | Forced topo + directory | Resolve → dial → Wave 1 success | Nightly (when ready) |
+| **N-HARD-DHT** | DHT partition escape | Islands + DHT | Lookup → circuit/media | Weekly (when ready) |
+| **N-ADMIT-HARD** | Admission on forced topo | hop + stranger/allowlist | Expected reject/accept + counters | Nightly |
+| **N-HARD-MHOP-*** | Multi-hop circuit lab | A–R1–R2–B (R1↛B) | See [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 4 | After L3.5; weekly |
+
+Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md). Delivery: [projects/hard-lab/](../../projects/hard-lab/).
 
 ### Inventory (thin)
 
@@ -210,6 +222,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/pp_node_soak_smoke.sh`](../../scripts/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
 | N-CHAOS | **Covered** (scaffold) | [`scripts/pp_node_chaos_smoke.sh`](../../scripts/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
 | N-MIX | **Covered** (scaffold) | [`scripts/pp_mix_hop_smoke.sh`](../../scripts/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
+| N-HARD-* / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) — no compose yet |
 
 ---
 
@@ -224,6 +237,9 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | **B-MSG+CALL** | Messaging + call coexistence | 2 peers | Chat during/after call; no stream starvation | Nightly |
 | **B-UI** | Chrome/actions only | 1–2 GUI instances | Accept visible; leave clears chrome — not media SLOs | Manual / sparse |
 | **B-MIX** | Browser interference (existing smokes in parallel) | independent pairs | Each child keeps its own criteria | Nightly |
+| **B-HARD-CALL** | Product call on forced-hop topo | A \| hop \| B isolated nets | Invite→InCall→Leave; path marked hop | Nightly (when scaffolded) |
+| **B-HARD-MSG+CALL** | Chat + call on forced-hop topo | Same | Chat during/after call; no starvation | Nightly (when scaffolded) |
+| **B-HARD-*** | Teardown / conflict / mobile-listen on hard topo | See HARD_LAB Wave 6 | Same criteria as B-* on forced nets | Weekly / after Wave 1 |
 
 ### Inventory (thin)
 
@@ -236,6 +252,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/pp_call_hop_msg_smoke.sh`](../../scripts/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
+| B-HARD-* | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 **Product-glue hole:** `CallMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
 
@@ -278,6 +295,31 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ---
 
+## Soft designs — hard lab (Gate F)
+
+**Status:** Design only — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+
+**Problem:** Relay-smoke + host probes do not force **A↛B**. Deployment risk needs isolated nets + optional impairments.
+
+**Harness rules (HL001–HL003):** thin clients; one compose family × `topo`/`link`/`disco` profiles; Wave 1 clean forced-hop before netem / multi-hop / NAT shapes.
+
+```text
+Wave 0  loopback + L0–L2 + B-CALL-HOP     (keep green)
+Wave 1  forced hop clean                  N-HARD-FORCE, B-HARD-CALL, B-HARD-MSG+CALL
+Wave 2  lossy / asym / bw
+Wave 3  stale / seed / dir / DHT / admit
+Wave 4  multi-hop circuit                 (after media-hop L3.5)
+Wave 5  NAT shapes / UPnP / v6            (weekly/manual)
+Wave 6  product stress on hard topo
+Wave 7  horizons                          (placeholders)
+```
+
+**Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable.
+
+**Driver sketch:** `pp_local_test.sh run --suite hard` (Wave 1 only at first). Do not conflate with `--suite node` / relay-smoke ports.
+
+---
+
 ## Soft designs — Phase 4 browser E2E (Gate C = thin client)
 
 **Decision:** Option A — thin client (`pp-call-probe`), not full GUI.
@@ -304,6 +346,7 @@ Later work is intentionally underspecified until evidence exists:
 | **C** | Before browser multi-process E2E | Thin client (preferred) vs full GUI — **done:** Option A thin client |
 | **D** | After first N-CAP curve | First local sweep (`--suite cap`, 2026-08-17): N=4/8 **100%**; N=12 **66.7%**; N=16 **50%** (hop `session participant limit` at 8). **N₀ = 8** (100% required); 12/16 stay informational. Circuit M=4/8 **100%**; **M₀ = 4** required, M=8 informational until more runs. Hop RSS ~5–8 MiB across the sweep. |
 | **E** | After first hop-call green | Initially **stop**; continued: B-CONFLICT + B-MSG+CALL scaffolds landed (thin client + loopback gtests). Product `CallMediaBridge` glue and GUI remain deferred. |
+| **F** | Hard lab design signed off | Wave order + sparse set — **done (design):** [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); carry out [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) h1+ |
 
 ---
 
@@ -313,6 +356,8 @@ Later work is intentionally underspecified until evidence exists:
 - PR-blocking large-N capacity
 - Full GUI as primary stress vehicle
 - One merged suite with shared pass criteria for node and browser
+- Hard-lab netem / multi-hop / CGNAT before Wave 1 forced-hop is green
+- Claiming hole punch or multi-SFU media paths in hard lab before those features ship
 
 ---
 
@@ -323,3 +368,4 @@ Later work is intentionally underspecified until evidence exists:
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
 5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
+6. **Phase 5 (hard lab)** — design in [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); implement Wave 1+ per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md) (not started).

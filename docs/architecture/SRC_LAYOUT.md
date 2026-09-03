@@ -266,3 +266,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 - [TESTING.md](TESTING.md) — tiers mapped to these layers; push-down seams; where suite ledgers live
 - [TEST_STRATEGY.md](../ops/TEST_STRATEGY.md) — purpose IDs, CI ladder, inventory
+- [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) — Tier C forced-hop / impairment ladder (design)

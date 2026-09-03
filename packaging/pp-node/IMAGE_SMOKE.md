@@ -1,7 +1,7 @@
 # pp-node image / deploy smoke tests
 
 **Tier:** ops dogfood  
-**Related:** [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md#pp-node-deploy-overlays), [BUILD.md](../../docs/ops/BUILD.md#headless-mesh-node-pp-node), [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (purpose IDs `N-*` / tiers; L2 = **N-FANOUT**)
+**Related:** [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md#pp-node-deploy-overlays), [BUILD.md](../../docs/ops/BUILD.md#headless-mesh-node-pp-node), [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (purpose IDs `N-*` / tiers; L2 = **N-FANOUT**), [HARD_LAB.md](HARD_LAB.md) (forced A↛B design)
 
 Automated checks for a **running** `pp-node` (Docker image, compose, or bare binary). These complement in-process gtests (`circuit_relay_service_test`, `media_relay_service_test`, …) which already own protocol correctness.
 
@@ -15,6 +15,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
 | **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |
 | **N-MIX / B-MIX** | Parallel allowlisted smokes (interference) | `--suite mix` | **Done** (nightly; not in `all`) |
+| **Hard lab** | Forced A↛B nets + impairments / discovery (Tier C) | [HARD_LAB.md](HARD_LAB.md) | **Design** — [projects/hard-lab/](../../projects/hard-lab/) |
 
 ## CI / release
 
@@ -128,6 +129,7 @@ Do **not** reimplement full gtest matrices in shell; L2 orchestrates the same `M
 | “Can a peer outside the container use this hop?” | L1 |
 | Packaged hop + attach×2 + frame (N-FANOUT) | L2 |
 | Two phones + hop on a bridge network | Manual dogfood / later three-container |
+| Forced A↛B + discovery + netem | [HARD_LAB.md](HARD_LAB.md) (design; not L0–L2) |
 
 ## Quick reference
 

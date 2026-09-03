@@ -93,6 +93,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
 | Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, skip taxonomy, doc homes |
 | Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
+| Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/) |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
 | Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md), [projects/feature-layer-reorg/](projects/feature-layer-reorg/) |
 | UI vs functional decoupling | [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](docs/architecture/RUNTIME_COMPOSITION.md) |

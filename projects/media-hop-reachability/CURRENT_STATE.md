@@ -37,7 +37,8 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Custom circuit | `CircuitRelayService` |
 | DialBack / Reachability / UPnP | mesh integration |
 | Identify | cpp fork |
-| Partition compose tests | `src/base/people/tests/circuit_*_compose_test.cpp` |
+| Partition compose tests | `src/domain/mesh/tests/` (`circuit_*_compose_test`, loopback fixture) |
+| Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — not implemented |
 
 ## Next
 

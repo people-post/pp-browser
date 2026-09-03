@@ -84,7 +84,8 @@ Every high-risk behavior should have a **named home tier and evidence**, or an *
 | Content | Home |
 |---------|------|
 | Doctrine (this file): tiers, push-down, skips, layer map | [`docs/architecture/TESTING.md`](TESTING.md) |
-| CI ladder, purpose IDs (`N-*` / `B-*`), compose PR set, scripts, soak/chaos | [`docs/ops/TEST_STRATEGY.md`](../ops/TEST_STRATEGY.md) |
+| CI ladder, purpose IDs (`N-*` / `B-*` / `N-HARD-*`), compose PR set, scripts, soak/chaos | [`docs/ops/TEST_STRATEGY.md`](../ops/TEST_STRATEGY.md) |
+| Hard lab topology / scenario ladder (Tier C deploy simulation) | [`packaging/pp-node/HARD_LAB.md`](../../packaging/pp-node/HARD_LAB.md) — delivery [projects/hard-lab/](../../projects/hard-lab/) |
 | In-flight matrices while a project ships | `projects/<name>/TEST_MATRIX.md` (e.g. [adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md)) |
 | Suite coverage ledger (behaviors ↔ gtests ↔ skips) | `src/<layer>/<module>/tests/README.md` when non-obvious |
 | Layer orientation | Optional short “Testing” blurb in `src/<layer>/README.md` linking here |
@@ -152,6 +153,7 @@ Cross-cutting product journeys (calls, hop, messaging across processes) keep **p
 | Doc | Role |
 |-----|------|
 | [TEST_STRATEGY.md](../ops/TEST_STRATEGY.md) | Purposes, inventory, CI, unit SQLite conventions |
+| [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) | Forced-hop / NAT / impairment scenario ladder (design) |
 | [SRC_LAYOUT.md](SRC_LAYOUT.md) | Product layers and independence |
 | [OWNERSHIP.md](OWNERSHIP.md) | Parent-only destroy (also applies to test fixtures) |
 | [BUILD.md](../ops/BUILD.md) | `PP_BROWSER_BUILD_TESTS`, ctest |
