@@ -23,7 +23,6 @@
 #include "domain/messaging/SyncStateCodec.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "feature/conversations/calls/CallSessionManager.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -106,10 +105,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
                                                         const std::string& actor_identity,
                                                         const std::optional<int64_t> relay_created_at_ms,
                                                         const std::optional<int64_t> relay_server_time_ms) const {
-  if (!call_sessions_ || !IsCallControlMessage(message)) {
+  if (!call_control_.apply_inbound_control || !IsCallControlMessage(message)) {
     return {};
   }
-  return call_sessions_->ApplyInboundControl(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
+  return call_control_.apply_inbound_control(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& message,

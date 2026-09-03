@@ -1,4 +1,4 @@
-#include "feature/conversations/calls/CallSessionManager.h"
+#include "feature/calls/CallSessionManager.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
@@ -45,9 +45,9 @@ void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn,
 
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                                       MeshMessagingService& mesh_messaging, IPskSessionStore& psk_store, CallMediaEngine& media)
+                                       CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
-      mesh_messaging_(mesh_messaging), psk_store_(psk_store), media_(media),
+      delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
       topology_(*this, sessions, contacts, media) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
@@ -351,7 +351,10 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   opts.update_preview = false;
   // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
   opts.critical_lane = true;
-  auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
+  if (!delivery_.send_user_message) {
+    return Error("Call delivery not bound");
+  }
+  auto sent = delivery_.send_user_message(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }
@@ -920,7 +923,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   }
 
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
-  mesh_messaging_.SyncInboxFromWake(true);
+  if (delivery_.sync_inbox_from_wake) {
+    delivery_.sync_inbox_from_wake(true);
+  }
 
   // Roster / prefetch after Accept returns — keep Accept worker snappy (no Accept hang UX).
   const std::string accept_call_id = call_id;
@@ -1464,7 +1469,9 @@ void CallSessionManager::TopologyReleaseDirectMedia() {
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {
-  mesh_messaging_.SyncInboxFromWake(true);
+  if (delivery_.sync_inbox_from_wake) {
+    delivery_.sync_inbox_from_wake(true);
+  }
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
@@ -1564,7 +1571,9 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
 }
 
 void CallSessionManager::P2pRequestInboxSync() {
-  mesh_messaging_.SyncInboxFromWake(true);
+  if (delivery_.sync_inbox_from_wake) {
+    delivery_.sync_inbox_from_wake(true);
+  }
 }
 
 bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {

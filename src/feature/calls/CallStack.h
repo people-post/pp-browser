@@ -5,13 +5,15 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "feature/conversations/calls/AmpCircuitHopReach.h"
-#include "feature/conversations/calls/AmpMediaRelayClient.h"
-#include "feature/conversations/calls/CallMediaBridge.h"
-#include "feature/conversations/calls/CallLifecycle.h"
+#include "feature/calls/AmpCircuitHopReach.h"
+#include "feature/calls/AmpMediaRelayClient.h"
+#include "feature/calls/CallDeliveryPorts.h"
+#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/conversations/calls/CallSessionManager.h"
-#include "feature/conversations/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallControlInboundPorts.h"
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
@@ -27,7 +29,6 @@ namespace pbr {
 class ContactsStore;
 class IdentityStore;
 class IThreadStore;
-class MeshMessagingService;
 class SqlitePskSessionStore;
 
 /**
@@ -45,8 +46,10 @@ struct CallStackDeps {
   ContactsStore* contacts = nullptr;
   IdentityStore* identity = nullptr;
   SqlitePskSessionStore* psk = nullptr;
-  /** Recreated on stack rebuild (BuildMessagingStack); passed fresh each BuildSessions. */
-  MeshMessagingService* mesh_messaging = nullptr;
+  /** Delivery + dial registration; filled from MeshMessagingService without typing it here. */
+  CallDeliveryPorts delivery;
+  /** Wire inbound call-control into conversations receive path after CSM is built. */
+  std::function<void(CallControlInboundPorts ports)> bind_call_control;
 
   /** Current MeshHost (null before StartMesh, reset on stop). */
   std::function<MeshHost*()> mesh;

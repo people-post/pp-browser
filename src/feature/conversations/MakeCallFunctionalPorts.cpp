@@ -1,9 +1,8 @@
-#include "feature/conversations/calls/CallFunctionalPorts.h"
+#include "feature/conversations/MakeCallFunctionalPorts.h"
 
 #include "foundation/data/SessionStore.h"
 #include "common/media/CallMediaHealth.h"
-#include "feature/conversations/calls/CallUiBackend.h"
-#include "feature/conversations/ConversationsHub.h"
+#include "feature/calls/CallUiBackend.h"
 
 namespace pbr {
 

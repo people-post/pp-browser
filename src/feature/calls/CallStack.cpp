@@ -1,4 +1,4 @@
-#include "feature/conversations/calls/CallStack.h"
+#include "feature/calls/CallStack.h"
 
 #include "foundation/data/MeshRole.h"
 #include "domain/mesh/host/MeshPorts.h"
@@ -11,7 +11,6 @@
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <vector>
@@ -41,9 +40,22 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
 void CallStack::BuildSessions(const CallStackDeps& deps) {
   deps_ = deps;
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
-                                                        *call_session_store_, *call_media_keys_, *deps_.mesh_messaging,
+                                                        *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
-  deps_.mesh_messaging->SetCallSessionManager(call_sessions_.get());
+  if (deps_.bind_call_control) {
+    CallControlInboundPorts inbound;
+    inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
+                                           std::optional<int64_t> relay_created_at_ms,
+                                           std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
+      if (!call_sessions_) {
+        return {};
+      }
+      return call_sessions_->ApplyInboundControl(message, sender_identity, relay_created_at_ms,
+                                                 relay_server_time_ms);
+    };
+    inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
+    deps_.bind_call_control(std::move(inbound));
+  }
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() {
     EnsureCallLifecycleBound();
@@ -368,10 +380,10 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
         }
       }
     }
-    if (deps_.mesh_messaging) {
-      deps_.mesh_messaging->RegisterPeerDirectEndpoint(identity, ma);
+    if (deps_.delivery.register_peer_direct_endpoint) {
+      deps_.delivery.register_peer_direct_endpoint(identity, ma);
       if (!peer_id.empty() && peer_id != identity) {
-        deps_.mesh_messaging->RegisterPeerDirectEndpoint(peer_id, ma);
+        deps_.delivery.register_peer_direct_endpoint(peer_id, ma);
       }
     }
     if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && call_sessions_) {
@@ -496,6 +508,9 @@ void CallStack::ResetRelayClients() {
 }
 
 void CallStack::ResetSessions() {
+  if (deps_.bind_call_control) {
+    deps_.bind_call_control({});
+  }
   call_sessions_.reset();
 }
 

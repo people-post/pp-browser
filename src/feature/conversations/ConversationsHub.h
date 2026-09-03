@@ -20,7 +20,7 @@
 #include "feature/conversations/GroupMembershipService.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
-#include "feature/conversations/calls/CallStack.h"
+#include "feature/calls/CallStack.h"
 #include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"

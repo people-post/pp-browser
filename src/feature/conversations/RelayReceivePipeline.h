@@ -10,6 +10,7 @@
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/IdentityStore.h"
+#include "feature/calls/CallControlInboundPorts.h"
 #include "common/Module.h"
 
 #include <optional>
@@ -20,7 +21,6 @@
 namespace pbr {
 
 class GroupInviteGate;
-class CallSessionManager;
 class InitiationBillingStore;
 
 struct RelayReceiveOutcome {
@@ -53,7 +53,7 @@ public:
                        IdentityStore& identity, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
-  void SetCallSessionManager(CallSessionManager* calls) { call_sessions_ = calls; }
+  void BindCallControlInbound(CallControlInboundPorts ports) { call_control_ = std::move(ports); }
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
@@ -103,7 +103,7 @@ private:
   IdentityStore& identity_;
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
-  CallSessionManager* call_sessions_ = nullptr;
+  CallControlInboundPorts call_control_;
   InitiationBillingStore* initiation_billing_ = nullptr;
   PublicPskLockCoordinator public_lock_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;

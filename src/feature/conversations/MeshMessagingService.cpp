@@ -1,5 +1,4 @@
 #include "domain/people/ContactTypes.h"
-#include "feature/conversations/calls/CallSessionManager.h"
 #include "feature/conversations/GroupMembershipService.h"
 #include "feature/conversations/AttachmentDownloadService.h"
 #include "feature/conversations/AmpChatBlobService.h"
@@ -208,10 +207,10 @@ void MeshMessagingService::SetInitiationBillingStore(InitiationBillingStore* sto
   }
 }
 
-void MeshMessagingService::SetCallSessionManager(CallSessionManager* calls) {
-  call_sessions_ = calls;
+void MeshMessagingService::BindCallControlInbound(CallControlInboundPorts ports) {
+  call_control_ = std::move(ports);
   if (receive_pipeline_) {
-    receive_pipeline_->SetCallSessionManager(calls);
+    receive_pipeline_->BindCallControlInbound(call_control_);
   }
 }
 
@@ -619,11 +618,10 @@ bool MeshMessagingService::IsPskReadyToSend(const std::string& thread_id) const 
 }
 
 bool MeshMessagingService::HasActiveLocalCall() const {
-  if (!call_sessions_) {
+  if (!call_control_.has_active_local_call) {
     return false;
   }
-  auto active = call_sessions_->ActiveLocalCall();
-  return active && active->has_value();
+  return call_control_.has_active_local_call();
 }
 
 Roe<void> MeshMessagingService::MaybeSendPublicAutoRekey(const std::string& thread_id) {

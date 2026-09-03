@@ -1,8 +1,8 @@
-#include "feature/conversations/calls/CallUiBackend.h"
+#include "feature/calls/CallUiBackend.h"
 
 #include "domain/media/CallMediaEngine.h"
-#include "feature/conversations/calls/CallSessionManager.h"
-#include "feature/conversations/calls/CallStack.h"
+#include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallStack.h"
 
 #include <stdexcept>
 #include "common/PbrCompat.h"

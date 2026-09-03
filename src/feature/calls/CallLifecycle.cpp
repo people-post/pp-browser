@@ -1,6 +1,6 @@
-#include "feature/conversations/calls/CallLifecycle.h"
+#include "feature/calls/CallLifecycle.h"
 
-#include "feature/conversations/calls/CallSessionManager.h"
+#include "feature/calls/CallSessionManager.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"

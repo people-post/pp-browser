@@ -15,7 +15,7 @@ class CallUiBackend;
 
 /**
  * Call functional ports for CallController.
- * Application fills from owned CallUiBackend + ConversationsHub lookups.
+ * Application fills from owned CallUiBackend + conversations lookups.
  * Clear via BindCallPorts({}).
  */
 struct CallFunctionalPorts {
@@ -29,12 +29,5 @@ struct CallFunctionalPorts {
   /** Profile pref OR `--debug` CLI override (V032 call diagnostics). */
   std::function<bool()> call_diagnostics_enabled;
 };
-
-class ConversationsHub;
-class SessionStore;
-
-/** Optional session_store wires profile `call_diagnostics` (CLI `--debug` still ORs in). */
-CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, ConversationsHub& hub,
-                                            SessionStore* session_store = nullptr);
 
 } // namespace pbr

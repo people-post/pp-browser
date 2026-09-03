@@ -4,7 +4,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/ui/ShellTypes.h"
 #include "common/Module.h"
-#include "feature/conversations/calls/CallFunctionalPorts.h"
+#include "feature/calls/CallFunctionalPorts.h"
 #include "gui/CallChromeSync.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"

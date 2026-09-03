@@ -1,5 +1,5 @@
-#include "feature/conversations/calls/CallTopologyController.h"
-#include "feature/conversations/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"

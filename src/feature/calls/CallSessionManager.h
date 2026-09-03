@@ -10,10 +10,10 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/conversations/calls/CallMediaBridge.h"
-#include "feature/conversations/calls/CallMediaHost.h"
-#include "feature/conversations/calls/CallTopologyController.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/calls/CallDeliveryPorts.h"
+#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallTopologyController.h"
 
 #include "common/Module.h"
 
@@ -36,7 +36,7 @@ public:
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, MeshMessagingService& mesh_messaging,
+                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
@@ -215,7 +215,7 @@ private:
   IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
-  MeshMessagingService& mesh_messaging_;
+  CallDeliveryPorts delivery_;
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;

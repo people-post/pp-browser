@@ -4,7 +4,7 @@
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
-#include "feature/conversations/calls/CallLifecycle.h"
+#include "feature/calls/CallLifecycle.h"
 
 #include <functional>
 #include <optional>

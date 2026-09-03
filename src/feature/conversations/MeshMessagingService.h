@@ -17,6 +17,7 @@
 #include "common/chat/IDirectMessageClient.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
+#include "feature/calls/CallControlInboundPorts.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "domain/mesh/host/MeshPorts.h"
@@ -34,7 +35,6 @@
 
 namespace pbr {
 
-class CallSessionManager;
 class GroupMembershipService;
 class AttachmentDownloadService;
 class IChatHistoryPeerClient;
@@ -95,7 +95,7 @@ public:
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
-  void SetCallSessionManager(CallSessionManager* calls);
+  void BindCallControlInbound(CallControlInboundPorts ports);
   void SetGroupMembership(GroupMembershipService* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
@@ -223,7 +223,7 @@ private:
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
-  CallSessionManager* call_sessions_ = nullptr;
+  CallControlInboundPorts call_control_;
   DirectoryShadowCache* directory_shadows_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;

@@ -1,4 +1,4 @@
-#include "feature/conversations/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaBridge.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/SfuAttachFanout.h"

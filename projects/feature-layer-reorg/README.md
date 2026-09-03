@@ -1,10 +1,10 @@
 # Feature / app layer reorg
 
-**Status:** **conversations rename + f7v1 + f6 soft edge** — `feature/conversations`; `src/gui/`; AI via ports  
+**Status:** **calls lift + conversations rename + f7v1** — `feature/calls`/`pp_feature_calls`; `feature/conversations`; `src/gui/`; soft ports  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md), [`src/feature/README.md`](../../src/feature/README.md)  
-**Prerequisite:** `src/base/` → `foundation` + `domain` (**done**). This project continues with `src/feature/`, `src/app/`, and the planned **`src/gui/`** layer.
+**Prerequisite:** `src/base/` → `foundation` + `domain` (**done**). This project continues with `src/feature/`, `src/gui/`, and `src/app/`.
 
 ## One-line goal
 
@@ -16,7 +16,7 @@ Shrink and clarify `feature/` and `app/` by moving **sure** engines into domain,
 |----------|-------------------------|
 | Layer litmus; domain peer independence; sure peels first | When folders physically rename |
 | Vocabulary + end-state names ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) | Exact bands under `gui/` |
-| Calls: nested band first ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | Top-level `pp_feature_calls` timing |
+| Calls: nested then top-level ([F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) | App-owned `CallStack` timing |
 | No top-level `feature/chat` | `ChatController` class rename |
 | Product UI layer = **`gui`** above feature ([F008](DECISIONS.md#f008--gui-layer-above-feature)) | When `feature/ui` physically moves |
 

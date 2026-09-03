@@ -3,9 +3,9 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/conversations/calls/CallLifecycle.h"
-#include "feature/conversations/calls/CallMediaHost.h"
-#include "feature/conversations/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"

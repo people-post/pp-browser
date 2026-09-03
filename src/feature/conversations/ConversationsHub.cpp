@@ -113,7 +113,20 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
   deps.psk = psk_store_.get();
-  deps.mesh_messaging = mesh_messaging_.get();
+  if (mesh_messaging_) {
+    deps.delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
+                                             const SendRelayOptions& options) {
+      return mesh_messaging_->SendUserMessage(thread_id, text, options);
+    };
+    deps.delivery.sync_inbox_from_wake = [this](bool force) { mesh_messaging_->SyncInboxFromWake(force); };
+    deps.delivery.register_peer_direct_endpoint = [this](const std::string& identity,
+                                                         const std::string& multiaddr) {
+      mesh_messaging_->RegisterPeerDirectEndpoint(identity, multiaddr);
+    };
+    deps.bind_call_control = [this](CallControlInboundPorts ports) {
+      mesh_messaging_->BindCallControlInbound(std::move(ports));
+    };
+  }
   deps.mesh = [this]() { return mesh_.get(); };
   deps.config = [this]() -> const AppConfig& { return config_; };
   deps.list_directory_nodes = [this]() {

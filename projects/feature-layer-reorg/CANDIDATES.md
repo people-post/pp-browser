@@ -60,8 +60,9 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Move | Depends on | Notes |
 |------|------------|-------|
-| Nest `feature/conversations/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
-| Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
+| Nest `feature/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
+| Top-level `feature/calls` | Soft delivery/inbound ports | **Done** — `pp_feature_calls`; hub still owns `CallStack` |
+| App-owned `CallStack` | After top-level calls | Optional — hub stops owning call lifecycle |
 | Rename `messaging` → `conversations` | After hub ownership clean | **Done** — path + Hub/Facade/`pp_feature_conversations` |
 | Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
 | Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — staging for gui |

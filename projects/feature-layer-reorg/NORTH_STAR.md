@@ -91,7 +91,7 @@ One aggregate `pp_gui` first; split libs later only if cycles allow.
 | Today | End state | Notes |
 |-------|-----------|-------|
 | `feature/messaging` | `feature/conversations` | **Done** — path + Hub/Facade/CMake target |
-| `feature/conversations` Call\* | `feature/calls` | [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level): still nested |
+| `feature/conversations` Call\* | `feature/calls` | **Done** — top-level `pp_feature_calls` + delivery ports |
 | `feature/ui/**` (legacy) | `src/gui/**` | **Done f7v1** ([F008](DECISIONS.md#f008--gui-layer-above-feature)) |
 | `feature/chat` | removed | Absorbed into gui/chat (via f5 staging) |
 | `domain/ui` | keep | Policy peer; not the GUI layer |

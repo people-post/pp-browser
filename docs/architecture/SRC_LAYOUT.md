@@ -170,15 +170,16 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 |------|----------|
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub + delivery |
-| `feature/conversations/calls/` | Call session band (f4v1; top-level `feature/calls` later) |
+| `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 
-Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`:
+Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
 ```
 settings
 ai/tools → ai/bindings → ai
-conversations
+calls
+conversations → calls
 ```
 
 ## GUI subfolders
@@ -259,4 +260,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename shipped; remaining: top-level `feature/calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).
+5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename + top-level `feature/calls` / `pp_feature_calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level)) shipped; remaining: app-owned `CallStack`, optional gui bands, inbox presentation.

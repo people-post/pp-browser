@@ -8,7 +8,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/conversations/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

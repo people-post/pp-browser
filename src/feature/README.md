@@ -39,8 +39,8 @@ src/feature/
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
 │   └── bindings/
+├── calls/            Call session (`pp_feature_calls`)
 └── conversations/    Conversations hub + delivery; ConversationsFacade
-    └── calls/        Call session band (f4v1 → future feature/calls)
 ```
 
 Product UI: see [`src/gui/README.md`](../gui/README.md).
@@ -53,14 +53,15 @@ Product UI: see [`src/gui/README.md`](../gui/README.md).
 |--------|---------|----------------------------|
 | **Configuration** | settings | How do user edits merge into `AppConfig`? |
 | **Intelligence** | ai, ai/tools, ai/bindings | How does the agent plan turns and call tools? |
-| **Conversations** | conversations (+ calls band) | How do threads sync/relay; how do call sessions run? |
+| **Call session** | calls | How do ring/accept/topology/media-bridge sessions run? |
+| **Conversations** | conversations | How do threads sync/relay? |
 | **Presentation** | `src/gui/` | Shell, contacts, chat screen, settings presenters |
 
 Start points when exploring:
 
 - Agent session → `ai/AgentSession.h`, `ai/TurnPlanner.h`, `ai/TurnExecutor.h`
 - Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshMessagingService.h`
-- Call session → `conversations/calls/CallStack.h`
+- Call session → `calls/CallStack.h`
 - Window shell → `gui/shell/ShellHost.h`
 - Chat screen → `gui/chat/ChatController.h`, `gui/chat/MessagingTools.h`
 - Settings apply → `settings/SettingsLogic.h`, `settings/SettingsSectionHandler.h`
@@ -83,17 +84,16 @@ Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_featu
 
 ### Intra-feature direction
 
-Feature modules do **not** link each other for AI/conversations. Conversations invoke the agent through `AgentInboundPorts` (app-filled from `AgentSession`); `pp_feature_conversations` must not `#include "feature/ai/"` or `PUBLIC_LIBS pp_feature_ai`.
-
 ```
-settings    (no feature-module PUBLIC_LIBS)
+settings
 ai/tools → ai/bindings → ai
-conversations   (no pp_feature_ai)
+calls
+conversations → calls   (delivery / inbound ports; no reverse include)
 ```
 
-(`gui` / `app` link `pp_feature_*` as needed and wire ports.)
+Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Conversations receive call-control via `CallControlInboundPorts`.
 
 ### Guards
 
-- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, retired `feature/ui`, `feature/chat`, `feature/messaging`
+- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths
 - [`scripts/check_gui_includes.sh`](../../scripts/check_gui_includes.sh) — bans `gui → app`
