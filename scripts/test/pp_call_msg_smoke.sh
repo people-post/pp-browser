@@ -3,7 +3,7 @@
 # Direct path, two OS processes. See docs/ops/TEST_STRATEGY.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROBE_BIN="${PP_CALL_PROBE_BIN:-${ROOT}/build/src/app/node/pp-call-probe}"
 READY_FILE="${PP_CALL_MSG_READY_FILE:-/tmp/pp-call-msg.ready}"
 LISTEN="${PP_CALL_MSG_LISTEN:-/ip4/127.0.0.1/udp/47130/adp/1.0.0}"

@@ -5,9 +5,9 @@
 # See docs/ops/TEST_STRATEGY.md (N-CHAOS)
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=pp_node_hop_lib.sh
-source "${ROOT}/scripts/pp_node_hop_lib.sh"
+source "${ROOT}/scripts/test/pp_node_hop_lib.sh"
 
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 PROBE_BIN="${PP_NODE_PROBE_BIN:-${ROOT}/build/src/app/node/pp-node-probe}"
@@ -36,7 +36,7 @@ if [[ ! -x "${PROBE_BIN}" ]]; then
   exit 1
 fi
 
-bash "${ROOT}/scripts/pp_node_image_smoke.sh"
+bash "${ROOT}/scripts/test/pp_node_image_smoke.sh"
 hop="$(pp_node_hop_multiaddr "${STATUS_URL}")"
 
 echo "=== N-CHAOS 1: kill client mid-attach, then hop accepts N=2 ==="
@@ -53,15 +53,15 @@ echo "=== N-CHAOS 2: docker restart hop, then L0+L1 ==="
 docker restart "${HOP_CONTAINER}"
 export PP_NODE_STATUS_URL="${STATUS_URL}"
 # Wait for /healthz after restart (image smoke retries).
-bash "${ROOT}/scripts/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
-bash "${ROOT}/scripts/pp_node_relay_smoke.sh" --status-url "${STATUS_URL}"
+bash "${ROOT}/scripts/test/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
+bash "${ROOT}/scripts/test/pp_node_relay_smoke.sh" --status-url "${STATUS_URL}"
 echo "ok  L0+L1 after docker restart"
 
 echo "=== N-CHAOS 3: docker pause ${PAUSE_SEC}s / unpause, then hop accepts N=2 ==="
 docker pause "${HOP_CONTAINER}"
 sleep "${PAUSE_SEC}"
 docker unpause "${HOP_CONTAINER}"
-bash "${ROOT}/scripts/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
+bash "${ROOT}/scripts/test/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
 hop="$(pp_node_hop_multiaddr "${STATUS_URL}")"
 PP_NODE_PROBE_HOP="${hop}" "${PROBE_BIN}" --hop "${hop}" --mode media-cap --attachers 2
 echo "ok  hop accepted new attach after pause/unpause"

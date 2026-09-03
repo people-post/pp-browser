@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local test driver: unit / call-direct / pp-node hop (Docker) lifecycle.
 #
-# Owns Docker up/stop/clear. Individual smokes stay in scripts/pp_*_smoke.sh.
+# Owns Docker up/stop/clear. Individual smokes stay in scripts/test/pp_*_smoke.sh.
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
@@ -13,7 +13,7 @@
 # See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${PP_LOCAL_COMPOSE_FILE:-${ROOT}/packaging/pp-node/docker-compose.relay-smoke.yml}"
 COMPOSE_PROJECT="${PP_LOCAL_COMPOSE_PROJECT:-pp-local-test}"
 DOGFOOD_COMPOSE="${PP_LOCAL_DOGFOOD_COMPOSE:-${ROOT}/packaging/pp-node/docker-compose.yml}"
@@ -137,7 +137,7 @@ ensure_docker_context() {
   if [[ ! -f "${DOCKER_CONTEXT}/Dockerfile" ]]; then
     die "missing ${DOCKER_CONTEXT}/Dockerfile
 Package the node image first (Ubuntu 24.04 family):
-  PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all"
+  PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_linux.sh all"
   fi
 }
 
@@ -193,7 +193,7 @@ stage_hop_binary_if_newer() {
 
 wait_healthz() {
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 cmd_up() {
@@ -284,19 +284,19 @@ run_unit() {
 run_call() {
   cmake_build_probes
   echo "=== suite call (B-CALL-DIRECT) ==="
-  bash "${ROOT}/scripts/pp_call_direct_smoke.sh"
+  bash "${ROOT}/scripts/test/pp_call_direct_smoke.sh"
 }
 
 run_conflict() {
   cmake_build_probes
   echo "=== suite conflict (B-CONFLICT) ==="
-  bash "${ROOT}/scripts/pp_call_conflict_smoke.sh"
+  bash "${ROOT}/scripts/test/pp_call_conflict_smoke.sh"
 }
 
 run_msg_call() {
   cmake_build_probes
   echo "=== suite msg-call (B-MSG+CALL) ==="
-  bash "${ROOT}/scripts/pp_call_msg_smoke.sh"
+  bash "${ROOT}/scripts/test/pp_call_msg_smoke.sh"
 }
 
 run_node() {
@@ -304,9 +304,9 @@ run_node() {
   cmd_up
   echo "=== suite node (L0/L1/N-FANOUT/N-CAP N=4) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_relay_smoke.sh" --status-url "${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_fanout_smoke.sh" --status-url "${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_relay_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_fanout_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_cap() {
@@ -316,8 +316,8 @@ run_cap() {
   export PP_NODE_STATUS_URL="${STATUS_URL}"
   export PP_NODE_CAP_SWEEP="${PP_NODE_CAP_SWEEP:-4,8,12,16}"
   export PP_NODE_PROBE_BRIDGES="${PP_NODE_PROBE_BRIDGES:-4,8}"
-  bash "${ROOT}/scripts/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}" --sweep "${PP_NODE_CAP_SWEEP}"
-  bash "${ROOT}/scripts/pp_node_circuit_cap_smoke.sh" --status-url "${STATUS_URL}" --bridges "${PP_NODE_PROBE_BRIDGES}"
+  bash "${ROOT}/scripts/test/pp_node_cap_smoke.sh" --status-url "${STATUS_URL}" --sweep "${PP_NODE_CAP_SWEEP}"
+  bash "${ROOT}/scripts/test/pp_node_circuit_cap_smoke.sh" --status-url "${STATUS_URL}" --bridges "${PP_NODE_PROBE_BRIDGES}"
 }
 
 run_soak() {
@@ -325,7 +325,7 @@ run_soak() {
   cmd_up
   echo "=== suite soak (N-SOAK ${PP_NODE_SOAK_SEC:-120}s) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_soak_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_soak_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_chaos() {
@@ -333,7 +333,7 @@ run_chaos() {
   cmd_up
   echo "=== suite chaos (N-CHAOS) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_chaos_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_chaos_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_call_hop() {
@@ -341,7 +341,7 @@ run_call_hop() {
   cmd_up
   echo "=== suite call-hop (B-CALL-HOP) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_call_hop_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_call_hop_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_msg_call_hop() {
@@ -349,19 +349,19 @@ run_msg_call_hop() {
   cmd_up
   echo "=== suite msg-call-hop (B-MSG+CALL via hop) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_mix() {
   cmake_build_probes
   echo "=== suite mix (B-MIX browser interference) ==="
-  bash "${ROOT}/scripts/pp_mix_browser_smoke.sh"
+  bash "${ROOT}/scripts/test/pp_mix_browser_smoke.sh"
   cmd_up
   echo "=== suite mix (N-MIX hop interference) ==="
   export PP_NODE_STATUS_URL="${STATUS_URL}"
-  bash "${ROOT}/scripts/pp_mix_hop_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_mix_hop_smoke.sh" --status-url "${STATUS_URL}"
   echo "=== suite mix (same-session hop chat) ==="
-  bash "${ROOT}/scripts/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_call_hop_msg_smoke.sh" --status-url "${STATUS_URL}"
 }
 
 run_hard() {
@@ -377,9 +377,9 @@ run_hard() {
     args+=(--build)
   fi
   hard_compose "${args[@]}"
-  bash "${ROOT}/scripts/pp_hard_force_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
-  bash "${ROOT}/scripts/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
-  bash "${ROOT}/scripts/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --with-chat
+  bash "${ROOT}/scripts/test/pp_hard_force_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
+  bash "${ROOT}/scripts/test/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up
+  bash "${ROOT}/scripts/test/pp_hard_call_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --with-chat
 }
 
 cmd_run() {

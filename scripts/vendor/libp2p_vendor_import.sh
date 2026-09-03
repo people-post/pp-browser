@@ -3,7 +3,7 @@
 # Safe to re-run when bumping versions.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.libp2p_vendor_import_tmp"
 

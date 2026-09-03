@@ -9,7 +9,7 @@
 # 3) PeerId lives in foundation/identity/ (not under mesh).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FAIL=0
 
 check_absent() {

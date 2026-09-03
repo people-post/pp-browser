@@ -1,13 +1,13 @@
 # Runtime image for org/datacenter pp-node (N011).
 #
 # glibc contract: same OS family as release CI — Ubuntu 24.04 (glibc 2.39).
-# Build the binary on ubuntu-24.04 (see scripts/pp_node_package_linux.sh);
+# Build the binary on ubuntu-24.04 (see scripts/platform/pp_node_package_linux.sh);
 # do not mix Debian bookworm binaries into this image or vice versa.
 #
 # Build context is a staging directory with:
 #   pp-node              (stripped Release binary)
 #   config.json.example
-# See scripts/pp_node_package_linux.sh and .github/workflows/release.yml.
+# See scripts/platform/pp_node_package_linux.sh and .github/workflows/release.yml.
 
 FROM ubuntu:24.04
 

@@ -4,7 +4,7 @@
 # release CI runners). See docs/ops/RELEASE.md.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${PP_NODE_BUILD_DIR:-${ROOT}/build-pp-node}"
 OUT_DIR="${PP_NODE_OUT_DIR:-${ROOT}/dist/pp-node}"
 RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION:-${PP_BROWSER_VERSION:-dev}}"

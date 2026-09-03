@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wipe local pp-browser profile data after Brief PQ / Account ID hard cut.
 #
-# Linux + macOS. Windows: scripts/wipe_local_profile.ps1
+# Linux + macOS. Windows: scripts/dev/wipe_local_profile.ps1
 # Android / iOS: clear app storage by hand (Settings or adb pm clear).
 #
 # Default data roots (see docs/contracts/DATA_LAYOUT.md):
@@ -9,10 +9,10 @@
 #   macOS:  ~/Library/Application Support/pp-browser/data
 #
 # Examples:
-#   ./scripts/wipe_local_profile.sh --dry-run
-#   ./scripts/wipe_local_profile.sh --yes
-#   ./scripts/wipe_local_profile.sh --yes --profile default
-#   ./scripts/wipe_local_profile.sh --yes --data-dir /path/to/data
+#   ./scripts/dev/wipe_local_profile.sh --dry-run
+#   ./scripts/dev/wipe_local_profile.sh --yes
+#   ./scripts/dev/wipe_local_profile.sh --yes --profile default
+#   ./scripts/dev/wipe_local_profile.sh --yes --data-dir /path/to/data
 #
 set -euo pipefail
 

@@ -95,8 +95,8 @@ Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke d
 
 ### Guards
 
-- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths
-- [`scripts/check_gui_includes.sh`](../../scripts/check_gui_includes.sh) — bans `gui → app`
+- [`scripts/check/check_feature_includes.sh`](../../scripts/check/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths
+- [`scripts/check/check_gui_includes.sh`](../../scripts/check/check_gui_includes.sh) — bans `gui → app`
 
 ---
 

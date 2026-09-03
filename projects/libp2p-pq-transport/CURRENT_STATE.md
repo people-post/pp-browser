@@ -21,7 +21,7 @@
 
 ## Dogfood (manual)
 
-Wipe local profiles (pre-v3 `identity.enc`) via `scripts/wipe_local_profile.sh` before running. Desktop: register → dial peer → chat/call. Confirm protocol id `/noise-mlkem768/1.0.0` and PeerIds are sha2-256 style (`Qm…`) from ML-DSA pubkeys.
+Wipe local profiles (pre-v3 `identity.enc`) via `scripts/dev/wipe_local_profile.sh` before running. Desktop: register → dial peer → chat/call. Confirm protocol id `/noise-mlkem768/1.0.0` and PeerIds are sha2-256 style (`Qm…`) from ML-DSA pubkeys.
 
 ## Note
 

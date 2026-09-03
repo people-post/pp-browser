@@ -47,7 +47,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/domain/mesh/`](src/domain/mesh/).
 
 - Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
-- Import/update remaining deps with `./scripts/libp2p_vendor_import.sh`.
+- Import/update remaining deps with `./scripts/vendor/libp2p_vendor_import.sh`.
 
 ## UI generation constraints
 
@@ -93,7 +93,8 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
 | Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, **promote failures downward**, skip taxonomy, doc homes |
 | Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
-| Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/) |
+| Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/); driver `./scripts/test/pp_local_test.sh run --suite hard` |
+| Scripts (layout map) | [`scripts/README.md`](scripts/README.md) — `check/` `platform/` `vendor/` `test/` `dev/` |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
 | Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md), [projects/feature-layer-reorg/](projects/feature-layer-reorg/) |
 | UI vs functional decoupling | [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](docs/architecture/RUNTIME_COMPOSITION.md) |

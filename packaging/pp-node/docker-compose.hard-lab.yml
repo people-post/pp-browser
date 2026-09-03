@@ -4,7 +4,7 @@
 #                └── net_ops (status HTTP to host)
 #
 # Host ports default 18617/18618 so relay-smoke (18517/18518) can coexist.
-# Driver: scripts/pp_hard_force_smoke.sh / pp_local_test.sh --suite hard
+# Driver: scripts/test/pp_hard_force_smoke.sh / pp_local_test.sh --suite hard
 # Design: HARD_LAB.md
 #
 # Build context for hop: ../../dist/pp-node/docker (package first).

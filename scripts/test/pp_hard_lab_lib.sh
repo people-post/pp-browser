@@ -69,7 +69,7 @@ pp_hard_exec() {
 
 pp_hard_wait_healthz() {
   export PP_NODE_STATUS_URL="${PP_HARD_STATUS_URL}"
-  bash "${ROOT}/scripts/pp_node_image_smoke.sh" --status-url "${PP_HARD_STATUS_URL}"
+  bash "${ROOT}/scripts/test/pp_node_image_smoke.sh" --status-url "${PP_HARD_STATUS_URL}"
 }
 
 # Populates: HOP_IP_A HOP_IP_B PEER_A_IP PEER_B_IP HOP_PEER_ID HOP_MA_A HOP_MA_B
@@ -91,7 +91,7 @@ pp_hard_ensure_up() {
   if [[ "${skip_up}" -eq 0 ]]; then
     echo "=== hard-lab compose up project=${PP_HARD_COMPOSE_PROJECT} ==="
     if [[ ! -f "${ROOT}/dist/pp-node/docker/Dockerfile" ]]; then
-      pp_hard_die "missing dist/pp-node/docker; package with scripts/pp_node_package_linux.sh all"
+      pp_hard_die "missing dist/pp-node/docker; package with scripts/platform/pp_node_package_linux.sh all"
     fi
     pp_hard_compose up -d --build --force-recreate
   fi

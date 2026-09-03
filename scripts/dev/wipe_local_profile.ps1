@@ -1,6 +1,6 @@
 # Wipe local pp-browser profile data after Brief PQ / Account ID hard cut.
 #
-# Windows. Linux/macOS: scripts/wipe_local_profile.sh
+# Windows. Linux/macOS: scripts/dev/wipe_local_profile.sh
 # Android / iOS: clear app storage by hand.
 #
 # Default data root: %LOCALAPPDATA%\pp-browser\

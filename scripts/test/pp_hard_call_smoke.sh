@@ -2,13 +2,13 @@
 # B-HARD-CALL: Invite→InCall→Leave via hop on forced-isolated nets (no A↔B).
 # Answerer on peer-b; offerer on peer-a with --via-hop.
 #
-# Prefer: ./scripts/pp_local_test.sh run --suite hard
+# Prefer: ./scripts/test/pp_local_test.sh run --suite hard
 # See packaging/pp-node/HARD_LAB.md and docs/ops/TEST_STRATEGY.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=pp_hard_lab_lib.sh
-source "${ROOT}/scripts/pp_hard_lab_lib.sh"
+source "${ROOT}/scripts/test/pp_hard_lab_lib.sh"
 
 CYCLES="${PP_CALL_PROBE_CYCLES:-2}"
 CALL_BIN_NAME="pp-call-probe"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fail if a macOS Mach-O still links Homebrew / Cellar / /usr/local dylibs.
-# Usage: ./scripts/macos_check_bundled_linkage.sh path/to/PP.app [path/to/binary...]
+# Usage: ./scripts/platform/macos_check_bundled_linkage.sh path/to/PP.app [path/to/binary...]
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then

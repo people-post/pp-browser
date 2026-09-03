@@ -2,7 +2,7 @@
 # Download Noto Sans CJK Regular + Noto Color Emoji into assets/fonts/.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FONTS="${ROOT}/assets/fonts"
 TMP="${ROOT}/.fonts_import_tmp"
 NOTO_CJK_REF="main"

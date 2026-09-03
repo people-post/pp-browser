@@ -5,7 +5,7 @@
 # See packaging/macos/signing.env.example and docs/ops/RELEASE.md.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Sync with pbr::kProductBundleName / kProductSlug in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"

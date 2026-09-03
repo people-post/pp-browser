@@ -2,7 +2,7 @@
 # Populate third_party/ from upstream git tags. Safe to re-run when bumping versions.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image live in people-post/pp-cpp-ui.
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.vendor_import_tmp"

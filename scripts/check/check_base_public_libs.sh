@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Guard domain peer CMake PUBLIC_LIBS edges (North Star).
-# Mirrors scripts/check_base_includes.sh legacy allowlist for link edges.
+# Mirrors scripts/check/check_base_includes.sh legacy allowlist for link edges.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 python3 - "$ROOT" <<'PY'
 import re

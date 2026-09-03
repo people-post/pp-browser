@@ -145,7 +145,7 @@
 1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
 2. Curated public / paid regulation later  
 3. **L3.5** multi-hop when single-hop cannot reach B  
-4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/pp_node_dht_smoke.sh`)
+4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/test/pp_node_dht_smoke.sh`)
 
 ## Follow-ups
 

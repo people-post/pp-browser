@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Sync with pbr::kProductBundleName in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
@@ -49,7 +49,7 @@ Requires (macOS only):
   CMake 3.24+
   Ninja (recommended)
 
-Signing (device / TestFlight): see packaging/ios/signing.env.example and scripts/ios_sign.sh
+Signing (device / TestFlight): see packaging/ios/signing.env.example and scripts/platform/ios_sign.sh
 Docs: docs/ops/IOS_BUILD.md
 EOF
 }
@@ -206,7 +206,7 @@ cmd_run_sim() {
   require_macos
   local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
-    echo "error: ${app} not found — run './scripts/ios_build.sh sim' first" >&2
+    echo "error: ${app} not found — run './scripts/platform/ios_build.sh sim' first" >&2
     exit 1
   fi
 
@@ -225,7 +225,7 @@ cmd_run_sim() {
     echo "  xcodebuild -downloadPlatform iOS" >&2
     echo "  # or: Xcode → Settings → Platforms → iOS → Get" >&2
     echo "  xcrun simctl list devices available" >&2
-    echo "  # optional: IOS_SIMULATOR_UDID=<udid> ./scripts/ios_build.sh run-sim" >&2
+    echo "  # optional: IOS_SIMULATOR_UDID=<udid> ./scripts/platform/ios_build.sh run-sim" >&2
     exit 1
   fi
 
@@ -295,7 +295,7 @@ cmd_run_device() {
   require_macos
   local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   if [[ ! -d "$app" ]]; then
-    echo "error: ${app} not found — run './scripts/ios_build.sh device' first" >&2
+    echo "error: ${app} not found — run './scripts/platform/ios_build.sh device' first" >&2
     exit 1
   fi
 
@@ -308,9 +308,9 @@ cmd_run_device() {
     set +a
   fi
 
-  if [[ -x "${ROOT}/scripts/ios_sign.sh" ]]; then
+  if [[ -x "${ROOT}/scripts/platform/ios_sign.sh" ]]; then
     echo "==> Signing ${app}"
-    "${ROOT}/scripts/ios_sign.sh" sign-app "$app"
+    "${ROOT}/scripts/platform/ios_sign.sh" sign-app "$app"
   fi
 
   local udid="${IOS_DEVICE_UDID:-}"
@@ -411,8 +411,8 @@ cmd_ipa() {
 
   local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   echo "==> Exporting IPA (${IOS_EXPORT_METHOD})"
-  "${ROOT}/scripts/ios_sign.sh" export-ipa "$app"
-  echo "==> Next: ./scripts/ios_build.sh upload-ipa"
+  "${ROOT}/scripts/platform/ios_sign.sh" export-ipa "$app"
+  echo "==> Next: ./scripts/platform/ios_build.sh upload-ipa"
   echo "    or open dist-ios/ in Transporter"
   echo "    then App Store Connect → build → export compliance → Internal Testing"
 }
@@ -423,10 +423,10 @@ cmd_upload_ipa() {
   local ipa="${1:-${ROOT}/dist-ios/pp-browser.ipa}"
   if [[ ! -f "$ipa" ]]; then
     echo "error: IPA not found: ${ipa}" >&2
-    echo "hint: run ./scripts/ios_build.sh ipa first" >&2
+    echo "hint: run ./scripts/platform/ios_build.sh ipa first" >&2
     exit 1
   fi
-  "${ROOT}/scripts/ios_sign.sh" upload-ipa "$ipa"
+  "${ROOT}/scripts/platform/ios_sign.sh" upload-ipa "$ipa"
 }
 
 main() {

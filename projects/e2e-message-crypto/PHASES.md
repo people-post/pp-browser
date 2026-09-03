@@ -126,7 +126,7 @@ d0 (complete)
 
 **Note:** `third_party/libsodium` and `cmake/dependencies.cmake` already vendored — c1 completes **link to `pp_base`** and module code.
 
-- [x] Add `libsodium` to [scripts/vendor_import.sh](../../scripts/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
+- [x] Add `libsodium` to [scripts/vendor/vendor_import.sh](../../scripts/vendor/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
 - [x] [third_party/UPSTREAM.json](../../third_party/UPSTREAM.json) + [third_party/README.md](../../third_party/README.md)
 - [x] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
 - [x] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)

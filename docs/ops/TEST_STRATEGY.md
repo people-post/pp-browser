@@ -162,26 +162,26 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 ### Local driver (lifecycle + suites)
 
-[`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) owns Docker hop **up / stop / clear** and calls the existing smoke scripts. Default hop file: [`docker-compose.relay-smoke.yml`](../../packaging/pp-node/docker-compose.relay-smoke.yml). `run --suite node` restages a **newer desktop `pp-node`** into the hop image when `dist/pp-node/docker/pp-node` is older than `build/src/app/node/pp-node` (avoids muxer failures against a stale packaged hop).
+[`scripts/test/pp_local_test.sh`](../../scripts/test/pp_local_test.sh) owns Docker hop **up / stop / clear** and calls the existing smoke scripts. Default hop file: [`docker-compose.relay-smoke.yml`](../../packaging/pp-node/docker-compose.relay-smoke.yml). `run --suite node` restages a **newer desktop `pp-node`** into the hop image when `dist/pp-node/docker/pp-node` is older than `build/src/app/node/pp-node` (avoids muxer failures against a stale packaged hop).
 
 ```bash
-./scripts/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)
-./scripts/pp_local_test.sh run --suite call    # B-CALL-DIRECT thin client
-./scripts/pp_local_test.sh run --suite conflict  # B-CONFLICT 3-peer thin client
-./scripts/pp_local_test.sh run --suite msg-call  # B-MSG+CALL chat during/after call
-./scripts/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP N=4 (starts hop)
-./scripts/pp_local_test.sh run --suite cap     # N-CAP-MEDIA sweep + N-CAP-CIRCUIT
-./scripts/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
-./scripts/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
-./scripts/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
-./scripts/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
-./scripts/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
-./scripts/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
-./scripts/pp_local_test.sh stop                # compose stop, volume kept
-./scripts/pp_local_test.sh clear               # down -v + ready-file
+./scripts/test/pp_local_test.sh run --suite unit    # core compose ctest (no Docker)
+./scripts/test/pp_local_test.sh run --suite call    # B-CALL-DIRECT thin client
+./scripts/test/pp_local_test.sh run --suite conflict  # B-CONFLICT 3-peer thin client
+./scripts/test/pp_local_test.sh run --suite msg-call  # B-MSG+CALL chat during/after call
+./scripts/test/pp_local_test.sh run --suite node    # L0/L1/N-FANOUT/N-CAP N=4 (starts hop)
+./scripts/test/pp_local_test.sh run --suite cap     # N-CAP-MEDIA sweep + N-CAP-CIRCUIT
+./scripts/test/pp_local_test.sh run --suite soak    # N-SOAK (default 120s; PP_NODE_SOAK_SEC=3600 weekly)
+./scripts/test/pp_local_test.sh run --suite chaos   # N-CHAOS kill-client + restart + pause
+./scripts/test/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
+./scripts/test/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
+./scripts/test/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
+./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
+./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
+./scripts/test/pp_local_test.sh clear               # down -v + ready-file
 ```
 
-`run` leaves the hop up unless `--down`. Package `dist/pp-node/docker` before `up` / `node` (`scripts/pp_node_package_linux.sh all`).
+`run` leaves the hop up unless `--down`. Package `dist/pp-node/docker` before `up` / `node` (`scripts/platform/pp_node_package_linux.sh all`).
 
 ---
 
@@ -214,16 +214,16 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| N-SMOKE | **Covered** | [`scripts/pp_node_image_smoke.sh`](../../scripts/pp_node_image_smoke.sh); release CI L0 |
-| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/probe/main.cpp); [`scripts/pp_node_relay_smoke.sh`](../../scripts/pp_node_relay_smoke.sh) |
-| N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/pp_node_fanout_smoke.sh`](../../scripts/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
+| N-SMOKE | **Covered** | [`scripts/test/pp_node_image_smoke.sh`](../../scripts/test/pp_node_image_smoke.sh); release CI L0 |
+| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
+| N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/test/pp_node_fanout_smoke.sh`](../../scripts/test/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
 | N-ADMIT | **Partial** | gtests (contacts-only / call-scoped); no deploy-profile stranger probe |
-| N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/pp_node_cap_smoke.sh`](../../scripts/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |
-| N-CAP-CIRCUIT | **Covered** (soft scaffold) | `pp-node-probe --mode circuit-cap` + [`scripts/pp_node_circuit_cap_smoke.sh`](../../scripts/pp_node_circuit_cap_smoke.sh). Soft SLO: 100% for M≤**M₀=4**; larger M informational. In-process: `ConcurrentBridges`. |
-| N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/pp_node_soak_smoke.sh`](../../scripts/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
-| N-CHAOS | **Covered** (scaffold) | [`scripts/pp_node_chaos_smoke.sh`](../../scripts/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
-| N-MIX | **Covered** (scaffold) | [`scripts/pp_mix_hop_smoke.sh`](../../scripts/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
-| N-HARD-FORCE | **Scaffold** | [`docker-compose.hard-lab.yml`](../../packaging/pp-node/docker-compose.hard-lab.yml) + [`scripts/pp_hard_force_smoke.sh`](../../scripts/pp_hard_force_smoke.sh); driver `--suite hard`. Isolation + circuit + media via hop. |
+| N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/test/pp_node_cap_smoke.sh`](../../scripts/test/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |
+| N-CAP-CIRCUIT | **Covered** (soft scaffold) | `pp-node-probe --mode circuit-cap` + [`scripts/test/pp_node_circuit_cap_smoke.sh`](../../scripts/test/pp_node_circuit_cap_smoke.sh). Soft SLO: 100% for M≤**M₀=4**; larger M informational. In-process: `ConcurrentBridges`. |
+| N-SOAK | **Covered** (scaffold) | `pp-node-probe --mode media-soak` + [`scripts/test/pp_node_soak_smoke.sh`](../../scripts/test/pp_node_soak_smoke.sh); driver `--suite soak`. Default **120s**; weekly `PP_NODE_SOAK_SEC=3600`. Fail on hop death or 3 consecutive attach failures. |
+| N-CHAOS | **Covered** (scaffold) | [`scripts/test/pp_node_chaos_smoke.sh`](../../scripts/test/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
+| N-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_hop_smoke.sh`](../../scripts/test/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
+| N-HARD-FORCE | **Scaffold** | [`docker-compose.hard-lab.yml`](../../packaging/pp-node/docker-compose.hard-lab.yml) + [`scripts/test/pp_hard_force_smoke.sh`](../../scripts/test/pp_hard_force_smoke.sh); driver `--suite hard`. Isolation + circuit + media via hop. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---
@@ -247,14 +247,14 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/pp_call_direct_smoke.sh`](../../scripts/pp_call_direct_smoke.sh); product `CallMediaBridge` still untested as a unit |
-| B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/pp_call_hop_smoke.sh`](../../scripts/pp_call_hop_smoke.sh); driver `--suite call-hop` |
+| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/test/pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); product `CallMediaBridge` still untested as a unit |
+| B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/test/pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop` |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
-| B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/pp_call_conflict_smoke.sh`](../../scripts/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
-| B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/pp_call_hop_msg_smoke.sh`](../../scripts/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
+| B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
+| B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/test/pp_call_hop_msg_smoke.sh`](../../scripts/test/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
-| B-MIX | **Covered** (scaffold) | [`scripts/pp_mix_browser_smoke.sh`](../../scripts/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
-| B-HARD-CALL | **Scaffold** | [`scripts/pp_hard_call_smoke.sh`](../../scripts/pp_hard_call_smoke.sh); driver `--suite hard` |
+| B-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_browser_smoke.sh`](../../scripts/test/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
+| B-HARD-CALL | **Scaffold** | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard` |
 | B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
 | B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 

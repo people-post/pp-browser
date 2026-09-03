@@ -2,7 +2,7 @@
 # Guard gui-layer include edges (F008). See src/gui/README.md.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FAIL=0
 
 check_absent() {

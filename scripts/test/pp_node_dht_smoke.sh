@@ -6,13 +6,13 @@
 #   cmake --build build --target pp-node -j
 #
 # Usage:
-#   ./scripts/pp_node_dht_smoke.sh
-#   PP_NODE_BIN=build/src/app/node/pp-node ./scripts/pp_node_dht_smoke.sh
+#   ./scripts/test/pp_node_dht_smoke.sh
+#   PP_NODE_BIN=build/src/app/node/pp-node ./scripts/test/pp_node_dht_smoke.sh
 #
 # See projects/p2p-mesh/DISCOVERY_ROADMAP.md (n2-core lab) and packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NODE_BIN="${PP_NODE_BIN:-${ROOT}/build/src/app/node/pp-node}"
 PIN="${PP_BROWSER_PIN:-local-test-pin}"
 TIMEOUT_SEC="${PP_NODE_DHT_SMOKE_TIMEOUT_SEC:-45}"

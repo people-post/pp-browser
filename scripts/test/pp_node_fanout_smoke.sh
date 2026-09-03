@@ -10,9 +10,9 @@
 # See packaging/pp-node/IMAGE_SMOKE.md and docs/ops/TEST_STRATEGY.md (N-FANOUT)
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=pp_node_hop_lib.sh
-source "${ROOT}/scripts/pp_node_hop_lib.sh"
+source "${ROOT}/scripts/test/pp_node_hop_lib.sh"
 
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 PROBE_BIN="${PP_NODE_PROBE_BIN:-${ROOT}/build/src/app/node/pp-node-probe}"
@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export PP_NODE_STATUS_URL="${STATUS_URL}"
-bash "${ROOT}/scripts/pp_node_image_smoke.sh"
+bash "${ROOT}/scripts/test/pp_node_image_smoke.sh"
 
 if [[ ! -x "${PROBE_BIN}" ]]; then
   echo "error: N-FANOUT probe binary missing (${PROBE_BIN}); build with:" >&2

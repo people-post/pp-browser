@@ -210,8 +210,8 @@ Everything else: weekly, manual, or on-demand.
 ```text
 packaging/pp-node/docker-compose.hard-lab.yml   # nets + hop + peer-a/b
 packaging/pp-node/Dockerfile.hard-peer          # Debian peer sidecar for host probes
-scripts/pp_hard_force_smoke.sh                  # N-HARD-FORCE runner
-scripts/pp_local_test.sh run --suite hard       # Wave 1 entry
+scripts/test/pp_hard_force_smoke.sh                  # N-HARD-FORCE runner
+scripts/test/pp_local_test.sh run --suite hard       # Wave 1 entry
 pp-node-probe --mode bridge-target|bridge-via-hop|media-recv|media-send
 ```
 

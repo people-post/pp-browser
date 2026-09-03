@@ -3,7 +3,7 @@
 # Safe to re-run when bumping the fork version.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FORK="${ROOT}/src/lib/rmlui"
 TMP="${ROOT}/.rmlui_tests_import_tmp"
 
@@ -61,7 +61,7 @@ cat > "${FORK}/UPSTREAM.json" <<EOF
     "Samples/shell",
     "Samples/assets"
   ],
-  "import_script": "scripts/rmlui_tests_import.sh"
+  "import_script": "scripts/vendor/rmlui_tests_import.sh"
 }
 EOF
 

@@ -4,9 +4,9 @@
 # Not same-session mix (that is B-MSG+CALL). See docs/ops/TEST_STRATEGY.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=pp_mix_lib.sh
-source "${ROOT}/scripts/pp_mix_lib.sh"
+source "${ROOT}/scripts/test/pp_mix_lib.sh"
 
 PROBE_BIN="${PP_CALL_PROBE_BIN:-${ROOT}/build/src/app/node/pp-call-probe}"
 
@@ -30,7 +30,7 @@ fi
 export PP_CALL_PROBE_BIN="${PROBE_BIN}"
 echo "=== B-MIX browser interference (call ∥ conflict ∥ msg-call) ==="
 pp_mix_run_parallel \
-  call "bash '${ROOT}/scripts/pp_call_direct_smoke.sh' --probe-bin '${PROBE_BIN}'" \
-  conflict "bash '${ROOT}/scripts/pp_call_conflict_smoke.sh' --probe-bin '${PROBE_BIN}'" \
-  msg-call "bash '${ROOT}/scripts/pp_call_msg_smoke.sh' --probe-bin '${PROBE_BIN}'"
+  call "bash '${ROOT}/scripts/test/pp_call_direct_smoke.sh' --probe-bin '${PROBE_BIN}'" \
+  conflict "bash '${ROOT}/scripts/test/pp_call_conflict_smoke.sh' --probe-bin '${PROBE_BIN}'" \
+  msg-call "bash '${ROOT}/scripts/test/pp_call_msg_smoke.sh' --probe-bin '${PROBE_BIN}'"
 echo "pp-mix-browser smoke PASSED"

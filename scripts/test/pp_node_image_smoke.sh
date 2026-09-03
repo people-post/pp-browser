@@ -3,9 +3,9 @@
 # Does not prove relay forwarding — only that the node is up and caps started.
 #
 # Usage:
-#   ./scripts/pp_node_image_smoke.sh
-#   PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/pp_node_image_smoke.sh
-#   ./scripts/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
+#   ./scripts/test/pp_node_image_smoke.sh
+#   PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
+#   ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
 #
 # See packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail

@@ -1,14 +1,14 @@
 # L2 / N-FANOUT dogfood topology for pp-node.
 # Hop runs in Docker; two media clients run in-process via pp-node-probe --mode=media-fanout
-# on the host (see scripts/pp_node_fanout_smoke.sh). This avoids shipping client images while
+# on the host (see scripts/test/pp_node_fanout_smoke.sh). This avoids shipping client images while
 # still exercising a separate process/network namespace for the hop.
 #
 # Usage (from repo root):
-#   ./scripts/pp_local_test.sh run --suite node
+#   ./scripts/test/pp_local_test.sh run --suite node
 #   # or manual:
 #   docker compose -f packaging/pp-node/docker-compose.relay-smoke.yml up -d --build
 #   cmake --build build --target pp-node-probe -j
-#   ./scripts/pp_node_fanout_smoke.sh
+#   ./scripts/test/pp_node_fanout_smoke.sh
 #
 # See IMAGE_SMOKE.md and docs/ops/TEST_STRATEGY.md (N-FANOUT).
 

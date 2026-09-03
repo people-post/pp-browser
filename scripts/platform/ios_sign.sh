@@ -5,7 +5,7 @@
 # See packaging/ios/signing.env.example and docs/ops/IOS_BUILD.md.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Sync with pbr::kProductBundleName / kProductSlug in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 PRODUCT_SLUG="${PP_BROWSER_PRODUCT_SLUG:-pp-browser}"
@@ -56,14 +56,14 @@ Optional:
 
 Local development:
   source packaging/ios/signing.env
-  ./scripts/ios_build.sh device
-  ./scripts/ios_sign.sh sign-app install-ios/PP.app
+  ./scripts/platform/ios_build.sh device
+  ./scripts/platform/ios_sign.sh sign-app install-ios/PP.app
 
 TestFlight IPA:
   source packaging/ios/signing.env   # with IOS_EXPORT_METHOD=app-store + Distribution vars
-  CMAKE_BUILD_TYPE=Release ./scripts/ios_build.sh device
-  ./scripts/ios_sign.sh export-ipa install-ios/PP.app
-  ./scripts/ios_sign.sh upload-ipa dist-ios/pp-browser.ipa
+  CMAKE_BUILD_TYPE=Release ./scripts/platform/ios_build.sh device
+  ./scripts/platform/ios_sign.sh export-ipa install-ios/PP.app
+  ./scripts/platform/ios_sign.sh upload-ipa dist-ios/pp-browser.ipa
 EOF
 }
 

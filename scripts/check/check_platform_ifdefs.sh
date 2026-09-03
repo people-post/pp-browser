@@ -3,7 +3,7 @@
 # See docs/architecture/PLATFORM_CODE.md.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FAIL=0
 
 if ! command -v rg >/dev/null 2>&1; then

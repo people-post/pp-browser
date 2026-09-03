@@ -189,7 +189,7 @@ Decisions to lock:
 - [x] v1 `AmpDhtService` on `/pp-mesh/dht/1.0.0` — self STORE + bootstrap FIND_PEER fan-out
 - [x] `MeshHost` + `ConversationsHub` wiring; Me → Network DHT checkbox (Node only, default off)
 - [x] Unit tests: `dht_record_codec_test`, `amp_dht_service_test` (incl. mutual discover)
-- [x] Two desktop Nodes with DHT enabled discover each other’s ADP addrs without Brief HTTP — `scripts/pp_node_dht_smoke.sh` + pp-node `ConfigureAmpDht` / warm FIND_PEER
+- [x] Two desktop Nodes with DHT enabled discover each other’s ADP addrs without Brief HTTP — `scripts/test/pp_node_dht_smoke.sh` + pp-node `ConfigureAmpDht` / warm FIND_PEER
 - [x] Mobile Client never runs DHT (`ResolveMeshRole` gate)
 - [x] Default off; enabling DHT does not auto-open public relay scope
 

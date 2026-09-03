@@ -14,13 +14,13 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Feature include edges
-        run: ./scripts/check_feature_includes.sh
+        run: ./scripts/check/check_feature_includes.sh
       - name: Base/domain include edges
         run: |
-          ./scripts/check_base_includes.sh
-          ./scripts/check_base_public_libs.sh
+          ./scripts/check/check_base_includes.sh
+          ./scripts/check/check_base_public_libs.sh
       - name: Platform ifdef locations
-        run: ./scripts/check_platform_ifdefs.sh
+        run: ./scripts/check/check_platform_ifdefs.sh
 
   build:
     strategy:
@@ -220,7 +220,7 @@ jobs:
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
-        run: ./scripts/android_build.sh apk
+        run: ./scripts/platform/android_build.sh apk
 
       - name: Disk usage (post-build)
         if: always()

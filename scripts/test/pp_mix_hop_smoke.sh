@@ -6,11 +6,11 @@
 # See docs/ops/TEST_STRATEGY.md
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=pp_node_hop_lib.sh
-source "${ROOT}/scripts/pp_node_hop_lib.sh"
+source "${ROOT}/scripts/test/pp_node_hop_lib.sh"
 # shellcheck source=pp_mix_lib.sh
-source "${ROOT}/scripts/pp_mix_lib.sh"
+source "${ROOT}/scripts/test/pp_mix_lib.sh"
 
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 PROBE_BIN="${PP_NODE_PROBE_BIN:-${ROOT}/build/src/app/node/pp-node-probe}"
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 export PP_NODE_STATUS_URL="${STATUS_URL}"
-bash "${ROOT}/scripts/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
+bash "${ROOT}/scripts/test/pp_node_image_smoke.sh" --status-url "${STATUS_URL}"
 
 if [[ ! -x "${PROBE_BIN}" ]]; then
   echo "error: pp-node-probe missing (${PROBE_BIN})" >&2
@@ -54,9 +54,9 @@ export PP_NODE_PROBE_BRIDGES="${BRIDGES}"
 
 echo "=== N-MIX hop interference (call-hop×${CYCLES} ∥ fanout ∥ circuit-cap M=${BRIDGES}) ==="
 pp_mix_run_parallel \
-  call-hop "bash '${ROOT}/scripts/pp_call_hop_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${CALL_PROBE_BIN}' --cycles '${CYCLES}'" \
-  fanout "bash '${ROOT}/scripts/pp_node_fanout_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${PROBE_BIN}'" \
-  circuit-cap "bash '${ROOT}/scripts/pp_node_circuit_cap_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${PROBE_BIN}' --bridges '${BRIDGES}'"
+  call-hop "bash '${ROOT}/scripts/test/pp_call_hop_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${CALL_PROBE_BIN}' --cycles '${CYCLES}'" \
+  fanout "bash '${ROOT}/scripts/test/pp_node_fanout_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${PROBE_BIN}'" \
+  circuit-cap "bash '${ROOT}/scripts/test/pp_node_circuit_cap_smoke.sh' --status-url '${STATUS_URL}' --probe-bin '${PROBE_BIN}' --bridges '${BRIDGES}'"
 
 if ! curl -fsS -m 5 "${STATUS_URL}/healthz" >/dev/null; then
   echo "error: hop /healthz failed after mix" >&2

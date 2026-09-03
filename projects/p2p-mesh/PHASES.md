@@ -128,7 +128,7 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] **nd4** — Amp directory twin (`MESH_DIRECTORY_AMP.md` / `/pp-mesh/directory/1.0.0`)
 - [x] **nd5** — `ledger_gateway` capability vocab + hop collector (dial path / UI deferred)
 - [x] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 landed in same track
-- [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
+- [x] Optional DHT lab smoke — `scripts/test/pp_node_dht_smoke.sh`
 
 ## Later horizons
 

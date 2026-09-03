@@ -26,7 +26,7 @@ foundation/platform/ui/host → pp-cpp-ui backend (Platform_SDL + Renderer_GL3) 
 
 ## Provenance
 
-See `../pp-cpp-ui/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
+See `../pp-cpp-ui/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/vendor/rmlui_tests_import.sh` when bumping the fork version.
 
 ## Build flags / product profile
 

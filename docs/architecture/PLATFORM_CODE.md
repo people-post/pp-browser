@@ -79,7 +79,7 @@ CMake **source-selects** the matching backend (do not compile MediaCodec TUs on 
 
 ## Allowlisted `#ifdef` locations
 
-Regressions are caught by [`scripts/check_platform_ifdefs.sh`](../../scripts/check_platform_ifdefs.sh) (CI lint job).
+Regressions are caught by [`scripts/check/check_platform_ifdefs.sh`](../../scripts/check/check_platform_ifdefs.sh) (CI lint job).
 
 Allowed paths for OS preprocessor branches:
 
