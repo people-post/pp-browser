@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 #include <sqlite3.h>
 
 namespace pbr {
@@ -223,19 +224,32 @@ TEST(ChatPayloadCodecTest, VectorATextRoundTrip) {
   EXPECT_EQ(message.text, "Hello");
 }
 
-TEST(SqliteThreadStoreTest, IncompatibleProfileDbFailsEveryCallNotJustTheFirst) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_sqlite_profile_version_guard_test";
-  std::filesystem::remove_all(data_dir);
-
-  {
-    SqliteThreadStore store(data_dir.string());
-    AssertStoreUnlocked(store);
-    ASSERT_TRUE(store.ListThreads());
-    store.Flush();
+class IncompatibleProfileDbTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() / "pp_browser_sqlite_profile_version_guard_test";
+    std::filesystem::remove_all(data_dir_);
   }
 
-  const std::filesystem::path profile_db = data_dir / "threads" / "profile.db";
+  void TearDown() override {
+    store_.reset();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+};
+
+TEST_F(IncompatibleProfileDbTest, FailsEveryCallNotJustTheFirst) {
+  {
+    auto bootstrap = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    AssertStoreUnlocked(*bootstrap);
+    ASSERT_TRUE(bootstrap->ListThreads());
+    bootstrap->Flush();
+    bootstrap.reset();
+  }
+
+  const std::filesystem::path profile_db = data_dir_ / "threads" / "profile.db";
   ASSERT_TRUE(std::filesystem::exists(profile_db));
   {
     sqlite3* db = nullptr;
@@ -244,17 +258,17 @@ TEST(SqliteThreadStoreTest, IncompatibleProfileDbFailsEveryCallNotJustTheFirst) 
     sqlite3_close(db);
   }
 
-  SqliteThreadStore store(data_dir.string());
-  AssertStoreUnlocked(store);
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  AssertStoreUnlocked(*store_);
 
-  auto first = store.ListThreads();
+  auto first = store_->ListThreads();
   ASSERT_FALSE(first);
   EXPECT_NE(first.error().message.find("Incompatible"), std::string::npos);
 
   // The guard must fire on every call. A failed open still assigned profile_db_,
   // so the early return in OpenProfileDb() skipped the version check from the
   // second call on and the store went on to read an incompatible database.
-  auto second = store.ListThreads();
+  auto second = store_->ListThreads();
   ASSERT_FALSE(second);
   EXPECT_NE(second.error().message.find("Incompatible"), std::string::npos);
 }
