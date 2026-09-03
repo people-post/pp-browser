@@ -109,4 +109,8 @@ if(PP_BROWSER_BUILD_TESTS)
   pp_browser_enable_googletest()
 endif()
 
+# Runtime asset paths: read by foundation/platform/DesktopPathProvider.cpp and the app
+# target, so it must be declared before add_subdirectory(src).
+option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
+
 add_subdirectory(src)

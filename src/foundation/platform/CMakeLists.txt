@@ -116,6 +116,17 @@ pp_browser_add_foundation_library(pp_foundation_platform_core
     CURL::libcurl
 )
 
+# DesktopPathProvider::BundleAssetsDir() reads these; they must be set on the
+# target that compiles it, not only on the app target (which links this lib).
+# Without them the packaged branch is compiled out and assets resolve relative
+# to the working directory, so a launched PP.app finds no assets.
+if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
+  target_compile_definitions(pp_foundation_platform_core PRIVATE PP_BROWSER_PACKAGED_BUILD=1)
+else()
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+endif()
+
 if(PP_BROWSER_HEADLESS)
   return()
 endif()

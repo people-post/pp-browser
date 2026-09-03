@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 #include <sqlite3.h>
 
 namespace pbr {
@@ -221,6 +222,55 @@ TEST(ChatPayloadCodecTest, VectorATextRoundTrip) {
   ThreadMessage message;
   ASSERT_TRUE(ChatPayloadCodec::ApplyRowToMessage(*encoded, message));
   EXPECT_EQ(message.text, "Hello");
+}
+
+class IncompatibleProfileDbTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() / "pp_browser_sqlite_profile_version_guard_test";
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  void TearDown() override {
+    store_.reset();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+};
+
+TEST_F(IncompatibleProfileDbTest, FailsEveryCallNotJustTheFirst) {
+  {
+    auto bootstrap = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    AssertStoreUnlocked(*bootstrap);
+    ASSERT_TRUE(bootstrap->ListThreads());
+    bootstrap->Flush();
+    bootstrap.reset();
+  }
+
+  const std::filesystem::path profile_db = data_dir_ / "threads" / "profile.db";
+  ASSERT_TRUE(std::filesystem::exists(profile_db));
+  {
+    sqlite3* db = nullptr;
+    ASSERT_EQ(sqlite3_open(profile_db.string().c_str(), &db), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(db, "PRAGMA user_version = 1;", nullptr, nullptr, nullptr), SQLITE_OK);
+    sqlite3_close(db);
+  }
+
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  AssertStoreUnlocked(*store_);
+
+  auto first = store_->ListThreads();
+  ASSERT_FALSE(first);
+  EXPECT_NE(first.error().message.find("Incompatible"), std::string::npos);
+
+  // The guard must fire on every call. A failed open still assigned profile_db_,
+  // so the early return in OpenProfileDb() skipped the version check from the
+  // second call on and the store went on to read an incompatible database.
+  auto second = store_->ListThreads();
+  ASSERT_FALSE(second);
+  EXPECT_NE(second.error().message.find("Incompatible"), std::string::npos);
 }
 
 } // namespace
