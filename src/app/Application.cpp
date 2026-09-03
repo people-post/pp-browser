@@ -414,7 +414,6 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
-  MessagingHub& messaging = Messaging();
   MessagingFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() {
