@@ -43,7 +43,7 @@ src/feature/
 │   └── bindings/
 ├── messaging/    Conversations hub (legacy name) + delivery; MessagingFacade
 │   └── calls/    Call session band (f4v1 → future feature/calls)
-└── ui/           Presenters + shell/contacts/chat bands (same pp_feature_ui)
+└── ui/           Presenters + shell/contacts/chat (pp_feature_ui) — **staging for src/gui/** (F008)
     ├── shell/    ShellHost, mount, gestures, shell ports
     ├── contacts/ Contacts + people-picker
     └── chat/     ChatController + screen helpers (absorbed from feature/chat)
@@ -58,7 +58,7 @@ src/feature/
 | **Configuration** | settings | How do user edits merge into `AppConfig`? |
 | **Intelligence** | ai, ai/tools, ai/bindings | How does the agent plan turns, call tools, and bind RmlUi actions? |
 | **Conversations** | messaging (+ calls band) | How do threads sync/relay; how do call sessions run? |
-| **Presentation** | ui (+ shell/contacts/chat bands) | Shell, contacts, chat screen, settings presenters |
+| **Presentation (staging)** | `feature/ui` bands | Shell/contacts/chat presenters → lift to **`gui/`** (not `domain/ui`) |
 
 Start points when exploring:
 

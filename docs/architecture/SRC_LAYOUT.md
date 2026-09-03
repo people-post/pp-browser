@@ -6,7 +6,7 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; **`gui` presents** them (target); `app` constructs the graph.
 
-> **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
+> **Migration note (paths):** Top-level folders today are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. **Target:** add `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)). Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
 
 ## Layers
 
@@ -33,6 +33,7 @@ app → feature → domain → foundation → common → pp_common (FetchContent
 ```
 
 **Target (f7):** `app → gui → feature → domain → …` — see [F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature).
+
 Convenience link aggregate (not a folder layer):
 
 ```
