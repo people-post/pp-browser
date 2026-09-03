@@ -92,7 +92,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
 4. Document the on-disk path and AAD purpose here.
 
-**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/feature/ui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
+**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/gui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
 
 Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vault required).
 

@@ -23,9 +23,9 @@
 #include "domain/messaging/SyncStateCodec.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/calls/CallSessionManager.h"
 #include "feature/messaging/GroupInviteGate.h"
-#include "feature/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/PublicPskLockCoordinator.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"

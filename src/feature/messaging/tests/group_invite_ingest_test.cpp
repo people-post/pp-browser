@@ -16,7 +16,7 @@
 #include "domain/people/IdentityStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/RelayReceivePipeline.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"

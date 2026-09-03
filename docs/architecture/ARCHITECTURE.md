@@ -27,7 +27,7 @@ Multi-turn chat uses a shared [`Conversation`](../../src/base/ai/conversation/Co
 
 ## Dynamic RML (`RmlMount`)
 
-Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlMount.cpp):
+Runtime UI updates use [`src/gui/RmlMount.cpp`](../../src/gui/RmlMount.cpp):
 
 - `MountInner` — browser-like inner markup mount (`SetInnerRML`) with optional validation, focus, and scroll preservation (`data-mount-id`)
 - `InjectRcss` — merge dynamic RCSS into the active document (re-inject by `source_tag` replaces prior rules)
@@ -35,7 +35,7 @@ Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlM
 
 ## Window Shell
 
-Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../../src/feature/ui/ShellHost.cpp):
+Chat uses the role-based shell in [`src/gui/shell/ShellHost.*`](../../src/gui/shell/ShellHost.cpp):
 
 - **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar

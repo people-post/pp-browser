@@ -3,21 +3,18 @@ pp_browser_add_feature_library(pp_feature_messaging
     AttachmentClientUtil.cpp
     AttachmentDownloadService.cpp
     AttachmentFetchUtil.cpp
-    CallMediaKeyStore.cpp
-    AmpCircuitHopReach.cpp
-    AmpMediaRelayClient.cpp
-    CallMediaBridge.cpp
-    CallLifecycle.cpp
-    CallInboundHandlers.cpp
-    CallSessionManager.cpp
-    CallStack.cpp
-    CallTopologyController.cpp
+    calls/AmpCircuitHopReach.cpp
+    calls/AmpMediaRelayClient.cpp
+    calls/CallMediaBridge.cpp
+    calls/CallLifecycle.cpp
+    calls/CallInboundHandlers.cpp
+    calls/CallSessionManager.cpp
+    calls/CallStack.cpp
+    calls/CallTopologyController.cpp
     ChatBlobRequestUtil.cpp
-    ChatHistoryResponder.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
-    EpochBumpCoordinator.cpp
     GroupInviteGate.cpp
     GroupMembershipService.cpp
     InboxController.cpp
@@ -26,30 +23,24 @@ pp_browser_add_feature_library(pp_feature_messaging
     AmpChatBlobService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
-    MobileEphemeralListenGate.cpp
-    ContactReachability.cpp
     MessagingContactsPorts.cpp
     MessagingFacade.cpp
-    CallFunctionalPorts.cpp
-    CallUiBackend.cpp
+    calls/CallFunctionalPorts.cpp
+    calls/CallUiBackend.cpp
     MessagingShellPorts.cpp
     AgentUiPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MeshMessagingService.cpp
-    PeerBriefRoute.cpp
     PeerDisplayResolver.cpp
     ProfileIconClientUtil.cpp
     ProfileIconFetchUtil.cpp
-    PskSessionCoordinator.cpp
-    PublicPskLockCoordinator.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
     RegistrationClientUtil.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
-    SqlitePskSessionStore.cpp
   PUBLIC_LIBS
     pp_feature_ai
     pp_foundation_crypto

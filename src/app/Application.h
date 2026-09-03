@@ -19,6 +19,10 @@
 
 class FontEngineInterfaceHarfBuzz;
 
+namespace Rml {
+class Context;
+}
+
 namespace pbr {
 
 class ActionRouter;
@@ -35,6 +39,7 @@ class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
 class ShellHost;
+struct SettingsToolPorts;
 class PeoplePickerController;
 class EmojiPickerController;
 class ChatController;
@@ -65,6 +70,16 @@ public:
   static std::string AssetsPath(const std::string& relative);
 
 private:
+  bool InitializeUiHost(const char* window_title, int window_width, int window_height,
+                        const BootstrapResult& bootstrap, Rml::Context*& context);
+  SettingsToolPorts WireSettings(Rml::Context* context);
+  void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
+  void WireCalls();
+  void WireUnlockPinAndFlow();
+  void WireAgentAndConfig();
+  bool MountPresenters(Rml::Context* context);
+  void WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap);
+
   bool initialized_ = false;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsService> secrets_;

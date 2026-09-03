@@ -4,9 +4,9 @@
 
 `src/` is organized in **product layers** (folders). Dependencies flow downward only. See [independence rules](#independence-inside-a-layer) before adding includes.
 
-**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
+**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; **`gui` presents** them; `app` constructs the graph.
 
-> **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
+> **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. GUI uses `#include "gui/…"`, `pp_gui`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
 
 ## Layers
 
@@ -19,15 +19,17 @@
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks / extracted stacks (Amp via FetchContent; RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
 | **Domain** | [`src/domain/`](../../src/domain/) | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui) — single-purpose engines/stores/clients |
-| Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions, screens; **wires** common contracts to concrete domain types |
+| Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions; **wires** common contracts to concrete domain types (Rml-free at module edge) |
+| **GUI** | [`src/gui/`](../../src/gui/) | Product Rml/SDL presenters + shell ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); name **gui** avoids clash with `domain/ui` |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
 ## Dependency rule
 
 ```
-app → feature → domain → foundation → common → pp_common (FetchContent)
-                 feature → foundation / common     (allowed)
-                 domain  → common / lib            (contracts + forks)
+app → gui → feature → domain → foundation → common → pp_common (FetchContent)
+          gui → feature / domain / foundation / common
+          feature → foundation / common     (allowed; no gui)
+          domain  → common / lib            (contracts + forks)
 ```
 
 Convenience link aggregate (not a folder layer):
@@ -39,7 +41,7 @@ pp_base INTERFACE = pp_foundation + pp_amp_{l1,l2,l3,link} + pp_domain_*
 Foundation uses `pp_foundation_*` and `#include "foundation/…"`. Domain uses `pp_domain_*` and `#include "domain/…"`. Amp uses FetchContent targets `pp_amp_*`.
 
 ```
-app → feature → (pp_base) → foundation / domain / amp → lib → pp_pbr_common → pp_common
+app → gui → feature → (pp_base) → foundation / domain / amp → lib → pp_pbr_common → pp_common
 ```
 
 `lib` and `common` may use `third_party`. No upward `#include` across layers.
@@ -55,7 +57,8 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 | **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
 | **domain** | **Strict independence.** Peers must not `#include` or `PUBLIC_LIBS`-link each other. Cross-need → contract/DTO in `common`; wire in `feature` (or `app` for lifetimes). |
-| **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. |
+| **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. Must not include `gui/`. |
+| **gui** | May use feature/domain/foundation; must not include `app/`. Bands share `pp_gui` for now. |
 | **app** | Single composition root. |
 
 ### Litmus tests
@@ -153,11 +156,11 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 ```
 domain/render → pp-cpp-ui `pp_ui` / PP_LIB_RMLUI_INCLUDE
 domain/mesh → adp (+ mesh_identity)
-feature/ui → domain/render
+gui → domain/render (via platform / RmlUi)
 feature/messaging → domain/mesh
 ```
 
-Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src/feature/ui/`.
+Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) lives under `src/gui/shell/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
 ## Feature subfolders
 
@@ -165,17 +168,29 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 
 | Path | Contents |
 |------|----------|
-| `feature/settings/` | Settings apply logic (no messaging/chat deps) |
-| `feature/messaging/` | MessagingHub, router, inbox, P2P service |
+| `feature/settings/` | Settings apply logic (no messaging/gui deps) |
+| `feature/messaging/` | Conversations hub + delivery (legacy folder name) |
+| `feature/messaging/calls/` | Call session band (f4v1) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | ShellHost, settings UI, profile/security sections; `ChatSessionPorts` + `SettingsCommands` (injected from app) |
-| `feature/chat/` | Chat UI, agent↔hub wiring, messaging agent tools |
 
 Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
 
 ```
-settings → ai/tools → ai/bindings → ai → messaging → ui → chat
+settings → ai/tools → ai/bindings → ai → messaging
 ```
+
+## GUI subfolders
+
+Module map: [`src/gui/README.md`](../../src/gui/README.md).
+
+| Path | Contents |
+|------|----------|
+| `gui/` | Shared presenters (settings, call, pin, emoji, badges, flow, …) |
+| `gui/shell/` | ShellHost, mount, shell ports |
+| `gui/contacts/` | Contacts + people-picker |
+| `gui/chat/` | ChatController + screen helpers |
+
+`pp_gui` links `pp_feature_*` (and domain/foundation as needed). Feature must not link or include `gui/`.
 
 Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
 
@@ -193,6 +208,7 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_base` | convenience product stack (`INTERFACE` = foundation + Amp + domain) |
 | `pp_feature_*` | feature — one static library per module folder |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
+| `pp_gui` | gui layer aggregate (presenters + shell) |
 | `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
 Foundation/domain module tests compile to one executable per folder (e.g. `pp_browser_mesh_test`, `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
@@ -215,7 +231,7 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 #include "common/ValueJson.h"
 #include "foundation/data/Config.h"
 #include "domain/mesh/host/MeshHost.h"
-#include "feature/chat/ChatController.h"
+#include "gui/chat/ChatController.h"
 #include "app/Application.h"
 ```
 
@@ -241,4 +257,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app wiring absorbs former base↔base orchestration.
+5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); remaining: soft edges, `conversations`/`calls` renames ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).

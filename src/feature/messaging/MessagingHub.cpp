@@ -1,12 +1,12 @@
 #include "feature/messaging/MessagingHub.h"
 
-#include "feature/messaging/ContactReachability.h"
+#include "domain/people/ContactReachability.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/AttachmentDownloadService.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"

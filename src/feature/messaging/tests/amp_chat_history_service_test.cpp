@@ -4,7 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "feature/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
 
 #include <filesystem>

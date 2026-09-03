@@ -205,7 +205,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 |------|------|
 | `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
 | `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/messaging/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
 | `src/feature/messaging/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
@@ -215,9 +215,9 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/messaging/MessageRouter.*` | Composer routing |
 | `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
-| `src/feature/chat/MessagingTools.*` | Agent tool definitions |
+| `src/gui/chat/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
-| `src/feature/ui/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
+| `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## A/V calls (signaling over messaging)

@@ -3,6 +3,7 @@
 
 pp_browser_add_domain_library(pp_domain_ui
   SOURCES
+    CallConflictCopy.cpp
     ChatFormHelper.cpp
     ContextMenuHost.cpp
     EmojiCatalog.cpp

@@ -13,7 +13,7 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "foundation/identity/PeerIdUtil.h"
 #include "feature/messaging/AmpDirectChatService.h"
-#include "feature/messaging/IDirectMessageClient.h"
+#include "common/chat/IDirectMessageClient.h"
 
 #include "common/Logger.h"
 

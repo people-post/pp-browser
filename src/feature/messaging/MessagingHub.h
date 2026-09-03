@@ -20,7 +20,7 @@
 #include "feature/messaging/GroupMembershipService.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
-#include "feature/messaging/CallStack.h"
+#include "feature/messaging/calls/CallStack.h"
 #include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/messaging/MessageRouter.h"
