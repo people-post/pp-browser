@@ -208,13 +208,13 @@ check_absent "must not include base/render/ (moved to foundation/platform/ui/)" 
   '#include "base/render/' src
 check_absent "messaging must not include base/net/AttachmentClientUtil.h (limit in common/chat/MessagingLimits.h)" \
   '#include "base/net/AttachmentClientUtil.h"' src/domain/messaging
-check_absent "must not include ChatBlobRequestUtil at base path (use feature/messaging/)" \
+check_absent "must not include ChatBlobRequestUtil at base path (use feature/conversations/)" \
   '#include "base/messaging/ChatBlobRequestUtil.h"' src
-check_absent "domain must not include ChatBlobRequestUtil at messaging path (use feature/messaging/)" \
+check_absent "domain must not include ChatBlobRequestUtil at messaging path (use feature/conversations/)" \
   '#include "domain/messaging/ChatBlobRequestUtil.h"' src
-check_absent "must not include base/net/ProfileIconClientUtil.h (use feature/messaging/)" \
+check_absent "must not include base/net/ProfileIconClientUtil.h (use feature/conversations/)" \
   '#include "base/net/ProfileIconClientUtil.h"' src
-check_absent "must not include base/net/RegistrationClientUtil.h (use feature/messaging/)" \
+check_absent "must not include base/net/RegistrationClientUtil.h (use feature/conversations/)" \
   '#include "base/net/RegistrationClientUtil.h"' src
 check_absent "messaging must not include feature/ (domain may not include feature)" \
   '#include "feature/' src/domain/messaging

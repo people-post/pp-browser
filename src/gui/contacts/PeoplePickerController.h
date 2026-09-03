@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Module.h"
-#include "feature/messaging/MessagingContactsPorts.h"
-#include "feature/messaging/MessagingPeoplePickerPorts.h"
+#include "feature/conversations/MessagingContactsPorts.h"
+#include "feature/conversations/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"

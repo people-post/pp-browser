@@ -17,7 +17,7 @@
 
 - [x] `identity.enc` under DEK
 - [x] Rename inner field to `private_key_b64`
-- [x] `MessagingHub` create/unlock vault; `Bootstrap`/`--pin`/`PP_BROWSER_PIN`
+- [x] `ConversationsHub` create/unlock vault; `Bootstrap`/`--pin`/`PP_BROWSER_PIN`
 - [x] Test fixtures inject DEK
 
 ## a3 — PSK at rest
@@ -33,7 +33,7 @@
 
 ## a5 — GUI unlock / deferred create (A006)
 
-- [x] `MessagingHub::Initialize` without PIN; `EnsureSecretsUnlocked`
+- [x] `ConversationsHub::Initialize` without PIN; `EnsureSecretsUnlocked`
 - [x] `PinGateController` + shell overlay
 - [x] Early unlock when vault exists; defer create until secrets use
 - [x] Gate Register / Secure message / PSK actions
@@ -57,6 +57,6 @@
 ## a8 — ProfileSecretsService (A009)
 
 - [x] `ProfileSecretsService` in `base/crypto` — vault, unlock, DEK fan-out
-- [x] `MessagingHub::EnsureMessagingReady` (libp2p/P2P after profile unlock)
+- [x] `ConversationsHub::EnsureMessagingReady` (libp2p/P2P after profile unlock)
 - [x] `PinGateController`, `Bootstrap`, Settings → profile service; messaging checks → hub
 - [x] Docs + ADR A009

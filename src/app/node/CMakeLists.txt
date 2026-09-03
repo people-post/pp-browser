@@ -12,7 +12,7 @@ add_executable(pp-node
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
   # Registration HTTP orchestration (N027); HTTP/sign helpers via pp_domain_net.
-  ${CMAKE_SOURCE_DIR}/src/feature/messaging/RegistrationClientUtil.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/conversations/RegistrationClientUtil.cpp
 )
 
 target_include_directories(pp-node PRIVATE
@@ -62,15 +62,15 @@ pp_browser_apply_warnings(pp-node-probe)
 install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
 
 # call_probe needs AmpDirectChatService (--with-chat); skip in headless (no messaging).
-if(TARGET pp_feature_messaging OR TARGET pp_domain_messaging)
+if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
   add_executable(pp-call-probe call_probe/main.cpp)
   target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
   target_link_libraries(pp-call-probe PRIVATE ${_pp_probe_libs})
-  if(TARGET pp_feature_messaging)
-    target_link_libraries(pp-call-probe PRIVATE pp_feature_messaging)
+  if(TARGET pp_feature_conversations)
+    target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
   else()
     target_sources(pp-call-probe PRIVATE
-      ${CMAKE_SOURCE_DIR}/src/feature/messaging/AmpDirectChatService.cpp)
+      ${CMAKE_SOURCE_DIR}/src/feature/conversations/AmpDirectChatService.cpp)
     target_link_libraries(pp-call-probe PRIVATE pp_domain_messaging)
   endif()
   pp_browser_apply_warnings(pp-call-probe)

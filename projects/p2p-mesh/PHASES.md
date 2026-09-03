@@ -182,5 +182,5 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 
 - [x] `_pp-browser._tcp` mDNS announce when Node or mobile ephemeral listen active
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
-- [x] Wire `MessagingHub::TickMesh` + contact list refresh
+- [x] Wire `ConversationsHub::TickMesh` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)

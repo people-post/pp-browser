@@ -94,8 +94,8 @@ Libp2p integration uses `PostLibp2pWorker`; unit tests fall back to a private pe
 
 Drives periodic policy (not UI frame ticks):
 
-- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `MessagingHub::StartCoordinatorTimers`
-- Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
+- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
+- Hub policy: peer sweep, mDNS, reachability UX — `ConversationsHub` (~1s)
 - Amp mesh pump: `MeshHost::Tick` / `MeshRuntime::Drive` (~5ms) while Amp is up — required for call-media / SFU / chat (no libp2p `io_context`)
 - Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
@@ -128,7 +128,7 @@ Produce (coordinator / worker)
 | Drain | Idle wait must return within ≤50ms when forced / woken; cap idle ≤2s always |
 | Observe | Call ring visibility = `RemountCallChrome` into mounts; SyncLayout / toasts are also mailbox citizens — same SLA. Logs that prove state (`call_ring.active`) do **not** prove paint |
 
-Do **not** couple relay poll cadence back to `ChatController::Update` for liveness. Poll stays on the coordinator (`MessagingHub::StartCoordinatorTimers`); UI liveness is the frame loop’s job. Call-wake UI refresh is `MessagingHub::SetOnCallWake` → `CallController::OnCallWake` (hopped to UI).
+Do **not** couple relay poll cadence back to `ChatController::Update` for liveness. Poll stays on the coordinator (`ConversationsHub::StartCoordinatorTimers`); UI liveness is the frame loop’s job. Call-wake UI refresh is `ConversationsHub::SetOnCallWake` → `CallController::OnCallWake` (hopped to UI).
 
 ### Thread affinity
 
@@ -200,7 +200,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 | Date | Change |
 |------|--------|
 | 2026-08-03 | Call Accept layer: `RemountCallChrome` (dedicated mounts); not always-mounted `data-if` + Dirty alone |
-| 2026-08-03 | Relay poll owned by `MessagingHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
+| 2026-08-03 | Relay poll owned by `ConversationsHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
 | 2026-08-03 | **UI delivery:** `PostTask(UI)` → `RequestForceFrame`; idle = Poll+≤50ms Delay (no WaitEventTimeout); mid-idle abort on ForceFrame/wake; liveness contract in Cross-thread rules |
 | 2026-08-03 | Call chrome + UI mailbox: hop ring refresh to UI; `RequestForceFrame` when UI tasks pending / SyncLayout; WakeEventLoop always pushes (no coalesce-drop); unanswered outbound TTL |
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |

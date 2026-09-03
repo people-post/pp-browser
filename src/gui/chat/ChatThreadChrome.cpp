@@ -13,7 +13,7 @@
 
 namespace pbr {
 
-void ChatThreadChrome::BindMessagingFacade(MessagingFacade* facade) {
+void ChatThreadChrome::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
 }
 
@@ -55,11 +55,11 @@ void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const 
   }
 }
 
-bool PortsMessagingReady(MessagingFacade* facade) {
+bool PortsMessagingReady(ConversationsFacade* facade) {
   return facade && facade->Snapshot().messaging_ready;
 }
 
-std::string ActiveThreadId(MessagingFacade* facade) {
+std::string ActiveThreadId(ConversationsFacade* facade) {
   return facade ? facade->ActiveThreadId() : std::string{};
 }
 

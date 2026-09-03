@@ -1,6 +1,6 @@
 # Feature / app layer reorg
 
-**Status:** **f7v1 + f6 soft edge** — `src/gui/` above feature; conversations→ai via `AgentInboundPorts`  
+**Status:** **conversations rename + f7v1 + f6 soft edge** — `feature/conversations`; `src/gui/`; AI via ports  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md), [`src/feature/README.md`](../../src/feature/README.md)  
@@ -25,7 +25,7 @@ See [NORTH_STAR.md](NORTH_STAR.md) and [DECISIONS.md](DECISIONS.md) (F001–F008
 ## Why this order
 
 1. **Foundation/domain peels taught ownership.** Feature still holds stores and pure helpers that already match domain litmus.
-2. **Folder splits without peels just move the god-objects.** `MessagingHub` stays hard until mass drops; UI nesting (f5) was staging only.
+2. **Folder splits without peels just move the god-objects.** `ConversationsHub` stays hard until mass drops; UI nesting (f5) was staging only.
 3. **Presenters are not feature peers.** `gui` above feature matches [UI_FUNCTIONAL_BOUNDARY](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md); name **`gui`** avoids clash with `domain/ui`.
 
 ## Scope

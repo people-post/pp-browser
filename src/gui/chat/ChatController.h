@@ -4,12 +4,12 @@
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
-#include "feature/messaging/MessagingFacade.h"
+#include "feature/conversations/ConversationsFacade.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/WorkingSetController.h"
-#include "feature/messaging/MessagingUiPorts.h"
+#include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
@@ -93,7 +93,7 @@ public:
 
   bool Setup(Rml::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
-  void BindMessagingFacade(MessagingFacade* facade);
+  void BindConversationsFacade(ConversationsFacade* facade);
   /** App-wired hook so messaging tool registration stays in Application (no ui→hub registration edge). */
   void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindAgentPorts(AgentUiPorts ports);
@@ -336,7 +336,7 @@ private:
   bool AgentConfigured() const;
 
   Rml::Context* context_ = nullptr;
-  MessagingFacade* facade_ = nullptr;
+  ConversationsFacade* facade_ = nullptr;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;

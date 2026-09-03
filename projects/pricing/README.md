@@ -13,7 +13,7 @@ Currency stub: **`pp_credit`** (display “Credits”), integer **minor units**.
 
 - Outbound chat/call blocked when offer `> 0` (rails unavailable); localized payment errors
 - Incoming call ring: offer copy + **Accept free** / disabled **Accept & charge**
-- `MessagingHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)
+- `ConversationsHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)
 - Media SoftMigrate: all paid hops → `call.error.payment_unavailable_media`
 - Chat compose disabled when peer floor unpaid
 

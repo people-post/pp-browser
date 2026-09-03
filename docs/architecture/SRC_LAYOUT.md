@@ -157,7 +157,7 @@ Path constants: [`src/lib/pp_lib_paths.cmake`](../../src/lib/pp_lib_paths.cmake)
 domain/render → pp-cpp-ui `pp_ui` / PP_LIB_RMLUI_INCLUDE
 domain/mesh → adp (+ mesh_identity)
 gui → domain/render (via platform / RmlUi)
-feature/messaging → domain/mesh
+feature/conversations → domain/mesh
 ```
 
 Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) lives under `src/gui/shell/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
@@ -168,17 +168,17 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 
 | Path | Contents |
 |------|----------|
-| `feature/settings/` | Settings apply logic (no messaging/gui deps) |
-| `feature/messaging/` | Conversations hub + delivery (legacy folder name) |
-| `feature/messaging/calls/` | Call session band (f4v1) |
+| `feature/settings/` | Settings apply logic (no conversations/gui deps) |
+| `feature/conversations/` | Conversations hub + delivery |
+| `feature/conversations/calls/` | Call session band (f4v1; top-level `feature/calls` later) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 
-Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_messaging` does not link `pp_feature_ai`:
+Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`:
 
 ```
 settings
 ai/tools → ai/bindings → ai
-messaging
+conversations
 ```
 
 ## GUI subfolders
@@ -255,8 +255,8 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ## Migration order (when coding starts)
 
-1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/messaging`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
+1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/conversations`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge shipped (`AgentInboundPorts`); remaining: `conversations`/`calls` renames ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).
+5. Feature/app/gui cleanup. **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — f7v1 shipped `src/gui/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)); f6 soft edge + `feature/conversations` rename shipped; remaining: top-level `feature/calls` ([F004](../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).

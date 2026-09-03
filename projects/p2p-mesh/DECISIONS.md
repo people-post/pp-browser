@@ -366,7 +366,7 @@ Paid mode: never exceed the **accepted ceiling** without explicit re-accept (sam
 ## N025 — Mobile call-scoped listen on Wi‑Fi (not full Node)
 
 **Date:** 2026-08-01  
-**Status:** Accepted (**implemented** — gating in `MessagingHub` / `MobileEphemeralListenGate`; LAN QA pending)  
+**Status:** Accepted (**implemented** — gating in `ConversationsHub` / `MobileEphemeralListenGate`; LAN QA pending)  
 **Decision:** Mobile stays **Client by default** (N001). Add **narrow, gated listen** so phones can be **dialed by PeerId on LAN** and serve as **in-call hops** without always-on Node behavior.
 
 ### Participation modes (mobile)

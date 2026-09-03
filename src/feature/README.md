@@ -11,7 +11,7 @@ Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYO
 
 **Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/` or `gui/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
-Each top-level folder (and `ai/tools`, `ai/bindings`, plus band `messaging/calls/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app/`gui` code. Top-level `feature/chat` and `feature/ui` are **retired**.
+Each top-level folder (and `ai/tools`, `ai/bindings`, plus band `conversations/calls/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app/`gui` code. Top-level `feature/chat`, `feature/ui`, and `feature/messaging` are **retired**.
 
 ---
 
@@ -35,17 +35,17 @@ Three top-level folders (+ calls band). Two sub-trees under `ai/`.
 
 ```
 src/feature/
-├── settings/     Config apply logic, section handlers + SettingsTools
-├── ai/           Agent session, turn pipeline, tools, bindings
+├── settings/         Config apply logic, section handlers + SettingsTools
+├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
 │   └── bindings/
-└── messaging/    Conversations hub (legacy name) + delivery; MessagingFacade
-    └── calls/    Call session band (f4v1 → future feature/calls)
+└── conversations/    Conversations hub + delivery; ConversationsFacade
+    └── calls/        Call session band (f4v1 → future feature/calls)
 ```
 
 Product UI: see [`src/gui/README.md`](../gui/README.md).
 
-`IToolProvider` / `ToolRegistry` live in `domain/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
+`IToolProvider` / `ToolRegistry` live in `domain/ai/` so settings and conversations can register tools without linking `pp_feature_ai`.
 
 **Domain grouping (mental model):**
 
@@ -53,19 +53,19 @@ Product UI: see [`src/gui/README.md`](../gui/README.md).
 |--------|---------|----------------------------|
 | **Configuration** | settings | How do user edits merge into `AppConfig`? |
 | **Intelligence** | ai, ai/tools, ai/bindings | How does the agent plan turns and call tools? |
-| **Conversations** | messaging (+ calls band) | How do threads sync/relay; how do call sessions run? |
+| **Conversations** | conversations (+ calls band) | How do threads sync/relay; how do call sessions run? |
 | **Presentation** | `src/gui/` | Shell, contacts, chat screen, settings presenters |
 
 Start points when exploring:
 
 - Agent session → `ai/AgentSession.h`, `ai/TurnPlanner.h`, `ai/TurnExecutor.h`
-- Conversations hub → `messaging/MessagingHub.h`, `messaging/MeshMessagingService.h`
-- Call session → `messaging/calls/CallStack.h`
+- Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshMessagingService.h`
+- Call session → `conversations/calls/CallStack.h`
 - Window shell → `gui/shell/ShellHost.h`
 - Chat screen → `gui/chat/ChatController.h`, `gui/chat/MessagingTools.h`
 - Settings apply → `settings/SettingsLogic.h`, `settings/SettingsSectionHandler.h`
 
-Includes use the repo root: `#include "feature/messaging/MessagingHub.h"`. GUI includes use `gui/…` from `src/gui/` / `src/app/` only.
+Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"`. GUI includes use `gui/…` from `src/gui/` / `src/app/` only.
 
 ---
 
@@ -83,17 +83,17 @@ Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_featu
 
 ### Intra-feature direction
 
-Feature modules do **not** link each other for AI/conversations. Conversations invoke the agent through `AgentInboundPorts` (app-filled from `AgentSession`); `pp_feature_messaging` must not `#include "feature/ai/"` or `PUBLIC_LIBS pp_feature_ai`.
+Feature modules do **not** link each other for AI/conversations. Conversations invoke the agent through `AgentInboundPorts` (app-filled from `AgentSession`); `pp_feature_conversations` must not `#include "feature/ai/"` or `PUBLIC_LIBS pp_feature_ai`.
 
 ```
 settings    (no feature-module PUBLIC_LIBS)
 ai/tools → ai/bindings → ai
-messaging   (no pp_feature_ai)
+conversations   (no pp_feature_ai)
 ```
 
 (`gui` / `app` link `pp_feature_*` as needed and wire ports.)
 
 ### Guards
 
-- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `messaging → feature/ai`, retired `feature/ui` and `feature/chat`
+- [`scripts/check_feature_includes.sh`](../../scripts/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, retired `feature/ui`, `feature/chat`, `feature/messaging`
 - [`scripts/check_gui_includes.sh`](../../scripts/check_gui_includes.sh) — bans `gui → app`

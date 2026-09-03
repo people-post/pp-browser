@@ -562,7 +562,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 ## V027 — Mobile call-scoped listen on Wi‑Fi
 
 **Date:** 2026-08-01  
-**Status:** Accepted (**implemented** — see mesh N025 / `MessagingHub::SyncMobileEphemeralListen`)  
+**Status:** Accepted (**implemented** — see mesh N025 / `ConversationsHub::SyncMobileEphemeralListen`)  
 **Decision:** Mobile does **not** become a full mesh **Node**. During an **active foreground call on Wi‑Fi**, the app may **listen ephemerally** and publish dialable addrs (mesh **N025**) so that:
 
 | Scenario | Benefit |
@@ -723,7 +723,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 **Rationale:** m1 call-media works but is held together by flags (`outbound_hello_inflight`, `settled` atomics) and comments (glare, SoftMigrate EOF). That knowledge belongs in an explicit machine before more patches. A blanket host inbound SM would add ceremony to simple RPCs and blur protocol differences.
 
-**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of MessagingHub; SM-ifying chat/dial-back.
+**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of ConversationsHub; SM-ifying chat/dial-back.
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
 

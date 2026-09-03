@@ -23,7 +23,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Files | Why |
 |-------|-----|
-| `feature/messaging/ProfileIconFetchUtil.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
+| `feature/conversations/ProfileIconFetchUtil.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
 
 **Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
 
@@ -60,9 +60,9 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 | Move | Depends on | Notes |
 |------|------------|-------|
-| Nest `feature/messaging/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
+| Nest `feature/conversations/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
 | Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
-| Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names); separate from gui lift |
+| Rename `messaging` → `conversations` | After hub ownership clean | **Done** — path + Hub/Facade/`pp_feature_conversations` |
 | Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
 | Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — staging for gui |
 | Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | **Done (f7v1)** — `pp_gui`; ban feature→gui |
@@ -73,7 +73,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 ## stay feature (orchestration) — do not lower
 
-`MessagingHub`, `MessagingFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
+`ConversationsHub`, `ConversationsFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
 
 **Moved (f7v1):** Rml presenters / shell / chrome controllers under `src/gui/`.
 

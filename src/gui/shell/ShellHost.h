@@ -3,7 +3,7 @@
 #include "domain/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
-#include "feature/messaging/MessagingShellPorts.h"
+#include "feature/conversations/MessagingShellPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/CallChromeSync.h"
 #include "gui/FlowCoordinatorPorts.h"

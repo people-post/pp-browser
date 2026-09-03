@@ -26,7 +26,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 
 | System | Primary module | UI sees (facade) | Hidden subsystems |
 |--------|----------------|------------------|-------------------|
-| **Messaging** | `feature/messaging/` | threads, send/receive, reachability, calls | libp2p, relay, mesh, SQLite stores |
+| **Messaging** | `feature/conversations/` | threads, send/receive, reachability, calls | libp2p, relay, mesh, SQLite stores |
 | **Agent** | `feature/ai/` | turn status, tool results, generation | LLM client, MCP executor, turn pipeline |
 | **Profile / vault** | `foundation/crypto/` | unlock status, PIN policy | Argon2, secrets store |
 | **Session / prefs** | `foundation/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
@@ -110,12 +110,12 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 - Disk DTOs live in `SessionStore` (`AppConfig`, `ProfilePreferences`).
 - Services expose **nested slice types** with `operator==` and `Apply(slice)` (equality-gated).
 - `ConfigApplyBridge` projects disk → slices; only the bridge calls `Apply`.
-- Settings UI **flushes** via `SessionStore` only — never `MessagingHub::Apply*` directly.
+- Settings UI **flushes** via `SessionStore` only — never `ConversationsHub::Apply*` directly.
 - Ephemeral UI config (pane width, draft text, last scroll) stays in presenters; do not persist unless product requires it.
 
 **Existing examples:**
 
-- `MessagingHub::NetworkConfig`, `PolicyPrefs`, `NotificationPrefs`
+- `ConversationsHub::NetworkConfig`, `PolicyPrefs`, `NotificationPrefs`
 - `ShellHost::ChromePrefs`, `ChatController::AgentConfig`, `LocalizationService::Prefs`
 - [RUNTIME_COMPOSITION.md — Settings / prefs hot-reload](RUNTIME_COMPOSITION.md#settings--prefs-hot-reload)
 
@@ -135,7 +135,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 **Existing examples:**
 
-- `MessagingFacade` — non-owning wrapper over `MessagingHub&` (app-owned); chat, chat sub-presenters (`ChatThreadChrome`, `ChatTranscriptScroller`), messaging tools, and `Application` settings/badge wiring call its methods instead of peeking hub accessors. Event subscriptions (`SetOnMessagesChanged`, `SetOnThreadChanged`, …) keep `std::function` params. **Phase 6 done** — replaced the `MessagingChatPorts` mega-struct + `MakeMessagingChatPorts`.
+- `ConversationsFacade` — non-owning wrapper over `ConversationsHub&` (app-owned); chat, chat sub-presenters (`ChatThreadChrome`, `ChatTranscriptScroller`), messaging tools, and `Application` settings/badge wiring call its methods instead of peeking hub accessors. Event subscriptions (`SetOnMessagesChanged`, `SetOnThreadChanged`, …) keep `std::function` params. **Phase 6 done** — replaced the `MessagingChatPorts` mega-struct + `MakeMessagingChatPorts`.
 - `MessagingShellPorts` — status-bar cluster/popover snapshots + retest for shell chrome. Mesh reads (host running, reachability, relay load) come from `MeshHost*` (via `MakeMessagingShellPorts(hub)` passing `hub.Mesh()`); only hub-owned bits (messaging-ready, Brief health, help-network, last error) are projected off the hub.
 - `SettingsCommands` — register, UPnP, reset profile, appearance, locales, PIN status + Change PIN (`change_pin`); the app-owned `ProfileSecretsService` stays out of `SettingsController` (no `ProfileSecretsService::Instance()`)
 - `ChatSessionPorts` — select thread, finalize display, find someone
@@ -204,7 +204,7 @@ struct MessagingActions {
 
 `Application` (`src/app/`) is the only place that:
 
-- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …) — parent-only destroy: [OWNERSHIP.md](OWNERSHIP.md)
+- Owns service lifetimes (`ConversationsHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …) — parent-only destroy: [OWNERSHIP.md](OWNERSHIP.md)
 - Binds ports (`SettingsCommands`, `ChatSessionPorts`, `CallActionsPorts`, `CallFunctionalPorts`, `UnlockEnsurePorts`, `FlowCoordinatorPorts`, `BadgeNotifyPorts`, `PinGateActionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
@@ -221,7 +221,7 @@ Presenters are **app-owned instances** (`Application` holds `unique_ptr` and cal
 | UI presenter | Functional facade **State** | Read / subscribe |
 | UI presenter | Functional facade **Actions** | Via ports or injected facade |
 | UI presenter | `SessionStore` flush (settings) | Yes — persisted config only |
-| UI presenter | `MessagingHub::Apply*` / internal APIs | **No** |
+| UI presenter | `ConversationsHub::Apply*` / internal APIs | **No** |
 | UI presenter | Another controller `::Instance()` | **No** — use coordinator or ports |
 | Functional system | `ShellHost::State()` | **No** — use `ProfileUnlockUiPorts`-style hooks |
 | `ConfigApplyBridge` | Service `Apply(slice)` | Yes |
@@ -235,7 +235,7 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 
 | Pattern | Location | Channel |
 |---------|----------|---------|
-| Persisted config slices | `ConfigApplyBridge`, `MessagingHub::Apply` | Config |
+| Persisted config slices | `ConfigApplyBridge`, `ConversationsHub::Apply` | Config |
 | Settings imperative ops | `SettingsCommands` | Actions |
 | Chat navigation | `ChatSessionPorts` | Actions |
 | Contacts notify | `ContactsNotifyPorts` | Actions + Events |
@@ -274,11 +274,11 @@ static Presenter& Instance();                      // static callbacks only
 
 ## Presenter template (target)
 
-`MessagingFacade` is now realized as a non-owning wrapper over `MessagingHub&` (see `src/feature/messaging/MessagingFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `MessagingHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
+`ConversationsFacade` is now realized as a non-owning wrapper over `ConversationsHub&` (see `src/feature/conversations/ConversationsFacade.{h,cpp}`): imperative ops are real methods and event subscribes take `std::function` params. `ConfigApplyBridge` still holds `ConversationsHub&` for `Apply` slices. The template below shows the longer-term listener/actions split.
 
 ```cpp
 // Functional — no RmlUi
-class MessagingFacade {
+class ConversationsFacade {
 public:
   MessagingView Snapshot() const;
   void Subscribe(MessagingListener* listener);
@@ -289,7 +289,7 @@ public:
 // UI — RmlUi only here
 class ChatPresenter {
 public:
-  ChatPresenter(MessagingFacade&, AgentFacade&, ChatSessionPorts ports);
+  ChatPresenter(ConversationsFacade&, AgentFacade&, ChatSessionPorts ports);
 
   void Tick(Rml::Context* ctx);       // Snapshot → Dirty()
   void OnSendMessage(std::string text);  // → Actions().SendMessage(...)

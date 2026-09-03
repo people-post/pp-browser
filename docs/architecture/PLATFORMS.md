@@ -54,7 +54,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `PlatformDefaults` | Brief LLM + network (`https://www.brief.global`) | Same as desktop |
 | `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (inline API key in Settings; Keystore deferred) |
 | libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
-| `MessagingHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground / ~45s background; FCM wake + WorkManager when enabled |
+| `ConversationsHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground / ~45s background; FCM wake + WorkManager when enabled |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
 | HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::ApplyPlatformCurlSsl` → system CAPATH (`TlsCaPath`); same entry as iOS via `ApplyCurlSslDefaults` |

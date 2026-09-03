@@ -7,7 +7,7 @@
 - Phase 0 ADRs P001–P006
 - Phase 1: `Key::Type::MlDsa65`, fork `mldsa_provider`, CryptoProvider / marshaller / validator, tests
 - Phase 2: Noise XXkem ML-KEM-768, protocol `/noise-mlkem768/1.0.0`, handshake state KEM tokens, `noise_xxkem_test`
-- Phase 3: `identity.enc` schema **3**, device ML-DSA keys, `PeerIdFromMlDsaPublicKey`, `Libp2pHost` / MessagingHub / NodeBootstrap bind path; legacy Ed25519 fail-closed
+- Phase 3: `identity.enc` schema **3**, device ML-DSA keys, `PeerIdFromMlDsaPublicKey`, `Libp2pHost` / ConversationsHub / NodeBootstrap bind path; legacy Ed25519 fail-closed
 - Phase 4: M003/M008/E025 + AT_REST / DATA_LAYOUT / LIBP2P_* / COMPATIBILITY docs amended
 - Phase 5: Product 32-byte device-key bind paths removed; unit + Yamux/Noise stream tests green; `pp-browser` links
 

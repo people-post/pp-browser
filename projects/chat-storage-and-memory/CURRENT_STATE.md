@@ -117,9 +117,9 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Area | Location | Notes |
 |------|----------|-------|
 | v6 pipeline + classifier + integrity | `src/base/messaging/tests/` | `v6_pipeline_test`, `e2e_ingest_classifier_test`, `v6_integrity_test` |
-| Relay encrypt/decrypt + pipeline | `src/feature/messaging/tests/` | `e2e_relay_crypto_test` |
-| Sync + gap + scroll + compromised | `src/feature/messaging/tests/` (`chat_sync_test`) | **13 tests** |
-| Cross-cutting ingest/dedup/routing | `src/feature/messaging/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
+| Relay encrypt/decrypt + pipeline | `src/feature/conversations/tests/` | `e2e_relay_crypto_test` |
+| Sync + gap + scroll + compromised | `src/feature/conversations/tests/` (`chat_sync_test`) | **13 tests** |
+| Cross-cutting ingest/dedup/routing | `src/feature/conversations/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
 | Rich ChatPayload | `chat_payload_rich_types_test`, `chat_payload_validator_test` | |
 | Live relay (D093) | `relay_live_integration_test` | skipped unless env set |
 | Relay history mock | `relay_history_test` | |

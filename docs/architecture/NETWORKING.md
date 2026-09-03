@@ -36,7 +36,7 @@ The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still 
 
 **Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)). SoftMigrate must not grow a parallel NAT toolkit.
 
-**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
+**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **ConversationsHub** / ConversationsCore + **CallStack** (app-only) → **ConversationsFacade** / CallUiBackend (UI).
 
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+) and [adp](../../projects/adp/).
 

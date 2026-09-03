@@ -85,14 +85,14 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsService`](../../src/foundation/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentDownloadService`, `Libp2pChatBlobService` (registered from `MessagingHub`). To add a new encrypted store:
+[`ProfileSecretsService`](../../src/foundation/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentDownloadService`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
 3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
 4. Document the on-disk path and AAD purpose here.
 
-**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/gui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
+**Messaging:** E2E/P2P actions also require `ConversationsHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/gui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
 
 Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vault required).
 

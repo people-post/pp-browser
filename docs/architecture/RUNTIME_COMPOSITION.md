@@ -26,9 +26,9 @@ flowchart TB
   subgraph feature_layer["feature/"]
     SettingsLogic["SettingsLogic<br/><small>feature/settings/</small>"]
     AgentSession["AgentSession<br/><small>feature/ai/</small>"]
-    MessagingHub["MessagingHub<br/><small>feature/messaging/</small>"]
-    CallStack["CallStack<br/><small>feature/messaging/ — call media/CSM/lifecycle</small>"]
-    MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
+    ConversationsHub["ConversationsHub<br/><small>feature/conversations/</small>"]
+    CallStack["CallStack<br/><small>feature/conversations/ — call media/CSM/lifecycle</small>"]
+    ConversationsFacade["ConversationsFacade<br/><small>feature/conversations/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
     ChatController["ChatController<br/><small>gui/chat/</small>"]
@@ -52,25 +52,25 @@ flowchart TB
   Application --> ConfigApplyBridge
   Application --> ChatController
   Application --> ShellHost
-  Application --> MessagingHub
-  Application -->|owns MessagingFacade| MessagingFacade
-  MessagingFacade --> MessagingHub
-  ConfigApplyBridge --> MessagingHub
+  Application --> ConversationsHub
+  Application -->|owns ConversationsFacade| ConversationsFacade
+  ConversationsFacade --> ConversationsHub
+  ConfigApplyBridge --> ConversationsHub
   ConfigApplyBridge --> ShellHost
   ConfigApplyBridge --> LocalizationService
   ConfigApplyBridge --> Theme
   ConfigApplyBridge --> SessionStore
 
   ChatController --> ShellHost
-  ChatController --> MessagingFacade
+  ChatController --> ConversationsFacade
   ChatController --> AgentSession
-  ShellHost --> MessagingHub
+  ShellHost --> ConversationsHub
   SettingsController --> SettingsLogic
-  MessagingHub --> AgentSession
-  MessagingHub --> Libp2p
-  MessagingHub --> IdentityStore
-  MessagingHub --> ThreadStore
-  MessagingHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
+  ConversationsHub --> AgentSession
+  ConversationsHub --> Libp2p
+  ConversationsHub --> IdentityStore
+  ConversationsHub --> ThreadStore
+  ConversationsHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
   CallStack --> CallMediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
@@ -102,7 +102,7 @@ flowchart LR
   end
 
   subgraph services["Core services"]
-    Hub["MessagingHub<br/><small>feature/messaging/</small>"]
+    Hub["ConversationsHub<br/><small>feature/conversations/</small>"]
     Mesh["MeshHost<br/><small>domain/mesh/ — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
@@ -142,7 +142,7 @@ flowchart LR
 
   Settings -->|flush disk DTOs only| Store
   Chat -->|AddConfigListener LLM| Store
-  Chat -->|MessagingFacade| Hub
+  Chat -->|ConversationsFacade| Hub
   App --> Agent
   App -->|BindAgentPorts| Chat
   App -->|BindAgentInbound| Hub
@@ -184,7 +184,7 @@ flowchart LR
 
 ## Settings / prefs hot-reload
 
-Disk DTOs stay in `SessionStore`. Services expose **nested** slice types (`MessagingHub::NetworkConfig`, `ShellHost::ChromePrefs`, …). [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) projects and applies only when a slice changes. Field-level howto: [CONFIGURATION.md](../ops/CONFIGURATION.md).
+Disk DTOs stay in `SessionStore`. Services expose **nested** slice types (`ConversationsHub::NetworkConfig`, `ShellHost::ChromePrefs`, …). [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) projects and applies only when a slice changes. Field-level howto: [CONFIGURATION.md](../ops/CONFIGURATION.md).
 
 ```mermaid
 flowchart TB
@@ -197,14 +197,14 @@ flowchart TB
   Disk --> Store
   Store --> Bridge
 
-  Bridge --> N["MessagingHub::NetworkConfig<br/><small>from AppConfig</small>"]
-  Bridge --> P["MessagingHub::PolicyPrefs<br/><small>from ProfilePreferences</small>"]
-  Bridge --> Push["MessagingHub::NotificationPrefs<br/><small>from ProfilePreferences</small>"]
+  Bridge --> N["ConversationsHub::NetworkConfig<br/><small>from AppConfig</small>"]
+  Bridge --> P["ConversationsHub::PolicyPrefs<br/><small>from ProfilePreferences</small>"]
+  Bridge --> Push["ConversationsHub::NotificationPrefs<br/><small>from ProfilePreferences</small>"]
   Bridge --> C["ShellHost::ChromePrefs<br/><small>from ProfilePreferences</small>"]
   Bridge --> L["LocalizationService::Prefs<br/><small>from ProfilePreferences</small>"]
   Bridge --> A["ChatController::AgentConfig<br/><small>from AppConfig</small>"]
 
-  N --> HubA["MessagingHub::Apply"]
+  N --> HubA["ConversationsHub::Apply"]
   P --> HubA
   Push --> HubA
   C --> ShellA["Theme + ShellHost::Apply"]
@@ -217,12 +217,12 @@ flowchart TB
 | From | To | Allowed? |
 |------|-----|----------|
 | Settings section flush | `SessionStore` SaveConfig / SaveProfilePrefs | Yes |
-| Settings UI | `MessagingHub::Apply*` / mesh / invite policy | **No** — go through SessionStore → bridge |
+| Settings UI | `ConversationsHub::Apply*` / mesh / invite policy | **No** — go through SessionStore → bridge |
 | Settings UI | register / rotate / UPnP / clear undelivered / reset profile / appearance / locales / reachability / PIN status | Via `SettingsCommands` (narrow args + views; app-filled); UI syncs state after — **no** `BindMessaging` / `Hub()` |
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
-| Application Run loop | `MessagingHub::TickMesh` | **Removed** — hub policy on coordinator timer (t4) |
+| Application Run loop | `ConversationsHub::TickMesh` | **Removed** — hub policy on coordinator timer (t4) |
 | UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
 | Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
 
@@ -245,7 +245,7 @@ flowchart TB
   subgraph coord["Coordinator thread"]
     Coord["CoordinatorThread<br/><small>mailbox + timer wheel</small>"]
     RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s/45s</small>"]
-    HubPolicy["MessagingHub policy<br/><small>peer sweep · mDNS · reachability</small>"]
+    HubPolicy["ConversationsHub policy<br/><small>peer sweep · mDNS · reachability</small>"]
     Coord --> RelayPoll
     Coord --> HubPolicy
   end
@@ -253,7 +253,7 @@ flowchart TB
   subgraph pool["Worker pool 2–4"]
     Pool["WorkerPool<br/><small>Critical · Normal · Background</small>"]
     Http["HttpClient · AgentSession<br/><small>LLM / tools / libcurl</small>"]
-    P2pWork["MeshMessagingService · MessagingHub<br/><small>relay sync / send</small>"]
+    P2pWork["MeshMessagingService · ConversationsHub<br/><small>relay sync / send</small>"]
     Pool --> Http
     Pool --> P2pWork
   end
@@ -305,13 +305,13 @@ Full model: [THREADING.md](THREADING.md).
 | **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **MessagingHub** (`MessagingCore`) | `feature/messaging/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
+| **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
 | **MeshHost** | `domain/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
-| **CallStack** | `feature/messaging/` | App-only call plane: media engine, CSM, lifecycle, mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
-| **MessagingFacade** | `feature/messaging/` | Non-owning wrapper over `MessagingHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
+| **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM, lifecycle, mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
+| **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |
-| **BadgeAggregator** | `gui/` | Nav unread badges; app-owned; `BindSource` via `MessagingFacade`; chat via `BadgeNotifyPorts` |
+| **BadgeAggregator** | `gui/` | Nav unread badges; app-owned; `BindSource` via `ConversationsFacade`; chat via `BadgeNotifyPorts` |
 | **BadgeNotifyPorts** | `gui/` | Badge refresh / sessions unread for chat; app-filled from `BadgeAggregator` |
 | **InputCoordinator** | `domain/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
 | **FlowCoordinator** | `gui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker via `FlowCoordinatorPorts` |
@@ -319,7 +319,7 @@ Full model: [THREADING.md](THREADING.md).
 | **CallController** | `gui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
 | **PinGateController** | `gui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
 | **PinGateActionPorts** | `gui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
-| **ProfileSecretsService** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `MessagingHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
+| **ProfileSecretsService** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `ConversationsHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
 | **ProfileUnlockGate** | `foundation/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
 | **UnlockEnsurePorts** | `gui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `gui/` | Window shell panes/nav; nested `ChromePrefs` |

@@ -12,7 +12,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "foundation/identity/PeerIdUtil.h"
-#include "feature/messaging/AmpDirectChatService.h"
+#include "feature/conversations/AmpDirectChatService.h"
 #include "common/chat/IDirectMessageClient.h"
 
 #include "common/Logger.h"

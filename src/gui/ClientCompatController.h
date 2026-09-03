@@ -2,7 +2,7 @@
 
 #include "domain/net/ClientCompat.h"
 #include "common/Module.h"
-#include "feature/messaging/MessagingCompatPorts.h"
+#include "feature/conversations/MessagingCompatPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/SupportDiscoveryPorts.h"
 
@@ -22,7 +22,7 @@ public:
   /** Publish app Support discovery after each resolved document. Clear via BindSupportDiscovery({}). */
   void BindSupportDiscovery(SupportDiscoveryPorts ports);
 
-  /** Non-blocking: IO fetch/cache then UI gate/banner. Safe after MessagingHub init. */
+  /** Non-blocking: IO fetch/cache then UI gate/banner. Safe after ConversationsHub init. */
   void CheckAsync();
 
   /** Apply a resolved document on the UI thread (also used by tests). */

@@ -224,7 +224,7 @@ Custom protocol `/pp-browser/circuit-relay/1.0.0` — stream bridge for NATed pe
 
 **Today:** single-hop (one relay must direct-dial target). **Planned:** multi-hop v2 — see [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md).
 
-Contact-first preference applies: `MessagingHub::RequestCircuitBridgePreferred`, `OrderCircuitHops`.
+Contact-first preference applies: `ConversationsHub::RequestCircuitBridgePreferred`, `OrderCircuitHops`.
 
 ### Message relay
 
@@ -393,14 +393,14 @@ Pricing UI ships with the first billable capability — **not** as a fake standa
 
 ## Host lifecycle
 
-`MessagingHub::StartMesh` / `Libp2pHost::Start`:
+`ConversationsHub::StartMesh` / `Libp2pHost::Start`:
 
 - Pass resolved role (`listen_enabled` + listen multiaddr + `bootstrap_peers`).
 - **Client:** create host + `start()` **without** `listen`.
 - Extend session clamps to **all mobile** via `Platform::IsMobile()`.
 - Start modules only if `Node && capability_enabled`; enforce pricing at the service admission boundary.
 
-Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingHub::Reinitialize` or finer hooks).
+Hot-reload: role / capability / pricing changes reconfigure modules (`ConversationsHub::Reinitialize` or finer hooks).
 
 ---
 
@@ -428,7 +428,7 @@ Surface **actual** listen multiaddr when Node.
 | Binary | Audience | Stack |
 |--------|----------|--------|
 | **`pp-browser`** | People (desktop/mobile UI) | SDL + RmlUi + optional in-app Node role |
-| **`pp-node`** | Org seeds, datacenter, power-user daemons | Same node **core** (libp2p / MessagingHub start path / capabilities); **no** UI |
+| **`pp-node`** | Org seeds, datacenter, power-user daemons | Same node **core** (libp2p / ConversationsHub start path / capabilities); **no** UI |
 
 ```mermaid
 flowchart LR
@@ -461,7 +461,7 @@ pp-node --listen /ip4/0.0.0.0/tcp/443 \
         --capabilities dht,circuit_relay,message_relay
 ```
 
-**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `MessagingHub::StartMesh` / host lifecycle; do **not** fork a second libp2p integration for servers.
+**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `ConversationsHub::StartMesh` / host lifecycle; do **not** fork a second libp2p integration for servers.
 
 ---
 

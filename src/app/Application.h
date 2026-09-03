@@ -10,7 +10,7 @@
 #include "domain/net/ClientCompat.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/conversations/ConversationsHub.h"
 
 #include <memory>
 #include <optional>
@@ -32,7 +32,7 @@ class CallUiBackend;
 class ClientCompatController;
 class FlowCoordinator;
 class InputCoordinator;
-class MessagingFacade;
+class ConversationsFacade;
 class PinGateController;
 class ProfileSecretsService;
 class ProfileUnlockGate;
@@ -56,7 +56,7 @@ public:
   void Run();
   void Shutdown();
 
-  MessagingHub& Messaging();
+  ConversationsHub& Conversations();
   /** App-owned profile vault / DEK service (Bootstrap initializes it). */
   ProfileSecretsService& Secrets();
   SessionStore& Store() { return store_; }
@@ -83,8 +83,8 @@ private:
   bool initialized_ = false;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsService> secrets_;
-  std::unique_ptr<MessagingHub> messaging_;
-  std::unique_ptr<MessagingFacade> messaging_facade_;
+  std::unique_ptr<ConversationsHub> messaging_;
+  std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;

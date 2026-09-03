@@ -203,18 +203,18 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
+| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
 | `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/messaging/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
-| `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/messaging/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
-| `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
-| `src/feature/messaging/MessageRouter.*` | Composer routing |
-| `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
+| `src/feature/conversations/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
+| `src/feature/conversations/InboxController.*` | Active thread, display rows |
+| `src/feature/conversations/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
+| `src/feature/conversations/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
+| `src/feature/conversations/MessageRouter.*` | Composer routing |
+| `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
 | `src/gui/chat/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |

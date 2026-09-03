@@ -55,7 +55,7 @@ Linux often masks the bug; **CI on Windows will fail**.
 | Pattern | File |
 |---------|------|
 | Store + schema helper | [`src/base/messaging/tests/call_session_store_test.cpp`](../../src/base/messaging/tests/call_session_store_test.cpp) |
-| Store + feature store on same `profile.db` | [`src/feature/messaging/tests/call_media_key_wrap_test.cpp`](../../src/feature/messaging/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
+| Store + feature store on same `profile.db` | [`src/feature/conversations/tests/call_media_key_wrap_test.cpp`](../../src/feature/conversations/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
 
 Minimal fixture skeleton:
 
@@ -149,7 +149,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/circuit_call_media_compose_test.cpp) |
 | Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/circuit_media_relay_compose_test.cpp) |
 | Circuit bridges | `circuit_relay_service_test` |
-| Call phase SM | `call_lifecycle_test` — [`src/feature/messaging/tests/call_lifecycle_test.cpp`](../../src/feature/messaging/tests/call_lifecycle_test.cpp) |
+| Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 
 Run (from a configured desktop build tree):
 

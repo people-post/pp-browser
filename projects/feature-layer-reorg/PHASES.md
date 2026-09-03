@@ -54,11 +54,11 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 Per [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): call **session** module named `calls`; nest before new lib.
 
-- [x] Nest `feature/messaging/calls/` (same `pp_feature_messaging`) — no new target yet
+- [x] Nest `feature/conversations/calls/` (same `pp_feature_conversations`) — no new target yet
 - [x] Move CallStack / CSM / Lifecycle / Topology / CallUiBackend / CallFunctionalPorts / Amp call façades into band
 - [x] Update includes only; `check_feature_includes.sh` unchanged for module edges
 - [ ] (Later) top-level `feature/calls` + `pp_feature_calls` after MeshMessagingService port breaks the cycle
-- [ ] (Later) rename parent `feature/messaging` → `feature/conversations` when hub ownership is clean
+- [x] Rename parent `feature/messaging` → `feature/conversations` (`ConversationsHub` / `ConversationsFacade` / `pp_feature_conversations`)
 
 ## f5 — Structural: split shell / contacts; absorb chat UI
 

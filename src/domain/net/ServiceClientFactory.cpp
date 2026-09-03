@@ -28,7 +28,7 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
         logging::getLogger("ServiceClientFactory").warning
             << "directory provider transport '" << transport
             << "' requires MeshHost (N029 nd4 Amp twin); skipping " << provider.base_url
-            << " — MessagingHub wires Amp via AmpDirectoryService";
+            << " — ConversationsHub wires Amp via AmpDirectoryService";
         continue;
       }
       backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));

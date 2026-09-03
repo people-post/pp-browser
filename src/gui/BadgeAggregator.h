@@ -7,7 +7,7 @@
 
 namespace pbr {
 
-/** Unread totals for nav badges. Application computes from MessagingHub + shell. */
+/** Unread totals for nav badges. Application computes from ConversationsHub + shell. */
 struct BadgeUnreadInputs {
   int sessions_unread = 0;
   /** Reserved for contacts-tab queues; fed from ContactsShellBridge when present. */
@@ -20,7 +20,7 @@ class BadgeAggregator {
 public:
   BadgeAggregator() = default;
 
-  /** App fills from MessagingHub / ShellHost. Not a process singleton. Clear with BindSource({}). */
+  /** App fills from ConversationsHub / ShellHost. Not a process singleton. Clear with BindSource({}). */
   void BindSource(std::function<BadgeUnreadInputs()> source);
   /** Nav badge write port without ShellHost::Instance(). Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);

@@ -140,7 +140,7 @@ d0 (complete)
 - [x] `MessageCipher` — XChaCha20-Poly1305 AEAD
 - [x] `EncryptedPayload` — blob codec + base64
 - [x] `ReplayWindow` — seq acceptance helper
-- [x] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/messaging/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
+- [x] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/conversations/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
 
 ### Tests
 
