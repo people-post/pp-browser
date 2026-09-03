@@ -9,9 +9,11 @@ pp-browser docs are split by **stability and blast radius**, not by feature name
 | **Product / UI** | [`ui/`](ui/) | Evolve with product | Shell, theme, RML/RCSS profiles — stable enough for agents, not wire-hard |
 | **Ops / howto** | [`ops/`](ops/) | Freely | Build, release, configuration howto |
 
-**Active feature work:** [`projects/README.md`](../projects/README.md) — DESIGN → PHASES → CURRENT_STATE → DECISIONS; promote normative outcomes into **contracts/** when shipped.
+**`docs/` = what the system is. `projects/` = what we are changing.** Phase status lives only in each project’s `CURRENT_STATE.md` — not in [`AGENTS.md`](../AGENTS.md).
 
-Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
+**Active feature work:** [`projects/README.md`](../projects/README.md) — DESIGN → PHASES → CURRENT_STATE → DECISIONS; promote normative outcomes into **contracts/** (or the matching tier) when shipped.
+
+Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable docs).
 
 ---
 
@@ -28,8 +30,10 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
 | [architecture/PLATFORM_CODE.md](architecture/PLATFORM_CODE.md) | OS code layout, `#ifdef` policy |
 | [architecture/P2P_MESSAGING.md](architecture/P2P_MESSAGING.md) | Messaging architecture (pointers to wire/crypto) |
-| [architecture/NETWORKING.md](architecture/NETWORKING.md) | **HTTP + libp2p** doctrine; settle rails; no WebRTC product path |
-| [architecture/LIBP2P_STREAMS.md](architecture/LIBP2P_STREAMS.md) | Libp2p stream framing, exchanges, size/hang handling |
+| [architecture/NETWORKING.md](architecture/NETWORKING.md) | **HTTP + Amp mesh** doctrine; settle rails; no WebRTC product path |
+| [architecture/MESH.md](architecture/MESH.md) | Mesh layer organization (Amp + PeerId) |
+| [architecture/MESH_IDENTITY.md](architecture/MESH_IDENTITY.md) | Mesh identity binding |
+| [architecture/LIBP2P_STREAMS.md](architecture/LIBP2P_STREAMS.md) | Stream framing, exchanges, size/hang handling |
 | [architecture/CALLS.md](architecture/CALLS.md) | A/V call **code** map; product work in `projects/p2p-av-calls/` |
 | [architecture/RMLUI_UPSTREAM.md](architecture/RMLUI_UPSTREAM.md) | In-tree RmlUi fork deltas |
 | [architecture/LIBP2P_UPSTREAM.md](architecture/LIBP2P_UPSTREAM.md) | In-tree libp2p fork deltas |
@@ -94,4 +98,5 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 2. Ship behind `PHASES`; keep `CURRENT_STATE` accurate.
 3. When a wire/disk/HTTP shape is **shipped**, promote the normative text into **`docs/contracts/`** in the same release window.
 4. Mark project ADRs **superseded by** the contract doc for outcomes; leave rationale in `DECISIONS.md`.
-5. Archive or delete the project folder when delivery ends — see [`projects/README.md`](../projects/README.md).
+5. Mark the project **Done / archived** in [`projects/README.md`](../projects/README.md) when delivery ends (folder may remain for ADR history).
+6. Never mirror phase status into [`AGENTS.md`](../AGENTS.md).

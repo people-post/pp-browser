@@ -2,7 +2,7 @@
 """Binary ChatPayload v1 encoder (D087) for frozen test vectors.
 
 Uses pp Binary Wire Profile: LenUtf8 = u64 BE + UTF-8 bytes.
-Layout: projects/chat-storage-and-memory/WIRE_SCHEMAS.md
+Layout: docs/contracts/WIRE_SCHEMAS.md
 """
 
 from __future__ import annotations
