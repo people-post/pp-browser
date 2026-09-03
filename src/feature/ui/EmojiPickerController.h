@@ -4,8 +4,8 @@
 #include "domain/ui/EmojiCatalog.h"
 #include "common/Module.h"
 #include "feature/ui/FlowCoordinatorPorts.h"
-#include "feature/ui/ShellFeedbackPorts.h"
-#include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/shell/ShellFeedbackPorts.h"
+#include "feature/ui/shell/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>

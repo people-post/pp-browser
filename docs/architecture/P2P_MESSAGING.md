@@ -215,9 +215,9 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/messaging/MessageRouter.*` | Composer routing |
 | `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
-| `src/feature/chat/MessagingTools.*` | Agent tool definitions |
+| `src/feature/ui/chat/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
-| `src/feature/ui/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
+| `src/feature/ui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## A/V calls (signaling over messaging)

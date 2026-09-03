@@ -1,4 +1,4 @@
-#include "feature/ui/ContactsChromeSync.h"
+#include "feature/ui/contacts/ContactsChromeSync.h"
 
 #include <gtest/gtest.h>
 

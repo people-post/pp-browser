@@ -3,7 +3,7 @@
 #include "domain/net/ClientCompat.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingCompatPorts.h"
-#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/shell/ShellFeedbackPorts.h"
 #include "feature/ui/SupportDiscoveryPorts.h"
 
 #include <string>

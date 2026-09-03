@@ -20,7 +20,7 @@
 #include "feature/ui/CallChromeSync.h"
 #include "domain/ui/CallConflictCopy.h"
 #include "feature/ui/PaymentFeedback.h"
-#include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/ui/contacts/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
 

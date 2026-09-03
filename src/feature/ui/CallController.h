@@ -6,8 +6,8 @@
 #include "common/Module.h"
 #include "feature/messaging/calls/CallFunctionalPorts.h"
 #include "feature/ui/CallChromeSync.h"
-#include "feature/ui/PeoplePickerNotifyPorts.h"
-#include "feature/ui/ShellCallChromePorts.h"
+#include "feature/ui/contacts/PeoplePickerNotifyPorts.h"
+#include "feature/ui/shell/ShellCallChromePorts.h"
 
 #include <cstdint>
 #include <string>

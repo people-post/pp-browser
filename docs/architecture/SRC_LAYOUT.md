@@ -157,7 +157,7 @@ feature/ui → domain/render
 feature/messaging → domain/mesh
 ```
 
-Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src/feature/ui/`.
+Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays under `src/feature/ui/shell/`.
 
 ## Feature subfolders
 
@@ -165,16 +165,19 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 
 | Path | Contents |
 |------|----------|
-| `feature/settings/` | Settings apply logic (no messaging/chat deps) |
-| `feature/messaging/` | MessagingHub, router, inbox, P2P service |
+| `feature/settings/` | Settings apply logic (no messaging/ui deps) |
+| `feature/messaging/` | Conversations hub + delivery (legacy folder name) |
+| `feature/messaging/calls/` | Call session band (f4v1) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | ShellHost, settings UI, profile/security sections; `ChatSessionPorts` + `SettingsCommands` (injected from app) |
-| `feature/chat/` | Chat UI, agent↔hub wiring, messaging agent tools |
+| `feature/ui/` | Settings/call/pin/emoji presenters + ports |
+| `feature/ui/shell/` | ShellHost, mount, shell ports (f5 band) |
+| `feature/ui/contacts/` | Contacts + people-picker (f5 band) |
+| `feature/ui/chat/` | ChatController + screen helpers (absorbed; no top-level `feature/chat`) |
 
 Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
 
 ```
-settings → ai/tools → ai/bindings → ai → messaging → ui → chat
+settings → ai/tools → ai/bindings → ai → messaging → ui
 ```
 
 Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
@@ -215,7 +218,7 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 #include "common/ValueJson.h"
 #include "foundation/data/Config.h"
 #include "domain/mesh/host/MeshHost.h"
-#include "feature/chat/ChatController.h"
+#include "feature/ui/chat/ChatController.h"
 #include "app/Application.h"
 ```
 

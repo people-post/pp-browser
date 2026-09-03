@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/ui/ShellTypes.h"
-#include "feature/ui/ShellPinGatePorts.h"
+#include "feature/ui/shell/ShellPinGatePorts.h"
 #include "feature/ui/UnlockGateCompletePorts.h"
 
 #include <string>

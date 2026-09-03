@@ -35,7 +35,7 @@ Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlM
 
 ## Window Shell
 
-Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../../src/feature/ui/ShellHost.cpp):
+Chat uses the role-based shell in [`src/feature/ui/shell/ShellHost.*`](../../src/feature/ui/shell/ShellHost.cpp):
 
 - **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar

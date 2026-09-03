@@ -64,7 +64,9 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
 | Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
 | Extract `feature/shell` / `contacts` | f5 | From ui grab-bag |
-| Absorb `feature/chat` → `feature/ui` | f5 | **No** top-level chat in end state ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names)) |
+| Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
+| Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — same `pp_feature_ui` |
+| Extract `feature/shell` / `contacts` libs | later | Optional top-level targets |
 | App named wirers | anytime | `WireConversations` / `WireCalls` |
 | Inbox presentation split | f6 last | Highest product risk |
 

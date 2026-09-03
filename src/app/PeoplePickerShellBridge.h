@@ -1,8 +1,8 @@
 #pragma once
 
-#include "feature/ui/PeoplePickerChromeSync.h"
-#include "feature/ui/PeoplePickerSurfaceSnapshot.h"
-#include "feature/ui/ShellChromeApplyPorts.h"
+#include "feature/ui/contacts/PeoplePickerChromeSync.h"
+#include "feature/ui/contacts/PeoplePickerSurfaceSnapshot.h"
+#include "feature/ui/shell/ShellChromeApplyPorts.h"
 
 namespace pbr {
 

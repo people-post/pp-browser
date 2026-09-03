@@ -3,7 +3,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
-#include "feature/ui/DataModelHost.h"
+#include "feature/ui/shell/DataModelHost.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>

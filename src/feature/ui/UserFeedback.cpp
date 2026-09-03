@@ -1,7 +1,7 @@
 #include "feature/ui/UserFeedback.h"
 
 #include "foundation/error/AppError.h"
-#include "feature/ui/ShellFeedback.h"
+#include "feature/ui/shell/ShellFeedback.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

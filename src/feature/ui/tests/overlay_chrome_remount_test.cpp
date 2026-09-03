@@ -1,7 +1,7 @@
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/shell/ShellFeedback.h"
+#include "feature/ui/shell/ShellFeedbackPorts.h"
 #include "feature/ui/PinGateController.h"
-#include "feature/ui/ShellPinGatePorts.h"
+#include "feature/ui/shell/ShellPinGatePorts.h"
 
 #include <gtest/gtest.h>
 

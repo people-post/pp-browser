@@ -2,7 +2,7 @@
 
 #include "feature/ui/ChatChromeSync.h"
 #include "feature/ui/ChatSurfaceSnapshot.h"
-#include "feature/ui/ShellChromeApplyPorts.h"
+#include "feature/ui/shell/ShellChromeApplyPorts.h"
 
 namespace pbr {
 

@@ -11,7 +11,7 @@ Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYO
 
 **Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
-Each top-level folder (and `ai/tools`, `ai/bindings`) builds as its own static library — **`pp_feature_<module>`** (e.g. `pp_feature_messaging`, `pp_feature_chat`). The aggregate **`pp_feature`** (`INTERFACE`) links all module libraries for app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
+Each top-level folder (and `ai/tools`, `ai/bindings`, plus bands `messaging/calls/`, `ui/{shell,contacts,chat}/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app code. Top-level `feature/chat` is **retired** ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).
 
 ---
 
@@ -32,18 +32,20 @@ If you are unsure, ask: *"Could another feature import this without pulling in a
 
 ## Module map
 
-Five top-level folders. Two sub-trees under `ai/`.
+Four top-level folders (+ bands). Two sub-trees under `ai/`.
 
 ```
 src/feature/
-├── settings/     Config apply logic, section handlers + SettingsTools (no messaging/chat/ai deps)
-├── ai/           Agent session, turn pipeline, UI generation; BuildToolRegistryFromConfig
-│   ├── tools/        Web search, MCP tool adapters
-│   └── bindings/     RmlUi action routing, bindings manifest
-├── messaging/    MessagingHub (conversations hub), MeshHost consumer, MessagingFacade; call session under messaging/calls/
-│   └── calls/        CallStack, CSM, lifecycle, topology, CallUiBackend (f4v1 band → future feature/calls)
-├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
-└── chat/         Chat controller, agent + MessagingFacade wiring, messaging agent tools
+├── settings/     Config apply logic, section handlers + SettingsTools
+├── ai/           Agent session, turn pipeline, UI generation
+│   ├── tools/
+│   └── bindings/
+├── messaging/    Conversations hub (legacy name) + delivery; MessagingFacade
+│   └── calls/    Call session band (f4v1 → future feature/calls)
+└── ui/           Presenters + shell/contacts/chat bands (same pp_feature_ui)
+    ├── shell/    ShellHost, mount, gestures, shell ports
+    ├── contacts/ Contacts + people-picker
+    └── chat/     ChatController + screen helpers (absorbed from feature/chat)
 ```
 
 `IToolProvider` / `ToolRegistry` live in `domain/ai/` so settings and messaging can register tools without linking `pp_feature_ai`.
@@ -54,19 +56,19 @@ src/feature/
 |--------|---------|----------------------------|
 | **Configuration** | settings | How do user edits merge into `AppConfig`? |
 | **Intelligence** | ai, ai/tools, ai/bindings | How does the agent plan turns, call tools, and bind RmlUi actions? |
-| **Connectivity** | messaging | How do threads sync, relay, and route through P2P? |
-| **Presentation** | ui | How does the shell host documents, settings, and contacts? |
-| **Chat surface** | chat | How does the chat screen wire agent, hub, and shell together? |
+| **Conversations** | messaging (+ calls band) | How do threads sync/relay; how do call sessions run? |
+| **Presentation** | ui (+ shell/contacts/chat bands) | Shell, contacts, chat screen, settings presenters |
 
 Start points when exploring:
 
 - Agent session → `ai/AgentSession.h`, `ai/TurnPlanner.h`, `ai/TurnExecutor.h`
-- Messaging hub → `messaging/MessagingHub.h`, `messaging/MeshMessagingService.h`
-- Window shell → `ui/ShellHost.h`, `ui/SettingsController.h`
-- Chat screen → `chat/ChatController.h`, `chat/MessagingTools.h`
+- Conversations hub → `messaging/MessagingHub.h`, `messaging/MeshMessagingService.h`
+- Call session → `messaging/calls/CallStack.h`
+- Window shell → `ui/shell/ShellHost.h`, `ui/SettingsController.h`
+- Chat screen → `ui/chat/ChatController.h`, `ui/chat/MessagingTools.h`
 - Settings apply → `settings/SettingsLogic.h`, `settings/SettingsSectionHandler.h`
 
-Includes use the repo root: `#include "feature/chat/ChatController.h"`.
+Includes use the repo root: `#include "feature/ui/chat/ChatController.h"`.
 
 ---
 
@@ -94,17 +96,15 @@ ai
 messaging
   ↑
 ui
-  ↑
-chat
 ```
 
 **Principles for new code:**
 
-1. **Downward includes only** — when module A needs a type from B, B should not include A's headers. Within feature: `settings` must not include `messaging/`, `ui/`, or `chat/`; `messaging` must not include `ui/` or `chat/`.
+1. **Downward includes only** — when module A needs a type from B, B should not include A's headers. Within feature: `settings` must not include `messaging/` or `ui/`; `messaging` must not include `ui/`.
 2. **Shared structs go low** — if feature and domain both need a DTO, move it to the owning domain module (or a dedicated `*Types.h` there / `common` if two peers need it).
 3. **Include legal deps; fwd-decl to break cycles** — if a type is already a legal dependency (lower layer or allowed feature edge), `#include` its header in the `.h` that names it. Do not forward-declare `foundation/`/`domain/`/`common/` types just to keep headers lean. Forward declarations are for cycle-breaking and forbidden upward edges. Prefer small ports/`*Types.h` headers when that avoids pulling an unrelated heavy tree — repo rule: [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 4. **Cross-controller wiring stays in app** — tool registration, tab ticks, and `ActionRouter` model-dirty callbacks belong in `src/app/`, not feature headers.
-5. **Fork glue stays at the edge** — RmlUi via `pp_foundation_platform` in `ui/`, `chat/`, and `ai/bindings/`; Amp/mesh via `pp_domain_mesh` in `messaging/` (forks under `src/lib/` / FetchContent).
+5. **Fork glue stays at the edge** — RmlUi via `pp_foundation_platform` in `ui/` and `ai/bindings/`; Amp/mesh via `pp_domain_mesh` in `messaging/` (forks under `src/lib/` / FetchContent).
 
 Feature/app cleanup tracking: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/).
 
@@ -120,18 +120,18 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` |
 | `CallActionsPorts` | `ui/CallActionsPorts.h` | Call chrome/actions for chat, shell, people-picker; Application fills from `CallController` |
-| `CallFunctionalPorts` | `messaging/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
-| `CallUiBackend` | `messaging/CallUiBackend.h` | Sealed façade over `CallStack` session/lifecycle (bound to `MessagingHub::CallStackRef()`; no leaky CSM/Lifecycle ports) |
-| `CallStack` | `messaging/CallStack.h` | Owns call media/CSM/lifecycle/bridge/CallMediaDirect/relay+dial+circuit clients; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()` |
-| `ContactsNotifyPorts` | `ui/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
+| `CallFunctionalPorts` | `messaging/calls/CallFunctionalPorts.h` | Functional call ports for `CallController`; Application fills via `MakeCallFunctionalPorts` + owned `CallUiBackend` |
+| `CallUiBackend` | `messaging/calls/CallUiBackend.h` | Sealed façade over `CallStack` session/lifecycle |
+| `CallStack` | `messaging/calls/CallStack.h` | Owns call media/CSM/lifecycle/bridge; Hub holds `unique_ptr<CallStack>` |
+| `ContactsNotifyPorts` | `ui/contacts/ContactsNotifyPorts.h` | Contacts refresh/select for chat; Application fills from `ContactsController` |
 | `UnlockEnsurePorts` | `ui/UnlockEnsurePorts.h` | Ensure unlocked / unlock-in-progress; Application fills from `ProfileUnlockGate` |
 | `FlowCoordinatorPorts` | `ui/FlowCoordinatorPorts.h` | Modal begin/end/dismiss; Application fills from `FlowCoordinator` |
 | `BadgeNotifyPorts` | `ui/BadgeNotifyPorts.h` | Badge refresh / sessions unread for chat; Application fills from `BadgeAggregator` |
 | `PinGateActionPorts` | `ui/PinGateActionPorts.h` | PIN overlay submit/cancel/chooser; Application fills from `PinGateController` |
-| `PeoplePickerNotifyPorts` | `ui/PeoplePickerNotifyPorts.h` | Open-picker hooks for chat/call; Application fills from `PeoplePickerController` |
+| `PeoplePickerNotifyPorts` | `ui/contacts/PeoplePickerNotifyPorts.h` | Open-picker hooks for chat/call; Application fills from `PeoplePickerController` |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind |
-| `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
-| `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
+| `ShellNavigationPorts` | `ui/shell/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
+| `ShellFeedbackPorts` | `ui/shell/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
 | `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
 | `MessagingFacade` | `messaging/MessagingFacade.h` | Non-owning wrapper over `MessagingHub&`; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (replaces the `MessagingChatPorts` mega-struct) |
 | `AgentUiPorts` | `messaging/AgentUiPorts.h` | Agent facade for chat; Application owns `AgentSession` |
@@ -147,8 +147,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | From | To | Why |
 |------|-----|-----|
 | `messaging/` | `feature/ai/AgentSession.h` | Route inbound messages to the agent session |
-| `ui/` | `feature/settings/*`, `feature/messaging/MessagingHub.h` | Settings sections and shell need hub access |
-| `chat/` | `feature/ai/*`, `feature/messaging/*`, `feature/ui/*` | Top-layer screen composes all lower feature modules |
+| `ui/` | `feature/settings/*`, `feature/messaging/*` | Settings/shell/chat presenters need hub + agent wiring |
 
 ### Test-layer dependencies
 

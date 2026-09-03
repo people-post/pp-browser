@@ -1,11 +1,11 @@
 include(PpBrowserFeature)
 
 # Acyclic module order: each library links only lower layers.
+# End-state names: messaging≈conversations; ui absorbs chat (+ shell/contacts bands).
 add_subdirectory(settings)
 add_subdirectory(ai)
 add_subdirectory(messaging)
 add_subdirectory(ui)
-add_subdirectory(chat)
 
 set(PP_FEATURE_MODULE_LIBS
   pp_feature_settings
@@ -14,7 +14,6 @@ set(PP_FEATURE_MODULE_LIBS
   pp_feature_ai
   pp_feature_messaging
   pp_feature_ui
-  pp_feature_chat
 )
 
 add_library(pp_feature INTERFACE)

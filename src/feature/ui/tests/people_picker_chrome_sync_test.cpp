@@ -1,4 +1,4 @@
-#include "feature/ui/PeoplePickerChromeSync.h"
+#include "feature/ui/contacts/PeoplePickerChromeSync.h"
 
 #include <gtest/gtest.h>
 

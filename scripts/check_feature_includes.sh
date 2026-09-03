@@ -23,25 +23,22 @@ check_absent "settings must not include messaging/" \
   '#include "feature/messaging/' src/feature/settings
 check_absent "settings must not include ui/" \
   '#include "feature/ui/' src/feature/settings
-check_absent "settings must not include chat/" \
-  '#include "feature/chat/' src/feature/settings
-check_absent "settings must not include ai/ (ToolRegistry is in base/ai)" \
-  '#include "feature/ai/' src/feature/settings
 
 check_absent "ai must not include messaging/" \
   '#include "feature/messaging/' src/feature/ai
 check_absent "ai must not include ui/" \
   '#include "feature/ui/' src/feature/ai
-check_absent "ai must not include chat/" \
-  '#include "feature/chat/' src/feature/ai
 
 check_absent "messaging must not include ui/" \
   '#include "feature/ui/' src/feature/messaging
-check_absent "messaging must not include chat/" \
-  '#include "feature/chat/' src/feature/messaging
 
-check_absent "ui must not include chat/" \
-  '#include "feature/chat/' src/feature/ui
+# Retired top-level feature/chat (F007) — must stay gone.
+if [[ -e "$ROOT/src/feature/chat" ]]; then
+  echo "FAIL: top-level src/feature/chat must stay removed (absorbed into feature/ui/chat/)"
+  FAIL=1
+fi
+check_absent "must not include retired feature/chat/ path" \
+  '#include "feature/chat/' src
 
 if [[ "$FAIL" -ne 0 ]]; then
   exit 1

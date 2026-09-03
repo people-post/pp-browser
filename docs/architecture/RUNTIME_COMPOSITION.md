@@ -31,7 +31,7 @@ flowchart TB
     MessagingFacade["MessagingFacade<br/><small>feature/messaging/</small>"]
     ShellHost["ShellHost<br/><small>feature/ui/</small>"]
     SettingsController["SettingsController<br/><small>feature/ui/</small>"]
-    ChatController["ChatController<br/><small>feature/chat/</small>"]
+    ChatController["ChatController<br/><small>feature/ui/chat/</small>"]
   end
 
   subgraph base_layer["base/"]
@@ -94,7 +94,7 @@ flowchart LR
   subgraph surfaces["UI surfaces"]
     Shell["ShellHost<br/><small>feature/ui/</small>"]
     Settings["SettingsController<br/><small>feature/ui/</small>"]
-    Chat["ChatController<br/><small>feature/chat/</small>"]
+    Chat["ChatController<br/><small>feature/ui/chat/</small>"]
     Contacts["ContactsController<br/><small>feature/ui/</small>"]
     PeoplePicker["PeoplePickerController<br/><small>feature/ui/</small>"]
     Pin["PinGateController<br/><small>feature/ui/ — presentation</small>"]
@@ -236,7 +236,7 @@ flowchart TB
   subgraph main["Main / UI thread"]
     SDL["Application::Run<br/><small>SDL event loop</small>"]
     UIQ["AppRuntime UI mailbox<br/><small>SequencedTaskRunner — RunUITasks</small>"]
-    ShellTick["ShellHost · ChatController<br/><small>feature/ui · feature/chat</small>"]
+    ShellTick["ShellHost · ChatController<br/><small>feature/ui/shell · feature/ui/chat</small>"]
     SDL --> UIQ
     SDL --> ShellTick
   end
@@ -330,7 +330,7 @@ Full model: [THREADING.md](THREADING.md).
 | **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
 | **CallActionsPorts** | `feature/ui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
 | **ProfileIdentityView** | `domain/people/` | Presentation projection of local identity |
-| **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
+| **ChatController** | `feature/ui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | `domain/mesh/` | Vendored host + asio IO thread |

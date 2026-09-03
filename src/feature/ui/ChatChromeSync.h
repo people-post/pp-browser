@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/ui/ChatSurfaceSnapshot.h"
-#include "feature/ui/ShellChromeOp.h"
+#include "feature/ui/shell/ShellChromeOp.h"
 
 namespace pbr {
 

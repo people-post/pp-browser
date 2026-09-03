@@ -65,11 +65,14 @@ Do not promote **blocked** → domain to “clean the folder.”
 
 ---
 
-## F005 — (reserved) shell / contacts split
+## F005 — Shell / contacts: nested bands first
 
-**Status:** deferred until f5
+**Date:** 2026-09-03  
+**Status:** accepted (path); top-level libs deferred
 
-Choose folder names and whether residual `feature/ui` remains. End state prefers presenters (including today’s `ChatController`) under **ui/shell/contacts**, not a top-level `chat` module ([F007](#f007--vocabulary--end-state-feature-names)).
+**Decision:** Nest under `feature/ui/shell/` and `feature/ui/contacts/` (same `pp_feature_ui`) before creating `pp_feature_shell` / `pp_feature_contacts`. Chat screen lives in `feature/ui/chat/` (no top-level `feature/chat`) per [F007](#f007--vocabulary--end-state-feature-names).
+
+**Done (f5v1):** bands created; `pp_feature_chat` removed.
 
 ---
 

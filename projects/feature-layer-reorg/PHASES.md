@@ -64,12 +64,13 @@ Per [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F0
 
 Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-level `feature/chat`** in the end state.
 
-- [ ] Extract shell host + chrome sync (`feature/shell` or equivalent)
-- [ ] Extract contacts + people-picker (`feature/contacts` or equivalent)
-- [ ] Move `ChatController` (+ chat screen helpers) from `feature/chat` into `feature/ui` (or shell) with other presenters
-- [ ] Retire `pp_feature_chat` / top-level `feature/chat` once presenters land
+- [x] Nest shell host + chrome sync under `feature/ui/shell/` (same `pp_feature_ui`; top-level `feature/shell` later)
+- [x] Nest contacts + people-picker under `feature/ui/contacts/`
+- [x] Move `ChatController` (+ helpers) to `feature/ui/chat/`; retire top-level `feature/chat` + `pp_feature_chat`
+- [x] Update `check_feature_includes.sh` (ban retired `feature/chat/` path)
 - [ ] Consolidate settings UI sections toward `feature/settings` where cheap
-- [ ] ADR lock residual `ui/` vs fold into shell; promote to SRC_LAYOUT / feature README
+- [ ] ADR lock residual `ui/` vs fold into shell; promote remaining SRC_LAYOUT / RUNTIME diagrams
+- [ ] (Later) top-level `pp_feature_shell` / `pp_feature_contacts` when include graph warrants
 
 ## f6 — App wirers + soft edges (ongoing / last)
 

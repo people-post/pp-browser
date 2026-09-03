@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/ui/ShellTypes.h"
-#include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/shell/ShellNavigationPorts.h"
 
 #include <functional>
 

@@ -3,41 +3,52 @@ pp_browser_add_feature_library(pp_feature_ui
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp
-    ContactsChromeSync.cpp
-    ContactsController.cpp
-    PeoplePickerController.cpp
+    chat/CalendarHelper.cpp
+    chat/ChatController.cpp
+    chat/ChatDataModel.cpp
+    chat/ChatThreadChrome.cpp
+    chat/ChatTranscriptScroller.cpp
+    chat/ChatWidgetHost.cpp
+    chat/ChatWidgetStateBuilder.cpp
+    chat/MessagingTools.cpp
+    chat/WorkingSetController.cpp
+    ClientCompatController.cpp
+    contacts/ContactsChromeSync.cpp
+    contacts/ContactsController.cpp
+    contacts/PeoplePickerChromeSync.cpp
+    contacts/PeoplePickerController.cpp
+    ChatChromeSync.cpp
     EmojiPickerController.cpp
-    DataModelHost.cpp
-    DocumentLoader.cpp
     FlowCoordinator.cpp
     PinGateController.cpp
-    ShellPinGatePorts.cpp
-    ShellCallChromePorts.cpp
-    ShellChromeApplyPorts.cpp
-    ChatChromeSync.cpp
-    PeoplePickerChromeSync.cpp
-    DeferredStartup.cpp
-    ClientCompatController.cpp
     ProfileSettingsSection.cpp
-    RmlMount.cpp
     SecuritySettingsSection.cpp
     SettingsController.cpp
-    ShellNavigationPorts.cpp
-    ShellSetupPorts.cpp
-    ShellFeedbackPorts.cpp
-    ShellSwipeBackGesture.cpp
-    ShellBottomSheetGesture.cpp
-    ShellCallChromeGesture.cpp
-    ShellFeedback.cpp
+    shell/DataModelHost.cpp
+    shell/DeferredStartup.cpp
+    shell/DocumentLoader.cpp
+    shell/RmlMount.cpp
+    shell/ShellBottomSheetGesture.cpp
+    shell/ShellCallChromeGesture.cpp
+    shell/ShellCallChromePorts.cpp
+    shell/ShellChromeApplyPorts.cpp
+    shell/ShellFeedback.cpp
+    shell/ShellFeedbackPorts.cpp
+    shell/ShellHost.cpp
+    shell/ShellInterruption.cpp
+    shell/ShellLayout.cpp
+    shell/ShellNavigationPorts.cpp
+    shell/ShellPinGatePorts.cpp
+    shell/ShellSetupPorts.cpp
+    shell/ShellSwipeBackGesture.cpp
     BlobQuotaRecoveryFlow.cpp
-    ShellHost.cpp
-    ShellInterruption.cpp
-    ShellLayout.cpp
     UiEditSession.cpp
     UserFeedback.cpp
   PUBLIC_LIBS
     pp_feature_settings
+    pp_feature_ai
     pp_feature_messaging
+    pp_foundation_platform
     pp_domain_ui
     RmlUi::Core)
 

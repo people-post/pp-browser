@@ -1,35 +1,29 @@
 # Feature / app reorg — current state
 
 **Updated:** 2026-09-03  
-**Phase:** **f4v1 nested calls band landed** → f5 (shell/contacts + absorb chat) or top-level calls when unblocked
+**Phase:** **f5v1 bands landed** (chat absorbed; shell/contacts nested under ui) → f6 wirers / top-level splits later
 
-## What already shipped
+## Shipped this stream
 
-- Foundation/domain split; f1–f3 sure peels; **F004/F006/F007** naming
-- **f4v1:** `feature/messaging/calls/` band (same `pp_feature_messaging`) — CallStack, CSM, lifecycle, topology, CallUiBackend, Amp circuit/media façades
+- f1–f3 peels; F004/F006/F007 naming
+- f4v1: `feature/messaging/calls/`
+- **f5v1:** retired top-level `feature/chat` → `feature/ui/chat/`; nested `feature/ui/shell/` + `feature/ui/contacts/`; single `pp_feature_ui` (now links `pp_feature_ai`)
 
-## Locked naming ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
+## Paths today
 
-| End-state folder | Today | Role |
-|------------------|-------|------|
-| `conversations/` | `feature/messaging` (parent) | Conversations hub + delivery |
-| `calls/` | `feature/messaging/calls/` | Call **session** (nested; top-level later) |
-| `ui/` (+ shell/contacts) | `feature/ui` + `feature/chat` | Presenters; no top-level chat/ |
-| `domain/messaging` | same | Record/codec engines |
+| Path | Role |
+|------|------|
+| `feature/messaging/` | Conversations hub + delivery (legacy name) |
+| `feature/messaging/calls/` | Call session |
+| `feature/ui/` | Residual presenters (settings, call UI, pin, emoji, …) |
+| `feature/ui/shell/` | ShellHost, mount, shell ports |
+| `feature/ui/contacts/` | Contacts + people-picker |
+| `feature/ui/chat/` | ChatController + screen helpers |
 
-## Snapshot
+Link order: `settings → ai → messaging → ui` (no `pp_feature_chat`).
 
-| Area | Notes |
-|------|-------|
-| `feature/messaging/` | Conversations hub + delivery; Call\* moved under `calls/` |
-| `feature/messaging/calls/` | Call session orchestration (f4v1) |
-| `feature/chat` | Still top-level — absorb in f5 |
-| `feature/ui` | Grab-bag + `CallController` |
+## Next
 
-## Next agent — start here
-
-1. **f5:** split shell/contacts from ui; move `ChatController` into ui/shell; retire top-level `feature/chat`.
-2. Or port MeshMessagingService edge and lift `calls/` to top-level `pp_feature_calls`.
-3. Optional: app named wirers (`WireConversations` / `WireCalls`).
-
-Do **not** invent `domain/calls`. Do **not** reintroduce top-level `feature/chat` in the plan.
+1. **f6:** named Application wirers; optional conversations→ai inbound port.
+2. Later: top-level `feature/calls` / `feature/shell` / `feature/contacts` / rename messaging→conversations when cycles allow.
+3. Promote SRC_LAYOUT when stable (partially updated).

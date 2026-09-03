@@ -1,7 +1,7 @@
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellInterruption.h"
-#include "feature/ui/ShellLayout.h"
-#include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/shell/ShellFeedback.h"
+#include "feature/ui/shell/ShellInterruption.h"
+#include "feature/ui/shell/ShellLayout.h"
+#include "feature/ui/shell/ShellNavigationPorts.h"
 #include "domain/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>

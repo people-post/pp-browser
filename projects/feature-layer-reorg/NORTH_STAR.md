@@ -64,7 +64,7 @@ feature/
   shell/           # ShellHost, gestures, feedback, RmlMount, chrome sync (from ui)
   contacts/        # Contacts + PeoplePicker (from ui)
   ui/              # shared ports + presenters; ABSORBS today’s feature/chat (ChatController)
-                   # NO top-level feature/chat/
+                   # NO top-level feature/ui/chat/
 ```
 
 ### Legacy → end-state

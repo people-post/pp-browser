@@ -36,7 +36,7 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | Surface | Module | Role |
 |---------|--------|------|
 | `ShellHost` | `feature/ui/` | Window chrome, pane layout, global feedback |
-| `ChatController` | `feature/chat/` | Chat screen presenter |
+| `ChatController` | `feature/ui/chat/` | Chat screen presenter |
 | `SettingsController` | `feature/ui/` | Me tab / settings presenter |
 | `ContactsController` | `feature/ui/` | Contacts tab presenter |
 | `PeoplePickerController` | `feature/ui/` | People picker presenter |
