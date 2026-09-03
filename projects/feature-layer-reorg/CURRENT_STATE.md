@@ -20,7 +20,7 @@
 | `feature/messaging` | Still hub/sync/calls; stores/PSK/reach helpers peeled |
 | `feature/ui` | No longer includes messaging `ContactReachability`; uses `domain/people` |
 | `domain/messaging` | + PSK store/coordinators, `CallMediaKeyStore`, epoch bump |
-| `domain/people` | + reachability, brief route, profile icon fetch |
+| `domain/people` | + reachability, brief route (`ProfileIconFetchUtil` stayed in feature — HTTP) |
 | `domain/mesh/reachability` | + `MobileEphemeralListenGate` |
 | `domain/ui` | + `PeoplePickerLogic`, `CallConflictCopy` |
 
