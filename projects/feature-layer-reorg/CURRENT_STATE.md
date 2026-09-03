@@ -33,9 +33,9 @@
 
 ## Next agent — start here
 
-1. **f1:** move `SqlitePskSessionStore` (+ ideally `CallMediaKeyStore` in the same or follow-up PR) to `domain/messaging`.
-2. Keep Hub ownership; update includes/CMake/tests only.
-3. Mark PHASES checkboxes; note any ADR if media vs messaging home for call keys is contested.
+1. **f1:** move `SqlitePskSessionStore` (+ ideally `CallMediaKeyStore` in the same or follow-up PR) to **`domain/messaging/` flat** ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)).
+2. Keep Hub ownership; update includes/CMake/tests only. **No new domain peers / no messaging subfolder migration in f1.**
+3. Mark PHASES checkboxes.
 4. Do **not** start `feature/calls` folder split until f1–f2 peels land (or an ADR explicitly overrides).
 
 ## Related docs still slightly stale

@@ -4,19 +4,23 @@ Confidence tags per [F002](DECISIONS.md#f002--confidence-tags-for-moves). Update
 
 ## sure — peel to domain (f1–f3)
 
-| Files (today) | Target | Notes |
-|---------------|--------|-------|
-| `feature/messaging/SqlitePskSessionStore.*` | `domain/messaging` | Mirrors other SQLite stores; DEK consumer |
-| `feature/messaging/CallMediaKeyStore.*` | `domain/messaging` or `domain/media` | Vault-backed epoch keys |
-| `feature/messaging/PskSessionCoordinator.*` | `domain/messaging` | Store ops via contracts |
-| `feature/messaging/PublicPskLockCoordinator.*` | `domain/messaging` | Rotate plan/commit |
-| `feature/messaging/EpochBumpCoordinator.*` | `domain/messaging` | Thin thread-store policy |
-| `feature/messaging/ContactReachability.*` | `domain/people` | Pure eligibility; fixes ui include smell |
-| `feature/messaging/PeerBriefRoute.*` | `domain/people` | Route resolution helpers |
-| `feature/messaging/ProfileIconFetchUtil.*` | `domain/people` | Cache fetch policy |
-| `feature/messaging/MobileEphemeralListenGate.*` | `domain/mesh` | Pure predicate |
-| `feature/ui/PeoplePickerLogic.h` | `domain/ui` | Pure logic |
-| `feature/ui/CallConflictCopy.*` | `domain/ui` | Copy/CTA policy |
+Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers): **no new top-level peers**; flat drop unless the peer already nests.
+
+| Files (today) | Target path | Notes |
+|---------------|-------------|-------|
+| `feature/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Next to `SqliteThreadStore` / `PeerKemKeyStore` |
+| `feature/messaging/CallMediaKeyStore.*` | `domain/messaging/` | Next to `CallSessionStore` — **not** `domain/media` |
+| `feature/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Next to `PskRotateCodec` |
+| `feature/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Rotate plan/commit |
+| `feature/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Thin thread-store policy |
+| `feature/messaging/ContactReachability.*` | `domain/people/` | Next to `ContactTypes` / `ContactsStore` |
+| `feature/messaging/PeerBriefRoute.*` | `domain/people/` | People-centric route helpers |
+| `feature/messaging/ProfileIconFetchUtil.*` | `domain/people/` | Next to `ProfileIconCache` |
+| `feature/messaging/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Only nested home — mesh already bands |
+| `feature/ui/PeoplePickerLogic.h` | `domain/ui/` | Pure logic |
+| `feature/ui/CallConflictCopy.*` | `domain/ui/` | Copy/CTA policy |
+
+**Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
 
 ## likely — after a short peel
 

@@ -25,7 +25,7 @@
 Single-peer or foundation+common-only. Hub keeps owning `unique_ptr`; only the **definition** moves.
 
 - [ ] `SqlitePskSessionStore` → `domain/messaging`
-- [ ] `CallMediaKeyStore` → `domain/messaging` (or `domain/media` — pick in PR notes)
+- [ ] `CallMediaKeyStore` → `domain/messaging` (flat; [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers) — not `domain/media`)
 - [ ] `PskSessionCoordinator` → `domain/messaging`
 - [ ] `PublicPskLockCoordinator` → `domain/messaging`
 - [ ] `EpochBumpCoordinator` → `domain/messaging`
@@ -38,7 +38,7 @@ Clears sharp `feature/ui` → messaging engine includes.
 - [ ] `ContactReachability` → `domain/people`
 - [ ] `PeerBriefRoute` → `domain/people`
 - [ ] `ProfileIconFetchUtil` → `domain/people`
-- [ ] `MobileEphemeralListenGate` → `domain/mesh`
+- [ ] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
 - [ ] `PeoplePickerLogic` → `domain/ui` (optional same batch)
 - [ ] `CallConflictCopy` → `domain/ui` (optional same batch)
 - [ ] UI includes ports/people/domain only — no `ContactReachability` from messaging

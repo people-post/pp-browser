@@ -11,6 +11,20 @@ This file only refines **feature** and **app**.
 
 ---
 
+## Domain peer set (stable for sure peels)
+
+Do **not** add peers for f1–f3 ([F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)). Existing peers already match the sure inventory:
+
+| Peer | Role for peels |
+|------|----------------|
+| `messaging` | Thread/PSK/call **session** stores, codecs, pure messaging policy (flat) |
+| `people` | Contacts/identity helpers, reachability eligibility, icon fetch policy (flat) |
+| `mesh` | Listen/reach predicates → prefer existing `mesh/reachability/` |
+| `media` | Capture/playback/codecs only — **not** call key vault |
+| `ui` | Pure presentation policy (no Rml controllers) |
+
+Optional later: band `domain/messaging/` into internal subfolders for readability — after peels, not before.
+
 ## Litmus (stable enough to use now)
 
 | Layer | Put it here when… | Not when… |

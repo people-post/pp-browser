@@ -63,3 +63,32 @@ Choose among: top-level `feature/calls/`, nested `feature/messaging/calls/`, or 
 **Status:** deferred until f5
 
 Choose folder names and whether residual `feature/ui` remains.
+
+---
+
+## F006 — Sure peels use existing domain peers (no new peers)
+
+**Date:** 2026-09-03  
+**Status:** accepted
+
+**Context:** f1–f3 will move stores/helpers out of `feature/`. Question: add `domain/calls`, `domain/psk`, etc., or reshape peer trees first?
+
+**Decision:**
+
+1. **Do not add top-level domain peers** for sure peels. Keep the peer set: `people`, `messaging`, `media`, `mesh`, `net`, `ui`, `ai`.
+2. **Land files in the peer that already owns the sibling types** (flat unless that peer already nests).
+3. **Do not invent `domain/calls`.** Call session types/stores already live in `domain/messaging`; capture/playback stays in `domain/media`. A new calls peer would either link messaging (banned) or orphan `CallSessionStore`.
+4. **Optional internal subfolders** under `domain/messaging/` (e.g. `call/`, `psk/`, `thread/`) are a **later** readability pass — not a prerequisite for f1. Prefer flat drops next to existing `Call*`, `Psk*`, `Sqlite*` files first.
+5. **`CallMediaKeyStore` → `domain/messaging`**, not `domain/media` — it is vault/SQLite next to `CallSessionStore`; `domain/media` is engine/codec/OS capture.
+
+**Homes for sure candidates:**
+
+| Candidate | Home |
+|-----------|------|
+| `SqlitePskSessionStore`, PSK/epoch coordinators | `domain/messaging/` (flat) |
+| `CallMediaKeyStore` | `domain/messaging/` (flat) |
+| `ContactReachability`, `PeerBriefRoute`, `ProfileIconFetchUtil` | `domain/people/` (flat) |
+| `MobileEphemeralListenGate` | `domain/mesh/reachability/` (nested — peer already nests) |
+| `PeoplePickerLogic`, `CallConflictCopy` | `domain/ui/` (flat) |
+
+**Consequences:** f1–f3 are path/CMake moves into known peers. Messaging stays a large flat folder for now; revisit internal banding only if navigation pain remains after peels.
