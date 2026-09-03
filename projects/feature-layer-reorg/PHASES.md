@@ -85,14 +85,14 @@ Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-lev
 
 Mechanical layer lift; **no** messaging→conversations rename in the same PR.
 
-- [ ] ADR already locked ([F008](DECISIONS.md#f008--gui-layer-above-feature)); update NORTH_STAR / SRC_LAYOUT pointers when moving
-- [ ] Move `feature/ui/**` → `src/gui/**` (keep `shell/`, `contacts/`, `chat/` bands; optional `call/` / `settings/` / `shared/`)
-- [ ] Retire `pp_feature_ui`; add `pp_gui` (single aggregate first)
-- [ ] Includes: `#include "gui/…"`; app/feature CMake link `pp_gui` above feature
-- [ ] Guards: ban `feature → gui`; ban new `feature/ui/` path; allow `gui → feature`
-- [ ] Update [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) / [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md) / `src/feature/README.md` / new `src/gui/README.md`
-- [ ] (Later) split `pp_gui_*` libs only if include graph warrants
-- [ ] Archive or freeze this project when layout matches promoted docs
+- [x] ADR already locked ([F008](DECISIONS.md#f008--gui-layer-above-feature)); update NORTH_STAR / SRC_LAYOUT pointers when moving
+- [x] Move `feature/ui/**` → `src/gui/**` (keep `shell/`, `contacts/`, `chat/` bands)
+- [x] Retire `pp_feature_ui`; add `pp_gui` (single aggregate first)
+- [x] Includes: `#include "gui/…"`; app links `pp_gui` above feature
+- [x] Guards: ban `feature → gui`; ban retired `feature/ui/` path; `check_gui_includes.sh`
+- [x] Update UI_FUNCTIONAL_BOUNDARY / SRC_LAYOUT / `src/feature/README.md` / `src/gui/README.md`
+- [ ] (Later) optional bands `gui/call|settings|shared`; split `pp_gui_*` libs if warranted
+- [ ] Archive or freeze this project when remaining renames match promoted docs
 
 ---
 

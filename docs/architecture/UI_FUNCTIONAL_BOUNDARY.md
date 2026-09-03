@@ -5,7 +5,7 @@
 
 How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
 
-**Layer target ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI code moves to top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with domain peer `domain/ui` (non-Rml presentation policy). Paths below still say `feature/ui/**` until f7 ships.
+**Layer ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI lives in top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with domain peer `domain/ui` (non-Rml presentation policy).
 
 **Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
@@ -31,19 +31,19 @@ How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with 
 | **Profile / vault** | `foundation/crypto/` | unlock status, PIN policy | Argon2, secrets store |
 | **Session / prefs** | `foundation/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
 | **Localization / theme** | `foundation/i18n/`, `domain/ui/` | labels, appearance | catalogs, asset resolution |
-| **Shell / navigation** | `feature/ui/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
+| **Shell / navigation** | `gui/shell/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
 
 **UI surfaces** (presenters + RmlUi binding — *not* functional systems):
 
 | Surface | Module | Role |
 |---------|--------|------|
-| `ShellHost` | `feature/ui/` | Window chrome, pane layout, global feedback |
-| `ChatController` | `feature/ui/chat/` | Chat screen presenter |
-| `SettingsController` | `feature/ui/` | Me tab / settings presenter |
-| `ContactsController` | `feature/ui/` | Contacts tab presenter |
-| `PeoplePickerController` | `feature/ui/` | People picker presenter |
-| `PinGateController` | `feature/ui/` | PIN overlay presentation |
-| `CallController` | `feature/ui/` | In-call / ring chrome |
+| `ShellHost` | `gui/` | Window chrome, pane layout, global feedback |
+| `ChatController` | `gui/chat/` | Chat screen presenter |
+| `SettingsController` | `gui/` | Me tab / settings presenter |
+| `ContactsController` | `gui/` | Contacts tab presenter |
+| `PeoplePickerController` | `gui/` | People picker presenter |
+| `PinGateController` | `gui/` | PIN overlay presentation |
+| `CallController` | `gui/` | In-call / ring chrome |
 
 Surfaces **present** functional state and **dispatch** actions. They must not hold direct pointers to subsystems the UI contract does not name (e.g. no `Libp2pHost*` in a controller header).
 

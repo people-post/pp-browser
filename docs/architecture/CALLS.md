@@ -437,7 +437,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/messaging/calls/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
-| `src/feature/ui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
+| `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/base/messaging/CallSessionStore.*` | Persistence |

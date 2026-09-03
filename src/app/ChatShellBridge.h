@@ -1,8 +1,8 @@
 #pragma once
 
-#include "feature/ui/ChatChromeSync.h"
-#include "feature/ui/ChatSurfaceSnapshot.h"
-#include "feature/ui/shell/ShellChromeApplyPorts.h"
+#include "gui/ChatChromeSync.h"
+#include "gui/ChatSurfaceSnapshot.h"
+#include "gui/shell/ShellChromeApplyPorts.h"
 
 namespace pbr {
 

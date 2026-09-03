@@ -128,7 +128,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
 | Storage | paths + profile size; reset wipes profile dir | — |
 
-On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Runtime apply is owned by [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (service slices) and `ChatController` (LLM/agent config listener) — not by settings controllers calling hubs directly.
+On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Runtime apply is owned by [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (service slices) and `ChatController` (LLM/agent config listener) — not by settings controllers calling hubs directly.
 
 ### Machine config keys (`config.json`)
 

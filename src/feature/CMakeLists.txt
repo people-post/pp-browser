@@ -1,11 +1,10 @@
 include(PpBrowserFeature)
 
 # Acyclic module order: each library links only lower layers.
-# End-state names: messaging≈conversations; ui absorbs chat (+ shell/contacts bands).
+# Presenters live in src/gui/ (F008); feature stays Rml-free at the module edge.
 add_subdirectory(settings)
 add_subdirectory(ai)
 add_subdirectory(messaging)
-add_subdirectory(ui)
 
 set(PP_FEATURE_MODULE_LIBS
   pp_feature_settings
@@ -13,7 +12,6 @@ set(PP_FEATURE_MODULE_LIBS
   pp_feature_ai_bindings
   pp_feature_ai
   pp_feature_messaging
-  pp_feature_ui
 )
 
 add_library(pp_feature INTERFACE)

@@ -1,4 +1,4 @@
-# Source layers: common → foundation → domain → feature → app.
+# Source layers: common → foundation → domain → feature → gui → app.
 # Convenience INTERFACE `pp_base` = foundation + Amp + domain peers (feature/app link).
 add_subdirectory(common)
 add_subdirectory(foundation)
@@ -64,6 +64,7 @@ endforeach()
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)
+  add_subdirectory(gui)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

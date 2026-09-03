@@ -65,7 +65,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names); separate from gui lift |
 | Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
 | Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — staging for gui |
-| Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | Name **gui** (not ui); ban feature→gui |
+| Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | **Done (f7v1)** — `pp_gui`; ban feature→gui |
 | Top-level `pp_feature_shell` / `contacts` | — | **Superseded** by `src/gui/` bands |
 | App named wirers | f6 | **Done (f6v1)** |
 | Inbox presentation split | last | Highest product risk |
@@ -74,5 +74,5 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 `MessagingHub`, `MessagingFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
 
-**Move with f7 (to `gui/`, not domain):** Rml presenters / shell / chrome controllers currently under `feature/ui/`.
+**Moved (f7v1):** Rml presenters / shell / chrome controllers under `src/gui/`.
 

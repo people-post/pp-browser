@@ -152,7 +152,7 @@ feature/
 - Do **not** rename `domain/messaging` to `domain/chat` (call control types stay in the messaging peer).
 - Do **not** name the product UI layer `src/ui/` — that collides with `domain/ui` ([F008](#f008--gui-layer-above-feature)).
 
-**Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`MessagingHub` → `ConversationsHub`) track the folder rename, not f4v1. Today’s `feature/ui/**` is the staging area for the `gui` lift.
+**Migration note:** Until renames ship, docs may say “`feature/messaging` = conversations (legacy path).” Class renames (`MessagingHub` → `ConversationsHub`) track the folder rename, not f4v1. `feature/ui/**` lifted to `src/gui/**` (f7v1).
 
 **Consequences:** f4/f5/f6 plan toward conversations/calls; **f7** lifts presenters into `src/gui/`. Promote into SRC_LAYOUT when folders actually move.
 
@@ -161,7 +161,7 @@ feature/
 ## F008 — `gui` layer above feature
 
 **Date:** 2026-09-03  
-**Status:** accepted (target layout); path not shipped yet
+**Status:** accepted; **path shipped (f7v1)**
 
 **Context:** [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) treats Rml presenters and functional hubs as two systems. Nesting shell/contacts/chat under `feature/ui/` (f5) improved discoverability but left presenters as a **peer** of messaging/ai in the same layer while depending on them — wrong mental model and a name clash with `domain/ui` (non-Rml policy).
 
@@ -191,4 +191,4 @@ feature/
 - No top-level `src/shell` between app and gui.
 - No simultaneous messaging→conversations rename in the lift PR.
 
-**Consequences:** Next structural phase is **f7** ([PHASES.md](PHASES.md)). Until then, paths remain `feature/ui/**`; docs say “staging for `gui`.”
+**Consequences:** f7v1 landed `src/gui/` + `pp_gui`. Remaining: optional gui bands; conversations/calls renames stay separate.

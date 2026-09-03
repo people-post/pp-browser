@@ -75,7 +75,7 @@ feature/
 ### GUI ([F008](DECISIONS.md#f008--gui-layer-above-feature))
 
 ```
-gui/               # TODAY staged as feature/ui/** — lift in f7
+gui/               # shipped f7v1
   shell/           # ShellHost, gestures, feedback, RmlMount, chrome ports
   contacts/        # Contacts + PeoplePicker
   chat/            # ChatController + screen helpers (no top-level feature/chat)
@@ -92,7 +92,7 @@ One aggregate `pp_gui` first; split libs later only if cycles allow.
 |-------|-----------|-------|
 | `feature/messaging` | `feature/conversations` | Rename when hub ownership is clean |
 | `feature/messaging` Call\* | `feature/calls` | [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level): nest first |
-| `feature/ui/**` (incl. shell/contacts/chat) | `src/gui/**` | [F008](DECISIONS.md#f008--gui-layer-above-feature); name **gui** not ui |
+| `feature/ui/**` (legacy) | `src/gui/**` | **Done f7v1** ([F008](DECISIONS.md#f008--gui-layer-above-feature)) |
 | `feature/chat` | removed | Absorbed into gui/chat (via f5 staging) |
 | `domain/ui` | keep | Policy peer; not the GUI layer |
 
