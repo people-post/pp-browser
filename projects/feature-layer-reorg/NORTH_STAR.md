@@ -1,13 +1,17 @@
-# Working North Star — feature / app
+# Working North Star — feature / app / gui
 
-**Status:** end-state names locked in [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names); paths migrate in phases  
+**Status:** end-state names in [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) + **`gui` layer** in [F008](DECISIONS.md#f008--gui-layer-above-feature); paths migrate in phases  
 **Promote** folder renames into [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md) when they ship.
 
-Layer north star from SRC_LAYOUT still holds:
+Layer north star:
 
-> `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
+> `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them **without Rml**; **`gui` presents** them; `app` constructs the graph.
 
-This file refines **feature** and **app**.
+```
+app → gui → feature → domain → foundation → common
+```
+
+(`domain/ui` stays a **domain peer** for non-Rml presentation policy — not the GUI layer.)
 
 ---
 
@@ -19,7 +23,8 @@ This file refines **feature** and **app**.
 | **Conversations** | Threads, sync, attachments, groups — product hub |
 | **Call session** | Ring → accept → keys → topology → leave |
 | **Call media** | A/V frames, codecs, legs |
-| **Chat** | User-facing screen label only — **not** a top-level feature folder |
+| **Chat** | User-facing screen label only — **not** a layer folder name |
+| **GUI** | Product Rml/SDL UI layer (`src/gui/`) — presenters, shell, chrome |
 
 **conversations ∥ call session** → both use **delivery**; call session drives **call media**.
 
@@ -33,10 +38,10 @@ This file refines **feature** and **app**.
 | `people` | Contacts/identity helpers |
 | `mesh` | Amp host, reachability, L4 call-media / media-relay |
 | `media` | Call-media capture/playback/codecs only |
-| `ui` | Pure presentation policy (no Rml controllers) |
+| `ui` | Pure presentation **policy** (no Rml controllers) — **not** `src/gui` |
 | `net` / `ai` | Unchanged |
 
-Do **not** add `domain/calls`.
+Do **not** add `domain/calls`. Do **not** rename this peer to collide with the GUI layer.
 
 ---
 
@@ -44,16 +49,20 @@ Do **not** add `domain/calls`.
 
 | Layer | Put it here when… | Not when… |
 |-------|-------------------|-----------|
-| **domain** | Owns one store, codec, client, or pure policy | Coordinates several peers or owns UI lifecycle |
-| **feature** | Coordinates workflows or screens | Single-purpose engine another feature would want alone |
-| **app** | Lifetimes + cross-controller wiring | Product policy or I/O engines |
+| **domain** | Owns one store, codec, client, or pure policy | Coordinates several peers or owns Rml lifecycle |
+| **feature** | Coordinates workflows / hubs / sessions (headless-capable) | Owns documents, data models, or chrome gestures |
+| **gui** | Owns a screen, shell chrome, Rml bind, or UI-only helper | Hub/session engines, mesh, stores |
+| **app** | Lifetimes + cross-surface wiring | Product policy or I/O engines |
 | **common** | Second domain peer must compile against the name | Only one peer needs it |
 
-**Cross-peer rule:** two of `{people, messaging, net, mesh, media, ui}` → feature or `common` contracts — never domain→domain.
+**Cross-peer rule:** two of `{people, messaging, net, mesh, media, ui}` → feature or `common` contracts — never domain→domain.  
+**Layer rule:** `feature` must not `#include "gui/…"` once the lift ships ([F008](DECISIONS.md#f008--gui-layer-above-feature)).
 
 ---
 
-## End-state feature map ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
+## End-state maps
+
+### Feature (orchestration only)
 
 ```
 feature/
@@ -61,11 +70,21 @@ feature/
   ai/              # agent session, turn pipeline, tools, bindings
   conversations/   # TODAY: feature/messaging — hub, delivery, sync, groups, façade
   calls/           # call session — f4v1 nested as messaging/calls/; later top-level
-  shell/           # ShellHost, gestures, feedback, RmlMount, chrome sync (from ui)
-  contacts/        # Contacts + PeoplePicker (from ui)
-  ui/              # shared ports + presenters; includes nested chat/ band (shipped f5v1)
-                   # no top-level feature/chat/
 ```
+
+### GUI ([F008](DECISIONS.md#f008--gui-layer-above-feature))
+
+```
+gui/               # TODAY staged as feature/ui/** — lift in f7
+  shell/           # ShellHost, gestures, feedback, RmlMount, chrome ports
+  contacts/        # Contacts + PeoplePicker
+  chat/            # ChatController + screen helpers (no top-level feature/chat)
+  call/            # CallController / call chrome (optional band)
+  settings/        # SettingsController + Me sections (optional band)
+  shared/          # BadgeAggregator, FlowCoordinator, DataModelHost, …
+```
+
+One aggregate `pp_gui` first; split libs later only if cycles allow.
 
 ### Legacy → end-state
 
@@ -73,18 +92,19 @@ feature/
 |-------|-----------|-------|
 | `feature/messaging` | `feature/conversations` | Rename when hub ownership is clean |
 | `feature/messaging` Call\* | `feature/calls` | [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level): nest first |
-| `feature/chat` | fold into `feature/ui` | Presenter stays; folder name drops |
-| `feature/ui` | `shell` + `contacts` + residual `ui` | f5 |
+| `feature/ui/**` (incl. shell/contacts/chat) | `src/gui/**` | [F008](DECISIONS.md#f008--gui-layer-above-feature); name **gui** not ui |
+| `feature/chat` | removed | Absorbed into gui/chat (via f5 staging) |
+| `domain/ui` | keep | Policy peer; not the GUI layer |
 
 Intended link order (end state):
 
 ```
-settings → ai → conversations → calls → shell / contacts / ui
+feature:  settings → ai → conversations → calls
+gui:      → feature (aggregate or bands); never the reverse
+app:      → gui + feature
 ```
 
-(`chat` is not a link node.)
-
-Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversations does **not** own call session long-term.
+Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversations does **not** own call session long-term. **App** owns GUI controllers; GUI binds feature facades through ports.
 
 ---
 
@@ -98,9 +118,9 @@ Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversat
 
 ## Still open
 
-1. Exact f5 split names (`shell` vs `ui/shell`).
+1. Exact band names under `gui/` (`call/` vs residual shared; settings section home).
 2. Whether Amp *chat* delivery adapters stay under conversations or move to mesh after audit.
-3. Whether `BadgeAggregator` lives with shell or contacts.
+3. Whether `BadgeAggregator` lives under `gui/shell` or `gui/shared`.
 4. Inbox row-building vs presenter ownership.
 5. Conversations→ai inbound port vs one-way edge.
 
@@ -108,7 +128,7 @@ Ownership: **app** owns `ConversationsHub` and `CallStack` separately; conversat
 
 ## Success criteria
 
-- Vocabulary used consistently in new docs/PRs (delivery / conversations / call session / call media).
-- No new top-level `feature/chat` dependency in the plan.
-- Domain peers stay independent; CI include checks green.
-- SRC_LAYOUT + `src/feature/README.md` updated when folders actually rename/move.
+- Vocabulary used consistently (delivery / conversations / call session / call media / **gui**).
+- No new top-level `feature/chat`; no product UI layer named `src/ui/` (collides with `domain/ui`).
+- Domain peers stay independent; `feature` stays Rml-free after f7; CI include checks green.
+- SRC_LAYOUT + READMEs updated when folders actually rename/move.

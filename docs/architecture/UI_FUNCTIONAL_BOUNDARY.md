@@ -5,6 +5,8 @@
 
 How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
 
+**Layer target ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)):** product UI code moves to top-level **`src/gui/`** (`app → gui → feature → …`). The name **`gui`** avoids colliding with domain peer `domain/ui` (non-Rml presentation policy). Paths below still say `feature/ui/**` until f7 ships.
+
 **Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
 ---

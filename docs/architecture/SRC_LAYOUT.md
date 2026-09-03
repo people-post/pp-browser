@@ -4,7 +4,7 @@
 
 `src/` is organized in **product layers** (folders). Dependencies flow downward only. See [independence rules](#independence-inside-a-layer) before adding includes.
 
-**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; `app` constructs the graph.
+**North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `domain` implements independent product capabilities; `feature` composes them; **`gui` presents** them (target); `app` constructs the graph.
 
 > **Migration note (paths):** Top-level folders are `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Domain peers use `#include "domain/…"`, `pp_domain_*`. Convenience aggregate `pp_base` (foundation + Amp `pp_amp_*` + domain peers) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt) — **`src/base/` is retired.** Domain peer allowlist is empty.
 
@@ -19,8 +19,10 @@
 | Lib | [`src/lib/`](../../src/lib/) | Owned hard forks / extracted stacks (Amp via FetchContent; RmlUi via pp-cpp-ui); may use `third_party` (+ optionally `common`); not product domain |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every domain peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
 | **Domain** | [`src/domain/`](../../src/domain/) | Heavy **peer libs** (people, messaging, net, mesh, media, ai, ui) — single-purpose engines/stores/clients |
-| Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions, screens; **wires** common contracts to concrete domain types |
+| Feature | [`src/feature/`](../../src/feature/) | Orchestration: hubs, sessions; **wires** common contracts to concrete domain types (target: Rml-free) |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
+
+**Working target (not shipped):** product Rml/SDL UI lifts to [`src/gui/`](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature) (`app → gui → feature → …`). Today’s presenters remain under `feature/ui/**` as staging. Name is **`gui`** so it does not collide with domain peer `domain/ui` (non-Rml policy).
 
 ## Dependency rule
 
@@ -30,6 +32,7 @@ app → feature → domain → foundation → common → pp_common (FetchContent
                  domain  → common / lib            (contracts + forks)
 ```
 
+**Target (f7):** `app → gui → feature → domain → …` — see [F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature).
 Convenience link aggregate (not a folder layer):
 
 ```
@@ -157,7 +160,7 @@ feature/ui → domain/render
 feature/messaging → domain/mesh
 ```
 
-Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays under `src/feature/ui/shell/`.
+Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) lives under `src/feature/ui/shell/` **today** (f5 staging). **Target:** `src/gui/shell/` ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
 ## Feature subfolders
 
@@ -169,15 +172,16 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/messaging/` | Conversations hub + delivery (legacy folder name) |
 | `feature/messaging/calls/` | Call session band (f4v1) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | Settings/call/pin/emoji presenters + ports |
-| `feature/ui/shell/` | ShellHost, mount, shell ports (f5 band) |
-| `feature/ui/contacts/` | Contacts + people-picker (f5 band) |
-| `feature/ui/chat/` | ChatController + screen helpers (absorbed; no top-level `feature/chat`) |
+| `feature/ui/` | **Staging for `src/gui/`** — settings/call/pin/emoji presenters + ports |
+| `feature/ui/shell/` | ShellHost, mount, shell ports (f5 band → `gui/shell`) |
+| `feature/ui/contacts/` | Contacts + people-picker (f5 band → `gui/contacts`) |
+| `feature/ui/chat/` | ChatController + screen helpers (→ `gui/chat`; no top-level `feature/chat`) |
 
 Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
 
 ```
-settings → ai/tools → ai/bindings → ai → messaging → ui
+settings → ai/tools → ai/bindings → ai → messaging → ui   # today
+# target after f7: settings → ai → messaging(/calls); gui → feature
 ```
 
 Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
@@ -244,4 +248,4 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 2. Extract remaining cross-peer types/helpers (`net`↔messaging/people stores and relay sign helpers).
 3. Move foundation folders to `src/foundation/`; update includes/CMake. **Done.**
 4. Move domain folders to `src/domain/`; drop aggregate “base” folder. **Done** (`pp_base` remains a CMake convenience INTERFACE in `src/CMakeLists.txt`).
-5. Feature/app cleanup (peel domain leftovers; split oversized feature modules; app wirers). **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — sure peels first; end-state names in [F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names) (`conversations` / `calls`; no top-level `feature/chat`).
+5. Feature/app cleanup (peel domain leftovers; split oversized feature modules; app wirers; **lift presenters to `src/gui/`**). **In progress:** [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) — sure peels first; [F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names) (`conversations` / `calls`; no top-level `feature/chat`); [F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature) (`app → gui → feature`; name **gui** not ui).

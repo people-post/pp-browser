@@ -1,17 +1,18 @@
 # `src/feature`
 
-Product **orchestration** for pp-browser: screens, controllers, sessions, and hubs that **wire** domain peers (and foundation) into user-facing workflows.
+Product **orchestration** for pp-browser: hubs, sessions, and workflows that **wire** domain peers (and foundation). Presenters / shell live under `feature/ui/**` **today** as staging for top-level **`src/gui/`** ([F008](../../projects/feature-layer-reorg/DECISIONS.md#f008--gui-layer-above-feature)).
 
 ```
-app → feature → domain → foundation → common → pp_common
+app → gui → feature → domain → foundation → common → pp_common   # target (f7)
+app → feature → …                                              # today (ui still under feature)
 feature    ← you are here
 ```
 
-Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md)). Ongoing feature/app cleanup: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) (sure peels first; working North Star).
+Includes use `foundation/…` and `domain/…` (see [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md)). Ongoing cleanup: [`projects/feature-layer-reorg/`](../../projects/feature-layer-reorg/) (sure peels first; working North Star).
 
-**Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/`. Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
+**Rule:** dependencies flow downward only. Feature may use `foundation/`, `domain/`, `common/`, and `lib/`; it must not `#include` from `app/` (and must not `#include` from `gui/` once that layer ships). Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
-Each top-level folder (and `ai/tools`, `ai/bindings`, plus bands `messaging/calls/`, `ui/{shell,contacts,chat}/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app code. Top-level `feature/chat` is **retired** ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)).
+Each top-level folder (and `ai/tools`, `ai/bindings`, plus bands `messaging/calls/`, `ui/{shell,contacts,chat}/`) builds into **`pp_feature_<module>`** libraries. The aggregate **`pp_feature`** (`INTERFACE`) links them for app code. Top-level `feature/chat` is **retired** ([F007](../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names)). End-state product UI folder is **`gui`**, not another `ui` next to `domain/ui`.
 
 ---
 

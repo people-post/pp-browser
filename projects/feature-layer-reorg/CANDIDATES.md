@@ -56,20 +56,23 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `AmpDirectChatService.*`, `AmpChatHistoryService.*`, `AmpChatBlobService.*` | product Amp adapters (unless audit proves mesh-only) |
 | Hubs / pipelines / routers / controllers / ports | orchestration or UI seams |
 
-## structural — folder splits (f4–f6)
+## structural — folder splits (f4–f7)
 
 | Move | Depends on | Notes |
 |------|------------|-------|
 | Nest `feature/messaging/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
 | Top-level `feature/calls` | After delivery ports break Hub↔CSM cycle | End-state name per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
-| Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names) |
-| Extract `feature/shell` / `contacts` | f5 | From ui grab-bag |
+| Rename `messaging` → `conversations` | After hub ownership clean | [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names); separate from gui lift |
 | Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
-| Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — same `pp_feature_ui` |
-| Extract `feature/shell` / `contacts` libs | later | Optional top-level targets |
-| App named wirers | anytime | `WireConversations` / `WireCalls` |
-| Inbox presentation split | f6 last | Highest product risk |
+| Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — staging for gui |
+| Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | Name **gui** (not ui); ban feature→gui |
+| Top-level `pp_feature_shell` / `contacts` | — | **Superseded** by `src/gui/` bands |
+| App named wirers | f6 | **Done (f6v1)** |
+| Inbox presentation split | last | Highest product risk |
 
 ## stay feature (orchestration) — do not lower
 
-`MessagingHub`, `MessagingFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*`, UI controllers, `AgentSession`, settings apply orchestration.
+`MessagingHub`, `MessagingFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
+
+**Move with f7 (to `gui/`, not domain):** Rml presenters / shell / chrome controllers currently under `feature/ui/`.
+

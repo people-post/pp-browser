@@ -62,24 +62,37 @@ Per [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) / [F0
 
 ## f5 — Structural: split shell / contacts; absorb chat UI
 
-Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-level `feature/chat`** in the end state.
+Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-level `feature/chat`**. Bands are **staging** for the `gui` lift ([F008](DECISIONS.md#f008--gui-layer-above-feature)); do not promote to `pp_feature_shell`.
 
-- [x] Nest shell host + chrome sync under `feature/ui/shell/` (same `pp_feature_ui`; top-level `feature/shell` later)
+- [x] Nest shell host + chrome sync under `feature/ui/shell/` (same `pp_feature_ui`)
 - [x] Nest contacts + people-picker under `feature/ui/contacts/`
 - [x] Move `ChatController` (+ helpers) to `feature/ui/chat/`; retire top-level `feature/chat` + `pp_feature_chat`
 - [x] Update `check_feature_includes.sh` (ban retired `feature/chat/` path)
-- [ ] Consolidate settings UI sections toward `feature/settings` where cheap
-- [ ] ADR lock residual `ui/` vs fold into shell; promote remaining SRC_LAYOUT / RUNTIME diagrams
-- [ ] (Later) top-level `pp_feature_shell` / `pp_feature_contacts` when include graph warrants
+- [ ] Consolidate settings UI sections where cheap (toward `gui/settings` after f7, or keep under residual presenters)
+- [ ] Promote remaining SRC_LAYOUT / RUNTIME diagrams after f7 path ships
+- [x] ~~(Later) top-level `pp_feature_shell` / `pp_feature_contacts`~~ — **superseded by f7 `src/gui/`**
 
-## f6 — App wirers + soft edges (ongoing / last)
+## f6 — App wirers + soft edges (ongoing)
 
 - [x] Split `Application::Initialize` into named wirers (`WireSettings`, `WireShellPresenters`, `WireCalls`, …) — no behavior change
 - [ ] Soften conversations→ai via inbound agent port if touching MessageRouter anyway
-- [ ] Inbox presentation extraction (highest product risk — last)
+- [ ] Inbox presentation extraction (highest product risk — last / after gui lift if cheaper)
 - [ ] Demote or schedule remaining cross-peer utils only after `common` contracts exist
-- [ ] Archive or freeze this project when layout matches promoted docs
 - [x] Vocabulary / end-state names locked ([F007](DECISIONS.md#f007--vocabulary--end-state-feature-names))
+- [x] GUI layer named `gui` above feature ([F008](DECISIONS.md#f008--gui-layer-above-feature))
+
+## f7 — Lift presenters to `src/gui/` ([F008](DECISIONS.md#f008--gui-layer-above-feature))
+
+Mechanical layer lift; **no** messaging→conversations rename in the same PR.
+
+- [ ] ADR already locked ([F008](DECISIONS.md#f008--gui-layer-above-feature)); update NORTH_STAR / SRC_LAYOUT pointers when moving
+- [ ] Move `feature/ui/**` → `src/gui/**` (keep `shell/`, `contacts/`, `chat/` bands; optional `call/` / `settings/` / `shared/`)
+- [ ] Retire `pp_feature_ui`; add `pp_gui` (single aggregate first)
+- [ ] Includes: `#include "gui/…"`; app/feature CMake link `pp_gui` above feature
+- [ ] Guards: ban `feature → gui`; ban new `feature/ui/` path; allow `gui → feature`
+- [ ] Update [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) / [SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md) / `src/feature/README.md` / new `src/gui/README.md`
+- [ ] (Later) split `pp_gui_*` libs only if include graph warrants
+- [ ] Archive or freeze this project when layout matches promoted docs
 
 ---
 
@@ -91,3 +104,4 @@ Per [F007](DECISIONS.md#f007--vocabulary--end-state-feature-names): **no top-lev
 | Attachment / registration / directory key *Util* ladders | Feature wiring by nature until peels |
 | Amp chat services → mesh | Only if mesh-only after audit |
 | Mega “rename everything” PR | Violates sure-things-first |
+| Top-level `pp_feature_shell` / `pp_feature_contacts` | Superseded by `src/gui/` (F008) |
