@@ -226,6 +226,22 @@ void CallStack::WireMediaRelayDeps() {
                 return Error(punched->error.empty() ? "punch failed" : punched->error);
               }
               return {};
+            },
+            [m](const std::string& introducer_peer_key,
+                const std::string& target_peer_id) -> Roe<void> {
+              auto* punch = m->AmpPunch();
+              if (!punch || !punch->IsStarted()) {
+                return Error("amp punch unavailable");
+              }
+              auto punched = punch->TryUpgradePunch(introducer_peer_key, target_peer_id,
+                                                    punch->LocalCandidateAddrs(), 2000);
+              if (!punched) {
+                return Error(punched.error().message);
+              }
+              if (!punched->ok) {
+                return Error(punched->error.empty() ? "upgrade punch failed" : punched->error);
+              }
+              return {};
             });
         log().info << "circuit-hop reach=amp";
       }
@@ -512,6 +528,20 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
   }
   return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
 }
+
+Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
+  if (!circuit_hop_reach_) {
+    return Error("amp circuit reach required");
+  }
+  if (!config().mesh.capabilities.circuit_relay) {
+    return Error("circuit-relay disabled");
+  }
+  if (peer_key.empty()) {
+    return Error("missing call peer");
+  }
+  return circuit_hop_reach_->TryUpgradeToDirect(peer_key);
+}
+
 
 CallSessionManager* CallStack::Calls() {
   return call_sessions_.get();

@@ -110,6 +110,8 @@ public:
                                         const std::vector<std::string>& multiaddrs);
   Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
   Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
+  /** L3.25c: upgrade call-media / hop from circuit R1 to direct via ACP. */
+  Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
 
 private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;

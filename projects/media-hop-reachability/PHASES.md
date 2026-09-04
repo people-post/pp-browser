@@ -37,7 +37,7 @@ Docs: [HOLE_PUNCH.md](HOLE_PUNCH.md), [H009](DECISIONS.md#h009--amp-coordinated-
 - [x] **L3.25a (scaffolding)** — `AmpObservedAddrs` merge + MeshHost ch0 refresh; punch JSON codec (`PunchLogic`); `AmpPunchCoordinator` Start/Stop + coded `TryColdPunch` gate; advertise `/pp-browser/amp-punch/1.0.0`
 - [x] **L3.25a (complete)** — Introducer orchestration + simultaneous burst dial; A026 election + A027 teardown; seed-introducer cold compose test
 - [x] **L3.25b** — Contact introducer; address-book upsert on punch success; SoftMigrate dialability benefit
-- [ ] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
+- [x] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
 - [ ] Tests: dual-dial race, sync-window expiry → circuit fallback; no CGNAT overclaim in hard-lab
 
 ## L3.5 — Multi-hop circuit v2

@@ -2,7 +2,7 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-04 (L3.25b complete)
+**Last updated:** 2026-09-04 (L3.25c complete)
 
 ## Direction
 
@@ -25,7 +25,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 
 | Area | State |
 |------|-------|
-| **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a+b complete** — seed/contact introducer, PeerId address-book upsert, punch-before-circuit hop reach — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
+| **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a–c complete** — seed/contact introducer, PeerId upsert, punch-before-circuit, upgrade-from-circuit (R1→direct demote) — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
 | **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); parallel to punch |
 | **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green**; punch upsert flips `IsDialable` (L3.25b) |
 | **L5 directory / DHT** | Planned; closed-set for media hops |
@@ -44,6 +44,5 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 
 ## Next
 
-1. **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit — [HOLE_PUNCH.md](HOLE_PUNCH.md)
-2. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
+1. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
 3. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)

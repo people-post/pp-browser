@@ -56,8 +56,15 @@ struct BurstDialResult {
   std::string error;
 };
 
-bool PeerAlreadyConnected(pp::amp::PeerLinkManager& links, const std::string& peer_id) {
-  return !peer_id.empty() && links.CountConnectedLinksForPeerId(peer_id) > 0;
+bool PeerAlreadyConnectedDirect(pp::amp::PeerLinkManager& links, const std::string& peer_id) {
+  if (peer_id.empty()) {
+    return false;
+  }
+  // Nested/circuit carrier links must not short-circuit punch (L3.25c upgrade-from-circuit).
+  if (auto* link = links.FindLinkByPeerId(peer_id)) {
+    return link->Phase() == pp::amp::PeerLinkPhase::Connected && !link->IsCarrierBacked();
+  }
+  return false;
 }
 
 BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoordinator::IoPump io_pump,
@@ -84,7 +91,7 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
     }
     const std::string peer_id = parsed->peer_id;
 
-    if (PeerAlreadyConnected(links, peer_id)) {
+    if (PeerAlreadyConnectedDirect(links, peer_id)) {
       out.ok = true;
       out.dialed = ma;
       out.error.clear();
@@ -96,7 +103,7 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
                             peer_id.substr(0, std::min<size_t>(peer_id.size(), 12));
 
     if (auto registered = links.RegisterEndpoint(key, ma); !registered) {
-      if (PeerAlreadyConnected(links, peer_id)) {
+      if (PeerAlreadyConnectedDirect(links, peer_id)) {
         out.ok = true;
         out.dialed = ma;
         out.error.clear();
@@ -123,7 +130,7 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
     });
 
     while (Clock::now() < deadline && !wait.IsSettled()) {
-      if (PeerAlreadyConnected(links, peer_id)) {
+      if (PeerAlreadyConnectedDirect(links, peer_id)) {
         out.ok = true;
         out.dialed = ma;
         out.error.clear();
@@ -137,25 +144,40 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
     }
 
     auto dialed = wait.Wait(std::chrono::milliseconds(1), Error("punch burst dial timed out"));
-    if (dialed || PeerAlreadyConnected(links, peer_id)) {
+    // Require a non-carrier PeerLink. EnsureAssociation must not count a nested/circuit
+    // carrier Session as a punch win (L3.25c upgrade-from-circuit / A024 coexist).
+    if (PeerAlreadyConnectedDirect(links, peer_id)) {
       out.ok = true;
       out.dialed = ma;
       out.error.clear();
       return out;
+    }
+    if (dialed) {
+      if (auto* link = links.FindLink(key)) {
+        if (link->Phase() == pp::amp::PeerLinkPhase::Connected && !link->IsCarrierBacked()) {
+          out.ok = true;
+          out.dialed = ma;
+          out.error.clear();
+          return out;
+        }
+      }
+      out.error = "punch burst associated without a direct PeerLink";
+      out.dialed = ma;
+      continue;
     }
 
     // Dual-dial race: local ADP may report "assoc already open" while inbound wins A026.
     const std::string err = dialed.error().message;
     if (err.find("already open") != std::string::npos) {
       const auto race_deadline = std::min(deadline, Clock::now() + std::chrono::milliseconds(500));
-      while (Clock::now() < race_deadline && !PeerAlreadyConnected(links, peer_id)) {
+      while (Clock::now() < race_deadline && !PeerAlreadyConnectedDirect(links, peer_id)) {
         if (io_pump) {
           io_pump();
         } else {
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
       }
-      if (PeerAlreadyConnected(links, peer_id)) {
+      if (PeerAlreadyConnectedDirect(links, peer_id)) {
         out.ok = true;
         out.dialed = ma;
         out.error.clear();
@@ -180,7 +202,7 @@ void PublishIfPunchConnected(pp::amp::PeerLinkManager& links, const std::string&
       peer_id = parsed->peer_id;
     }
   }
-  if (!burst.ok && !peer_id.empty() && links.CountConnectedLinksForPeerId(peer_id) > 0) {
+  if (!burst.ok && PeerAlreadyConnectedDirect(links, peer_id)) {
     burst.ok = true;
   }
   if (!burst.ok) {
@@ -567,6 +589,20 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
                                                                 const std::string& target_peer_id,
                                                                 const std::vector<std::string>& my_addrs,
                                                                 int window_ms) {
+  return RunPunch(introducer_peer_key, target_peer_id, my_addrs, window_ms, "cold");
+}
+
+AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryUpgradePunch(const std::string& introducer_peer_key,
+                                                                   const std::string& target_peer_id,
+                                                                   const std::vector<std::string>& my_addrs,
+                                                                   int window_ms) {
+  return RunPunch(introducer_peer_key, target_peer_id, my_addrs, window_ms, "upgrade");
+}
+
+AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& introducer_peer_key,
+                                                            const std::string& target_peer_id,
+                                                            const std::vector<std::string>& my_addrs,
+                                                            int window_ms, const std::string& reason) {
   if (!started_) {
     return PunchRoe::error(Failure::Of(Err::NotStarted, "amp punch coordinator not started"));
   }
@@ -588,7 +624,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
   req.target_peer_id = target_peer_id;
   req.addrs = sanitized;
   req.window_ms = window;
-  req.reason = "cold";
+  req.reason = reason.empty() ? "cold" : reason;
   const std::string request_json = EncodePunchConnect(req);
 
   SettledWait<PunchResult, Failure> wait;

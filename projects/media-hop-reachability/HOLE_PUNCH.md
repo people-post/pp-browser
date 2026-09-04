@@ -141,7 +141,7 @@ Do not implement punch as “send more keepalives.”
 | **Docs** | This file + H009 + DESIGN/PHASES reset (Amp framing) — **this change** |
 | **L3.25a** | Addr lifecycle clarity on Amp (observed/listen/advertise); cold punch via seed introducer |
 | **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit — **done** |
-| **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit |
+| **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit — **done** |
 
 **Parallel:** [L3.5 multi-hop circuit](PHASES.md#l35--multi-hop-circuit-v2) — do not block punch on multi-hop or vice versa.
 
