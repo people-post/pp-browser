@@ -96,8 +96,15 @@ public:
   }
 
   bool IsDialable(const std::string& peer_key) const override {
-    if (amp_links_ && amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
-      return true;
+    if (amp_links_) {
+      if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
+        return true;
+      }
+      // L3.25b: successful punch may leave a Connected PeerLink under PeerId before/without
+      // a separate endpoint row — SoftMigrate should still treat that as direct-dialable.
+      if (amp_links_->IsConnected(peer_key)) {
+        return true;
+      }
     }
     // SoftMigrate hop dialability is media-relay-specific. Call-media circuit hops
     // must not mark a peer dialable for quote/attach (TryEnsureCallMediaReachable

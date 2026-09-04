@@ -1,6 +1,6 @@
 # Amp Coordinated Punch (ACP) — plan
 
-**Status:** Spec accepted; **L3.25a complete** — seed-introducer cold punch (connect/offer/candidates/sync + burst dial) with compose test.  
+**Status:** Spec accepted; **L3.25a+b complete** — seed/contact introducer cold punch, PeerId address-book upsert, SoftMigrate dialability via punch-before-circuit.
 **Stack ADR:** [H009](DECISIONS.md#h009--amp-coordinated-punch-acp)  
 **Preference order:** [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail)  
 **Underlay:** Amp UDP (D10 / A017) — not libp2p DCUtR as a product path  
@@ -140,7 +140,7 @@ Do not implement punch as “send more keepalives.”
 |-------|--------|
 | **Docs** | This file + H009 + DESIGN/PHASES reset (Amp framing) — **this change** |
 | **L3.25a** | Addr lifecycle clarity on Amp (observed/listen/advertise); cold punch via seed introducer |
-| **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit |
+| **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit — **done** |
 | **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit |
 
 **Parallel:** [L3.5 multi-hop circuit](PHASES.md#l35--multi-hop-circuit-v2) — do not block punch on multi-hop or vice versa.

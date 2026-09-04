@@ -171,6 +171,42 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
   return out;
 }
 
+
+void PublishIfPunchConnected(pp::amp::PeerLinkManager& links, const std::string& known_peer_id,
+                             BurstDialResult& burst) {
+  std::string peer_id = known_peer_id;
+  if (peer_id.empty() && !burst.dialed.empty()) {
+    if (auto parsed = pp::amp::ParseAdpMultiaddr(burst.dialed)) {
+      peer_id = parsed->peer_id;
+    }
+  }
+  if (!burst.ok && !peer_id.empty() && links.CountConnectedLinksForPeerId(peer_id) > 0) {
+    burst.ok = true;
+  }
+  if (!burst.ok) {
+    return;
+  }
+  std::string winner = burst.dialed;
+  if (winner.empty() && !peer_id.empty()) {
+    if (auto ma = links.PreferredMultiaddr(peer_id)) {
+      winner = *ma;
+    }
+  }
+  // Last resort: any endpoint record whose peer_id matches the authenticated PeerId.
+  if (winner.empty() && !peer_id.empty()) {
+    if (auto* link = links.FindLinkByPeerId(peer_id)) {
+      if (auto ma = links.PreferredMultiaddr(link->PeerKey())) {
+        winner = *ma;
+      }
+    }
+  }
+  if (winner.empty()) {
+    return;
+  }
+  PublishPunchWinnerAddrs(links, peer_id, winner);
+  burst.dialed = winner;
+}
+
 std::string ResolvePeerKey(pp::amp::PeerLinkManager& links, const std::string& peer_id) {
   if (peer_id.empty()) {
     return {};
@@ -401,13 +437,14 @@ struct AmpPunchCoordinator::Impl {
     const std::string remote_peer_id = link.RemotePeerId();
     auto session = std::make_shared<pp::amp::ChannelSession>();
     auto phase = std::make_shared<std::string>("await_first");
+    auto punch_remote_peer_id = std::make_shared<std::string>();
     session->Bind(*link.Mux(), channel_id, PunchJsonChannelPolicy(std::chrono::milliseconds{8000}),
-                  [this, session, remote_peer_id, phase](Roe<std::vector<uint8_t>> frame) {
+                  [this, session, remote_peer_id, phase, punch_remote_peer_id](Roe<std::vector<uint8_t>> frame) {
                     if (!frame || stopped.load(std::memory_order_acquire)) {
                       return false;
                     }
                     const std::string json_utf8(frame->begin(), frame->end());
-                    RunWorker(post_worker, [this, session, remote_peer_id, phase, json_utf8]() {
+                    RunWorker(post_worker, [this, session, remote_peer_id, phase, punch_remote_peer_id, json_utf8]() {
                       if (stopped.load(std::memory_order_acquire) || !links) {
                         return;
                       }
@@ -444,6 +481,7 @@ struct AmpPunchCoordinator::Impl {
                         if (io_pump) {
                           io_pump();
                         }
+                        *punch_remote_peer_id = offer->initiator_peer_id;
                         *phase = "await_sync";
                         return;
                       }
@@ -454,7 +492,25 @@ struct AmpPunchCoordinator::Impl {
                           return;
                         }
                         *phase = "bursting";
+                        // L3.25b: book remote candidate addrs under PeerId before/without burst win.
+                        for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
+                          if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                            if (!parsed->peer_id.empty()) {
+                              (void)links->RegisterEndpoint(parsed->peer_id, ma);
+                            }
+                          }
+                        }
                         auto burst = BurstDialCandidates(*links, io_pump, sync->peer_addrs, sync->window_ms);
+                        std::string remote_id = *punch_remote_peer_id;
+                        if (remote_id.empty()) {
+                          for (const std::string& ma : sync->peer_addrs) {
+                            if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                              remote_id = parsed->peer_id;
+                              break;
+                            }
+                          }
+                        }
+                        PublishIfPunchConnected(*links, remote_id, burst);
                         PunchResult result;
                         result.epoch_id = sync->epoch_id;
                         result.ok = burst.ok;
@@ -549,7 +605,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
 
   const auto read_timeout = RemainingTimeout(deadline);
   links_.EnsureAssociation(
-      introducer_peer_key, [this, introducer_peer_key, request_json, finish, session, deadline,
+      introducer_peer_key, [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline,
                             read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
         if (!assoc) {
           finish(PunchRoe::error(WrapLinkFailure(assoc.error())));
@@ -557,7 +613,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
         }
         links_.OpenChannel(
             introducer_peer_key, kAmpPunchProtocolId, PunchJsonChannelPolicy(read_timeout),
-            [this, introducer_peer_key, request_json, finish, session, deadline,
+            [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline,
              read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
               if (!channel) {
                 finish(PunchRoe::error(WrapLinkFailure(channel.error())));
@@ -579,7 +635,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
               }
               session->Bind(
                   *link->Mux(), *channel, PunchJsonChannelPolicy(read_timeout),
-                  [this, finish](Roe<std::vector<uint8_t>> frame) {
+                  [this, finish, target_peer_id](Roe<std::vector<uint8_t>> frame) {
                     if (!frame) {
                       finish(PunchRoe::error(
                           Failure::Of(Err::ProtocolError, "punch: failed to read introducer frame")));
@@ -600,6 +656,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
                         return false;
                       }
                       if (result->ok) {
+                        PublishPunchWinnerAddrs(links_, target_peer_id, result->winner_multiaddr);
                         finish(*result);
                       } else {
                         finish(PunchRoe::error(Failure::Of(
@@ -614,8 +671,16 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::strin
                             Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
                         return false;
                       }
+                      for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
+                        if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                          if (!parsed->peer_id.empty()) {
+                            (void)links_.RegisterEndpoint(parsed->peer_id, ma);
+                          }
+                        }
+                      }
                       auto burst =
                           BurstDialCandidates(links_, io_pump_, sync->peer_addrs, sync->window_ms);
+                      PublishIfPunchConnected(links_, target_peer_id, burst);
                       PunchResult result;
                       result.epoch_id = sync->epoch_id;
                       result.ok = burst.ok;
