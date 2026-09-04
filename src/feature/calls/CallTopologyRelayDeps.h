@@ -72,6 +72,11 @@ public:
   virtual Roe<void> TryEnsureHopReachable(const std::string& hop_peer_id) = 0;
   /** Reach a call peer for 1:1 call-media when not directly dialable. */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
+  /** L3.25c: punch via circuit R1 as introducer, then demote the circuit hop. */
+  virtual Roe<void> TryUpgradeToDirect(const std::string& peer_key) {
+    (void)peer_key;
+    return Error("circuit upgrade not available");
+  }
 };
 
 /** Amp-only dial registry (PeerLinkManager + AmpCircuitHopRegistry). */
@@ -96,8 +101,15 @@ public:
   }
 
   bool IsDialable(const std::string& peer_key) const override {
-    if (amp_links_ && amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
-      return true;
+    if (amp_links_) {
+      if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
+        return true;
+      }
+      // L3.25b: successful punch may leave a Connected PeerLink under PeerId before/without
+      // a separate endpoint row — SoftMigrate should still treat that as direct-dialable.
+      if (amp_links_->IsConnected(peer_key)) {
+        return true;
+      }
     }
     // SoftMigrate hop dialability is media-relay-specific. Call-media circuit hops
     // must not mark a peer dialable for quote/attach (TryEnsureCallMediaReachable
@@ -133,9 +145,11 @@ private:
 class CircuitHopReachClient final : public ICircuitHopReach {
 public:
   CircuitHopReachClient(std::function<Roe<void>(const std::string&)> try_media_hop_reach,
-                        std::function<Roe<void>(const std::string&)> try_call_media_reach)
+                        std::function<Roe<void>(const std::string&)> try_call_media_reach,
+                        std::function<Roe<void>(const std::string&)> try_upgrade = {})
       : try_media_hop_reach_(std::move(try_media_hop_reach)),
-        try_call_media_reach_(std::move(try_call_media_reach)) {}
+        try_call_media_reach_(std::move(try_call_media_reach)),
+        try_upgrade_(std::move(try_upgrade)) {}
 
   Roe<void> TryEnsureHopReachable(const std::string& hop_peer_id) override {
     if (!try_media_hop_reach_) {
@@ -151,9 +165,17 @@ public:
     return try_call_media_reach_(peer_key);
   }
 
+  Roe<void> TryUpgradeToDirect(const std::string& peer_key) override {
+    if (!try_upgrade_) {
+      return Error("circuit upgrade not available");
+    }
+    return try_upgrade_(peer_key);
+  }
+
 private:
   std::function<Roe<void>(const std::string&)> try_media_hop_reach_;
   std::function<Roe<void>(const std::string&)> try_call_media_reach_;
+  std::function<Roe<void>(const std::string&)> try_upgrade_;
 };
 
 } // namespace pbr

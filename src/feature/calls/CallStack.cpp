@@ -9,6 +9,7 @@
 #include "domain/people/IdentityStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/reachability/PunchLogic.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
@@ -180,9 +181,68 @@ void CallStack::WireMediaRelayDeps() {
       if (!circuit) {
         circuit_hop_reach_.reset();
       } else {
+        IChatPeerLinks* punch_links = &circuit->links;
         circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
             circuit->tunnel, circuit->hops, circuit->links, [m]() { m->Tick(); },
-            [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); });
+            [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
+            [this, m, punch_links](const std::string& target_peer_id) -> Roe<void> {
+              auto* punch = m->AmpPunch();
+              if (!punch || !punch->IsStarted()) {
+                return Error("amp punch unavailable");
+              }
+              std::vector<std::string> contact_ids;
+              if (deps_.contacts) {
+                if (auto listed = deps_.contacts->List()) {
+                  for (const auto& hop : CollectContactHopCandidates(*listed)) {
+                    if (!hop.peer_id.empty()) {
+                      contact_ids.push_back(hop.peer_id);
+                    }
+                  }
+                }
+              }
+              MeshConfig mesh_cfg = config().mesh;
+              NormalizeMeshConfig(mesh_cfg);
+              std::vector<std::string> seed_ids;
+              for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+                if (!hop.peer_id.empty()) {
+                  seed_ids.push_back(hop.peer_id);
+                }
+              }
+              auto intro = PickPunchIntroducer(
+                  contact_ids, seed_ids, target_peer_id,
+                  [punch_links](const std::string& id) {
+                    return punch_links->GetLinkSnapshot(id).has_endpoint;
+                  },
+                  [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
+              if (!intro) {
+                return Error("no punch introducer");
+              }
+              auto punched =
+                  punch->TryColdPunch(*intro, target_peer_id, punch->LocalCandidateAddrs(), 2000);
+              if (!punched) {
+                return Error(punched.error().message);
+              }
+              if (!punched->ok) {
+                return Error(punched->error.empty() ? "punch failed" : punched->error);
+              }
+              return {};
+            },
+            [m](const std::string& introducer_peer_key,
+                const std::string& target_peer_id) -> Roe<void> {
+              auto* punch = m->AmpPunch();
+              if (!punch || !punch->IsStarted()) {
+                return Error("amp punch unavailable");
+              }
+              auto punched = punch->TryUpgradePunch(introducer_peer_key, target_peer_id,
+                                                    punch->LocalCandidateAddrs(), 2000);
+              if (!punched) {
+                return Error(punched.error().message);
+              }
+              if (!punched->ok) {
+                return Error(punched->error.empty() ? "upgrade punch failed" : punched->error);
+              }
+              return {};
+            });
         log().info << "circuit-hop reach=amp";
       }
     } else {
@@ -468,6 +528,20 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
   }
   return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
 }
+
+Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
+  if (!circuit_hop_reach_) {
+    return Error("amp circuit reach required");
+  }
+  if (!config().mesh.capabilities.circuit_relay) {
+    return Error("circuit-relay disabled");
+  }
+  if (peer_key.empty()) {
+    return Error("missing call peer");
+  }
+  return circuit_hop_reach_->TryUpgradeToDirect(peer_key);
+}
+
 
 CallSessionManager* CallStack::Calls() {
   return call_sessions_.get();

@@ -188,7 +188,7 @@ flowchart TB
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 libp2p direct after SFU attach.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
 - Legacy ICE-fail → SFU auto-recovery remains group-only; 1:1 recovery is libp2p dial/hop Retry (mesh).
-- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack peerstore dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (in-libp2p, H001/H007).
+- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
 
 `CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes N thresholds (`ShouldUseMediaRelay` = N≥3 only) until 1:1 hop policy is retargeted under V026.
 
