@@ -20,6 +20,7 @@
 #include "feature/messaging/GroupMembershipService.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
+#include "base/messaging/PaymentPromiseStore.h"
 #include "feature/messaging/CallStack.h"
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "base/messaging/AttachmentSuppressionStore.h"
@@ -204,6 +205,7 @@ public:
   Roe<void> SendChargeRequired(const std::string& peer_identity,
                                std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_.get(); }
+  PaymentPromiseStore* PaymentPromises() const { return payment_promises_.get(); }
 
   ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);
@@ -297,6 +299,7 @@ private:
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<InitiationBillingStore> initiation_billing_;
+  std::unique_ptr<PaymentPromiseStore> payment_promises_;
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;

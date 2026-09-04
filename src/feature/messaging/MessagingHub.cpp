@@ -836,6 +836,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
+  payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
+  (void)payment_promises_->Load();
 
   {
     StartupPhase phase("MessagingHub::ReconcileOutbox");

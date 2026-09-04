@@ -47,6 +47,7 @@ Payment is not ready, but gates and wire must exist so volunteer/`0` and paid pa
 3. Persist under profile `payment_promises.json` via `PaymentPromiseStore`. Export/share of receipts can come later.
 4. **Local avoid:** `PaymentPromiseAvoid` stamps `local_avoid` on the receipt and best-effort sets matching contact `TrustLevel::Blocked`. Humans exit bad counterparties; software records verifiable facts.
 5. Settlement (Brief escrow / multi-sig / chain) and public reputation stay out of scope for this slice.
+6. `MessagingHub` owns `PaymentPromiseStore` (load with profile). `PaymentPromiseLifecycle` signs with the unlocked account ML-DSA key — still no wire/UI.
 
 ### Rationale
 

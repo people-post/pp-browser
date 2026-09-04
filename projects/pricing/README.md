@@ -14,6 +14,7 @@ Currency stub: **`pp_credit`** (display “Credits”), integer **minor units**.
 
 - Local signed payment promise + outcome receipts (`payment_promises.json`, P002)
 - Local avoid helper stamps receipt + contact `Blocked` (no public reputation yet)
+- `PaymentPromiseLifecycle` create/accept/outcome/avoid; store owned by `MessagingHub`
 - Outbound chat/call blocked when offer `> 0` (rails unavailable); localized payment errors
 - Incoming call ring: offer copy + **Accept free** / disabled **Accept & charge**
 - `MessagingHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)
