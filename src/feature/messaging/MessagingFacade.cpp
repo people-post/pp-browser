@@ -392,6 +392,51 @@ Roe<void> MessagingFacade::SendChargeRequired(const std::string& peer_identity,
   return hub_.SendChargeRequired(peer_identity, floor_minor);
 }
 
+Roe<PaymentPromise> MessagingFacade::CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params) {
+  return hub_.CreatePaymentPromiseOffer(params);
+}
+
+Roe<PaymentPromise> MessagingFacade::AcceptPaymentPromise(const std::string& promise_id) {
+  return hub_.AcceptPaymentPromise(promise_id);
+}
+
+Roe<PaymentPromise> MessagingFacade::MarkPaymentPromiseDelivering(const std::string& promise_id) {
+  return hub_.MarkPaymentPromiseDelivering(promise_id);
+}
+
+Roe<PaymentPromise> MessagingFacade::RecordPaymentPromiseOutcome(const std::string& promise_id,
+                                                                const PaymentPromiseState outcome,
+                                                                const std::string& note) {
+  return hub_.RecordPaymentPromiseOutcome(promise_id, outcome, note);
+}
+
+Roe<void> MessagingFacade::AvoidPaymentPromiseCounterparty(const std::string& promise_id) {
+  return hub_.AvoidPaymentPromiseCounterparty(promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> MessagingFacade::ListPaymentPromises() {
+  return hub_.ListPaymentPromises();
+}
+
+Roe<std::optional<PaymentPromise>> MessagingFacade::GetPaymentPromise(const std::string& promise_id) {
+  return hub_.GetPaymentPromise(promise_id);
+}
+
+bool MessagingFacade::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {
+  return hub_.ShouldAvoidPaymentCounterparty(other_account_id);
+}
+
+Roe<ThreadMessage> MessagingFacade::BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                                      const PaymentPromiseControlType type,
+                                                                      const PaymentPromise& promise,
+                                                                      const std::string& body_text) {
+  return hub_.BuildPaymentPromiseControlMessage(thread_id, type, promise, body_text);
+}
+
+Roe<PaymentPromise> MessagingFacade::IngestPaymentPromiseControlMessage(const ThreadMessage& message) {
+  return hub_.IngestPaymentPromiseControlMessage(message);
+}
+
 // --- Settings / profile helpers ---------------------------------------------
 
 ProfileIdentityView MessagingFacade::LoadProfileIdentityView() { return hub_.LoadProfileIdentityView(); }

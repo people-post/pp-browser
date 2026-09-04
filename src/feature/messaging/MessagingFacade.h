@@ -4,6 +4,9 @@
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/PaymentPromiseLifecycle.h"
+#include "base/messaging/PaymentPromiseWireCodec.h"
+#include "base/data/PaymentPromiseTypes.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
@@ -162,6 +165,22 @@ public:
   bool IsInitiationOutboundBlocked(const std::string& peer_identity);
   Roe<void> SendChargeRequired(const std::string& peer_identity,
                                std::optional<int64_t> floor_minor = std::nullopt);
+
+  // --- Payment promises (P002) -----------------------------------------------
+  Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
+  Roe<PaymentPromise> AcceptPaymentPromise(const std::string& promise_id);
+  Roe<PaymentPromise> MarkPaymentPromiseDelivering(const std::string& promise_id);
+  Roe<PaymentPromise> RecordPaymentPromiseOutcome(const std::string& promise_id, PaymentPromiseState outcome,
+                                                  const std::string& note = {});
+  Roe<void> AvoidPaymentPromiseCounterparty(const std::string& promise_id);
+  Roe<std::vector<PaymentPromise>> ListPaymentPromises();
+  Roe<std::optional<PaymentPromise>> GetPaymentPromise(const std::string& promise_id);
+  bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
+  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                       PaymentPromiseControlType type,
+                                                       const PaymentPromise& promise,
+                                                       const std::string& body_text);
+  Roe<PaymentPromise> IngestPaymentPromiseControlMessage(const ThreadMessage& message);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);

@@ -1,4 +1,8 @@
 #include "feature/messaging/MessagingHub.h"
+#include "base/messaging/PaymentPromiseLifecycle.h"
+#include "base/messaging/PaymentPromiseAvoid.h"
+#include "base/messaging/PaymentPromiseWireCodec.h"
+#include "common/ValueJson.h"
 
 #include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/GroupInviteGate.h"
@@ -1554,6 +1558,102 @@ Roe<void> MessagingHub::SendChargeRequired(const std::string& peer_identity,
     return Error("Messaging not ready");
   }
   return p2p_->SendChargeRequired(peer_identity, floor_minor);
+}
+
+Roe<PaymentPromise> MessagingHub::CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::CreateOffer(*payment_promises_, Identity(), params);
+}
+
+Roe<PaymentPromise> MessagingHub::AcceptPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::Accept(*payment_promises_, Identity(), promise_id);
+}
+
+Roe<PaymentPromise> MessagingHub::MarkPaymentPromiseDelivering(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::MarkDelivering(*payment_promises_, promise_id);
+}
+
+Roe<PaymentPromise> MessagingHub::RecordPaymentPromiseOutcome(const std::string& promise_id,
+                                                             const PaymentPromiseState outcome,
+                                                             const std::string& note) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::RecordOutcome(*payment_promises_, Identity(), promise_id, outcome, note);
+}
+
+Roe<void> MessagingHub::AvoidPaymentPromiseCounterparty(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::AvoidCounterparty(*payment_promises_, Contacts(), Identity(), promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> MessagingHub::ListPaymentPromises() const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->List();
+}
+
+Roe<std::optional<PaymentPromise>> MessagingHub::GetPaymentPromise(const std::string& promise_id) const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->Get(promise_id);
+}
+
+bool MessagingHub::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {
+  if (!payment_promises_ || other_account_id.empty()) {
+    return false;
+  }
+  auto local = Identity().GetAccountId();
+  if (!local) {
+    return false;
+  }
+  return PaymentPromiseAvoid::ShouldAvoid(*payment_promises_, Contacts(), *local, other_account_id);
+}
+
+Roe<ThreadMessage> MessagingHub::BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                                   const PaymentPromiseControlType type,
+                                                                   const PaymentPromise& promise,
+                                                                   const std::string& body_text) {
+  return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
+}
+
+Roe<PaymentPromise> MessagingHub::IngestPaymentPromiseControlMessage(const ThreadMessage& message) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  auto type = PaymentPromiseWireCodec::ControlTypeFromMessage(message);
+  if (!type) {
+    return Error("not a payment promise control message");
+  }
+  auto root = TryParseObject(message.payload_json);
+  if (!root) {
+    return Error("invalid payment promise control payload");
+  }
+  auto detail = root->getString("detail");
+  if (!detail || detail->empty()) {
+    return Error("payment promise control missing detail");
+  }
+  auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail);
+  if (!decoded) {
+    return decoded.error();
+  }
+  auto saved = payment_promises_->Upsert(*decoded);
+  if (!saved) {
+    return saved.error();
+  }
+  return *decoded;
 }
 
 Roe<void> MessagingHub::RotateBriefLlmKey() {

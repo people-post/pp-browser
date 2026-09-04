@@ -21,6 +21,8 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/PaymentPromiseStore.h"
+#include "base/messaging/PaymentPromiseLifecycle.h"
+#include "base/messaging/PaymentPromiseWireCodec.h"
 #include "feature/messaging/CallStack.h"
 #include "base/messaging/AttachmentDownloadPolicy.h"
 #include "base/messaging/AttachmentSuppressionStore.h"
@@ -206,6 +208,23 @@ public:
                                std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_.get(); }
   PaymentPromiseStore* PaymentPromises() const { return payment_promises_.get(); }
+
+  /** P002: local signed payment-promise lifecycle (no settlement rails). */
+  Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
+  Roe<PaymentPromise> AcceptPaymentPromise(const std::string& promise_id);
+  Roe<PaymentPromise> MarkPaymentPromiseDelivering(const std::string& promise_id);
+  Roe<PaymentPromise> RecordPaymentPromiseOutcome(const std::string& promise_id, PaymentPromiseState outcome,
+                                                  const std::string& note = {});
+  Roe<void> AvoidPaymentPromiseCounterparty(const std::string& promise_id);
+  Roe<std::vector<PaymentPromise>> ListPaymentPromises() const;
+  Roe<std::optional<PaymentPromise>> GetPaymentPromise(const std::string& promise_id) const;
+  bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
+  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                       PaymentPromiseControlType type,
+                                                       const PaymentPromise& promise,
+                                                       const std::string& body_text);
+  /** Upsert a remote signed receipt from an inbound control message. */
+  Roe<PaymentPromise> IngestPaymentPromiseControlMessage(const ThreadMessage& message);
 
   ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);

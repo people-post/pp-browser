@@ -37,6 +37,7 @@ pp_browser_add_base_library(pp_base_messaging
     PaymentPromiseCodec.cpp
     PaymentPromiseStore.cpp
     PaymentPromiseLifecycle.cpp
+    PaymentPromiseWireCodec.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     MessagingJson.cpp
