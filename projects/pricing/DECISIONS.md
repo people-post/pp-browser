@@ -33,3 +33,25 @@ Payment is not ready, but gates and wire must exist so volunteer/`0` and paid pa
 - Mesh N010 / N017 / N019 / N020; calls V022 / V023  
 - [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)  
 - [NETWORKING.md](../../docs/architecture/NETWORKING.md) settlement note  
+
+
+## P002 — Local signed payment promise receipts + avoid
+
+**Date:** 2026-09-04  
+**Status:** Accepted (foundation slice)
+
+### Decision
+
+1. **Early artifact** for payment-before-service is a **local signed `PaymentPromise` receipt** (promise + terminal outcome), not escrow rails and not on-chain service validation.
+2. **Canonical ML-DSA-65 signatures** cover promise fields and outcome fields separately; `local_avoid` is never part of signed bytes.
+3. Persist under profile `payment_promises.json` via `PaymentPromiseStore`. Export/share of receipts can come later.
+4. **Local avoid:** `PaymentPromiseAvoid` stamps `local_avoid` on the receipt and best-effort sets matching contact `TrustLevel::Blocked`. Humans exit bad counterparties; software records verifiable facts.
+5. Settlement (Brief escrow / multi-sig / chain) and public reputation stay out of scope for this slice.
+
+### Rationale
+
+Schema + durable signed lifecycle is the path-dependent foundation for release UI, evidence export, and later money movement. Avoid is the cheap safety valve.
+
+### Cross-links
+
+- Pricing P001 gates; NETWORKING settlement note; mesh N020 receipts/reputation (later)
