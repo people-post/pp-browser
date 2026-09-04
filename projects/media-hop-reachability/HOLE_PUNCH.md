@@ -1,6 +1,6 @@
 # Amp Coordinated Punch (ACP) — plan
 
-**Status:** Spec / ADR only — **not implemented**  
+**Status:** Spec accepted; **L3.25a scaffolding landed** (observed addrs + codec + coordinator stub). Cold-punch orchestration not yet enabled.  
 **Stack ADR:** [H009](DECISIONS.md#h009--amp-coordinated-punch-acp)  
 **Preference order:** [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail)  
 **Underlay:** Amp UDP (D10 / A017) — not libp2p DCUtR as a product path  

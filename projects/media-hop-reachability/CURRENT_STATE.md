@@ -2,7 +2,7 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-04
+**Last updated:** 2026-09-04 (L3.25a scaffolding)
 
 ## Direction
 
@@ -25,7 +25,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 
 | Area | State |
 |------|-------|
-| **L3.25 Amp Coordinated Punch** | Spec done — [HOLE_PUNCH.md](HOLE_PUNCH.md); implement L3.25a–c |
+| **L3.25 Amp Coordinated Punch** | Spec done; **scaffolding landed** (`AmpObservedAddrs`, `PunchLogic`, `AmpPunchCoordinator` stub). Cold-punch orchestration still open — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
 | **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); parallel to punch |
 | **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green**; punch benefit TBD |
 | **L5 directory / DHT** | Planned; closed-set for media hops |
