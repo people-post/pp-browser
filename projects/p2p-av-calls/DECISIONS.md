@@ -542,7 +542,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 |-------|------|
 | **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
 | **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
-| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in-libp2p** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather; punch planned H009). |
 | **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
 | **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
 | **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |

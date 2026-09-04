@@ -7,7 +7,7 @@
 
 ## Overview
 
-The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile defaults to **consume-only**, with **call-scoped listen on Wi‑Fi** when in an active call (N025). Hosting on desktop is a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside libp2p.
+The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile defaults to **consume-only**, with **call-scoped listen on Wi‑Fi** when in an active call (N025). Hosting on desktop is a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back, planned Amp Coordinated Punch) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside the Amp mesh stack.
 
 ```mermaid
 flowchart TB
@@ -37,7 +37,7 @@ flowchart TB
 | Layer | Owns |
 |-------|------|
 | **p2p-mesh (this doc)** | Role, capabilities, config, Me → Network UI, relay **policy** (who, scope, quotes, settle), `pp-node` packaging |
-| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: peerstore, Identify, circuit evolution, `IsPeerDialable` |
+| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: addr book, ch0 ads, dial-back/UPnP, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
 | **[RELAY_SCOPE.md](RELAY_SCOPE.md)** | Scope tags, escalation, bridge score, provider caps |
 | **[p2p-av-calls](../p2p-av-calls/)** | Call lifecycle; SoftMigrate **consumes** ranked hops |
 | **HTTP Brief** | Message inbox durability when peer paths fail |
@@ -278,7 +278,7 @@ Do **not** show scary “You are behind a firewall” as a hard fact. Infer soft
 | Seed dial | Can we reach bootstrap? |
 | Inbound seen | Has any remote connected inbound? |
 | Dial-back | Seed / probe peer dial-back (“can you open a stream to me?”) — `pp-node` feature |
-| Later | AutoNAT-style observed addrs; hole punch; circuit-relay when stuck outbound-only |
+| Later | AutoNAT-style observed addrs; **Amp Coordinated Punch** ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md)); circuit-relay when stuck outbound-only |
 
 Stack implementation details: [media-hop-reachability](../media-hop-reachability/DESIGN.md).
 
@@ -495,7 +495,7 @@ Code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md). Networ
 | **Contribution UX** | Light thanks/stats for volunteer nodes |
 | **Multi-hop circuit v2** | [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) |
 | **DHT** | Later than circuit/reachability for most UX paths |
-| **Hole punch** | DCUtR-class when fork allows |
+| **Hole punch** | Amp Coordinated Punch — [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) (H009); parallel to multi-hop |
 
 ---
 

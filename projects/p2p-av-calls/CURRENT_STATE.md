@@ -14,7 +14,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | ADRs | V001–**V034** |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
-| Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
+| Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
 | **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed; gtest `call_lifecycle_test` |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
