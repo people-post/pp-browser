@@ -137,12 +137,15 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
 
     auto history = std::make_unique<AmpChatHistoryService>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
                                                            worker);
-    history->Start();
-    peer_history_ = std::move(history);
-
+    history->Start(/*register_handler=*/false);
     auto chat = std::make_unique<AmpDirectChatService>(*amp_links_, amp_io_pump, worker);
+    chat->SetHistoryInbound([hist = history.get()](std::shared_ptr<pp::amp::ChannelSession> session,
+                                                   std::vector<uint8_t> body) {
+      hist->ServeInbound(std::move(session), std::move(body));
+    });
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     chat->Start();
+    peer_history_ = std::move(history);
     direct_chat_ = std::move(chat);
     log().info << "direct chat/history/blob transport=amp";
   } else {

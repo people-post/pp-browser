@@ -50,13 +50,13 @@
 
 ## Landed (L4 chat — D5)
 
-- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/chat/1.0.0` and `/pp-browser/chat-history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/rpc/1.0.0` and `/pp-browser/rpc/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
 - `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
 - `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
 
 ## Landed (L4 call-media — D6)
 
-- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
+- `CallMediaLegCoordinator` — `/pp-browser/realtime/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
 - Dual-dial glare (L4): higher base58 PeerId keeps outbound; lower yields and adopts inbound
 - L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe ([A027](DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
 - `AdoptClientChannel` must not touch `Session` after `sessions.erase` (parent-only destroy / no use-after-erase)
@@ -155,7 +155,7 @@
 
 ## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
 
-- **`AmpChatBlobService`** — `/pp-browser/chat-blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
+- **`AmpChatBlobService`** — `/pp-browser/blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
 - **Amp UDP accept** always enabled
 - **When Amp starts:** Amp L4 coords own dial-back + circuit/media-relay hosting (no TCP Identify/DialBack)
 - **Deleted** transitional TCP-hello Opus dogfood: `CallMediaAdpDogfood.h`, `CallMediaAdpPath`, `CallMediaAdpKey`, hello `adp_*` fields
@@ -188,7 +188,7 @@
 
 ## Landed (D8 — Amp dial-back + reachability chrome)
 
-- **`AmpDialBackService`** — same JSON probe as TCP DialBack over Amp ChannelSession; MeshHost owns + advertises `/pp-browser/dial-back/1.0.0`
+- **`AmpDialBackService`** — same JSON probe as TCP DialBack over Amp ChannelSession; MeshHost owns + advertises `/pp-browser/reach/1.0.0`
 - **`ReachabilityService`** restored — seed dial (ADP bootstrap) + dial-back + optional UPnP UDP; Me→Network / `pp-node --status` / startup probe
 - **`BuildAmpReachabilityProbeTargets`** — public IPv4 + UPnP external as ADP MAs
 - **Probes restored (Amp):** `pp-node-probe` (l1/fanout/cap/soak) + `pp-call-probe` (direct/hop/chat)

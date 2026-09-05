@@ -41,7 +41,7 @@ When building the current product, satisfy these so **`[later]`** features plug 
 | **Populate full `sync_state` watermarks in v6** | `loaded_min_seq` / `loaded_max_seq` needed for history backfill |
 | **Implement `GetMessagesBySeqRange` in v6** | Store query for tail/gap/responder serve (D060) |
 | **Implement `FetchChatTargetMessages` in v6** (D058) | Feature-layer: tail, gap, manual sync, scroll backfill share one fetch + ingest path |
-| **Peer-direct history protocol** (D060) | libp2p `/pp-browser/chat-history/1.0.0`; relay D027 fallback |
+| **Peer-direct history protocol** (D060) | libp2p `/pp-browser/rpc/1.0.0`; relay D027 fallback |
 | **Authoritative empty gap close** (D061, D067) | Never-published seq after successful empty fetch — not compromised; guard when higher seq already held; late fill after tail close |
 | **Inbound find-only (private); public auto-create (D080)** | **`e2e`:** outbound shell only; inbound without row → reject. **`e2e_public`:** auto-create on first decrypt |
 | **Compromised thread freeze** (D068) | Outbox retry disabled; gap sync paused; epoch bump cancels old-epoch pending |
@@ -859,7 +859,7 @@ Ingest: authorized backfill only — seq in `(history_floor_seq, loaded_min_seq)
 
 ### Peer-direct history fetch (D060)
 
-libp2p stream protocol **`/pp-browser/chat-history/1.0.0`**. Semantics mirror D027; only transport differs.
+libp2p stream protocol **`/pp-browser/rpc/1.0.0`**. Semantics mirror D027; only transport differs.
 
 **Request** (UTF-8 JSON, requester signs canonical bytes or uses established libp2p identity binding):
 

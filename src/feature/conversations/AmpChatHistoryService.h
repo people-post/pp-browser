@@ -7,7 +7,11 @@
 #include "domain/net/ServiceClients.h"
 #include "domain/people/IdentityStore.h"
 
+#include "amp/L3/ChannelSession.h"
+
+#include <cstdint>
 #include <functional>
+#include <vector>
 #include <memory>
 #include <string>
 #include "common/PbrCompat.h"
@@ -27,8 +31,12 @@ public:
   AmpChatHistoryService(const AmpChatHistoryService&) = delete;
   AmpChatHistoryService& operator=(const AmpChatHistoryService&) = delete;
 
-  void Start();
+  /** When register_handler is false, inbound is served only via ServeInbound (rpc demux). */
+  void Start(bool register_handler = true);
   void Stop();
+
+  /** Shared `/pp-browser/rpc/1.0.0` demux entry — already-bound session + first DATA body. */
+  void ServeInbound(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body);
 
   void RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
 

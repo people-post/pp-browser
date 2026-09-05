@@ -232,7 +232,7 @@ Bubble states: `uploading` → `sent` / `failed`. Failed delivery leaves no “s
 | **Outbound blob** | Peer-direct when reachable → else CDN PUT+retain |
 | **Inbound missing blob** | Local hash hit → peer-direct by `content_hash` → CDN GET if `url` still valid → failed UI |
 
-The small **attachment envelope** (`ChatPayload`) continues on the normal message send path (already direct-first, relay fallback). A new libp2p protocol (proposed `/pp-browser/chat-blob/1.0.0`) carries ciphertext or plaintext-hash-authenticated bytes — exact framing in a6 design notes; authz = same chat relationship as history sync.
+The small **attachment envelope** (`ChatPayload`) continues on the normal message send path (already direct-first, relay fallback). A new libp2p protocol (proposed `/pp-browser/blob/1.0.0`) carries ciphertext or plaintext-hash-authenticated bytes — exact framing in a6 design notes; authz = same chat relationship as history sync.
 
 **CDN role:** Offline / unreachable peers, group fan-out durability window, and fallback when peer transfer fails — **not** long-term archive ([R002](#r002--relay-is-delivery-only-local-is-source-of-truth)).
 

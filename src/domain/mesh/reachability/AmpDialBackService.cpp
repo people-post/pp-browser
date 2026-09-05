@@ -139,6 +139,46 @@ struct AmpDialBackService::Impl {
     }
   }
 
+    void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
+    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
+      if (stopped.load(std::memory_order_acquire) || !links) {
+        return;
+      }
+      DialBackProbeResult result;
+      const std::string json_utf8(body.begin(), body.end());
+      auto root = TryParseObject(json_utf8);
+      if (!root) {
+        result.error = "invalid dial-back json";
+      } else {
+        const std::string op = root->getString("op").value_or("");
+        if (op != "probe") {
+          result.error = "unsupported op";
+        } else {
+          std::vector<std::string> targets;
+          if (const Array* addrs = root->getArray("target_multiaddrs")) {
+            for (const auto& item : addrs->elements) {
+              if (auto s = asString(item)) {
+                targets.push_back(*s);
+              }
+            }
+          }
+          const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
+          result = DialAmpTargets(*links, io_pump, targets, timeout_ms);
+        }
+      }
+      Object response;
+      response.set("v", int64_t{1});
+      response.set("ok", result.ok);
+      response.set("dialed", result.dialed);
+      response.set("error", result.error);
+      (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
+      if (io_pump) {
+        io_pump();
+      }
+      session->Close();
+    });
+  }
+
   void HandleInboundOnLink(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links) {
       return;
@@ -149,45 +189,7 @@ struct AmpDialBackService::Impl {
                     if (!frame || stopped.load(std::memory_order_acquire)) {
                       return false;
                     }
-                    auto body = std::move(*frame);
-                    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
-                      if (stopped.load(std::memory_order_acquire) || !links) {
-                        return;
-                      }
-                      DialBackProbeResult result;
-                      const std::string json_utf8(body.begin(), body.end());
-                      auto root = TryParseObject(json_utf8);
-                      if (!root) {
-                        result.error = "invalid dial-back json";
-                      } else {
-                        const std::string op = root->getString("op").value_or("");
-                        if (op != "probe") {
-                          result.error = "unsupported op";
-                        } else {
-                          std::vector<std::string> targets;
-                          if (const Array* addrs = root->getArray("target_multiaddrs")) {
-                            for (const auto& item : addrs->elements) {
-                              if (auto s = asString(item)) {
-                                targets.push_back(*s);
-                              }
-                            }
-                          }
-                          const int timeout_ms =
-                              static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
-                          result = DialAmpTargets(*links, io_pump, targets, timeout_ms);
-                        }
-                      }
-                      Object response;
-                      response.set("v", int64_t{1});
-                      response.set("ok", result.ok);
-                      response.set("dialed", result.dialed);
-                      response.set("error", result.error);
-                      (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
-                      if (io_pump) {
-                        io_pump();
-                      }
-                      session->Close();
-                    });
+                    ServeProbe(session, std::move(*frame));
                     return false;
                   });
   }
@@ -203,16 +205,25 @@ AmpDialBackService::AmpDialBackService(pp::amp::PeerLinkManager& links, IoPump i
 
 AmpDialBackService::~AmpDialBackService() { Stop(); }
 
-void AmpDialBackService::Start() {
+void AmpDialBackService::Start(bool register_handler) {
   if (started_) {
     return;
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kDialBackProtocolId,
-                            [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-                              impl->HandleInboundOnLink(link, channel_id);
-                            });
+  if (register_handler) {
+    links_.SetProtocolHandler(kDialBackProtocolId,
+                              [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
+                                impl->HandleInboundOnLink(link, channel_id);
+                              });
+  }
+}
+
+void AmpDialBackService::ServeInbound(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
+  if (!started_ || !impl_) {
+    return;
+  }
+  impl_->ServeProbe(std::move(session), std::move(body));
 }
 
 void AmpDialBackService::Stop() {

@@ -8,7 +8,7 @@
 
 AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **L4 `protocol_id` strings name conversation shapes**, not product features. This document freezes the complete set of kinds so agents and humans do not mint a new `/pp-…/1.0.0` for every feature.
 
-Wire `protocol_id` strings in use today remain valid. Kinds are the **taxonomy and gate**; id merge/rename is optional later and must be versioned.
+Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. `rpc` demuxes envelope vs history via `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
 
@@ -58,25 +58,16 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 |------------|------|-------|
 | Channel 0 capability plane | **identify** | [A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane) |
 | `/pp-mesh/directory/1.0.0` | **discover** | |
-| `/pp-mesh/dht/1.0.0` | **discover** | Keep separate id while Kademlia SM differs |
-| `/pp-browser/dial-back/1.0.0` | **reach** | Candidate future merge with punch via `op` |
-| `/pp-browser/amp-punch/1.0.0` | **reach** | |
-| `/pp-browser/circuit-relay/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
-| `/pp-browser/amp-circuit-carrier/1.0.0` | *(plumbing)* | Outer splice target for nested Session — not a product kind |
-| `/pp-browser/chat/1.0.0` | **rpc** | Live envelopes |
-| `/pp-browser/chat-history/1.0.0` | **rpc** | Same shape; optional future merge via `op` |
-| `/pp-browser/chat-blob/1.0.0` | **blob** | Conceptual rename only unless versioning requires |
-| `/pp-browser/call-media/1.0.0` | **realtime** (E2E) | |
-| `/pp-browser/media-relay/1.0.0` | **realtime** (blind hop) | Optional cosmetic rename to `datagram_relay` ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |
+| `/pp-mesh/dht/1.0.0` | **discover** | Separate id while Kademlia SM differs |
+| `/pp-browser/reach/1.0.0` | **reach** | Dial-back probe |
+| `/pp-browser/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
+| `/pp-browser/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
+| `/pp-browser/circuit-carrier/1.0.0` | *(plumbing)* | Outer splice target for nested Session — not a product kind |
+| `/pp-browser/rpc/1.0.0` | **rpc** | `op=envelope` live chat; `op=history` history sync |
+| `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
+| `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
+| `/pp-browser/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |
 
-### Deferred / rejected as new kinds
-
-| Item | Disposition |
-|------|-------------|
-| Peer `message_relay` ([N017](../../projects/p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later)) | **rpc host role** (retention/queue) — not a new conversation shape; HTTP Brief remains offline path until then |
-| `/pp-browser/call-signal/1.0.0` | **Do not ship** — call controls ride messaging/`rpc` |
-| Circuit multi-hop / `broker_media` | **circuit** ops (same id or major version of same kind) |
-| Screen share, in-call data, thumbnails | **realtime** `channel_type` / frame fields |
 
 ## Use-case coverage (composition)
 

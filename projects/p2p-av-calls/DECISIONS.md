@@ -739,7 +739,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 |-------|------|
 | **Codec** | H264 Constrained Baseline Annex-B via `IVideoCodec` (~640×360 desktop / ~360×640 mobile after orientation @ ~20 fps). |
 | **Layer** | **video_lo only.** `allow_video_hi` stays false; simulcast / `video_hi` is a later horizon. |
-| **1:1** | Same `/pp-browser/call-media/1.0.0` duplex as audio. Frame **v2**: `ver=2 \| seq \| mark \| channel \| nonce \| ct`. Channel `0` = Opus, `1` = H264 AU. Decrypt **v1** bodies as channel 0 (voice interop). Cap **128 KiB** (no NAL fragmentation in this slice). |
+| **1:1** | Same `/pp-browser/realtime/1.0.0` duplex as audio. Frame **v2**: `ver=2 \| seq \| mark \| channel \| nonce \| ct`. Channel `0` = Opus, `1` = H264 AU. Decrypt **v1** bodies as channel 0 (voice interop). Cap **128 KiB** (no NAL fragmentation in this slice). |
 | **E2E / uplink** | **One key per call epoch** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)), not per subscriber. Publisher AEAD-seals each AU **once**; hop copies that ciphertext to subscribers. Per-target encrypt is rejected — it would multiply video uplink by N−1. AAD `stream_id` + channel is replay binding, not a per-peer key. |
 | **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. Same shared-key AEAD on **all** channels as audio. |
 | **Hop queues** | Never shed `ReliableOrdered` (audio) to enqueue `LatestLossy` (video). Drop stale video first. |

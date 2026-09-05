@@ -9,7 +9,8 @@
 
 namespace pbr {
 
-inline constexpr const char* kDirectChatProtocolId = "/pp-browser/chat/1.0.0";
+inline constexpr const char* kRpcProtocolId = "/pp-browser/rpc/1.0.0";
+inline constexpr const char* kDirectChatProtocolId = kRpcProtocolId;
 
 /** Direct push of RelayEnvelope over the peer mesh (Amp ChannelSession). */
 class IDirectMessageClient {

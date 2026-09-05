@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# B-MSG+CALL: chat ping on /pp-browser/chat/1.0.0 during MediaReady and after leave.
+# B-MSG+CALL: chat ping on /pp-browser/rpc/1.0.0 during MediaReady and after leave.
 # Direct path, two OS processes. See docs/ops/TEST_STRATEGY.md
 set -euo pipefail
 

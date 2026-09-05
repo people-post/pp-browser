@@ -23,7 +23,7 @@
 |------|--------|
 | R008 / R021 Smart policy | Auto ≤ 4 MiB; tap larger; pref + backlog drain |
 | R020 suppression | Tombstones + clear-history blob wipe |
-| R019 peer-first | `/pp-browser/chat-blob/1.0.0` — fetch + push |
+| R019 peer-first | `/pp-browser/blob/1.0.0` — fetch + push |
 | Fetch ladder | Pending local → peer-direct → CDN (`AttachmentFetchUtil`) |
 | R015 outbound peer | Peer push when reachable; else CDN (`AttachmentClientUtil`) |
 | Enqueue peer-only | `CanFetchAttachment` — no CDN URL required when peer/pending path exists |

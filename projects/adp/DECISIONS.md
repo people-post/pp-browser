@@ -208,4 +208,6 @@
 
 **Rationale:** Stops protocol sprawl while covering find → meet → talk → bulk → live (E2E or blind hop). Aligns existing anti-proliferation ADRs (ch0, generic circuit, generic media hop, V033 RPC vs SM) into one agent-facing gate.
 
+**Converted (2026-09-04):** Product not released — wire ids renamed in-place to kind names (`/pp-browser/rpc|blob|realtime|datagram-relay|circuit|reach/1.0.0`, punch `/pp-browser/reach/punch/1.0.0`, carrier → `circuit-carrier`). `rpc` demuxes envelope vs history via `op`; punch keeps a distinct reach-kind id (multi-frame SM).
+
 **Alternatives rejected:** One mega “mesh-control” channel for discover+reach+dht (already considered and rejected for DHT in N028); feature-named protocols forever; collapsing E2E call-media and blind media-relay into a single id (different security postures under the **realtime** kind).

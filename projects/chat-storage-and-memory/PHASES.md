@@ -79,7 +79,7 @@ Wave 7 (optional post-v1)
 | **4a** | **v6-schema** — `sender_seq`, `session_epoch`, `sync_state`, `chat_targets` PSK columns, `GetMessagesBySeqRange` | v2b + v4 |
 | **4b** | **v6-pipeline** — outbox, receive classifier, `ReplayWindow`, inbound find-only (D062), floor semantics | 4a |
 | **4c** | **v6-sync** — `FetchChatTargetMessages`, tail/gap, empty-gap guard (D067), user sync (D059) | 4b |
-| **4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (**release-critical** — [D094](DECISIONS.md#d094--peer-direct-history-required-for-v1-d060)) | 4c |
+| **4d** | **v6-libp2p** — `/pp-browser/rpc/1.0.0` (**release-critical** — [D094](DECISIONS.md#d094--peer-direct-history-required-for-v1-d060)) | 4c |
 | **4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, passive adopt (D085), banners | 4b + c1 `ReplayWindow` |
 | **5–6** | *(e2e)* c2 → c3 | After v6 exit; see [e2e PHASES](../e2e-message-crypto/PHASES.md#agent-batch-delivery-order) |
 | **7** | post-v6c, post-v6d, post-v4, post-v6b; `e2e_public` + post-v6e with e2e c3+ | After v1 + c3 |
@@ -369,7 +369,7 @@ Existing foundation this project builds on.
 
 ### v6-libp2p — libp2p peer-direct (D060)
 
-- [x] Protocol **`/pp-browser/chat-history/1.0.0`** — request/response mirrors D027
+- [x] Protocol **`/pp-browser/rpc/1.0.0`** — request/response mirrors D027
 - [x] Responder serves `GetMessagesBySeqRange` from local `thread.db`
 - [x] Requester ingests envelopes; `transport=direct` on persist
 
@@ -460,7 +460,7 @@ Existing foundation this project builds on.
 | v2b channel split | c2 | `MeshMessagingService` encrypt/decrypt on `channel=e2e` |
 | v6 envelope + seq | c2–c3 | AAD binds `sender_seq`; `ChatPayload` plaintext (E010) |
 | v6 receive pipeline | c2 | `PeerSigningKeyStore` + inbound verify (E016, D081) |
-| v6 peer history (D060) | libp2p integration | `/pp-browser/chat-history/1.0.0` responder + requester |
+| v6 peer history (D060) | libp2p integration | `/pp-browser/rpc/1.0.0` responder + requester |
 | D038 integrity UX | c3 | PSK rotation + epoch bump transaction (D047) |
 
 Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto for **`e2e`** lands after v2b + v6 foundations; **`e2e_public`** auto-key + relaxed ingest at e2e **c3+**.

@@ -65,18 +65,8 @@ struct AmpChatHistoryService::Impl {
     }
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire)) {
-      return;
-    }
-    auto session = std::make_shared<pp::amp::ChannelSession>();
-    session->Bind(*link.Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
-                  [this, session](Roe<std::vector<uint8_t>> frame) {
-                    if (!frame || stopped.load(std::memory_order_acquire)) {
-                      return false;
-                    }
-                    auto body = std::move(*frame);
-                    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
+  void ServeRequest(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
+    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         return;
                       }
@@ -109,7 +99,20 @@ struct AmpChatHistoryService::Impl {
                       if (io_pump) {
                         io_pump();
                       }
-                    });
+    });
+  }
+
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire)) {
+      return;
+    }
+    auto session = std::make_shared<pp::amp::ChannelSession>();
+    session->Bind(*link.Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
+                  [this, session](Roe<std::vector<uint8_t>> frame) {
+                    if (!frame || stopped.load(std::memory_order_acquire)) {
+                      return false;
+                    }
+                    ServeRequest(session, std::move(*frame));
                     return false;
                   });
   }
@@ -129,15 +132,24 @@ AmpChatHistoryService::~AmpChatHistoryService() {
   Stop();
 }
 
-void AmpChatHistoryService::Start() {
+void AmpChatHistoryService::Start(bool register_handler) {
   if (started_) {
     return;
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kChatHistoryProtocolId, [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-    impl->HandleInboundChannel(link, channel_id);
-  });
+  if (register_handler) {
+    links_.SetProtocolHandler(kChatHistoryProtocolId, [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
+      impl->HandleInboundChannel(link, channel_id);
+    });
+  }
+}
+
+void AmpChatHistoryService::ServeInbound(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
+  if (!started_ || !impl_) {
+    return;
+  }
+  impl_->ServeRequest(std::move(session), std::move(body));
 }
 
 void AmpChatHistoryService::Stop() {
