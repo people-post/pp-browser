@@ -1,3 +1,4 @@
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"

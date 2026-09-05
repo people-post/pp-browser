@@ -50,6 +50,7 @@ flowchart TB
 | What's in the repo today? | [CURRENT_STATE.md](CURRENT_STATE.md) |
 | What to build next, in what order? | [PHASES.md](PHASES.md) |
 | Why we chose X | [DECISIONS.md](DECISIONS.md) |
+| L4 protocol kinds (no new id per feature) | [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) (A028 / N030) |
 
 ## Seed (locked)
 

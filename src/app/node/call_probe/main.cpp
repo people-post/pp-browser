@@ -6,6 +6,7 @@
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
 #include "common/chat/RelayEnvelope.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"

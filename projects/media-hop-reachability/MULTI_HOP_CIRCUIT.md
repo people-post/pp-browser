@@ -129,7 +129,7 @@ Counting convention (illustrative): each **relay node** on the path consumes one
 
 ## Protocol sketch (circuit v2 — not implemented)
 
-Extend `/pp-browser/circuit-relay/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
+Extend `/pp-browser/circuit/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
 
 | Op | Direction | Purpose |
 |----|-----------|---------|

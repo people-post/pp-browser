@@ -96,7 +96,7 @@ Exploratory alternates live under [`design/branding/icon-candidates/`](../../des
 |------|--------|
 | CMake target `pp-browser` | Scripts, CI, and docs reference it |
 | Config/data dirs | See [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md) |
-| P2P protocol IDs (`/pp-browser/chat/1.0.0`, …) | Wire compatibility with peers |
+| P2P protocol IDs (`/pp-browser/rpc/1.0.0`, …) | Wire compatibility with peers |
 | Crypto / signing domains | On-disk / clipboard / API |
 | GitHub repo name | Org/process; not a product rename |
 | Release artifact filenames | `pp-browser-<version>-…` |

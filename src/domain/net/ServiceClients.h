@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/chat/IDirectMessageClient.h"
+
 #include "common/directory/DirectoryTypes.h"
 #include "common/Error.h"
 #include "common/directory/IDirectoryClient.h"
@@ -40,8 +42,8 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** D060 peer-direct history — `/pp-browser/chat-history/1.0.0`. */
-inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/1.0.0";
+/** D060 peer-direct history — `/pp-browser/rpc/history/1.0.0` (rpc kind; own OPEN). */
+inline constexpr const char* kChatHistoryProtocolId = kRpcHistoryProtocolId;
 
 class IChatHistoryPeerClient {
 public:
@@ -50,8 +52,9 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** R019 peer-direct attachment blobs — `/pp-browser/chat-blob/1.0.0`. */
-inline constexpr const char* kChatBlobProtocolId = "/pp-browser/chat-blob/1.0.0";
+/** R019 peer-direct attachment blobs — `/pp-browser/blob/1.0.0`. */
+inline constexpr const char* kBlobProtocolId = "/pp-browser/blob/1.0.0";
+inline constexpr const char* kChatBlobProtocolId = kBlobProtocolId;
 
 class IChatBlobPeerClient {
 public:

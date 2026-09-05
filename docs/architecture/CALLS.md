@@ -29,7 +29,7 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
-| **ICallMediaTransport** | 1:1 `/pp-browser/call-media/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
+| **ICallMediaTransport** | 1:1 `/pp-browser/realtime/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
 | **ConversationsHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
 
 ```mermaid

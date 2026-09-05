@@ -11,7 +11,8 @@
 
 namespace pbr {
 
-inline constexpr const char* kCallMediaDirectProtocolId = "/pp-browser/call-media/1.0.0";
+inline constexpr const char* kRealtimeProtocolId = "/pp-browser/realtime/1.0.0";
+inline constexpr const char* kCallMediaDirectProtocolId = kRealtimeProtocolId;
 
 /** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
 enum class CallMediaSessionPhase {

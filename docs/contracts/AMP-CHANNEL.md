@@ -23,15 +23,17 @@ L2 AEAD wraps **L3 frame bytes**. L4 payloads inside L3 DATA frames are unchange
 | **1 … 0xFFFF_FFFE** | Dynamic; allocated by opener |
 | **0xFFFF_FFFF** | Illegal |
 
-`protocol_id` is a UTF-8 string (e.g. `/pp-browser/chat/1.0.0`) carried in OPEN.
+`protocol_id` is a UTF-8 string (e.g. `/pp-browser/rpc/chat/1.0.0`) carried in OPEN.
+
+L4 ids name **conversation kinds**, not product features — complete set and “when to mint a new id” gate: [L4_PROTOCOL_KINDS.md](L4_PROTOCOL_KINDS.md) ([A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes)).
 
 ## Channel classes
 
 | Class | ADP QoS | Duplex | Typical `protocol_id` |
 |-------|---------|--------|------------------------|
-| **Transactional** | Reliable | half; `read_once` | `/pp-browser/chat/1.0.0`, `/pp-browser/chat-history/1.0.0` |
-| **Control** | Reliable | half or full | `/pp-browser/dial-back/1.0.0`, ch0 |
-| **Bulk** | Reliable | half | `/pp-browser/chat-blob/1.0.0` |
+| **Transactional** | Reliable | half; `read_once` | `/pp-browser/rpc/chat/1.0.0`, `/pp-browser/rpc/history/1.0.0` |
+| **Control** | Reliable | half or full | `/pp-browser/reach/1.0.0`, ch0 |
+| **Bulk** | Reliable | half | `/pp-browser/blob/1.0.0` |
 | **Realtime** | BestEffort | full | Opus/media relay media frames |
 | **RealtimeControl** | Reliable | full | call-media hello/teardown on same call |
 
@@ -148,13 +150,13 @@ Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameS
 
 | `protocol_id` | L4 shape |
 |---------------|----------|
-| `/pp-browser/chat/1.0.0` | One DATA = `RelayEnvelope` JSON; ack DATA = `{"ok":true}` |
-| `/pp-browser/chat-history/1.0.0` | request JSON → response JSON |
-| `/pp-browser/chat-blob/1.0.0` | JSON meta → ciphertext or error JSON |
-| `/pp-browser/call-media/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
-| `/pp-browser/media-relay/1.0.0` | duplex realtime + control |
-| `/pp-browser/circuit-relay/1.0.0` | tunnel setup → forwarded L3 frames ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel)) |
-| `/pp-browser/dial-back/1.0.0` | short JSON |
+| `/pp-browser/rpc/chat/1.0.0` | One DATA = `RelayEnvelope` JSON; ack DATA = `{"ok":true}` |
+| `/pp-browser/rpc/history/1.0.0` | request JSON → response JSON |
+| `/pp-browser/blob/1.0.0` | JSON meta → ciphertext or error JSON |
+| `/pp-browser/realtime/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
+| `/pp-browser/datagram-relay/1.0.0` | duplex realtime + control |
+| `/pp-browser/circuit/1.0.0` | tunnel setup → forwarded L3 frames ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel)) |
+| `/pp-browser/reach/1.0.0` | short JSON |
 
 Decode rules: **exact consume** for binary L4; JSON unknown-field policy per [WIRE_SCHEMAS § Unknown-field](WIRE_SCHEMAS.md#unknown-field-policy-d073).
 
@@ -173,7 +175,7 @@ Admit rules are pure (`CallMediaBundleLogic`); L4 runs on **`MeshRuntime`** io t
 
 ## Circuit tunnel (v1)
 
-Relay hosts `/pp-browser/circuit-relay/1.0.0`. After a JSON bridge handshake, the relay **splices opaque L4 DATA bodies** between the client circuit channel and a channel opened to the target on `target_protocol` (parity with today’s `StreamBridge`). Each hop still has its own AMP Session (A↔R, R↔B); the relay does not terminate an A↔B Session. Nested end-to-end Session through the tunnel ([A019] blind L2 ciphertext) remains a future refinement.
+Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the relay **splices opaque L4 DATA bodies** between the client circuit channel and a channel opened to the target on `target_protocol` (parity with today’s `StreamBridge`). Each hop still has its own AMP Session (A↔R, R↔B); the relay does not terminate an A↔B Session. Nested end-to-end Session through the tunnel ([A019] blind L2 ciphertext) remains a future refinement.
 
 ### Bridge request (first DATA on circuit channel)
 
@@ -184,7 +186,7 @@ Relay hosts `/pp-browser/circuit-relay/1.0.0`. After a JSON bridge handshake, th
   "timeout_ms": 8000,
   "target_peer_id": "<base58>",
   "target_multiaddr": "/ip4/.../udp/.../adp/1.0.0/p2p/...",
-  "target_protocol": "/pp-browser/call-media/1.0.0"
+  "target_protocol": "/pp-browser/realtime/1.0.0"
 }
 ```
 
@@ -204,7 +206,7 @@ Runtime: **`CircuitTunnelCoordinator`** on `MeshRuntime` — non-blocking `Start
 
 ### Nested Session carrier ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session))
 
-For Amp **call-media** over circuit, the bridged channel is **not** the product L4 pipe. Outer `target_protocol` is `/pp-browser/amp-circuit-carrier/1.0.0`. After splice:
+For Amp **call-media** over circuit, the bridged channel is **not** the product L4 pipe. Outer `target_protocol` is Amp `kAmpCircuitCarrierProtocolId` (`/amp/circuit-carrier/1.0.0`). After splice:
 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.

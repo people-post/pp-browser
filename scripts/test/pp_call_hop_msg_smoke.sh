@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Same-session mix: chat during/after a hop call on one pair (no direct A→B path).
-# Distinct circuit hops for call-media and /pp-browser/chat/1.0.0.
+# Distinct circuit hops for call-media and /pp-browser/rpc/1.0.0.
 # See docs/ops/TEST_STRATEGY.md (B-MSG+CALL hop path)
 set -euo pipefail
 

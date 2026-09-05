@@ -196,3 +196,18 @@
 **Transitional:** TearDown still runs from some L4 frame paths; `ChannelSession::Bind` pins `shared_ptr` for the dispatch so request-close does not UAF. Prefer migrating to “signal → parent drops after dispatch / next io tick.”  
 **Rationale:** Dual-dial TearDown-from-callback and media-relay `AdoptClientChannel` post-erase UAF showed child-driven destroy is the dual-dial/fanout crash class.  
 **Alternatives:** shared ownership everywhere; forbid any close from `on_frame_` (too rigid for glare/quote one-shot).
+
+## A028 — L4 protocol kinds = seven conversation shapes
+
+**Date:** 2026-09-04  
+**Status:** Accepted (design)  
+**Normative:** [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md)  
+**Amends / cross-links:** [A016](#a016--channel-0--capability--identify-plane), [A019](#a019--circuit-relay--channel-tunnel), [A020](#a020--single-transport-entry-per-protocol), [A024](#a024--amp-call-media-over-circuit--nested-session); mesh [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types), [N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later), [N030](../p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate).
+
+**Decision:** Freeze L4 taxonomy as **seven conversation kinds** — **identify**, **discover**, **reach**, **circuit**, **rpc**, **blob**, **realtime** — not one `protocol_id` per product feature. AMP L1–L3 already own mux/QoS/crypto; a new L4 id is allowed only when the **conversation contract** is new (QoS/duplex/lifetime, security posture, or failure model). Prefer envelope `op`, `channel_type` / frame fields, circuit `target_protocol`, and PeerLink policy for feature growth. Current shipped ids map onto these kinds; merges/renames are optional and versioned — do not big-bang rewrite wire strings. Carrier (`amp-circuit-carrier`) stays plumbing, not a product kind. Rejected as new kinds: always-on `call-signal`; A/V-specific relay forks; per-feature tunnels; treating deferred `message_relay` as a distinct wire shape (it is an **rpc** host role).
+
+**Rationale:** Stops protocol sprawl while covering find → meet → talk → bulk → live (E2E or blind hop). Aligns existing anti-proliferation ADRs (ch0, generic circuit, generic media hop, V033 RPC vs SM) into one agent-facing gate.
+
+**Converted (2026-09-04):** Product not released — wire ids renamed in-place to kind names (`/pp-browser/rpc|blob|realtime|datagram-relay|circuit|reach/1.0.0`, punch `/pp-browser/reach/punch/1.0.0`). `rpc` kind uses separate OPEN ids `/pp-browser/rpc/chat/1.0.0` and `/pp-browser/rpc/history/1.0.0` (handler ownership; no first-frame demux); punch keeps a distinct reach-kind id (multi-frame SM). Nested-Session carrier uses Amp default `/amp/circuit-carrier/1.0.0` (no product `/pp-browser/circuit-carrier` id).
+
+**Alternatives rejected:** One mega “mesh-control” channel for discover+reach+dht (already considered and rejected for DHT in N028); feature-named protocols forever; collapsing E2E call-media and blind media-relay into a single id (different security postures under the **realtime** kind).

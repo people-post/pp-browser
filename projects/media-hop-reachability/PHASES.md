@@ -34,7 +34,7 @@ Implement **in Amp mesh** ([H001](DECISIONS.md#h001--separate-project-implementa
 Docs: [HOLE_PUNCH.md](HOLE_PUNCH.md), [H009](DECISIONS.md#h009--amp-coordinated-punch-acp), preference [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail). **Parallel** to L3.5.
 
 - [x] ADR + spec (H009, HOLE_PUNCH) — **done**
-- [x] **L3.25a (scaffolding)** — `AmpObservedAddrs` merge + MeshHost ch0 refresh; punch JSON codec (`PunchLogic`); `AmpPunchCoordinator` Start/Stop + coded `TryColdPunch` gate; advertise `/pp-browser/amp-punch/1.0.0`
+- [x] **L3.25a (scaffolding)** — `AmpObservedAddrs` merge + MeshHost ch0 refresh; punch JSON codec (`PunchLogic`); `AmpPunchCoordinator` Start/Stop + coded `TryColdPunch` gate; advertise `/pp-browser/reach/1.0.0`
 - [x] **L3.25a (complete)** — Introducer orchestration + simultaneous burst dial; A026 election + A027 teardown; seed-introducer cold compose test
 - [x] **L3.25b** — Contact introducer; address-book upsert on punch success; SoftMigrate dialability benefit
 - [x] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
