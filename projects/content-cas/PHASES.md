@@ -14,3 +14,5 @@ Ordering only. Status: [CURRENT_STATE.md](CURRENT_STATE.md).
 P0 is this change set. P1+ are implementation.
 
 Post-P2 (same branch as cutover): private presentation policy **C011** (RAM LRU + inline video size gate) — see [DECISIONS](DECISIONS.md#c011--private-presentation-ram-lru--video-size-gate).
+
+**C012:** keep CAS under `domain/messaging` through P2/C011; peel to `domain/content` when P3/P4 introduces a second non-messaging owner — see [DECISIONS](DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner).

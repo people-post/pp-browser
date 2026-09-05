@@ -131,9 +131,30 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 **Rejected (for now):** Blocking CAS write of large videos; requiring full stream-decrypt before any video UI.
 
 ---
+
+## C012 — Module home: stay in messaging until public CAS has a second owner
+
+**Status:** Accepted  
+
+**Decision:**
+
+1. **Keep for now** under `src/domain/messaging/`: `CasStore`, `ObjectIndex`, `CasTypes`, `AttachmentCache`, `AttachmentPlaintextMemoryCache` (and related private-attachment I/O). Callers today are almost entirely conversations/attachments; domain peers must stay independent ([SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md)).
+2. **Do not** move this into `foundation/` — it is a product durable store + realm policy, not kernel path/config/crypto primitives.
+3. **Planned peel:** introduce a new domain peer (preferred name **`domain/content`**) when **P3/P4** (public library / Share publicly… / provide-fetch) gives CAS a **second real owner** outside messaging. That peer should own:
+   - `CasStore`, `ObjectIndex`, realm types
+   - optional thin presentation helpers (RAM LRU / view wipe) if still realm-generic
+4. **Leave behind in messaging / feature:** chat-specific policy — attachment download/suppression, chat blob responders, thread UX gates that call into content via `common` contracts + feature wiring.
+5. **No premature empty peer** that messaging still monopolizes; extract when the second consumer compiles against content without linking messaging codecs/stores.
+
+**Rationale:** Avoids cross-peer edges and churn during private cutover (P1–P2 / C011). Aligns peel with the moment public CAS stops being “messaging storage with a fancy path.”
+
+**Rejected (for now):** Immediate `domain/content` (or `domain/cas`) split; placing CAS in foundation.
+
+---
 ## Amends
 
 - Amends attachment layout expectations in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (planned CAS section).  
 - Does not change L4 kinds; compositions for share/broadcast recorded in [L4_PROTOCOL_KINDS](../../docs/contracts/L4_PROTOCOL_KINDS.md).  
 - Supersedes durable-byte role of per-thread `blobs/` once P2 cutover lands (R016 paths become views/refs).
 - C011 amends attachment presentation expectations in [AT_REST_ENCRYPTION](../../docs/contracts/AT_REST_ENCRYPTION.md) and [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md).
+- C012 records deferred `domain/content` peel; amends domain peer table intent in [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md).

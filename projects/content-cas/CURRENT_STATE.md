@@ -40,3 +40,11 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | RAM LRU | `AttachmentPlaintextMemoryCache` — private plaintext (≤8 MiB/entry, 64 entries / 64 MiB); filled on save/load; **cleared on ClearDek** with `WipeAllAttachmentViewCaches` |
 | Inline video gate | `kMaxInlinePrivateVideoBytes` (= Soft 4 MiB): large private videos stay in CAS; soft poster only; no `blobs_view` until explicit open |
 | Images / posters | Prefer RAM then CAS; `blobs_view` still used for RmlUi file `src` (future: in-memory texture / stream decrypt) |
+
+## Module home (C012)
+
+| Now | Later |
+|-----|-------|
+| Implementation under `src/domain/messaging/` (`CasStore`, `ObjectIndex`, `AttachmentCache`, `AttachmentPlaintextMemoryCache`, …) | Peel to `src/domain/content/` at P3/P4 when public share/library/provide-fetch needs CAS without linking messaging |
+| Chat-specific download/suppression/responders stay messaging/feature | Feature wires `common` contracts across peers |
+
