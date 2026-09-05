@@ -230,7 +230,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   }
   peer->listen_ma = *listen;
   peer->Links().SetLocalListenMultiaddrs({peer->listen_ma});
-  peer->Links().EnableNestedCarrierAccept(true, kCircuitCarrierProtocolId);
+  peer->Links().EnableNestedCarrierAccept(true);
   return peer;
 }
 
@@ -291,7 +291,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
   pbr::CircuitBridgeTarget target;
   target.target_peer_id = peer_id;
   target.target_multiaddr = peer_ma;
-  target.target_protocol = kCircuitCarrierProtocolId;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
   AsyncWait<pbr::CircuitTunnelBridgeResult> bridge_wait;
   auto tunnel_id = circuit.StartBridge(hop_key, target, {}, {}, bridge_wait.Fn(), 10000);
@@ -313,7 +313,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
   if (!peer.Links().IsConnected(peer_id)) {
     return pbr::Error("nested link not connected");
   }
-  (void)hops.Install(peer_id, hop_key, kCircuitCarrierProtocolId, bridge_wait.result->session,
+  (void)hops.Install(peer_id, hop_key, pp::amp::kAmpCircuitCarrierProtocolId, bridge_wait.result->session,
                      tunnel_id);
   return {};
 }
@@ -587,7 +587,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
     media->DetachLeg(leg_id);
     if (via_hop) {
-      hops->Clear(*peer_id, kCircuitCarrierProtocolId);
+      hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
       const auto settle = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
       while (std::chrono::steady_clock::now() < settle) {
         (*offerer)->Pump();
@@ -610,7 +610,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       }
       std::cout << "ok  chat after leave cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
       if (via_hop) {
-        hops->Clear(*peer_id, kCircuitCarrierProtocolId);
+        hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
       }
     }
 

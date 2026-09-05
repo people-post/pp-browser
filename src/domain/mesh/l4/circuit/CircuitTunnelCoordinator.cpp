@@ -21,7 +21,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 pp::amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
-  if (target_protocol == kCircuitCarrierProtocolId) {
+  if (target_protocol == pp::amp::kAmpCircuitCarrierProtocolId) {
     return pp::amp::CircuitCarrierChannelPolicy();
   }
   return pp::amp::CircuitTunnelChannelPolicy();

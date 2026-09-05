@@ -206,7 +206,7 @@ Runtime: **`CircuitTunnelCoordinator`** on `MeshRuntime` — non-blocking `Start
 
 ### Nested Session carrier ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session))
 
-For Amp **call-media** over circuit, the bridged channel is **not** the product L4 pipe. Outer `target_protocol` is product `kCircuitCarrierProtocolId` (`/pp-browser/circuit-carrier/1.0.0`); Amp’s library default is `/amp/circuit-carrier/1.0.0`. After splice:
+For Amp **call-media** over circuit, the bridged channel is **not** the product L4 pipe. Outer `target_protocol` is Amp `kAmpCircuitCarrierProtocolId` (`/amp/circuit-carrier/1.0.0`). After splice:
 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.

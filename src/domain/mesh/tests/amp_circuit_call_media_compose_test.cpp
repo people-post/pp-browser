@@ -52,8 +52,8 @@ protected:
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, harness_->ma_b)));
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("relay", harness_->ma_r)));
 
-    harness_->mgr_a().EnableNestedCarrierAccept(true, kCircuitCarrierProtocolId);
-    harness_->mgr_b().EnableNestedCarrierAccept(true, kCircuitCarrierProtocolId);
+    harness_->mgr_a().EnableNestedCarrierAccept(true);
+    harness_->mgr_b().EnableNestedCarrierAccept(true);
 
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
     circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);
@@ -123,7 +123,7 @@ protected:
     CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     target.target_multiaddr = harness_->ma_b;
-    target.target_protocol = kCircuitCarrierProtocolId;
+    target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
     Wait<CircuitTunnelBridgeResult> bridge_wait;
     auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
@@ -148,7 +148,7 @@ protected:
     if (!harness_->mgr_a().IsConnected(harness_->peer_id_b)) {
       return Error("nested link not connected on A");
     }
-    (void)hops_->Install(harness_->peer_id_b, "relay", kCircuitCarrierProtocolId,
+    (void)hops_->Install(harness_->peer_id_b, "relay", pp::amp::kAmpCircuitCarrierProtocolId,
                          bridge_wait.result->session, tunnel_id);
     return {};
   }

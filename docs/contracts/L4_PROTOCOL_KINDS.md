@@ -64,7 +64,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | `/pp-browser/reach/1.0.0` | **reach** | Dial-back probe |
 | `/pp-browser/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
 | `/pp-browser/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
-| `/pp-browser/circuit-carrier/1.0.0` | *(plumbing)* | Product-owned wire id; configured into Amp `EnableNestedCarrierAccept` (Amp library default is `/amp/circuit-carrier/1.0.0`) |
+| `/amp/circuit-carrier/1.0.0` | *(plumbing)* | Amp-owned nested-Session carrier (`kAmpCircuitCarrierProtocolId`); product uses Amp default — not a `/pp-browser/*` id |
 | `/pp-browser/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
 | `/pp-browser/rpc/history/1.0.0` | **rpc** | Peer history request/response |
 | `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
@@ -119,7 +119,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 
 | Dimension | `reach` dial-back | `reach/punch` | `circuit` | `circuit-carrier` | ch0 identify | `directory` / `dht` |
 |-----------|-------------------|---------------|-----------|-------------------|--------------|---------------------|
-| **Wire id** | `/pp-browser/reach/1.0.0` | `/pp-browser/reach/punch/1.0.0` | `/pp-browser/circuit/1.0.0` | `/pp-browser/circuit-carrier/1.0.0` | (ch0; no product id) | `/pp-mesh/directory/1.0.0`, `/pp-mesh/dht/1.0.0` |
+| **Wire id** | `/pp-browser/reach/1.0.0` | `/pp-browser/reach/punch/1.0.0` | `/pp-browser/circuit/1.0.0` | `/amp/circuit-carrier/1.0.0` | (ch0; no product id) | `/pp-mesh/directory/1.0.0`, `/pp-mesh/dht/1.0.0` |
 | **Kind** | reach | reach | circuit | plumbing | identify | discover |
 | **Send size** | small JSON | small multi-frame JSON | control JSON + opaque splice | opaque nested Session | caps JSON | small control JSON |
 | **Guarantee** | reliable short probe | reliable SM; may fail → circuit | reliable setup; then opaque forward | large BestEffort-ish carrier queue for bursts | reliable | reliable |
