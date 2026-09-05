@@ -25,6 +25,19 @@ bool IsAttachmentImageMime(const std::string& mime);
 bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);
 
+/**
+ * Presentation gate for private video: above this size, skip session `blobs_view`
+ * materialization until explicit open (CAS ingest unchanged). Matches Soft auto-download
+ * ceiling (4 MiB). Unknown size (`byte_length == 0`) stays permissive.
+ */
+inline constexpr uint64_t kMaxInlinePrivateVideoBytes = 4ULL * 1024ULL * 1024ULL;
+
+/**
+ * True when private attachment plaintext may be materialized for inline UI
+ * (`blobs_view` / image src). Large private videos return false (open-on-demand).
+ */
+bool AttachmentAllowsInlinePrivateView(const std::string& mime, uint64_t byte_length);
+
 std::string FormatAttachmentByteSize(uint64_t byte_length);
 
 /** True when private CAS holds the hash. */
@@ -71,12 +84,13 @@ bool AttachmentPosterExists(const std::string& profile_dir, const std::string& t
 
 /**
  * Ensure a JPEG poster under blobs_view for a video attachment (R012).
- * Best-effort extract; soft placeholder on decode failure.
+ * Best-effort extract; soft placeholder when over inline size or on decode failure.
+ * `known_byte_length` skips full decrypt/materialize when the video exceeds the inline gate.
  */
 Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
                                         const std::string& filename, const ByteVector& dek,
-                                        std::string_view profile_id);
+                                        std::string_view profile_id, uint64_t known_byte_length = 0);
 
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
                                       const ChatAttachmentFields& fields, const std::string& source_path,

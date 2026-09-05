@@ -754,12 +754,19 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
 
   std::string local_path;
   if (fields) {
-    if (attachment_downloads_) {
-      if (auto view = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
-                                                                fields->filename)) {
-        local_path = *view;
+    const bool allow_inline = AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length);
+    if (allow_inline) {
+      if (attachment_downloads_) {
+        if (auto view = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
+                                                                  fields->filename)) {
+          local_path = *view;
+        }
+      } else if (!profile_data_dir_.empty()) {
+        local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
+                                         fields->filename);
       }
     } else if (!profile_data_dir_.empty()) {
+      // Large private video: keep plaintext off disk until explicit open.
       local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
                                        fields->filename);
     }
@@ -767,40 +774,45 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
   AttachmentDownloadService::DownloadState state = AttachmentDownloadService::DownloadState::Pending;
   if (fields && attachment_downloads_) {
     state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
-  } else if (!local_path.empty()) {
+  } else if (!local_path.empty() ||
+             (fields && !profile_data_dir_.empty() &&
+              AttachmentBlobExists(profile_data_dir_, message.thread_id, fields->content_hash))) {
     state = AttachmentDownloadService::DownloadState::Ready;
   }
 
   std::string html = "<div class=\"chat-card chat-attachment-card\">";
-  if (fields && state == AttachmentDownloadService::DownloadState::Ready && !local_path.empty()) {
-    if (IsAttachmentImageMime(fields->mime)) {
-      html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
-    } else if (IsAttachmentVideoMime(fields->mime)) {
-      html += "<div class=\"chat-attachment-video\">";
-      std::string poster_path;
-      if (!profile_data_dir_.empty() &&
-          AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-        poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
-      }
-      if (!poster_path.empty()) {
-        html += "<img class=\"chat-attachment-video-poster\" src=\"" +
-                StructuredTextParser::EscapeText(poster_path) + "\"/>";
-      } else {
-        html += "<div class=\"chat-attachment-video-badge\">Video</div>";
-        html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
-      }
-      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
-      html += "</div>";
-    } else {
-      html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
-      if (fields->byte_length > 0) {
-        html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-                "</p>";
-      }
-      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+  const bool ready = fields && state == AttachmentDownloadService::DownloadState::Ready;
+  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty()) {
+    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
+  } else if (ready && IsAttachmentVideoMime(fields->mime)) {
+    html += "<div class=\"chat-attachment-video\">";
+    std::string poster_path;
+    if (!profile_data_dir_.empty() &&
+        AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+      poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
     }
+    if (!poster_path.empty()) {
+      html += "<img class=\"chat-attachment-video-poster\" src=\"" +
+              StructuredTextParser::EscapeText(poster_path) + "\"/>";
+    } else {
+      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+      html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+    }
+    if (fields->byte_length > 0) {
+      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+              "</p>";
+    }
+    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+            escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+    html += "</div>";
+  } else if (ready && !local_path.empty()) {
+    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
+    if (fields->byte_length > 0) {
+      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
+              "</p>";
+    }
+    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
+            escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
   } else {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields && fields->byte_length > 0) {

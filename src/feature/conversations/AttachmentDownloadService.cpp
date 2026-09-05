@@ -208,8 +208,11 @@ void AttachmentDownloadService::RunJob(const Job& job) {
     MarkFailed(key);
     return;
   }
-  (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                 job.fields.filename, dek_copy, profile_id_);
+  const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
+  if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint)) {
+    (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                   job.fields.filename, dek_copy, profile_id_);
+  }
   MaybeBuildPoster(job.thread_id, job.fields);
   MarkReady(key);
 }
@@ -320,7 +323,7 @@ void AttachmentDownloadService::MaybeBuildPoster(const std::string& thread_id,
     return;
   }
   (void)EnsureAttachmentPoster(profile_dir_, thread_id, fields.content_hash, fields.mime, fields.filename, dek_copy,
-                               profile_id_);
+                               profile_id_, fields.byte_length);
 }
 
 void AttachmentDownloadService::RetryDownload(const std::string& thread_id, const std::string& message_id,
