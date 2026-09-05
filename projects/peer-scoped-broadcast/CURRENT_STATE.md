@@ -6,7 +6,7 @@
 | Spine | Status |
 |-------|--------|
 | A — calls hop trustworthy | Prerequisite (owned by p2p-av-calls / p2p-mesh); not changed here |
-| **B — signed tips without mesh** | **In progress** — ML-DSA tips, publisher, rpc codec, Amp 1:1 push |
+| **B — signed tips without mesh** | **In progress** — ML-DSA tips, Amp 1:1, IdentityStore publisher + peer_id key resolve |
 | C — tip + live | Not started |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
@@ -22,10 +22,11 @@
 | Tip push/ack JSON + `/pp-browser/rpc/peer-announce/1.0.0` | `PeerAnnounceRpcCodec.*`, `IDirectMessageClient.h`, L4 table |
 | Amp 1:1 tip transport | `feature/conversations/AmpPeerAnnounceService.*` (OpenChannel + feed ingest) |
 | Mesh advertise | `MeshHost` includes `kRpcPeerAnnounceProtocolId` |
-| Tests | `domain/messaging/tests/peer_announce_test.cpp`; `feature/conversations/tests/amp_peer_announce_service_test.cpp` |
+| Device publisher + inbound key resolve | `PeerAnnounceKeyResolve.*`; `MeshMessagingService` wires IdentityStore device ML-DSA + `PeerSigningKeyStore` kind `peer_id`; `PublishAndPushAnnounce` |
+| Tests | `peer_announce_test.cpp` (incl. key resolve); `amp_peer_announce_service_test.cpp` (round-trip, unknown key ack, store-backed resolve) |
 
-**Signing:** tips use **device ML-DSA-65** (PeerId-bound), same family as IdentityStore — not Ed25519.
+**Signing:** tips use **device ML-DSA-65** (PeerId-bound), same family as IdentityStore — not Ed25519. Account-kind signing keys are **not** used for tip verify.
 
-**Still out of scope this slice:** IdentityStore auto-wiring / contact key resolver in MeshMessaging, epidemic `help_announce`, UI, live media session join.
+**Still out of scope this slice:** epidemic `help_announce`, UI, tip→live (Spine C), full MeshMessaging integration tests.
 
 See [PROGRAM.md](PROGRAM.md) for sequencing.

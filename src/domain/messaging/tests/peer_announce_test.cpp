@@ -1,9 +1,15 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
 
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/identity/PeerIdUtil.h"
+
+#include "common/directory/DirectoryJson.h"
 
 #include <gtest/gtest.h>
 #include <variant>
@@ -179,6 +185,57 @@ TEST(PeerAnnounceTest, RpcTipPushAckRoundTrip) {
   ASSERT_TRUE(std::holds_alternative<PeerAnnounceTipAck>(*decoded_ack));
   EXPECT_TRUE(std::get<PeerAnnounceTipAck>(*decoded_ack).ok);
   EXPECT_STREQ(kRpcPeerAnnounceProtocolId, "/pp-browser/rpc/peer-announce/1.0.0");
+}
+
+TEST(PeerAnnounceKeyResolveTest, PrefersLocalDeviceKey) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  ASSERT_TRUE(peer_id);
+
+  PeerSigningKeyStore store;
+  auto resolved =
+      ResolvePeerAnnouncePublisherKey(*peer_id, *peer_id, keys->public_key, store);
+  ASSERT_TRUE(resolved);
+  EXPECT_EQ(*resolved, keys->public_key);
+}
+
+TEST(PeerAnnounceKeyResolveTest, ResolvesPeerIdStoreAndRejectsAccountKind) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  ASSERT_TRUE(peer_id);
+
+  PeerSigningKeyStore store;
+  PeerSigningKeyRecord record;
+  record.signing_public_key_b64 = Base64Encode(keys->public_key);
+  record.source = "test";
+  store.Put(ContactIdKindToString(ContactIdKind::PeerId), *peer_id, record);
+
+  auto resolved = ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store);
+  ASSERT_TRUE(resolved);
+  EXPECT_EQ(*resolved, keys->public_key);
+
+  PeerSigningKeyStore account_only;
+  account_only.Put(ContactIdKindToString(ContactIdKind::Account), *peer_id, record);
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, account_only));
+}
+
+TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  ASSERT_TRUE(peer_id);
+
+  PeerSigningKeyStore store;
+  PeerSigningKeyRecord record;
+  record.signing_public_key_b64 = Base64Encode(keys->public_key);
+  record.source = "test";
+  store.Put(ContactIdKindToString(ContactIdKind::PeerId), "not-the-derived-peer-id", record);
+
+  EXPECT_FALSE(
+      ResolvePeerAnnouncePublisherKey("not-the-derived-peer-id", "other-local", {}, store));
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store));
 }
 
 } // namespace pbr

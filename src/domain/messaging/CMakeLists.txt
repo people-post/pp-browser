@@ -44,6 +44,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     PeerAnnounceFeed.cpp
     PeerAnnouncePublisher.cpp
     PeerAnnounceRpcCodec.cpp
+    PeerAnnounceKeyResolve.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp
@@ -61,6 +62,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
+    pp_foundation_identity
     pp_foundation_platform
     sodium
     SQLite::SQLite3)

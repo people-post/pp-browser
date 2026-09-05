@@ -6,6 +6,8 @@
 #include "feature/conversations/AmpDirectChatService.h"
 #include "feature/conversations/AmpPeerAnnounceService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnounceKeyResolve.h"
+#include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -148,6 +150,27 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
     peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
     peer_announce_ = std::make_unique<AmpPeerAnnounceService>(*amp_links_, *peer_announce_feed_, amp_io_pump,
                                                              worker);
+    peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
+      std::string local_peer_id;
+      std::vector<uint8_t> local_pk;
+      if (auto identity = identity_.Get()) {
+        local_peer_id = identity->peer_id;
+      }
+      if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+        local_pk = *pk;
+      }
+      return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
+    });
+    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
+      if (auto identity = identity_.Get(); identity && !identity->peer_id.empty()) {
+        peer_announce_publisher_ =
+            std::make_unique<PeerAnnouncePublisher>(identity->peer_id, *sk, peer_announce_feed_.get());
+      } else {
+        log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
+      }
+    } else {
+      log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
+    }
     peer_announce_->Start();
     log().info << "direct chat/history/blob/peer-announce transport=amp";
   } else {
@@ -169,6 +192,19 @@ void MeshMessagingService::RegisterPeerSigningKey(const std::string& peer_identi
   record.signing_public_key_b64 = signing_public_key_b64;
   record.source = source;
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
+}
+
+Roe<PeerAnnounceTipAck> MeshMessagingService::PublishAndPushAnnounce(const std::string& peer_key,
+                                                                     const PeerAnnouncePublisher::Draft& draft,
+                                                                     const int64_t now_ms) {
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    return Error("peer-announce not ready (Amp or device identity missing)");
+  }
+  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
+  if (!tip) {
+    return tip.error();
+  }
+  return peer_announce_->PushTip(peer_key, *tip);
 }
 
 void MeshMessagingService::RegisterPeerKemKey(const std::string& peer_identity_kind,

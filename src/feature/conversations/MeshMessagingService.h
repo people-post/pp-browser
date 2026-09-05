@@ -24,6 +24,8 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "feature/conversations/AmpPeerAnnounceService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/messaging/PeerAnnounceRpcCodec.h"
 #include "domain/net/ServiceClients.h"
 
 #include <atomic>
@@ -118,6 +120,16 @@ public:
                               const std::string& signing_public_key_b64, const std::string& source = "manual");
   void RegisterPeerKemKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                           const std::string& kem_public_key_b64, const std::string& source = "manual");
+
+  /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
+  PeerAnnouncePublisher* PeerAnnouncePublisherOrNull() const { return peer_announce_publisher_.get(); }
+  AmpPeerAnnounceService* PeerAnnounceServiceOrNull() const { return peer_announce_.get(); }
+  /**
+   * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
+   * Requires Amp peer-announce service + device identity keys.
+   */
+  Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
+                                                 const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
@@ -227,6 +239,7 @@ private:
   std::unique_ptr<IDirectMessageClient> direct_chat_;
   std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
   std::unique_ptr<AmpPeerAnnounceService> peer_announce_;
+  std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

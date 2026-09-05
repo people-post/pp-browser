@@ -1,10 +1,16 @@
 #include "feature/conversations/AmpPeerAnnounceService.h"
 
 #include "domain/messaging/PeerAnnounceCodec.h"
+#include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
 
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/identity/PeerIdUtil.h"
+
+#include "common/directory/DirectoryJson.h"
 
 #include <gtest/gtest.h>
 
@@ -101,6 +107,64 @@ TEST_F(AmpPeerAnnounceServiceTest, PushTipRoundTripIngestsOnPeer) {
   ASSERT_TRUE(latest);
   EXPECT_EQ(latest->body, "now live");
   EXPECT_EQ(latest->signature_b64, tip->signature_b64);
+}
+
+TEST_F(AmpPeerAnnounceServiceTest, PushTipFailsAckWhenPublisherKeyUnknown) {
+  auto topic = MakePeerAnnounceTopicId("unknown-publisher", "live");
+  ASSERT_TRUE(topic);
+
+  PeerAnnouncePublisher publisher("unknown-publisher", sk_a_);
+  PeerAnnouncePublisher::Draft go_live;
+  go_live.topic_id = *topic;
+  go_live.program_id = "show-1";
+  go_live.state = PeerAnnounceState::Live;
+  go_live.join_handle = "session-1";
+  auto tip = publisher.Publish(go_live, 1'000);
+  ASSERT_TRUE(tip) << tip.error().message;
+
+  auto ack = a_svc_->PushTip("b", *tip);
+  ASSERT_TRUE(ack) << ack.error().message;
+  EXPECT_FALSE(ack->ok);
+  EXPECT_EQ(ack->error, "unknown publisher key");
+  EXPECT_FALSE(feed_b_.Latest("unknown-publisher", *topic, "show-1"));
+}
+
+TEST_F(AmpPeerAnnounceServiceTest, PushTipRoundTripWithStoreBackedResolver) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  ASSERT_TRUE(peer_id);
+
+  PeerSigningKeyStore store;
+  PeerSigningKeyRecord record;
+  record.signing_public_key_b64 = Base64Encode(keys->public_key);
+  record.source = "test";
+  store.Put(ContactIdKindToString(ContactIdKind::PeerId), *peer_id, record);
+
+  b_svc_->SetPublisherKeyResolver(
+      [&store](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
+        return ResolvePeerAnnouncePublisherKey(tip_peer_id, "", {}, store);
+      });
+
+  auto topic = MakePeerAnnounceTopicId(*peer_id, "live");
+  ASSERT_TRUE(topic);
+  PeerAnnouncePublisher publisher(*peer_id, keys->secret_key);
+  PeerAnnouncePublisher::Draft go_live;
+  go_live.topic_id = *topic;
+  go_live.program_id = "show-2";
+  go_live.state = PeerAnnounceState::Live;
+  go_live.join_handle = "session-2";
+  go_live.body = "store resolve";
+  auto tip = publisher.Publish(go_live, 2'000);
+  ASSERT_TRUE(tip) << tip.error().message;
+
+  auto ack = a_svc_->PushTip("b", *tip);
+  ASSERT_TRUE(ack) << ack.error().message;
+  EXPECT_TRUE(ack->ok) << ack->error;
+
+  auto latest = feed_b_.Latest(*peer_id, *topic, "show-2");
+  ASSERT_TRUE(latest);
+  EXPECT_EQ(latest->body, "store resolve");
 }
 
 } // namespace
