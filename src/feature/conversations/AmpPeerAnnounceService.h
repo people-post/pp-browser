@@ -26,6 +26,8 @@ public:
   using WorkerPost = std::function<void(std::function<void()>)>;
   /** Resolve publisher ML-DSA-65 public key for tip.peer_id (device key). */
   using ResolvePublisherKey = std::function<std::optional<std::vector<uint8_t>>(const std::string& peer_id)>;
+  /** Fired after a tip is verified and ingested into the local feed (any thread). */
+  using OnTipIngested = std::function<void(const PeerAnnounceTip& tip)>;
 
   AmpPeerAnnounceService(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
                          WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {});
@@ -38,6 +40,7 @@ public:
   void Stop();
 
   void SetPublisherKeyResolver(ResolvePublisherKey resolve_key);
+  void SetOnTipIngested(OnTipIngested cb);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const;
 

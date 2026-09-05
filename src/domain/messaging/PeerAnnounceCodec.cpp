@@ -67,6 +67,16 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
   if (!tip.hop_peer_id.empty()) {
     AppendField(out, "hop_peer_id", tip.hop_peer_id);
   }
+  // Additive kind / viewer attribution (omit defaults for legacy verify).
+  if (!tip.kind.empty()) {
+    AppendField(out, "kind", tip.kind);
+  }
+  if (!tip.viewer_peer_id.empty()) {
+    AppendField(out, "viewer_peer_id", tip.viewer_peer_id);
+  }
+  if (!tip.viewer_msg_id.empty()) {
+    AppendField(out, "viewer_msg_id", tip.viewer_msg_id);
+  }
   AppendField(out, "body", tip.body);
   AppendField(out, "content_id_hex", tip.content_id_hex);
   return out.str();
@@ -85,6 +95,15 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   json.set("join_handle", tip.join_handle);
   if (!tip.hop_peer_id.empty()) {
     json.set("hop_peer_id", tip.hop_peer_id);
+  }
+  if (!tip.kind.empty()) {
+    json.set("kind", tip.kind);
+  }
+  if (!tip.viewer_peer_id.empty()) {
+    json.set("viewer_peer_id", tip.viewer_peer_id);
+  }
+  if (!tip.viewer_msg_id.empty()) {
+    json.set("viewer_msg_id", tip.viewer_msg_id);
   }
   json.set("body", tip.body);
   json.set("content_id_hex", tip.content_id_hex);
@@ -117,6 +136,9 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   tip.created_at_ms = ObjectInt64(o, "created_at_ms").value_or(0);
   tip.join_handle = ObjectString(o, "join_handle").value_or("");
   tip.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
+  tip.kind = ObjectString(o, "kind").value_or("");
+  tip.viewer_peer_id = ObjectString(o, "viewer_peer_id").value_or("");
+  tip.viewer_msg_id = ObjectString(o, "viewer_msg_id").value_or("");
   tip.body = ObjectString(o, "body").value_or("");
   tip.content_id_hex = ObjectString(o, "content_id_hex").value_or("");
   tip.signature_b64 = ObjectString(o, "signature_b64").value_or("");

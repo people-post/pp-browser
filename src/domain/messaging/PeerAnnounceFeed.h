@@ -28,13 +28,19 @@ public:
 
   std::vector<PeerAnnounceTip> ListForTopic(const std::string& peer_id, const std::string& topic_id) const;
 
+  /** live_chat tips for a program (does not include program schedule/live/end tips). */
+  std::vector<PeerAnnounceTip> ListLiveChat(const std::string& peer_id, const std::string& topic_id,
+                                            const std::string& program_id) const;
+
   bool IsNewerThanStored(const PeerAnnounceTip& tip) const;
 
   size_t Size() const { return tips_.size(); }
 
 private:
-  static std::string MapKey(const std::string& peer_id, const std::string& topic_id,
-                            const std::string& program_id);
+  /** Program tips use kind=""; live_chat tips include kind + viewer_msg_id so they never clobber Latest(). */
+  static std::string MapKey(const PeerAnnounceTip& tip);
+  static std::string ProgramMapKey(const std::string& peer_id, const std::string& topic_id,
+                                   const std::string& program_id);
 
   std::vector<uint8_t> publisher_public_key_;
   std::unordered_map<std::string, PeerAnnounceTip> tips_;

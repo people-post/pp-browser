@@ -42,8 +42,10 @@
 | Accept without SoftMigrate / 1:1 media | `CallTopologyController::OnAnnounceViewerJoined`; `CallSessionManager::AcceptLiveAnnounceJoin`; facade `JoinLiveAnnounceFromTip` |
 | Tests | `AnnounceLiveJoinTest` in `peer_announce_test.cpp` |
 
-**Still out of scope:** SoftMigrate for announce viewers, Notifications/banner pickup UI, join button chrome, epidemic `help_announce`, overlay (`intent=overlay` / `live_chat`) tip path. Media attaches only when `hop_peer_id`/`sfu_hint` is present.
+**Domain wire landed (bare minimum, schema v1 additive):** tip `kind` / `viewer_peer_id` / `viewer_msg_id`; `AnnounceOverlayReply` + rate helpers; `AnnounceNotificationInbox`; feed isolates `live_chat` from program `Latest()`; Mesh `ReplyToAnnounceOverlay` / `PublishLiveChatFromOverlay`; Amp `SetOnTipIngested` → inbox upsert.
 
-**Product UX (docs only, 2026-09-05):** Discovery ≠ call ring; Notifications + optional live banner; Watch reuses join API without ringtone; Private vs On-screen replies (publisher-signed overlay tips + rate limit / block). See [DESIGN.md](DESIGN.md#product-pickup-ux--not-call-ringing).
+**Still out of scope:** SoftMigrate for announce viewers, Notifications/banner **UI chrome**, join button chrome, epidemic `help_announce`. Media attaches only when `hop_peer_id`/`sfu_hint` is present.
+
+**Product UX:** Discovery ≠ call ring; Notifications + optional live banner (domain inbox ready; UI later); Watch reuses join API without ringtone; Private vs On-screen replies (publisher-signed overlay tips + rate limit / block). See [DESIGN.md](DESIGN.md#product-pickup-ux--not-call-ringing).
 
 See [PROGRAM.md](PROGRAM.md) for sequencing.

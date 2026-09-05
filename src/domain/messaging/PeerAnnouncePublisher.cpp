@@ -23,8 +23,11 @@ Roe<PeerAnnounceTip> PeerAnnouncePublisher::Emit(PeerAnnounceTip tip, const int6
       return ingested.error();
     }
   }
-  last_tip_ = *signed_tip;
-  last_emit_ms_ = now_ms;
+  // live_chat tips share seq space but must not become the heartbeat baseline.
+  if (TipIsProgramKind(*signed_tip)) {
+    last_tip_ = *signed_tip;
+    last_emit_ms_ = now_ms;
+  }
   next_seq_ = signed_tip->seq + 1;
   epoch_ = signed_tip->epoch;
   return *signed_tip;
@@ -44,6 +47,9 @@ Roe<PeerAnnounceTip> PeerAnnouncePublisher::Publish(const Draft& draft, const in
   tip.state = draft.state;
   tip.join_handle = draft.join_handle;
   tip.hop_peer_id = draft.hop_peer_id;
+  tip.kind = draft.kind;
+  tip.viewer_peer_id = draft.viewer_peer_id;
+  tip.viewer_msg_id = draft.viewer_msg_id;
   tip.body = draft.body;
   tip.content_id_hex = draft.content_id_hex;
 
@@ -71,6 +77,9 @@ Roe<std::optional<PeerAnnounceTip>> PeerAnnouncePublisher::MaybeEmitHeartbeat(co
   tip.seq = next_seq_;
   tip.body.clear();
   tip.content_id_hex.clear();
+  tip.kind.clear();
+  tip.viewer_peer_id.clear();
+  tip.viewer_msg_id.clear();
   tip.state = PeerAnnounceState::Live;
   auto emitted = Emit(std::move(tip), now_ms);
   if (!emitted) {

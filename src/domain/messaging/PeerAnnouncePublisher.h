@@ -28,6 +28,10 @@ public:
     std::string hop_peer_id;
     std::string body;
     std::string content_id_hex;
+    /** Empty/program = schedule/live/end; live_chat = overlay tip. */
+    std::string kind;
+    std::string viewer_peer_id;
+    std::string viewer_msg_id;
     /** When true, bump epoch and reset seq to 1 (new show / revoke path). */
     bool bump_epoch = false;
   };

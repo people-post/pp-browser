@@ -26,6 +26,8 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/AnnounceNotificationInbox.h"
+#include "domain/messaging/AnnounceOverlayReply.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
 #include "domain/net/ServiceClients.h"
 
@@ -136,6 +138,21 @@ public:
    * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
    */
   Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
+  /**
+   * Overlay (on-screen) reply request: DM body with intent=overlay.
+   * Publisher policy/rate limits decide whether to rebroadcast as live_chat.
+   */
+  Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
+                                            const std::string& text, const std::string& viewer_msg_id);
+  /** Publisher: sign+push a live_chat tip from a decoded overlay request. */
+  Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
+                                                     const std::string& program_id, const std::string& join_handle,
+                                                     const std::string& viewer_peer_id,
+                                                     const AnnounceOverlayReplyBody& body, int64_t now_ms);
+  AnnounceNotificationInbox& AnnounceNotifications() { return announce_notifications_; }
+  const AnnounceNotificationInbox& AnnounceNotifications() const { return announce_notifications_; }
+  bool DismissAnnounceNotification(const std::string& key) { return announce_notifications_.Dismiss(key); }
+  bool DismissAnnounceLiveBanner(const std::string& key) { return announce_notifications_.DismissBanner(key); }
   /**
    * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
    * Does not SoftMigrate or attach media yet.
@@ -257,6 +274,7 @@ private:
   std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
   std::unique_ptr<AmpPeerAnnounceService> peer_announce_;
   std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
+  AnnounceNotificationInbox announce_notifications_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

@@ -47,6 +47,7 @@ struct AmpPeerAnnounceService::Impl {
   std::mutex feed_mutex;
   std::mutex resolver_mutex;
   ResolvePublisherKey resolve_key;
+  OnTipIngested on_tip_ingested;
   std::atomic<bool> stopped{false};
 
   void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
@@ -90,6 +91,14 @@ struct AmpPeerAnnounceService::Impl {
       ack.ok = false;
       ack.error = ingested.error().message;
       return ack;
+    }
+    OnTipIngested cb;
+    {
+      std::lock_guard lock(resolver_mutex);
+      cb = on_tip_ingested;
+    }
+    if (cb) {
+      cb(tip);
     }
     ack.ok = true;
     return ack;
@@ -175,6 +184,12 @@ void AmpPeerAnnounceService::SetPublisherKeyResolver(ResolvePublisherKey resolve
   std::lock_guard lock(impl_->resolver_mutex);
   impl_->resolve_key = std::move(resolve_key);
 }
+
+void AmpPeerAnnounceService::SetOnTipIngested(OnTipIngested cb) {
+  std::lock_guard lock(impl_->resolver_mutex);
+  impl_->on_tip_ingested = std::move(cb);
+}
+
 
 bool AmpPeerAnnounceService::IsPeerReachable(const std::string& peer_identity_value) const {
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);

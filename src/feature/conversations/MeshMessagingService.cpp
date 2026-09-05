@@ -156,18 +156,22 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
     peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
       std::string local_peer_id;
       std::vector<uint8_t> local_pk;
-      if (auto identity = identity_.Get()) {
-        local_peer_id = identity->peer_id;
+      if (auto local_identity = identity_.Get()) {
+        local_peer_id = local_identity->peer_id;
       }
       if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
         local_pk = *pk;
       }
       return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
     });
+    peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
+      const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
+      announce_notifications_.UpsertFromTip(tip, now_ms);
+    });
     if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-      if (auto identity = identity_.Get(); identity && !identity->peer_id.empty()) {
+      if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
         peer_announce_publisher_ =
-            std::make_unique<PeerAnnouncePublisher>(identity->peer_id, *sk, peer_announce_feed_.get());
+            std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
       } else {
         log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
       }
@@ -246,6 +250,66 @@ Roe<ThreadMessage> MeshMessagingService::ReplyToAnnouncePublisher(const std::str
   }
   WarmPeerForThread(thread->id);
   return SendUserMessage(thread->id, text);
+}
+
+
+Roe<ThreadMessage> MeshMessagingService::ReplyToAnnounceOverlay(const std::string& tip_peer_id,
+                                                                const std::string& join_handle,
+                                                                const std::string& text,
+                                                                const std::string& viewer_msg_id) {
+  if (tip_peer_id.empty()) {
+    return Error("Missing announce publisher peer_id");
+  }
+  if (join_handle.empty() || viewer_msg_id.empty() || text.empty()) {
+    return Error("Overlay reply requires join_handle, viewer_msg_id, and text");
+  }
+
+  std::string contact_id;
+  std::string account_id;
+  std::string title = tip_peer_id;
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+    if (*found) {
+      const Contact& contact = **found;
+      contact_id = contact.id;
+      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      title = FormatContactTitle(contact);
+      if (title.empty()) {
+        title = tip_peer_id;
+      }
+      RegisterContactDirectEndpoints(contact);
+    }
+  }
+
+  auto plan = PlanAnnounceOverlayReply(tip_peer_id, contact_id, account_id, title, join_handle, text, viewer_msg_id);
+  if (!plan) {
+    return plan.error();
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(plan->dm.target, plan->dm.contact_id, plan->dm.thread_title);
+  if (!thread) {
+    return thread.error();
+  }
+  WarmPeerForThread(thread->id);
+  return SendUserMessage(thread->id, plan->message_body);
+}
+
+Roe<PeerAnnounceTipAck> MeshMessagingService::PublishLiveChatFromOverlay(
+    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
+    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+    const int64_t now_ms) {
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    return Error("peer-announce not ready (Amp or device identity missing)");
+  }
+  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
+  if (!draft) {
+    return draft.error();
+  }
+  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
+  if (!tip) {
+    return tip.error();
+  }
+  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
+  return peer_announce_->PushTip(peer_key, *tip);
 }
 
 Roe<AnnounceLiveJoinPlan> MeshMessagingService::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const {

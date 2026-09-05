@@ -14,6 +14,17 @@ inline constexpr const char* kPeerAnnounceAppNs = "pp-browser/peer-announce/1";
 inline constexpr int64_t kPeerAnnounceLiveHeartbeatMinIntervalMs = 30'000;
 inline constexpr int64_t kPeerAnnounceLiveHeartbeatMaxIntervalMs = 60'000;
 
+/** Tip kind (additive; empty == program). Avoids schema bump for overlay tips. */
+inline constexpr const char* kPeerAnnounceKindProgram = "program";
+inline constexpr const char* kPeerAnnounceKindLiveChat = "live_chat";
+
+/** Viewer→publisher overlay request intent (DM/rpc body), not a tip kind. */
+inline constexpr const char* kAnnounceOverlayIntent = "overlay";
+
+inline constexpr int64_t kAnnounceOverlayViewerMinIntervalMs = 5'000;
+inline constexpr int64_t kAnnounceOverlayPublisherMaxPerMinute = 30;
+inline constexpr size_t kAnnounceOverlayMaxBodyChars = 280;
+
 enum class PeerAnnounceHelperCaps : uint32_t {
   None = 0,
   HelpAnnounce = 1u << 0,
@@ -67,9 +78,29 @@ struct PeerAnnounceTip {
   std::string join_handle;
   /** Optional media_relay / SFU hop PeerId for Spine C viewers. */
   std::string hop_peer_id;
+  /**
+   * Tip kind (additive). Empty or "program" = schedule/live/end tips.
+   * "live_chat" = publisher-signed on-screen overlay tip.
+   */
+  std::string kind;
+  /** Attribution for live_chat tips (additive; omit when empty). */
+  std::string viewer_peer_id;
+  std::string viewer_msg_id;
   std::string body;
   std::string content_id_hex;
   std::string signature_b64;
 };
+
+inline bool TipIsProgramKind(const PeerAnnounceTip& tip) {
+  return tip.kind.empty() || tip.kind == kPeerAnnounceKindProgram;
+}
+
+inline bool TipIsLiveChatKind(const PeerAnnounceTip& tip) {
+  return tip.kind == kPeerAnnounceKindLiveChat;
+}
+
+inline std::string NormalizedPeerAnnounceKind(const PeerAnnounceTip& tip) {
+  return TipIsLiveChatKind(tip) ? std::string(kPeerAnnounceKindLiveChat) : std::string{};
+}
 
 } // namespace pbr

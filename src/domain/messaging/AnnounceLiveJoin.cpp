@@ -3,12 +3,16 @@
 namespace pbr {
 
 bool TipIsLiveJoinable(const PeerAnnounceTip& tip) {
-  return tip.state == PeerAnnounceState::Live && !tip.join_handle.empty() && !tip.peer_id.empty();
+  return TipIsProgramKind(tip) && tip.state == PeerAnnounceState::Live && !tip.join_handle.empty() &&
+         !tip.peer_id.empty();
 }
 
 Roe<AnnounceLiveJoinPlan> PlanAnnounceLiveJoin(const PeerAnnounceTip& tip) {
   if (tip.peer_id.empty()) {
     return Error("Missing announce publisher peer_id");
+  }
+  if (!TipIsProgramKind(tip)) {
+    return Error("live_chat tips are not joinable");
   }
   if (tip.state != PeerAnnounceState::Live) {
     return Error("Announce tip is not live");

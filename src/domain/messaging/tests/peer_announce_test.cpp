@@ -1,6 +1,8 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceOverlayReply.h"
+#include "domain/messaging/AnnounceNotificationInbox.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
@@ -385,6 +387,132 @@ TEST(AnnounceLiveJoinTest, CopiesHopPeerIdIntoPlanAndHandoffSfuHint) {
   EXPECT_EQ(*handoff->pending.sfu_hint, "12D3KooWMediaHop");
   ASSERT_TRUE(handoff->session.sfu_hint.has_value());
   EXPECT_EQ(*handoff->session.sfu_hint, "12D3KooWMediaHop");
+}
+
+TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
+  ASSERT_TRUE(topic);
+  auto tip = SampleTip(*topic);
+  tip.kind = kPeerAnnounceKindLiveChat;
+  tip.viewer_peer_id = "12D3KooWViewer";
+  tip.viewer_msg_id = "msg-1";
+  tip.body = "hello overlay";
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys->public_key));
+  auto json = EncodePeerAnnounceTipJson(*signed_tip);
+  ASSERT_TRUE(json);
+  auto decoded = DecodePeerAnnounceTipJson(*json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->kind, kPeerAnnounceKindLiveChat);
+  EXPECT_EQ(decoded->viewer_peer_id, "12D3KooWViewer");
+  EXPECT_EQ(decoded->viewer_msg_id, "msg-1");
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
+}
+
+TEST(PeerAnnounceKindTest, EmptyKindKeepsLegacyCanonical) {
+  auto tip = SampleTip("topic");
+  tip.kind.clear();
+  tip.viewer_peer_id.clear();
+  tip.viewer_msg_id.clear();
+  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
+  EXPECT_EQ(canonical.find("kind="), std::string::npos);
+  EXPECT_EQ(canonical.find("viewer_peer_id="), std::string::npos);
+}
+
+TEST(PeerAnnounceFeedKindTest, LiveChatDoesNotClobberProgramLatest) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
+  ASSERT_TRUE(topic);
+  PeerAnnounceFeed feed(keys->public_key);
+
+  auto program = SampleTip(*topic);
+  program.seq = 1;
+  program.state = PeerAnnounceState::Live;
+  program.join_handle = "session-1";
+  auto signed_program = SignPeerAnnounceTip(program, keys->secret_key);
+  ASSERT_TRUE(signed_program);
+  ASSERT_TRUE(feed.Ingest(*signed_program));
+
+  auto chat = SampleTip(*topic);
+  chat.seq = 2;
+  chat.kind = kPeerAnnounceKindLiveChat;
+  chat.viewer_peer_id = "viewer";
+  chat.viewer_msg_id = "m1";
+  chat.body = "hi";
+  auto signed_chat = SignPeerAnnounceTip(chat, keys->secret_key);
+  ASSERT_TRUE(signed_chat);
+  ASSERT_TRUE(feed.Ingest(*signed_chat));
+
+  auto latest = feed.Latest(program.peer_id, *topic, program.program_id);
+  ASSERT_TRUE(latest);
+  EXPECT_TRUE(TipIsProgramKind(*latest));
+  EXPECT_EQ(latest->join_handle, "session-1");
+  EXPECT_EQ(feed.ListLiveChat(program.peer_id, *topic, program.program_id).size(), 1u);
+}
+
+TEST(AnnounceLiveJoinTest, RejectsLiveChatKind) {
+  auto tip = SampleTip("topic");
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle = "session";
+  tip.kind = kPeerAnnounceKindLiveChat;
+  tip.viewer_msg_id = "m1";
+  EXPECT_FALSE(TipIsLiveJoinable(tip));
+  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
+}
+
+TEST(AnnounceOverlayReplyTest, PlansEncodesAndBuildsLiveChatDraft) {
+  auto plan = PlanAnnounceOverlayReply("12D3KooWPublisher", "c1", "account:alice", "Alice", "session-1",
+                                       "hello", "vm-1");
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->join_handle, "session-1");
+  auto decoded = DecodeAnnounceOverlayReplyBody(plan->message_body);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->text, "hello");
+
+  EXPECT_TRUE(AnnounceOverlayViewerAllowed(0, 1000));
+  EXPECT_FALSE(AnnounceOverlayViewerAllowed(1000, 1000 + kAnnounceOverlayViewerMinIntervalMs - 1));
+  EXPECT_TRUE(AnnounceOverlayPublisherAllowed(0, 0, 1000));
+  EXPECT_FALSE(AnnounceOverlayPublisherAllowed(static_cast<int>(kAnnounceOverlayPublisherMaxPerMinute), 1000,
+                                               1000 + 10));
+
+  auto draft = MakeLiveChatAnnounceDraft("topic", "show", "session-1", "viewer-peer", *decoded);
+  ASSERT_TRUE(draft) << draft.error().message;
+  EXPECT_EQ(draft->kind, kPeerAnnounceKindLiveChat);
+  EXPECT_EQ(draft->viewer_msg_id, "vm-1");
+  EXPECT_EQ(draft->body, "hello");
+}
+
+TEST(AnnounceNotificationInboxTest, UpsertsProgramTipsAndLiveBanner) {
+  AnnounceNotificationInbox inbox;
+  PeerAnnounceTip tip;
+  tip.peer_id = "pub";
+  tip.topic_id = "topic";
+  tip.program_id = "show";
+  tip.state = PeerAnnounceState::Live;
+  tip.seq = 1;
+  tip.join_handle = "s1";
+  EXPECT_TRUE(inbox.UpsertFromTip(tip, 10));
+  EXPECT_EQ(inbox.ListActive().size(), 1u);
+  EXPECT_EQ(inbox.ListLiveBanners().size(), 1u);
+
+  tip.kind = kPeerAnnounceKindLiveChat;
+  tip.viewer_msg_id = "m";
+  tip.seq = 2;
+  EXPECT_FALSE(inbox.UpsertFromTip(tip, 20));
+
+  tip.kind.clear();
+  tip.viewer_msg_id.clear();
+  tip.seq = 3;
+  tip.body = "still live";
+  EXPECT_TRUE(inbox.UpsertFromTip(tip, 30));
+  const auto key = AnnounceNotificationInbox::MakeKey(tip);
+  EXPECT_TRUE(inbox.DismissBanner(key));
+  EXPECT_TRUE(inbox.ListLiveBanners().empty());
+  EXPECT_FALSE(inbox.ListActive().empty());
 }
 
 } // namespace pbr
