@@ -244,6 +244,10 @@ public:
   Roe<PendingCallInvite> ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
                                                        const std::string& topic_id,
                                                        const std::string& program_id);
+  /** Accept an armed live-announce invite (no SoftMigrate / 1:1 media). */
+  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
+  /** Plan+arm from tip then accept (defers media when hop_peer_id absent). */
+  Roe<PendingCallInvite> JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip);
 
   ConversationsHub& Hub() { return hub_; }
 

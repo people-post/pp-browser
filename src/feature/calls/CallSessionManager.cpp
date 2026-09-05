@@ -994,6 +994,77 @@ Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const Announc
 }
 
 
+Roe<void> CallSessionManager::AcceptLiveAnnounceJoin(const std::string& call_id) {
+  log().info << "AcceptLiveAnnounceJoin start call_id=" << call_id;
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  SweepExpiredInvites();
+  if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
+    return cleared.error();
+  }
+  auto pending = sessions_.LoadPendingInvite(call_id, *local);
+  if (!pending || !pending->has_value() || (*pending)->status != "pending") {
+    return Error("Pending live-announce invite not found");
+  }
+  if (CallSessionLogic::IsInviteExpired(**pending, util::NowUnixMs())) {
+    (void)sessions_.UpdateInviteStatus(call_id, *local, "expired");
+    NotifyRingChanged();
+    return Error("Live-announce invite expired");
+  }
+
+  auto session = sessions_.LoadSession(call_id);
+  CallSession row;
+  if (session && session->has_value()) {
+    row = **session;
+  } else {
+    row.call_id = call_id;
+    row.origin_thread_id = (*pending)->origin_thread_id;
+    row.origin_group_id = (*pending)->origin_group_id;
+    row.media_mode = (*pending)->media_mode;
+    row.video_allowed = (*pending)->video_allowed;
+    row.state = CallSessionState::Ringing;
+    row.created_at = (*pending)->created_at;
+    row.media_epoch = 1;
+    row.sfu_hint = (*pending)->sfu_hint;
+  }
+  if (!row.sfu_hint && (*pending)->sfu_hint) {
+    row.sfu_hint = (*pending)->sfu_hint;
+  }
+
+  auto joined = sessions_.CountJoined(call_id);
+  const size_t joined_count = joined ? *joined : 0;
+  if (!CallSessionLogic::CanAcceptJoin(joined_count)) {
+    return Error("Call is full");
+  }
+
+  const int64_t now = util::NowUnixMs();
+  row.state = CallSessionLogic::TransitionOnRemoteJoined(row.state);
+  if (auto saved = sessions_.UpsertSession(row); !saved) {
+    return saved.error();
+  }
+
+  CallParticipant self;
+  self.call_id = call_id;
+  self.identity = *local;
+  self.state = CallParticipantState::Joined;
+  self.media.video_enabled = false;
+  self.joined_at = now;
+  if (auto saved = sessions_.UpsertParticipant(self); !saved) {
+    return saved.error();
+  }
+  (void)sessions_.UpdateInviteStatus(call_id, *local, "accepted");
+
+  // No SoftMigrate, no 1:1 ScheduleStartDirectMedia, no CallAccept wire to publisher.
+  const bool sfu_scheduled = topology_.OnAnnounceViewerJoined(call_id, row.sfu_hint);
+  NotifyRingChanged();
+  log().info << "AcceptLiveAnnounceJoin end call_id=" << call_id
+             << " sfu_scheduled=" << (sfu_scheduled ? 1 : 0) << " ok";
+  return {};
+}
+
+
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   auto local = LocalRelayIdentity();
   if (!local) {

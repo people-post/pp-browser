@@ -65,6 +65,8 @@ struct PeerAnnounceTip {
   uint64_t epoch = 0;
   int64_t created_at_ms = 0;
   std::string join_handle;
+  /** Optional media_relay / SFU hop PeerId for Spine C viewers. */
+  std::string hop_peer_id;
   std::string body;
   std::string content_id_hex;
   std::string signature_b64;

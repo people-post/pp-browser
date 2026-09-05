@@ -90,6 +90,13 @@ public:
    */
   Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan);
 
+  /**
+   * Spine C: accept an armed live-announce invite without SoftMigrate or 1:1 media.
+   * Attaches SFU when session/pending carries sfu_hint (tip.hop_peer_id); otherwise
+   * marks joined and defers media.
+   */
+  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
+
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
   /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */

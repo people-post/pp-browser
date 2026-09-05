@@ -65,6 +65,8 @@ public:
    * Does not SoftMigrate or attach media — AcceptInvite remains the next step.
    */
   Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan);
+  /** Spine C: accept armed live-announce invite (no SoftMigrate / 1:1 media). */
+  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
 
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
   void StopCallMedia(const std::string& call_id);

@@ -625,4 +625,23 @@ Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromStoredAnnounce(const 
   return calls->ArmJoinFromLiveAnnounce(*plan);
 }
 
+Roe<void> ConversationsFacade::AcceptLiveAnnounceJoin(const std::string& call_id) {
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return Error("Call session manager unavailable");
+  }
+  return calls->AcceptLiveAnnounceJoin(call_id);
+}
+
+Roe<PendingCallInvite> ConversationsFacade::JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip) {
+  auto armed = ArmLiveJoinFromAnnounceTip(tip);
+  if (!armed) {
+    return armed.error();
+  }
+  if (auto accepted = AcceptLiveAnnounceJoin(armed->call_id); !accepted) {
+    return accepted.error();
+  }
+  return armed;
+}
+
 } // namespace pbr

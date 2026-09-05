@@ -141,6 +141,12 @@ public:
                            const std::optional<std::string>& sfu_hint);
 
   /**
+   * Spine C announce viewer: attach via sfu_hint when present (no SoftMigrate / N≥3 gate).
+   * Returns true if an SFU attach was scheduled.
+   */
+  bool OnAnnounceViewerJoined(const std::string& call_id, const std::optional<std::string>& sfu_hint);
+
+  /**
    * After inbound CallAccept raised joined count: soft-migrate or clear SFU wait.
    * Returns true if SFU path was taken (caller should not start P2P offerer).
    */

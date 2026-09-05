@@ -63,6 +63,10 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
   AppendField(out, "epoch", tip.epoch);
   AppendField(out, "created_at_ms", tip.created_at_ms);
   AppendField(out, "join_handle", tip.join_handle);
+  // Additive: omit when empty so pre-hop tips keep verifying.
+  if (!tip.hop_peer_id.empty()) {
+    AppendField(out, "hop_peer_id", tip.hop_peer_id);
+  }
   AppendField(out, "body", tip.body);
   AppendField(out, "content_id_hex", tip.content_id_hex);
   return out.str();
@@ -79,6 +83,9 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   json.set("epoch", static_cast<int64_t>(tip.epoch));
   json.set("created_at_ms", tip.created_at_ms);
   json.set("join_handle", tip.join_handle);
+  if (!tip.hop_peer_id.empty()) {
+    json.set("hop_peer_id", tip.hop_peer_id);
+  }
   json.set("body", tip.body);
   json.set("content_id_hex", tip.content_id_hex);
   json.set("signature_b64", tip.signature_b64);
@@ -109,6 +116,7 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   tip.epoch = ObjectNonNegInt(o, "epoch").value_or(0);
   tip.created_at_ms = ObjectInt64(o, "created_at_ms").value_or(0);
   tip.join_handle = ObjectString(o, "join_handle").value_or("");
+  tip.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
   tip.body = ObjectString(o, "body").value_or("");
   tip.content_id_hex = ObjectString(o, "content_id_hex").value_or("");
   tip.signature_b64 = ObjectString(o, "signature_b64").value_or("");

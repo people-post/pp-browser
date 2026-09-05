@@ -22,6 +22,7 @@ Roe<AnnounceLiveJoinPlan> PlanAnnounceLiveJoin(const PeerAnnounceTip& tip) {
   plan.publisher_peer_id = tip.peer_id;
   plan.topic_id = tip.topic_id;
   plan.program_id = tip.program_id;
+  plan.hop_peer_id = tip.hop_peer_id;
   plan.seq = tip.seq;
   plan.epoch = tip.epoch;
   return plan;

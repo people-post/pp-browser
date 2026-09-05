@@ -25,6 +25,7 @@ public:
     std::string program_id;
     PeerAnnounceState state = PeerAnnounceState::Scheduled;
     std::string join_handle;
+    std::string hop_peer_id;
     std::string body;
     std::string content_id_hex;
     /** When true, bump epoch and reset seq to 1 (new show / revoke path). */

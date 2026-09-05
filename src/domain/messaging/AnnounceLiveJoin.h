@@ -21,6 +21,8 @@ struct AnnounceLiveJoinPlan {
   std::string publisher_peer_id;
   std::string topic_id;
   std::string program_id;
+  /** Optional media_relay hop PeerId (tip.hop_peer_id → session.sfu_hint). */
+  std::string hop_peer_id;
   uint64_t seq = 0;
   uint64_t epoch = 0;
 };

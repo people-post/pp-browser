@@ -25,6 +25,9 @@ Roe<AnnounceLiveJoinHandoff> BuildAnnounceLiveJoinHandoff(const AnnounceLiveJoin
   handoff.pending.created_at = now_ms;
   handoff.pending.expires_at = now_ms + kDefaultCallInviteTtlMs;
   handoff.pending.status = "pending";
+  if (!plan.hop_peer_id.empty()) {
+    handoff.pending.sfu_hint = plan.hop_peer_id;
+  }
 
   handoff.session.call_id = plan.call_id;
   handoff.session.media_mode = handoff.pending.media_mode;
@@ -32,6 +35,9 @@ Roe<AnnounceLiveJoinHandoff> BuildAnnounceLiveJoinHandoff(const AnnounceLiveJoin
   handoff.session.state = CallSessionState::Ringing;
   handoff.session.created_at = now_ms;
   handoff.session.media_epoch = 1;
+  if (!plan.hop_peer_id.empty()) {
+    handoff.session.sfu_hint = plan.hop_peer_id;
+  }
   return handoff;
 }
 

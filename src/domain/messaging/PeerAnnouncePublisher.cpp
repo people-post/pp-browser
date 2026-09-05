@@ -43,6 +43,7 @@ Roe<PeerAnnounceTip> PeerAnnouncePublisher::Publish(const Draft& draft, const in
   tip.program_id = draft.program_id;
   tip.state = draft.state;
   tip.join_handle = draft.join_handle;
+  tip.hop_peer_id = draft.hop_peer_id;
   tip.body = draft.body;
   tip.content_id_hex = draft.content_id_hex;
 

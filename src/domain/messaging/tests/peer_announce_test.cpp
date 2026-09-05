@@ -345,4 +345,46 @@ TEST(AnnounceLiveJoinHandoffTest, RejectsMissingIdentities) {
   EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "account:bob", "account:alice", 1, true));
 }
 
+
+TEST(PeerAnnounceHopPeerIdTest, JsonAndSignRoundTripWithHop) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto tip = SampleTip("topic-hop");
+  tip.hop_peer_id = "12D3KooWMediaHop";
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys->public_key));
+
+  auto json = EncodePeerAnnounceTipJson(*signed_tip);
+  ASSERT_TRUE(json);
+  auto decoded = DecodePeerAnnounceTipJson(*json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->hop_peer_id, "12D3KooWMediaHop");
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
+}
+
+TEST(PeerAnnounceHopPeerIdTest, EmptyHopKeepsLegacyCanonical) {
+  auto tip = SampleTip("topic-hop");
+  tip.hop_peer_id.clear();
+  const std::string with_empty = PeerAnnounceCanonicalSignBytes(tip);
+  EXPECT_EQ(with_empty.find("hop_peer_id="), std::string::npos);
+}
+
+TEST(AnnounceLiveJoinTest, CopiesHopPeerIdIntoPlanAndHandoffSfuHint) {
+  auto tip = SampleTip("topic-hop");
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle = "session-live-1";
+  tip.hop_peer_id = "12D3KooWMediaHop";
+  auto plan = PlanAnnounceLiveJoin(tip);
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->hop_peer_id, "12D3KooWMediaHop");
+
+  auto handoff = BuildAnnounceLiveJoinHandoff(*plan, "account:bob", "account:alice", 1'700'000'000'000, true);
+  ASSERT_TRUE(handoff) << handoff.error().message;
+  ASSERT_TRUE(handoff->pending.sfu_hint.has_value());
+  EXPECT_EQ(*handoff->pending.sfu_hint, "12D3KooWMediaHop");
+  ASSERT_TRUE(handoff->session.sfu_hint.has_value());
+  EXPECT_EQ(*handoff->session.sfu_hint, "12D3KooWMediaHop");
+}
+
 } // namespace pbr
