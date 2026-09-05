@@ -278,3 +278,12 @@ Threshold **4 MiB** = server small-tier cap (keep UX and quota vocabulary aligne
 **Rationale:** Covers size-tier auto, power-user Always/On-demand, and offline catch-up without four overlapping toggles. Large auto over peer uplink remains opt-in (Always / one-shot).
 
 ---
+
+---
+
+## Follow-on — profile Content CAS (realms)
+
+**Date:** 2026-09-05  
+**Status:** Accepted (points forward)  
+
+**Decision:** Durable attachment bytes migrate to profile-level **private/public CAS** per [content-cas](../content-cas/) (C001–C009). Cutover is **big bang** (C007). This project’s per-thread `blobs/` remains the pre-cutover layout.

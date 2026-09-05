@@ -1590,12 +1590,13 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
   const ByteVector attachment_dek = Attachments().CopyDek();
-  const ByteVector* attachment_dek_ptr = attachment_dek.empty() ? nullptr : &attachment_dek;
 
   if (active.kind == ThreadKind::Group) {
     auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
     if (sent) {
-      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+      if (!attachment_dek.empty() && !profile_id_.empty()) {
+        (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+      }
       Attachments().MaybeBuildPoster(thread_id, *fields);
       if (attachment_downloads_) {
         attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
@@ -1605,7 +1606,9 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   }
   auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
   if (sent) {
-    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+    if (!attachment_dek.empty() && !profile_id_.empty()) {
+      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+    }
     Attachments().MaybeBuildPoster(thread_id, *fields);
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(thread_id, *sent);

@@ -92,8 +92,11 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
     return std::vector<uint8_t>(pending->begin(), pending->end());
   }
 
+  if (dek == nullptr || profile_id.empty()) {
+    return Error("Attachment CAS load requires DEK");
+  }
   auto plaintext = LoadAttachmentPlaintext(profile_data_dir, request.thread_id, fields->content_hash, fields->mime,
-                                           fields->filename, dek, profile_id);
+                                           fields->filename, *dek, profile_id);
   if (!plaintext) {
     return plaintext.error();
   }

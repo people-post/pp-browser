@@ -115,13 +115,14 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 
 Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
 
-### Attachment blob AEAD (a5)
+### Attachment blob AEAD (a5 / C007 / C011)
 
 | Purpose | AAD |
 |---------|-----|
-| Local attachment cache | `attachment-blob\|{profile_id}\|{thread_id}\|{hash_hex}\|1` |
+| Private CAS block | `cas-private\|{profile_id}\|{content_id_hex}\|1` (`BuildCasPrivateAad`) |
 
-On-disk under `{profile}/threads/{thread_id}/blobs/`: magic `PPBA` (4 bytes) + `FileCipher` blob when a DEK is present; legacy plaintext when DEK is null (tests). Session plaintext for RmlUi `<img>` / OS open is materialized under `blobs_view/` while unlocked and wiped on `ClearDek` (`WipeAllAttachmentViewCaches`). Helpers: `BuildAttachmentBlobAad`, `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`.
+Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked and is wiped on `ClearDek` (`WipeAllAttachmentViewCaches`), which also clears `AttachmentPlaintextMemoryCache` (C011). Large private videos above Soft 4 MiB (`kMaxInlinePrivateVideoBytes` / `AttachmentAllowsInlinePrivateView`) skip `blobs_view` until explicit open; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`.
+
 
 ## Test fixtures
 

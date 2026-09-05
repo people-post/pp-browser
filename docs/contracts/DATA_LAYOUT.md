@@ -41,8 +41,33 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
-      blobs/                # attachment placeholder
 ```
+
+### Content CAS (planned)
+
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C011). `CasStore` on disk; attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
+
+After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
+
+```
+{data_dir}/profiles/{id}/
+  cas/
+    private/blocks/{aa}/{bb}/{content_id_hex}  # DEK-wrapped (PPBA)
+    public/blocks/{aa}/{bb}/{content_id_hex}   # clear published bytes (v1)
+  object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
+  threads/{thread_id}/
+    blobs_view/         # optional session plaintext materialization (not source of truth)
+    # blobs/            # not used; durable bytes live in cas/private only
+```
+
+| Realm | At rest | Object id | How it gets bytes |
+|-------|---------|------------|-------------------|
+| **private** | Profile DEK wrap (PPBA) | BLAKE2b-256(plaintext) — R016 | Chat/E2E decrypt → memory → wrap; never auto-public |
+| **public** | Clear published payload (v1) | Hash(published bytes); new object on publish | Explicit **Share publicly…** only |
+
+**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. Large private videos (> Soft 4 MiB) skip `blobs_view` until explicit open; CAS ingest unchanged. Public clear bytes need no DEK wipe path.
+
+Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
 ### PIN-related files (disk only)
 
