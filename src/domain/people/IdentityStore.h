@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/directory/IAccountSigningAccess.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "foundation/crypto/CryptoTypes.h"
@@ -13,7 +14,7 @@
 
 namespace pbr {
 
-class IdentityStore : public Module, public IDekConsumer {
+class IdentityStore : public Module, public IDekConsumer, public IAccountSigningAccess {
 public:
   /** Current identity plaintext JSON schema inside identity.enc. Unversioned / v1–v2 Ed25519 device keys fail closed (PQ hard cut). */
   static constexpr int kSchemaVersion = 3;
@@ -48,8 +49,8 @@ public:
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
   /** Account ML-DSA-65 secret (raw). Empty/error if not yet minted. */
-  Roe<ByteVector> GetAccountMlDsaPrivateKey() const;
-  Roe<std::string> GetAccountId() const;
+  Roe<ByteVector> GetAccountMlDsaPrivateKey() const override;
+  Roe<std::string> GetAccountId() const override;
   void Flush();
 
 private:

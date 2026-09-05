@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/directory/IContactTrustAccess.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "domain/people/ContactTypes.h"
@@ -12,7 +13,7 @@
 
 namespace pbr {
 
-class ContactsStore : public Module {
+class ContactsStore : public Module, public IContactTrustAccess {
 public:
   /** Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load. */
   static constexpr int kSchemaVersion = 1;
@@ -32,6 +33,9 @@ public:
   Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit, int64_t fetched_at_ms);
   Roe<Contact> AddEmpty();
   void Flush();
+
+  Roe<bool> IsAccountBlocked(const std::string& account_id) const override;
+  Roe<void> BlockAccountIfPresent(const std::string& account_id) override;
 
 private:
   Roe<void> EnsureLoaded() const;

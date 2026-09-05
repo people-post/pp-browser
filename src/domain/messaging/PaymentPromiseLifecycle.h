@@ -1,9 +1,9 @@
 #pragma once
 
+#include "common/directory/IAccountSigningAccess.h"
+#include "common/directory/IContactTrustAccess.h"
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "domain/messaging/PaymentPromiseStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
 #include "common/Error.h"
 
 #include <cstdint>
@@ -34,11 +34,11 @@ public:
   };
 
   /** Create Offered receipt, sign with local account key, upsert. */
-  static Roe<PaymentPromise> CreateOffer(PaymentPromiseStore& store, IdentityStore& identity,
+  static Roe<PaymentPromise> CreateOffer(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                          const OfferParams& params);
 
   /** Move Offered → Accepted and attach local counterparty signature. */
-  static Roe<PaymentPromise> Accept(PaymentPromiseStore& store, IdentityStore& identity,
+  static Roe<PaymentPromise> Accept(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                     const std::string& promise_id);
 
   /** Non-terminal progress marker (Accepted → Delivering). No new signature. */
@@ -48,13 +48,13 @@ public:
    * Record a terminal outcome (Released / Rejected / Expired / Disputed),
    * sign outcome bytes with local account key, upsert.
    */
-  static Roe<PaymentPromise> RecordOutcome(PaymentPromiseStore& store, IdentityStore& identity,
+  static Roe<PaymentPromise> RecordOutcome(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                            const std::string& promise_id, PaymentPromiseState outcome,
                                            const std::string& note = {});
 
   /** Stamp local_avoid + best-effort contact Blocked for counterparty. */
-  static Roe<void> AvoidCounterparty(PaymentPromiseStore& store, ContactsStore& contacts,
-                                     IdentityStore& identity, const std::string& promise_id);
+  static Roe<void> AvoidCounterparty(PaymentPromiseStore& store, IContactTrustAccess& contacts,
+                                     IAccountSigningAccess& identity, const std::string& promise_id);
 };
 
 } // namespace pbr

@@ -21,7 +21,7 @@ Roe<PaymentPromise> LoadRequired(PaymentPromiseStore& store, const std::string& 
   return **loaded;
 }
 
-Roe<std::string> RequireAccountId(IdentityStore& identity) {
+Roe<std::string> RequireAccountId(IAccountSigningAccess& identity) {
   auto account_id = identity.GetAccountId();
   if (!account_id) {
     return account_id.error();
@@ -32,7 +32,7 @@ Roe<std::string> RequireAccountId(IdentityStore& identity) {
   return *account_id;
 }
 
-Roe<ByteVector> RequireAccountSecret(IdentityStore& identity) {
+Roe<ByteVector> RequireAccountSecret(IAccountSigningAccess& identity) {
   auto secret = identity.GetAccountMlDsaPrivateKey();
   if (!secret) {
     return secret.error();
@@ -46,7 +46,7 @@ bool IsParty(const PaymentPromise& promise, const std::string& account_id) {
 
 } // namespace
 
-Roe<PaymentPromise> PaymentPromiseLifecycle::CreateOffer(PaymentPromiseStore& store, IdentityStore& identity,
+Roe<PaymentPromise> PaymentPromiseLifecycle::CreateOffer(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                                          const OfferParams& params) {
   if (params.counterparty_account_id.empty()) {
     return Error("counterparty_account_id required");
@@ -102,7 +102,7 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::CreateOffer(PaymentPromiseStore& st
   return promise;
 }
 
-Roe<PaymentPromise> PaymentPromiseLifecycle::Accept(PaymentPromiseStore& store, IdentityStore& identity,
+Roe<PaymentPromise> PaymentPromiseLifecycle::Accept(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                                     const std::string& promise_id) {
   auto promise = LoadRequired(store, promise_id);
   if (!promise) {
@@ -158,7 +158,7 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::MarkDelivering(PaymentPromiseStore&
   return *promise;
 }
 
-Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& store, IdentityStore& identity,
+Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                                            const std::string& promise_id,
                                                            const PaymentPromiseState outcome,
                                                            const std::string& note) {
@@ -200,8 +200,8 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& 
   return *promise;
 }
 
-Roe<void> PaymentPromiseLifecycle::AvoidCounterparty(PaymentPromiseStore& store, ContactsStore& contacts,
-                                                     IdentityStore& identity, const std::string& promise_id) {
+Roe<void> PaymentPromiseLifecycle::AvoidCounterparty(PaymentPromiseStore& store, IContactTrustAccess& contacts,
+                                                     IAccountSigningAccess& identity, const std::string& promise_id) {
   auto local_account = RequireAccountId(identity);
   if (!local_account) {
     return local_account.error();
