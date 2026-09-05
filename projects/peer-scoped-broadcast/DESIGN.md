@@ -237,20 +237,6 @@ Summary locked there:
 
 ---
 
-## Media scale (multi-hop tree)
-
-Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscriber counts need a **degree-capped tree of blind SFUs** so seed / PreferLocal root egress stays ~`degree × bitrate`. That plan lives in **[MEDIA_TREE.md](MEDIA_TREE.md)** (ADRs [B001–B006](DECISIONS.md), phases B0–B3, program **Spine F**).
-
-Summary locked there:
-
-- Broadcast ≠ large group call (do not SoftMigrate / raise V007).
-- Keep encrypt-once AEAD; hops stay blind; stable session key + join ticket (no rotate-on-viewer-leave).
-- Viewers attach to **leaves**; relays are `help_media` Nodes.
-- Circuit multi-hop remains reachability only; media copies only at `media_relay` nodes.
-- Group calls keep one-hop SFU; multi-SFU media is **broadcast-only**.
-
----
-
 ## Explicit non-goals
 
 - Open topics anyone can create or speak on  
