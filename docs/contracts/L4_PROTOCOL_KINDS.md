@@ -81,6 +81,8 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | Chat / receipts / presence / call signaling | **rpc** envelopes |
 | History / contact paste / small config pull | **rpc** |
 | Photos, docs, video files, icons | **blob** |
+| Content-addressed file share (IPFS-*like*; not Kubo/Bitswap wire) | **discover** (provider lookup) + **blob** (bytes; optional piece/manifest later) + **rpc** (announce / meta / ACL) |
+| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD of the same program |
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |
@@ -89,6 +91,17 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | SoftMigrate attach | Existing **realtime** hop control ops ([N026](../../projects/p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)) |
 
 Policy (who may hop, pricing, MeshHopPolicy), codecs, and UI stay **above** the wire kinds.
+
+### Prepared compositions (no new kinds)
+
+These product goals are **in scope of the seven kinds**; they need swarm/fan-out *services*, not new `protocol_id` families.
+
+| Goal | Do | Don’t |
+|------|----|--------|
+| **File share by content id** | Keep **blob** as the bulk conversation; add provider advertise/lookup on **discover**/**rpc**; optional blob piece/manifest mode for multi-source assemble; HTTP/CDN remains a delivery path | Mint `/pp-browser/ipfs/…` or treat Bitswap as an L4 kind; require Kubo wire compatibility |
+| **Live broadcast** | Treat as **realtime** blind-hop topology (more subscribers) + **rpc** for channel control; identify caps may advertise `realtime_broadcast_fanout` | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable ordered blob/rpc logs |
+
+Cheap forward-compat: identify capability bits (`blob_pieces`, `blob_provide`, `realtime_broadcast_fanout`); leave blob APIs room for `content_id` + optional `manifest`. Defer full rarest-first swarm, provider-DHT product semantics, and broadcast SFU UX until attachments and 1:1/group calls + hop are solid.
 
 ## Behavior matrix (as implemented)
 
