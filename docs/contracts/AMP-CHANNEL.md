@@ -128,12 +128,12 @@ Max reassembled size defaults match today’s stream caps:
 | Policy | Default max |
 |--------|-------------|
 | Control JSON | 256 KiB |
-| Chat blob | per `AmpChannelLimits` |
+| Bulk (blob) | per `AmpChannelLimits::kMaxBulkFrameBytes` |
 | Call media | per `AmpChannelLimits` / product policy |
 
 ## Channel policies (port StreamIoPolicy)
 
-Core factories: `lib/amp/L3/ChannelPolicy.h`. Product L4 factories: `base/mesh/ProductChannelPolicies.h`.
+Core factories: `lib/amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: `domain/mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
 
 | Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
 |---------|-------|----------------|------|-------------|--------------|------|
@@ -141,7 +141,8 @@ Core factories: `lib/amp/L3/ChannelPolicy.h`. Product L4 factories: `base/mesh/P
 | `MediaRelayHopChannelPolicy` | Realtime | 2 | Oldest | no | off | product |
 | `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | 8 s | product |
 | `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s | core |
-| `ChatBlobChannelPolicy` | Bulk | 1 | Never | configurable | 8 s | product |
+| `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | 1 | Never | no | off | **core** |
+| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s | product |
 | `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | 8 s | core |
 
 Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameSession` today).

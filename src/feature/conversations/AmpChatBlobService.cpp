@@ -122,7 +122,7 @@ struct AmpChatBlobService::Impl {
     }
     auto session = std::make_shared<pp::amp::ChannelSession>();
     auto pending_push = std::make_shared<std::optional<ChatBlobRequest>>();
-    session->Bind(*link.Mux(), channel_id, pp::amp::ChatBlobChannelPolicy(/*read_once=*/false),
+    session->Bind(*link.Mux(), channel_id, pp::amp::BulkChannelPolicy(/*read_once=*/false),
                   [this, session, pending_push](Roe<std::vector<uint8_t>> frame) {
                     if (!frame || stopped.load(std::memory_order_acquire)) {
                       return false;
@@ -308,7 +308,7 @@ Roe<std::vector<uint8_t>> AmpChatBlobService::FetchChatBlob(const ChatBlobReques
       finish(Error(assoc.error().message));
       return;
     }
-    links_.OpenChannel(peer_key, kChatBlobProtocolId, pp::amp::ChatBlobChannelPolicy(/*read_once=*/true),
+    links_.OpenChannel(peer_key, kChatBlobProtocolId, pp::amp::BulkChannelPolicy(/*read_once=*/true),
                        [this, peer_key, request_json, finish, settled, session, deadline,
                         read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
@@ -328,7 +328,7 @@ Roe<std::vector<uint8_t>> AmpChatBlobService::FetchChatBlob(const ChatBlobReques
                            return;
                          }
 
-                         auto policy = pp::amp::ChatBlobChannelPolicy(/*read_once=*/true);
+                         auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
                          policy.read_timeout = read_timeout;
                          session->Bind(*link->Mux(), *channel, std::move(policy),
                                        [finish](Roe<std::vector<uint8_t>> frame) {
@@ -402,7 +402,7 @@ Roe<void> AmpChatBlobService::PushChatBlob(const ChatBlobRequest& request,
           return;
         }
         links_.OpenChannel(
-            peer_key, kChatBlobProtocolId, pp::amp::ChatBlobChannelPolicy(/*read_once=*/true),
+            peer_key, kChatBlobProtocolId, pp::amp::BulkChannelPolicy(/*read_once=*/true),
             [this, peer_key, request_json, ciphertext, finish, settled, session, deadline,
              read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
               if (!channel) {
@@ -421,7 +421,7 @@ Roe<void> AmpChatBlobService::PushChatBlob(const ChatBlobRequest& request,
                 return;
               }
 
-              auto policy = pp::amp::ChatBlobChannelPolicy(/*read_once=*/true);
+              auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
               policy.read_timeout = read_timeout;
               session->Bind(*link->Mux(), *channel, std::move(policy),
                             [finish](Roe<std::vector<uint8_t>> frame) {
