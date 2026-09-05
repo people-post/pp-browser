@@ -1,4 +1,8 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "domain/messaging/PaymentPromiseLifecycle.h"
+#include "domain/messaging/PaymentPromiseAvoid.h"
+#include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "common/ValueJson.h"
 
 #include "domain/people/ContactReachability.h"
 #include "feature/conversations/GroupInviteGate.h"
@@ -902,6 +906,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
+  payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
+  (void)payment_promises_->Load();
 
   {
     StartupPhase phase("ConversationsHub::ReconcileOutbox");
@@ -993,6 +999,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
+  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1070,6 +1077,7 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
                                                 std::move(amp_pump), std::move(amp_worker));
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
+  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1692,6 +1700,142 @@ Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
     return Error("Messaging not ready");
   }
   return mesh_messaging_->SendChargeRequired(peer_identity, floor_minor);
+}
+
+Roe<PaymentPromise> ConversationsHub::CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::CreateOffer(*payment_promises_, Identity(), params);
+}
+
+Roe<PaymentPromise> ConversationsHub::CreatePaymentPromiseOfferForThread(const std::string& thread_id,
+                                                                     PaymentPromiseLifecycle::OfferParams params) {
+  if (thread_id.empty()) {
+    return Error("thread_id required");
+  }
+  params.service_ref = "thread:" + thread_id;
+  params.release_rule = PaymentPromiseReleaseRule::PayerAck;
+  return CreatePaymentPromiseOffer(params);
+}
+
+Roe<PaymentPromise> ConversationsHub::AcceptPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::Accept(*payment_promises_, Identity(), promise_id);
+}
+
+Roe<PaymentPromise> ConversationsHub::MarkPaymentPromiseDelivering(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::MarkDelivering(*payment_promises_, promise_id);
+}
+
+Roe<PaymentPromise> ConversationsHub::RecordPaymentPromiseOutcome(const std::string& promise_id,
+                                                             const PaymentPromiseState outcome,
+                                                             const std::string& note) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::RecordOutcome(*payment_promises_, Identity(), promise_id, outcome, note);
+}
+
+Roe<void> ConversationsHub::AvoidPaymentPromiseCounterparty(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return PaymentPromiseLifecycle::AvoidCounterparty(*payment_promises_, Contacts(), Identity(), promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> ConversationsHub::ListPaymentPromises() const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->List();
+}
+
+Roe<std::optional<PaymentPromise>> ConversationsHub::GetPaymentPromise(const std::string& promise_id) const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->Get(promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> ConversationsHub::ListPendingInboundPaymentPromises() const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->ListPendingInbound();
+}
+
+Roe<std::optional<PaymentPromise>> ConversationsHub::GetPendingInboundPaymentPromise(
+    const std::string& promise_id) const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->GetPendingInbound(promise_id);
+}
+
+Roe<PaymentPromise> ConversationsHub::AcceptInboundPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->AcceptInbound(promise_id);
+}
+
+Roe<bool> ConversationsHub::IgnoreInboundPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->IgnoreInbound(promise_id);
+}
+
+bool ConversationsHub::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {
+  if (!payment_promises_ || other_account_id.empty()) {
+    return false;
+  }
+  auto local = Identity().GetAccountId();
+  if (!local) {
+    return false;
+  }
+  return PaymentPromiseAvoid::ShouldAvoid(*payment_promises_, Contacts(), *local, other_account_id);
+}
+
+Roe<ThreadMessage> ConversationsHub::BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                                   const PaymentPromiseControlType type,
+                                                                   const PaymentPromise& promise,
+                                                                   const std::string& body_text) {
+  return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
+}
+
+Roe<PaymentPromise> ConversationsHub::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  auto type = PaymentPromiseWireCodec::ControlTypeFromMessage(message);
+  if (!type) {
+    return Error("not a payment promise control message");
+  }
+  auto root = TryParseObject(message.payload_json);
+  if (!root) {
+    return Error("invalid payment promise control payload");
+  }
+  auto detail = root->getString("detail");
+  if (!detail || detail->empty()) {
+    return Error("payment promise control missing detail");
+  }
+  auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail);
+  if (!decoded) {
+    return decoded.error();
+  }
+  // P003: stage only — never auto-commit remote receipts.
+  auto staged = payment_promises_->StageInbound(*decoded);
+  if (!staged) {
+    return staged.error();
+  }
+  return *decoded;
 }
 
 Roe<void> ConversationsHub::RotateBriefLlmKey() {

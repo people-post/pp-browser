@@ -32,6 +32,11 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupTypes.cpp
     InitiationBillingCodec.cpp
     InitiationBillingStore.cpp
+    PaymentPromiseAvoid.cpp
+    PaymentPromiseCodec.cpp
+    PaymentPromiseStore.cpp
+    PaymentPromiseLifecycle.cpp
+    PaymentPromiseWireCodec.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp

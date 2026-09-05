@@ -207,6 +207,13 @@ void MeshMessagingService::SetInitiationBillingStore(InitiationBillingStore* sto
   }
 }
 
+void MeshMessagingService::SetPaymentPromiseStore(PaymentPromiseStore* store) {
+  payment_promises_ = store;
+  if (receive_pipeline_) {
+    receive_pipeline_->SetPaymentPromiseStore(store);
+  }
+}
+
 void MeshMessagingService::BindCallControlInbound(CallControlInboundPorts ports) {
   call_control_ = std::move(ports);
   if (receive_pipeline_) {
