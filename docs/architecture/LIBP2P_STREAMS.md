@@ -73,8 +73,8 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 
 | Protocol | Service | Exchange |
 |----------|---------|----------|
-| `/pp-browser/rpc/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
-| `/pp-browser/rpc/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
+| `/pp-browser/rpc/chat/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
+| `/pp-browser/rpc/history/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
 | `/pp-browser/blob/1.0.0` | Amp `AmpChatBlobService` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
 | dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
 | media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |

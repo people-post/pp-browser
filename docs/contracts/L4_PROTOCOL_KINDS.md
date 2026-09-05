@@ -8,7 +8,7 @@
 
 AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **L4 `protocol_id` strings name conversation shapes**, not product features. This document freezes the complete set of kinds so agents and humans do not mint a new `/pp-…/1.0.0` for every feature.
 
-Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. `rpc` demuxes envelope vs history via `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
+Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has two OPEN ids (chat vs history) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
 
@@ -23,6 +23,8 @@ Add a new L4 `protocol_id` **only** when the conversation contract is new:
 | | New tunnel hop count or broker path |
 
 **Do not** add `/pp-browser/call-signal/…`, A/V-specific relay forks, or per-feature tunnels. Prefer envelope `op`, `channel_type` / frame fields, `target_protocol` on circuit, and PeerLink policy.
+
+**Multiple OPEN ids under one kind are OK** when separate services own the inbound handler (e.g. `rpc/chat` vs `rpc/history`). That is still one kind — not a license to mint a new *kind* per feature. Avoid first-frame `op` sniffing only to share a single OPEN string across unrelated handlers.
 
 ## Seven kinds (complete set)
 
@@ -63,7 +65,8 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | `/pp-browser/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
 | `/pp-browser/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
 | `/pp-browser/circuit-carrier/1.0.0` | *(plumbing)* | Product-owned wire id; configured into Amp `EnableNestedCarrierAccept` (Amp library default is `/amp/circuit-carrier/1.0.0`) |
-| `/pp-browser/rpc/1.0.0` | **rpc** | `op=envelope` live chat; `op=history` history sync |
+| `/pp-browser/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
+| `/pp-browser/rpc/history/1.0.0` | **rpc** | Peer history request/response |
 | `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
 | `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
 | `/pp-browser/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |

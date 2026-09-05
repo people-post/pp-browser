@@ -205,25 +205,16 @@ AmpDialBackService::AmpDialBackService(pp::amp::PeerLinkManager& links, IoPump i
 
 AmpDialBackService::~AmpDialBackService() { Stop(); }
 
-void AmpDialBackService::Start(bool register_handler) {
+void AmpDialBackService::Start() {
   if (started_) {
     return;
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  if (register_handler) {
-    links_.SetProtocolHandler(kDialBackProtocolId,
-                              [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-                                impl->HandleInboundOnLink(link, channel_id);
-                              });
-  }
-}
-
-void AmpDialBackService::ServeInbound(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
-  if (!started_ || !impl_) {
-    return;
-  }
-  impl_->ServeProbe(std::move(session), std::move(body));
+  links_.SetProtocolHandler(kDialBackProtocolId,
+                            [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
+                              impl->HandleInboundOnLink(link, channel_id);
+                            });
 }
 
 void AmpDialBackService::Stop() {

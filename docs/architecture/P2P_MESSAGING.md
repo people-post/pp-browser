@@ -138,9 +138,9 @@ Local store is written **before** send. Server rejections do not delete history.
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 | Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/rpc/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp-browser/rpc/history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
 
-### Direct live send (`/pp-browser/rpc/1.0.0`)
+### Direct live send (`/pp-browser/rpc/chat/1.0.0`)
 
 Outbound `SendUserMessage` tries libp2p direct first when the peer has a registered dialable multiaddr (`Contact.multiaddrs` / `RegisterPeerDirectEndpoint`); on failure falls back to `IRelayClient::Send`. Inbound direct envelopes use the same `RelayEnvelope` shape and `RelayReceivePipeline` with `MessageTransport::Direct`.
 
@@ -210,7 +210,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/conversations/InboxController.*` | Active thread, display rows |
 | `src/feature/conversations/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/1.0.0` push |
+| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |
 | `src/feature/conversations/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
 | `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |

@@ -23,7 +23,7 @@ L2 AEAD wraps **L3 frame bytes**. L4 payloads inside L3 DATA frames are unchange
 | **1 … 0xFFFF_FFFE** | Dynamic; allocated by opener |
 | **0xFFFF_FFFF** | Illegal |
 
-`protocol_id` is a UTF-8 string (e.g. `/pp-browser/rpc/1.0.0`) carried in OPEN.
+`protocol_id` is a UTF-8 string (e.g. `/pp-browser/rpc/chat/1.0.0`) carried in OPEN.
 
 L4 ids name **conversation kinds**, not product features — complete set and “when to mint a new id” gate: [L4_PROTOCOL_KINDS.md](L4_PROTOCOL_KINDS.md) ([A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes)).
 
@@ -31,7 +31,7 @@ L4 ids name **conversation kinds**, not product features — complete set and �
 
 | Class | ADP QoS | Duplex | Typical `protocol_id` |
 |-------|---------|--------|------------------------|
-| **Transactional** | Reliable | half; `read_once` | `/pp-browser/rpc/1.0.0`, `/pp-browser/rpc/1.0.0` |
+| **Transactional** | Reliable | half; `read_once` | `/pp-browser/rpc/chat/1.0.0`, `/pp-browser/rpc/history/1.0.0` |
 | **Control** | Reliable | half or full | `/pp-browser/reach/1.0.0`, ch0 |
 | **Bulk** | Reliable | half | `/pp-browser/blob/1.0.0` |
 | **Realtime** | BestEffort | full | Opus/media relay media frames |
@@ -150,8 +150,8 @@ Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameS
 
 | `protocol_id` | L4 shape |
 |---------------|----------|
-| `/pp-browser/rpc/1.0.0` | One DATA = `RelayEnvelope` JSON; ack DATA = `{"ok":true}` |
-| `/pp-browser/rpc/1.0.0` | request JSON → response JSON |
+| `/pp-browser/rpc/chat/1.0.0` | One DATA = `RelayEnvelope` JSON; ack DATA = `{"ok":true}` |
+| `/pp-browser/rpc/history/1.0.0` | request JSON → response JSON |
 | `/pp-browser/blob/1.0.0` | JSON meta → ciphertext or error JSON |
 | `/pp-browser/realtime/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
 | `/pp-browser/datagram-relay/1.0.0` | duplex realtime + control |

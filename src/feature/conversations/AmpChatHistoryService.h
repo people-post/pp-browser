@@ -7,18 +7,14 @@
 #include "domain/net/ServiceClients.h"
 #include "domain/people/IdentityStore.h"
 
-#include "amp/L3/ChannelSession.h"
-
-#include <cstdint>
 #include <functional>
-#include <vector>
 #include <memory>
 #include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** D060 peer-direct history over AMP ChannelSession — product single-entry when Amp is attached ([A020]). */
+/** D060 peer-direct history on `/pp-browser/rpc/history/1.0.0` — product path when Amp is attached ([A020]). */
 class AmpChatHistoryService : public IChatHistoryPeerClient {
 public:
   using IoPump = std::function<void()>;
@@ -31,12 +27,8 @@ public:
   AmpChatHistoryService(const AmpChatHistoryService&) = delete;
   AmpChatHistoryService& operator=(const AmpChatHistoryService&) = delete;
 
-  /** When register_handler is false, inbound is served only via ServeInbound (rpc demux). */
-  void Start(bool register_handler = true);
+  void Start();
   void Stop();
-
-  /** Shared `/pp-browser/rpc/1.0.0` demux entry — already-bound session + first DATA body. */
-  void ServeInbound(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body);
 
   void RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
 

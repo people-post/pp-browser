@@ -411,7 +411,7 @@ Chat-shaped response (libp2p / documentation):
 | `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |
-| libp2p history | protocol id `/pp-browser/rpc/1.0.0` | Request/response breaking change → new protocol id |
+| libp2p history | protocol id `/pp-browser/rpc/history/1.0.0` | Request/response breaking change → new protocol id |
 | App release | `PP_BROWSER_RELEASE_VERSION` | Packaging + About + User-Agent; compared to `min_client_version` |
 | Client-compat | `schema_version` on `GET /v1/client-compat` | Product floor / soft update nudge ([SERVICE_ENDPOINTS](SERVICE_ENDPOINTS.md#client-compatibility-discovery)) |
 | Protocol gen | `kProtocolGen` | App constant; future in-band messaging hello — not directory profile |

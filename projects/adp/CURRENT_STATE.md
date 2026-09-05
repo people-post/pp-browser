@@ -50,7 +50,7 @@
 
 ## Landed (L4 chat — D5)
 
-- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/rpc/1.0.0` and `/pp-browser/rpc/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/rpc/chat/1.0.0` and `/pp-browser/rpc/history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
 - `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
 - `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
 

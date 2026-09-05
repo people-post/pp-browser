@@ -5,11 +5,7 @@
 #include "domain/net/ServiceClients.h"
 #include "common/chat/IDirectMessageClient.h"
 
-#include "amp/L3/ChannelSession.h"
-
-#include <cstdint>
 #include <functional>
-#include <vector>
 #include <memory>
 #include <string>
 #include "common/PbrCompat.h"
@@ -17,8 +13,8 @@
 namespace pbr {
 
 /**
- * `/pp-browser/rpc/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
- * Product single-entry when MeshHost Amp is attached ([A020]/ legacy path remains for tests/fallback.
+ * `/pp-browser/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
+ * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
  */
 class AmpDirectChatService : public IDirectMessageClient {
 public:
@@ -36,11 +32,6 @@ public:
   void Stop();
 
   void SetInboundHandler(InboundHandler handler);
-
-  /** Optional history demux target for shared kRpcProtocolId. */
-  using HistoryInbound = std::function<void(std::shared_ptr<pp::amp::ChannelSession>,
-                                          std::vector<uint8_t>)>;
-  void SetHistoryInbound(HistoryInbound handler);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;

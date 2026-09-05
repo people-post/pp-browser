@@ -82,8 +82,8 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D5 — L4 port: chat + history
 
-- [x] `/pp-browser/rpc/1.0.0` on ChannelSession
-- [x] `/pp-browser/rpc/1.0.0`
+- [x] `/pp-browser/rpc/chat/1.0.0` on ChannelSession
+- [x] `/pp-browser/rpc/history/1.0.0`
 - [x] Port gtests; single transport entry ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 
 ### D6 — L4 port: call-media

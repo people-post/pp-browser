@@ -25,7 +25,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 - **`e2e`** relay body is **AEAD ciphertext** in `payload_b64` (c2 landed).
 - **`e2e_public`** compose/send uses account ML-KEM-768 auto-key (E024 / M015); optional **Use only this device…** rekey (E027).
 - Inbound poll: **`e2e`** find-only via `chat_targets` (D062); **`e2e_public`** auto-creates after decrypt (D080).
-- libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/rpc/1.0.0`.
+- libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/rpc/history/1.0.0`.
 - Relay history: **`HttpRelayClient::FetchChatHistory`**; mock when `base_url` unset; live integration via env (D093).
 
 ## Release scope

@@ -42,8 +42,8 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** D060 peer-direct history — `/pp-browser/rpc/1.0.0`. */
-inline constexpr const char* kChatHistoryProtocolId = kRpcProtocolId;
+/** D060 peer-direct history — `/pp-browser/rpc/history/1.0.0` (rpc kind; own OPEN). */
+inline constexpr const char* kChatHistoryProtocolId = kRpcHistoryProtocolId;
 
 class IChatHistoryPeerClient {
 public:

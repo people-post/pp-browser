@@ -43,7 +43,6 @@ struct AmpDirectChatService::Impl {
   WorkerPost post_worker;
   std::mutex handler_mutex;
   InboundHandler inbound;
-  AmpDirectChatService::HistoryInbound history_inbound;
   std::atomic<bool> stopped{false};
 
   void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
@@ -72,17 +71,6 @@ struct AmpDirectChatService::Impl {
         const std::string json_utf8(body.begin(), body.end());
         auto root = TryParseObject(json_utf8);
         if (!root) {
-          return;
-        }
-        AmpDirectChatService::HistoryInbound history;
-        {
-          std::lock_guard lock(handler_mutex);
-          history = history_inbound;
-        }
-        const std::string op = root->getString("op").value_or("");
-        const bool is_history = (op == "history") || root->getString("requester_identity_kind").has_value();
-        if (is_history && history) {
-          history(session, std::move(body));
           return;
         }
         auto envelope = ParseRelayEnvelope(*root);
@@ -144,11 +132,6 @@ void AmpDirectChatService::Stop() {
 void AmpDirectChatService::SetInboundHandler(InboundHandler handler) {
   std::lock_guard lock(impl_->handler_mutex);
   impl_->inbound = std::move(handler);
-}
-
-void AmpDirectChatService::SetHistoryInbound(HistoryInbound handler) {
-  std::lock_guard lock(impl_->handler_mutex);
-  impl_->history_inbound = std::move(handler);
 }
 
 bool AmpDirectChatService::IsPeerReachable(const std::string& peer_identity_value) const {
