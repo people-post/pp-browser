@@ -2,6 +2,7 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/AnnounceDmReply.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -307,6 +308,41 @@ TEST(AnnounceLiveJoinTest, RejectsEmptyPublisherPeerId) {
   tip.join_handle = "session-abc";
   EXPECT_FALSE(TipIsLiveJoinable(tip));
   EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
+}
+
+
+TEST(AnnounceLiveJoinHandoffTest, BuildsPendingInviteAndRingingSession) {
+  AnnounceLiveJoinPlan plan;
+  plan.call_id = "session-abc";
+  plan.publisher_peer_id = "12D3KooWPublisher";
+  plan.topic_id = "topic-1";
+  plan.program_id = "show-1";
+  plan.seq = 4;
+  plan.epoch = 1;
+
+  auto handoff = BuildAnnounceLiveJoinHandoff(plan, "account:bob", "account:alice", 1'700'000'000'000, true);
+  ASSERT_TRUE(handoff) << handoff.error().message;
+  EXPECT_EQ(handoff->pending.call_id, "session-abc");
+  EXPECT_EQ(handoff->pending.inviter_identity, "account:alice");
+  EXPECT_EQ(handoff->pending.invitee_identity, "account:bob");
+  EXPECT_EQ(handoff->pending.media_mode, CallMediaMode::Video);
+  EXPECT_TRUE(handoff->pending.video_allowed);
+  EXPECT_EQ(handoff->pending.status, "pending");
+  ASSERT_TRUE(handoff->pending.expires_at.has_value());
+  EXPECT_EQ(*handoff->pending.expires_at, 1'700'000'000'000 + kDefaultCallInviteTtlMs);
+  EXPECT_EQ(handoff->session.call_id, "session-abc");
+  EXPECT_EQ(handoff->session.state, CallSessionState::Ringing);
+  EXPECT_EQ(handoff->session.media_mode, CallMediaMode::Video);
+}
+
+TEST(AnnounceLiveJoinHandoffTest, RejectsMissingIdentities) {
+  AnnounceLiveJoinPlan plan;
+  plan.call_id = "session-abc";
+  plan.publisher_peer_id = "12D3KooWPublisher";
+  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "", "account:alice", 1, true));
+  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "account:bob", "", 1, true));
+  plan.call_id.clear();
+  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "account:bob", "account:alice", 1, true));
 }
 
 } // namespace pbr

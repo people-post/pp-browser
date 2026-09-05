@@ -7,7 +7,7 @@
 |-------|--------|
 | A — calls hop trustworthy | Prerequisite (owned by p2p-av-calls / p2p-mesh); not changed here |
 | **B — signed tips without mesh** | **Exit met** — tips + Amp 1:1 + IdentityStore resolve + DM reply |
-| **C — tip + live** | **Started** — join plan from live tip (no SoftMigrate/media yet) |
+| **C — tip + live** | **In progress** — join plan + arm pending invite (Accept/SoftMigrate/media next) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
 
@@ -36,8 +36,9 @@
 | Piece | Path |
 |-------|------|
 | Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshMessagingService::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
+| Arm pending invite + ringing session from plan | `AnnounceLiveJoinHandoff.*`; `CallSessionManager::ArmJoinFromLiveAnnounce` (no SoftMigrate/media) |
 | Tests | `AnnounceLiveJoinTest` in `peer_announce_test.cpp` |
 
-**Still out of scope:** SoftMigrate / media attach, UI join button, epidemic `help_announce`.
+**Still out of scope:** SoftMigrate / media attach on Accept, UI join button, epidemic `help_announce`.
 
 See [PROGRAM.md](PROGRAM.md) for sequencing.

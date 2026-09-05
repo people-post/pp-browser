@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/messaging/CallSessionLogic.h"
+#include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PeerCapsLogic.h"
@@ -945,6 +946,53 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
   return {};
 }
+
+
+Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan) {
+  if (plan.call_id.empty()) {
+    return Error("Live-join plan missing call_id");
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+
+  std::string inviter = plan.publisher_peer_id;
+  if (auto found = contacts_.FindByIdentity(plan.publisher_peer_id, ContactIdKind::PeerId)) {
+    if (*found) {
+      const std::string account = PrimaryIdOfKind(**found, ContactIdKind::Account);
+      if (!account.empty()) {
+        inviter = account;
+      }
+    }
+  }
+
+  auto handoff = BuildAnnounceLiveJoinHandoff(plan, *local, inviter, util::NowUnixMs(), true);
+  if (!handoff) {
+    return handoff.error();
+  }
+
+  if (auto saved = sessions_.UpsertPendingInvite(handoff->pending); !saved) {
+    return saved.error();
+  }
+  if (auto saved = sessions_.UpsertSession(handoff->session); !saved) {
+    return saved.error();
+  }
+
+  // Seed inviter as ringing so AcceptInvite / roster paths see a peer.
+  CallParticipant inviter_row;
+  inviter_row.call_id = plan.call_id;
+  inviter_row.identity = inviter;
+  inviter_row.state = CallParticipantState::Ringing;
+  inviter_row.joined_at = handoff->pending.created_at;
+  (void)sessions_.UpsertParticipant(inviter_row);
+
+  NotifyRingChanged();
+  log().info << "ArmJoinFromLiveAnnounce call_id=" << plan.call_id << " inviter=" << inviter
+             << " topic=" << plan.topic_id << " program=" << plan.program_id;
+  return handoff->pending;
+}
+
 
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   auto local = LocalRelayIdentity();

@@ -3,6 +3,7 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/InitiationBillingStore.h"
@@ -83,6 +84,12 @@ public:
 
   Roe<void> AcceptInvite(const std::string& call_id,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
+  /**
+   * Spine C (slice 1): arm a pending invite + ringing session from a live-join plan
+   * so AcceptInvite can proceed later. Does not SoftMigrate or attach media.
+   */
+  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan);
+
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
   /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
