@@ -90,6 +90,8 @@ If a task cannot name which **spine exit** it advances, it waits.
 
 ## Parking lot (explicitly not spines yet)
 
+- Notifications tab + live banner pickup chrome (product UX locked in [DESIGN.md](DESIGN.md#product-pickup-ux--not-call-ringing); implement after Spine C media join is dogfoodable)
+- On-screen overlay reply path (`intent=overlay` → publisher-signed `live_chat` tips + rate limit / block) — after private DM reply is stable
 - Creator helper marketplace / paid announce  
 - Open GossipSub / free-form topics  
 - Piece swarm (content-cas P5)  
@@ -114,8 +116,8 @@ If a task cannot name which **spine exit** it advances, it waits.
 | Spine | Status | Notes |
 |-------|--------|-------|
 | A — hop trustworthy | **Still prerequisite** (parallel) | Track in p2p-av-calls / p2p-mesh CURRENT_STATE |
-| B — tips without mesh | **In progress** — ML-DSA codec/feed/publisher/rpc codec; Amp 1:1 push landed; IdentityStore resolver next | `PeerAnnounce*` under domain/messaging |
-| C — tip + live | Blocked on A + B | |
+| B — tips without mesh | **Exit met** | Amp 1:1 + IdentityStore + DM reply — see CURRENT_STATE |
+| C — tip + live | **In progress** | plan/arm/accept (no SoftMigrate); UI pickup chrome still parking-lot |
 | D — announce helpers | Blocked on C | |
 | E — CAS replay | Blocked on C (product); P3/P4 not started | |
 

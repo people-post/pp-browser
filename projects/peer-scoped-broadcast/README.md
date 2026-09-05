@@ -6,17 +6,21 @@
 
 ## One-line goal
 
-Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plus **live video** on the existing **realtime** blind-hop path — not open GossipSub, not in-topic public replies.
+Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plus **live video** on the existing **realtime** blind-hop path — not open GossipSub, not free-speak replies; public on-screen chat only via publisher-signed tips.
 
 ## Documents
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Planes, roles, whitelist, lifecycle, non-goals |
+| [DESIGN.md](DESIGN.md) | Planes, roles, pickup UX, replies/overlay, whitelist, lifecycle, non-goals |
 | [PROGRAM.md](PROGRAM.md) | Multi-project spines — overall progress over single-project speed |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Implementation progress |
 
-Live shows may use publisher-paced **re-announce heartbeats** (min interval + dedup) — see [DESIGN.md](DESIGN.md#live-re-announce-heartbeat).
+Product notes locked in design:
+
+- **Pickup:** Notifications tab + optional live banner — not call ringing ([DESIGN § Product pickup UX](DESIGN.md#product-pickup-ux--not-call-ringing)).
+- **Replies:** Private DM, or on-screen via publisher-mediated rebroadcast + rate limits ([DESIGN § Speak / reply](DESIGN.md#speak--reply-rules)).
+- **Heartbeats:** publisher-paced re-announce while live ([DESIGN § Heartbeat](DESIGN.md#live-re-announce-heartbeat)).
 
 ## Why this project exists
 

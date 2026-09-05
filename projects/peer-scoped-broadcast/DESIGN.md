@@ -1,7 +1,7 @@
 # Peer-scoped announce + live broadcast — design
 
-**Status:** Accepted sketch (2026-09-05)  
-**Implements:** nothing yet — memory aid for a later phase  
+**Status:** Accepted sketch (2026-09-05); pickup UX + overlay reply product rules amended same day  
+**Implements:** Spine B tips + Spine C join handoff in code — see [CURRENT_STATE.md](CURRENT_STATE.md); Notifications/banner and overlay path still design-only  
 **Program sequencing:** [PROGRAM.md](PROGRAM.md) (spines A–E across mesh / calls / CAS)  
 **L4 fit:** announce ≈ **rpc** (+ optional small relay); live A/V ≈ **realtime** blind hop; DVR/replay ≈ **blob** / [content-cas](../content-cas/)
 
@@ -66,12 +66,43 @@ Do **not** carry video bitstreams on the announce/gossip plane.
 ### Speak / reply rules
 
 - Helpers **must drop** anything not **signed by that PeerId**, with `topic_id` bound into the signed payload.
-- **No public in-topic reply mesh.**
-- To respond: send a **direct message** to the publisher. If they want it “public,” **they** rebroadcast under their topic (their rate limits / moderation).
+- **No public in-topic reply mesh.** Viewers never speak on the announce topic or on the media hop.
+- Subscriber reply modes (product):
+
+| Mode | Transport | Who sees it |
+|------|-----------|-------------|
+| **Private** | Normal DM to the publisher | Publisher only |
+| **On screen** (live overlay) | Still a request **to the publisher** (DM or small rpc), tagged `intent=overlay` + live session id | Everyone — **only after** the publisher signs a short announce tip (e.g. `kind=live_chat`) that helpers may forward |
+
+```text
+Viewer "Send to live"
+  → DM/rpc to publisher: text + live_session_id + intent=overlay
+Publisher device (policy)
+  → rate-limit / block / allow
+  → if ok: sign overlay tip → helpers forward → viewers render on live UI
+```
+
+Publisher remains sole author on their topic. Busy-while-live is handled by **device policy**, not by opening the mesh:
+
+| Publisher mode | Behavior |
+|----------------|----------|
+| **Auto** (default while live) | Allow-list / score / rate limit → auto-sign overlay tips |
+| **Moderated** | Queue; Approve / Block in publisher live chrome |
+| **Off** | Overlay intent falls back to private DM only |
+
+**Abuse controls for overlay (minimum):**
+
+- Per-viewer rate toward that live session (e.g. 1 overlay request / N seconds).
+- Publisher outbound cap on signed overlay tips / minute (same budget family as announce, **not** media).
+- Short text only; no blobs on the announce plane.
+- Publisher block / mute drops future overlay intents; optional grey-list for repeat spam.
+- Session bind: overlay tips carry `join_handle` / program id so they do not leak across shows.
+- Dedup: same `(publisher, session, viewer_msg_id)` once.
+- Helpers forward **publisher-signed** overlay tips only — never raw viewer speech.
 
 ### Payload policy
 
-- **Small announcements only** (text, pointers, caps, schedule/live tips).
+- **Small announcements only** (text, pointers, caps, schedule/live tips, optional `live_chat` overlay tips).
 - Large bytes stay on **CAS / blob provide-fetch** (put a content id in the announce).
 
 ### Lifecycle
@@ -109,8 +140,9 @@ Matches existing L4 composition ([L4_PROTOCOL_KINDS](../../docs/contracts/L4_PRO
 
 ### Viewer / chat
 
-- **Watch** → realtime subscriber path (SFU/hop).
-- **Chat / react “publicly”** → DM (or side chat) to publisher; publisher may rebroadcast a text announce — still not free-speak on the media mesh.
+- **Watch** → realtime subscriber path (SFU/hop); product entry is Notifications / banner → join API (see [Product pickup UX](#product-pickup-ux--not-call-ringing)), not call ringing.
+- **Private reply** → DM to publisher (existing messaging path).
+- **On-screen reply** → overlay request to publisher → publisher-signed tip → live overlay / chat rail (see [Speak / reply rules](#speak--reply-rules)). Still not free-speak on the media mesh.
 
 ### Live re-announce (heartbeat)
 
@@ -129,6 +161,35 @@ While a program is **live**, the publisher may **auto-repeat** a small signed ti
 | Events that bypass the floor once | Go-live, SoftMigrate / token rotate, end (`state=ended` + optional DVR `content_id`) |
 
 **Intent:** improve mid-show audience reach via discovery tips, not via announce-plane video or unbounded beaconing.
+
+---
+
+## Product pickup UX — not call ringing
+
+Discovery tips are **subscription events**, not mutual call invites. Many subscribed publishers may go live; urgency is lower than a 1:1/group ring.
+
+| Concern | Owner | Product surface |
+|---------|--------|-----------------|
+| Tip arrival / schedule / live / end | Announce feed | **Notifications** tab (subscribed messages) |
+| Soft interrupt while live | Same tip, not dismissed | Optional **sticky banner** (“X is live”) → Watch / Dismiss |
+| Watch / join media | Calls stack (reuse hop) | Join API under the hood; **no** Accept/Decline ringtone |
+| Private reply | Messaging | Opens/finds DM thread |
+| On-screen reply | Messaging request + announce rebroadcast | Live overlay after publisher signs |
+| Publish / go live / end | Publisher chrome | Me / composer — **not** the Notifications tab |
+
+```text
+Subscribed tip arrives
+  → upsert Notifications item (by publisher + topic + epoch/seq)
+  → if live + not dismissed → show/update banner (heartbeat refreshes same card)
+User taps Watch
+  → JoinLiveAnnounceFromTip / AcceptLiveAnnounceJoin (media handoff; no ring UI)
+User taps Reply
+  → Private DM  or  On-screen overlay intent (publisher policy)
+```
+
+**Spine C media handoff** (`ArmJoinFromLiveAnnounce`, pending invite shapes) may reuse call **session** types for SFU attach. That is an implementation convenience — **do not** present announce join as incoming-call chrome (`NotifyRingChanged`, ringtone, bilateral `CallAccept`). Prefer a tip list + banner that calls the same accept path.
+
+Tips stay on the announce feed (in-memory today); they are **not** chat rows in `SqliteThreadStore` unless a later durable-feed spine deliberately stores history. OS push, if any, should use a quiet notify type — not `call_wake`.
 
 ---
 
@@ -166,8 +227,10 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 
 - Open topics anyone can create or speak on  
 - Classic GossipSub as the product path  
-- Public threaded replies on the announce plane  
+- Public threaded replies or free-speak on the announce / media planes (overlay only via publisher-signed tips)  
+- Presenting live-tip pickup as call ringing / `call_wake`  
 - Carrying live video (or large blobs) on announce/gossip  
+- Putting live chat bitstreams on realtime media frames  
 - Replacing chat DM, mesh DHT `FIND_PEER`, or content-cas provide/fetch  
 - Minting a new L4 kind such as `/pp-browser/broadcast/…` (use rpc + realtime + blob)
 
@@ -175,4 +238,4 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 
 ## One-line summary
 
-**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; while live, publisher-paced heartbeat tips (min interval + dedup) for late discovery; live picture on realtime hop; optional recording in CAS; conversation stays DM; the publisher alone controls what becomes public again — one helper relationship, explicit `help_announce` / `help_media` flags.**
+**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; discovery via Notifications + optional live banner (not call ring); while live, publisher-paced heartbeat tips for late discovery; live picture on realtime hop; private DM or publisher-mediated on-screen overlay replies; optional recording in CAS; one helper relationship, explicit `help_announce` / `help_media` flags.**
