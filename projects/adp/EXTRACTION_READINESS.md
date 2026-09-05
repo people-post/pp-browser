@@ -1,6 +1,6 @@
 # AMP extraction readiness (pp-browser)
 
-**Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v0.1.4`).  
+**Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v0.1.5`).  
 **Done:** in-tree production sources removed; consumers use `#include "amp/..."` from FetchContent pp-cpp-amp. L4 harness duplicated under `src/domain/mesh/tests/support/`.
 
 ## Layer map
