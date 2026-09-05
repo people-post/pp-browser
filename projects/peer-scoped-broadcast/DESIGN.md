@@ -2,6 +2,7 @@
 
 **Status:** Accepted sketch (2026-09-05)  
 **Implements:** nothing yet — memory aid for a later phase  
+**Program sequencing:** [PROGRAM.md](PROGRAM.md) (spines A–E across mesh / calls / CAS)  
 **L4 fit:** announce ≈ **rpc** (+ optional small relay); live A/V ≈ **realtime** blind hop; DVR/replay ≈ **blob** / [content-cas](../content-cas/)
 
 ## Problem

@@ -13,6 +13,7 @@ Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plu
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Planes, roles, whitelist, lifecycle, non-goals |
+| [PROGRAM.md](PROGRAM.md) | Multi-project spines — overall progress over single-project speed |
 
 Live shows may use publisher-paced **re-announce heartbeats** (min interval + dedup) — see [DESIGN.md](DESIGN.md#live-re-announce-heartbeat).
 
