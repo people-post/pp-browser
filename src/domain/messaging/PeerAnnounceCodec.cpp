@@ -1,6 +1,7 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/MlDsa.h"
 
 #include "common/ValueJson.h"
 
@@ -24,20 +25,8 @@ void AppendField(std::ostringstream& out, const char* key, const uint64_t value)
   out << key << '=' << value << '\n';
 }
 
-Roe<ByteVector> ExpandEd25519SecretKey(const std::vector<uint8_t>& secret_key) {
-  EnsureSodiumInit();
-  if (secret_key.size() == crypto_sign_SECRETKEYBYTES) {
-    return ByteVector(secret_key.begin(), secret_key.end());
-  }
-  if (secret_key.size() == crypto_sign_SEEDBYTES) {
-    ByteVector sk(crypto_sign_SECRETKEYBYTES);
-    ByteVector pk(crypto_sign_PUBLICKEYBYTES);
-    if (crypto_sign_seed_keypair(pk.data(), sk.data(), secret_key.data()) != 0) {
-      return Error("Ed25519 seed expand failed");
-    }
-    return sk;
-  }
-  return Error("Ed25519 secret key must be 32-byte seed or 64-byte sodium sk");
+ByteVector ToBytes(const std::string& text) {
+  return ByteVector(text.begin(), text.end());
 }
 
 } // namespace
@@ -129,27 +118,22 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   return tip;
 }
 
-Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& ed25519_secret_key) {
-  auto sk = ExpandEd25519SecretKey(ed25519_secret_key);
-  if (!sk) {
-    return sk.error();
+Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& mldsa_secret_key) {
+  if (mldsa_secret_key.size() != kMlDsa65SecretKeyBytes) {
+    return Error("peer announce sign requires ML-DSA-65 secret key");
   }
-  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
-  ByteVector signature(crypto_sign_BYTES);
-  unsigned long long sig_len = 0;
-  if (crypto_sign_detached(signature.data(), &sig_len, reinterpret_cast<const unsigned char*>(canonical.data()),
-                           canonical.size(), sk->data()) != 0) {
-    return Error("peer announce sign failed");
+  const auto canonical = ToBytes(PeerAnnounceCanonicalSignBytes(tip));
+  auto signature = MlDsa::Sign(mldsa_secret_key, canonical);
+  if (!signature) {
+    return signature.error();
   }
-  signature.resize(static_cast<size_t>(sig_len));
-  tip.signature_b64 = Base64Encode(signature);
+  tip.signature_b64 = Base64Encode(*signature);
   return tip;
 }
 
-Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& ed25519_public_key) {
-  EnsureSodiumInit();
-  if (ed25519_public_key.size() != crypto_sign_PUBLICKEYBYTES) {
-    return Error("Ed25519 public key must be 32 bytes");
+Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& mldsa_public_key) {
+  if (mldsa_public_key.size() != kMlDsa65PublicKeyBytes) {
+    return Error("peer announce verify requires ML-DSA-65 public key");
   }
   if (tip.signature_b64.empty()) {
     return Error("peer announce tip missing signature");
@@ -158,12 +142,15 @@ Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<ui
   if (!signature) {
     return signature.error();
   }
-  if (signature->size() != crypto_sign_BYTES) {
+  if (signature->size() != kMlDsa65SignatureBytes) {
     return Error("peer announce signature size invalid");
   }
-  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
-  if (crypto_sign_verify_detached(signature->data(), reinterpret_cast<const unsigned char*>(canonical.data()),
-                                  canonical.size(), ed25519_public_key.data()) != 0) {
+  const auto canonical = ToBytes(PeerAnnounceCanonicalSignBytes(tip));
+  auto ok = MlDsa::Verify(mldsa_public_key, canonical, *signature);
+  if (!ok) {
+    return ok.error();
+  }
+  if (!*ok) {
     return Error("peer announce signature verify failed");
   }
   return {};

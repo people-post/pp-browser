@@ -1,6 +1,6 @@
 # Peer-scoped announce + live broadcast
 
-**Status:** Design sketch accepted (2026-09-05); **Spine B thin started** (tip codec/feed) — see [CURRENT_STATE](CURRENT_STATE.md)  
+**Status:** Design sketch accepted (2026-09-05); **Spine B in progress** (ML-DSA tips, publisher, rpc codec) — see [CURRENT_STATE](CURRENT_STATE.md)  
 **Owner:** Hongwei + agents  
 **Related:** [p2p-mesh](../p2p-mesh/), [p2p-av-calls](../p2p-av-calls/), [content-cas](../content-cas/), [L4_PROTOCOL_KINDS](../../docs/contracts/L4_PROTOCOL_KINDS.md)
 

@@ -1,29 +1,17 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/messaging/PeerAnnounceRpcCodec.h"
 
-#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/MlDsa.h"
 
-#include <sodium.h>
 #include <gtest/gtest.h>
+#include <variant>
 
 #include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
-
-struct Ed25519Pair {
-  std::vector<uint8_t> pk;
-  std::vector<uint8_t> sk;
-};
-
-Ed25519Pair MakeKeyPair() {
-  EnsureSodiumInit();
-  Ed25519Pair pair;
-  pair.pk.resize(crypto_sign_PUBLICKEYBYTES);
-  pair.sk.resize(crypto_sign_SECRETKEYBYTES);
-  crypto_sign_keypair(pair.pk.data(), pair.sk.data());
-  return pair;
-}
 
 PeerAnnounceTip SampleTip(const std::string& topic_id) {
   PeerAnnounceTip tip;
@@ -57,13 +45,14 @@ TEST(PeerAnnounceTest, TopicIdIsStableAndPeerScoped) {
 }
 
 TEST(PeerAnnounceTest, SignVerifyAndJsonRoundTrip) {
-  const auto keys = MakeKeyPair();
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
   auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
   ASSERT_TRUE(topic);
   auto tip = SampleTip(*topic);
-  auto signed_tip = SignPeerAnnounceTip(tip, keys.sk);
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
   ASSERT_TRUE(signed_tip) << signed_tip.error().message;
-  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys.pk));
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys->public_key));
 
   auto json = EncodePeerAnnounceTipJson(*signed_tip);
   ASSERT_TRUE(json);
@@ -71,35 +60,37 @@ TEST(PeerAnnounceTest, SignVerifyAndJsonRoundTrip) {
   ASSERT_TRUE(decoded) << decoded.error().message;
   EXPECT_EQ(decoded->peer_id, signed_tip->peer_id);
   EXPECT_EQ(decoded->signature_b64, signed_tip->signature_b64);
-  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys.pk));
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 }
 
 TEST(PeerAnnounceTest, FeedRejectsStaleAndBadSignature) {
-  const auto keys = MakeKeyPair();
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
   auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
   ASSERT_TRUE(topic);
 
-  PeerAnnounceFeed feed(keys.pk);
+  PeerAnnounceFeed feed(keys->public_key);
   auto tip1 = SampleTip(*topic);
   tip1.seq = 1;
-  auto signed1 = SignPeerAnnounceTip(tip1, keys.sk);
+  auto signed1 = SignPeerAnnounceTip(tip1, keys->secret_key);
   ASSERT_TRUE(signed1);
   ASSERT_TRUE(feed.Ingest(*signed1));
 
   auto tip0 = SampleTip(*topic);
   tip0.seq = 0;
-  auto signed0 = SignPeerAnnounceTip(tip0, keys.sk);
+  auto signed0 = SignPeerAnnounceTip(tip0, keys->secret_key);
   ASSERT_TRUE(signed0);
   EXPECT_FALSE(feed.Ingest(*signed0));
 
-  const auto other = MakeKeyPair();
+  auto other = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(other);
   auto tip2 = SampleTip(*topic);
   tip2.seq = 2;
-  auto forged = SignPeerAnnounceTip(tip2, other.sk);
+  auto forged = SignPeerAnnounceTip(tip2, other->secret_key);
   ASSERT_TRUE(forged);
   EXPECT_FALSE(feed.Ingest(*forged));
 
-  auto signed2 = SignPeerAnnounceTip(tip2, keys.sk);
+  auto signed2 = SignPeerAnnounceTip(tip2, keys->secret_key);
   ASSERT_TRUE(signed2);
   ASSERT_TRUE(feed.Ingest(*signed2));
   auto latest = feed.Latest("12D3KooWPublisherTest", *topic, "show-1");
@@ -113,6 +104,81 @@ TEST(PeerAnnounceTest, HeartbeatMinInterval) {
   EXPECT_TRUE(PeerAnnounceHeartbeatDue(1'000, 1'000 + kPeerAnnounceLiveHeartbeatMinIntervalMs));
   EXPECT_EQ(PeerAnnounceNextHeartbeatAtMs(1'000, 0.0), 1'000 + kPeerAnnounceLiveHeartbeatMinIntervalMs);
   EXPECT_EQ(PeerAnnounceNextHeartbeatAtMs(1'000, 1.0), 1'000 + kPeerAnnounceLiveHeartbeatMaxIntervalMs);
+}
+
+TEST(PeerAnnounceTest, PublisherLocalFeedAndHeartbeat) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
+  ASSERT_TRUE(topic);
+
+  PeerAnnounceFeed feed(keys->public_key);
+  PeerAnnouncePublisher publisher("12D3KooWPublisherTest", keys->secret_key, &feed);
+
+  PeerAnnouncePublisher::Draft go_live;
+  go_live.topic_id = *topic;
+  go_live.program_id = "show-1";
+  go_live.state = PeerAnnounceState::Live;
+  go_live.join_handle = "session-abc";
+  go_live.body = "Now live";
+  auto tip = publisher.Publish(go_live, 1'000);
+  ASSERT_TRUE(tip) << tip.error().message;
+  EXPECT_EQ(tip->seq, 1u);
+  EXPECT_EQ(tip->body, "Now live");
+  ASSERT_TRUE(feed.Latest("12D3KooWPublisherTest", *topic, "show-1"));
+
+  auto too_soon = publisher.MaybeEmitHeartbeat(1'000 + 1'000);
+  ASSERT_TRUE(too_soon);
+  EXPECT_FALSE(too_soon->has_value());
+
+  auto hb = publisher.MaybeEmitHeartbeat(1'000 + kPeerAnnounceLiveHeartbeatMinIntervalMs);
+  ASSERT_TRUE(hb) << hb.error().message;
+  ASSERT_TRUE(hb->has_value());
+  EXPECT_EQ((*hb)->seq, 2u);
+  EXPECT_TRUE((*hb)->body.empty());
+  EXPECT_EQ((*hb)->state, PeerAnnounceState::Live);
+
+  PeerAnnouncePublisher::Draft end;
+  end.topic_id = *topic;
+  end.program_id = "show-1";
+  end.state = PeerAnnounceState::Ended;
+  end.content_id_hex = "abcd";
+  auto ended = publisher.Publish(end, 1'000 + 2 * kPeerAnnounceLiveHeartbeatMinIntervalMs);
+  ASSERT_TRUE(ended);
+  EXPECT_EQ(ended->state, PeerAnnounceState::Ended);
+
+  auto no_hb = publisher.MaybeEmitHeartbeat(1'000 + 10 * kPeerAnnounceLiveHeartbeatMinIntervalMs);
+  ASSERT_TRUE(no_hb);
+  EXPECT_FALSE(no_hb->has_value());
+}
+
+TEST(PeerAnnounceTest, RpcTipPushAckRoundTrip) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto topic = MakePeerAnnounceTopicId("12D3KooWPublisherTest", "live");
+  ASSERT_TRUE(topic);
+  auto tip = SampleTip(*topic);
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip);
+
+  auto push_json = EncodePeerAnnounceTipPush(*signed_tip);
+  ASSERT_TRUE(push_json);
+  auto decoded = DecodePeerAnnounceRpcJson(*push_json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  ASSERT_TRUE(std::holds_alternative<PeerAnnounceTipPush>(*decoded));
+  EXPECT_EQ(std::get<PeerAnnounceTipPush>(*decoded).tip.signature_b64, signed_tip->signature_b64);
+
+  PeerAnnounceTipAck ack;
+  ack.ok = true;
+  ack.seq = signed_tip->seq;
+  ack.epoch = signed_tip->epoch;
+  auto ack_json = EncodePeerAnnounceTipAck(ack);
+  ASSERT_TRUE(ack_json);
+  auto decoded_ack = DecodePeerAnnounceRpcJson(*ack_json);
+  ASSERT_TRUE(decoded_ack);
+  ASSERT_TRUE(std::holds_alternative<PeerAnnounceTipAck>(*decoded_ack));
+  EXPECT_TRUE(std::get<PeerAnnounceTipAck>(*decoded_ack).ok);
+  EXPECT_STREQ(kRpcPeerAnnounceProtocolId, "/pp-browser/rpc/peer-announce/1.0.0");
 }
 
 } // namespace pbr

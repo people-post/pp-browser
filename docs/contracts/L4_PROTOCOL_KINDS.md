@@ -10,7 +10,7 @@ AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **
 
 **Shared-code boundary:** Amp owns transport (OPEN/FRAG/Bulk QoS). pp-browser owns L4 conversation SMs (rpc/blob/realtime/…). pp-ledger owns `/pp-ledger/rpc/1.0.0` codecs and chain sync. Do not put swarm/piece selection or ledger tip-follow into Amp — see [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md). BitTorrent-style multi-peer fetch is future **blob** ops + **discover**, not a new kind.
 
-Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has two OPEN ids (chat vs history) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
+Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|rpc/peer-announce|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has multiple OPEN ids (chat vs history vs peer-announce) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
 
@@ -69,6 +69,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | `/amp/circuit-carrier/1.0.0` | *(plumbing)* | Amp-owned nested-Session carrier (`kAmpCircuitCarrierProtocolId`); product uses Amp default — not a `/pp-browser/*` id |
 | `/pp-browser/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
 | `/pp-browser/rpc/history/1.0.0` | **rpc** | Peer history request/response |
+| `/pp-browser/rpc/peer-announce/1.0.0` | **rpc** | Peer-scoped announce tips (Spine B; own OPEN) |
 | `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
 | `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
 | `/pp-browser/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |

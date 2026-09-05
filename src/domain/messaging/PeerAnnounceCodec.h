@@ -21,8 +21,9 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip);
 Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip);
 Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(std::string_view json);
 
-Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& ed25519_secret_key);
-Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& ed25519_public_key);
+/** Sign with device ML-DSA-65 secret (PeerId-bound; matches IdentityStore device key). */
+Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& mldsa_secret_key);
+Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& mldsa_public_key);
 
 int64_t PeerAnnounceNextHeartbeatAtMs(int64_t last_emit_ms, double jitter_unit);
 bool PeerAnnounceHeartbeatDue(int64_t last_emit_ms, int64_t now_ms);

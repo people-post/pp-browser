@@ -42,6 +42,8 @@ pp_browser_add_domain_library(pp_domain_messaging
     PaymentPromiseWireCodec.cpp
     PeerAnnounceCodec.cpp
     PeerAnnounceFeed.cpp
+    PeerAnnouncePublisher.cpp
+    PeerAnnounceRpcCodec.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp

@@ -114,7 +114,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 | Spine | Status | Notes |
 |-------|--------|-------|
 | A — hop trustworthy | **Still prerequisite** (parallel) | Track in p2p-av-calls / p2p-mesh CURRENT_STATE |
-| B — tips without mesh | **In progress (thin)** — codec/feed/tests landed; rpc/UI later | `PeerAnnounce*` under domain/messaging |
+| B — tips without mesh | **In progress** — ML-DSA codec/feed/publisher/rpc codec; Amp 1:1 fan-out next | `PeerAnnounce*` under domain/messaging |
 | C — tip + live | Blocked on A + B | |
 | D — announce helpers | Blocked on C | |
 | E — CAS replay | Blocked on C (product); P3/P4 not started | |
