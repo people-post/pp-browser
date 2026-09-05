@@ -455,8 +455,8 @@ Roe<ThreadMessage> MessagingFacade::BuildPaymentPromiseControlMessage(const std:
   return hub_.BuildPaymentPromiseControlMessage(thread_id, type, promise, body_text);
 }
 
-Roe<PaymentPromise> MessagingFacade::IngestPaymentPromiseControlMessage(const ThreadMessage& message) {
-  return hub_.IngestPaymentPromiseControlMessage(message);
+Roe<PaymentPromise> MessagingFacade::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
+  return hub_.StagePaymentPromiseControlMessage(message);
 }
 
 // --- Settings / profile helpers ---------------------------------------------

@@ -233,7 +233,7 @@ public:
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
   /** Stage a remote signed receipt from an inbound control message (does not commit; P003). */
-  Roe<PaymentPromise> IngestPaymentPromiseControlMessage(const ThreadMessage& message);
+  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
 
   ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);

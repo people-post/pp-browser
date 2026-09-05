@@ -1670,7 +1670,7 @@ Roe<ThreadMessage> MessagingHub::BuildPaymentPromiseControlMessage(const std::st
   return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
 }
 
-Roe<PaymentPromise> MessagingHub::IngestPaymentPromiseControlMessage(const ThreadMessage& message) {
+Roe<PaymentPromise> MessagingHub::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
   if (!payment_promises_) {
     return Error("payment promise store unavailable");
   }
