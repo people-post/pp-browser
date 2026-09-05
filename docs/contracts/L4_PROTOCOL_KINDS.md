@@ -62,7 +62,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | `/pp-browser/reach/1.0.0` | **reach** | Dial-back probe |
 | `/pp-browser/reach/punch/1.0.0` | **reach** | Punch SM (distinct id; multi-frame) |
 | `/pp-browser/circuit/1.0.0` | **circuit** | Extend with v2 ops; do not mint a sibling tunnel family |
-| `/pp-browser/circuit-carrier/1.0.0` | *(plumbing)* | Outer splice target for nested Session — not a product kind |
+| `/pp-browser/circuit-carrier/1.0.0` | *(plumbing)* | Product-owned wire id; configured into Amp `EnableNestedCarrierAccept` (Amp library default is `/amp/circuit-carrier/1.0.0`) |
 | `/pp-browser/rpc/1.0.0` | **rpc** | `op=envelope` live chat; `op=history` history sync |
 | `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
 | `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |

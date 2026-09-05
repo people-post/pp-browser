@@ -146,7 +146,7 @@
 ## Landed (D9 step 5d — Amp call-media nested Session over circuit / A024)
 
 - **Carrier-neutral MSH** — `MshAdpHandshake` optional non-chunked wire; `PeerLink` carrier mode over bridged `ChannelSession`
-- **`kAmpCircuitCarrierProtocolId`** — outer splice target (not product L4); `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
+- **`kCircuitCarrierProtocolId (product) / Amp default `/amp/circuit-carrier/1.0.0``** — outer splice target (not product L4); `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
 - **`PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept`** — install virtual PeerLink after inner MSH; `OpenChannel` works without ADP endpoint; rekey refreshes protocol handlers
 - **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
 - **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link

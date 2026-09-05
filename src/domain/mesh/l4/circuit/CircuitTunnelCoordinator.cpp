@@ -1,3 +1,4 @@
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 
 #include "amp/L3/ChannelBridge.h"
@@ -20,7 +21,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 pp::amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
-  if (target_protocol == pp::amp::kAmpCircuitCarrierProtocolId) {
+  if (target_protocol == kCircuitCarrierProtocolId) {
     return pp::amp::CircuitCarrierChannelPolicy();
   }
   return pp::amp::CircuitTunnelChannelPolicy();
