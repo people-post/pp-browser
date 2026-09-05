@@ -134,7 +134,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 | C — tip + live | **In progress** | plan/arm/accept (no SoftMigrate); UI pickup chrome still parking-lot; B0 ticket/key may land here |
 | D — announce helpers | Blocked on C | Orthogonal to F |
 | E — CAS replay | Blocked on C (product); P3/P4 not started | |
-| F — media tree | **Spec only** | [MEDIA_TREE.md](MEDIA_TREE.md); starts after C dogfood; first exit B1 |
+| F — media tree | **B0 started** | Join ticket + tests landed; tip→ticket attach + B1 next |
 
 Update this table when a spine **exits**; link dogfood evidence in the owning projects’ CURRENT_STATE.
 

@@ -74,8 +74,9 @@ Reuse call AEAD family; change **lifecycle**, not the seal model.
 | Rotate | On every leave | **Not** on viewer leave; rotate on end / revoke / kick-ban epoch |
 | Key delivery | Pairwise wrap to ≤16 | **Join ticket** (publisher-signed grant → session key or key wrap) |
 | Hop keys | Never | **Never** (blindness preserved) |
+| Hop payload | Opaque ciphertext | **Required** — every hop must copy opaque sealed frames ([B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast)) |
 
-Drop AEAD only if a concrete hop path cannot carry opaque blobs — not as a scaling shortcut ([B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast)).
+Encryption is mandatory. Do not add a cleartext media path; hops that cannot forward opaque blobs are not eligible as tree relays.
 
 ### Join ticket (sketch)
 

@@ -23,6 +23,10 @@ struct AnnounceLiveJoinPlan {
   std::string program_id;
   /** Optional media_relay hop PeerId (tip.hop_peer_id → session.sfu_hint). */
   std::string hop_peer_id;
+  /** Stable broadcast media epoch after join-ticket apply (B0); default 1. */
+  uint32_t media_epoch = 1;
+  /** Opaque media_key_id from CallMediaKeyStore after ticket apply (optional). */
+  std::string media_key_id;
   uint64_t seq = 0;
   uint64_t epoch = 0;
 };

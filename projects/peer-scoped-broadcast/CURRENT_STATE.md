@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **Spec only** — [MEDIA_TREE.md](MEDIA_TREE.md), [DECISIONS.md](DECISIONS.md) B001–B006, [PHASES.md](PHASES.md); code after C dogfood |
+| **F — media tree** | **B0 started** — join ticket mint/verify/apply + tests; encryption mandatory (B003); attach wiring next |
 
 ## Spine B landed
 
@@ -31,6 +31,20 @@
 
 **Spine B still out of scope:** epidemic `help_announce`, UI chrome, full MeshMessaging integration tests.
 
+
+
+## Spine F / B0 started (media key ticket)
+
+| Piece | Path |
+|-------|------|
+| Join ticket types + mint/verify/JSON | `BroadcastJoinTicket.*` |
+| Apply → `CallMediaKeyStore::PutEpochKey` | `ApplyBroadcastJoinTicket` |
+| Live-join plan carries `media_epoch` / `media_key_id` | `AnnounceLiveJoinPlan` + handoff |
+| Tests | `broadcast_join_ticket_test.cpp` (5 cases) |
+
+**B003 locked:** encrypt-once AEAD mandatory; every hop must forward opaque blobs (no cleartext escape).
+
+**Still out of scope for this slice:** tip→ticket RPC, accept-path auto-apply, multi-hop tree (B1).
 
 ## Spine C started (slice 0)
 

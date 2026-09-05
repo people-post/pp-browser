@@ -12,10 +12,10 @@ Delivery order for live **media capacity** (Spine F). Do not start B1 until Spin
 Prerequisite for tree work; may land as C ribs.
 
 - [ ] Session flag / shape distinct from group SoftMigrate (subscribe-only viewers)
-- [ ] Stable session media key (no rotate-on-viewer-leave)
-- [ ] Join ticket (publisher-signed) delivers key / grant
-- [ ] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal)
-- [ ] Encrypt-once AEAD; hop copies ciphertext (keep V004 family)
+- [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint/apply
+- [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/apply + unit tests
+- [ ] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal) — wire into accept path
+- [x] Encrypt-once AEAD mandatory; hops must copy opaque ciphertext (B003 locked)
 - [ ] Loopback / lab: publisher + hop + ≥2 viewers
 
 **Exit:** Watchable live from tip without treating audience as call roster.
@@ -61,5 +61,5 @@ Prerequisite for tree work; may land as C ribs.
 
 - Simulcast / `video_hi` for adaptive tree layers
 - Open helper marketplace (beyond whitelist)
-- Cleartext media exception (only if hop cannot carry opaque blobs — [B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast))
+- Cleartext media (rejected — [B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast); hops must carry opaque blobs)
 - Multi-SFU trees for **group calls** (remains non-goal)

@@ -34,7 +34,8 @@ Roe<AnnounceLiveJoinHandoff> BuildAnnounceLiveJoinHandoff(const AnnounceLiveJoin
   handoff.session.video_allowed = video_allowed;
   handoff.session.state = CallSessionState::Ringing;
   handoff.session.created_at = now_ms;
-  handoff.session.media_epoch = 1;
+  handoff.session.media_epoch = plan.media_epoch == 0 ? 1 : plan.media_epoch;
+  handoff.session.media_key_id = plan.media_key_id;
   if (!plan.hop_peer_id.empty()) {
     handoff.session.sfu_hint = plan.hop_peer_id;
   }

@@ -26,9 +26,10 @@
 ## B003 — Keep encrypt-once AEAD for broadcast
 
 **Date:** 2026-09-05  
-**Decision:** Keep app-layer **encrypt-once AEAD** under a **session broadcast key**; hops remain blind and copy ciphertext (same seal family as [V004](../p2p-av-calls/DECISIONS.md#v004--shared-call-media-key-not-group-n-ciphertext)). Do **not** drop encryption for scale. Revisit cleartext only if a concrete hop path cannot carry opaque blobs.  
-**Rationale:** AEAD cost is negligible vs egress; blindness enables PreferLocal / contact / `help_media` relays; cleartext does not reduce seed N× bitrate.  
-**Alternatives:** Cleartext media (rejected as default); per-viewer encrypt (rejected — kills tree copy).
+**Updated:** 2026-09-05 — all hops **must** carry opaque blobs; cleartext escape removed.  
+**Decision:** Keep app-layer **encrypt-once AEAD** under a **session broadcast key**; hops remain blind and copy ciphertext (same seal family as [V004](../p2p-av-calls/DECISIONS.md#v004--shared-call-media-key-not-group-n-ciphertext)). Encryption is **mandatory**. Every `media_relay` hop (root, intermediate, leaf) **must** forward opaque sealed frames without inspecting or requiring plaintext. Do **not** introduce a cleartext media path.  
+**Rationale:** AEAD cost is negligible vs egress; blindness enables PreferLocal / contact / `help_media` relays; cleartext does not reduce seed N× bitrate. Opaque-blob transport is a hop capability requirement, not an optional fallback.  
+**Alternatives:** Cleartext media (rejected); per-viewer encrypt (rejected — kills tree copy).
 
 ---
 
