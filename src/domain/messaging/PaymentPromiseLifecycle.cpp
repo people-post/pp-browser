@@ -32,14 +32,6 @@ Roe<std::string> RequireAccountId(IAccountSigningAccess& identity) {
   return *account_id;
 }
 
-Roe<ByteVector> RequireAccountSecret(IAccountSigningAccess& identity) {
-  auto secret = identity.GetAccountMlDsaPrivateKey();
-  if (!secret) {
-    return secret.error();
-  }
-  return *secret;
-}
-
 bool IsParty(const PaymentPromise& promise, const std::string& account_id) {
   return promise.payer_account_id == account_id || promise.payee_account_id == account_id;
 }
@@ -61,10 +53,6 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::CreateOffer(PaymentPromiseStore& st
   if (*local_account == params.counterparty_account_id) {
     return Error("counterparty must differ from local account");
   }
-  auto secret = RequireAccountSecret(identity);
-  if (!secret) {
-    return secret.error();
-  }
 
   PaymentPromise promise;
   promise.promise_id = std::string("promise:") + util::GenerateUuid();
@@ -85,7 +73,7 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::CreateOffer(PaymentPromiseStore& st
   promise.expires_at_ms = params.expires_at_ms;
   promise.state = PaymentPromiseState::Offered;
 
-  auto signature = PaymentPromiseCodec::SignPromise(*secret, promise);
+  auto signature = PaymentPromiseCodec::SignPromise(identity, promise);
   if (!signature) {
     return signature.error();
   }
@@ -118,16 +106,12 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::Accept(PaymentPromiseStore& store, 
   if (!IsParty(*promise, *local_account)) {
     return Error("local account is not a party to this promise");
   }
-  auto secret = RequireAccountSecret(identity);
-  if (!secret) {
-    return secret.error();
-  }
 
   // Accepting party signs the promise commitment if they have not already.
   const bool local_is_payer = promise->payer_account_id == *local_account;
   std::string& slot = local_is_payer ? promise->payer_signature_b64 : promise->payee_signature_b64;
   if (slot.empty()) {
-    auto signature = PaymentPromiseCodec::SignPromise(*secret, *promise);
+    auto signature = PaymentPromiseCodec::SignPromise(identity, *promise);
     if (!signature) {
       return signature.error();
     }
@@ -179,16 +163,12 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& 
   if (!IsParty(*promise, *local_account)) {
     return Error("local account is not a party to this promise");
   }
-  auto secret = RequireAccountSecret(identity);
-  if (!secret) {
-    return secret.error();
-  }
 
   promise->state = outcome;
   promise->outcome_actor_account_id = *local_account;
   promise->outcome_at_ms = util::NowUnixMs();
   promise->outcome_note = note;
-  auto signature = PaymentPromiseCodec::SignOutcome(*secret, *promise);
+  auto signature = PaymentPromiseCodec::SignOutcome(identity, *promise);
   if (!signature) {
     return signature.error();
   }

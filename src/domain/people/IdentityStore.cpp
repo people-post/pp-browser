@@ -471,6 +471,10 @@ Roe<std::string> IdentityStore::SignPayload(const std::string& canonical_json) c
 }
 
 Roe<std::string> IdentityStore::SignBytes(const std::vector<uint8_t>& sign_bytes) const {
+  return SignAccountBytes(sign_bytes);
+}
+
+Roe<std::string> IdentityStore::SignAccountBytes(const AccountSignBytes& sign_bytes) const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
@@ -544,22 +548,6 @@ Roe<std::string> IdentityStore::GetHybridKemPublicKeyB64() const {
     return Error("Hybrid KEM public key missing");
   }
   return identity_.kem_public_key_b64;
-}
-
-Roe<ByteVector> IdentityStore::GetAccountMlDsaPrivateKey() const {
-  std::lock_guard lock(mutex_);
-  auto load = EnsureLoaded();
-  if (!load) {
-    return load.error();
-  }
-  auto decoded = Base64Decode(identity_.account_signing_private_key_b64);
-  if (!decoded) {
-    return decoded.error();
-  }
-  if (decoded->size() != kMlDsa65SecretKeyBytes) {
-    return Error("Invalid ML-DSA-65 secret key size");
-  }
-  return *decoded;
 }
 
 Roe<std::string> IdentityStore::GetAccountId() const {

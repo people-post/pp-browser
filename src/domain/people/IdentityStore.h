@@ -42,14 +42,13 @@ public:
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
+  Roe<std::string> SignAccountBytes(const AccountSignBytes& sign_bytes) const override;
   /** Raw device ML-DSA-65 private key for libp2p Host identity binding. */
   Roe<ByteVector> GetDeviceMlDsaPrivateKey() const;
   Roe<ByteVector> GetDeviceMlDsaPublicKey() const;
   /** Account ML-KEM-768 secret (M015). Mints only if identity has no valid KEM yet. */
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
-  /** Account ML-DSA-65 secret (raw). Empty/error if not yet minted. */
-  Roe<ByteVector> GetAccountMlDsaPrivateKey() const override;
   Roe<std::string> GetAccountId() const override;
   void Flush();
 

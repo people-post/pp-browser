@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/directory/IAccountSigningAccess.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
@@ -24,10 +25,12 @@ public:
   static Roe<ByteVector> BuildOutcomeSignBytes(const PaymentPromise& promise);
 
   static Roe<std::string> SignPromise(const ByteVector& secret_key, const PaymentPromise& promise);
+  static Roe<std::string> SignPromise(IAccountSigningAccess& identity, const PaymentPromise& promise);
   static Roe<bool> VerifyPromiseSignature(const ByteVector& public_key, const PaymentPromise& promise,
                                           const std::string& signature_b64);
 
   static Roe<std::string> SignOutcome(const ByteVector& secret_key, const PaymentPromise& promise);
+  static Roe<std::string> SignOutcome(IAccountSigningAccess& identity, const PaymentPromise& promise);
   static Roe<bool> VerifyOutcomeSignature(const ByteVector& public_key, const PaymentPromise& promise);
 };
 

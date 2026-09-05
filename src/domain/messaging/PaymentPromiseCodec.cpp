@@ -147,6 +147,14 @@ Roe<std::string> PaymentPromiseCodec::SignPromise(const ByteVector& secret_key, 
   return SignBytes(secret_key, *bytes);
 }
 
+Roe<std::string> PaymentPromiseCodec::SignPromise(IAccountSigningAccess& identity, const PaymentPromise& promise) {
+  auto bytes = BuildPromiseSignBytes(promise);
+  if (!bytes) {
+    return bytes.error();
+  }
+  return identity.SignAccountBytes(*bytes);
+}
+
 Roe<bool> PaymentPromiseCodec::VerifyPromiseSignature(const ByteVector& public_key, const PaymentPromise& promise,
                                                       const std::string& signature_b64) {
   if (signature_b64.empty()) {
@@ -171,6 +179,20 @@ Roe<std::string> PaymentPromiseCodec::SignOutcome(const ByteVector& secret_key, 
     return bytes.error();
   }
   return SignBytes(secret_key, *bytes);
+}
+
+Roe<std::string> PaymentPromiseCodec::SignOutcome(IAccountSigningAccess& identity, const PaymentPromise& promise) {
+  if (!PaymentPromiseStateIsTerminal(promise.state)) {
+    return Error("outcome signature requires a terminal promise state");
+  }
+  if (promise.outcome_actor_account_id.empty()) {
+    return Error("outcome signature requires outcome_actor_account_id");
+  }
+  auto bytes = BuildOutcomeSignBytes(promise);
+  if (!bytes) {
+    return bytes.error();
+  }
+  return identity.SignAccountBytes(*bytes);
 }
 
 Roe<bool> PaymentPromiseCodec::VerifyOutcomeSignature(const ByteVector& public_key, const PaymentPromise& promise) {
