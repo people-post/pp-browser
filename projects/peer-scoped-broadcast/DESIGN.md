@@ -111,6 +111,24 @@ Matches existing L4 composition ([L4_PROTOCOL_KINDS](../../docs/contracts/L4_PRO
 - **Watch** → realtime subscriber path (SFU/hop).
 - **Chat / react “publicly”** → DM (or side chat) to publisher; publisher may rebroadcast a text announce — still not free-speak on the media mesh.
 
+### Live re-announce (heartbeat)
+
+While a program is **live**, the publisher may **auto-repeat** a small signed tip so late helpers/readers still discover the session. This is **publisher-driven refresh**, not helper-invented spam.
+
+| Rule | Policy |
+|------|--------|
+| Who emits | **Publisher PeerId only**; helpers forward, they do not set their own cadence |
+| When | Only while the realtime session is live; stop on end/revoke. Optional separate “schedule/presence” mode is out of default live path |
+| Minimum interval | Floor **≥30–60s** between live heartbeats; also enforce a **max** (e.g. ≤1/min) |
+| Jitter | Prefer **jittered / desynchronized** schedule over a fixed metronome (spreads helper load) |
+| Payload | **Heartbeat ≠ full blurb**: `state=live`, `program_id`, `seq`/`epoch`, join/session id or token hash; keep title/description on the go-live tip |
+| Dedup | Helpers/readers drop if same `(peer_id, topic_id, program_id, epoch)` (or lower `seq`) seen inside the interval window — stops mesh echo amplification |
+| Budget | Counts against **`help_announce`** rate limits; must **not** track video bitrate or `help_media` cost |
+| Pull | After first tip, prefer **IHAVE / IWANT**-style pull for quiet meshes; rare push OK for cold start |
+| Events that bypass the floor once | Go-live, SoftMigrate / token rotate, end (`state=ended` + optional DVR `content_id`) |
+
+**Intent:** improve mid-show audience reach via discovery tips, not via announce-plane video or unbounded beaconing.
+
 ---
 
 ## Shared helper whitelist (product)
@@ -136,9 +154,10 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 ## Combined lifecycle (a live show)
 
 1. **Tease / schedule** → announce only.  
-2. **Go live** → announce `state=live` + join params → viewers attach realtime; `help_media` peers may hop.  
-3. **End** → announce `state=ended` + optional `content_id` for DVR; tear down realtime.  
-4. **Revoke** → stop signing; rotate topic and/or invalidate join tokens; hops detach.
+2. **Go live** → fuller announce `state=live` + join params → viewers attach realtime; `help_media` peers may hop.  
+3. **While live** → publisher auto-repeats **heartbeat** tips on the min-interval / jitter policy above; helpers dedup and forward under `help_announce`.  
+4. **End** → one `state=ended` tip (+ optional `content_id` for DVR); stop heartbeats; tear down realtime.  
+5. **Revoke** → stop signing; rotate topic and/or invalidate join tokens; hops detach.
 
 ---
 
@@ -155,4 +174,4 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 
 ## One-line summary
 
-**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; live picture on realtime hop; optional recording in CAS; conversation stays DM; the publisher alone controls what becomes public again — one helper relationship, explicit `help_announce` / `help_media` flags.**
+**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; while live, publisher-paced heartbeat tips (min interval + dedup) for late discovery; live picture on realtime hop; optional recording in CAS; conversation stays DM; the publisher alone controls what becomes public again — one helper relationship, explicit `help_announce` / `help_media` flags.**

@@ -14,6 +14,8 @@ Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plu
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Planes, roles, whitelist, lifecycle, non-goals |
 
+Live shows may use publisher-paced **re-announce heartbeats** (min interval + dedup) — see [DESIGN.md](DESIGN.md#live-re-announce-heartbeat).
+
 ## Why this project exists
 
 We considered classic gossip/pubsub (open topics, epidemic fan-out, in-topic replies) and rejected it as the product shape: amplification risk, topic collision/squatting, and weak lifecycle. The reduced model below keeps broadcast useful while matching mesh + calls + CAS boundaries already in L4.
