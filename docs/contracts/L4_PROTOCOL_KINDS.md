@@ -8,6 +8,8 @@
 
 AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **L4 `protocol_id` strings name conversation shapes**, not product features. This document freezes the complete set of kinds so agents and humans do not mint a new `/pp-…/1.0.0` for every feature.
 
+**Shared-code boundary:** Amp owns transport (OPEN/FRAG/Bulk QoS). pp-browser owns L4 conversation SMs (rpc/blob/realtime/…). pp-ledger owns `/pp-ledger/rpc/1.0.0` codecs and chain sync. Do not put swarm/piece selection or ledger tip-follow into Amp — see [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md). BitTorrent-style multi-peer fetch is future **blob** ops + **discover**, not a new kind.
+
 Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has two OPEN ids (chat vs history) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
