@@ -43,18 +43,12 @@ public:
 };
 
 /** D060 peer-direct history — `/pp-browser/rpc/history/1.0.0` (rpc kind; own OPEN). */
-inline constexpr const char* kChatHistoryProtocolId = kRpcHistoryProtocolId;
-
 class IChatHistoryPeerClient {
 public:
   virtual ~IChatHistoryPeerClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
-
-/** R019 peer-direct attachment blobs — `/pp-browser/blob/1.0.0`. */
-inline constexpr const char* kBlobProtocolId = "/pp-browser/blob/1.0.0";
-inline constexpr const char* kChatBlobProtocolId = kBlobProtocolId;
 
 class IChatBlobPeerClient {
 public:

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "common/directory/IContactTrustAccess.h"
 #include "domain/messaging/PaymentPromiseStore.h"
-#include "domain/people/ContactsStore.h"
 #include "common/Error.h"
 
 #include <string>
@@ -20,14 +20,14 @@ public:
    * Avoid the counterparty of `promise_id` relative to `local_account_id`.
    * Contact block is best-effort when a contact row exists; receipt stamp always applied.
    */
-  static Roe<void> AvoidCounterparty(PaymentPromiseStore& promises, ContactsStore& contacts,
+  static Roe<void> AvoidCounterparty(PaymentPromiseStore& promises, IContactTrustAccess& contacts,
                                      const std::string& promise_id, const std::string& local_account_id);
 
   /**
    * True when contact trust is Blocked for other_account_id, or a local_avoid receipt exists
    * between local_account_id and other_account_id.
    */
-  static bool ShouldAvoid(const PaymentPromiseStore& promises, const ContactsStore& contacts,
+  static bool ShouldAvoid(const PaymentPromiseStore& promises, const IContactTrustAccess& contacts,
                           const std::string& local_account_id, const std::string& other_account_id);
 };
 

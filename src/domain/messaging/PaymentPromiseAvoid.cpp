@@ -1,7 +1,5 @@
 #include "domain/messaging/PaymentPromiseAvoid.h"
 
-#include "domain/people/ContactTypes.h"
-
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -19,7 +17,7 @@ std::string CounterpartyAccountId(const PaymentPromise& promise, const std::stri
 
 } // namespace
 
-Roe<void> PaymentPromiseAvoid::AvoidCounterparty(PaymentPromiseStore& promises, ContactsStore& contacts,
+Roe<void> PaymentPromiseAvoid::AvoidCounterparty(PaymentPromiseStore& promises, IContactTrustAccess& contacts,
                                                  const std::string& promise_id,
                                                  const std::string& local_account_id) {
   if (local_account_id.empty()) {
@@ -43,25 +41,10 @@ Roe<void> PaymentPromiseAvoid::AvoidCounterparty(PaymentPromiseStore& promises, 
     return marked.error();
   }
 
-  auto hit = contacts.FindByIdentity(other, ContactIdKind::Account);
-  if (!hit) {
-    return hit.error();
-  }
-  if (!hit->has_value()) {
-    // Receipt stamp is enough when the address book has no row yet.
-    return {};
-  }
-  Contact contact = **hit;
-  contact.local.trust = TrustLevel::Blocked;
-  SyncContactMirrors(contact);
-  auto upserted = contacts.Upsert(contact);
-  if (!upserted) {
-    return upserted.error();
-  }
-  return {};
+  return contacts.BlockAccountIfPresent(other);
 }
 
-bool PaymentPromiseAvoid::ShouldAvoid(const PaymentPromiseStore& promises, const ContactsStore& contacts,
+bool PaymentPromiseAvoid::ShouldAvoid(const PaymentPromiseStore& promises, const IContactTrustAccess& contacts,
                                       const std::string& local_account_id, const std::string& other_account_id) {
   if (other_account_id.empty()) {
     return false;
@@ -69,11 +52,8 @@ bool PaymentPromiseAvoid::ShouldAvoid(const PaymentPromiseStore& promises, const
   if (promises.HasLocalAvoidAgainst(local_account_id, other_account_id)) {
     return true;
   }
-  auto hit = contacts.FindByIdentity(other_account_id, ContactIdKind::Account);
-  if (!hit || !hit->has_value()) {
-    return false;
-  }
-  return (*hit)->local.trust == TrustLevel::Blocked || (*hit)->trust == TrustLevel::Blocked;
+  auto blocked = contacts.IsAccountBlocked(other_account_id);
+  return blocked && *blocked;
 }
 
 } // namespace pbr
