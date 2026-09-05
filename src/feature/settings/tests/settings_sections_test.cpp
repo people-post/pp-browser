@@ -5,7 +5,7 @@
 #include "feature/settings/NetworkSettingsSection.h"
 #include "feature/settings/StorageSettingsSection.h"
 
-#include "base/i18n/LocalizationService.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
@@ -53,7 +53,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   network_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.relay_base_url, "https://relay.example");
   EXPECT_EQ(state.node_enabled, "on");
-  EXPECT_FALSE(state.libp2p_listen_multiaddr.empty());
+  EXPECT_TRUE(state.amp_listen_multiaddr.empty());
   EXPECT_TRUE(network_section.IsPersisted(state, bootstrap));
 
   state.node_enabled = "off";

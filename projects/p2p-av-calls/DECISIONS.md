@@ -8,7 +8,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 
 **Date:** 2026-07-28  
 **Status:** **Superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking)**  
-**Decision:** **Signaling and call state** ride the Brief mesh / E2E messaging path. **Media** uses a **WebRTC-shaped** stack (ICE + encrypted realtime media). **Fallback** is mesh Node **`audio_relay` / `video_relay`** SFU (or TURN-like), preferring contact-first then org seed (N014). Do **not** implement a long-lived custom Opus-over-libp2p media stack as the product path.  
+**Decision:** **Signaling and call state** ride the Brief mesh / E2E messaging path. **Media** uses a **WebRTC-shaped** stack (ICE + encrypted realtime media). **Fallback** is mesh Node **`audio_relay` / `video_relay`** SFU (or TURN-like), preferring contact-first then org seed (N014). Do **not** implement a long-lived custom Opus-over-mesh media stack as the product path.  
 **Rationale:** Mobile is always Client (no listen); NAT makes pure full-mesh unreliable; WebRTC delivers expected call quality and congestion control; mesh keeps discovery, SFU ops, and product crypto under Brief.  
 **Alternatives:** (A) Full WebRTC including third-party SaaS SFU only — rejected as default (ops may still use extra seeds). (B) Custom A/V solely on libp2p streams — rejected for v1 product quality/time.
 
@@ -542,12 +542,12 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 |-------|------|
 | **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
 | **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
-| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in-libp2p** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather; punch planned H009). |
 | **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
 | **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
 | **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |
 
-**Supersedes / updates:** [V001](#v001--hybrid-media-stack-option-c) (hybrid WebRTC); product intent of [V014](#v014--media-stack-libdatachannel--libopus--sdl) (libdatachannel transport); [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) “1:1 stay on ICE P2P”; [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) dual WebRTC/SFU backends → one libp2p media backend family; [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p) ICE Retry as product recovery.
+**Supersedes / updates:** [V001](#v001--hybrid-media-stack-option-c) (hybrid WebRTC); product intent of [V014](#v014--media-stack-libdatachannel--libopus--sdl) (libdatachannel transport); [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) “1:1 stay on ICE P2P”; [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) dual WebRTC/SFU backends → one mesh media backend family; [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p) ICE Retry as product recovery.
 
 **Rationale:** One peer stack to deepen (NAT, discovery, QoS, incentives); HTTP for backends; accept realtime/NAT tradeoffs for **audio-first**; avoid maintaining ICE and multiaddr dial in parallel.
 
@@ -562,7 +562,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 ## V027 — Mobile call-scoped listen on Wi‑Fi
 
 **Date:** 2026-08-01  
-**Status:** Accepted (**implemented** — see mesh N025 / `MessagingHub::SyncMobileEphemeralListen`)  
+**Status:** Accepted (**implemented** — see mesh N025 / `ConversationsHub::SyncMobileEphemeralListen`)  
 **Decision:** Mobile does **not** become a full mesh **Node**. During an **active foreground call on Wi‑Fi**, the app may **listen ephemerally** and publish dialable addrs (mesh **N025**) so that:
 
 | Scenario | Benefit |
@@ -711,7 +711,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 **Date:** 2026-08-07  
 **Status:** Accepted (**s2a done** — call-media phases in code; media-relay N026 **s3a+s3b done**; circuit compose loopbacks green)  
-**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** libp2p host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `base/p2p`.
+**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** mesh host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `base/p2p`.
 
 | Rule | Detail |
 |------|--------|
@@ -723,7 +723,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 **Rationale:** m1 call-media works but is held together by flags (`outbound_hello_inflight`, `settled` atomics) and comments (glare, SoftMigrate EOF). That knowledge belongs in an explicit machine before more patches. A blanket host inbound SM would add ceremony to simple RPCs and blur protocol differences.
 
-**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of MessagingHub; SM-ifying chat/dial-back.
+**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of ConversationsHub; SM-ifying chat/dial-back.
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
 

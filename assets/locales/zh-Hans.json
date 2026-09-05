@@ -164,6 +164,8 @@
     "settings.network.circuit_relay_hint": "让其他人可以通过这台电脑互相到达。",
     "settings.network.media_relay": "帮他人通话",
     "settings.network.media_relay_hint": "为他人转发通话音视频（你无法收听内容）。",
+    "settings.network.dht": "节点发现（DHT）",
+    "settings.network.dht_hint": "帮助其他节点在 mesh 上互相发现。开启后会占用额外带宽。",
     "settings.network.prefer_contacts": "好友优先",
     "settings.network.prefer_contacts_hint": "连接与协助时优先联系人。关闭后也会协助更广的网络。",
 

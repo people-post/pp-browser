@@ -44,7 +44,7 @@ Pattern: `vMAJOR.MINOR.PATCH` with optional suffixes (`-rc1`, `-beta1`, …).
 | `pp-node/v0.1.0` | Stable node / GHCR release |
 | `pp-node/v0.1.0-rc1` | Pre-release (no `:latest` image tag) |
 
-Independent semver from the app. Breaking mesh/wire protocols still need a coordinated bump (or dual-protocol support) — see [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) and protocol IDs under `src/base/p2p/`.
+Independent semver from the app. Breaking mesh/wire protocols still need a coordinated bump (or dual-protocol support) — see [COMPATIBILITY.md](../contracts/COMPATIBILITY.md) and protocol IDs under `src/domain/mesh/`.
 
 ## Maintainer flow
 
@@ -86,7 +86,7 @@ Uses `-DPP_BROWSER_PACKAGED_BUILD=ON`.
 
 [`release-pp-node.yml`](../.github/workflows/release-pp-node.yml):
 
-- Ubuntu 24.04 build (`-DPP_BROWSER_HEADLESS=ON`) via [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh)
+- Ubuntu 24.04 build (`-DPP_BROWSER_HEADLESS=ON`) via [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh)
 - Push `ghcr.io/<owner>/pp-node:<version>` (and `:v…`, `:latest` when not a prerelease)
 - L0 HTTP smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md))
 - GitHub Release named `pp-node <version>` with the Linux tarball
@@ -116,11 +116,11 @@ docker pull ghcr.io/people-post/pp-node:0.1.0
 docker run --rm -it \
   --cap-add=NET_BIND_SERVICE \
   -e PP_BROWSER_PIN=... \
-  -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443 \
+  -e PP_NODE_AMP_UDP_PORT=443 \
   -e PP_NODE_DATA_DIR=/var/lib/pp-node \
   -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
   -v pp-node-data:/var/lib/pp-node \
-  -p 443:443 \
+  -p 443:443/udp \
   -p 18518:18518 \
   ghcr.io/people-post/pp-node:0.1.0
 ```
@@ -159,10 +159,10 @@ cpack --config build/CPackConfig.cmake
 **Node** (Ubuntu 24.04 host):
 
 ```bash
-PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-./scripts/pp_local_test.sh run --suite node
+PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_linux.sh all
+./scripts/test/pp_local_test.sh run --suite node
 # or: docker compose -f packaging/pp-node/docker-compose.yml up -d
-#     ./scripts/pp_node_relay_smoke.sh
+#     ./scripts/test/pp_node_relay_smoke.sh
 ```
 
 ## Checklist before tagging

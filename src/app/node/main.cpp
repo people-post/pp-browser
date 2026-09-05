@@ -1,15 +1,15 @@
 #include "app/node/NodeBootstrap.h"
-#include "app/node/NodeEnvOverlay.h"
 #include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/platform/PlatformLogDefaults.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/runtime/AppRuntime.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/platform/PlatformLogDefaults.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
-#include "base/p2p/Reachability.h"
+#include "common/ValueJson.h"
+#include "domain/mesh/reachability/Reachability.h"
 
 #include <atomic>
 #include <chrono>
@@ -37,13 +37,11 @@ void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0 << " [options]\n"
       << "\n"
-      << "Headless Brief mesh node (N011). Always Node; fail-loud listen by default (N016).\n"
+      << "Headless Brief mesh node (N011). Always Node.\n"
       << "Precedence: CLI flags → environment → config file → defaults.\n"
       << "\n"
       << "Options:\n"
       << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG)\n"
-      << "  --listen <multiaddr>  Override libp2p listen (or PP_NODE_LISTEN)\n"
-      << "  --listen-fallback     Allow desktop-style port fallback (or PP_NODE_LISTEN_FALLBACK)\n"
       << "  --status              Print reachability JSON and exit (nr ops)\n"
       << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
       << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
@@ -57,8 +55,8 @@ void PrintUsage(const char* argv0) {
       << "  --help                Show this help\n"
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
-      << "  PP_NODE_DATA_DIR, PP_NODE_LISTEN, PP_NODE_BOOTSTRAP_PEERS,\n"
-      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
+      << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
+      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT,\n"
       << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
       << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
       << "\n"
@@ -88,18 +86,20 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
-  if (boot.mesh && boot.mesh->Runtime()) {
-    snap.listen_multiaddr = boot.mesh->Runtime()->BoundListenMultiaddr();
-    if (boot.mesh->Host()) {
-      if (auto peer = boot.mesh->Host()->LocalPeerIdBase58()) {
-        snap.peer_id = *peer;
-      }
-    }
-  }
-  snap.circuit_relay = boot.mesh && boot.mesh->CircuitRelay() && boot.mesh->CircuitRelay()->IsStarted();
-  snap.media_relay = boot.mesh && boot.mesh->MediaRelay() && boot.mesh->MediaRelay()->IsStarted();
   if (boot.mesh) {
+    snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
+    if (boot.mesh->Amp()) {
+      snap.peer_id = boot.mesh->Amp()->LocalPeerId();
+    }
+    snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
+                         boot.mesh->AmpCircuitTunnel()->ServeInbound();
+    snap.media_relay = boot.mesh->AmpMediaRelayCoord() && boot.mesh->AmpMediaRelayCoord()->IsStarted() &&
+                       boot.mesh->AmpMediaRelayCoord()->ServeInbound();
+    snap.dht = boot.mesh->AmpDht() && boot.mesh->AmpDht()->IsStarted();
     snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
+    if (boot.mesh->AmpDht()) {
+      snap.dht_json = boot.mesh->AmpDht()->FormatOpsStatusJson();
+    }
   }
   return snap;
 }
@@ -111,11 +111,6 @@ int main(int argc, char** argv) {
   std::string pin;
   // Env defaults; CLI overwrites below (CLI → env → file).
   std::string profile_override = EnvOrEmpty("PP_NODE_PROFILE");
-  std::string listen_override; // CLI only; PP_NODE_LISTEN applied in Bootstrap
-  bool listen_fallback = false;
-  if (auto from_env = pbr::ParsePpNodeBoolEnv(EnvOrEmpty("PP_NODE_LISTEN_FALLBACK"))) {
-    listen_fallback = *from_env;
-  }
   bool print_status = false;
   std::string status_addr_spec =
       std::string(pbr::kDefaultStatusHttpBindHost) + ":" + std::to_string(pbr::kDefaultStatusHttpBindPort);
@@ -133,8 +128,6 @@ int main(int argc, char** argv) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--sandbox") == 0) {
       // Handled by ResolveSandboxModeFromLaunch below.
-    } else if (std::strcmp(argv[i], "--listen-fallback") == 0) {
-      listen_fallback = true;
     } else if (std::strcmp(argv[i], "--status") == 0) {
       print_status = true;
     } else if (std::strcmp(argv[i], "--status-addr") == 0 && i + 1 < argc) {
@@ -145,8 +138,6 @@ int main(int argc, char** argv) {
       pin = argv[++i];
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[++i];
-    } else if (std::strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
-      listen_override = argv[++i];
     } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
       ++i; // Config::Load reads --config from argv
     } else {
@@ -174,8 +165,6 @@ int main(int argc, char** argv) {
   options.argv = argv;
   options.pin = pin;
   options.profile_override = profile_override;
-  options.listen_override = listen_override;
-  options.listen_fallback = listen_fallback;
 
   auto boot = pbr::BootstrapPpNode(options);
   if (!boot) {
@@ -184,10 +173,18 @@ int main(int argc, char** argv) {
   }
 
   if (print_status) {
-    const std::string bound = boot->mesh->BoundListenMultiaddr();
-    const bool try_upnp = !pbr::ShouldSkipUpnpForListen(bound);
-    boot->mesh->Reachability().RunProbeBlocking(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
-    std::cout << boot->mesh->Reachability().FormatOpsStatusJson() << std::endl;
+    boot->mesh->RunReachabilityProbeBlocking(/*try_upnp_first=*/false);
+    auto snap = MakeSnapshot(*boot);
+    auto root_obj = pbr::TryParseObject(snap.reachability_json);
+    pbr::Object out = root_obj ? std::move(*root_obj) : pbr::Object{};
+    out.set("host_running", snap.host_running);
+    out.set("dht", snap.dht);
+    if (!snap.dht_json.empty()) {
+      if (auto dht = pbr::TryParseObject(snap.dht_json)) {
+        out.set("dht_stats", *dht);
+      }
+    }
+    std::cout << pbr::DumpJson(out) << std::endl;
     ShutdownNode(*boot);
     return 0;
   }
@@ -211,10 +208,7 @@ int main(int argc, char** argv) {
   }
 
   auto schedule_probe = [&]() {
-    if (boot->mesh && boot->mesh->Runtime() && boot->mesh->DialBack()) {
-      const bool try_upnp = !pbr::ShouldSkipUpnpForListen(boot->mesh->BoundListenMultiaddr());
-      boot->mesh->Reachability().StartProbe(*boot->mesh->Runtime(), *boot->mesh->DialBack(), try_upnp);
-    }
+    boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false);
   };
   schedule_probe();
 

@@ -10,7 +10,7 @@
 4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and tier-specific ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
 6. **Storage abstraction** — `IPskSessionStore` seam; v1 backing store is `profile.db` `chat_targets` (E008/D084); keychain backend later.
-7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `P2pMessagingService` dependencies.
+7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `MeshMessagingService` dependencies.
 
 ## Three chat tiers (E021 / D089)
 
@@ -54,7 +54,7 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 │   Ed25519Signer — relay envelope + registration               │
 ├─────────────────────────────────────────────────────────────┤
 │ Transport TLS (BoringSSL) — existing, unrelated to E2E body │
-│   curl HTTPS · libp2p TLS · lsquic                            │
+│   curl HTTPS · Amp mesh (ADP)                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -129,8 +129,8 @@ Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as
 |------|----------|
 | `IPeerSigningKeyResolver` | `src/base/messaging/` |
 | `PeerSigningKeyStore` | `src/base/messaging/` or `src/base/people/` |
-| `AutoKeyEstablishment` | `src/base/crypto/` |
-| Ingest wiring | `src/feature/messaging/` receive pipeline step 2 + 7 |
+| `AutoKeyEstablishment` | `src/foundation/crypto/` |
+| Ingest wiring | `src/feature/conversations/` receive pipeline step 2 + 7 |
 
 ### Session key derivation (E015)
 
@@ -460,7 +460,7 @@ If peer rotated more than **8** times before import, epochs outside the retired 
 | `EncryptedPayload.h/.cpp` | Blob codec + base64 |
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
 | `IPskSessionStore.h` | Session CRUD + **`GenerateMasterPsk()`** (E011) + `ResolveMasterPskForEpoch(epoch)` (E018) + **`ImportPskBundle` / `ExportPskBundle`** (E020) + **`MarkPskVerified()`** / **`IsPskVerified()`** (E011) — interface in `base/crypto` |
-| `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/messaging/` — reads/writes `chat_targets` PSK columns (E008/D084) |
+| `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/conversations/` — reads/writes `chat_targets` PSK columns (E008/D084) |
 
 **Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.
 

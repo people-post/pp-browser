@@ -1,6 +1,6 @@
 #include "feature/ai/TurnPlanner.h"
 
-#include "base/ai/PromptBuilder.h"
+#include "domain/ai/PromptBuilder.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

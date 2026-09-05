@@ -13,7 +13,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
 2. else client left unset (should not happen after defaults / empty coalesce)
 
-Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+Native messaging code (`MeshMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
 **Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
@@ -77,15 +77,16 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
   "registration": { "base_url": "https://www.brief.global/api/relay" },
   "libp2p": {
     "node_enabled": true,
-    "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
+    "mesh_enabled": true,
+    "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
+      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
     ]
   }
 }
 ```
 
-**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no listen). Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
+**Libp2p roles (n1):** Desktop defaults to **Node** (`node_enabled`); Me → Network can opt out. Mobile is always **Client** (no Node hosting). Amp UDP accept remains on for Clients. Clients still dial the Brief seed from `bootstrap_peers`. See [p2p-mesh](../../projects/p2p-mesh/).
 Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to those defaults; production never falls back to in-process mocks (`Mock*Client` is test-only).
 
 ## Relay envelope (target — D056, D090)
@@ -202,21 +203,21 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
-| `src/base/p2p/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
-| `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/P2pMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/messaging/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
-| `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
-| `src/feature/messaging/MessageRouter.*` | Composer routing |
-| `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
-| `src/feature/chat/MessagingTools.*` | Agent tool definitions |
+| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
+| `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
+| `src/feature/conversations/InboxController.*` | Active thread, display rows |
+| `src/feature/conversations/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
+| `src/feature/conversations/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
+| `src/feature/conversations/MessageRouter.*` | Composer routing |
+| `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
+| `src/gui/chat/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
-| `src/feature/ui/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
+| `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## A/V calls (signaling over messaging)

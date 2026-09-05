@@ -1,25 +1,30 @@
-#include "base/p2p/CallMediaDirectService.h"
-#include "base/p2p/CircuitRelayService.h"
-#include "base/p2p/Libp2pHost.h"
-#include "base/p2p/Libp2pWorker.h"
-#include "base/p2p/PeerSessionManager.h"
-#include "base/p2p/StreamFrameIo.h"
+#include "amp/L1/Clock.h"
+#include "amp/L1/OsUdpDatagramIo.h"
+#include "amp/L1/Types.h"
+#include "foundation/crypto/MlDsa.h"
+#include "amp/link/AdpMultiaddr.h"
+#include "amp/link/AmpStack.h"
+#include "amp/link/Types.h"
+#include "common/chat/RelayEnvelope.h"
+#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
+#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "foundation/identity/PeerIdUtil.h"
+#include "feature/conversations/AmpDirectChatService.h"
+#include "common/chat/IDirectMessageClient.h"
 
 #include "common/Logger.h"
 
-#include <libp2p/connection/stream.hpp>
-#include <libp2p/connection/stream_and_protocol.hpp>
-#include <libp2p/host/host.hpp>
-#include <libp2p/peer/protocol.hpp>
+#include <sodium.h>
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -33,18 +38,20 @@ namespace {
 void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage:\n"
-      << "  " << argv0 << " --role answerer --listen <multiaddr> [--advertise-host <ip>]\n"
-      << "                 [--call-id ID] [--ready-file PATH] [--no-auto-detach] [--with-chat]\n"
-      << "  " << argv0 << " --role offerer --peer <multiaddr-with-p2p> [--call-id ID] [--cycles K]\n"
-      << "                 [--via-hop <multiaddr-with-p2p>] [--hold-ms N] [--timeout-ms N]\n"
+      << "  " << argv0 << " --role answerer --listen <adp-ma|/ip4/0.0.0.0/udp/PORT/adp/1.0.0>\n"
+      << "                 [--advertise-host <ip>] [--call-id ID] [--ready-file PATH]\n"
+      << "                 [--no-auto-detach] [--with-chat]\n"
+      << "  " << argv0 << " --role offerer --peer <adp-ma-with-p2p> [--call-id ID] [--cycles K]\n"
+      << "                 [--via-hop <adp-ma-with-p2p>] [--hold-ms N] [--timeout-ms N]\n"
       << "                 [--expect ok|busy] [--with-chat]\n"
       << "\n"
-      << "Thin-client B-CALL-DIRECT / B-CALL-HOP / B-CONFLICT / B-MSG+CALL\n"
+      << "Amp thin-client B-CALL-DIRECT / B-CALL-HOP / B-CONFLICT / B-MSG+CALL\n"
       << "(docs/ops/TEST_STRATEGY.md).\n"
+      << "  Listen/peer example: /ip4/127.0.0.1/udp/47100/adp/1.0.0[/p2p/<PeerId>]\n"
       << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
       << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
-      << "  --with-chat     Ping /pp-browser/chat/1.0.0 during and after the call.\n"
-      << "                  With --via-hop, chat uses a separate circuit hop (same pair).\n";
+      << "  --with-chat     AmpDirectChatService ping during and after the call.\n"
+      << "                  With --via-hop, chat rides the nested Amp circuit link.\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -92,127 +99,274 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
   return multiaddr;
 }
 
-using libp2p::peer::ProtocolName;
-
-constexpr const char* kProbeChatProtocol = "/pp-browser/chat/1.0.0";
-
-void ArmProbeChat(pbr::Libp2pHost& host, std::atomic<int>& received) {
-  host.GetHost().setProtocolHandler(
-      {ProtocolName{kProbeChatProtocol}}, [&](libp2p::StreamAndProtocol stream_in) {
-        auto stream = std::move(stream_in.stream);
-        pbr::PostLibp2pWorker(host, pbr::WorkerLane::Normal, [&received, stream = std::move(stream)]() {
-          auto frame = pbr::BlockingReadLengthPrefixedFrame(stream);
-          if (!frame) {
-            return;
-          }
-          received.fetch_add(1, std::memory_order_acq_rel);
-          (void)pbr::BlockingWriteLengthPrefixedFrame(stream, {'a', 'c', 'k'});
-        });
-      });
+/** Parse `/ip4/H/udp/P/adp/1.0.0` with optional `/p2p/...` for answerer bind. */
+std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
+  if (auto full = pp::amp::ParseAdpMultiaddr(ma)) {
+    return full->endpoint;
+  }
+  // Without /p2p/: /ip4/H/udp/P/adp/1.0.0
+  const std::string prefix = "/ip4/";
+  if (ma.rfind(prefix, 0) != 0) {
+    return std::nullopt;
+  }
+  const auto host_end = ma.find('/', prefix.size());
+  if (host_end == std::string::npos) {
+    return std::nullopt;
+  }
+  const std::string host = ma.substr(prefix.size(), host_end - prefix.size());
+  const std::string udp_tag = "/udp/";
+  if (ma.compare(host_end, udp_tag.size(), udp_tag) != 0) {
+    return std::nullopt;
+  }
+  const auto port_start = host_end + udp_tag.size();
+  const auto port_end = ma.find('/', port_start);
+  if (port_end == std::string::npos) {
+    return std::nullopt;
+  }
+  const int port = std::atoi(ma.substr(port_start, port_end - port_start).c_str());
+  if (port < 0 || port > 65535) {
+    return std::nullopt;
+  }
+  if (ma.find("/adp/") == std::string::npos) {
+    return std::nullopt;
+  }
+  unsigned a = 0;
+  unsigned b = 0;
+  unsigned c = 0;
+  unsigned d = 0;
+  if (std::sscanf(host.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) != 4 || a > 255 || b > 255 || c > 255 ||
+      d > 255) {
+    return std::nullopt;
+  }
+  return pp::adp::IpEndpoint::V4(static_cast<uint8_t>(a), static_cast<uint8_t>(b),
+                                  static_cast<uint8_t>(c), static_cast<uint8_t>(d),
+                                  static_cast<uint16_t>(port));
 }
 
-bool SendProbeChat(pbr::Libp2pHost& host, pbr::PeerSessionManager& sessions, const std::string& peer_key) {
-  auto done = std::make_shared<std::promise<bool>>();
-  auto future = done->get_future();
-  sessions.OpenStream(peer_key, {ProtocolName{kProbeChatProtocol}},
-                      [&host, done](libp2p::StreamAndProtocolOrError stream_res) {
-                        if (!stream_res) {
-                          done->set_value(false);
-                          return;
-                        }
-                        auto stream = stream_res.value().stream;
-                        pbr::PostLibp2pWorker(host, pbr::WorkerLane::Normal, [stream, done]() {
-                          const std::vector<uint8_t> ping = {'p', 'i', 'n', 'g'};
-                          auto wrote = pbr::BlockingWriteLengthPrefixedFrame(stream, ping);
-                          if (!wrote) {
-                            done->set_value(false);
-                            return;
-                          }
-                          auto ack = pbr::BlockingReadLengthPrefixedFrame(stream);
-                          done->set_value(ack && *ack == std::vector<uint8_t>({'a', 'c', 'k'}));
-                        });
-                      });
-  if (future.wait_for(std::chrono::seconds(8)) != std::future_status::ready) {
-    return false;
-  }
-  return future.get();
+pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
+  pp::amp::PeerLinkConfig config;
+  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
+    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
+    if (!peer_id) {
+      return {};
+    }
+    return *peer_id;
+  };
+  return config;
 }
 
-bool EnsureProbeChatHop(pbr::CircuitRelayService& circuit, pbr::PeerSessionManager& sessions,
-                        const std::string& hop_key, const std::string& peer_id,
-                        const std::string& peer_ma) {
-  pbr::CircuitBridgeTarget target;
-  target.target_peer_id = peer_id;
-  target.target_multiaddr = peer_ma;
-  target.target_protocol = kProbeChatProtocol;
-  auto bridged = circuit.RequestBridge(hop_key, target, 10000);
-  if (!bridged || !bridged->ok || !bridged->stream) {
-    std::cerr << "error: chat circuit bridge: "
-              << (bridged ? bridged->error : bridged.error().message) << "\n";
-    return false;
+struct AmpPeer {
+  std::shared_ptr<pp::adp::WallClock> clock;
+  std::unique_ptr<pp::amp::AmpStack> stack;
+  std::string peer_id;
+  std::string listen_ma;
+
+  void Pump() {
+    if (stack) {
+      stack->Pump();
+      stack->Tick();
+    }
   }
-  if (auto hop = sessions.InstallCircuitHop(peer_id, hop_key, kProbeChatProtocol, bridged->stream); !hop) {
-    std::cerr << "error: install chat circuit hop: " << hop.error().message << "\n";
+
+  pp::amp::MeshRuntime& Runtime() { return stack->Runtime(); }
+  pp::amp::PeerLinkManager& Links() { return stack->Links(); }
+};
+
+template <typename Pred>
+bool PumpUntil(AmpPeer& peer, Pred&& done, const int timeout_ms) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (done()) {
+      return true;
+    }
+    peer.Pump();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return done();
+}
+
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_ep,
+                                               const bool accept_inbound) {
+  auto keys = pbr::MlDsa::GenerateKeyPair();
+  if (!keys) {
+    return keys.error();
+  }
+  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  if (!peer_id) {
+    return peer_id.error();
+  }
+
+  auto bound = pp::adp::OsUdpDatagramIo::Bind(bind_ep);
+  if (!bound) {
+    return bound.error();
+  }
+
+  auto peer = std::make_unique<AmpPeer>();
+  peer->clock = std::make_shared<pp::adp::WallClock>();
+  peer->peer_id = *peer_id;
+
+  pp::amp::MshIdentity identity;
+  identity.ml_dsa_secret_key = std::move(keys->secret_key);
+  identity.ml_dsa_public_key = std::move(keys->public_key);
+
+  pp::amp::AmpStack::Config cfg;
+  cfg.identity = std::move(identity);
+  cfg.local_peer_id = peer->peer_id;
+  cfg.link_config = MakeProbeLinkConfig();
+
+  std::shared_ptr<pp::adp::DatagramIo> io = std::move(*bound);
+  auto stack = pp::amp::AmpStack::Create(std::move(io), peer->clock, std::move(cfg));
+  if (!stack) {
+    return stack.error();
+  }
+  peer->stack = std::move(*stack);
+  peer->stack->Start();
+  peer->stack->GetEndpoint().SetAcceptEnabled(accept_inbound);
+
+  auto listen = pp::amp::FormatAdpMultiaddr(peer->stack->LocalEndpoint(), peer->peer_id);
+  if (!listen) {
+    return listen.error();
+  }
+  peer->listen_ma = *listen;
+  peer->Links().SetLocalListenMultiaddrs({peer->listen_ma});
+  peer->Links().EnableNestedCarrierAccept(true);
+  return peer;
+}
+
+template <typename Result>
+struct AsyncWait {
+  std::atomic<bool> done{false};
+  pbr::Roe<Result> result = pbr::Error("pending");
+
+  std::function<void(pbr::Roe<Result>)> Fn() {
+    return [this](pbr::Roe<Result> r) {
+      result = std::move(r);
+      done.store(true, std::memory_order_release);
+    };
+  }
+
+  pp::amp::PeerLinkManager::LinkCb LinkFn() {
+    return [this](pp::amp::PeerLinkManager::LinkRoe r) {
+      if (r) {
+        result = pbr::Roe<Result>();
+      } else {
+        result = pbr::Error(r.error().message);
+      }
+      done.store(true, std::memory_order_release);
+    };
+  }
+
+  bool PumpUntilDone(AmpPeer& peer, const int timeout_ms = 10000) {
+    return PumpUntil(peer, [this] { return done.load(std::memory_order_acquire); }, timeout_ms);
+  }
+};
+
+pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
+  pbr::RelayEnvelope env;
+  env.message_id = "pp-call-probe-chat-" + std::to_string(cycle);
+  env.sender_relay_id = "probe";
+  env.sender_contact_id = "probe";
+  env.body.e2e.payload_b64 = "cGluZw=="; // "ping"
+  env.sender_seq = static_cast<uint64_t>(cycle + 1);
+  env.order_key = env.sender_seq;
+  env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+  return env;
+}
+
+bool SendProbeChat(pbr::AmpDirectChatService& chat, const std::string& peer_key, const int cycle) {
+  auto sent = chat.SendEnvelope(peer_key, MakeProbeChatEnvelope(cycle));
+  if (!sent) {
+    std::cerr << "error: chat send: " << sent.error().message << "\n";
     return false;
   }
   return true;
 }
 
-bool SendProbeChatMaybeViaHop(pbr::Libp2pHost& host, pbr::PeerSessionManager& sessions,
-                              pbr::CircuitRelayService* circuit, bool via_hop, const std::string& hop_key,
-                              const std::string& peer_id, const std::string& peer_ma,
-                              const std::string& peer_key) {
-  if (via_hop) {
-    if (!circuit || !EnsureProbeChatHop(*circuit, sessions, hop_key, peer_id, peer_ma)) {
-      return false;
-    }
+pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
+                                     pbr::AmpCircuitHopRegistry& hops, const std::string& hop_key,
+                                     const std::string& peer_id, const std::string& peer_ma) {
+  pbr::CircuitBridgeTarget target;
+  target.target_peer_id = peer_id;
+  target.target_multiaddr = peer_ma;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+
+  AsyncWait<pbr::CircuitTunnelBridgeResult> bridge_wait;
+  auto tunnel_id = circuit.StartBridge(hop_key, target, {}, {}, bridge_wait.Fn(), 10000);
+  if (!tunnel_id) {
+    return pbr::Error("start bridge failed");
   }
-  const bool ok = SendProbeChat(host, sessions, peer_key);
-  if (via_hop) {
-    sessions.ClearCircuitHop(peer_id, kProbeChatProtocol);
+  if (!bridge_wait.PumpUntilDone(peer, 12000) || !bridge_wait.result) {
+    return bridge_wait.result ? pbr::Error(bridge_wait.result->error) : bridge_wait.result.error();
   }
-  return ok;
+  if (!bridge_wait.result->ok || !bridge_wait.result->session) {
+    return pbr::Error(bridge_wait.result->error.empty() ? "bridge refused" : bridge_wait.result->error);
+  }
+
+  AsyncWait<void> nested_wait;
+  peer.Links().EstablishNestedOverCarrier(peer_id, bridge_wait.result->session, true, nested_wait.LinkFn());
+  if (!nested_wait.PumpUntilDone(peer, 12000) || !nested_wait.result) {
+    return nested_wait.result ? pbr::Error("nested failed") : nested_wait.result.error();
+  }
+  if (!peer.Links().IsConnected(peer_id)) {
+    return pbr::Error("nested link not connected");
+  }
+  (void)hops.Install(peer_id, hop_key, pp::amp::kAmpCircuitCarrierProtocolId, bridge_wait.result->session,
+                     tunnel_id);
+  return {};
 }
 
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
                 int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat) {
-  pbr::Libp2pHostConfig cfg;
-  cfg.listen_multiaddr = listen_ma;
-  pbr::Libp2pHost host;
-  if (auto started = host.Start(cfg); !started) {
-    std::cerr << "error: answerer host start: " << started.error().message << "\n";
+  if (sodium_init() < 0) {
+    std::cerr << "error: sodium_init failed\n";
     return 1;
   }
-  auto peer_id = host.LocalPeerIdBase58();
-  if (!peer_id) {
-    std::cerr << "error: answerer peer id unavailable\n";
+
+  auto bind_ep = ParseListenEndpoint(listen_ma);
+  if (!bind_ep) {
+    std::cerr << "error: --listen must be Amp ADP multiaddr "
+                 "(/ip4/.../udp/.../adp/1.0.0[/p2p/...])\n";
+    return 2;
+  }
+
+  auto peer = MakeAmpPeer(*bind_ep, true);
+  if (!peer) {
+    std::cerr << "error: answerer amp start: " << peer.error().message << "\n";
     return 1;
   }
-  std::string advertise = listen_ma;
+
+  std::string advertise = (*peer)->listen_ma;
   if (!advertise_host.empty()) {
     advertise = RewriteListenHost(std::move(advertise), advertise_host);
   } else {
     advertise = RewriteWildcardListenHost(std::move(advertise));
   }
-  if (!HasP2pSuffix(advertise)) {
-    advertise += "/p2p/" + *peer_id;
-  }
 
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
-  auto sessions = std::make_unique<pbr::PeerSessionManager>(host, sessions_cfg);
-  auto media = std::make_unique<pbr::CallMediaDirectService>(host, *sessions);
+  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime());
   media->Start();
 
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*peer)->Runtime());
+  circuit->Start();
+  circuit->SetServeInbound(false);
+
+  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
+  std::unique_ptr<pbr::AmpDirectChatService> chat;
   std::atomic<int> chat_received{0};
   if (with_chat) {
-    ArmProbeChat(host, chat_received);
+    auto pump = [p = peer->get()]() { p->Pump(); };
+    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
+    chat = std::make_unique<pbr::AmpDirectChatService>(
+        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
+    chat->Start();
+    chat->SetInboundHandler([&](pbr::RelayEnvelope) {
+      chat_received.fetch_add(1, std::memory_order_acq_rel);
+    });
   }
 
   const pbr::ByteVector media_key(32, 0x42);
   std::mutex mu;
-  std::condition_variable cv;
   int cycles_done = 0;
   int audio_in_session = 0;
   std::atomic<bool> detach_after_audio{false};
@@ -225,18 +379,14 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     cbs.on_connected = [&] {
       audio_in_session = 0;
       std::lock_guard lock(mu);
-      cv.notify_all();
     };
     cbs.on_audio = [&](const std::vector<uint8_t>&) {
       std::lock_guard lock(mu);
       ++cycles_done;
       ++audio_in_session;
-      // Hop path auto-detaches so the next cycle can inbound. With-chat waits for the
-      // post-chat audio frame so MediaReady overlaps the in-call chat hop.
       if (audio_in_session >= (with_chat ? 2 : 1)) {
         detach_after_audio.store(true, std::memory_order_release);
       }
-      cv.notify_all();
     };
   });
 
@@ -254,17 +404,19 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   while (std::chrono::steady_clock::now() < deadline) {
+    (*peer)->Pump();
     if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
-      // Circuit-bridged close does not idle the answerer; Detach so the next cycle can inbound.
       media->Detach();
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
+  if (chat) {
+    chat->Stop();
+  }
   media->Stop();
-  media.reset();
-  sessions.reset();
-  host.Stop();
+  circuit->Stop();
+  (*peer)->stack->Stop();
   std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
             << " chat_frames=" << chat_received.load() << "\n";
   return 0;
@@ -277,13 +429,13 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     std::cerr << "error: --cycles must be 1..100\n";
     return 2;
   }
-  if (!HasP2pSuffix(peer_ma)) {
-    std::cerr << "error: --peer must include /p2p/<PeerId>\n";
+  if (!HasP2pSuffix(peer_ma) || peer_ma.find("/adp/") == std::string::npos) {
+    std::cerr << "error: --peer must be Amp ADP multiaddr with /p2p/<PeerId>\n";
     return 2;
   }
   const bool via_hop = !hop_ma.empty();
-  if (via_hop && !HasP2pSuffix(hop_ma)) {
-    std::cerr << "error: --via-hop must include /p2p/<PeerId>\n";
+  if (via_hop && (!HasP2pSuffix(hop_ma) || hop_ma.find("/adp/") == std::string::npos)) {
+    std::cerr << "error: --via-hop must be Amp ADP multiaddr with /p2p/<PeerId>\n";
     return 2;
   }
   auto peer_id = PeerIdFromMultiaddr(peer_ma);
@@ -291,34 +443,46 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     std::cerr << "error: cannot parse peer id from --peer\n";
     return 2;
   }
-
-  pbr::Libp2pHostConfig cfg;
-  cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/0";
-  pbr::Libp2pHost host;
-  if (auto started = host.Start(cfg); !started) {
-    std::cerr << "error: offerer host start: " << started.error().message << "\n";
+  if (sodium_init() < 0) {
+    std::cerr << "error: sodium_init failed\n";
     return 1;
   }
 
-  pbr::PeerSessionConfig sessions_cfg;
-  sessions_cfg.dial_timeout = std::chrono::milliseconds(5000);
-  sessions_cfg.dial_failure_backoff = std::chrono::milliseconds(100);
-  auto sessions = std::make_unique<pbr::PeerSessionManager>(host, sessions_cfg);
-  auto circuit = std::make_unique<pbr::CircuitRelayService>(host, *sessions);
-  if (via_hop) {
-    circuit->Start();
+  // Bind all interfaces so Docker/netns offerers can dial a hop on a bridge IP
+  // (127.0.0.1-bound UDP cannot sendto non-loopback destinations).
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), false);
+  if (!offerer) {
+    std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
+    return 1;
   }
-  auto media = std::make_unique<pbr::CallMediaDirectService>(host, *sessions);
+
+  auto hops = std::make_unique<pbr::AmpCircuitHopRegistry>();
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*offerer)->Runtime());
+  circuit->Start();
+  circuit->SetServeInbound(false);
+
+  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*offerer)->Runtime());
   media->Start();
 
-  const std::string peer_key = via_hop ? *peer_id : std::string{"peer"};
+  auto pump = [p = offerer->get()]() { p->Pump(); };
+  std::unique_ptr<pbr::IChatPeerLinks> chat_links;
+  std::unique_ptr<pbr::AmpDirectChatService> chat;
+  if (with_chat) {
+    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
+    chat = std::make_unique<pbr::AmpDirectChatService>(
+        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
+    chat->Start();
+  }
+
+  const std::string dial_peer_ma = RewriteWildcardListenHost(peer_ma);
+  const std::string peer_key = *peer_id;
   if (via_hop) {
-    if (auto reg = sessions->RegisterEndpoint("hop", RewriteWildcardListenHost(hop_ma)); !reg) {
+    if (auto reg = (*offerer)->Links().RegisterEndpoint("hop", RewriteWildcardListenHost(hop_ma)); !reg) {
       std::cerr << "error: register hop: " << reg.error().message << "\n";
       return 1;
     }
     std::cout << "pp-call-probe offerer via-hop=" << hop_ma << " peer=" << peer_ma << "\n";
-  } else if (auto reg = sessions->RegisterEndpoint("peer", RewriteWildcardListenHost(peer_ma)); !reg) {
+  } else if (auto reg = (*offerer)->Links().RegisterEndpoint(peer_key, dial_peer_ma); !reg) {
     std::cerr << "error: register peer: " << reg.error().message << "\n";
     return 1;
   }
@@ -326,33 +490,14 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   const pbr::ByteVector media_key(32, 0x42);
   for (int cycle = 0; cycle < cycles; ++cycle) {
     if (via_hop) {
-      pbr::CircuitBridgeTarget target;
-      target.target_peer_id = *peer_id;
-      target.target_multiaddr = peer_ma;
-      target.target_protocol = pbr::kCallMediaDirectProtocolId;
-      auto bridged = circuit->RequestBridge("hop", target, 10000);
-      if (!bridged || !bridged->ok || !bridged->stream) {
-        std::cerr << "error: circuit bridge cycle " << cycle << ": "
-                  << (bridged ? bridged->error : bridged.error().message) << "\n";
-        return 1;
-      }
-      if (auto hop = sessions->InstallCircuitHop(*peer_id, "hop", pbr::kCallMediaDirectProtocolId,
-                                                 bridged->stream);
-          !hop) {
-        std::cerr << "error: install circuit hop cycle " << cycle << ": " << hop.error().message
-                  << "\n";
-        return 1;
-      }
-      if (!sessions->IsCircuitBacked(*peer_id, pbr::kCallMediaDirectProtocolId)) {
-        std::cerr << "error: expected circuit-backed call-media after bridge cycle " << cycle << "\n";
+      auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, dial_peer_ma);
+      if (!nested) {
+        std::cerr << "error: nested circuit cycle " << cycle << ": " << nested.error().message << "\n";
         return 1;
       }
     }
 
-    std::mutex mu;
-    std::condition_variable cv;
-    bool connected = false;
-
+    std::atomic<bool> connected{false};
     pbr::CallMediaDirectConnectParams params;
     params.peer_key = peer_key;
     params.call_id = call_id;
@@ -361,84 +506,125 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     params.offerer = true;
 
     pbr::CallMediaDirectCallbacks cbs;
-    cbs.on_connected = [&] {
-      std::lock_guard lock(mu);
-      connected = true;
-      cv.notify_one();
-    };
+    cbs.on_connected = [&] { connected.store(true, std::memory_order_release); };
 
-    if (auto ok = media->Connect(params, cbs, timeout_ms); !ok) {
+    AsyncWait<void> leg_done;
+    const pbr::CallMediaLegId leg_id =
+        media->StartLeg(params, std::move(cbs), leg_done.Fn(), timeout_ms);
+    if (!leg_id) {
       if (expect_busy) {
-        std::cout << "ok  busy cycle " << cycle << " connect rejected: " << ok.error().message << "\n";
+        std::cout << "ok  busy cycle " << cycle << " start rejected\n";
         continue;
       }
-      std::cerr << "error: connect cycle " << cycle << ": " << ok.error().message << "\n";
+      std::cerr << "error: start leg cycle " << cycle << "\n";
       return 1;
     }
-    {
-      std::unique_lock lock(mu);
-      if (!cv.wait_for(lock, std::chrono::milliseconds(timeout_ms + 1000), [&] { return connected; })) {
-        if (expect_busy) {
-          std::cout << "ok  busy cycle " << cycle << " connect timeout\n";
-          media->Detach();
-          continue;
-        }
-        std::cerr << "error: connect timeout cycle " << cycle << "\n";
-        return 1;
+
+    if (!leg_done.PumpUntilDone(**offerer, timeout_ms + 2000) || !leg_done.result) {
+      if (expect_busy) {
+        std::cout << "ok  busy cycle " << cycle << " connect rejected: "
+                  << (leg_done.result ? "failed" : leg_done.result.error().message) << "\n";
+        media->DetachLeg(leg_id);
+        continue;
       }
+      std::cerr << "error: connect cycle " << cycle << ": "
+                << (leg_done.result ? "failed" : leg_done.result.error().message) << "\n";
+      return 1;
+    }
+
+    if (!PumpUntil(**offerer, [&] { return connected.load(std::memory_order_acquire); },
+                   timeout_ms + 1000)) {
+      if (expect_busy) {
+        std::cout << "ok  busy cycle " << cycle << " connect timeout\n";
+        media->DetachLeg(leg_id);
+        continue;
+      }
+      std::cerr << "error: connect timeout cycle " << cycle << "\n";
+      return 1;
     }
     if (expect_busy) {
       std::cerr << "error: expected busy (second inbound rejected) but connect succeeded\n";
-      media->Detach();
+      media->DetachLeg(leg_id);
       return 1;
     }
 
     const std::vector<uint8_t> opus = {static_cast<uint8_t>(0x10 + cycle)};
-    if (!media->SendAudio(opus, 1, 0)) {
-      std::cerr << "error: send audio cycle " << cycle << "\n";
+    if (auto sent = media->SendAudio(leg_id, opus, 1, 0); !sent) {
+      std::cerr << "error: send audio cycle " << cycle << ": " << sent.error().message << "\n";
       return 1;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    if (with_chat) {
-      if (!SendProbeChatMaybeViaHop(host, *sessions, circuit.get(), via_hop, "hop", *peer_id, peer_ma,
-                                    peer_key)) {
+    const auto audio_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (std::chrono::steady_clock::now() < audio_deadline) {
+      (*offerer)->Pump();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    if (with_chat && chat) {
+      if (!SendProbeChat(*chat, peer_key, cycle)) {
         std::cerr << "error: chat during call cycle " << cycle << "\n";
         return 1;
       }
       std::cout << "ok  chat during call cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
-      if (!media->SendAudio({static_cast<uint8_t>(0x20 + cycle)}, 2, 0)) {
+      if (auto sent = media->SendAudio(leg_id, {static_cast<uint8_t>(0x20 + cycle)}, 2, 0); !sent) {
         std::cerr << "error: audio after chat cycle " << cycle << "\n";
         return 1;
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      const auto after_chat = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+      while (std::chrono::steady_clock::now() < after_chat) {
+        (*offerer)->Pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
     }
+
     if (hold_ms > 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(hold_ms));
+      const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
+      while (std::chrono::steady_clock::now() < hold_deadline) {
+        (*offerer)->Pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
     }
-    media->Detach();
+
+    media->DetachLeg(leg_id);
     if (via_hop) {
-      sessions->ClearCircuitHop(*peer_id, pbr::kCallMediaDirectProtocolId);
-      std::this_thread::sleep_for(std::chrono::milliseconds(800));
+      hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
+      const auto settle = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+      while (std::chrono::steady_clock::now() < settle) {
+        (*offerer)->Pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
     }
-    if (with_chat) {
-      if (!SendProbeChatMaybeViaHop(host, *sessions, circuit.get(), via_hop, "hop", *peer_id, peer_ma,
-                                    peer_key)) {
+
+    if (with_chat && chat) {
+      if (via_hop) {
+        auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, dial_peer_ma);
+        if (!nested) {
+          std::cerr << "error: chat hop after leave cycle " << cycle << ": " << nested.error().message
+                    << "\n";
+          return 1;
+        }
+      }
+      if (!SendProbeChat(*chat, peer_key, cycle + 100)) {
         std::cerr << "error: chat after leave cycle " << cycle << "\n";
         return 1;
       }
       std::cout << "ok  chat after leave cycle " << cycle << (via_hop ? " via-hop" : "") << "\n";
+      if (via_hop) {
+        hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
+      }
     }
-    std::cout << "ok  cycle " << cycle << " connect+audio+detach"
-              << (via_hop ? " via-hop" : "") << "\n";
+
+    std::cout << "ok  cycle " << cycle << " connect+audio+detach" << (via_hop ? " via-hop" : "")
+              << "\n";
   }
 
+  if (chat) {
+    chat->Stop();
+  }
   media->Stop();
-  media.reset();
-  circuit.reset();
-  sessions.reset();
-  host.Stop();
-  std::cout << "pp-call-probe offerer PASSED cycles=" << cycles
-            << (via_hop ? " via-hop" : "") << (with_chat ? " with-chat" : "") << "\n";
+  circuit->Stop();
+  (*offerer)->stack->Stop();
+  std::cout << "pp-call-probe offerer PASSED cycles=" << cycles << (via_hop ? " via-hop" : "")
+            << (with_chat ? " with-chat" : "") << "\n";
   return 0;
 }
 
@@ -446,7 +632,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
 int main(int argc, char** argv) {
   std::string role;
-  std::string listen_ma = "/ip4/127.0.0.1/tcp/47100";
+  std::string listen_ma = "/ip4/127.0.0.1/udp/47100/adp/1.0.0";
   std::string peer_ma;
   std::string hop_ma;
   std::string advertise_host;

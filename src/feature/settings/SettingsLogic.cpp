@@ -1,8 +1,8 @@
 #include "feature/settings/SettingsLogic.h"
 
-#include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
-#include "base/data/LlmPreset.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/MeshRole.h"
+#include "foundation/data/LlmPreset.h"
 #include "feature/settings/SettingsUiState.h"
 
 #include <sstream>
@@ -90,17 +90,19 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
       state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
   config.directory.base_url =
       state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
+  // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
+  // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
+  config.directory.providers.clear();
+  config.directory.transport = "http";
   config.registration.base_url = state.registration_base_url.empty()
                                      ? defaults.registration.base_url
                                      : state.registration_base_url;
-  config.libp2p.node_enabled = (state.node_enabled != "off");
-  config.libp2p.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
-  config.libp2p.capabilities.media_relay = (state.media_relay_enabled == "on");
-  config.libp2p.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
-  if (!state.libp2p_listen_multiaddr.empty()) {
-    config.libp2p.listen_multiaddr = state.libp2p_listen_multiaddr;
-  }
-  NormalizeLibp2pConfig(config.libp2p);
+  config.mesh.node_enabled = (state.node_enabled != "off");
+  config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
+  config.mesh.capabilities.media_relay = (state.media_relay_enabled == "on");
+  config.mesh.capabilities.dht = (state.dht_enabled == "on");
+  config.mesh.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
+  NormalizeMeshConfig(config.mesh);
   return config;
 }
 

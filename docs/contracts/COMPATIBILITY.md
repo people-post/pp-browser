@@ -44,8 +44,8 @@ When Brief drops classical `relay_users` (ML-DSA-only register), **or** after th
 
 | Platform | Script |
 |----------|--------|
-| Linux / macOS | [`scripts/wipe_local_profile.sh`](../../scripts/wipe_local_profile.sh) |
-| Windows | [`scripts/wipe_local_profile.ps1`](../../scripts/wipe_local_profile.ps1) |
+| Linux / macOS | [`scripts/dev/wipe_local_profile.sh`](../../scripts/dev/wipe_local_profile.sh) |
+| Windows | [`scripts/dev/wipe_local_profile.ps1`](../../scripts/dev/wipe_local_profile.ps1) |
 | Android / iOS | Clear app storage by hand (no script) |
 
 Brief-side wipe: www repo `scripts/wipe_relay_pq.sh`.

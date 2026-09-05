@@ -5,7 +5,7 @@
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, and bounded worker pool.
 
-**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/base/runtime/`, `src/common/`.
+**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/foundation/runtime/`, `src/common/`.
 
 ---
 
@@ -59,7 +59,7 @@ flowchart TB
 
 ~**6–9** OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier (+ SDL audio internals).
 
-During an active call, add SDL capture/video/ringtone threads and libp2p call-media IO on the host thread.
+During an active call, add SDL capture/video/ringtone threads and mesh call-media IO on the host thread.
 
 See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for the wiring diagram.
 
@@ -94,8 +94,9 @@ Libp2p integration uses `PostLibp2pWorker`; unit tests fall back to a private pe
 
 Drives periodic policy (not UI frame ticks):
 
-- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `MessagingHub::StartCoordinatorTimers`
-- Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
+- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `ConversationsHub::StartCoordinatorTimers`
+- Hub policy: peer sweep, mDNS, reachability UX — `ConversationsHub` (~1s)
+- Amp mesh pump: `MeshHost::Tick` / `MeshRuntime::Drive` (~5ms) while Amp is up — required for call-media / SFU / chat (no libp2p `io_context`)
 - Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
 Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** coordinator message.
@@ -127,7 +128,7 @@ Produce (coordinator / worker)
 | Drain | Idle wait must return within ≤50ms when forced / woken; cap idle ≤2s always |
 | Observe | Call ring visibility = `RemountCallChrome` into mounts; SyncLayout / toasts are also mailbox citizens — same SLA. Logs that prove state (`call_ring.active`) do **not** prove paint |
 
-Do **not** couple relay poll cadence back to `ChatController::Update` for liveness. Poll stays on the coordinator (`MessagingHub::StartCoordinatorTimers`); UI liveness is the frame loop’s job. Call-wake UI refresh is `MessagingHub::SetOnCallWake` → `CallController::OnCallWake` (hopped to UI).
+Do **not** couple relay poll cadence back to `ChatController::Update` for liveness. Poll stays on the coordinator (`ConversationsHub::StartCoordinatorTimers`); UI liveness is the frame loop’s job. Call-wake UI refresh is `ConversationsHub::SetOnCallWake` → `CallController::OnCallWake` (hopped to UI).
 
 ### Thread affinity
 
@@ -148,7 +149,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 ### Libp2p integration executors
 
-Integration services under `src/base/p2p/` use three executor classes via `Libp2pScheduler`:
+Integration services under `src/domain/mesh/` use three executor classes via `Libp2pScheduler`:
 
 | Class | Dispatch | Examples |
 |-------|----------|------------|
@@ -156,7 +157,7 @@ Integration services under `src/base/p2p/` use three executor classes via `Libp2
 | **Data** | `Libp2pHost::Post` / stream async (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media duplex **and** call-media hello/ack |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `Libp2pExecutorLimits`.
+Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy control; `AsyncReadStreamJson` / `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for peer stream waits). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `pp::amp::AmpChannelLimits`.
 
 ---
 
@@ -177,8 +178,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Item | Location | Notes |
 |------|----------|-------|
-| c-ares DNS TXT | `src/lib/libp2p/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
-| Call ringtone playback | `src/base/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
+| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 
@@ -188,8 +188,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 
 | Library | Model | Policy |
 |---------|-------|--------|
-| asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
-| c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
+| asio (`pp-node` status HTTP) | `io_context` | Status server only (not mesh) |
 | libcurl | Sync on caller | Pool only |
 | SQLite | Caller + mutex | Pool for long writes |
 | SDL3 | Internal audio/camera | Unchanged |
@@ -201,7 +200,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 | Date | Change |
 |------|--------|
 | 2026-08-03 | Call Accept layer: `RemountCallChrome` (dedicated mounts); not always-mounted `data-if` + Dirty alone |
-| 2026-08-03 | Relay poll owned by `MessagingHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
+| 2026-08-03 | Relay poll owned by `ConversationsHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
 | 2026-08-03 | **UI delivery:** `PostTask(UI)` → `RequestForceFrame`; idle = Poll+≤50ms Delay (no WaitEventTimeout); mid-idle abort on ForceFrame/wake; liveness contract in Cross-thread rules |
 | 2026-08-03 | Call chrome + UI mailbox: hop ring refresh to UI; `RequestForceFrame` when UI tasks pending / SyncLayout; WakeEventLoop always pushes (no coalesce-drop); unanswered outbound TTL |
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |

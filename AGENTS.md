@@ -2,17 +2,29 @@
 
 This document orients coding agents working in this repository.
 
+## Documentation authority
+
+| Kind | Where | Rule |
+|------|--------|------|
+| What the system **is** (normative) | [`docs/`](docs/README.md) — architecture, contracts, ui, ops | Edit here for shipped behavior; prefer one canonical file per concern |
+| What we are **changing** | [`projects/<name>/`](projects/README.md) | DESIGN / PHASES / DECISIONS; phase status only in that project’s **CURRENT_STATE.md** |
+| Code | `src/`, `assets/` | Wins if docs disagree |
+
+- **Do not** put phase checklists or “what’s next” lines in this file — they drift. Link the project folder; read **CURRENT_STATE.md** for status.
+- When wire/disk/HTTP ships, **promote** into `docs/contracts/` (or the right docs tier) in the same PR; mark ADRs **superseded by** the stable doc; do not leave a second editable normative copy under `projects/`.
+- Index of active vs done projects: [`projects/README.md`](projects/README.md). Doc map: [`docs/README.md`](docs/README.md).
+
 ## Architecture
 
 pp-browser is a native AI-oriented UI shell:
 
-- **SDL3 + OpenGL3** — product window host in `src/base/render/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
+- **SDL3 + OpenGL3** — product window host in `src/foundation/platform/ui/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
-- **Hard-forked libp2p** — P2P networking in `src/lib/libp2p/`
-- **Third-party libs** — curl and libp2p deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
-- **Five-layer source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
+- **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
+- **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
+- **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
-See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + libp2p; call media on libp2p — V026). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
+See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
 ## RmlUi is maintained in pp-cpp-ui
 
@@ -20,7 +32,7 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 
 - Edit RmlUi in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific host/overlays stay in [`src/base/render/`](src/base/render/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
+- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/domain/ui/`](src/domain/ui/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
 
 ### Fork features (pp-browser)
 
@@ -30,14 +42,12 @@ We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/
 | User-agent baseline styles | `rmlui/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 | List markers (workaround) | `rmlui/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md) |
 
-## libp2p is maintained in-tree
+## libp2p is maintained in-tree (PeerId only)
 
-We **own and modify** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
+We **own** the hard fork under [`src/lib/libp2p/`](src/lib/libp2p/). After **A017** it retains **PeerId + key wire** only (no Host/TCP/Yamux/Noise). Mesh/dial/mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/domain/mesh/`](src/domain/mesh/).
 
-- Edit libp2p directly when protocol or transport changes are needed.
-- Document fork-specific changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
-- App-specific glue lives in [`src/base/p2p/`](src/base/p2p/) (not in the fork proper).
-- Import/update libp2p deps with `./scripts/libp2p_vendor_import.sh`.
+- Document fork changes in [docs/architecture/LIBP2P_UPSTREAM.md](docs/architecture/LIBP2P_UPSTREAM.md).
+- Import/update remaining deps with `./scripts/vendor/libp2p_vendor_import.sh`.
 
 ## UI generation constraints
 
@@ -47,42 +57,46 @@ AI-generated UI and chat output must follow:
 - [docs/ui/RML_PROFILE.md](docs/ui/RML_PROFILE.md) — allowed RML elements, structured JSON chat blocks
 - [docs/ui/RCSS_PROFILE.md](docs/ui/RCSS_PROFILE.md) — supported RCSS properties
 
-Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/PromptBuilder.cpp).
+Prompt text for LLMs is built in [`src/domain/ai/PromptBuilder.cpp`](src/domain/ai/PromptBuilder.cpp).
 
 ## Common tasks
 
+Paths and stable docs only. For in-flight feature status, open the project’s **CURRENT_STATE.md** (see [projects/README.md](projects/README.md)).
+
 | Task | Where to look |
 |------|----------------|
-| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/home.rml`, `assets/views/chat.rml`, `src/feature/chat/ChatController.cpp` |
-| Window shell / layout | `src/feature/ui/ShellHost.*`, [docs/ui/WINDOW_SHELL.md](docs/ui/WINDOW_SHELL.md) |
-| Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) — auxiliary pane design |
-| Theme / layout | `assets/themes/base.rcss` |
-| App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/feature/chat/ChatController.cpp` |
-| Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
-| AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
-| P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| Libp2p stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/base/p2p/StreamFrameIo.*` |
-| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done; **N023** relay scope ([RELAY_SCOPE.md](projects/p2p-mesh/RELAY_SCOPE.md)); **N022** invest libp2p; **N026** media-relay attach SM design ([MEDIA_RELAY_ATTACH.md](projects/p2p-mesh/MEDIA_RELAY_ATTACH.md)) |
-| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** libp2p media (**m1** mobile LAN OK; **m2** teardown done); **V033** session SMs + circuit compose; **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
-| Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
-| Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s3 landed**; s4 polish next — [DESIGN](projects/network-status-chrome/DESIGN.md) |
-| Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
-| Profile icons / chat attachments | [projects/relay-blob-upload/](projects/relay-blob-upload/) — **a1–a6 + a5 done** — Smart policy, suppression, peer chat-blob, fetch ladder, outbound peer upload, DEK-wrap, video poster |
-| SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
-| E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/); PQ natives + libsodium via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) |
-| At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |
-| Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) — **m3 `endpoints[]` landed**; next **m4c** paste contacts (M018) — amends D096 (D099), E025, A010 |
-| PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — ADR A007 in [projects/at-rest-crypto/DECISIONS.md](projects/at-rest-crypto/DECISIONS.md) |
-| Chat storage / memory | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — **Waves 1–2 done**; Wave 3 next (v3 ∥ v4) |
-| Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/runtime/`, `src/base/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
+| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/home.rml`, `assets/views/chat.rml`, `src/gui/chat/ChatController.cpp` |
+| Window shell / layout | `src/gui/shell/ShellHost.*`, [docs/ui/WINDOW_SHELL.md](docs/ui/WINDOW_SHELL.md) |
+| Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) |
+| Theme / layout | `assets/themes/base.rcss`, [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) |
+| App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/gui/chat/ChatController.cpp` |
+| Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
+| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
+| P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
+| Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
+| Mesh stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/domain/mesh/StreamFrameIo.*` |
+| P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
+| P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
+| Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) |
+| Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) |
+| Contacts UI / store | `src/gui/contacts/ContactsController.*`, `src/domain/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
+| Profile icons / chat attachments | [docs/contracts/SERVICE_ENDPOINTS.md](docs/contracts/SERVICE_ENDPOINTS.md), [projects/relay-blob-upload/](projects/relay-blob-upload/) |
+| E2E message crypto | `src/foundation/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md), [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
+| At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md), [projects/at-rest-crypto/](projects/at-rest-crypto/) |
+| Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) |
+| PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
+| Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
 | Doc map / contracts | [docs/README.md](docs/README.md) |
-| In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
+| In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
-| Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures |
+| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, **promote failures downward**, skip taxonomy, doc homes |
+| Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
+| Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/); driver `./scripts/test/pp_local_test.sh run --suite hard` |
+| Scripts (layout map) | [`scripts/README.md`](scripts/README.md) — `check/` `platform/` `vendor/` `test/` `dev/` |
 | macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
-| Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md) |
+| Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md), [projects/feature-layer-reorg/](projects/feature-layer-reorg/) |
 | UI vs functional decoupling | [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md), [RUNTIME_COMPOSITION.md](docs/architecture/RUNTIME_COMPOSITION.md) |
 
 ## Conventions
@@ -92,6 +106,8 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
-- Respect layer dependencies: `app → feature → base → common` (see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)).
+- Respect layer dependencies: `app → feature → domain → foundation → common` (today paths still `base/` for foundation+domain; see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **domain peer → domain peer** edges; put shared seams in `src/common/` and wire in `feature/`.
+- **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
+- **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).

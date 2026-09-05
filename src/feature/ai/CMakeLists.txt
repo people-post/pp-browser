@@ -4,6 +4,7 @@ add_subdirectory(bindings)
 pp_browser_add_feature_library(pp_feature_ai
   SOURCES
     AgentSession.cpp
+    AgentUiPorts.cpp
     PayloadTurnPlanBuilder.cpp
     ToolPermissionPolicy.cpp
     ToolPermissionPrompt.cpp

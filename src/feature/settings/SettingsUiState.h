@@ -29,10 +29,10 @@ struct SettingsUiState {
   std::string node_enabled = "on";
   /** True on desktop so Me → Network shows the help-the-network toggle. */
   bool show_node_toggle = true;
-  /** Actual or preferred listen multiaddr (read-only display). */
-  std::string libp2p_listen_multiaddr;
-  /** Last libp2p start error for Network UX (may be empty). */
-  std::string libp2p_status_message;
+  /** Runtime Amp listen multiaddr (display-only; not persisted). */
+  std::string amp_listen_multiaddr;
+  /** Last mesh start error for Network UX (may be empty). */
+  std::string mesh_status_message;
   std::string reachability_status_label;
   std::string reachability_summary;
   std::string reachability_help_kind;
@@ -42,6 +42,8 @@ struct SettingsUiState {
   bool show_circuit_relay_toggle = false;
   std::string media_relay_enabled = "on";
   bool show_media_relay_toggle = false;
+  std::string dht_enabled = "off";
+  bool show_dht_toggle = false;
   std::string prefer_contacts_for_routing = "on";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;

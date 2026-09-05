@@ -12,7 +12,6 @@
 - Linux **video calls** (a3+, best-effort VA-API): `libva-dev` — soft link at configure time. Without it, `VideoCodec_Linux` builds the unavailable stub (voice still works). Runtime also needs a VA driver package (e.g. `mesa-va-drivers`, `intel-media-va-driver`, or vendor NVIDIA VA support) and a usable `/dev/dri/renderD*`.
 - **Windows / macOS voice:** no extra packages — SDL uses **WASAPI** / **CoreAudio**. Ensure OS mic privacy allows the app (Windows Settings → Privacy → Microphone; macOS TCC prompt / shipped apps need mic usage string when notarized).
 - **Android / iOS voice:** no Pulse/ALSA packages; SDL uses AAudio/OpenSL ES or CoreAudio via the SDK. **Permissions and audio session are still TODO** before claiming mobile voice — see [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
-- Perl (for lsquic code generation)
 
 Debian/Ubuntu one-liner:
 
@@ -42,21 +41,21 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, and (for libp2p) BoringSSL, Boost, lsquic, and related packages. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
 RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
 
-If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
+If base `third_party/` trees are missing, run `./scripts/vendor/vendor_import.sh` from the repo root.
 
 Chat/CJK fonts (Noto Sans CJK Regular + **Noto Color Emoji** CBDT, with monochrome Noto Emoji as secondary fallback) ship under `assets/fonts/`. FreeType is built with libpng so CBDT color bitmaps load. To refresh fonts:
 
 ```bash
-./scripts/fonts_import_noto.sh
+./scripts/vendor/fonts_import_noto.sh
 ```
 
-If libp2p dependency trees are missing, run `./scripts/libp2p_vendor_import.sh`.
+If libp2p dependency trees are missing, run `./scripts/vendor/libp2p_vendor_import.sh`.
 
 SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump `PP_CPP_UI_GIT_TAG` when updating them.
 
@@ -79,35 +78,17 @@ cmake --build build -j
 
 ### Owned forks (RmlUi / libp2p)
 
-Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `TESTING`, `EXAMPLES`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
+Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
 
 | Option | Default (desktop) | Effect |
 |--------|-------------------|--------|
 | `PP_BROWSER_BUILD_TESTS` | ON | Host unit/integration tests and in-tree RmlUi unit tests |
-| `PP_BROWSER_LIBP2P_TESTING` | ON | In-tree libp2p unit tests |
-| `PP_BROWSER_LIBP2P_EXAMPLES` | OFF | In-tree libp2p examples |
-| `PP_BROWSER_LIBP2P_COVERAGE` | OFF | libp2p gcovr coverage targets |
 
-Mobile builds default host and libp2p fork tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
+Mobile builds default host tests OFF. See [RMLUI_UPSTREAM.md](../architecture/RMLUI_UPSTREAM.md) and [LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md).
 
-### libp2p tests and coverage
+### libp2p fork (A017 PeerId only)
 
-By default, desktop builds enable in-tree libp2p unit tests (`PP_BROWSER_LIBP2P_TESTING=ON`). Examples are opt-in.
-
-```bash
-# Default: pp-browser + libp2p unit tests
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-ctest --test-dir build
-
-# libp2p examples
-cmake -B build -S . -DPP_BROWSER_LIBP2P_EXAMPLES=ON
-cmake --build build -j
-
-# libp2p coverage (requires gcovr)
-cmake -B build -S . -DPP_BROWSER_LIBP2P_COVERAGE=ON -DPP_BROWSER_LIBP2P_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target ctest_coverage_html
-```
+The in-tree libp2p fork retains PeerId + key wire only (`p2p_peer_id`, `p2p_wire`). Mesh underlay is Amp — see [adp](../../projects/adp/).
 
 ### Compiler cache (optional)
 
@@ -148,19 +129,19 @@ cmake -B build-pp-node -S . -G Ninja \
 cmake --build build-pp-node -j --target pp-node
 ```
 
-Or: `scripts/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
+Or: `scripts/platform/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
 
 **Desktop GUI trees** also produce **`pp-node`** as an extra target (links the same node runtime; GUI deps still configured):
 
 ```bash
 cmake --build build -j --target pp-node
-./build/src/app/node/pp-node --listen /ip4/0.0.0.0/tcp/18517 --pin "$PP_BROWSER_PIN"
+PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 ```
 
-- PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_LISTEN`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
-- Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` / `PP_NODE_LISTEN_FALLBACK=1` only for local dogfood.
+- PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_AMP_UDP_PORT`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
+- Amp UDP listen is controlled by `libp2p.amp_udp_port` / `PP_NODE_AMP_UDP_PORT` (0 = ephemeral; org seed should pin **443**).
 - Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
-- **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Separate from the libp2p listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
+- **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Separate from the Amp UDP listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
   ```bash
   curl -sS http://127.0.0.1:18518/healthz
   curl -sS http://127.0.0.1:18518/status
@@ -168,17 +149,17 @@ cmake --build build -j --target pp-node
   - `--status-addr host:port` or `PP_NODE_STATUS_ADDR` (empty disables; default loopback)
   - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
-- Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh).
-- **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/pp_local_test.sh`](../../scripts/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
+- Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh).
+- **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/test/pp_local_test.sh`](../../scripts/test/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md). Doctrine (tiers / layers): [`TESTING.md`](../architecture/TESTING.md).
 - **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; cut tags from **`main`**. Tip development is on **`develop`**. See [RELEASE.md](RELEASE.md).
 - **Node release CI** builds on Ubuntu 24.04 (same family as `ubuntu:24.04` image), attaches a Linux tarball to the **pp-node** GitHub Release, pushes GHCR, and runs L0 smoke.
 - Local tarball + image smoke (on Ubuntu 24.04):
 
 ```bash
 sudo apt-get install -y cmake ninja-build ccache pkg-config
-PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-./scripts/pp_local_test.sh run --suite node   # hop + L0/L1/N-FANOUT/N-CAP N=4
-# or manual compose + ./scripts/pp_node_relay_smoke.sh
+PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_linux.sh all
+./scripts/test/pp_local_test.sh run --suite node   # hop + L0/L1/N-FANOUT/N-CAP N=4
+# or manual compose + ./scripts/test/pp_node_relay_smoke.sh
 ```
 
   Keep build host and image on the same Ubuntu 24.04 family so glibc matches.
@@ -241,11 +222,11 @@ Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu: `sudo apt install ripgrep`.
 
 ```bash
-./scripts/check_feature_includes.sh
-./scripts/check_platform_ifdefs.sh
+./scripts/check/check_feature_includes.sh
+./scripts/check/check_platform_ifdefs.sh
 ```
 
-OS `#ifdef`s belong in `src/base/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
+OS `#ifdef`s belong in `src/foundation/platform/` or dedicated `*_Win32` / `*_Android` backends — see [PLATFORM_CODE.md](../architecture/PLATFORM_CODE.md). CI runs both scripts on every PR.
 
 ## Tests
 
@@ -283,7 +264,6 @@ Build a debug APK with the Gradle project under [`android/`](../android/). The n
 
 - Android SDK (API 35) and NDK r26+
 - JDK 17+
-- Perl (lsquic codegen — same as desktop)
 - Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
 
 Set environment variables:
@@ -296,9 +276,9 @@ export ANDROID_NDK_HOME=/path/to/android/ndk
 ### Build and install
 
 ```bash
-./scripts/android_build.sh apk          # assembleDebug
-./scripts/android_build.sh apk-release  # assembleRelease (unsigned; debug keystore)
-./scripts/android_build.sh install      # installDebug (requires adb device/emulator)
+./scripts/platform/android_build.sh apk          # assembleDebug
+./scripts/platform/android_build.sh apk-release  # assembleRelease (unsigned; debug keystore)
+./scripts/platform/android_build.sh install      # installDebug (requires adb device/emulator)
 ```
 
 For tagged releases, pass version metadata to CMake:
@@ -306,7 +286,7 @@ For tagged releases, pass version metadata to CMake:
 ```bash
 export PP_BROWSER_VERSION=0.1.0
 export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
-./scripts/android_build.sh apk-release
+./scripts/platform/android_build.sh apk-release
 ```
 
 The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are packaged into the APK automatically.
@@ -323,13 +303,12 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 
 - macOS with Xcode 15+ and iOS SDK
 - CMake 3.24+, Ninja (recommended)
-- Perl (lsquic codegen — same as desktop)
 
 ### Build and run (simulator)
 
 ```bash
-./scripts/ios_build.sh sim
-./scripts/ios_build.sh run-sim
+./scripts/platform/ios_build.sh sim
+./scripts/platform/ios_build.sh run-sim
 ```
 
 Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md).

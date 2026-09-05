@@ -19,7 +19,7 @@
 - [x] `HttpClient::Put(url, body, headers)` with Content-Type / length
 - [x] `IBlobClient` + `HttpBlobClient`: presign, retain, delete, list, setProfileIcon, PutUpload
 - [x] `UploadRelayBlobBytes` helper (presign → PUT → retain)
-- [x] Wire into `ServiceClientFactory` + `MessagingHub::Blob()` with auth signer
+- [x] Wire into `ServiceClientFactory` + `ConversationsHub::Blob()` with auth signer
 - [x] Unit tests: sign golden vectors; mock upload sequence
 - [x] Draft SERVICE_ENDPOINTS section (promote when merged)
 

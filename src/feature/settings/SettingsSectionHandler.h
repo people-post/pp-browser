@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/data/BootstrapTypes.h"
-#include "base/data/SessionStore.h"
+#include "foundation/data/BootstrapTypes.h"
+#include "foundation/data/SessionStore.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsUiState.h"
 #include "common/PbrCompat.h"

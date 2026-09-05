@@ -1,12 +1,12 @@
 # Local / dogfood deploy for pp-node (not production hardening).
 # Usage (from repo root after packaging):
-#   bash scripts/pp_node_package_linux.sh all
+#   bash scripts/platform/pp_node_package_linux.sh all
 #   docker compose -f packaging/pp-node/docker-compose.yml up -d --build
 #
 # Status HTTP (published on host; image has no curl):
-#   ./scripts/pp_node_relay_smoke.sh
+#   ./scripts/test/pp_node_relay_smoke.sh
 #   curl -sS http://127.0.0.1:18518/healthz
-# See IMAGE_SMOKE.md. Prefer ./scripts/pp_local_test.sh for hop lifecycle.
+# See IMAGE_SMOKE.md. Prefer ./scripts/test/pp_local_test.sh for hop lifecycle.
 
 services:
   pp-node:
@@ -18,7 +18,8 @@ services:
     restart: unless-stopped
     environment:
       PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
-      PP_NODE_LISTEN: ${PP_NODE_LISTEN:-/ip4/0.0.0.0/tcp/18517}
+      # Amp UDP listen (A017). Org seed production should use 443 to match default bootstrap.
+      PP_NODE_AMP_UDP_PORT: ${PP_NODE_AMP_UDP_PORT:-18517}
       PP_NODE_DATA_DIR: /var/lib/pp-node
       # Admin HTTP for console/probes (ADDR alone is enough to bind non-loopback).
       PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
@@ -26,13 +27,13 @@ services:
     volumes:
       - pp-node-data:/var/lib/pp-node
     ports:
-      # Dev listen (avoid privileged 443). Override with PP_NODE_LISTEN + ports.
-      - "${PP_NODE_HOST_PORT:-18517}:18517"
+      # Amp UDP + status HTTP. Override with PP_NODE_AMP_UDP_PORT + ports.
+      - "${PP_NODE_HOST_PORT:-18517}:18517/udp"
       - "${PP_NODE_STATUS_HOST_PORT:-18518}:18518"
-    # For /ip4/0.0.0.0/tcp/443 instead:
-    #   ports: ["443:443", "18518:18518"]
+    # For org seed /udp/443:
+    #   ports: ["443:443/udp", "18518:18518"]
     #   cap_add: [NET_BIND_SERVICE]
-    #   environment.PP_NODE_LISTEN: /ip4/0.0.0.0/tcp/443
+    #   environment.PP_NODE_AMP_UDP_PORT: 443
 
 volumes:
   pp-node-data:

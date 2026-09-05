@@ -2,9 +2,9 @@
 
 **Tier:** architecture
 
-**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + libp2p only**. Call media → **libp2p** ([V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)). Wire-compat `call_sdp` / `call_ice` are ignored inbound; product does not send them.
+**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + peer mesh**. Call media → **AMP** ([projects/adp](../../projects/adp/) D10 hard-require); libp2p retained for PeerId/crypto only. Wire-compat `call_sdp` / `call_ice` are ignored inbound; product does not send them.
 
-**Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallLibp2pMediaBridge`.
+**Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallMediaBridge`.
 
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
 **Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V034** — libp2p **video_lo**).  
@@ -21,17 +21,16 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 ## Call lifecycle
 
-1:1 call phases are owned by [`CallLifecycle`](../../src/feature/messaging/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
+1:1 call phases are owned by [`CallLifecycle`](../../src/feature/calls/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
 
 | Owner | Responsibility |
 |-------|----------------|
 | **CallLifecycle** | Phase enum, transitions, thread policy, listen desire, `ShouldSuppressRing` |
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
-| **CallLibp2pMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
-| **CallMediaDirectService** | 1:1 `/pp-browser/call-media/1.0.0` — hello, AEAD Opus/H264 frames; capture enqueues, **host IO thread** owns Yamux R/W |
-| **CallMediaAdpPath** | Optional **Opus-only** BestEffort side-path over ADP UDP (TEMP `CallMediaAdpDogfood.h`); hello advertises `adp_*`; falls back to stream Opus ([projects/adp](../../projects/adp/)) |
-| **MessagingHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
+| **CallMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
+| **ICallMediaTransport** | 1:1 `/pp-browser/call-media/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
+| **ConversationsHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
 
 ```mermaid
 stateDiagram-v2
@@ -60,7 +59,7 @@ Ring chrome is a **lifecycle phase**, not a free-standing UI poll of `TopPending
 sequenceDiagram
   participant CSM as CallSessionManager
   participant Life as CallLifecycle
-  participant Hub as MessagingHub
+  participant Hub as ConversationsHub
   participant Ctrl as CallController
   participant UI as Shell_RemountCallChrome
 
@@ -149,7 +148,7 @@ flowchart TB
   end
   subgraph feature [feature/messaging]
     CSM[CallSessionManager<br/>session + roster + dispatch]
-    L2P[CallLibp2pMediaBridge]
+    L2P[CallMediaBridge]
     Topo[CallTopologyController]
   end
   subgraph base [base]
@@ -159,7 +158,7 @@ flowchart TB
     Adapt[CallMediaAdaptation]
   end
   subgraph mesh [libp2p integration]
-    DM[Direct chat / P2pMessagingService]
+    DM[Direct chat / MeshMessagingService]
     MR[MediaRelayService]
   end
   CC --> CSM
@@ -189,7 +188,7 @@ flowchart TB
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 libp2p direct after SFU attach.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
 - Legacy ICE-fail → SFU auto-recovery remains group-only; 1:1 recovery is libp2p dial/hop Retry (mesh).
-- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack peerstore dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (in-libp2p, H001/H007).
+- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
 
 `CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes N thresholds (`ShouldUseMediaRelay` = N≥3 only) until 1:1 hop policy is retargeted under V026.
 
@@ -205,7 +204,7 @@ Module timing across the two planes. Product invite/roster rules stay in [DESIGN
 sequenceDiagram
   participant UI as CallController
   participant CSM as CallSessionManager
-  participant L2P as CallLibp2pMediaBridge
+  participant L2P as CallMediaBridge
   participant Eng as CallMediaEngine
   participant DM as CallMediaDirectService
 
@@ -222,7 +221,7 @@ sequenceDiagram
 
 ### Media-key defer (answerer before key)
 
-Answerer may reach `JoinedLocal` before `CallMediaKey` arrives. `CallLibp2pMediaBridge` reports `MediaDeferred` → `MediaPending` until the key lands, then enters `MediaConnecting`.
+Answerer may reach `JoinedLocal` before `CallMediaKey` arrives. `CallMediaBridge` reports `MediaDeferred` → `MediaPending` until the key lands, then enters `MediaConnecting`.
 
 ### Soft-migrate 2→3 (V025)
 
@@ -230,7 +229,7 @@ Answerer may reach `JoinedLocal` before `CallMediaKey` arrives. `CallLibp2pMedia
 sequenceDiagram
   participant UI as CallController
   participant CSM as CallSessionManager
-  participant L2P as CallLibp2pMediaBridge
+  participant L2P as CallMediaBridge
   participant Topo as CallTopologyController
   participant Eng as CallMediaEngine
   participant DM as Direct_DM
@@ -257,22 +256,22 @@ sequenceDiagram
 
 ## Layer ownership
 
-Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
+Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`. Object lifetimes follow [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy; UI affinity for SDL / ringtone teardown).
 
 | Concern | Layer | Today | Target |
 |---------|-------|-------|--------|
 | Session rows, invites, participants | `base/messaging` | `CallSessionStore`, `CallTypes`, `CallSessionLogic` | Unchanged |
 | Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
-| PC / Opus / H264 / SDL | `base/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
-| Adaptation policy | `base/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
+| PC / Opus / H264 / SDL | `domain/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
+| Adaptation policy | `domain/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
 | Call stack ownership (CSM + lifecycle + media bridge + CallMediaDirect + relay/dial/circuit clients) | `feature/messaging` | **`CallStack`** | Owns call-media unique_ptrs; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds it |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Thin orchestrator |
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
-| 1:1 libp2p dial + connect-fail / Retry | `feature/messaging` | **`CallLibp2pMediaBridge`** | Primary 1:1 media path |
+| 1:1 libp2p dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** | Primary 1:1 media path |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
-| Call media health | `base/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
+| Call media health | `domain/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
 | Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
@@ -281,8 +280,8 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 
 ## Major systems (relationships)
 
-### MessagingHub / CallStack
-`CallStack` (feature/messaging) owns the call-media objects — `CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`, `CallSessionManager`, `CallLifecycle`, `CallLibp2pMediaBridge`, `CallMediaDirectService`, `MediaRelayServiceClient`, `PeerSessionDialRegistry`, `CircuitHopReachClient` — plus `WireMediaRelayDeps`, lifecycle binding, N025 listen desire, and the call-scoped reachability helpers (`TryEnsureCallMediaReachable` / `TryEnsureCircuitHopReachable`). `MessagingHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `OnMeshServicesStarted`; `StopLibp2p` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → `mesh_->Stop()` → `FinishMeshStop`.
+### ConversationsHub / CallStack
+`CallStack` (feature/messaging) owns the call-media objects — `CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`, `CallSessionManager`, `CallLifecycle`, `CallMediaBridge`, `CallMediaDirectService`, `MediaRelayServiceClient`, `PeerSessionDialRegistry`, `CircuitHopReachClient` — plus `WireMediaRelayDeps`, lifecycle binding, N025 listen desire, and the call-scoped reachability helpers (`TryEnsureCallMediaReachable` / `TryEnsureCircuitHopReachable`). `ConversationsHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `OnMeshServicesStarted`; `StopMesh` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → `mesh_->Stop()` → `FinishMeshStop`.
 
 ### CallSessionManager (façade)
 **Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
@@ -292,7 +291,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 ### CallMediaEngine
 Single media backend for the process:
 
-- **Direct 1:1:** `CallLibp2pMediaBridge` drives `StartSfu` with a send fn wired to `CallMediaDirectService`; inbound frames → `OnSfuPacket`.
+- **Direct 1:1:** `CallMediaBridge` drives `StartSfu` with a send fn wired to `CallMediaDirectService`; inbound frames → `OnSfuPacket`.
 - **Group SFU:** encode → `SfuSendFn` / inbound `OnSfuPacket` via `MediaRelayService`.
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
@@ -332,7 +331,7 @@ Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attach
 
 ## Target internal design
 
-Extract without changing the external façade (`MessagingHub::Calls()`, `CallController`).
+Extract without changing the external façade (`ConversationsHub::Calls()`, `CallController`).
 
 ### Pure units (`base/messaging`, gtest — no libp2p)
 
@@ -354,7 +353,7 @@ Responsibilities:
 State it owns: `sfu_attached_`, attach-wait call id/deadline, `awaiting_sfu_recovery_`, `soft_migrate_in_flight_`.  
 Session manager asks: “joined count is now N — what media action?”
 
-### 2. `CallLibp2pMediaBridge` (feature)
+### 2. `CallMediaBridge` (feature)
 Responsibilities:
 
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
@@ -416,7 +415,7 @@ Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-bac
 Landed (behavior-preserving + who-picks fix):
 
 1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
-2. **Libp2p media bridge** — `CallLibp2pMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
+2. **Libp2p media bridge** — `CallMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
 3. **Dispatch cleanup** — thin `ApplyInboundControl` → `HandleInbound*` in `CallInboundHandlers.cpp`; arms call topology or libp2p bridge.
 4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `SfuAttachWaitLogic`, `SfuAttachFanout` + fakes (`IMediaRelayClient` / `IDialRegistry`).
 5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
@@ -428,19 +427,19 @@ Landed (behavior-preserving + who-picks fix):
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
-| `src/feature/messaging/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
-| `src/feature/messaging/CallSessionManager.*` | Façade — session + thin inbound dispatch |
-| `src/feature/messaging/CallMediaHost.h` | Narrow host façade for libp2p media side effects |
-| `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
-| `src/base/p2p/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
-| `src/base/p2p/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
-| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
-| `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
-| `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
-| `src/feature/ui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
-| `src/base/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
-| `src/base/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
+| `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
+| `src/feature/calls/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
+| `src/feature/calls/CallSessionManager.*` | Façade — session + thin inbound dispatch |
+| `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
+| `src/feature/calls/CallMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
+| `src/domain/mesh/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
+| `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
+| `src/feature/calls/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
+| `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
+| `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
+| `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
+| `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
+| `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/base/messaging/CallSessionStore.*` | Persistence |
 | `src/base/messaging/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick |
 | `src/base/messaging/SoftMigrateLogic.*` | Pure who-picks |
@@ -448,7 +447,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
 | `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
-| `src/base/p2p/MediaRelayService.*` | Blind SFU |
+| `src/domain/mesh/MediaRelayService.*` | Blind SFU |
 
 ---
 

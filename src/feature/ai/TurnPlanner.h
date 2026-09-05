@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/ai/LlmClient.h"
-#include "base/ai/TurnPlan.h"
+#include "domain/ai/LlmClient.h"
+#include "domain/ai/TurnPlan.h"
 #include "common/Error.h"
 
 #include <string>

@@ -665,7 +665,7 @@ Build the summary from a **pre-clear scan** of `thread.db` (and `profile.db` `ou
 | Thread kind | User message | Path |
 |-------------|--------------|------|
 | AI | any (non-payload) | `AgentSession::SubmitToThread` → store → LLM |
-| Direct | normal text | `P2pMessagingService::SendUserMessage` → relay (or direct transport) |
+| Direct | normal text | `MeshMessagingService::SendUserMessage` → relay (or direct transport) |
 | Direct | `@ai …` | Local assist — see table below |
 | Direct | structured payload | local action chips — no relay |
 
@@ -697,7 +697,7 @@ Aliases: `@ai share …` → shared reply; `@ai share all …` → shared full.
 
 ## Transport provenance (D051)
 
-Persist `transport` (`local` / `relay` / `direct`) at send/receive in `P2pMessagingService` (and future libp2p layer). E2E vs public **thread shell** styling (`.chat-shell--e2e`) in v2b.
+Persist `transport` (`local` / `relay` / `direct`) at send/receive in `MeshMessagingService` (and future libp2p layer). E2E vs public **thread shell** styling (`.chat-shell--e2e`) in v2b.
 
 Per-message indicator in E2E threads — **Direct** (libp2p), **Relay** (fallback), **Local** (`@ai`, system, unsent). Read `transport` column; do not infer from thread type alone.
 
@@ -901,7 +901,7 @@ libp2p stream protocol **`/pp-browser/chat-history/1.0.0`**. Semantics mirror D0
 
 **Requester rules:** Verify envelope signatures; ingest via receive pipeline; set `transport=direct` on persisted rows.
 
-Implementation lives in `src/base/p2p/` + `P2pMessagingService` — not in `IThreadStore`.
+Implementation lives in `src/domain/mesh/` + `MeshMessagingService` — not in `IThreadStore`.
 
 ### Within-epoch sender contract (E2E only)
 

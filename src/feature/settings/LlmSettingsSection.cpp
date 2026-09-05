@@ -1,8 +1,8 @@
 #include "feature/settings/LlmSettingsSection.h"
 
-#include "base/data/LlmPreset.h"
-#include "base/data/SessionStore.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
 

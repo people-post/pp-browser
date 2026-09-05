@@ -1,10 +1,9 @@
 #include "feature/settings/NetworkSettingsSection.h"
 
-#include "base/data/Config.h"
-#include "base/data/Libp2pRole.h"
-#include "base/data/SessionStore.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/platform/Platform.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
 
@@ -26,15 +25,13 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.relay_base_url = bootstrap.config.relay.base_url;
   state.directory_base_url = bootstrap.config.directory.base_url;
   state.registration_base_url = bootstrap.config.registration.base_url;
-  state.node_enabled = bootstrap.config.libp2p.node_enabled ? "on" : "off";
-  state.circuit_relay_enabled = bootstrap.config.libp2p.capabilities.circuit_relay ? "on" : "off";
-  state.media_relay_enabled = bootstrap.config.libp2p.capabilities.media_relay ? "on" : "off";
-  state.prefer_contacts_for_routing = bootstrap.config.libp2p.prefer_contacts_for_routing ? "on" : "off";
+  state.node_enabled = bootstrap.config.mesh.node_enabled ? "on" : "off";
+  state.circuit_relay_enabled = bootstrap.config.mesh.capabilities.circuit_relay ? "on" : "off";
+  state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";
+  state.dht_enabled = bootstrap.config.mesh.capabilities.dht ? "on" : "off";
+  state.prefer_contacts_for_routing = bootstrap.config.mesh.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
-  Libp2pConfig libp2p = bootstrap.config.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  state.libp2p_listen_multiaddr = libp2p.listen_multiaddr;
-  // libp2p_status_message is filled by SettingsController (needs MessagingHub).
+  // amp_listen_multiaddr is filled by SettingsController from ConversationsHub runtime.
 }
 
 bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
@@ -42,12 +39,13 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const bool node_on = state.node_enabled == "on";
   const bool circuit_on = state.circuit_relay_enabled == "on";
   const bool media_on = state.media_relay_enabled == "on";
+  const bool dht_on = state.dht_enabled == "on";
   const bool prefer_contacts = state.prefer_contacts_for_routing == "on";
   return state.relay_base_url == config.relay.base_url && state.directory_base_url == config.directory.base_url &&
-         state.registration_base_url == config.registration.base_url && node_on == config.libp2p.node_enabled &&
-         circuit_on == config.libp2p.capabilities.circuit_relay &&
-         media_on == config.libp2p.capabilities.media_relay &&
-         prefer_contacts == config.libp2p.prefer_contacts_for_routing;
+         state.registration_base_url == config.registration.base_url && node_on == config.mesh.node_enabled &&
+         circuit_on == config.mesh.capabilities.circuit_relay &&
+         media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
+         prefer_contacts == config.mesh.prefer_contacts_for_routing;
 }
 
 Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
@@ -64,15 +62,13 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.relay_base_url = defaults.relay.base_url;
   state.directory_base_url = defaults.directory.base_url;
   state.registration_base_url = defaults.registration.base_url;
-  state.node_enabled = defaults.libp2p.node_enabled ? "on" : "off";
-  state.circuit_relay_enabled = defaults.libp2p.capabilities.circuit_relay ? "on" : "off";
-  state.media_relay_enabled = defaults.libp2p.capabilities.media_relay ? "on" : "off";
-  state.prefer_contacts_for_routing = defaults.libp2p.prefer_contacts_for_routing ? "on" : "off";
+  state.node_enabled = defaults.mesh.node_enabled ? "on" : "off";
+  state.circuit_relay_enabled = defaults.mesh.capabilities.circuit_relay ? "on" : "off";
+  state.media_relay_enabled = defaults.mesh.capabilities.media_relay ? "on" : "off";
+  state.dht_enabled = defaults.mesh.capabilities.dht ? "on" : "off";
+  state.prefer_contacts_for_routing = defaults.mesh.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
-  Libp2pConfig libp2p = defaults.libp2p;
-  NormalizeLibp2pConfig(libp2p);
-  state.libp2p_listen_multiaddr = libp2p.listen_multiaddr;
-  state.libp2p_status_message.clear();
+  state.mesh_status_message.clear();
 }
 
 } // namespace pbr

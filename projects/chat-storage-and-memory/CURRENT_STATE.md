@@ -79,8 +79,8 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 
 | Feature | Status | Location |
 |---------|--------|----------|
-| Relay send + poll (v1 envelope) | **Implemented** | `P2pMessagingService.*` |
-| **E014 outbound signing** | **Implemented** | `EnvelopeSigner`, `P2pMessagingService` |
+| Relay send + poll (v1 envelope) | **Implemented** | `MeshMessagingService.*` |
+| **E014 outbound signing** | **Implemented** | `EnvelopeSigner`, `MeshMessagingService` |
 | **Inbound receive pipeline** | **Implemented** | `RelayReceivePipeline`, `E2eIngestClassifier`, `ReplayWindow` |
 | **Inbound Ed25519 verify** | **Implemented** (fail closed if key missing) | `PeerSigningKeyStore`, `RelayDirectorySigningKeyResolver` |
 | **AEAD payload in `payload_b64` (`e2e`)** | **Implemented** (c2) | `E2eRelayPayloadCodec.*` |
@@ -88,7 +88,7 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Local write + outbox | **Implemented** | `AppendMessage`, `ReconcileOutbox` |
 | Inbound find-only routing (D062) | **Implemented** | `RelayReceivePipeline` |
 | **History floor on clear** (D037) | **Implemented** | `SqliteThreadStore::ClearMessages` |
-| **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `P2pMessagingService` |
+| **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `MeshMessagingService` |
 | **`FetchChatTargetMessages`** / tail sync | **Implemented** | `ChatSyncService` |
 | **User-initiated sync UX** (D059) | **Implemented** | `chat.rml` — Sync with peer / Retry sync banner |
 | **Scroll backfill UX** (D052/post-v6c) | **Implemented** | Load older messages banner, `ScrollBackfill` |
@@ -117,9 +117,9 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Area | Location | Notes |
 |------|----------|-------|
 | v6 pipeline + classifier + integrity | `src/base/messaging/tests/` | `v6_pipeline_test`, `e2e_ingest_classifier_test`, `v6_integrity_test` |
-| Relay encrypt/decrypt + pipeline | `src/feature/messaging/tests/` | `e2e_relay_crypto_test` |
-| Sync + gap + scroll + compromised | `src/feature/messaging/tests/` (`chat_sync_test`) | **13 tests** |
-| Cross-cutting ingest/dedup/routing | `src/feature/messaging/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
+| Relay encrypt/decrypt + pipeline | `src/feature/conversations/tests/` | `e2e_relay_crypto_test` |
+| Sync + gap + scroll + compromised | `src/feature/conversations/tests/` (`chat_sync_test`) | **13 tests** |
+| Cross-cutting ingest/dedup/routing | `src/feature/conversations/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
 | Rich ChatPayload | `chat_payload_rich_types_test`, `chat_payload_validator_test` | |
 | Live relay (D093) | `relay_live_integration_test` | skipped unless env set |
 | Relay history mock | `relay_history_test` | |

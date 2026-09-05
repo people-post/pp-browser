@@ -1,12 +1,13 @@
 # Libp2p stream framing & failure handling
 
-**Tier:** architecture
+**Tier:** architecture  
+**Status:** **Legacy** — product peer underlay is **AMP** ([NETWORKING.md](NETWORKING.md), [projects/adp](../../projects/adp/) D10). This document remains for residual `StreamFrameIo` / fork notes and archived TCP+Noise+Yamux behavior.
 
-How pp-browser exchanges bytes on libp2p streams: stack layers, on-wire shapes, protocol exchanges, and how shorter / longer / hung frames are handled. Normative **application** payloads remain in [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md) and [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Product messaging flow: [P2P_MESSAGING.md](P2P_MESSAGING.md). Fork notes: [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md).
+How pp-browser historically exchanged bytes on libp2p streams: stack layers, on-wire shapes, protocol exchanges, and how shorter / longer / hung frames are handled. Normative **application** payloads remain in [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md) and [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Product messaging flow: [P2P_MESSAGING.md](P2P_MESSAGING.md). Fork notes: [LIBP2P_UPSTREAM.md](LIBP2P_UPSTREAM.md).
 
-## Production host stack
+## Production host stack (retired underlay)
 
-`Libp2pHost` builds an ExplicitHost with **TCP + Noise (`/noise-mlkem768/1.0.0`) + Yamux** only (QUIC exists in the fork but is not wired on the live path).
+`Libp2pHost` historically built an ExplicitHost with **TCP + Noise (`/noise-mlkem768/1.0.0`) + Yamux**. Product mesh no longer starts this stack when Amp is enabled (D10).
 
 ```
 TCP
@@ -72,13 +73,13 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 
 | Protocol | Service | Exchange |
 |----------|---------|----------|
-| `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` | One short stream per message: write `RelayEnvelope` JSON → read `{"ok":true}` ack (`DuplexFrameSession` + `ControlJsonIoPolicy`) |
-| `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON (same pipe; SQLite `Serve` on worker) |
-| `/pp-browser/chat-blob/1.0.0` | `Libp2pChatBlobService` | Write `ChatBlobRequest` JSON → read ciphertext **or** JSON error ack (fetch); push: JSON request → ciphertext frame → JSON ack |
-| dial-back / circuit-relay | same JSON framing family | Control frames; blocking JSON still used for handshake / `StreamBridge` |
-| media-relay / call-media | `DuplexFrameSession` | Ongoing length-prefixed frames; **no** per-frame read timeout by default |
+| `/pp-browser/chat/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
+| `/pp-browser/chat-history/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
+| `/pp-browser/chat-blob/1.0.0` | Amp `AmpChatBlobService` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
+| dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
+| media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |
 
-Chat/history **frame R/W** runs on the host `io_context`. Parse / `ChatHistoryResponder::Serve` / inbound envelope delivery run on `PostLibp2pWorker` (Normal lane).
+When `mesh_enabled` succeeds, `MeshHost` skips libp2p Identify + TCP mesh listen (D9 step 6). Amp framing: [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md).
 
 ## Application payload (inside the JSON frame)
 
@@ -151,11 +152,11 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 
 | Concern | Location |
 |---------|----------|
-| Frame IO | `src/base/p2p/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
-| JSON frames | `src/base/p2p/StreamJsonFrame.*` |
-| Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
-| Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
-| Chat blob | `src/feature/messaging/Libp2pChatBlobService.*` |
+| Frame IO | `src/domain/mesh/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
+| JSON frames | `src/domain/mesh/StreamJsonFrame.*` |
+| Direct chat | `src/feature/conversations/Libp2pDirectChatService.*` |
+| Chat history | `src/feature/conversations/Libp2pChatHistoryService.*` |
+| Chat blob | `src/feature/conversations/Libp2pChatBlobService.*` |
 | Limits | `src/base/messaging/MessagingLimits.h` |
 | Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
 | Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |

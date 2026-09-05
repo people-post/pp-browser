@@ -14,12 +14,12 @@ Currency stub: **`pp_credit`** (display “Credits”), integer **minor units**.
 
 - Local signed payment promise + outcome receipts (`payment_promises.json`, P002)
 - Local avoid helper stamps receipt + contact `Blocked` (no public reputation yet)
-- `PaymentPromiseLifecycle` create/accept/outcome/avoid; store owned by `MessagingHub`
+- `PaymentPromiseLifecycle` create/accept/outcome/avoid; store owned by `ConversationsHub`
 - Wire control codec + Hub/Facade APIs for offer/accept/outcome/avoid/stage
 - **P003:** inbound receipts stage in `pending_inbound[]` (Accept/Ignore); peer-chat offer helper forces payer-ack + `thread:<id>` service_ref; receive pipeline stages (does not auto-commit)
 - Outbound chat/call blocked when offer `> 0` (rails unavailable); localized payment errors
 - Incoming call ring: offer copy + **Accept free** / disabled **Accept & charge**
-- `MessagingHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)
+- `ConversationsHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)
 - Media SoftMigrate: all paid hops → `call.error.payment_unavailable_media`
 - Chat compose disabled when peer floor unpaid
 

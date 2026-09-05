@@ -10,7 +10,7 @@ pp-browser is a native AI-oriented UI shell:
 - **ActionRouter** — maps UI events to MCP tool calls via bindings manifest
 - **UiGenerator** — LLM produces RML/RCSS/bindings from MCP tool schemas
 
-Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md). Runtime ownership and settings fan-out among app / messaging / shell / chat: [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md). **UI ↔ functional boundary** (state, config, actions, events): [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md). **Networking:** [NETWORKING.md](NETWORKING.md) (HTTP + libp2p). Voice/video call planes: [CALLS.md](CALLS.md).
+Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md). Runtime ownership and settings fan-out among app / messaging / shell / chat: [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md). **Parent-only destroy** (lifetimes): [OWNERSHIP.md](OWNERSHIP.md). **UI ↔ functional boundary** (state, config, actions, events): [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md). **Networking:** [NETWORKING.md](NETWORKING.md) (HTTP + libp2p). Voice/video call planes: [CALLS.md](CALLS.md).
 
 ```
 Application → Backend (SDL_GL3) → RmlUi Context
@@ -27,7 +27,7 @@ Multi-turn chat uses a shared [`Conversation`](../../src/base/ai/conversation/Co
 
 ## Dynamic RML (`RmlMount`)
 
-Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlMount.cpp):
+Runtime UI updates use [`src/gui/RmlMount.cpp`](../../src/gui/RmlMount.cpp):
 
 - `MountInner` — browser-like inner markup mount (`SetInnerRML`) with optional validation, focus, and scroll preservation (`data-mount-id`)
 - `InjectRcss` — merge dynamic RCSS into the active document (re-inject by `source_tag` replaces prior rules)
@@ -35,7 +35,7 @@ Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlM
 
 ## Window Shell
 
-Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../../src/feature/ui/ShellHost.cpp):
+Chat uses the role-based shell in [`src/gui/shell/ShellHost.*`](../../src/gui/shell/ShellHost.cpp):
 
 - **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar

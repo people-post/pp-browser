@@ -38,10 +38,12 @@ TEST(StatusHttpProtocolTest, LoopbackDetection) {
 TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = true;
-  snap.listen_multiaddr = "/ip4/0.0.0.0/tcp/443";
+  snap.listen_multiaddr = "/ip4/0.0.0.0/udp/443/adp/1.0.0/p2p/12D3KooWTest";
   snap.peer_id = "12D3KooWtest";
   snap.circuit_relay = true;
   snap.media_relay = false;
+  snap.dht = true;
+  snap.dht_json = R"({"started":true,"cached_records":2})";
   snap.reachability_json = R"({"status":"reachable","seed_dial_ok":true})";
 
   pbr::StatusHttpRequest health{.method = "GET", .path = "/healthz", .authorization = {}};
@@ -62,6 +64,9 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   EXPECT_EQ(sj->getString("peer_id").value_or(""), snap.peer_id);
   EXPECT_TRUE(sj->getIf<bool>("circuit_relay").value_or(false));
   EXPECT_FALSE(sj->getIf<bool>("media_relay").value_or(true));
+  EXPECT_TRUE(sj->getIf<bool>("dht").value_or(false));
+  ASSERT_NE(sj->getObject("dht_stats"), nullptr);
+  EXPECT_EQ(sj->getObject("dht_stats")->getIf<int64_t>("cached_records").value_or(0), 2);
 }
 
 TEST(StatusHttpProtocolTest, BearerAuth) {

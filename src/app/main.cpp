@@ -1,14 +1,14 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
-#include "base/runtime/StartupTiming.h"
-#include "base/media/CallMediaHealth.h"
-#include "base/platform/Platform.h"
-#include "base/platform/PlatformLogDefaults.h"
-#include "base/platform/PlatformLogSink.h"
-#include "base/platform/PlatformStartupHints.h"
-#include "base/platform/DeploymentProfile.h"
-#include "base/runtime/ProductBranding.h"
+#include "common/StartupTiming.h"
+#include "common/media/CallMediaHealth.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformLogDefaults.h"
+#include "foundation/platform/PlatformLogSink.h"
+#include "foundation/platform/PlatformStartupHints.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/runtime/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -105,12 +105,12 @@ int main(int argc, char** argv) {
   options.profile_override = profile_override;
   options.pin = pin;
 
-  // Construct Application first so MessagingHub is process-owned before Bootstrap initializes it.
+  // Construct Application first so ConversationsHub is process-owned before Bootstrap initializes it.
   pbr::Application app;
 
   auto bootstrap_result = [&] {
     pbr::StartupPhase phase("Bootstrap::Run");
-    return pbr::Bootstrap::Run(options, app.Messaging(), app.Secrets());
+    return pbr::Bootstrap::Run(options, app.Conversations(), app.Secrets());
   }();
   if (!bootstrap_result) {
     root.error << pbr::kProductName << ": " << bootstrap_result.error().message;

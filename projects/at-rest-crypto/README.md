@@ -1,6 +1,6 @@
 # At-rest crypto
 
-**Status:** Implemented (atomic writes + vault + identity/PSK encryption + GUI PIN flows)  
+**Status:** **Done / archived** — see [projects/README.md](../README.md). Stable: [AT_REST_ENCRYPTION](../../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/contracts/AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md), [docs/contracts/DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md)  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/) (wire E2E; E008 PSK-at-rest), [chat-storage-and-memory](../chat-storage-and-memory/) (D048 plaintext transcripts), [multi-device-account](../multi-device-account/) (shared DEK / link-device — A010)

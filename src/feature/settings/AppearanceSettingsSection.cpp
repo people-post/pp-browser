@@ -1,7 +1,7 @@
 #include "feature/settings/AppearanceSettingsSection.h"
 
-#include "base/data/SessionStore.h"
-#include "base/i18n/LocalizationService.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

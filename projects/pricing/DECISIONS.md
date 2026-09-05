@@ -47,7 +47,7 @@ Payment is not ready, but gates and wire must exist so volunteer/`0` and paid pa
 3. Persist under profile `payment_promises.json` via `PaymentPromiseStore`. Export/share of receipts can come later.
 4. **Local avoid:** `PaymentPromiseAvoid` stamps `local_avoid` on the receipt and best-effort sets matching contact `TrustLevel::Blocked`. Humans exit bad counterparties; software records verifiable facts.
 5. Settlement (Brief escrow / multi-sig / chain) and public reputation stay out of scope for this slice.
-6. `MessagingHub` owns `PaymentPromiseStore` (load with profile). `PaymentPromiseLifecycle` signs with the unlocked account ML-DSA key.
+6. `ConversationsHub` owns `PaymentPromiseStore` (load with profile). `PaymentPromiseLifecycle` signs with the unlocked account ML-DSA key.
 7. `PaymentPromiseWireCodec` packs signed receipts into system-message controls (`promise_offer` / `promise_accept` / `promise_outcome`). Hub/Facade expose create/accept/outcome/avoid/stage; P003 makes inbound stage-only (`StagePaymentPromiseControlMessage`); UI cards remain follow-ups.
 
 ### Rationale
@@ -67,7 +67,7 @@ Schema + durable signed lifecycle is the path-dependent foundation for release U
 
 1. **Inbound remote receipts stage only.** Receiving `promise_offer` / `promise_accept` / `promise_outcome` control messages must **not** auto-upsert into the committed `promises[]` store. Wire/Hub entrypoint is `StagePaymentPromiseControlMessage` → `PaymentPromiseStore::StageInbound` (`pending_inbound[]`). Commit/drop via store `AcceptInbound` / `IgnoreInbound` (Hub/Facade: `AcceptInboundPaymentPromise` / `IgnoreInboundPaymentPromise`).
 2. **Release rule v1 is payer-ack.** `PaymentPromiseLifecycle::OfferParams::release_rule` defaults to `PaymentPromiseReleaseRule::PayerAck`. Dual-ack and timeout auto-release remain schema-only for now.
-3. **First product surface is peer chat/service**, not mesh-hop metering UI. `MessagingHub::CreatePaymentPromiseOfferForThread` sets `service_ref = thread:<id>` and forces payer-ack.
+3. **First product surface is peer chat/service**, not mesh-hop metering UI. `ConversationsHub::CreatePaymentPromiseOfferForThread` sets `service_ref = thread:<id>` and forces payer-ack.
 4. **Receive pipeline** (`RelayReceivePipeline::ApplyInboundPaymentPromiseMessage`) stages inbound controls; the chat system message still persists for human review. UI cards for Accept/Ignore remain a follow-up.
 
 ### Rationale

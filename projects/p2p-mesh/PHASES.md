@@ -4,6 +4,8 @@
 
 Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
+**Pre-blockchain name directory (N029):** after n-dir/n2 landings, follow **[PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md)** packages **nd1 → nd5** before on-chain names (Phase D).
+
 ## n0 — Project docs
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
@@ -12,14 +14,15 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
 - [x] **N023** — relay scope / domain bridging spec ([RELAY_SCOPE.md](RELAY_SCOPE.md))
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
+- [x] **N029** — name directory north star ([NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md)); pre-chain plan ([PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md))
 
 ## n1 — Role shell + bootstrap + Network UI
 
-- [x] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
+- [x] `MeshConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
 - [x] Desktop busy-port fallback **18517–18526** (+ optional ephemeral); persist actual port (N016)
 - [x] Clear error / UX if Node listen ultimately fails (no silent “no libp2p”)
 - [x] `ConfigJson` + `config.json.example`
-- [x] `ResolveLibp2pRole` (mobile → Client; desktop × `node_enabled`)
+- [x] `ResolveMeshRole` (mobile → Client; desktop × `node_enabled`)
 - [x] Skip `host->listen` for Client; register bootstrap peers
 - [x] `SessionConfigFromApp` via `Platform::IsMobile()`
 - [x] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet); surface **actual** listen port when Node
@@ -94,11 +97,38 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [ ] Bonds / reputation / anti-capture (N020 long)
 - [ ] Blockchain rails / accept_paid_jobs later (secondary)
 
+## n-dir — Mesh directory consumers (before n2)
+
+**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md#track-n-dir--wire-mesh-directory-into-consumers). API + pp-node publish landed (N027); **consumer wiring landed**.
+
+- [x] `MeshDirectoryCache` + periodic `ListMeshNodes` refresh
+- [x] `CollectDirectoryHopCandidates` + `MeshHopAffinity::DirectoryNode`
+- [x] Wire circuit/media hop paths + `RegisterPeerDirectEndpoint`
+- [x] Bridge score prefers directory when seed unreachable (`seed_dial_ok` → skip seeds)
+- [x] Phase E smoke + docs (manual) — lab Amp/DHT + Brief `/mesh/nodes` probe done; live www `mesh_node` publish still open
+
 ## n2 — DHT (later per N015)
 
-- [ ] Kademlia when `Node && capabilities.dht`
+**Work plan:** [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md). AMP-native Kademlia; not pp-ledger BitTorrent DHT.
+
+- [x] **n2-spec:** ADR N028 + `docs/contracts/MESH_DHT.md` + config schema stub
+- [x] **n2-core:** FIND_PEER when `Node && capabilities.dht` (default off)
+- [x] **n2-caps:** Signed capability records in DHT
+- [x] **n2-hard:** Rate limits / reputation (trail v1)
 - [ ] Never on Client/mobile
-- [ ] Do not jump here immediately after n1
+- [x] Do not start n2-core until **n-dir** acceptance passes
+
+## nd — Pre-chain name directory (N029 Phases A–C)
+
+**Work plan:** [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md). Do **before** on-chain names (Phase D). n-dir/n2 consumer tracks are largely done; this hardens the phone-book seam.
+
+- [x] **nd1** — `INameDirectory` / `NameRecord` seam (load-bearing for chain swap)
+- [x] **nd2** — Record field fidelity + resolve-by-account on `INameDirectory` (manual Phase E smoke still open)
+- [x] **nd3** — `directory.providers[]` + HTTP failover
+- [x] **nd4** — Amp directory twin (`MESH_DIRECTORY_AMP.md` / `/pp-mesh/directory/1.0.0`)
+- [x] **nd5** — `ledger_gateway` capability vocab + hop collector (dial path / UI deferred)
+- [x] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 landed in same track
+- [x] Optional DHT lab smoke — `scripts/test/pp_node_dht_smoke.sh`
 
 ## Later horizons
 
@@ -152,5 +182,5 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 
 - [x] `_pp-browser._tcp` mDNS announce when Node or mobile ephemeral listen active
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
-- [x] Wire `MessagingHub::TickLibp2p` + contact list refresh
+- [x] Wire `ConversationsHub::TickMesh` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)

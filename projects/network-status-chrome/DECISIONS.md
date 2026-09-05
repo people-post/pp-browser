@@ -163,4 +163,4 @@ Normative UX summary: [DESIGN.md](DESIGN.md).
 
 **Rationale:** Client happiness is Brief messaging + P2P dial-out when needed. Inbound dialability is a Node/helper concern. Matches how the product actually works (HTTP relay + optional libp2p).
 
-**Consequences:** New icons `status-brief.svg`, `status-direct.svg`, `status-inbound.svg`; `P2pMessagingService` tracks brief poll health; shell bindings renamed from mesh/reach to brief/direct/inbound. Hop “relay available” upgrade (old S007 later clause) remains deferred as Direct/inbound enrichment, not a Brief substitute.
+**Consequences:** New icons `status-brief.svg`, `status-direct.svg`, `status-inbound.svg`; `MeshMessagingService` tracks brief poll health; shell bindings renamed from mesh/reach to brief/direct/inbound. Hop “relay available” upgrade (old S007 later clause) remains deferred as Direct/inbound enrichment, not a Brief substitute.

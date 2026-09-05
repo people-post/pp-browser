@@ -1,89 +1,91 @@
 #include "app/Application.h"
 #include "app/ConfigApplyBridge.h"
 
-#include "base/crypto/ProfileSecretsService.h"
-#include "base/crypto/ProfileUnlockGate.h"
-#include "base/data/AppPaths.h"
-#include "base/data/SchemaVersion.h"
-#include "base/data/SessionStore.h"
-#include "base/error/AppError.h"
+#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/SessionStore.h"
+#include "foundation/error/AppError.h"
 #include "common/Error.h"
-#include "base/i18n/LocalizationService.h"
-#include "base/messaging/ChatPayloadValidator.h"
-#include "base/messaging/MessagingLimits.h"
-#include "base/runtime/ProductBranding.h"
-#include "base/ui/InputCoordinator.h"
-#include "base/ui/ContextMenuHost.h"
-#include "base/ui/ViewCatalog.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "domain/messaging/ChatPayloadValidator.h"
+#include "common/chat/MessagingLimits.h"
+#include "foundation/runtime/ProductBranding.h"
+#include "domain/ui/InputCoordinator.h"
+#include "domain/ui/ContextMenuHost.h"
+#include "domain/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
-#include "feature/chat/ChatController.h"
-#include "feature/chat/MessagingTools.h"
+#include "gui/chat/ChatController.h"
+#include "gui/chat/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
-#include "base/runtime/AppRuntime.h"
-#include "base/platform/IAssetLocator.h"
-#include "base/platform/ILocalNotifier.h"
-#include "base/platform/IPathProvider.h"
-#include "base/platform/Platform.h"
-#include "base/platform/PlatformServices.h"
-#include "base/platform/AppEventHooks.h"
-#include "base/platform/MobileWindowSizing.h"
-#include "base/platform/NativeFileDialog.h"
-#include "base/platform/SdlAppEvents.h"
-#include "base/platform/WindowIcon.h"
-#include "feature/messaging/AgentUiPorts.h"
-#include "feature/messaging/CallFunctionalPorts.h"
-#include "feature/messaging/CallUiBackend.h"
-#include "feature/messaging/MessagingFacade.h"
-#include "feature/messaging/MessagingHub.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/IAssetLocator.h"
+#include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/IPathProvider.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformServices.h"
+#include "foundation/platform/AppEventHooks.h"
+#include "foundation/platform/MobileWindowSizing.h"
+#include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ui/SdlAppEvents.h"
+#include "foundation/platform/WindowIcon.h"
+#include "feature/ai/AgentUiPorts.h"
+#include "feature/conversations/AgentInboundPorts.h"
+#include "feature/conversations/MakeCallFunctionalPorts.h"
+#include "feature/calls/CallFunctionalPorts.h"
+#include "feature/calls/CallUiBackend.h"
+#include "feature/conversations/ConversationsFacade.h"
+#include "feature/conversations/ConversationsHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
-#include "feature/ui/BadgeNotifyPorts.h"
-#include "feature/ui/CallActionsPorts.h"
-#include "feature/ui/ChatSessionPorts.h"
+#include "gui/BadgeNotifyPorts.h"
+#include "gui/CallActionsPorts.h"
+#include "gui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
-#include "feature/ui/ContactsController.h"
-#include "feature/ui/ContactsNotifyPorts.h"
-#include "feature/ui/ChatSurfaceNotifyPorts.h"
-#include "feature/ui/FlowCoordinatorPorts.h"
-#include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
-#include "feature/ui/PinGateActionPorts.h"
-#include "feature/ui/ShellChromeApplyPorts.h"
-#include "feature/ui/CallController.h"
-#include "feature/ui/BadgeAggregator.h"
-#include "feature/ui/ClientCompatController.h"
-#include "feature/ui/SupportDiscoveryPorts.h"
-#include "feature/ui/DataModelHost.h"
-#include "feature/ui/DeferredStartup.h"
-#include "feature/ui/FlowCoordinator.h"
-#include "feature/ui/PinGateController.h"
-#include "feature/ui/UnlockEnsurePorts.h"
-#include "feature/ui/UnlockGateCompletePorts.h"
-#include "feature/ui/PeoplePickerController.h"
-#include "feature/ui/PeoplePickerNotifyPorts.h"
-#include "feature/ui/EmojiPickerController.h"
-#include "feature/ui/EmojiPickerNotifyPorts.h"
-#include "feature/ui/SettingsController.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellFeedbackPorts.h"
-#include "feature/ui/ShellHost.h"
-#include "feature/ui/ShellSetupPorts.h"
-#include "feature/ui/ShellNavigationPorts.h"
-#include "feature/ui/UserFeedback.h"
-#include "base/people/ContactTypes.h"
+#include "gui/contacts/ContactsController.h"
+#include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/ChatSurfaceNotifyPorts.h"
+#include "gui/FlowCoordinatorPorts.h"
+#include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
+#include "gui/PinGateActionPorts.h"
+#include "gui/shell/ShellChromeApplyPorts.h"
+#include "gui/CallController.h"
+#include "gui/BadgeAggregator.h"
+#include "gui/ClientCompatController.h"
+#include "gui/SupportDiscoveryPorts.h"
+#include "gui/shell/DataModelHost.h"
+#include "gui/shell/DeferredStartup.h"
+#include "gui/FlowCoordinator.h"
+#include "gui/PinGateController.h"
+#include "gui/UnlockEnsurePorts.h"
+#include "gui/UnlockGateCompletePorts.h"
+#include "gui/contacts/PeoplePickerController.h"
+#include "gui/contacts/PeoplePickerNotifyPorts.h"
+#include "gui/EmojiPickerController.h"
+#include "gui/EmojiPickerNotifyPorts.h"
+#include "gui/SettingsController.h"
+#include "gui/shell/ShellFeedback.h"
+#include "gui/shell/ShellFeedbackPorts.h"
+#include "gui/shell/ShellHost.h"
+#include "gui/shell/ShellSetupPorts.h"
+#include "gui/shell/ShellNavigationPorts.h"
+#include "gui/UserFeedback.h"
+#include "domain/people/ContactTypes.h"
 #include "common/Utilities.h"
-#include "feature/messaging/MessagingCompatPorts.h"
-#include "feature/messaging/MessagingContactsPorts.h"
-#include "feature/messaging/MessagingShellPorts.h"
-#include "feature/messaging/MessagingPeoplePickerPorts.h"
-#include "feature/messaging/MessagingUiPorts.h"
-#include "feature/ui/ShellCallChromePorts.h"
-#include "feature/ui/ShellPinGatePorts.h"
+#include "feature/conversations/MessagingCompatPorts.h"
+#include "feature/conversations/MessagingContactsPorts.h"
+#include "feature/conversations/MessagingShellPorts.h"
+#include "feature/conversations/MessagingPeoplePickerPorts.h"
+#include "feature/conversations/MessagingUiPorts.h"
+#include "gui/shell/ShellCallChromePorts.h"
+#include "gui/shell/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
-#include "base/ui/Theme.h"
-#include "base/runtime/StartupTiming.h"
-#include "base/p2p/Reachability.h"
+#include "domain/ui/Theme.h"
+#include "common/StartupTiming.h"
+#include "domain/mesh/reachability/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -91,7 +93,7 @@
 #include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/TextLoupe.h>
 
-#include "RmlUi_Backend.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "RmlUi_Renderer_GL3.h"
 #include "TextLoupeRenderer.h"
 #include "FontEngineInterfaceHarfBuzz.h"
@@ -190,10 +192,10 @@ Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
   secrets_ = std::make_unique<ProfileSecretsService>();
-  messaging_ = std::make_unique<MessagingHub>();
+  messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
-  messaging_facade_ = std::make_unique<MessagingFacade>(*messaging_);
+  messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -232,7 +234,7 @@ Application::~Application() {
   messaging_.reset();
 }
 
-MessagingHub& Application::Messaging() {
+ConversationsHub& Application::Conversations() {
   return *messaging_;
 }
 
@@ -249,7 +251,7 @@ void Application::ShutdownMessaging() {
     return;
   }
   {
-    StartupPhase phase("Shutdown::MessagingHub");
+    StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
   if (secrets_ && secrets_->IsInitialized()) {
@@ -304,29 +306,8 @@ std::string Application::AssetsPath(const std::string& relative) {
   return IAssetLocator::Instance().Resolve(relative);
 }
 
-bool Application::Initialize(const char* window_title) {
-  if (initialized_) {
-    return true;
-  }
-
-  if (!store_.IsInitialized()) {
-    log().error << "SessionStore not initialized";
-    return false;
-  }
-
-  const BootstrapResult& bootstrap = store_.Snapshot();
-
-  const int width = bootstrap.machine_prefs.window.width;
-  const int height = bootstrap.machine_prefs.window.height;
-
-  int window_width = width;
-  int window_height = height;
-  if (Platform::IsMobile()) {
-    ResolveMobileWindowSize(window_width, window_height);
-  }
-
-  log().info << "Initializing (" << window_width << "x" << window_height << ")";
-
+bool Application::InitializeUiHost(const char* window_title, int window_width, int window_height,
+                                   const BootstrapResult& bootstrap, Rml::Context*& context) {
   AppRuntime::InitializeUI();
 
   if (![&] {
@@ -395,7 +376,7 @@ bool Application::Initialize(const char* window_title) {
     LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
   }
 
-  auto* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
+  context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
   if (!context) {
     log().error << "Rml::CreateContext failed";
     Rml::Shutdown();
@@ -427,13 +408,15 @@ bool Application::Initialize(const char* window_title) {
   SdlAppEvents::Install();
 
   ContextMenuHost::Instance().Install(context);
+  return true;
+}
 
+SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   action_router_->Attach(context);
   action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
-  MessagingHub& messaging = Messaging();
-  MessagingFacade& facade = *messaging_facade_;
+  ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() {
     return facade.LoadProfileIdentityView();
@@ -503,11 +486,20 @@ bool Application::Initialize(const char* window_title) {
   settings_commands.messaging_ready = [&facade]() {
     return facade.IsInitialized() && facade.IsMessagingReady();
   };
-  settings_commands.last_libp2p_error = [&facade]() -> std::string {
+  settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
       return {};
     }
-    return facade.LastLibp2pError();
+    return facade.LastMeshError();
+  };
+  settings_commands.amp_listen_multiaddr = [&facade]() -> std::string {
+    if (!facade.IsInitialized()) {
+      return {};
+    }
+    if (const MeshHost* mesh = facade.Hub().Mesh()) {
+      return mesh->AmpListenMultiaddr();
+    }
+    return {};
   };
   settings_commands.load_reachability = [&facade]() {
     SettingsReachabilityView view;
@@ -588,7 +580,7 @@ bool Application::Initialize(const char* window_title) {
       if (contact.local.display_name != display_name) {
         contact.local.display_name = display_name;
         SyncContactMirrors(contact);
-        auto saved = Messaging().Contacts().Upsert(contact);
+        auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
           return saved.error();
         }
@@ -603,7 +595,7 @@ bool Application::Initialize(const char* window_title) {
       contact.local.trust = TrustLevel::Unknown;
       contact.remote.ids.push_back({ContactIdKind::Account, account_id, true});
       SyncContactMirrors(contact);
-      auto saved = Messaging().Contacts().Upsert(contact);
+      auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
         return saved.error();
       }
@@ -636,7 +628,12 @@ bool Application::Initialize(const char* window_title) {
   // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
   // preference row titles/subtitles (and other localized labels) now that catalogs exist.
   settings_->RefreshLocalizedChrome();
+  return settings_tool_ports;
+}
 
+void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
+  ConversationsHub& messaging = Conversations();
+  ConversationsFacade& facade = *messaging_facade_;
   ShellHost& shell = *shell_;
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
@@ -661,7 +658,7 @@ bool Application::Initialize(const char* window_title) {
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
-  chat_->BindMessagingFacade(messaging_facade_.get());
+  chat_->BindConversationsFacade(messaging_facade_.get());
   chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
     RegisterSettingsTools(tools, settings_tool_ports);
@@ -724,7 +721,7 @@ bool Application::Initialize(const char* window_title) {
     if (contacts_shell_bridge_) {
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
-    if (Platform::IsDesktop() && store_.Snapshot().config.libp2p.node_enabled) {
+    if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
       const ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(
@@ -745,6 +742,9 @@ bool Application::Initialize(const char* window_title) {
     chat_->BindBadgeNotify(std::move(badge_notify));
   }
   chat_->BindInputCoordinator(*input_);
+}
+
+void Application::WireCalls() {
   {
     CallActionsPorts call_actions;
     call_actions.start_call = [this](const std::string& thread_id, const bool video_allowed) {
@@ -778,7 +778,11 @@ bool Application::Initialize(const char* window_title) {
     shell_->BindCallActions(call_actions);
     people_picker_->BindCallActions(std::move(call_actions));
   }
+}
 
+void Application::WireUnlockPinAndFlow() {
+  ConversationsHub& messaging = Conversations();
+  ConversationsFacade& facade = *messaging_facade_;
   unlock_gate_->BindSecrets(*secrets_);
   {
     UnlockGateCompletePorts gate_complete;
@@ -885,11 +889,30 @@ bool Application::Initialize(const char* window_title) {
     people_picker_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
+}
 
+void Application::WireAgentAndConfig() {
+  ConversationsHub& messaging = Conversations();
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_session_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  if (messaging_facade_) {
+    AgentInboundPorts inbound;
+    inbound.submit_scoped_assist = [this](const std::string& thread_id, const std::string& prompt,
+                                          std::optional<std::string> user_payload, AtAiMode mode) {
+      if (agent_session_) {
+        agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
+      }
+    };
+    inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
+                                      std::optional<std::string> user_payload) {
+      if (agent_session_) {
+        agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
+      }
+    };
+    messaging_facade_->BindAgentInbound(std::move(inbound));
+  }
   if (agent_session_) {
     agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
     agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
@@ -904,7 +927,9 @@ bool Application::Initialize(const char* window_title) {
       }
     });
   }
+}
 
+bool Application::MountPresenters(Rml::Context* context) {
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";
     return false;
@@ -984,8 +1009,11 @@ bool Application::Initialize(const char* window_title) {
       chat_shell_bridge_->Clear();
     }
     chat_->BindShellSetup({});
-    chat_->BindMessagingFacade(nullptr);
+    chat_->BindConversationsFacade(nullptr);
     chat_->BindAgentPorts({});
+    if (messaging_facade_) {
+      messaging_facade_->BindAgentInbound({});
+    }
     chat_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
     chat_->BindEmojiPickerNotify({});
@@ -1062,7 +1090,12 @@ bool Application::Initialize(const char* window_title) {
     Backend::Shutdown();
     return false;
   }
+  return true;
+}
 
+void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap) {
+  ConversationsHub& messaging = Conversations();
+  ShellHost& shell = *shell_;
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
@@ -1142,6 +1175,45 @@ bool Application::Initialize(const char* window_title) {
                                   bootstrap.profile_prefs.compact_chrome_frost);
 
   ApplyUiDocumentLanguage(context);
+}
+
+bool Application::Initialize(const char* window_title) {
+  if (initialized_) {
+    return true;
+  }
+
+  if (!store_.IsInitialized()) {
+    log().error << "SessionStore not initialized";
+    return false;
+  }
+
+  const BootstrapResult& bootstrap = store_.Snapshot();
+
+  const int width = bootstrap.machine_prefs.window.width;
+  const int height = bootstrap.machine_prefs.window.height;
+
+  int window_width = width;
+  int window_height = height;
+  if (Platform::IsMobile()) {
+    ResolveMobileWindowSize(window_width, window_height);
+  }
+
+  log().info << "Initializing (" << window_width << "x" << window_height << ")";
+
+  Rml::Context* context = nullptr;
+  if (!InitializeUiHost(window_title, window_width, window_height, bootstrap, context)) {
+    return false;
+  }
+
+  const SettingsToolPorts settings_tool_ports = WireSettings(context);
+  WireShellPresenters(settings_tool_ports);
+  WireCalls();
+  WireUnlockPinAndFlow();
+  WireAgentAndConfig();
+  if (!MountPresenters(context)) {
+    return false;
+  }
+  WireHubLifecycle(context, bootstrap);
 
   log().info << "Initialization complete";
   initialized_ = true;
@@ -1246,8 +1318,11 @@ void Application::Shutdown() {
     chat_shell_bridge_->Clear();
   }
   chat_->BindShellSetup({});
-  chat_->BindMessagingFacade(nullptr);
+  chat_->BindConversationsFacade(nullptr);
   chat_->BindAgentPorts({});
+  if (messaging_facade_) {
+    messaging_facade_->BindAgentInbound({});
+  }
   chat_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
   chat_->BindEmojiPickerNotify({});
@@ -1354,7 +1429,7 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
 
-    // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
+    // Abort Connect / circuit waits, then join workers while ConversationsHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
     if (messaging_) {
       StartupPhase phase("Shutdown::AbortCallMedia");

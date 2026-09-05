@@ -14,8 +14,8 @@ How to build **PP** for iOS (simulator and device) and connect an **Apple Develo
 |------|-------------------|
 | iOS app bundle | `PP.app` |
 | Bundle ID | `dev.pp-browser.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
-| Build script | [`scripts/ios_build.sh`](../../scripts/ios_build.sh) |
-| Signing script | [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh) |
+| Build script | [`scripts/platform/ios_build.sh`](../../scripts/platform/ios_build.sh) |
+| Signing script | [`scripts/platform/ios_sign.sh`](../../scripts/platform/ios_sign.sh) |
 | Entitlements | [`packaging/ios/pp-browser.entitlements`](../../packaging/ios/pp-browser.entitlements) |
 | Local env template | [`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example) |
 | Export template | [`packaging/ios/ExportOptions.plist.example`](../../packaging/ios/ExportOptions.plist.example) |
@@ -30,8 +30,7 @@ Until you fill in signing placeholders, **simulator builds work unsigned**; **de
 
 - macOS with **Xcode matching the device iOS major** (e.g. iPhone on **iOS 26.5** needs **Xcode 26.5+**; Xcode 26.5+ itself needs **macOS Tahoe 26.2+**)
 - **CMake 3.24+**, **Ninja** (recommended)
-- **Perl** (lsquic codegen — same as desktop/Android)
-- Vendored trees present (`./scripts/vendor_import.sh`, `./scripts/libp2p_vendor_import.sh` if needed)
+- Vendored trees present (`./scripts/vendor/vendor_import.sh`, `./scripts/vendor/libp2p_vendor_import.sh` if needed)
 
 Install command-line tools if needed:
 
@@ -48,14 +47,14 @@ If `xcrun devicectl` reports **developer disk image could not be mounted**, the 
 From the repository root:
 
 ```bash
-chmod +x scripts/ios_build.sh scripts/ios_sign.sh   # once, if not executable
-./scripts/ios_build.sh sim
+chmod +x scripts/platform/ios_build.sh scripts/platform/ios_sign.sh   # once, if not executable
+./scripts/platform/ios_build.sh sim
 ```
 
 Open **Simulator.app**, then:
 
 ```bash
-./scripts/ios_build.sh run-sim
+./scripts/platform/ios_build.sh run-sim
 ```
 
 On first launch, open **Me → Assistant** and enter a cloud API key (same as Android/desktop).
@@ -76,16 +75,16 @@ If typing with the Mac keyboard works but nothing appears on screen, the app pat
 ## Build commands
 
 ```bash
-./scripts/ios_build.sh configure-sim     # CMake → build-ios-simulator/
-./scripts/ios_build.sh configure-device  # CMake → build-ios-device/
-./scripts/ios_build.sh build             # Build current tree
-./scripts/ios_build.sh install           # Install to install-ios/PP.app
-./scripts/ios_build.sh sim               # configure + build + install (simulator)
-./scripts/ios_build.sh device            # configure + build + install (device)
-./scripts/ios_build.sh run-sim           # install + launch on Simulator
-./scripts/ios_build.sh run-device        # sign (from signing.env) + install + launch on iPhone
-./scripts/ios_build.sh xcode             # -G Xcode for IDE debugging
-./scripts/ios_build.sh clean             # Remove build-ios-* trees
+./scripts/platform/ios_build.sh configure-sim     # CMake → build-ios-simulator/
+./scripts/platform/ios_build.sh configure-device  # CMake → build-ios-device/
+./scripts/platform/ios_build.sh build             # Build current tree
+./scripts/platform/ios_build.sh install           # Install to install-ios/PP.app
+./scripts/platform/ios_build.sh sim               # configure + build + install (simulator)
+./scripts/platform/ios_build.sh device            # configure + build + install (device)
+./scripts/platform/ios_build.sh run-sim           # install + launch on Simulator
+./scripts/platform/ios_build.sh run-device        # sign (from signing.env) + install + launch on iPhone
+./scripts/platform/ios_build.sh xcode             # -G Xcode for IDE debugging
+./scripts/platform/ios_build.sh clean             # Remove build-ios-* trees
 ```
 
 Optional version metadata:
@@ -93,7 +92,7 @@ Optional version metadata:
 ```bash
 export PP_BROWSER_VERSION=0.1.0
 export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
-./scripts/ios_build.sh sim
+./scripts/platform/ios_build.sh sim
 ```
 
 Manual CMake (equivalent to `configure-sim`):
@@ -174,12 +173,12 @@ source packaging/ios/signing.env
 Sign + install on a connected iPhone:
 
 ```bash
-./scripts/ios_build.sh device          # once, or when sources change
+./scripts/platform/ios_build.sh device          # once, or when sources change
 source packaging/ios/signing.env
-./scripts/ios_build.sh run-device      # embeds profile, codesigns, devicectl install + launch
+./scripts/platform/ios_build.sh run-device      # embeds profile, codesigns, devicectl install + launch
 ```
 
-Or manually: `./scripts/ios_sign.sh sign-app install-ios/PP.app` then  
+Or manually: `./scripts/platform/ios_sign.sh sign-app install-ios/PP.app` then  
 `xcrun devicectl device install app --device <UDID> install-ios/PP.app`.
 
 ---
@@ -231,8 +230,8 @@ PP_BROWSER_BUILD_NUMBER=1   # bump every upload
 ### Build, export, upload
 
 ```bash
-./scripts/ios_build.sh ipa              # Release device build + dist-ios/*.ipa
-./scripts/ios_build.sh upload-ipa       # or open dist-ios/ in Transporter.app
+./scripts/platform/ios_build.sh ipa              # Release device build + dist-ios/*.ipa
+./scripts/platform/ios_build.sh upload-ipa       # or open dist-ios/ in Transporter.app
 ```
 
 `ipa` forces `IOS_EXPORT_METHOD=app-store` if unset, signs with Distribution + App Store profile, uses a secure codesign timestamp, strips `get-task-allow`, and stamps `CFBundleShortVersionString` / `CFBundleVersion` from the env vars above. Each App Store Connect upload needs a **new** `PP_BROWSER_BUILD_NUMBER`.
@@ -272,9 +271,9 @@ No iOS release workflow is wired yet — macOS release CI remains in [`.github/w
 |-----------|--------------|
 | Renderer | OpenGL ES 3 via SDL (same pattern as Android) |
 | Assets | `PP.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
-| Paths | [`IosPathProvider`](../../src/base/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
+| Paths | [`IosPathProvider`](../../src/foundation/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
 | MCP | HTTP URL only — no subprocess on mobile |
-| libp2p | Built and linked; host `protoc` bootstrapped on first cross-compile |
+| libp2p | PeerId + key wire only (A017); no Host/protoc bootstrap |
 | Keychain / APNs | Placeholder entitlements; implementation deferred |
 
 See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset behavior (mirror Android where applicable).
@@ -287,29 +286,28 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 |---------|------------|
 | `iOS builds require macOS` | Run on a Mac; simulator/device tooling is not available on Linux agents |
 | Codesign / profile mismatch | Ensure App ID, profile, and `IOS_BUNDLE_IDENTIFIER` all match |
-| Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build PP.app/PP` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
+| Instant quit on open (older iPhone) | Binary `minos` must match deployment target. Check with `vtool -show-build PP.app/PP` — if `minos` is the SDK (e.g. 18.0) instead of `15.0`, reconfigure with `CMAKE_OSX_DEPLOYMENT_TARGET` (see `scripts/platform/ios_build.sh`) and rebuild. Xcode attribute alone does not affect Ninja. |
 | `0xe800003a` / could not be verified | App was signed without `application-identifier`. `ios_sign.sh` must extract entitlements from the `.mobileprovision` (fixed via `plutil -extract`); re-run `sign-app` / `run-device`. |
 | ASC rejects IPA / Invalid Signature | Use `IOS_EXPORT_METHOD=app-store`, **Distribution** identity, **App Store** profile (not Development). Confirm `codesign -d --entitlements :-` has no `get-task-allow`. |
 | ASC rejects reused version | Bump `PP_BROWSER_BUILD_NUMBER` (CFBundleVersion) every upload |
 | `altool` cannot find API key | Place `AuthKey_<KEY_ID>.p8` via `IOS_ASC_P8_PATH`, or upload with Transporter |
 | Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
 | Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `PP.app/assets/` |
-| `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |
 
 ---
 
 ## Quick checklist
 
 - [ ] Xcode + command-line tools installed
-- [ ] `./scripts/ios_build.sh sim` succeeds
-- [ ] Simulator launch via `./scripts/ios_build.sh run-sim`
+- [ ] `./scripts/platform/ios_build.sh sim` succeeds
+- [ ] Simulator launch via `./scripts/platform/ios_build.sh run-sim`
 - [ ] App ID `dev.pp-browser.ios` registered (or plist/CMake updated)
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
-- [ ] `./scripts/ios_sign.sh sign-app install-ios/PP.app` verifies on device
+- [ ] `./scripts/platform/ios_sign.sh sign-app install-ios/PP.app` verifies on device
 - [ ] Apple Distribution cert + App Store provisioning profile
 - [ ] App Store Connect iOS app for `dev.pp-browser.ios`
 - [ ] `IOS_DISTRIBUTION_*` + `IOS_EXPORT_METHOD=app-store` in `signing.env`
-- [ ] `./scripts/ios_build.sh ipa` → `dist-ios/*.ipa`
+- [ ] `./scripts/platform/ios_build.sh ipa` → `dist-ios/*.ipa`
 - [ ] Upload (script or Transporter) + export compliance + Internal TestFlight
 - [ ] Encryption answers / docs per [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md)

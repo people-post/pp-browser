@@ -20,12 +20,20 @@ Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.globa
 ```json
 {
   "relay": { "base_url": "https://www.brief.global/api/relay", "transport": "http" },
-  "directory": { "base_url": "https://www.brief.global/api/relay" },
+  "directory": {
+    "base_url": "https://www.brief.global/api/relay",
+    "transport": "http",
+    "providers": [
+      { "base_url": "https://www.brief.global/api/relay", "transport": "http" }
+    ]
+  },
   "registration": { "base_url": "https://www.brief.global/api/relay" }
 }
 ```
 
-`transport` is reserved for future libp2p support (`http` | `libp2p`). v1 uses HTTP when `base_url` is set.
+`directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateServiceClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
+
+`transport` on relay/registration remains reserved (`http` now). Directory providers use the same vocabulary.
 
 ## HTTP registration (challenge + sign bytes)
 
@@ -156,7 +164,7 @@ Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failur
 
 ## Native agent tools
 
-[`MessagingTools`](../../src/feature/chat/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `MessagingHub` → `Http*Client` directly (not via MCP).
+[`MessagingTools`](../../src/gui/chat/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `ConversationsHub` → `Http*Client` directly (not via MCP).
 
 ## MCP client buckets
 

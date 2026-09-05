@@ -14,19 +14,19 @@ pp-browser consumes RmlUi from sibling / FetchContent [`pp-cpp-ui`](https://gith
 | `../pp-cpp-ui/rmlui/Samples/assets/` | Fonts and minimal RML/RCSS for the test harness |
 | `../pp-cpp-ui/rmlui/reference/backends/` | Upstream sample backends (used by `rmlui_shell` tests; not by the app) |
 | `../pp-cpp-ui/backend/` | Reusable `SystemInterface_SDL` + `RenderInterface_GL3` (`pp_ui_backend`) |
-| `src/base/render/platform/` | Mobile GL lifecycle helpers |
-| `src/base/render/renderer/` | Product overlays (text loupe, call video tiles) |
-| `src/base/render/host/` | `BrowserHost` product `Backend::*` bootstrap |
+| `src/foundation/platform/ui/platform/` | Mobile GL lifecycle helpers |
+| `src/foundation/platform/ui/renderer/` | Product overlays (text loupe, call video tiles) |
+| `src/foundation/platform/ui/host/` | `BrowserHost` product `Backend::*` bootstrap |
 
 Dependency rule:
 
 ```
-base/render/host → pp-cpp-ui backend (Platform_SDL + Renderer_GL3) → RmlUi Include (public API)
+foundation/platform/ui/host → pp-cpp-ui backend (Platform_SDL + Renderer_GL3) → RmlUi Include (public API)
 ```
 
 ## Provenance
 
-See `../pp-cpp-ui/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
+See `../pp-cpp-ui/rmlui/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/vendor/rmlui_tests_import.sh` when bumping the fork version.
 
 ## Build flags / product profile
 
@@ -68,7 +68,7 @@ Do not land speculative fork data-binding patches without a failing unit test un
 
 ## Patching
 
-Edit files under **pp-cpp-ui** `rmlui/` or `backend/` (separate repo commits). Product host/overlays stay in `src/base/render/`.
+Edit files under **pp-cpp-ui** `rmlui/` or `backend/` (separate repo commits). Product host/overlays stay in `src/foundation/platform/ui/`.
 
 **pp-browser fork patches (as of import):**
 
@@ -96,7 +96,7 @@ Edit files under **pp-cpp-ui** `rmlui/` or `backend/` (separate repo commits). P
 - `Context` / `SelectionController` touch — iOS-aligned static text gestures: defer selection on touch down, word select on long-press/double-tap, scroll-first vertical drag; `SetTouchLongPressCallback` for app context menu; `cursor: text` UA for `input`/`textarea`; `TouchState` holds `ObserverPtr` for `touch_target` / `scroll_container` and `OnElementRemove` clears both (avoids UAF in `UpdateTouchGestures` when OSK/safe-area remounts mid-gesture)
 - `Context` touch hover — after the last finger lifts (`ProcessTouchEnd` / `ProcessTouchCancel` when `touch_states` is empty), call `ProcessMouseLeave` so `:hover` does not stick at the last touch point across remount/layout shifts (e.g. compact nav pill reflow)
 - `ScrollController` / `Context` touch — fling velocity from a short sample ring; softer inertia coast; rubber-band overscroll while dragging; spring settle (`Mode::Overscroll`) on release / edge hit; `Element::SetScrollTop/Left(..., clamp)` for unclamped overscroll; restore after layout clamp; axis gated when `overflow:auto` has no range; per-edge overscroll mask (`SetScrollOverscrollEdges`) so sheet dismiss can block top bounce
-- `TextLoupe` / `Context` — touch-only magnifier during text selection drags (static text and `WidgetTextInput`); two-phase `SetTextLoupeRenderCallback` hook in `Context::Render()`; GL capture/draw in `src/base/render/renderer/TextLoupeRenderer.cpp`
+- `TextLoupe` / `Context` — touch-only magnifier during text selection drags (static text and `WidgetTextInput`); two-phase `SetTextLoupeRenderCallback` hook in `Context::Render()`; GL capture/draw in `src/foundation/platform/ui/renderer/TextLoupeRenderer.cpp`
 - `WidgetDropDown` — set `:checked` on parent `<select>` while the list is open (matches RmlUi style-guide selectors)
 - `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
@@ -121,7 +121,7 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 
 **Do not reintroduce app-level layout patches** (e.g. `display: block` on `.bubble-assistant h2`) or parser hacks (bullet characters in `StructuredTextParser`) — fix gaps in the fork instead.
 
-**Workaround marker locations** (search `FORK_WORKAROUND` in pp-cpp-ui `rmlui/` and `src/base/render/`):
+**Workaround marker locations** (search `FORK_WORKAROUND` in pp-cpp-ui `rmlui/` and `src/foundation/platform/ui/`):
 
 - `../pp-cpp-ui/rmlui/Source/Core/ListMarker.*` — marker string generation
 - `../pp-cpp-ui/rmlui/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
@@ -130,7 +130,7 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 
 pp-browser-owned integration code:
 
-- `src/base/render/` — SDL3 + OpenGL3 backend (**compiled into the app** via `pp_base_render`)
+- `src/foundation/platform/ui/` — SDL3 + OpenGL3 backend (**compiled into the app** via `pp_foundation_platform`)
 - `../pp-cpp-ui/rmlui/reference/backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/platform/` if needed.
 - `src/app/` — application lifecycle and `InputCoordinator`
 

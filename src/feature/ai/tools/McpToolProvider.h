@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/IToolProvider.h"
+#include "domain/ai/IToolProvider.h"
 #include "feature/ai/tools/McpToolAdapter.h"
 
 #include <string>

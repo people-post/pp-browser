@@ -565,7 +565,7 @@ No hard max file size in v1.
 | Thread memory | `memory.value_enc` | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
 Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat payload + denormalized presentation fields). **Metadata stays plaintext** (timestamps, delivery, `content_type`, `target_message_id`, thread titles, participant ids, `sync_state`). **No SQLCipher.** **No incremental migration** — bump `user_version` (`thread.db` **2**, `profile.db` **4**); incompatible DBs fail with wipe-profile guidance.  
-**Implementation:** `SqliteThreadStore` implements `IDekConsumer`; registered from `MessagingHub`. Chat history requires profile unlock when a vault exists.  
+**Implementation:** `SqliteThreadStore` implements `IDekConsumer`; registered from `ConversationsHub`. Chat history requires profile unlock when a vault exists.  
 **Deferred:** FTS/search sidecar; encrypting thread titles / participant lists.  
 **Rationale:** Protect offline disk reads of message text without full-DB encryption; reuse existing DEK/`FileCipher` stack.  
 **Alternatives:** SQLCipher whole DB; per-column AEAD with online migration (rejected — hard cut).
@@ -1014,7 +1014,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 | `psk_verified_at` | INTEGER NULL | Unix ms when user confirmed OOB fingerprint match (E011); `NULL` until verified; cleared on PSK replace/import/rotation |
 | `retired_psks_json` | TEXT NULL | JSON array `[{ epoch, master_psk_b64, retired_at }]` — E018 |
 
-**`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/messaging/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
+**`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/conversations/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
 
 **Rationale:** Chat-target-scoped secrets colocated with seq/epoch; survives thread shell delete/recreate; inbound decrypt resolves `ChatTargetKey` before `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected); PSK in `thread.db` (rejected — ephemeral shell).
@@ -1325,12 +1325,12 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 ---
 
-## D097 — Shared libp2p host + on-demand session policy + direct chat protocol
+## D097 — Shared mesh host + on-demand session policy + direct chat protocol
 
 **Date:** 2026-07-09  
 **Decision:**
 
-1. One shared `Libp2pHost` (Yamux + Noise) owned by `MessagingHub`; history and direct chat register protocol handlers on it.
+1. One shared `Libp2pHost` (Yamux + Noise) owned by `ConversationsHub`; history and direct chat register protocol handlers on it.
 2. `PeerSessionManager` implements on-demand dial, ConnectionManager reuse, warm-active set, idle TTL, connection caps, dial backoff — **not** an app-level socket pool.
 3. Direct live messaging uses `/pp-browser/chat/1.0.0` (length-prefixed JSON `RelayEnvelope`); send path is direct-first then relay fallback; ingest via `RelayReceivePipeline` with `MessageTransport::Direct`.
 4. v1 thread routing remains relay-id (`ChatTargetKey`); PeerId is used for dial via multiaddr `/p2p/…`. Contacts persist `multiaddrs`.

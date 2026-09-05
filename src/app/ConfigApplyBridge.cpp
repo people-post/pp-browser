@@ -1,7 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
-#include "base/runtime/AppRuntime.h"
-#include "base/ui/Theme.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "domain/ui/Theme.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, ShellHost& shell, ChatController& chat,
+void ConfigApplyBridge::Bind(ConversationsHub& messaging, SessionStore& store, ShellHost& shell, ChatController& chat,
                              AssetPathResolver resolve_asset) {
   messaging_ = &messaging;
   store_ = &store;
@@ -24,9 +24,9 @@ void ConfigApplyBridge::InstallListeners() {
   }
 
   const BootstrapResult& snap = store_->Snapshot();
-  last_network_ = MessagingHub::ProjectNetwork(snap.config);
-  last_policy_ = MessagingHub::ProjectPolicy(snap.profile_prefs);
-  last_notifications_ = MessagingHub::ProjectNotifications(snap.profile_prefs);
+  last_network_ = ConversationsHub::ProjectNetwork(snap.config);
+  last_policy_ = ConversationsHub::ProjectPolicy(snap.profile_prefs);
+  last_notifications_ = ConversationsHub::ProjectNotifications(snap.profile_prefs);
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Project(snap.profile_prefs);
   last_agent_ = ChatController::ProjectAgent(snap.config);
@@ -39,7 +39,7 @@ void ConfigApplyBridge::OnConfig(const AppConfig& config) {
   if (!messaging_) {
     return;
   }
-  const MessagingHub::NetworkConfig network = MessagingHub::ProjectNetwork(config);
+  const ConversationsHub::NetworkConfig network = ConversationsHub::ProjectNetwork(config);
   if (!last_network_ || network != *last_network_) {
     last_network_ = network;
     messaging_->Apply(network);
@@ -59,13 +59,13 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
     return;
   }
 
-  const MessagingHub::PolicyPrefs policy = MessagingHub::ProjectPolicy(prefs);
+  const ConversationsHub::PolicyPrefs policy = ConversationsHub::ProjectPolicy(prefs);
   if (!last_policy_ || policy != *last_policy_) {
     last_policy_ = policy;
     messaging_->Apply(policy);
   }
 
-  const MessagingHub::NotificationPrefs notifications = MessagingHub::ProjectNotifications(prefs);
+  const ConversationsHub::NotificationPrefs notifications = ConversationsHub::ProjectNotifications(prefs);
   if (!last_notifications_ || notifications != *last_notifications_) {
     last_notifications_ = notifications;
     messaging_->Apply(notifications);
