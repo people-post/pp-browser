@@ -88,6 +88,58 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 
 Policy (who may hop, pricing, MeshHopPolicy), codecs, and UI stay **above** the wire kinds.
 
+## Behavior matrix (as implemented)
+
+Dimensions below describe **conversation behavior** on the OPEN, not delivery path (direct / punch / circuit / HTTP). Channel-class and policy details: [AMP-CHANNEL.md](AMP-CHANNEL.md).
+
+### App / product conversations
+
+| Dimension | `rpc/chat` | `rpc/history` | `blob` | `realtime` (call-media) | `datagram-relay` (hop) |
+|-----------|------------|---------------|--------|-------------------------|-------------------------|
+| **Wire id** | `/pp-browser/rpc/chat/1.0.0` | `/pp-browser/rpc/history/1.0.0` | `/pp-browser/blob/1.0.0` | `/pp-browser/realtime/1.0.0` | `/pp-browser/datagram-relay/1.0.0` |
+| **Kind** | rpc | rpc | blob | realtime (E2E) | realtime (blind hop) |
+| **L3 class** | Transactional | Transactional | Bulk | RealtimeControl + Realtime | RealtimeControl + Realtime |
+| **QoS** | Reliable | Reliable | Reliable | control Reliable; media BestEffort | hop control Reliable; media BestEffort |
+| **Duplex** | half (`read_once`-style ack) | half (req → resp) | half (meta ↔ bytes/error) | full (session) | full (session / fan-out) |
+| **Send size** | small JSON envelope | small JSON request | **large** ciphertext | tiny control + continuous media | opaque datagrams |
+| **Send pattern** | push event | pull query | fetch or push by hash | continuous while call up | continuous / fan-out |
+| **Delivery guarantee** | reliable (AMP); app may retry | reliable query; paginate on fail | reliable transfer or fail | media **lossy OK**; control reliable | media lossy OK; hop may drop |
+| **Latest-wins / drop** | no (do not drop chat) | no | no (`ChatBlob` drop never) | media: **drop oldest** (e.g. queue 64) | media: aggressive drop (queue ~2) |
+| **Broadcast / fan-out** | 1:1 peer (group = many 1:1 or later relay role) | 1:1 pull | 1:1 (CDN secondary) | 1:1 E2E | **multi-receiver hop** |
+| **Return size** | tiny ack `{"ok":true}` | **medium** message batch | large bytes or error JSON | hello_ack + ongoing media | hop control acks + media |
+| **Return order** | ack only | batch ordered by seq/cursor | stream/object completeness | media not strictly app-ordered | hop does not reorder for meaning |
+| **Latency sensitivity** | moderate (chat) | low–moderate (sync) | low (bulk) | **high** (media) | **high** |
+| **Lifetime** | short OPEN | short OPEN (longer read timeout) | short OPEN | **long-lived call SM** | **long-lived hop / SoftMigrate** |
+| **In-band “signal”** | envelope `op`s (call invite, attachment pointer, …) | history request fields | blob `op` fetch/push | bundle hello / channel admit | attach / quote / SoftMigrate ops |
+| **Code owner (approx.)** | `AmpDirectChatService` | `AmpChatHistoryService` | `AmpChatBlobService` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
+
+**Mental model:** `rpc/chat` is the small **send + tiny return** bus (product signals via envelope `op`). `rpc/history` is the same reliability class with **pull + larger return**. `blob` is **large reliable** transfer. `realtime` / `datagram-relay` are **time-sensitive**, lossy media allowed, drop-oldest, long-lived.
+
+### Infra conversations (path / discovery — not app payload)
+
+| Dimension | `reach` dial-back | `reach/punch` | `circuit` | `circuit-carrier` | ch0 identify | `directory` / `dht` |
+|-----------|-------------------|---------------|-----------|-------------------|--------------|---------------------|
+| **Wire id** | `/pp-browser/reach/1.0.0` | `/pp-browser/reach/punch/1.0.0` | `/pp-browser/circuit/1.0.0` | `/pp-browser/circuit-carrier/1.0.0` | (ch0; no product id) | `/pp-mesh/directory/1.0.0`, `/pp-mesh/dht/1.0.0` |
+| **Kind** | reach | reach | circuit | plumbing | identify | discover |
+| **Send size** | small JSON | small multi-frame JSON | control JSON + opaque splice | opaque nested Session | caps JSON | small control JSON |
+| **Guarantee** | reliable short probe | reliable SM; may fail → circuit | reliable setup; then opaque forward | large BestEffort-ish carrier queue for bursts | reliable | reliable |
+| **Return** | ok / dialed / error | sync / result frames | bridge / tunnel up | nested traffic | peer caps | list / find results |
+| **Latency** | setup-sensitive | setup-sensitive | setup then follows target | follows nested realtime/rpc | once per session | moderate |
+| **Lifetime** | one-shot | short multi-frame SM | live tunnel while needed | while nested call/path up | session start | short ops |
+| **Role** | “can you dial me?” | NAT assist | path when direct fails | nest E2E Session in tunnel | “what do you speak?” | find peers / names |
+
+**Delivery path** (direct ADP, punch-assisted direct, circuit → nested Session, HTTP/CDN fallback) is **orthogonal** to the rows above: same `protocol_id` conversation, different way to reach the peer.
+
+### Where facilitation / “signal” lives
+
+| Need | Home | Why |
+|------|------|-----|
+| Call invite / accept / hangup; “attachment available” | **`rpc/chat`** envelope `op` (or later `rpc/call` if policy diverges) | Short product control; same inbox/thread story |
+| History catch-up | **`rpc/history`** | Pull API; separate handler / timeouts |
+| Blob fetch / push / transfer error | **In-band on `blob`** | Steers the bulk conversation |
+| Call-media hello / channel admit; SoftMigrate attach | **In-band on `realtime` / hop** | Steers the live session |
+| Path setup | **`reach` / `circuit` / carrier** | Delivery, not app payload |
+
 ## Related
 
 - [NETWORKING.md](../architecture/NETWORKING.md) — HTTP + Amp doctrine  
