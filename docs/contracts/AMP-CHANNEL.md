@@ -143,7 +143,6 @@ Core factories: `lib/amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Produ
 | `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s | core |
 | `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | 1 | Never | no | off | **core** |
 | `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s | product |
-| `ChatBlobChannelPolicy` | Bulk | — | — | — | — | deprecated alias |
 | `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | 8 s | core |
 
 Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameSession` today).
