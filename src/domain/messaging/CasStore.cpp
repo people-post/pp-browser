@@ -47,7 +47,12 @@ std::string CasStore::BlocksRoot(const CasRealm realm) const {
 }
 
 std::string CasStore::BlockPath(const CasRealm realm, const ByteVector& content_id) const {
-  return (std::filesystem::path(BlocksRoot(realm)) / BytesToHex(content_id)).string();
+  // Two-level fan-out: …/blocks/ab/cd/<64-hex> (65 536 leaf dirs; avoids flat readdir blow-ups).
+  const std::string hex = BytesToHex(content_id);
+  if (hex.size() < 4) {
+    return (std::filesystem::path(BlocksRoot(realm)) / hex).string();
+  }
+  return (std::filesystem::path(BlocksRoot(realm)) / hex.substr(0, 2) / hex.substr(2, 2) / hex).string();
 }
 
 bool CasStore::Exists(const CasRealm realm, const ByteVector& content_id) const {

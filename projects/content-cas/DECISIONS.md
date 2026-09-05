@@ -101,6 +101,16 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 
 ---
 
+## C010 — Two-level hex block sharding
+
+**Status:** Accepted  
+
+**Decision:** On-disk block paths are `cas/{realm}/blocks/{aa}/{bb}/{content_id_hex}` where `aa` / `bb` are the first two hex byte pairs of the 64-char content id (65 536 leaf directories). Same layout for private and public.
+
+**Rationale:** Flat `blocks/` directories blow up under large object counts (pp-node / library scale). Two fixed hex levels are enough fan-out without deep nesting or content-dependent directory schemes.
+
+---
+
 ## Amends
 
 - Amends attachment layout expectations in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (planned CAS section).  

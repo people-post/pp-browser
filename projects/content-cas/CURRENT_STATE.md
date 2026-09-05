@@ -17,7 +17,7 @@
 |-------|------|
 | Types / realms | `src/domain/messaging/CasTypes.h` |
 | Index | `ObjectIndex.*` → `{profile}/object_index.db` |
-| Store | `CasStore.*` → `cas/{private\|public}/blocks/{content_id_hex}` |
+| Store | `CasStore.*` → `cas/{private\|public}/blocks/{aa}/{bb}/{content_id_hex}` (C010) |
 | Tests | `tests/cas_store_test.cpp` (5 cases) |
 
 Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profile_id}\|{content_id_hex}\|1`). Public blocks: clear bytes. Content id = BLAKE2b-256(plaintext) (R016). Attachment cutover still pending (C007).

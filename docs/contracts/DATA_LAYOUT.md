@@ -46,15 +46,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 
 ### Content CAS (planned)
 
-**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C009). Not on disk yet.
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). `CasStore` on disk (P1); attachment cutover still pending (C007).
 
-After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm.
+After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
 
 ```
 {data_dir}/profiles/{id}/
   cas/
-    private/blocks/     # DEK-wrapped attachment / private library bytes
-    public/blocks/      # explicitly published clear bytes (v1)
+    private/blocks/{aa}/{bb}/{content_id_hex}  # DEK-wrapped (PPBA)
+    public/blocks/{aa}/{bb}/{content_id_hex}   # clear published bytes (v1)
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth)

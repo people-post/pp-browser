@@ -1,6 +1,6 @@
 # Content CAS (private / public realms)
 
-**Status:** Design accepted (2026-09-05) — not implemented  
+**Status:** Design accepted (2026-09-05); P1 store landed — see [CURRENT_STATE](CURRENT_STATE.md)  
 **Normative disk sketch:** [DATA_LAYOUT § Content CAS](../../docs/contracts/DATA_LAYOUT.md#content-cas-planned)  
 **L4 composition:** [L4_PROTOCOL_KINDS § Prepared compositions](../../docs/contracts/L4_PROTOCOL_KINDS.md#prepared-compositions-no-new-kinds)  
 **Related:** [relay-blob-upload](../relay-blob-upload/) (attachments MVP shipped), [at-rest-crypto](../at-rest-crypto/)
@@ -10,6 +10,6 @@ One content-addressed store engine with **two confidentiality realms**: chat att
 | Doc | Role |
 |-----|------|
 | [DESIGN.md](DESIGN.md) | Architecture, invariants, APIs |
-| [DECISIONS.md](DECISIONS.md) | C001–C009 locked choices |
+| [DECISIONS.md](DECISIONS.md) | C001–C010 locked choices |
 | [PHASES.md](PHASES.md) | P0–P5 delivery order |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Progress |

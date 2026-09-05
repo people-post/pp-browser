@@ -12,12 +12,15 @@
 namespace pbr {
 
 /**
- * Profile-level content-addressed store with private/public realms ([content-cas] C001–C005).
+ * Profile-level content-addressed store with private/public realms ([content-cas] C001–C005, C010).
  *
  * Layout:
- *   {profile}/cas/private/blocks/{content_id_hex}  — PPBA + FileCipher under DEK
- *   {profile}/cas/public/blocks/{content_id_hex}   — clear published bytes
+ *   {profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}  — PPBA + FileCipher under DEK
+ *   {profile}/cas/public/blocks/{aa}/{bb}/{content_id_hex}   — clear published bytes
  *   {profile}/object_index.db
+ *
+ * Block paths use two hex prefix levels (256² leaf dirs) so large stores (e.g. pp-node)
+ * do not flatten millions of files into one directory.
  */
 class CasStore {
 public:

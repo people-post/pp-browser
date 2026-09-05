@@ -22,8 +22,8 @@ We also want one on-disk engine that can later support piece/multi-source fetch 
 ```text
 {profile}/
   cas/
-    private/blocks/     # DEK-wrapped
-    public/blocks/      # clear published (v1)
+    private/blocks/{aa}/{bb}/{content_id_hex}  # DEK-wrapped; two-level hex shard (C010)
+    public/blocks/{aa}/{bb}/{content_id_hex}   # clear published (v1); same layout
   object_index.db       # realm, content_id, mime, pins, published_from?, refs
   threads/{id}/
     …                   # after cutover: refs / session views only — not a second byte store
@@ -47,7 +47,7 @@ private object (plaintext id P)
   → load private plaintext in memory (DEK)
   → encode published payload (v1 = plaintext bytes)
   → content_id_public = hash(published_bytes)
-  → write cas/public/blocks/{id}
+  → write cas/public/blocks/{aa}/{bb}/{id}
   → index row realm=public, published_from=P
   → optional announce (P4)
 ```
