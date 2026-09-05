@@ -281,6 +281,7 @@ struct AmpPunchCoordinator::Impl {
   pp::amp::PeerLinkManager* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
+  AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   std::vector<std::string>* local_addrs = nullptr;
 
@@ -475,6 +476,19 @@ struct AmpPunchCoordinator::Impl {
                         return;
                       }
                       const std::string op = PunchOp(*root).value_or("");
+                      if (op == "probe" && *phase == "await_first") {
+                        AmpPunchCoordinator::ProbeInbound probe;
+                        {
+                          // probe_inbound set on coordinator; Impl holds copy
+                          probe = probe_inbound;
+                        }
+                        if (probe) {
+                          *phase = "probe";
+                          // body already in json_utf8
+                          probe(session, std::vector<uint8_t>(json_utf8.begin(), json_utf8.end()));
+                        }
+                        return;
+                      }
                       if (op == "connect" && *phase == "await_first") {
                         auto req = DecodePunchConnect(*root);
                         if (!req) {
@@ -565,6 +579,10 @@ AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
 
 void AmpPunchCoordinator::SetLocalCandidateAddrs(std::vector<std::string> addrs) {
   local_addrs_ = SanitizePunchAddrs(std::move(addrs));
+}
+
+void AmpPunchCoordinator::SetProbeInbound(ProbeInbound handler) {
+  impl_->probe_inbound = std::move(handler);
 }
 
 void AmpPunchCoordinator::Start() {

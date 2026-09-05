@@ -3,6 +3,7 @@
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/mesh/host/MeshPorts.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "amp/link/Types.h"

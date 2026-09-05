@@ -1,3 +1,4 @@
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 
 #include "amp/L3/ChannelBridge.h"

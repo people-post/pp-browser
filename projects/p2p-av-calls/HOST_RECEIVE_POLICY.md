@@ -15,8 +15,8 @@ Admission, queue, drop, and meter rules for every inbound request a libp2p / mes
 | Plane | Protocols / types | Owner |
 |-------|-------------------|--------|
 | Signaling | `call_*` E2E controls (+ HTTP inbox) | `RelayReceivePipeline` → `CallSessionManager` |
-| 1:1 media | `/pp-browser/call-media/1.0.0` | `CallMediaDirectService` + bridge |
-| Group media | `/pp-browser/media-relay/1.0.0` | `MediaRelayService` |
+| 1:1 media | `/pp-browser/realtime/1.0.0` | `CallMediaDirectService` + bridge |
+| Group media | `/pp-browser/datagram-relay/1.0.0` | `MediaRelayService` |
 | Reachability | circuit-relay, dial-back, N025 | enable dials only |
 
 ---

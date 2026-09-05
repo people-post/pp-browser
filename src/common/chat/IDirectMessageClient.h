@@ -9,7 +9,11 @@
 
 namespace pbr {
 
-inline constexpr const char* kDirectChatProtocolId = "/pp-browser/chat/1.0.0";
+/** rpc-kind live chat — separate OPEN from history (handler ownership). */
+inline constexpr const char* kRpcChatProtocolId = "/pp-browser/rpc/chat/1.0.0";
+/** rpc-kind peer history sync — separate OPEN from live chat. */
+inline constexpr const char* kRpcHistoryProtocolId = "/pp-browser/rpc/history/1.0.0";
+inline constexpr const char* kDirectChatProtocolId = kRpcChatProtocolId;
 
 /** Direct push of RelayEnvelope over the peer mesh (Amp ChannelSession). */
 class IDirectMessageClient {

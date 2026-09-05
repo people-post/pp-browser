@@ -220,7 +220,7 @@ Kademlia-style peer and content routing. Useful for discovery later; seed + circ
 
 ### Circuit relay
 
-Custom protocol `/pp-browser/circuit-relay/1.0.0` — stream bridge for NATed peers. Checkbox under Node; org seed typically enables it. Pricing optional (often volunteer).
+Custom protocol `/pp-browser/circuit/1.0.0` — stream bridge for NATed peers. Checkbox under Node; org seed typically enables it. Pricing optional (often volunteer).
 
 **Today:** single-hop (one relay must direct-dial target). **Planned:** multi-hop v2 — see [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md).
 
@@ -236,7 +236,7 @@ Homegrown **content-agnostic** forwarder — no media keys, no codec decode.
 
 | Aspect | Detail |
 |--------|--------|
-| Protocol | `/pp-browser/media-relay/1.0.0` |
+| Protocol | `/pp-browser/datagram-relay/1.0.0` |
 | Framing | `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
 | QoS types | `reliable_ordered`, `latest_lossy`, optional `best_effort`; subscribe by `(stream_id, channel_id)` |
 | Session | Quote → accept → attach; ↑/↓ budgets (C/B/A per direction); volunteer rate 0 |

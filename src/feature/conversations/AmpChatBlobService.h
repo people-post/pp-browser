@@ -18,7 +18,7 @@
 namespace pbr {
 
 /**
- * `/pp-browser/chat-blob/1.0.0` over AMP ChannelSession ([A020] single entry when Amp is attached).
+ * `/pp-browser/blob/1.0.0` over AMP ChannelSession ([A020] single entry when Amp is attached).
  */
 class AmpChatBlobService : public IChatBlobPeerService {
 public:

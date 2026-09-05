@@ -40,6 +40,8 @@ The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still 
 
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+) and [adp](../../projects/adp/).
 
+**L4 protocol kinds:** freeze growth around seven conversation shapes (identify / discover / reach / circuit / rpc / blob / realtime) — [L4_PROTOCOL_KINDS.md](../contracts/L4_PROTOCOL_KINDS.md) ([A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes), [N030](../../projects/p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate)). Do not add a new `protocol_id` per feature.
+
 ## Calls
 
 Call **media** product path is **AMP** (voice-first): direct PeerLink channels and/or circuit nested Session + SoftMigrate `media_relay`. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Code map: [CALLS.md](CALLS.md) · Amp: [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).

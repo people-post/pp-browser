@@ -13,8 +13,8 @@
 namespace pbr {
 
 /**
- * `/pp-browser/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
- * Product single-entry when MeshHost Amp is attached ([A020]/ legacy path remains for tests/fallback.
+ * `/pp-browser/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
+ * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
  */
 class AmpDirectChatService : public IDirectMessageClient {
 public:

@@ -54,10 +54,10 @@ TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
 }
 
 TEST(AmpCircuitHopRegistryTest, KeyIncludesProtocol) {
-  EXPECT_EQ(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"),
-            "QmA\x1f/pp-browser/call-media/1.0.0");
-  EXPECT_NE(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/media-relay/1.0.0"),
-            AmpCircuitHopRegistry::Key("QmA", "/pp-browser/call-media/1.0.0"));
+  EXPECT_EQ(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/realtime/1.0.0"),
+            "QmA\x1f/pp-browser/realtime/1.0.0");
+  EXPECT_NE(AmpCircuitHopRegistry::Key("QmA", "/pp-browser/datagram-relay/1.0.0"),
+            AmpCircuitHopRegistry::Key("QmA", "/pp-browser/realtime/1.0.0"));
 }
 
 } // namespace

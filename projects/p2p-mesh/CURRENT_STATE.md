@@ -19,7 +19,7 @@
 | **nd (pre-chain)** | nd1–nd5 landed — [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md); Amp twin [`MESH_DIRECTORY_AMP.md`](../../docs/contracts/MESH_DIRECTORY_AMP.md) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
-| **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
+| **n3** | Custom `/pp-browser/circuit/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
 | **nf** | Contact-first circuit preference + provider admission (see below) |
 | **n4-media** | Blind `media_relay` + N021 framing + quote/attach + closed-set pick helpers (see below) |
 
@@ -43,7 +43,7 @@
 | Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `ConversationsHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
-| Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
+| Dial-back | `/pp-browser/reach/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
 
@@ -71,7 +71,7 @@
 
 | Area | State |
 |------|-------|
-| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
+| Protocol | `/pp-browser/circuit/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
 | UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
@@ -91,7 +91,7 @@
 
 | Area | State |
 |------|-------|
-| Protocol | `/pp-browser/media-relay/1.0.0` (`MediaRelayService`) |
+| Protocol | `/pp-browser/datagram-relay/1.0.0` (`MediaRelayService`) |
 | Framing | N021 binary frames: `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
 | QoS | `reliable_ordered`, `latest_lossy`, `best_effort` |
 | Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
