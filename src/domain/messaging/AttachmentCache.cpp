@@ -1,9 +1,12 @@
 #include "domain/messaging/AttachmentCache.h"
 
+#include "domain/messaging/CasStore.h"
+
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/platform/VideoPosterExtractor.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/CryptoConstants.h"
 
 #include <algorithm>
 #include <cctype>
@@ -146,6 +149,11 @@ Roe<void> WriteBytesAtomic(const std::filesystem::path& path, const ByteVector& 
   return {};
 }
 
+
+ByteVector ContentIdFromHash(const std::vector<uint8_t>& content_hash) {
+  return ByteVector(content_hash.begin(), content_hash.end());
+}
+
 } // namespace
 
 std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id) {
@@ -165,6 +173,45 @@ std::string BuildAttachmentBlobAad(std::string_view profile_id, std::string_view
   return std::string("attachment-blob|") + std::string(profile_id) + "|" + std::string(thread_id) + "|" +
          std::string(hash_hex) + "|1";
 }
+
+Roe<ByteVector> LoadLegacyThreadBlobPlaintext(const std::string& profile_dir, const std::string& thread_id,
+                                              const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                              const std::string& filename, const ByteVector* dek,
+                                              std::string_view profile_id) {
+  const auto path =
+      FindBlobFile(std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id)), content_hash, mime, filename);
+  if (path.empty()) {
+    return Error("Attachment blob not cached locally");
+  }
+  auto raw = ReadFileBytes(path);
+  if (!raw) {
+    return raw.error();
+  }
+  if (raw->size() >= 4 && std::memcmp(raw->data(), kAttachmentBlobMagic, 4) == 0) {
+    if (dek == nullptr) {
+      return Error("Attachment blob is DEK-wrapped; unlock required");
+    }
+    if (profile_id.empty()) {
+      return Error("Attachment DEK unwrap requires profile_id");
+    }
+    const ByteVector blob(raw->begin() + 4, raw->end());
+    const std::string aad = BuildAttachmentBlobAad(profile_id, thread_id, AttachmentHashHex(content_hash));
+    auto plain = FileCipher::Decrypt(*dek, blob, aad);
+    if (!plain) {
+      return plain.error();
+    }
+    auto hash = AttachmentContentHash(*plain);
+    if (!hash) {
+      return hash.error();
+    }
+    if (*hash != content_hash) {
+      return Error("Attachment plaintext hash mismatch after decrypt");
+    }
+    return plain;
+  }
+  return raw;
+}
+
 
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
   if (!filename.empty()) {
@@ -227,6 +274,11 @@ bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thr
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return false;
   }
+  const ByteVector content_id = ContentIdFromHash(content_hash);
+  CasStore cas(profile_dir, {});
+  if (cas.Exists(CasRealm::Private, content_id)) {
+    return true;
+  }
   const auto path = FindBlobFile(std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id)), content_hash, "",
                                  {});
   return !path.empty();
@@ -277,34 +329,30 @@ Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const s
     return Error("Attachment plaintext hash mismatch");
   }
 
+  const ByteVector content_id = ContentIdFromHash(content_hash);
+
+  // C007 big-bang: durable wrapped bytes go to private CAS only.
+  if (dek != nullptr) {
+    if (profile_id.empty()) {
+      return Error("Attachment DEK-wrap requires profile_id");
+    }
+    CasStore cas(profile_dir, std::string(profile_id));
+    if (auto put = cas.PutPrivate(content_id, plaintext, *dek, mime, filename); !put) {
+      return put.error();
+    }
+    return cas.BlockPath(CasRealm::Private, content_id);
+  }
+
+  // No-dek fixture / migrate source path: plaintext under legacy thread blobs/.
   const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
   std::error_code ec;
   std::filesystem::create_directories(root, ec);
   if (ec) {
     return Error("Failed to create attachment cache directory");
   }
-
   const auto path = root / AttachmentFilename(content_hash, mime, filename);
-  if (dek != nullptr) {
-    if (profile_id.empty()) {
-      return Error("Attachment DEK-wrap requires profile_id");
-    }
-    const std::string aad = BuildAttachmentBlobAad(profile_id, thread_id, AttachmentHashHex(content_hash));
-    auto cipher = FileCipher::Encrypt(*dek, plaintext, aad);
-    if (!cipher) {
-      return cipher.error();
-    }
-    ByteVector on_disk;
-    on_disk.reserve(4 + cipher->size());
-    on_disk.insert(on_disk.end(), kAttachmentBlobMagic, kAttachmentBlobMagic + 4);
-    on_disk.insert(on_disk.end(), cipher->begin(), cipher->end());
-    if (auto written = WriteBytesAtomic(path, on_disk); !written) {
-      return written.error();
-    }
-  } else {
-    if (auto written = WriteBytesAtomic(path, plaintext); !written) {
-      return written.error();
-    }
+  if (auto written = WriteBytesAtomic(path, plaintext); !written) {
+    return written.error();
   }
   return path.string();
 }
@@ -316,38 +364,16 @@ Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const st
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment load lookup");
   }
-  const auto path =
-      FindBlobFile(std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id)), content_hash, mime, filename);
-  if (path.empty()) {
-    return Error("Attachment blob not cached locally");
+  const ByteVector content_id = ContentIdFromHash(content_hash);
+
+  if (dek != nullptr && !profile_id.empty()) {
+    CasStore cas(profile_dir, std::string(profile_id));
+    if (cas.Exists(CasRealm::Private, content_id)) {
+      return cas.GetPrivate(content_id, *dek);
+    }
   }
-  auto raw = ReadFileBytes(path);
-  if (!raw) {
-    return raw.error();
-  }
-  if (raw->size() >= 4 && std::memcmp(raw->data(), kAttachmentBlobMagic, 4) == 0) {
-    if (dek == nullptr) {
-      return Error("Attachment blob is DEK-wrapped; unlock required");
-    }
-    if (profile_id.empty()) {
-      return Error("Attachment DEK unwrap requires profile_id");
-    }
-    const ByteVector blob(raw->begin() + 4, raw->end());
-    const std::string aad = BuildAttachmentBlobAad(profile_id, thread_id, AttachmentHashHex(content_hash));
-    auto plain = FileCipher::Decrypt(*dek, blob, aad);
-    if (!plain) {
-      return plain.error();
-    }
-    auto hash = AttachmentContentHash(*plain);
-    if (!hash) {
-      return hash.error();
-    }
-    if (*hash != content_hash) {
-      return Error("Attachment plaintext hash mismatch after decrypt");
-    }
-    return plain;
-  }
-  return raw;
+
+  return LoadLegacyThreadBlobPlaintext(profile_dir, thread_id, content_hash, mime, filename, dek, profile_id);
 }
 
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
@@ -365,11 +391,7 @@ Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const 
 
   const auto blob_root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
   const auto blob_path = FindBlobFile(blob_root, content_hash, mime, filename);
-  if (blob_path.empty()) {
-    return Error("Attachment blob not cached locally");
-  }
-
-  if (!FileStartsWithMagic(blob_path)) {
+  if (!blob_path.empty() && !FileStartsWithMagic(blob_path)) {
     // Legacy plaintext under blobs/ is already usable.
     return blob_path.string();
   }
@@ -606,13 +628,13 @@ uint64_t AttachmentCacheByteSize(const std::string& profile_dir) {
   if (profile_dir.empty()) {
     return 0;
   }
+  uint64_t total = DirectoryTreeByteSize(std::filesystem::path(profile_dir) / "cas" / "private");
   const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
   std::error_code ec;
   if (!std::filesystem::exists(threads_root, ec) || ec) {
-    return 0;
+    return total;
   }
 
-  uint64_t total = 0;
   for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
     if (ec) {
       break;
@@ -634,22 +656,97 @@ Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir) {
   }
   const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
   std::error_code ec;
-  if (!std::filesystem::exists(threads_root, ec)) {
-    return Roe<void>{};
-  }
-  for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
-    if (ec) {
-      return Error("Failed to enumerate thread attachment caches");
+  if (std::filesystem::exists(threads_root, ec)) {
+    for (const auto& entry : std::filesystem::directory_iterator(threads_root, ec)) {
+      if (ec) {
+        return Error("Failed to enumerate thread attachment caches");
+      }
+      if (!entry.is_directory(ec) || ec) {
+        ec.clear();
+        continue;
+      }
+      if (auto wiped = WipeThreadAttachmentBlobs(profile_dir, entry.path().filename().string()); !wiped) {
+        return wiped.error();
+      }
     }
-    if (!entry.is_directory(ec) || ec) {
+  }
+  const auto private_cas = std::filesystem::path(profile_dir) / "cas" / "private";
+  if (std::filesystem::exists(private_cas, ec)) {
+    std::filesystem::remove_all(private_cas, ec);
+    if (ec) {
+      return Error("Failed to wipe private CAS blocks");
+    }
+  }
+  // P2: only private CAS objects exist from attachments; drop the index file.
+  for (const char* name : {"object_index.db", "object_index.db-wal", "object_index.db-shm"}) {
+    std::filesystem::remove(std::filesystem::path(profile_dir) / name, ec);
+  }
+  return {};
+}
+
+Roe<void> MigrateLegacyAttachmentBlobsToCas(const std::string& profile_dir, std::string_view profile_id,
+                                            const ByteVector& dek) {
+  if (profile_dir.empty() || profile_id.empty()) {
+    return Error("CAS migrate requires profile_dir and profile_id");
+  }
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size for CAS migrate");
+  }
+  const auto threads_root = std::filesystem::path(ThreadsRoot(profile_dir));
+  std::error_code ec;
+  if (!std::filesystem::exists(threads_root, ec) || ec) {
+    return {};
+  }
+  CasStore cas(profile_dir, std::string(profile_id));
+  for (const auto& thread_entry : std::filesystem::directory_iterator(threads_root, ec)) {
+    if (ec) {
+      return Error("Failed to enumerate threads for CAS migrate");
+    }
+    if (!thread_entry.is_directory(ec) || ec) {
       ec.clear();
       continue;
     }
-    if (auto wiped = WipeThreadAttachmentBlobs(profile_dir, entry.path().filename().string()); !wiped) {
-      return wiped.error();
+    const std::string thread_id = thread_entry.path().filename().string();
+    const auto blobs_root = thread_entry.path() / "blobs";
+    if (!std::filesystem::exists(blobs_root, ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    for (const auto& file_entry : std::filesystem::directory_iterator(blobs_root, ec)) {
+      if (ec) {
+        return Error("Failed to enumerate legacy attachment blobs");
+      }
+      if (!file_entry.is_regular_file(ec) || ec) {
+        ec.clear();
+        continue;
+      }
+      const std::string name = file_entry.path().filename().string();
+      if (name.size() < 64) {
+        continue;
+      }
+      const std::string hex = name.substr(0, 64);
+      auto content_id = HexToBytes(hex);
+      if (!content_id || content_id->size() != kAttachmentContentHashSize) {
+        continue;
+      }
+      if (cas.Exists(CasRealm::Private, *content_id)) {
+        continue;
+      }
+      const std::vector<uint8_t> hash_vec(content_id->begin(), content_id->end());
+      auto plain = LoadLegacyThreadBlobPlaintext(profile_dir, thread_id, hash_vec, "", "", &dek, profile_id);
+      if (!plain) {
+        continue;
+      }
+      if (auto put = cas.PutPrivate(*content_id, *plain, dek); !put) {
+        continue;
+      }
+    }
+    std::filesystem::remove_all(blobs_root, ec);
+    if (ec) {
+      return Error("Failed to remove legacy blobs after CAS migrate");
     }
   }
-  return Roe<void>{};
+  return {};
 }
 
 } // namespace pbr

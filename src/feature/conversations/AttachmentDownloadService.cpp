@@ -48,11 +48,16 @@ Roe<void> AttachmentDownloadService::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
-  std::lock_guard lock(mutex_);
-  if (!dek_.empty()) {
-    sodium_memzero(dek_.data(), dek_.size());
+  {
+    std::lock_guard lock(mutex_);
+    if (!dek_.empty()) {
+      sodium_memzero(dek_.data(), dek_.size());
+    }
+    dek_ = std::move(dek);
   }
-  dek_ = std::move(dek);
+  if (!profile_dir_.empty() && !profile_id_.empty()) {
+    (void)MigrateLegacyAttachmentBlobsToCas(profile_dir_, profile_id_, CopyDek());
+  }
   return {};
 }
 

@@ -13,7 +13,7 @@
 
 namespace pbr {
 
-/** Root `{profile}/threads/{thread_id}/blobs` (R016 / D075). */
+/** Legacy root `{profile}/threads/{thread_id}/blobs` (pre-P2; read/migrate only). */
 std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id);
 
 /** Session plaintext view root `{profile}/threads/{thread_id}/blobs_view` (a5 DEK-wrap). */
@@ -34,7 +34,7 @@ bool AttachmentOpenNeedsConfirm(const std::string& mime);
 
 std::string FormatAttachmentByteSize(uint64_t byte_length);
 
-/** True when any on-disk blob (wrapped or legacy plaintext) exists for the hash. */
+/** True when private CAS or legacy thread `blobs/` holds the hash. */
 bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thread_id,
                           const std::vector<uint8_t>& content_hash);
 
@@ -47,15 +47,15 @@ std::string AttachmentLocalPath(const std::string& profile_dir, const std::strin
                                 const std::string& filename = {});
 
 /**
- * Persist attachment bytes under `blobs/`. When `dek` is set, writes PPBA + FileCipher blob;
- * when null, writes legacy plaintext (tests / unlocked-less fixtures).
+ * Persist attachment bytes. With `dek`+`profile_id`: private CAS (C007; PPBA under cas/private).
+ * Without dek: legacy plaintext under thread `blobs/` (fixtures / migrate source only).
  */
 Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
                                          const ByteVector& plaintext, const std::string& filename = {},
                                          const ByteVector* dek = nullptr, std::string_view profile_id = {});
 
-/** Load plaintext from wrapped or legacy blob under `blobs/`. */
+/** Load plaintext from private CAS, else legacy thread `blobs/`. */
 Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
                                         const std::string& filename, const ByteVector* dek,
@@ -108,10 +108,17 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 
-/** Total bytes under all thread `blobs/`, `blobs_view/`, and `blob_cipher/` trees. */
+/** Total bytes under CAS private + thread `blobs/` / `blobs_view/` / `blob_cipher/`. */
 uint64_t AttachmentCacheByteSize(const std::string& profile_dir);
 
-/** Wipe downloaded attachment bytes for every thread under `{profile}/threads/`. */
+/** Wipe downloaded attachment bytes for every thread and clear private CAS. */
 Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir);
+
+/**
+ * One-shot C007 migrate: decrypt legacy `threads/.../blobs/...` (old AAD) into private CAS, then
+ * remove each thread blobs tree. Idempotent when CAS already has the content id.
+ */
+Roe<void> MigrateLegacyAttachmentBlobsToCas(const std::string& profile_dir, std::string_view profile_id,
+                                            const ByteVector& dek);
 
 } // namespace pbr

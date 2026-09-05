@@ -46,7 +46,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 
 ### Content CAS (planned)
 
-**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). `CasStore` on disk (P1); attachment cutover still pending (C007).
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). ``CasStore` on disk; attachment durable path cut over to private CAS (P2 / C007).
 
 After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
 
