@@ -85,16 +85,18 @@ struct AmpPeerAnnounceService::Impl {
       ack.error = verified.error().message;
       return ack;
     }
-    std::lock_guard lock(feed_mutex);
-    feed->SetTrustedPublisherKey(*pk);
-    if (auto ingested = feed->Ingest(tip); !ingested) {
-      ack.ok = false;
-      ack.error = ingested.error().message;
-      return ack;
+    {
+      std::lock_guard feed_lock(feed_mutex);
+      feed->SetTrustedPublisherKey(*pk);
+      if (auto ingested = feed->Ingest(tip); !ingested) {
+        ack.ok = false;
+        ack.error = ingested.error().message;
+        return ack;
+      }
     }
     OnTipIngested cb;
     {
-      std::lock_guard lock(resolver_mutex);
+      std::lock_guard resolver_lock(resolver_mutex);
       cb = on_tip_ingested;
     }
     if (cb) {
