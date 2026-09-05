@@ -6,8 +6,8 @@
 | Spine | Status |
 |-------|--------|
 | A — calls hop trustworthy | Prerequisite (owned by p2p-av-calls / p2p-mesh); not changed here |
-| **B — signed tips without mesh** | **Near exit** — tips + Amp 1:1 + IdentityStore resolve + DM reply path |
-| C — tip + live | Not started |
+| **B — signed tips without mesh** | **Exit met** — tips + Amp 1:1 + IdentityStore resolve + DM reply |
+| **C — tip + live** | **Started** — join plan from live tip (no SoftMigrate/media yet) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
 
@@ -28,6 +28,16 @@
 
 **Signing:** tips use **device ML-DSA-65** (PeerId-bound). Account-kind signing keys are **not** used for tip verify.
 
-**Still out of scope this slice:** epidemic `help_announce`, UI chrome, tip→live (Spine C), full MeshMessaging integration tests.
+**Spine B still out of scope:** epidemic `help_announce`, UI chrome, full MeshMessaging integration tests.
+
+
+## Spine C started (slice 0)
+
+| Piece | Path |
+|-------|------|
+| Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshMessagingService::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
+| Tests | `AnnounceLiveJoinTest` in `peer_announce_test.cpp` |
+
+**Still out of scope:** SoftMigrate / media attach, UI join button, epidemic `help_announce`.
 
 See [PROGRAM.md](PROGRAM.md) for sequencing.

@@ -25,6 +25,7 @@
 #include "feature/conversations/AmpPeerAnnounceService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
 #include "domain/net/ServiceClients.h"
 
@@ -135,6 +136,16 @@ public:
    * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
    */
   Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
+  /**
+   * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
+   * Does not SoftMigrate or attach media yet.
+   */
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const;
+  /** Look up latest tip in the local feed then plan a live join. */
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                           const std::string& topic_id,
+                                                           const std::string& program_id) const;
+
 
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */

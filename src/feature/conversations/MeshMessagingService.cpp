@@ -8,6 +8,7 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
@@ -246,6 +247,24 @@ Roe<ThreadMessage> MeshMessagingService::ReplyToAnnouncePublisher(const std::str
   WarmPeerForThread(thread->id);
   return SendUserMessage(thread->id, text);
 }
+
+Roe<AnnounceLiveJoinPlan> MeshMessagingService::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const {
+  return PlanAnnounceLiveJoin(tip);
+}
+
+Roe<AnnounceLiveJoinPlan> MeshMessagingService::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                                              const std::string& topic_id,
+                                                                              const std::string& program_id) const {
+  if (!peer_announce_feed_) {
+    return Error("peer-announce feed unavailable");
+  }
+  auto tip = peer_announce_feed_->Latest(peer_id, topic_id, program_id);
+  if (!tip) {
+    return Error("No stored announce tip for live join");
+  }
+  return PlanAnnounceLiveJoin(*tip);
+}
+
 
 
 void MeshMessagingService::RegisterPeerKemKey(const std::string& peer_identity_kind,

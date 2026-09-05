@@ -1,6 +1,7 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -262,6 +263,50 @@ TEST(AnnounceDmReplyTest, FallsBackToPeerIdThread) {
 TEST(AnnounceDmReplyTest, RejectsEmptyPeerId) {
   auto plan = PlanAnnounceDmReply("", "c1", "account:alice", "Alice");
   EXPECT_FALSE(plan);
+}
+
+
+TEST(AnnounceLiveJoinTest, PlansCallIdFromLiveJoinHandle) {
+  auto tip = SampleTip("topic-live");
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle = "session-abc";
+  tip.seq = 3;
+  tip.epoch = 2;
+
+  ASSERT_TRUE(TipIsLiveJoinable(tip));
+  auto plan = PlanAnnounceLiveJoin(tip);
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->call_id, "session-abc");
+  EXPECT_EQ(plan->publisher_peer_id, tip.peer_id);
+  EXPECT_EQ(plan->topic_id, tip.topic_id);
+  EXPECT_EQ(plan->program_id, tip.program_id);
+  EXPECT_EQ(plan->seq, 3u);
+  EXPECT_EQ(plan->epoch, 2u);
+}
+
+TEST(AnnounceLiveJoinTest, RejectsScheduledEndedOrMissingHandle) {
+  auto tip = SampleTip("topic-live");
+  tip.state = PeerAnnounceState::Scheduled;
+  EXPECT_FALSE(TipIsLiveJoinable(tip));
+  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
+
+  tip.state = PeerAnnounceState::Ended;
+  tip.join_handle = "session-abc";
+  EXPECT_FALSE(TipIsLiveJoinable(tip));
+  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
+
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle.clear();
+  EXPECT_FALSE(TipIsLiveJoinable(tip));
+  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
+}
+
+TEST(AnnounceLiveJoinTest, RejectsEmptyPublisherPeerId) {
+  PeerAnnounceTip tip;
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle = "session-abc";
+  EXPECT_FALSE(TipIsLiveJoinable(tip));
+  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
 }
 
 } // namespace pbr
