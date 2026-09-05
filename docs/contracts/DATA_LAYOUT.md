@@ -41,12 +41,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
-      blobs/                # legacy durable attachment bytes (pre–content-cas); see Content CAS below
 ```
 
 ### Content CAS (planned)
 
-**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). ``CasStore` on disk; attachment durable path cut over to private CAS (P2 / C007).
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). `CasStore` on disk; attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
 
 After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
 
@@ -58,7 +57,7 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth)
-    # blobs/            # removed as durable store after cutover; migrate then delete
+    # blobs/            # not used; durable bytes live in cas/private only
 ```
 
 | Realm | At rest | Object id | How it gets bytes |

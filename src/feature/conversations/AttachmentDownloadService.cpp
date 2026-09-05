@@ -55,9 +55,6 @@ Roe<void> AttachmentDownloadService::SetDek(ByteVector dek) {
     }
     dek_ = std::move(dek);
   }
-  if (!profile_dir_.empty() && !profile_id_.empty()) {
-    (void)MigrateLegacyAttachmentBlobsToCas(profile_dir_, profile_id_, CopyDek());
-  }
   return {};
 }
 
@@ -201,17 +198,18 @@ void AttachmentDownloadService::RunJob(const Job& job) {
   }
   const ByteVector bytes(plaintext->begin(), plaintext->end());
   const ByteVector dek_copy = CopyDek();
-  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
+  if (dek_copy.empty() || profile_id_.empty()) {
+    MarkFailed(key);
+    return;
+  }
   if (auto saved = SaveAttachmentPlaintext(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                           bytes, job.fields.filename, dek_ptr, profile_id_);
+                                           bytes, job.fields.filename, dek_copy, profile_id_);
       !saved) {
     MarkFailed(key);
     return;
   }
-  if (dek_ptr != nullptr) {
-    (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                   job.fields.filename, dek_ptr, profile_id_);
-  }
+  (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                 job.fields.filename, dek_copy, profile_id_);
   MaybeBuildPoster(job.thread_id, job.fields);
   MarkReady(key);
 }
@@ -306,8 +304,10 @@ Roe<std::string> AttachmentDownloadService::EnsureLocalViewPath(const std::strin
                                                                 const std::string& mime,
                                                                 const std::string& filename) {
   const ByteVector dek_copy = CopyDek();
-  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
-  return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_ptr, profile_id_);
+  if (dek_copy.empty() || profile_id_.empty()) {
+    return Error("Attachment view requires unlocked DEK");
+  }
+  return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_copy, profile_id_);
 }
 
 void AttachmentDownloadService::MaybeBuildPoster(const std::string& thread_id,
@@ -316,8 +316,10 @@ void AttachmentDownloadService::MaybeBuildPoster(const std::string& thread_id,
     return;
   }
   const ByteVector dek_copy = CopyDek();
-  const ByteVector* dek_ptr = dek_copy.empty() ? nullptr : &dek_copy;
-  (void)EnsureAttachmentPoster(profile_dir_, thread_id, fields.content_hash, fields.mime, fields.filename, dek_ptr,
+  if (dek_copy.empty() || profile_id_.empty()) {
+    return;
+  }
+  (void)EnsureAttachmentPoster(profile_dir_, thread_id, fields.content_hash, fields.mime, fields.filename, dek_copy,
                                profile_id_);
 }
 

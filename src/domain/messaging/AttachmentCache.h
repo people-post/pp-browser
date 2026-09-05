@@ -13,18 +13,11 @@
 
 namespace pbr {
 
-/** Legacy root `{profile}/threads/{thread_id}/blobs` (pre-P2; read/migrate only). */
-std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id);
-
-/** Session plaintext view root `{profile}/threads/{thread_id}/blobs_view` (a5 DEK-wrap). */
+/** Session plaintext view root `{profile}/threads/{thread_id}/blobs_view`. */
 std::string AttachmentViewRoot(const std::string& profile_dir, const std::string& thread_id);
 
 /** Lowercase hex of attachment plaintext hash. */
 std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash);
-
-/** AAD: `attachment-blob|{profile_id}|{thread_id}|{hash_hex}|1`. */
-std::string BuildAttachmentBlobAad(std::string_view profile_id, std::string_view thread_id,
-                                   std::string_view hash_hex);
 
 std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename = {});
 
@@ -34,40 +27,39 @@ bool AttachmentOpenNeedsConfirm(const std::string& mime);
 
 std::string FormatAttachmentByteSize(uint64_t byte_length);
 
-/** True when private CAS or legacy thread `blobs/` holds the hash. */
+/** True when private CAS holds the hash. */
 bool AttachmentBlobExists(const std::string& profile_dir, const std::string& thread_id,
                           const std::vector<uint8_t>& content_hash);
 
 /**
- * Absolute path to a plaintext file for display/open: prefer `blobs_view/`, then legacy
- * plaintext under `blobs/` (never ciphertext / PPBA-wrapped files). Empty if unavailable.
+ * Absolute path to a plaintext file for display/open under `blobs_view/` only.
+ * Empty if the view is not materialized.
  */
 std::string AttachmentLocalPath(const std::string& profile_dir, const std::string& thread_id,
                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
                                 const std::string& filename = {});
 
 /**
- * Persist attachment bytes. With `dek`+`profile_id`: private CAS (C007; PPBA under cas/private).
- * Without dek: legacy plaintext under thread `blobs/` (fixtures / migrate source only).
+ * Persist attachment bytes into private CAS (PPBA under cas/private). Requires `dek` and
+ * `profile_id` (C007 — no thread `blobs/` durable store).
  */
 Roe<std::string> SaveAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
                                          const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                         const ByteVector& plaintext, const std::string& filename = {},
-                                         const ByteVector* dek = nullptr, std::string_view profile_id = {});
+                                         const ByteVector& plaintext, const std::string& filename,
+                                         const ByteVector& dek, std::string_view profile_id);
 
-/** Load plaintext from private CAS, else legacy thread `blobs/`. */
+/** Load plaintext from private CAS. Requires `dek` and `profile_id`. */
 Roe<ByteVector> LoadAttachmentPlaintext(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector* dek,
+                                        const std::string& filename, const ByteVector& dek,
                                         std::string_view profile_id);
 
 /**
- * Ensure a plaintext file under `blobs_view/` (or return legacy plaintext path).
- * Materializes from wrapped storage when DEK is available.
+ * Ensure a plaintext file under `blobs_view/` by loading from private CAS when needed.
  */
 Roe<std::string> EnsureAttachmentViewPath(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                          const std::string& filename, const ByteVector* dek,
+                                          const std::string& filename, const ByteVector& dek,
                                           std::string_view profile_id);
 
 /** `{blobs_view}/{hash}.poster.jpg` — session plaintext poster (wiped with view cache). */
@@ -83,14 +75,14 @@ bool AttachmentPosterExists(const std::string& profile_dir, const std::string& t
  */
 Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const std::string& thread_id,
                                         const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                        const std::string& filename, const ByteVector* dek,
+                                        const std::string& filename, const ByteVector& dek,
                                         std::string_view profile_id);
 
 Roe<void> CopyAttachmentPlaintextFile(const std::string& profile_dir, const std::string& thread_id,
                                       const ChatAttachmentFields& fields, const std::string& source_path,
-                                      const ByteVector* dek = nullptr, std::string_view profile_id = {});
+                                      const ByteVector& dek, std::string_view profile_id);
 
-/** Remove cached blobs + view materializations for a thread (R020 clear-history). */
+/** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);
 
 /** Wipe all `blobs_view/` trees (ClearDek / vault lock). */
@@ -108,17 +100,10 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 
-/** Total bytes under CAS private + thread `blobs/` / `blobs_view/` / `blob_cipher/`. */
+/** Total bytes under CAS private + thread `blobs_view/` / `blob_cipher/`. */
 uint64_t AttachmentCacheByteSize(const std::string& profile_dir);
 
 /** Wipe downloaded attachment bytes for every thread and clear private CAS. */
 Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir);
-
-/**
- * One-shot C007 migrate: decrypt legacy `threads/.../blobs/...` (old AAD) into private CAS, then
- * remove each thread blobs tree. Idempotent when CAS already has the content id.
- */
-Roe<void> MigrateLegacyAttachmentBlobsToCas(const std::string& profile_dir, std::string_view profile_id,
-                                            const ByteVector& dek);
 
 } // namespace pbr

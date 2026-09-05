@@ -1,6 +1,6 @@
 # Content CAS (private / public realms)
 
-**Status:** Design accepted (2026-09-05); P1 store + P2 attachment cutover landed — see [CURRENT_STATE](CURRENT_STATE.md)  
+**Status:** Design accepted (2026-09-05); P1 store + P2 attachment cutover landed (legacy `blobs/` support removed) — see [CURRENT_STATE](CURRENT_STATE.md)  
 **Normative disk sketch:** [DATA_LAYOUT § Content CAS](../../docs/contracts/DATA_LAYOUT.md#content-cas-planned)  
 **L4 composition:** [L4_PROTOCOL_KINDS § Prepared compositions](../../docs/contracts/L4_PROTOCOL_KINDS.md#prepared-compositions-no-new-kinds)  
 **Related:** [relay-blob-upload](../relay-blob-upload/) (attachments MVP shipped), [at-rest-crypto](../at-rest-crypto/)

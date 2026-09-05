@@ -29,7 +29,7 @@ We also want one on-disk engine that can later support piece/multi-source fetch 
     …                   # after cutover: refs / session views only — not a second byte store
 ```
 
-Thread `blobs/` / `blobs_view/` become **views** into `cas/private` after the big-bang cutover (C007).
+Durable bytes live in `cas/private` only. Thread `blobs_view/` is a session plaintext cache; per-thread `blobs/` is not used.
 
 ## Invariants
 

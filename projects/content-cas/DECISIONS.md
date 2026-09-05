@@ -77,6 +77,8 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 
 **Rejected:** Dual-write period (simpler ops story vs longer inconsistency window). Product not released — wipe/migrate local profiles is acceptable ([COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md)).
 
+**Follow-up:** After cutover, legacy thread `blobs/` read/write and the unlock migrate helper were removed. Pre-release profiles without CAS must be wiped/recreated.
+
 **Rationale:** One durable location; avoids split-brain fetch ladder. Accept profile wipe/migrate cost pre-release.
 
 ---
