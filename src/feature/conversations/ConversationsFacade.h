@@ -22,6 +22,9 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshMessagingService.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
@@ -228,6 +231,20 @@ public:
    * Escape hatch for lifecycle / bridges that legitimately need the hub
    * (e.g. ConfigApplyBridge Apply slices). Prefer facade methods otherwise.
    */
+
+  // --- Peer-scoped live announce (Spine C) ----------------------------------
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                          const std::string& topic_id,
+                                                          const std::string& program_id);
+  /**
+   * Plan from tip then arm pending invite via Calls(). No SoftMigrate/media.
+   */
+  Roe<PendingCallInvite> ArmLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
+  Roe<PendingCallInvite> ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                       const std::string& topic_id,
+                                                       const std::string& program_id);
+
   ConversationsHub& Hub() { return hub_; }
 
 private:
