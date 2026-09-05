@@ -81,6 +81,8 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | Chat / receipts / presence / call signaling | **rpc** envelopes |
 | History / contact paste / small config pull | **rpc** |
 | Photos, docs, video files, icons | **blob** |
+| Content-addressed file share (IPFS-*like*; not Kubo/Bitswap wire) | **discover** (provider lookup) + **blob** (bytes; optional piece/manifest later) + **rpc** (announce / meta / ACL) — on-disk realms: [content-cas](../../projects/content-cas/) |
+| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD |
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |
@@ -89,6 +91,15 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | SoftMigrate attach | Existing **realtime** hop control ops ([N026](../../projects/p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)) |
 
 Policy (who may hop, pricing, MeshHopPolicy), codecs, and UI stay **above** the wire kinds.
+
+### Prepared compositions (no new kinds)
+
+These product goals stay **inside the seven kinds**; they need swarm/fan-out *services* and on-disk realm separation, not new `protocol_id` families. Disk plan: [content-cas](../../projects/content-cas/).
+
+| Goal | Do | Don’t |
+|------|----|--------|
+| **File share by content id** | Keep **blob** as the bulk conversation; provider advertise/lookup on **discover**/**rpc**; optional piece/manifest later; **public** CAS realm only via explicit publish | Mint `/pp-browser/ipfs/…`; treat Bitswap as an L4 kind; promote chat decrypt into public CAS |
+| **Live broadcast** | **realtime** blind-hop topology + **rpc** channel control | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable blob/rpc logs |
 
 ## Behavior matrix (as implemented)
 

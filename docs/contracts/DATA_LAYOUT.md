@@ -41,9 +41,32 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
-      blobs/                # attachment placeholder
+      blobs/                # legacy durable attachment bytes (pre–content-cas); see Content CAS below
 ```
 
+### Content CAS (planned)
+
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C009). Not on disk yet.
+
+After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm.
+
+```
+{data_dir}/profiles/{id}/
+  cas/
+    private/blocks/     # DEK-wrapped attachment / private library bytes
+    public/blocks/      # explicitly published clear bytes (v1)
+  object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
+  threads/{thread_id}/
+    blobs_view/         # optional session plaintext materialization (not source of truth)
+    # blobs/            # removed as durable store after cutover; migrate then delete
+```
+
+| Realm | At rest | Object id | How it gets bytes |
+|-------|---------|------------|-------------------|
+| **private** | Profile DEK wrap (PPBA) | BLAKE2b-256(plaintext) — R016 | Chat/E2E decrypt → memory → wrap; never auto-public |
+| **public** | Clear published payload (v1) | Hash(published bytes); new object on publish | Explicit **Share publicly…** only |
+
+Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 ### PIN-related files (disk only)
 
 | File / field | Role |
