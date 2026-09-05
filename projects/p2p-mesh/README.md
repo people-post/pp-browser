@@ -5,7 +5,7 @@
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in Amp mesh), [p2p-av-calls](../p2p-av-calls/) (V026), [push-notifications](../push-notifications/), messaging under `src/feature/conversations/`
+**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in Amp mesh), [p2p-av-calls](../p2p-av-calls/) (V026), [peer-scoped-broadcast](../peer-scoped-broadcast/) (announce feeds + live fan-out sketch), [push-notifications](../push-notifications/), messaging under `src/feature/conversations/`
 
 ## One-line goal
 

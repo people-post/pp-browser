@@ -82,7 +82,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | History / contact paste / small config pull | **rpc** |
 | Photos, docs, video files, icons | **blob** |
 | Content-addressed file share (IPFS-*like*; not Kubo/Bitswap wire) | **discover** (provider lookup) + **blob** (bytes; optional piece/manifest later) + **rpc** (announce / meta / ACL) — on-disk realms: [content-cas](../../projects/content-cas/) |
-| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD of the same program |
+| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD of the same program — product sketch: [peer-scoped-broadcast](../../projects/peer-scoped-broadcast/) |
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |

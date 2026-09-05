@@ -3,7 +3,7 @@
 **Status:** Design accepted (2026-09-05); P1–P2 landed; private presentation (C011) landed; module home locked (C012) — see [CURRENT_STATE](CURRENT_STATE.md)  
 **Normative disk sketch:** [DATA_LAYOUT § Content CAS](../../docs/contracts/DATA_LAYOUT.md#content-cas-planned)  
 **L4 composition:** [L4_PROTOCOL_KINDS § Prepared compositions](../../docs/contracts/L4_PROTOCOL_KINDS.md#prepared-compositions-no-new-kinds)  
-**Related:** [relay-blob-upload](../relay-blob-upload/) (attachments MVP shipped), [at-rest-crypto](../at-rest-crypto/)
+**Related:** [relay-blob-upload](../relay-blob-upload/) (attachments MVP shipped), [at-rest-crypto](../at-rest-crypto/), [peer-scoped-broadcast](../peer-scoped-broadcast/) (announce tips → optional DVR in CAS)
 
 One content-addressed store engine with **two confidentiality realms**: chat attachments (E2E → memory → DEK wrap) vs explicit public publish. No new L4 kinds.
 
