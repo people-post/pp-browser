@@ -1248,6 +1248,54 @@ void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
   });
 }
 
+bool CallTopologyController::OnAnnounceViewerJoined(const std::string& call_id,
+                                                   const std::optional<std::string>& sfu_hint) {
+  if (sfu_hint && !sfu_hint->empty()) {
+    CallSfuAttachDetail attach;
+    attach.call_id = call_id;
+    attach.hop_peer_id = *sfu_hint;
+    attach.hop_multiaddr = ResolveHopMultiaddr(*sfu_hint);
+    attach.publisher_stream_id = PublisherStreamIdForLocal();
+    host_.TopologyNoteMediaAttempted(call_id);
+    BeginSfuAttachWait(call_id);
+    host_.TopologySetMediaActivity(Tr("call.status.connecting_media_relay"));
+    host_.TopologyNotifyRingChanged();
+    const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    soft_migrate_flight_gen_ = gen;
+    soft_migrate_in_flight_ = true;
+    AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
+      Roe<void> ok = AttachLocalToSfu(call_id, attach);
+      AppRuntime::PostUI([this, call_id, ok, gen]() {
+        if (!IsMigrateGenerationCurrent(gen)) {
+          return;
+        }
+        soft_migrate_in_flight_ = false;
+        if (!ok) {
+          if (sfu_attached_ && media_.IsSfuMode()) {
+            SyncSfuSubscriptions(call_id);
+            host_.TopologyNotifyRingChanged();
+            return;
+          }
+          log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
+          host_.TopologySetLastMediaError(ok.error().message);
+          ClearSfuAttachWait();
+          (void)host_.TopologyLeaveCall(call_id);
+        } else {
+          pending_inbound_sfu_attach_.reset();
+          pending_inbound_sfu_attach_call_id_.clear();
+        }
+        FlushPendingInboundSfuAttach();
+        host_.TopologyNotifyRingChanged();
+      });
+    });
+    return true;
+  }
+  ClearSfuAttachWait();
+  awaiting_sfu_recovery_ = false;
+  log().info << "OnAnnounceViewerJoined defer media (no sfu_hint) call_id=" << call_id;
+  return false;
+}
+
 bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                                                  const std::optional<std::string>& sfu_hint) {
   if (n_joined >= 3 && sfu_hint && !sfu_hint->empty()) {

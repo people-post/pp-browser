@@ -4,6 +4,12 @@
 #include "feature/conversations/AmpChatBlobService.h"
 #include "feature/conversations/AmpChatHistoryService.h"
 #include "feature/conversations/AmpDirectChatService.h"
+#include "feature/conversations/AmpPeerAnnounceService.h"
+#include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnounceKeyResolve.h"
+#include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -12,6 +18,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/people/PeerDisplayLabel.h"
 #include "domain/messaging/InitiationBillingCodec.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
@@ -143,7 +150,36 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
     chat->Start();
     peer_history_ = std::move(history);
     direct_chat_ = std::move(chat);
-    log().info << "direct chat/history/blob transport=amp";
+    peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
+    peer_announce_ = std::make_unique<AmpPeerAnnounceService>(*amp_links_, *peer_announce_feed_, amp_io_pump,
+                                                             worker);
+    peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
+      std::string local_peer_id;
+      std::vector<uint8_t> local_pk;
+      if (auto local_identity = identity_.Get()) {
+        local_peer_id = local_identity->peer_id;
+      }
+      if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+        local_pk = *pk;
+      }
+      return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
+    });
+    peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
+      const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
+      announce_notifications_.UpsertFromTip(tip, now_ms);
+    });
+    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
+      if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
+        peer_announce_publisher_ =
+            std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
+      } else {
+        log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
+      }
+    } else {
+      log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
+    }
+    peer_announce_->Start();
+    log().info << "direct chat/history/blob/peer-announce transport=amp";
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
@@ -164,6 +200,136 @@ void MeshMessagingService::RegisterPeerSigningKey(const std::string& peer_identi
   record.source = source;
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
 }
+
+Roe<PeerAnnounceTipAck> MeshMessagingService::PublishAndPushAnnounce(const std::string& peer_key,
+                                                                     const PeerAnnouncePublisher::Draft& draft,
+                                                                     const int64_t now_ms) {
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    return Error("peer-announce not ready (Amp or device identity missing)");
+  }
+  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
+  if (!tip) {
+    return tip.error();
+  }
+  return peer_announce_->PushTip(peer_key, *tip);
+}
+
+Roe<ThreadMessage> MeshMessagingService::ReplyToAnnouncePublisher(const std::string& tip_peer_id,
+                                                                  const std::string& text) {
+  if (tip_peer_id.empty()) {
+    return Error("Missing announce publisher peer_id");
+  }
+  if (text.empty()) {
+    return Error("Empty announce reply");
+  }
+
+  std::string contact_id;
+  std::string account_id;
+  std::string title = tip_peer_id;
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+    if (*found) {
+      const Contact& contact = **found;
+      contact_id = contact.id;
+      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      title = FormatContactTitle(contact);
+      if (title.empty()) {
+        title = tip_peer_id;
+      }
+      RegisterContactDirectEndpoints(contact);
+    }
+  }
+
+  auto plan = PlanAnnounceDmReply(tip_peer_id, contact_id, account_id, title);
+  if (!plan) {
+    return plan.error();
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(plan->target, plan->contact_id, plan->thread_title);
+  if (!thread) {
+    return thread.error();
+  }
+  WarmPeerForThread(thread->id);
+  return SendUserMessage(thread->id, text);
+}
+
+
+Roe<ThreadMessage> MeshMessagingService::ReplyToAnnounceOverlay(const std::string& tip_peer_id,
+                                                                const std::string& join_handle,
+                                                                const std::string& text,
+                                                                const std::string& viewer_msg_id) {
+  if (tip_peer_id.empty()) {
+    return Error("Missing announce publisher peer_id");
+  }
+  if (join_handle.empty() || viewer_msg_id.empty() || text.empty()) {
+    return Error("Overlay reply requires join_handle, viewer_msg_id, and text");
+  }
+
+  std::string contact_id;
+  std::string account_id;
+  std::string title = tip_peer_id;
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+    if (*found) {
+      const Contact& contact = **found;
+      contact_id = contact.id;
+      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      title = FormatContactTitle(contact);
+      if (title.empty()) {
+        title = tip_peer_id;
+      }
+      RegisterContactDirectEndpoints(contact);
+    }
+  }
+
+  auto plan = PlanAnnounceOverlayReply(tip_peer_id, contact_id, account_id, title, join_handle, text, viewer_msg_id);
+  if (!plan) {
+    return plan.error();
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(plan->dm.target, plan->dm.contact_id, plan->dm.thread_title);
+  if (!thread) {
+    return thread.error();
+  }
+  WarmPeerForThread(thread->id);
+  return SendUserMessage(thread->id, plan->message_body);
+}
+
+Roe<PeerAnnounceTipAck> MeshMessagingService::PublishLiveChatFromOverlay(
+    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
+    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+    const int64_t now_ms) {
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    return Error("peer-announce not ready (Amp or device identity missing)");
+  }
+  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
+  if (!draft) {
+    return draft.error();
+  }
+  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
+  if (!tip) {
+    return tip.error();
+  }
+  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
+  return peer_announce_->PushTip(peer_key, *tip);
+}
+
+Roe<AnnounceLiveJoinPlan> MeshMessagingService::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const {
+  return PlanAnnounceLiveJoin(tip);
+}
+
+Roe<AnnounceLiveJoinPlan> MeshMessagingService::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                                              const std::string& topic_id,
+                                                                              const std::string& program_id) const {
+  if (!peer_announce_feed_) {
+    return Error("peer-announce feed unavailable");
+  }
+  auto tip = peer_announce_feed_->Latest(peer_id, topic_id, program_id);
+  if (!tip) {
+    return Error("No stored announce tip for live join");
+  }
+  return PlanAnnounceLiveJoin(*tip);
+}
+
+
 
 void MeshMessagingService::RegisterPeerKemKey(const std::string& peer_identity_kind,
                                            const std::string& peer_identity_value,

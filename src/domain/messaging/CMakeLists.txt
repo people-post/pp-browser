@@ -40,6 +40,16 @@ pp_browser_add_domain_library(pp_domain_messaging
     PaymentPromiseStore.cpp
     PaymentPromiseLifecycle.cpp
     PaymentPromiseWireCodec.cpp
+    PeerAnnounceCodec.cpp
+    PeerAnnounceFeed.cpp
+    PeerAnnouncePublisher.cpp
+    PeerAnnounceRpcCodec.cpp
+    PeerAnnounceKeyResolve.cpp
+    AnnounceDmReply.cpp
+    AnnounceOverlayReply.cpp
+    AnnounceNotificationInbox.cpp
+    AnnounceLiveJoin.cpp
+    AnnounceLiveJoinHandoff.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp
@@ -57,6 +67,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     pp_foundation_error
     pp_foundation_data
     pp_foundation_crypto
+    pp_foundation_identity
     pp_foundation_platform
     sodium
     SQLite::SQLite3)

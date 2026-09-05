@@ -22,6 +22,13 @@
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "domain/mesh/host/MeshPorts.h"
+#include "feature/conversations/AmpPeerAnnounceService.h"
+#include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/AnnounceNotificationInbox.h"
+#include "domain/messaging/AnnounceOverlayReply.h"
+#include "domain/messaging/PeerAnnounceRpcCodec.h"
 #include "domain/net/ServiceClients.h"
 
 #include <atomic>
@@ -35,6 +42,7 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
 
 class GroupMembershipService;
 class AttachmentDownloadService;
@@ -115,6 +123,47 @@ public:
                               const std::string& signing_public_key_b64, const std::string& source = "manual");
   void RegisterPeerKemKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                           const std::string& kem_public_key_b64, const std::string& source = "manual");
+
+  /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
+  PeerAnnouncePublisher* PeerAnnouncePublisherOrNull() const { return peer_announce_publisher_.get(); }
+  AmpPeerAnnounceService* PeerAnnounceServiceOrNull() const { return peer_announce_.get(); }
+  /**
+   * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
+   * Requires Amp peer-announce service + device identity keys.
+   */
+  Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
+                                                 const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
+  /**
+   * Spine B: reply to an announce publisher via DM (not in-topic speak).
+   * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
+   */
+  Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
+  /**
+   * Overlay (on-screen) reply request: DM body with intent=overlay.
+   * Publisher policy/rate limits decide whether to rebroadcast as live_chat.
+   */
+  Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
+                                            const std::string& text, const std::string& viewer_msg_id);
+  /** Publisher: sign+push a live_chat tip from a decoded overlay request. */
+  Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
+                                                     const std::string& program_id, const std::string& join_handle,
+                                                     const std::string& viewer_peer_id,
+                                                     const AnnounceOverlayReplyBody& body, int64_t now_ms);
+  AnnounceNotificationInbox& AnnounceNotifications() { return announce_notifications_; }
+  const AnnounceNotificationInbox& AnnounceNotifications() const { return announce_notifications_; }
+  bool DismissAnnounceNotification(const std::string& key) { return announce_notifications_.Dismiss(key); }
+  bool DismissAnnounceLiveBanner(const std::string& key) { return announce_notifications_.DismissBanner(key); }
+  /**
+   * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
+   * Does not SoftMigrate or attach media yet.
+   */
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const;
+  /** Look up latest tip in the local feed then plan a live join. */
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                           const std::string& topic_id,
+                                                           const std::string& program_id) const;
+
+
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
@@ -222,6 +271,10 @@ private:
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
+  std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
+  std::unique_ptr<AmpPeerAnnounceService> peer_announce_;
+  std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
+  AnnounceNotificationInbox announce_notifications_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

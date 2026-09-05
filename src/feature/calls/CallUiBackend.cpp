@@ -180,6 +180,21 @@ Roe<CallSession> CallUiBackend::StartCall(const std::string& origin_thread_id, c
   return UnavailableError();
 }
 
+Roe<PendingCallInvite> CallUiBackend::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan) {
+  if (auto* calls = stack_.Calls()) {
+    return calls->ArmJoinFromLiveAnnounce(plan);
+  }
+  return UnavailableError();
+}
+
+Roe<void> CallUiBackend::AcceptLiveAnnounceJoin(const std::string& call_id) {
+  if (auto* calls = stack_.Calls()) {
+    return calls->AcceptLiveAnnounceJoin(call_id);
+  }
+  return UnavailableError();
+}
+
+
 Roe<void> CallUiBackend::InviteParticipant(const std::string& call_id,
                                            const std::string& invitee_identity) {
   if (auto* calls = stack_.Calls()) {
