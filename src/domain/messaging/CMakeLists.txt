@@ -3,6 +3,8 @@ pp_browser_add_domain_library(pp_domain_messaging
     AttachmentCache.cpp
     AttachmentDownloadPolicy.cpp
     AttachmentSuppressionStore.cpp
+    CasStore.cpp
+    ObjectIndex.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
