@@ -210,4 +210,6 @@
 
 **Converted (2026-09-04):** Product not released — wire ids renamed in-place to kind names (`/pp-browser/rpc|blob|realtime|datagram-relay|circuit|reach/1.0.0`, punch `/pp-browser/reach/punch/1.0.0`). `rpc` kind uses separate OPEN ids `/pp-browser/rpc/chat/1.0.0` and `/pp-browser/rpc/history/1.0.0` (handler ownership; no first-frame demux); punch keeps a distinct reach-kind id (multi-frame SM). Nested-Session carrier uses Amp default `/amp/circuit-carrier/1.0.0` (no product `/pp-browser/circuit-carrier` id).
 
+**Prepared compositions (2026-09-05):** IPFS-*like* content share = **discover** + **blob** (+ **rpc** announce/meta); live broadcast = **rpc** control + **realtime** blind hop (optional **blob** DVR). Documented in [L4_PROTOCOL_KINDS § Prepared compositions](../../docs/contracts/L4_PROTOCOL_KINDS.md#prepared-compositions-no-new-kinds) — no new kinds.
+
 **Alternatives rejected:** One mega “mesh-control” channel for discover+reach+dht (already considered and rejected for DHT in N028); feature-named protocols forever; collapsing E2E call-media and blind media-relay into a single id (different security postures under the **realtime** kind).

@@ -82,7 +82,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | History / contact paste / small config pull | **rpc** |
 | Photos, docs, video files, icons | **blob** |
 | Content-addressed file share (IPFS-*like*; not Kubo/Bitswap wire) | **discover** (provider lookup) + **blob** (bytes; optional piece/manifest later) + **rpc** (announce / meta / ACL) — on-disk realms: [content-cas](../../projects/content-cas/) |
-| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD |
+| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD of the same program |
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |
@@ -94,12 +94,14 @@ Policy (who may hop, pricing, MeshHopPolicy), codecs, and UI stay **above** the 
 
 ### Prepared compositions (no new kinds)
 
-These product goals stay **inside the seven kinds**; they need swarm/fan-out *services* and on-disk realm separation, not new `protocol_id` families. Disk plan: [content-cas](../../projects/content-cas/).
+These product goals are **in scope of the seven kinds**; they need swarm/fan-out *services* and on-disk realm separation, not new `protocol_id` families. Disk plan: [content-cas](../../projects/content-cas/).
 
 | Goal | Do | Don’t |
 |------|----|--------|
-| **File share by content id** | Keep **blob** as the bulk conversation; provider advertise/lookup on **discover**/**rpc**; optional piece/manifest later; **public** CAS realm only via explicit publish | Mint `/pp-browser/ipfs/…`; treat Bitswap as an L4 kind; promote chat decrypt into public CAS |
-| **Live broadcast** | **realtime** blind-hop topology + **rpc** channel control | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable blob/rpc logs |
+| **File share by content id** | Keep **blob** as the bulk conversation; add provider advertise/lookup on **discover**/**rpc**; optional blob piece/manifest mode for multi-source assemble; HTTP/CDN remains a delivery path; **public** CAS realm only via explicit publish | Mint `/pp-browser/ipfs/…` or treat Bitswap as an L4 kind; require Kubo wire compatibility; promote chat decrypt into public CAS |
+| **Live broadcast** | Treat as **realtime** blind-hop topology (more subscribers) + **rpc** for channel control; identify caps may advertise `realtime_broadcast_fanout` | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable ordered blob/rpc logs |
+
+Cheap forward-compat: identify capability bits (`blob_pieces`, `blob_provide`, `realtime_broadcast_fanout`); leave blob APIs room for `content_id` + optional `manifest`. Defer full rarest-first swarm, provider-DHT product semantics, and broadcast SFU UX until attachments and 1:1/group calls + hop are solid.
 
 ## Behavior matrix (as implemented)
 
