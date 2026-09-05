@@ -73,9 +73,9 @@ Muxer-internal queues (unchanged): Yamux stream `WriteQueue` + `ReadBuffer`, con
 
 | Protocol | Service | Exchange |
 |----------|---------|----------|
-| `/pp-browser/chat/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
-| `/pp-browser/chat-history/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
-| `/pp-browser/chat-blob/1.0.0` | Amp `AmpChatBlobService` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
+| `/pp-browser/rpc/chat/1.0.0` | Amp `AmpDirectChatService` (product) / `Libp2pDirectChatService` (fallback) | One short exchange per message: write `RelayEnvelope` JSON → read ack |
+| `/pp-browser/rpc/history/1.0.0` | Amp `AmpChatHistoryService` / `Libp2pChatHistoryService` | Write `ChatHistoryRequest` JSON → read `ChatHistoryResponse` JSON |
+| `/pp-browser/blob/1.0.0` | Amp `AmpChatBlobService` / `Libp2pChatBlobService` | Fetch: JSON request → ciphertext **or** JSON error ack; push: JSON → ciphertext → JSON ack |
 | dial-back / circuit-relay | Amp circuit coordinator when Amp owns mesh; else libp2p JSON framing | Control frames; Amp uses `ChannelSession` |
 | media-relay / call-media | Amp L4 coordinators when Amp up ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol)) | Ongoing frames; call-media = control+media channel bundle (A021); circuit nested Session (A024) |
 
@@ -154,9 +154,9 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 |---------|----------|
 | Frame IO | `src/domain/mesh/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
 | JSON frames | `src/domain/mesh/StreamJsonFrame.*` |
-| Direct chat | `src/feature/messaging/Libp2pDirectChatService.*` |
-| Chat history | `src/feature/messaging/Libp2pChatHistoryService.*` |
-| Chat blob | `src/feature/messaging/Libp2pChatBlobService.*` |
+| Direct chat | `src/feature/conversations/Libp2pDirectChatService.*` |
+| Chat history | `src/feature/conversations/Libp2pChatHistoryService.*` |
+| Chat blob | `src/feature/conversations/Libp2pChatBlobService.*` |
 | Limits | `src/base/messaging/MessagingLimits.h` |
 | Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
 | Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |

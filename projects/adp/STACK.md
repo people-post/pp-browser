@@ -2,7 +2,7 @@
 
 **Status:** Foundation spec (2026-08-30)  
 **Owner:** Hongwei + agents  
-**Related:** [ADP.md](../../docs/contracts/ADP.md) (L1), [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) (L2), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) (L3), [DECISIONS.md](DECISIONS.md) (A001–A026)
+**Related:** [ADP.md](../../docs/contracts/ADP.md) (L1), [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) (L2), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) (L3), [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) (L4 kinds / [A028](DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes)), [DECISIONS.md](DECISIONS.md) (A001–A028)
 
 ## Names
 
@@ -23,9 +23,9 @@ Libp2p shrinks to retained crypto/identity utilities; `Host::newStream` and stre
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  L4  Application protocols                              │
-│      /pp-browser/chat|call-media|media-relay|…          │
-│      JSON + binary payloads (WIRE_SCHEMAS)              │
+│  L4  Application protocols (kinds: identify / discover /│
+│      reach / circuit / rpc / blob / realtime — A028)    │
+│      /pp-browser/* /pp-mesh/* + WIRE_SCHEMAS payloads   │
 └─────────────────────────┬───────────────────────────────┘
                           │ messages ≤ app max (e.g. 256 KiB)
 ┌─────────────────────────▼───────────────────────────────┐
@@ -168,7 +168,7 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 
 L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
 
-**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `MessagingHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
+**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `ConversationsHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
 
 ## Code layout (planned)
 

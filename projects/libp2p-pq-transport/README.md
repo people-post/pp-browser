@@ -1,8 +1,8 @@
 # Full-PQ libp2p transport
 
-**Status:** Phases 0–5 landed (manual device smoke optional)  
+**Status:** **Done / archived** (phases 0–5) — see [projects/README.md](../README.md)  
 **Owner:** Hongwei + agents  
-**Stable refs (promote as phases ship):** [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md), [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md), [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md)  
+**Stable refs:** [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md), [LIBP2P_STREAMS.md](../../docs/architecture/LIBP2P_STREAMS.md), [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md)  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/) (account ML-DSA / ML-KEM), [multi-device-account](../multi-device-account/) (device vs account keys)
 
 ## One-line goal

@@ -332,4 +332,31 @@ Roe<Contact> ContactsStore::AddEmpty() {
   return Upsert(contact);
 }
 
+Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {
+  auto hit = FindByIdentity(account_id, ContactIdKind::Account);
+  if (!hit || !hit->has_value()) {
+    return false;
+  }
+  const Contact& contact = **hit;
+  return contact.local.trust == TrustLevel::Blocked || contact.trust == TrustLevel::Blocked;
+}
+
+Roe<void> ContactsStore::BlockAccountIfPresent(const std::string& account_id) {
+  auto hit = FindByIdentity(account_id, ContactIdKind::Account);
+  if (!hit) {
+    return hit.error();
+  }
+  if (!hit->has_value()) {
+    return {};
+  }
+  Contact contact = **hit;
+  contact.local.trust = TrustLevel::Blocked;
+  SyncContactMirrors(contact);
+  auto upserted = Upsert(contact);
+  if (!upserted) {
+    return upserted.error();
+  }
+  return {};
+}
+
 } // namespace pbr

@@ -9,9 +9,11 @@ pp-browser docs are split by **stability and blast radius**, not by feature name
 | **Product / UI** | [`ui/`](ui/) | Evolve with product | Shell, theme, RML/RCSS profiles — stable enough for agents, not wire-hard |
 | **Ops / howto** | [`ops/`](ops/) | Freely | Build, release, configuration howto |
 
-**Active feature work:** [`projects/README.md`](../projects/README.md) — DESIGN → PHASES → CURRENT_STATE → DECISIONS; promote normative outcomes into **contracts/** when shipped.
+**`docs/` = what the system is. `projects/` = what we are changing.** Phase status lives only in each project’s `CURRENT_STATE.md` — not in [`AGENTS.md`](../AGENTS.md).
 
-Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
+**Active feature work:** [`projects/README.md`](../projects/README.md) — DESIGN → PHASES → CURRENT_STATE → DECISIONS; promote normative outcomes into **contracts/** (or the matching tier) when shipped.
+
+Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable docs).
 
 ---
 
@@ -20,7 +22,8 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | Doc | Topic |
 |-----|--------|
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
-| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → foundation → common` (today: foundation+domain still under `base/`) |
+| [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | North Star: `app → feature → domain → foundation → common` — feature/app cleanup: [projects/feature-layer-reorg/](../projects/feature-layer-reorg/) |
+| [architecture/TESTING.md](architecture/TESTING.md) | Testing doctrine: tiers, push-down seams, promote failures downward, skip taxonomy, doc homes |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
@@ -28,8 +31,10 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
 | [architecture/PLATFORM_CODE.md](architecture/PLATFORM_CODE.md) | OS code layout, `#ifdef` policy |
 | [architecture/P2P_MESSAGING.md](architecture/P2P_MESSAGING.md) | Messaging architecture (pointers to wire/crypto) |
-| [architecture/NETWORKING.md](architecture/NETWORKING.md) | **HTTP + libp2p** doctrine; settle rails; no WebRTC product path |
-| [architecture/LIBP2P_STREAMS.md](architecture/LIBP2P_STREAMS.md) | Libp2p stream framing, exchanges, size/hang handling |
+| [architecture/NETWORKING.md](architecture/NETWORKING.md) | **HTTP + Amp mesh** doctrine; settle rails; no WebRTC product path |
+| [architecture/MESH.md](architecture/MESH.md) | Mesh layer organization (Amp + PeerId) |
+| [architecture/MESH_IDENTITY.md](architecture/MESH_IDENTITY.md) | Mesh identity binding |
+| [architecture/LIBP2P_STREAMS.md](architecture/LIBP2P_STREAMS.md) | Stream framing, exchanges, size/hang handling |
 | [architecture/CALLS.md](architecture/CALLS.md) | A/V call **code** map; product work in `projects/p2p-av-calls/` |
 | [architecture/RMLUI_UPSTREAM.md](architecture/RMLUI_UPSTREAM.md) | In-tree RmlUi fork deltas |
 | [architecture/LIBP2P_UPSTREAM.md](architecture/LIBP2P_UPSTREAM.md) | In-tree libp2p fork deltas |
@@ -53,6 +58,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/ADP.md](contracts/ADP.md) | Association Datagram Protocol (UDP L1) | wire version `1` |
 | [contracts/AMP-SESSION.md](contracts/AMP-SESSION.md) | AMP Session (L2 MSH + full AEAD) | `msh_version`, `session_epoch` |
 | [contracts/AMP-CHANNEL.md](contracts/AMP-CHANNEL.md) | AMP Channel mux (L3); ownership hierarchy [A027] | `channel_frame_version`, `protocol_id` |
+| [contracts/L4_PROTOCOL_KINDS.md](contracts/L4_PROTOCOL_KINDS.md) | L4 conversation kinds + gate for new `protocol_id`s ([A028](../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes) / [N030](../projects/p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate)) | kind taxonomy (wire ids versioned separately) |
 | [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
 | [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
 
@@ -79,7 +85,8 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
-| [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Tiered testing; `N-*` / `B-*` purposes; inventory; CI ladder |
+| [../scripts/README.md](../scripts/README.md) | Repo scripts layout (`check/` `platform/` `vendor/` `test/` `dev/`) |
+| [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Purpose IDs (`N-*` / `B-*` / `N-HARD-*`), inventory, CI ladder, SQLite test conventions — doctrine: [TESTING.md](architecture/TESTING.md); hard lab: [HARD_LAB.md](../packaging/pp-node/HARD_LAB.md) |
 | [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
 | [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize PP.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |
@@ -94,4 +101,5 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 2. Ship behind `PHASES`; keep `CURRENT_STATE` accurate.
 3. When a wire/disk/HTTP shape is **shipped**, promote the normative text into **`docs/contracts/`** in the same release window.
 4. Mark project ADRs **superseded by** the contract doc for outcomes; leave rationale in `DECISIONS.md`.
-5. Archive or delete the project folder when delivery ends — see [`projects/README.md`](../projects/README.md).
+5. Mark the project **Done / archived** in [`projects/README.md`](../projects/README.md) when delivery ends (folder may remain for ADR history).
+6. Never mirror phase status into [`AGENTS.md`](../AGENTS.md).

@@ -25,7 +25,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 - **`e2e`** relay body is **AEAD ciphertext** in `payload_b64` (c2 landed).
 - **`e2e_public`** compose/send uses account ML-KEM-768 auto-key (E024 / M015); optional **Use only this device…** rekey (E027).
 - Inbound poll: **`e2e`** find-only via `chat_targets` (D062); **`e2e_public`** auto-creates after decrypt (D080).
-- libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/chat-history/1.0.0`.
+- libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/rpc/history/1.0.0`.
 - Relay history: **`HttpRelayClient::FetchChatHistory`**; mock when `base_url` unset; live integration via env (D093).
 
 ## Release scope
@@ -117,9 +117,9 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Area | Location | Notes |
 |------|----------|-------|
 | v6 pipeline + classifier + integrity | `src/base/messaging/tests/` | `v6_pipeline_test`, `e2e_ingest_classifier_test`, `v6_integrity_test` |
-| Relay encrypt/decrypt + pipeline | `src/feature/messaging/tests/` | `e2e_relay_crypto_test` |
-| Sync + gap + scroll + compromised | `src/feature/messaging/tests/` (`chat_sync_test`) | **13 tests** |
-| Cross-cutting ingest/dedup/routing | `src/feature/messaging/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
+| Relay encrypt/decrypt + pipeline | `src/feature/conversations/tests/` | `e2e_relay_crypto_test` |
+| Sync + gap + scroll + compromised | `src/feature/conversations/tests/` (`chat_sync_test`) | **13 tests** |
+| Cross-cutting ingest/dedup/routing | `src/feature/conversations/tests/` (`messaging_cross_cutting_test`) | dedup, oversize, find-only, tier paths |
 | Rich ChatPayload | `chat_payload_rich_types_test`, `chat_payload_validator_test` | |
 | Live relay (D093) | `relay_live_integration_test` | skipped unless env set |
 | Relay history mock | `relay_history_test` | |

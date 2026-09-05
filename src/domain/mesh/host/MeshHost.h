@@ -6,6 +6,7 @@
 #include "domain/mesh/dht/AmpDhtService.h"
 #include "domain/mesh/discovery/AmpDirectoryService.h"
 #include "domain/mesh/reachability/AmpDialBackService.h"
+#include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/host/MeshIdentityConfig.h"
@@ -94,6 +95,8 @@ public:
   AmpCircuitHopRegistry* AmpCircuitHops();
   /** Amp dial-back for reachability chrome (D8); null when Amp is down. */
   AmpDialBackService* AmpDialBack();
+  /** Amp coordinated punch (H009 / L3.25a); null when Amp is down. */
+  AmpPunchCoordinator* AmpPunch();
   /** Amp mesh DHT (n2); null when Amp is down. */
   AmpDhtService* AmpDht();
   /** Amp directory twin (N029 nd4); null when Amp is down. */
@@ -122,7 +125,11 @@ private:
   void StopAmp();
   void ApplyAmpAdvertisement(const MeshHostConfig& config);
   void EnsureAmpL4Coordinators();
-  void StartAmpL4Hosting(bool host_circuit, bool host_media, bool host_dht, bool host_directory);
+  void RefreshAdvertisedListenAddrs();
+  /** When `refresh_listen_addrs` is false, keep caller-supplied listen multiaddrs (AttachAmpStack /
+   * MemoryDatagramIo tests) instead of expanding from real LAN NICs. */
+  void StartAmpL4Hosting(bool host_circuit, bool host_media, bool host_dht, bool host_directory,
+                         bool refresh_listen_addrs = true);
   AmpReachabilityProbeDeps MakeReachabilityDeps(bool try_upnp_first) const;
 
   std::unique_ptr<ReachabilityService> reachability_;
@@ -131,6 +138,7 @@ private:
   std::unique_ptr<CircuitTunnelCoordinator> amp_circuit_;
   std::unique_ptr<AmpMediaRelayCoordinator> amp_media_relay_;
   std::unique_ptr<AmpDialBackService> amp_dial_back_;
+  std::unique_ptr<AmpPunchCoordinator> amp_punch_;
   std::unique_ptr<AmpDhtService> amp_dht_;
   std::unique_ptr<AmpDirectoryService> amp_directory_;
   bool host_dht_ = false;

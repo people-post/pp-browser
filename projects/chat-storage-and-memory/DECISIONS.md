@@ -565,7 +565,7 @@ No hard max file size in v1.
 | Thread memory | `memory.value_enc` | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
 Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat payload + denormalized presentation fields). **Metadata stays plaintext** (timestamps, delivery, `content_type`, `target_message_id`, thread titles, participant ids, `sync_state`). **No SQLCipher.** **No incremental migration** — bump `user_version` (`thread.db` **2**, `profile.db` **4**); incompatible DBs fail with wipe-profile guidance.  
-**Implementation:** `SqliteThreadStore` implements `IDekConsumer`; registered from `MessagingHub`. Chat history requires profile unlock when a vault exists.  
+**Implementation:** `SqliteThreadStore` implements `IDekConsumer`; registered from `ConversationsHub`. Chat history requires profile unlock when a vault exists.  
 **Deferred:** FTS/search sidecar; encrypting thread titles / participant lists.  
 **Rationale:** Protect offline disk reads of message text without full-DB encryption; reuse existing DEK/`FileCipher` stack.  
 **Alternatives:** SQLCipher whole DB; per-column AEAD with online migration (rejected — hard cut).
@@ -691,7 +691,7 @@ Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat paylo
 ## D060 — Peer-direct history protocol (libp2p)
 
 **Date:** 2026-06-30  
-**Decision:** libp2p app protocol **`/pp-browser/chat-history/1.0.0`** mirrors D027 semantics. **Request:** signed JSON — `requester_identity_kind`, `requester_identity_value`, `peer_identity_kind`, `peer_identity_value`, `channel`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit` (default 50, max 100), `order` (`asc`|`desc`). **Response:** `{ messages: RelayEnvelope[], has_more, cursor }` — same envelope shape as relay (no `thread_id`, D056). **Responder:** participant of `ChatTargetKey`; serve from local `GetMessagesBySeqRange` on **`local_thread_id`**; cap batch (D029). **Requester:** verify each envelope signature; ingest via receive pipeline. Reject non-participant requests. Wire spec: [DESIGN § Peer-direct history fetch](DESIGN.md#peer-direct-history-fetch-d060).  
+**Decision:** libp2p app protocol **`/pp-browser/rpc/1.0.0`** mirrors D027 semantics. **Request:** signed JSON — `requester_identity_kind`, `requester_identity_value`, `peer_identity_kind`, `peer_identity_value`, `channel`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit` (default 50, max 100), `order` (`asc`|`desc`). **Response:** `{ messages: RelayEnvelope[], has_more, cursor }` — same envelope shape as relay (no `thread_id`, D056). **Responder:** participant of `ChatTargetKey`; serve from local `GetMessagesBySeqRange` on **`local_thread_id`**; cap batch (D029). **Requester:** verify each envelope signature; ingest via receive pipeline. Reject non-participant requests. Wire spec: [DESIGN § Peer-direct history fetch](DESIGN.md#peer-direct-history-fetch-d060).  
 **Rationale:** Peer-first backfill without a relay hop when both sides are online; reuses wire + ingest paths.  
 **Alternatives:** Custom binary sync format (rejected); relay-only backfill (rejected — contradicts peer-first goal).
 
@@ -839,7 +839,7 @@ Inner plaintext is a versioned **`TranscriptBodyCodec` v1** envelope (chat paylo
 ## D072 — `envelope_version` + shared history wire types
 
 **Date:** 2026-06-29  
-**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Canonical **byte layout**, body hash, and `EnvelopeSigner` API: [e2e-message-crypto E014](../e2e-message-crypto/DECISIONS.md#e014--canonical-ed25519-relay-envelope-signing-bytes) / [DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). Bump independently of `ChatPayload.payload_version` (D087) and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative wire: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
+**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Canonical **byte layout**, body hash, and `EnvelopeSigner` API: [e2e-message-crypto E014](../e2e-message-crypto/DECISIONS.md#e014--canonical-ed25519-relay-envelope-signing-bytes) / [DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). Bump independently of `ChatPayload.payload_version` (D087) and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/rpc/1.0.0` (D060). Normative wire: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
 **Rationale:** Outer wire evolution without dual-parser; prevent relay/libp2p request shape drift.  
 **Alternatives:** Implicit optional fields only (rejected); separate HTTP vs libp2p structs (rejected).
 
@@ -1014,7 +1014,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 | `psk_verified_at` | INTEGER NULL | Unix ms when user confirmed OOB fingerprint match (E011); `NULL` until verified; cleared on PSK replace/import/rotation |
 | `retired_psks_json` | TEXT NULL | JSON array `[{ epoch, master_psk_b64, retired_at }]` — E018 |
 
-**`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/messaging/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
+**`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/conversations/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
 
 **Rationale:** Chat-target-scoped secrets colocated with seq/epoch; survives thread shell delete/recreate; inbound decrypt resolves `ChatTargetKey` before `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected); PSK in `thread.db` (rejected — ephemeral shell).
@@ -1277,7 +1277,7 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 ## D094 — Peer-direct history required for v1 (D060)
 
 **Date:** 2026-07-06  
-**Product override:** v1 release **requires** libp2p peer-direct **`/pp-browser/chat-history/1.0.0`** (wave **v6-libp2p** / PHASES 4d). Relay D027 remains **fallback** when peer is offline or direct fails (D058 transport order unchanged).  
+**Product override:** v1 release **requires** libp2p peer-direct **`/pp-browser/rpc/1.0.0`** (wave **v6-libp2p** / PHASES 4d). Relay D027 remains **fallback** when peer is offline or direct fails (D058 transport order unchanged).  
 **Rationale:** “Sync with peer” (D059) must exercise direct transport in v1, not relay-only.  
 **Alternatives:** A — relay-only for v1 (superseded — peer-direct deferred to post-v1).
 
@@ -1330,9 +1330,9 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 **Date:** 2026-07-09  
 **Decision:**
 
-1. One shared `Libp2pHost` (Yamux + Noise) owned by `MessagingHub`; history and direct chat register protocol handlers on it.
+1. One shared `Libp2pHost` (Yamux + Noise) owned by `ConversationsHub`; history and direct chat register protocol handlers on it.
 2. `PeerSessionManager` implements on-demand dial, ConnectionManager reuse, warm-active set, idle TTL, connection caps, dial backoff — **not** an app-level socket pool.
-3. Direct live messaging uses `/pp-browser/chat/1.0.0` (length-prefixed JSON `RelayEnvelope`); send path is direct-first then relay fallback; ingest via `RelayReceivePipeline` with `MessageTransport::Direct`.
+3. Direct live messaging uses `/pp-browser/rpc/1.0.0` (length-prefixed JSON `RelayEnvelope`); send path is direct-first then relay fallback; ingest via `RelayReceivePipeline` with `MessageTransport::Direct`.
 4. v1 thread routing remains relay-id (`ChatTargetKey`); PeerId is used for dial via multiaddr `/p2p/…`. Contacts persist `multiaddrs`.
 5. Mobile background: suspend cold peer connections; keep warm (active-thread) set.
 

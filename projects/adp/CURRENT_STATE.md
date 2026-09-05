@@ -50,13 +50,13 @@
 
 ## Landed (L4 chat — D5)
 
-- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/chat/1.0.0` and `/pp-browser/chat-history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
+- `AmpDirectChatService` + `AmpChatHistoryService` — `/pp-browser/rpc/chat/1.0.0` and `/pp-browser/rpc/history/1.0.0` over `ChannelSession` / `PeerLinkManager::OpenChannel`
 - `ChannelMux::SetProtocolHandler` + `PeerLinkManager::SetProtocolHandler` for inbound L4 dispatch
 - `pp_browser_feature_messaging_test` — `AmpDirectChatServiceTest`, `AmpChatHistoryServiceTest` (parallel stack; production still libp2p)
 
 ## Landed (L4 call-media — D6)
 
-- `CallMediaLegCoordinator` — `/pp-browser/call-media/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
+- `CallMediaLegCoordinator` — `/pp-browser/realtime/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
 - Dual-dial glare (L4): higher base58 PeerId keeps outbound; lower yields and adopts inbound
 - L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe ([A027](DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
 - `AdoptClientChannel` must not touch `Session` after `sessions.erase` (parent-only destroy / no use-after-erase)
@@ -103,7 +103,7 @@
 
 - `AmpStack` — owns `DatagramIo` + `Endpoint` + `MeshRuntime` for one local peer
 - **`MeshHost` Amp underlay** ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys) / D10): `mesh_enabled` / `AttachAmpStack`; hard-require Amp; `Tick` pumps Amp
-- **Product wiring:** `mesh.mesh_enabled` (default **true**) → MessagingHub + pp-node; `TickMesh` calls `mesh_->Tick()` so Amp pumps
+- **Product wiring:** `mesh.mesh_enabled` (default **true**) → ConversationsHub + pp-node; `TickMesh` calls `mesh_->Tick()` so Amp pumps
 - `pp_browser_mesh_test` — `MeshHostAmpTest.AttachAmpStackParallelNoMeshHost`
 
 ## Landed (D9 step 3 — chat/history single entry)
@@ -124,7 +124,7 @@
 
 - `MeshRuntime::AddIoTick` / `RemoveIoTick` — multiplex L4 deadline hooks on one Amp runtime (call-media + circuit + media-relay)
 - `MeshHost` owns `CircuitTunnelCoordinator` + `AmpMediaRelayCoordinator` when Amp is up; `Start()` mirrors `host_circuit_relay` / `host_media_relay`
-- `MessagingHub::ApplyMeshAdmissionPolicies` mirrors admission onto Amp coordinators
+- `ConversationsHub::ApplyMeshAdmissionPolicies` mirrors admission onto Amp coordinators
 - **SoftMigrate stays on libp2p** (`MediaRelayService` / `CircuitRelayService`) — Amp media-relay still quote/attach-only (no Subscribe/SendFrame/local hop); Amp circuit returns `ChannelSession`, not a stream for SoftMigrate fan-out
 
 ## Landed (D9 step 5b — media-relay SoftMigrate single entry)
@@ -146,7 +146,7 @@
 ## Landed (D9 step 5d — Amp call-media nested Session over circuit / A024)
 
 - **Carrier-neutral MSH** — `MshAdpHandshake` optional non-chunked wire; `PeerLink` carrier mode over bridged `ChannelSession`
-- **`kAmpCircuitCarrierProtocolId`** — outer splice target (not product L4); `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
+- **`kAmpCircuitCarrierProtocolId` (`/amp/circuit-carrier/1.0.0`)** — Amp-owned outer splice target (not product L4); product uses library default; `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
 - **`PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept`** — install virtual PeerLink after inner MSH; `OpenChannel` works without ADP endpoint; rekey refreshes protocol handlers
 - **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
 - **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link
@@ -155,7 +155,7 @@
 
 ## Landed (D9 step 5e / 6 / 7 — blob + TCP underlay retire)
 
-- **`AmpChatBlobService`** — `/pp-browser/chat-blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
+- **`AmpChatBlobService`** — `/pp-browser/blob/1.0.0` single entry when Amp links present ([A020]); advertised on ch0
 - **Amp UDP accept** always enabled
 - **When Amp starts:** Amp L4 coords own dial-back + circuit/media-relay hosting (no TCP Identify/DialBack)
 - **Deleted** transitional TCP-hello Opus dogfood: `CallMediaAdpDogfood.h`, `CallMediaAdpPath`, `CallMediaAdpKey`, hello `adp_*` fields
@@ -167,7 +167,7 @@
 |--------|-----|
 | **Do not block MeshHost Amp attach on AMP dial-back / mDNS** | Ownership is independent of reachability chrome; libp2p DialBack/Identify still cover probes until cutover |
 | **Shared device ML-DSA keys required for `mesh_enabled`** | One PeerId across stacks ([A023](DECISIONS.md#a023--meshhost-may-own-ampstack-in-parallel-same-device-keys)) |
-| **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0; product drives via MessagingHub Amp mesh pump (~5ms) + Connect/OpenChannel `io_pump` |
+| **`MeshHost::Tick` must Pump Amp** | Idle UDP stack otherwise never completes MSH/ch0; product drives via ConversationsHub Amp mesh pump (~5ms) + Connect/OpenChannel `io_pump` |
 | **Amp start is soft-fail** | **Superseded by D10** — Amp hard-require; no TCP underlay fallback |
 | **AMP dial-back is optional until Identify/TCP teardown** | **D10:** DialBack retired; Amp dial-back remains D8 follow-on |
 | **Chat+history flip together** | Shared Amp address book / reachability; blob stays libp2p |
@@ -188,7 +188,7 @@
 
 ## Landed (D8 — Amp dial-back + reachability chrome)
 
-- **`AmpDialBackService`** — same JSON probe as TCP DialBack over Amp ChannelSession; MeshHost owns + advertises `/pp-browser/dial-back/1.0.0`
+- **`AmpDialBackService`** — same JSON probe as TCP DialBack over Amp ChannelSession; MeshHost owns + advertises `/pp-browser/reach/1.0.0`
 - **`ReachabilityService`** restored — seed dial (ADP bootstrap) + dial-back + optional UPnP UDP; Me→Network / `pp-node --status` / startup probe
 - **`BuildAmpReachabilityProbeTargets`** — public IPv4 + UPnP external as ADP MAs
 - **Probes restored (Amp):** `pp-node-probe` (l1/fanout/cap/soak) + `pp-call-probe` (direct/hop/chat)

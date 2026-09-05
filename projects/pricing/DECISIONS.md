@@ -33,3 +33,51 @@ Payment is not ready, but gates and wire must exist so volunteer/`0` and paid pa
 - Mesh N010 / N017 / N019 / N020; calls V022 / V023  
 - [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md)  
 - [NETWORKING.md](../../docs/architecture/NETWORKING.md) settlement note  
+
+
+## P002 — Local signed payment promise receipts + avoid
+
+**Date:** 2026-09-04  
+**Status:** Accepted (foundation slice)
+
+### Decision
+
+1. **Early artifact** for payment-before-service is a **local signed `PaymentPromise` receipt** (promise + terminal outcome), not escrow rails and not on-chain service validation.
+2. **Canonical ML-DSA-65 signatures** cover promise fields and outcome fields separately; `local_avoid` is never part of signed bytes.
+3. Persist under profile `payment_promises.json` via `PaymentPromiseStore`. Export/share of receipts can come later.
+4. **Local avoid:** `PaymentPromiseAvoid` stamps `local_avoid` on the receipt and best-effort sets matching contact `TrustLevel::Blocked`. Humans exit bad counterparties; software records verifiable facts.
+5. Settlement (Brief escrow / multi-sig / chain) and public reputation stay out of scope for this slice.
+6. `ConversationsHub` owns `PaymentPromiseStore` (load with profile). `PaymentPromiseLifecycle` signs with the unlocked account ML-DSA key.
+7. `PaymentPromiseWireCodec` packs signed receipts into system-message controls (`promise_offer` / `promise_accept` / `promise_outcome`). Hub/Facade expose create/accept/outcome/avoid/stage; P003 makes inbound stage-only (`StagePaymentPromiseControlMessage`); UI cards remain follow-ups.
+
+### Rationale
+
+Schema + durable signed lifecycle is the path-dependent foundation for release UI, evidence export, and later money movement. Avoid is the cheap safety valve.
+
+### Cross-links
+
+- Pricing P001 gates; NETWORKING settlement note; mesh N020 receipts/reputation (later)
+
+## P003 — Inbound stage + payer-ack default + peer-chat surface
+
+**Date:** 2026-09-04  
+**Status:** Accepted
+
+### Decision
+
+1. **Inbound remote receipts stage only.** Receiving `promise_offer` / `promise_accept` / `promise_outcome` control messages must **not** auto-upsert into the committed `promises[]` store. Wire/Hub entrypoint is `StagePaymentPromiseControlMessage` → `PaymentPromiseStore::StageInbound` (`pending_inbound[]`). Commit/drop via store `AcceptInbound` / `IgnoreInbound` (Hub/Facade: `AcceptInboundPaymentPromise` / `IgnoreInboundPaymentPromise`).
+2. **Release rule v1 is payer-ack.** `PaymentPromiseLifecycle::OfferParams::release_rule` defaults to `PaymentPromiseReleaseRule::PayerAck`. Dual-ack and timeout auto-release remain schema-only for now.
+3. **First product surface is peer chat/service**, not mesh-hop metering UI. `ConversationsHub::CreatePaymentPromiseOfferForThread` sets `service_ref = thread:<id>` and forces payer-ack.
+4. **Receive pipeline** (`RelayReceivePipeline::ApplyInboundPaymentPromiseMessage`) stages inbound controls; the chat system message still persists for human review. UI cards for Accept/Ignore remain a follow-up.
+
+### Rationale
+
+Auto-committing remote economic artifacts is too aggressive for subjective services. Explicit Accept/Ignore matches human release judgment; payer-ack is the minimal release rule that matches “I got what I paid for.”
+
+### Out of scope
+
+Escrow/settlement, public evidence, DEK encryption of `payment_promises.json`, directory-key verify on receive, mesh-hop metering UI.
+
+### Cross-links
+
+- P002 receipts; P001 initiation gates; NETWORKING settlement note

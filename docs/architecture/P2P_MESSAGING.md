@@ -138,9 +138,9 @@ Local store is written **before** send. Server rejections do not delete history.
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 | Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp-browser/rpc/history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
 
-### Direct live send (`/pp-browser/chat/1.0.0`)
+### Direct live send (`/pp-browser/rpc/chat/1.0.0`)
 
 Outbound `SendUserMessage` tries libp2p direct first when the peer has a registered dialable multiaddr (`Contact.multiaddrs` / `RegisterPeerDirectEndpoint`); on failure falls back to `IRelayClient::Send`. Inbound direct envelopes use the same `RelayEnvelope` shape and `RelayReceivePipeline` with `MessageTransport::Direct`.
 
@@ -203,21 +203,21 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | App messaging assembler (`MessagingCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
+| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
 | `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/messaging/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
-| `src/feature/messaging/MessagingFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/messaging/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
-| `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
-| `src/feature/messaging/MessageRouter.*` | Composer routing |
-| `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
-| `src/feature/chat/MessagingTools.*` | Agent tool definitions |
+| `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
+| `src/feature/conversations/InboxController.*` | Active thread, display rows |
+| `src/feature/conversations/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |
+| `src/feature/conversations/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
+| `src/feature/conversations/MessageRouter.*` | Composer routing |
+| `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
+| `src/gui/chat/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
-| `src/feature/ui/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
+| `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## A/V calls (signaling over messaging)

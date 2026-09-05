@@ -8,7 +8,7 @@
 namespace pbr {
 
 /**
- * Profile DEK consumer — MessagingHub fans out unlock/lock via this interface.
+ * Profile DEK consumer — ConversationsHub fans out unlock/lock via this interface.
  * New at-rest stores implement SetDek/ClearDek and register with the hub.
  */
 class IDekConsumer {

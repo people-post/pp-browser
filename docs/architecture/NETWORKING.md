@@ -34,11 +34,13 @@ The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still 
 - Routing and transmission (L3 channels, FRAG/QoS, budgets)
 - Price incentives (quotes, ceilings, volunteer → paid regulation)
 
-**Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)). SoftMigrate must not grow a parallel NAT toolkit.
+**Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)), including planned **Amp Coordinated Punch** ([HOLE_PUNCH.md](../../projects/media-hop-reachability/HOLE_PUNCH.md)). SoftMigrate must not grow a parallel NAT toolkit.
 
-**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **MessagingHub** / MessagingCore + **CallStack** (app-only) → **MessagingFacade** / CallUiBackend (UI).
+**Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **ConversationsHub** / ConversationsCore + **CallStack** (app-only) → **ConversationsFacade** / CallUiBackend (UI).
 
 See [p2p-mesh](../../projects/p2p-mesh/) (N022+) and [adp](../../projects/adp/).
+
+**L4 protocol kinds:** freeze growth around seven conversation shapes (identify / discover / reach / circuit / rpc / blob / realtime) — [L4_PROTOCOL_KINDS.md](../contracts/L4_PROTOCOL_KINDS.md) ([A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes), [N030](../../projects/p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate)). Do not add a new `protocol_id` per feature.
 
 ## Calls
 

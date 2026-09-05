@@ -86,7 +86,7 @@ Uses `-DPP_BROWSER_PACKAGED_BUILD=ON`.
 
 [`release-pp-node.yml`](../.github/workflows/release-pp-node.yml):
 
-- Ubuntu 24.04 build (`-DPP_BROWSER_HEADLESS=ON`) via [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh)
+- Ubuntu 24.04 build (`-DPP_BROWSER_HEADLESS=ON`) via [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh)
 - Push `ghcr.io/<owner>/pp-node:<version>` (and `:v…`, `:latest` when not a prerelease)
 - L0 HTTP smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md))
 - GitHub Release named `pp-node <version>` with the Linux tarball
@@ -159,10 +159,10 @@ cpack --config build/CPackConfig.cmake
 **Node** (Ubuntu 24.04 host):
 
 ```bash
-PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/pp_node_package_linux.sh all
-./scripts/pp_local_test.sh run --suite node
+PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_linux.sh all
+./scripts/test/pp_local_test.sh run --suite node
 # or: docker compose -f packaging/pp-node/docker-compose.yml up -d
-#     ./scripts/pp_node_relay_smoke.sh
+#     ./scripts/test/pp_node_relay_smoke.sh
 ```
 
 ## Checklist before tagging

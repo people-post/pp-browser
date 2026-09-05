@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Fallback only. scripts/ios_sign.sh prefers entitlements extracted from the
+  Fallback only. scripts/platform/ios_sign.sh prefers entitlements extracted from the
   provisioning profile (application-identifier, team-identifier, get-task-allow).
   Device install requires application-identifier — do not ship get-task-allow alone.
 -->

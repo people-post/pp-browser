@@ -105,12 +105,12 @@ int main(int argc, char** argv) {
   options.profile_override = profile_override;
   options.pin = pin;
 
-  // Construct Application first so MessagingHub is process-owned before Bootstrap initializes it.
+  // Construct Application first so ConversationsHub is process-owned before Bootstrap initializes it.
   pbr::Application app;
 
   auto bootstrap_result = [&] {
     pbr::StartupPhase phase("Bootstrap::Run");
-    return pbr::Bootstrap::Run(options, app.Messaging(), app.Secrets());
+    return pbr::Bootstrap::Run(options, app.Conversations(), app.Secrets());
   }();
   if (!bootstrap_result) {
     root.error << pbr::kProductName << ": " << bootstrap_result.error().message;

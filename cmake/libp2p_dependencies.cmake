@@ -10,7 +10,7 @@ function(pp_libp2p_require_vendored name)
   if(NOT EXISTS "${PP_LIBP2P_THIRD_PARTY}/${name}/CMakeLists.txt")
     message(FATAL_ERROR
       "Missing libp2p vendored dependency '${name}' under third_party/.\n"
-      "  Run: ./scripts/libp2p_vendor_import.sh")
+      "  Run: ./scripts/vendor/libp2p_vendor_import.sh")
   endif()
 endfunction()
 

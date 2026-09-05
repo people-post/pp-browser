@@ -93,9 +93,9 @@ flowchart LR
 
 - Extend `IRegistrationClient` / HTTP client with `entity_kind` + `capabilities`.
 - Extend `IDirectoryClient` with `ListMeshNodes` (HTTP).
-- Route `MessagingHub` through `CreateServiceClients` (live pluggability).
+- Route `ConversationsHub` through `CreateServiceClients` (live pluggability).
 - Config: `advertise_multiaddrs`; NodeEnvOverlay env.
-- **pp-node:** thin register/renew loop (no MessagingHub) using advertise + local caps; `entity_kind=mesh_node`.
+- **pp-node:** thin register/renew loop (no ConversationsHub) using advertise + local caps; `entity_kind=mesh_node`.
 - **pp-browser:** do not mesh-publish; keep person register/auto-renew; Identify advertise policy documented (org seed via pp-node).
 - Fix auto-renew to pass advertise/listen multiaddrs when renewing person endpoints.
 - Unit tests for overlay, registration util, directory list parsing.
@@ -123,6 +123,6 @@ flowchart LR
 - [x] www: `GET /v1/mesh/nodes` returns JSON `{nodes:[…]}` (prod + QA probed 2026-09-02; currently empty listings). Search endpoint answers; exclusion of `mesh_node` still needs a live published node to prove.
 - [ ] pp-node: with PIN + data volume + advertise env, registers/renews as mesh_node against www (ops smoke; not run against prod from lab).
 - [x] pp-browser: Node on does **not** create mesh_node listings (default `mesh_publish=false`; only pp-node / explicit advertise path).
-- [x] Lab: Amp directory twin two-node query + HTTP failover (`AmpDirectory*` tests); MeshHost regression via `scripts/pp_node_dht_smoke.sh`.
+- [x] Lab: Amp directory twin two-node query + HTTP failover (`AmpDirectory*` tests); MeshHost regression via `scripts/test/pp_node_dht_smoke.sh`.
 - [ ] Customers can resolve org node by Account ID → endpoints without baking Peer ID (needs a published person/mesh listing in the target env).
 - [x] Docs describe bootstrap → directory → mesh layering (MESH_DIRECTORY + N029 / PRE_CHAIN).

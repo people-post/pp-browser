@@ -23,7 +23,7 @@ This doc plans **multi-hop custom circuit** (`/pp-browser/circuit-relay`) evolut
 ## Goals
 
 1. **Transitive partition bridging** — escape islands where no single relay sees both consumer and target.
-2. **Same product story** — contact-first, scope escalation, circuit last resort ([H002](DECISIONS.md#h002--publish-in-stack--circuit--fail), [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers)).
+2. **Same product story** — contact-first, scope escalation, circuit last resort ([H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail), [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers)).
 3. **Simple consumer UX** — **A** chooses and pays **one immediate relay R1** only ([N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker)).
 4. **Provider economics** — **R1** selects upstream relays and downstream **`media_relay`**; bundles cost + SLA into one quote to A.
 
@@ -129,7 +129,7 @@ Counting convention (illustrative): each **relay node** on the path consumes one
 
 ## Protocol sketch (circuit v2 — not implemented)
 
-Extend `/pp-browser/circuit-relay/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
+Extend `/pp-browser/circuit/1.0.0` with a **v2** frame family (exact JSON fields TBD at implementation):
 
 | Op | Direction | Purpose |
 |----|-----------|---------|

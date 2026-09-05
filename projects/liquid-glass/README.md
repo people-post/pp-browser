@@ -1,6 +1,6 @@
 # Floating Chrome — compact shell chrome
 
-**Status:** **Done** (2026-07-22)  
+**Status:** **Done** (2026-07-22) — archived in [projects/README.md](../README.md). Stable: [UI_DESIGN_SYSTEM — Floating Chrome](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials).
 **Stable refs:** [docs/ui/UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [docs/ui/WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md#compact-floating-chrome), [docs/ui/RCSS_PROFILE.md](../../docs/ui/RCSS_PROFILE.md)
 
 Former name: **Liquid Glass**. Pivoted per [LG008](DECISIONS.md#lg008--floating-chrome-top-layer-frost-only).

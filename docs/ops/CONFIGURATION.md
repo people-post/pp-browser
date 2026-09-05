@@ -54,14 +54,14 @@ After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`Se
 
 | Disk DTO | Projector | Service slice | Apply |
 |----------|-----------|---------------|-------|
-| `AppConfig` | `MessagingHub::ProjectNetwork` | `MessagingHub::NetworkConfig` | `MessagingHub::Apply` |
+| `AppConfig` | `ConversationsHub::ProjectNetwork` | `ConversationsHub::NetworkConfig` | `ConversationsHub::Apply` |
 | `AppConfig` | `ChatController::ProjectAgent` | `ChatController::AgentConfig` | `ChatController::Apply` |
-| `ProfilePreferences` | `MessagingHub::ProjectPolicy` | `MessagingHub::PolicyPrefs` | `MessagingHub::Apply` |
-| `ProfilePreferences` | `MessagingHub::ProjectNotifications` | `MessagingHub::NotificationPrefs` | `MessagingHub::Apply` |
+| `ProfilePreferences` | `ConversationsHub::ProjectPolicy` | `ConversationsHub::PolicyPrefs` | `ConversationsHub::Apply` |
+| `ProfilePreferences` | `ConversationsHub::ProjectNotifications` | `ConversationsHub::NotificationPrefs` | `ConversationsHub::Apply` |
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
 | `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`MessagingHub`](../../src/feature/messaging/MessagingHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/domain/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
 
 | SessionStore listener | Used by |
 |-----------------------|---------|
@@ -128,7 +128,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
 | Storage | paths + profile size; reset wipes profile dir | — |
 
-On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Runtime apply is owned by [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (service slices) and `ChatController` (LLM/agent config listener) — not by settings controllers calling hubs directly.
+On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Runtime apply is owned by [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (service slices) and `ChatController` (LLM/agent config listener) — not by settings controllers calling hubs directly.
 
 ### Machine config keys (`config.json`)
 

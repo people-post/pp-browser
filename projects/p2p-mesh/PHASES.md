@@ -128,7 +128,7 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] **nd4** — Amp directory twin (`MESH_DIRECTORY_AMP.md` / `/pp-mesh/directory/1.0.0`)
 - [x] **nd5** — `ledger_gateway` capability vocab + hop collector (dial path / UI deferred)
 - [x] First-release bar: **nd1 + nd2** (nd3 preferred); nd4/nd5 landed in same track
-- [x] Optional DHT lab smoke — `scripts/pp_node_dht_smoke.sh`
+- [x] Optional DHT lab smoke — `scripts/test/pp_node_dht_smoke.sh`
 
 ## Later horizons
 
@@ -182,5 +182,5 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 
 - [x] `_pp-browser._tcp` mDNS announce when Node or mobile ephemeral listen active
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
-- [x] Wire `MessagingHub::TickMesh` + contact list refresh
+- [x] Wire `ConversationsHub::TickMesh` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)

@@ -6,6 +6,10 @@
 
 namespace pbr {
 
+/** R019 peer-direct attachment blobs — `/pp-browser/blob/1.0.0`. */
+inline constexpr const char* kBlobProtocolId = "/pp-browser/blob/1.0.0";
+inline constexpr const char* kChatBlobProtocolId = kBlobProtocolId;
+
 enum class ChatBlobOp { Fetch, Push };
 
 struct ChatBlobRequest {

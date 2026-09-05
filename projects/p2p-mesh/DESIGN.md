@@ -7,7 +7,7 @@
 
 ## Overview
 
-The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile defaults to **consume-only**, with **call-scoped listen on Wi‑Fi** when in an active call (N025). Hosting on desktop is a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside libp2p.
+The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile defaults to **consume-only**, with **call-scoped listen on Wi‑Fi** when in an active call (N025). Hosting on desktop is a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back, planned Amp Coordinated Punch) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside the Amp mesh stack.
 
 ```mermaid
 flowchart TB
@@ -37,7 +37,7 @@ flowchart TB
 | Layer | Owns |
 |-------|------|
 | **p2p-mesh (this doc)** | Role, capabilities, config, Me → Network UI, relay **policy** (who, scope, quotes, settle), `pp-node` packaging |
-| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: peerstore, Identify, circuit evolution, `IsPeerDialable` |
+| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: addr book, ch0 ads, dial-back/UPnP, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
 | **[RELAY_SCOPE.md](RELAY_SCOPE.md)** | Scope tags, escalation, bridge score, provider caps |
 | **[p2p-av-calls](../p2p-av-calls/)** | Call lifecycle; SoftMigrate **consumes** ranked hops |
 | **HTTP Brief** | Message inbox durability when peer paths fail |
@@ -220,11 +220,11 @@ Kademlia-style peer and content routing. Useful for discovery later; seed + circ
 
 ### Circuit relay
 
-Custom protocol `/pp-browser/circuit-relay/1.0.0` — stream bridge for NATed peers. Checkbox under Node; org seed typically enables it. Pricing optional (often volunteer).
+Custom protocol `/pp-browser/circuit/1.0.0` — stream bridge for NATed peers. Checkbox under Node; org seed typically enables it. Pricing optional (often volunteer).
 
 **Today:** single-hop (one relay must direct-dial target). **Planned:** multi-hop v2 — see [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md).
 
-Contact-first preference applies: `MessagingHub::RequestCircuitBridgePreferred`, `OrderCircuitHops`.
+Contact-first preference applies: `ConversationsHub::RequestCircuitBridgePreferred`, `OrderCircuitHops`.
 
 ### Message relay
 
@@ -236,7 +236,7 @@ Homegrown **content-agnostic** forwarder — no media keys, no codec decode.
 
 | Aspect | Detail |
 |--------|--------|
-| Protocol | `/pp-browser/media-relay/1.0.0` |
+| Protocol | `/pp-browser/datagram-relay/1.0.0` |
 | Framing | `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
 | QoS types | `reliable_ordered`, `latest_lossy`, optional `best_effort`; subscribe by `(stream_id, channel_id)` |
 | Session | Quote → accept → attach; ↑/↓ budgets (C/B/A per direction); volunteer rate 0 |
@@ -278,7 +278,7 @@ Do **not** show scary “You are behind a firewall” as a hard fact. Infer soft
 | Seed dial | Can we reach bootstrap? |
 | Inbound seen | Has any remote connected inbound? |
 | Dial-back | Seed / probe peer dial-back (“can you open a stream to me?”) — `pp-node` feature |
-| Later | AutoNAT-style observed addrs; hole punch; circuit-relay when stuck outbound-only |
+| Later | AutoNAT-style observed addrs; **Amp Coordinated Punch** ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md)); circuit-relay when stuck outbound-only |
 
 Stack implementation details: [media-hop-reachability](../media-hop-reachability/DESIGN.md).
 
@@ -393,14 +393,14 @@ Pricing UI ships with the first billable capability — **not** as a fake standa
 
 ## Host lifecycle
 
-`MessagingHub::StartMesh` / `Libp2pHost::Start`:
+`ConversationsHub::StartMesh` / `Libp2pHost::Start`:
 
 - Pass resolved role (`listen_enabled` + listen multiaddr + `bootstrap_peers`).
 - **Client:** create host + `start()` **without** `listen`.
 - Extend session clamps to **all mobile** via `Platform::IsMobile()`.
 - Start modules only if `Node && capability_enabled`; enforce pricing at the service admission boundary.
 
-Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingHub::Reinitialize` or finer hooks).
+Hot-reload: role / capability / pricing changes reconfigure modules (`ConversationsHub::Reinitialize` or finer hooks).
 
 ---
 
@@ -428,7 +428,7 @@ Surface **actual** listen multiaddr when Node.
 | Binary | Audience | Stack |
 |--------|----------|--------|
 | **`pp-browser`** | People (desktop/mobile UI) | SDL + RmlUi + optional in-app Node role |
-| **`pp-node`** | Org seeds, datacenter, power-user daemons | Same node **core** (libp2p / MessagingHub start path / capabilities); **no** UI |
+| **`pp-node`** | Org seeds, datacenter, power-user daemons | Same node **core** (libp2p / ConversationsHub start path / capabilities); **no** UI |
 
 ```mermaid
 flowchart LR
@@ -461,7 +461,7 @@ pp-node --listen /ip4/0.0.0.0/tcp/443 \
         --capabilities dht,circuit_relay,message_relay
 ```
 
-**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `MessagingHub::StartMesh` / host lifecycle; do **not** fork a second libp2p integration for servers.
+**Implementation rule:** One networking stack, two entrypoints. Extract a reusable “node runtime” from `ConversationsHub::StartMesh` / host lifecycle; do **not** fork a second libp2p integration for servers.
 
 ---
 
@@ -495,7 +495,7 @@ Code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md). Networ
 | **Contribution UX** | Light thanks/stats for volunteer nodes |
 | **Multi-hop circuit v2** | [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) |
 | **DHT** | Later than circuit/reachability for most UX paths |
-| **Hole punch** | DCUtR-class when fork allows |
+| **Hole punch** | Amp Coordinated Punch — [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) (H009); parallel to multi-hop |
 
 ---
 

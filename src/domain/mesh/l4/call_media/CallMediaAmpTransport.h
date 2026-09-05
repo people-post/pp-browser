@@ -13,7 +13,7 @@ namespace pbr {
 
 /**
  * Blocking Connect facade over CallMediaLegCoordinator for CallMediaBridge ([A020]/ [A021]).
- * `io_pump` (MeshHost::Tick) may run on the Connect waiter while MessagingHub also ticks —
+ * `io_pump` (MeshHost::Tick) may run on the Connect waiter while ConversationsHub also ticks —
  * MeshRuntime serializes Drive/PostToIo.
  */
 class CallMediaAmpTransport : public ICallMediaTransport {

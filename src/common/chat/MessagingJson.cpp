@@ -310,6 +310,7 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   body.set("e2e", BuildE2eBody(envelope));
 
   Object json;
+  json.set("op", "envelope");
   json.set("envelope_version", static_cast<int64_t>(envelope.envelope_version));
   json.set("message_id", envelope.message_id);
   json.set("sender_relay_id", envelope.sender_relay_id);
@@ -564,6 +565,7 @@ Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& reco
 
 Object ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
   Object json;
+  json.set("op", "history");
   json.set("requester_identity_kind", request.requester_identity_kind);
   json.set("requester_identity_value", request.requester_identity_value);
   json.set("peer_identity_kind", request.peer_identity_kind);

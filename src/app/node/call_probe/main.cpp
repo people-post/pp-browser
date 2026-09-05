@@ -6,14 +6,15 @@
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
 #include "common/chat/RelayEnvelope.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "foundation/identity/PeerIdUtil.h"
-#include "feature/messaging/AmpDirectChatService.h"
-#include "feature/messaging/IDirectMessageClient.h"
+#include "feature/conversations/AmpDirectChatService.h"
+#include "common/chat/IDirectMessageClient.h"
 
 #include "common/Logger.h"
 
@@ -277,7 +278,11 @@ pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
 
 bool SendProbeChat(pbr::AmpDirectChatService& chat, const std::string& peer_key, const int cycle) {
   auto sent = chat.SendEnvelope(peer_key, MakeProbeChatEnvelope(cycle));
-  return static_cast<bool>(sent);
+  if (!sent) {
+    std::cerr << "error: chat send: " << sent.error().message << "\n";
+    return false;
+  }
+  return true;
 }
 
 pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
@@ -444,7 +449,9 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     return 1;
   }
 
-  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
+  // Bind all interfaces so Docker/netns offerers can dial a hop on a bridge IP
+  // (127.0.0.1-bound UDP cannot sendto non-loopback destinations).
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), false);
   if (!offerer) {
     std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
     return 1;

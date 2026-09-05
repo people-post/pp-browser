@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/chat/IDirectMessageClient.h"
+
 #include "common/directory/DirectoryTypes.h"
 #include "common/Error.h"
 #include "common/directory/IDirectoryClient.h"
@@ -40,18 +42,13 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
-/** D060 peer-direct history — `/pp-browser/chat-history/1.0.0`. */
-inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/1.0.0";
-
+/** D060 peer-direct history — `/pp-browser/rpc/history/1.0.0` (rpc kind; own OPEN). */
 class IChatHistoryPeerClient {
 public:
   virtual ~IChatHistoryPeerClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
-
-/** R019 peer-direct attachment blobs — `/pp-browser/chat-blob/1.0.0`. */
-inline constexpr const char* kChatBlobProtocolId = "/pp-browser/chat-blob/1.0.0";
 
 class IChatBlobPeerClient {
 public:
@@ -61,7 +58,7 @@ public:
   virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
 };
 
-/** Product blob entry (Amp or libp2p) — DEK + profile wiring for MessagingHub. */
+/** Product blob entry (Amp or libp2p) — DEK + profile wiring for ConversationsHub. */
 class IChatBlobPeerService : public IChatBlobPeerClient, public IDekConsumer {
 public:
   ~IChatBlobPeerService() override = default;

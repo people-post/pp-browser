@@ -1,12 +1,12 @@
 # Local / dogfood deploy for pp-node (not production hardening).
 # Usage (from repo root after packaging):
-#   bash scripts/pp_node_package_linux.sh all
+#   bash scripts/platform/pp_node_package_linux.sh all
 #   docker compose -f packaging/pp-node/docker-compose.yml up -d --build
 #
 # Status HTTP (published on host; image has no curl):
-#   ./scripts/pp_node_relay_smoke.sh
+#   ./scripts/test/pp_node_relay_smoke.sh
 #   curl -sS http://127.0.0.1:18518/healthz
-# See IMAGE_SMOKE.md. Prefer ./scripts/pp_local_test.sh for hop lifecycle.
+# See IMAGE_SMOKE.md. Prefer ./scripts/test/pp_local_test.sh for hop lifecycle.
 
 services:
   pp-node:

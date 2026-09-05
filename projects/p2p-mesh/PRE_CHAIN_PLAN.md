@@ -76,16 +76,16 @@ expires_at
 3. Map existing types:
    - `DirectoryHit` / `MeshNodeHit` → `NameRecord`
    - `MeshDirectoryNode` → either become `NameRecord` or carry the missing fields through the cache
-4. `HttpDirectoryClient` implements the port; `MessagingHub` / hop builders consume **only** `NameRecord` / port snapshots
+4. `HttpDirectoryClient` implements the port; `ConversationsHub` / hop builders consume **only** `NameRecord` / port snapshots
 5. Unit tests: mapping fixtures; mock directory behind the port
 
-**Touchpoints:** `src/base/net/ServiceClients*`, `src/foundation/data/Config.h` (`MeshDirectoryNode`), `src/domain/mesh/discovery/*`, `src/feature/messaging/MessagingHub.cpp`, tests
+**Touchpoints:** `src/base/net/ServiceClients*`, `src/foundation/data/Config.h` (`MeshDirectoryNode`), `src/domain/mesh/discovery/*`, `src/feature/conversations/ConversationsHub.cpp`, tests
 
 **Exit:** No hop/UI code parses Brief-only JSON keys outside the HTTP adapter.
 
 **Anti-scope:** no Amp protocol, no chain, no DNS dial.
 
-**Status:** Landed — `INameDirectory` + `DirectoryClientNameDirectory` + `NameRecord` in `src/domain/mesh/discovery/NameDirectory.*`; MessagingHub cache fetcher uses `ListService("mesh_node")`.
+**Status:** Landed — `INameDirectory` + `DirectoryClientNameDirectory` + `NameRecord` in `src/domain/mesh/discovery/NameDirectory.*`; ConversationsHub cache fetcher uses `ListService("mesh_node")`.
 
 ---
 
@@ -113,9 +113,9 @@ expires_at
 2. Cache fetcher iterates providers with failover (empty list → platform default Brief URL)
 3. Docs: CONFIGURATION.md — “directory provider (HTTP now; Amp/chain later)”
 
-**Exit:** Swapping the phone-book backend is a provider entry, not a MessagingHub rewrite.
+**Exit:** Swapping the phone-book backend is a provider entry, not a ConversationsHub rewrite.
 
-**Status:** Landed — `DirectoryConfig.providers[]`, `EffectiveDirectoryProviders`, `FailoverDirectoryClient`, factory HTTP wiring; Amp backends owned by MeshHost/MessagingHub (nd4). Settings UI edits `base_url` only (clears providers).
+**Status:** Landed — `DirectoryConfig.providers[]`, `EffectiveDirectoryProviders`, `FailoverDirectoryClient`, factory HTTP wiring; Amp backends owned by MeshHost/ConversationsHub (nd4). Settings UI edits `base_url` only (clears providers).
 
 ---
 
@@ -133,7 +133,7 @@ expires_at
 
 **Anti-scope:** fog anycast, root-signed epoch manifests, invite sponsorship (theory only until scheduled).
 
-**Status:** Landed — `docs/contracts/MESH_DIRECTORY_AMP.md`; `AmpDirectoryService` + `AmpDirectoryClient`; MeshHost advertise/serve; MessagingHub Amp-first `MeshDirectoryCache` fetcher then HTTP; pp-node hosts snapshot; `CreateServiceClients` still HTTP-only (Amp needs PeerLinkManager).
+**Status:** Landed — `docs/contracts/MESH_DIRECTORY_AMP.md`; `AmpDirectoryService` + `AmpDirectoryClient`; MeshHost advertise/serve; ConversationsHub Amp-first `MeshDirectoryCache` fetcher then HTTP; pp-node hosts snapshot; `CreateServiceClients` still HTTP-only (Amp needs PeerLinkManager).
 
 ---
 

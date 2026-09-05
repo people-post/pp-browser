@@ -44,8 +44,8 @@ When Brief drops classical `relay_users` (ML-DSA-only register), **or** after th
 
 | Platform | Script |
 |----------|--------|
-| Linux / macOS | [`scripts/wipe_local_profile.sh`](../../scripts/wipe_local_profile.sh) |
-| Windows | [`scripts/wipe_local_profile.ps1`](../../scripts/wipe_local_profile.ps1) |
+| Linux / macOS | [`scripts/dev/wipe_local_profile.sh`](../../scripts/dev/wipe_local_profile.sh) |
+| Windows | [`scripts/dev/wipe_local_profile.ps1`](../../scripts/dev/wipe_local_profile.ps1) |
 | Android / iOS | Clear app storage by hand (no script) |
 
 Brief-side wipe: www repo `scripts/wipe_relay_pq.sh`.
@@ -84,7 +84,7 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 - Breaking HTTP: new path or explicit API version; keep `/v1` until sunset.
 - **Client-compat discovery:** unauthenticated `GET /v1/client-compat` on the relay base URL ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md#client-compatibility-discovery)). Compare local app semver (`PP_BROWSER_RELEASE_VERSION`) to `min_client_version` / `latest_client_version`. Below min → blocking update dialog; below latest → dismissible banner. Fail open on network error; cache TTL 6h under the profile dir. This is a **relay/service** floor only.
 - **Peer mismatch:** discovered via messaging / libp2p (soft-skip unknown wire, protocol-id negotiation failure)—not via directory profile fields. Optional future: in-band capability hello on the chat protocol.
-- libp2p: version in protocol id (e.g. `/pp-browser/chat-history/1.0.0`); advertise multiple ids when bumping; no mutual protocol → clear incompatible state, not a crash loop.
+- libp2p: version in protocol id (e.g. `/pp-browser/rpc/1.0.0`); advertise multiple ids when bumping; no mutual protocol → clear incompatible state, not a crash loop.
 
 ---
 

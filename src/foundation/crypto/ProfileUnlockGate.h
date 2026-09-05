@@ -36,7 +36,7 @@ struct ProfileUnlockUiPorts {
 
 /**
  * App-filled ports: messaging readiness + prefs + UI. Clear via BindPorts({}).
- * Gate does not depend on MessagingHub or ShellHost.
+ * Gate does not depend on ConversationsHub or ShellHost.
  */
 struct ProfileUnlockPorts {
   std::function<bool()> messaging_initialized;

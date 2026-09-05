@@ -18,7 +18,7 @@ JSON (`Value` / `Object`) comes from [`pp-cpp-common`](https://github.com/people
 
 ### Shared / PeerId deps
 
-Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.sh) (plus standalone Asio / Outcome trees). See `libp2p_dependencies` in [`UPSTREAM.json`](UPSTREAM.json) when present.
+Imported by [`scripts/vendor/libp2p_vendor_import.sh`](../scripts/vendor/libp2p_vendor_import.sh) (plus standalone Asio / Outcome trees). See `libp2p_dependencies` in [`UPSTREAM.json`](UPSTREAM.json) when present.
 
 | Directory | Upstream | Notes |
 |-----------|----------|-------|
@@ -50,7 +50,7 @@ BoringSSL in `third_party/boringssl/` provides TLS for curl on Linux and PeerId 
 
 ## Updating a vendored library
 
-1. Edit the tag in [`scripts/vendor_import.sh`](../scripts/vendor_import.sh) or [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.sh).
+1. Edit the tag in [`scripts/vendor/vendor_import.sh`](../scripts/vendor/vendor_import.sh) or [`scripts/vendor/libp2p_vendor_import.sh`](../scripts/vendor/libp2p_vendor_import.sh).
 2. Run the import script from the repo root.
 3. Rebuild and run tests.
 4. Commit `third_party/` and `UPSTREAM.json`.

@@ -16,7 +16,7 @@ How to connect an **Apple Developer Program** account to pp-browser / **PP** for
 | Bundle ID | `dev.pp-browser.app` ([`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 | Release artifact | `pp-browser-<version>-macos.dmg` (CPack DragNDrop; volume name PP) |
 | Entitlements | [`packaging/macos/pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) |
-| Signing script | [`scripts/macos_sign_and_notarize.sh`](../../scripts/macos_sign_and_notarize.sh) |
+| Signing script | [`scripts/platform/macos_sign_and_notarize.sh`](../../scripts/platform/macos_sign_and_notarize.sh) |
 | Local env template | [`packaging/macos/signing.env.example`](../../packaging/macos/signing.env.example) |
 | CI workflow | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) |
 
@@ -116,7 +116,7 @@ CPack on macOS packages the signed **`PP.app` only** from `CMAKE_INSTALL_PREFIX`
 
 | Step | Script command | When skipped |
 |------|----------------|--------------|
-| After install | `./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/PP.app"` | No `APPLE_CERTIFICATE_BASE64` |
+| After install | `./scripts/platform/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/PP.app"` | No `APPLE_CERTIFICATE_BASE64` |
 | After cpack | `notarize` + `staple` on the `.dmg` | No `APPLE_NOTARY_*` secrets |
 
 On `Invalid`, the script prints the notary JSON log (`notarytool log <submission-id>`).
@@ -147,13 +147,13 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 cmake --install build --prefix install
 
-./scripts/macos_sign_and_notarize.sh sign-app install/PP.app
+./scripts/platform/macos_sign_and_notarize.sh sign-app install/PP.app
 
 (cd build && cpack -G DragNDrop)
 dmg="$(find build -maxdepth 2 -name '*.dmg' -print -quit)"
 
-./scripts/macos_sign_and_notarize.sh notarize "$dmg"
-./scripts/macos_sign_and_notarize.sh staple "$dmg"
+./scripts/platform/macos_sign_and_notarize.sh notarize "$dmg"
+./scripts/platform/macos_sign_and_notarize.sh staple "$dmg"
 ```
 
 ### Verify Gatekeeper
@@ -168,15 +168,15 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 ### Script commands
 
 ```bash
-./scripts/macos_sign_and_notarize.sh --help
+./scripts/platform/macos_sign_and_notarize.sh --help
 
 # Individual steps:
-./scripts/macos_sign_and_notarize.sh sign-app   <PP.app>
-./scripts/macos_sign_and_notarize.sh notarize   <PP.app|file.dmg>
-./scripts/macos_sign_and_notarize.sh staple     <PP.app|file.dmg>
+./scripts/platform/macos_sign_and_notarize.sh sign-app   <PP.app>
+./scripts/platform/macos_sign_and_notarize.sh notarize   <PP.app|file.dmg>
+./scripts/platform/macos_sign_and_notarize.sh staple     <PP.app|file.dmg>
 
 # Convenience (after cpack, when dmg path is known):
-./scripts/macos_sign_and_notarize.sh release install/PP.app build/pp-browser-0.1.0-macos.dmg
+./scripts/platform/macos_sign_and_notarize.sh release install/PP.app build/pp-browser-0.1.0-macos.dmg
 ```
 
 ---
@@ -191,7 +191,7 @@ Open the DMG, drag PP to Applications, launch without right-click → Open.
 | Wrong identity | Match `APPLE_SIGNING_IDENTITY` exactly to `security find-identity -v -p codesigning` |
 | CI still unsigned | Confirm all seven secrets are set; unsigned path logs `warning: macOS signing credentials not configured` |
 | Gatekeeper blocks signed app | Ensure DMG was **notarized and stapled**, not just the `.app` |
-| Launch crash: `Library not loaded: /opt/homebrew/...` or Team ID mismatch | Binary linked Homebrew dylibs (nghttp2/png/brotli). Reconfigure with clean build; curl has `USE_NGHTTP2=OFF`, FreeType disables brotli and forces vendored libpng. Run `./scripts/macos_check_bundled_linkage.sh install/PP.app` |
+| Launch crash: `Library not loaded: /opt/homebrew/...` or Team ID mismatch | Binary linked Homebrew dylibs (nghttp2/png/brotli). Reconfigure with clean build; curl has `USE_NGHTTP2=OFF`, FreeType disables brotli and forces vendored libpng. Run `./scripts/platform/macos_check_bundled_linkage.sh install/PP.app` |
 
 ---
 

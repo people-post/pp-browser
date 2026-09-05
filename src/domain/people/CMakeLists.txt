@@ -4,11 +4,13 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   ProfileIconCache.cpp
   ContactJson.cpp
   ContactIdentity.cpp
+  ContactReachability.cpp
   ContactsStore.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
   LinkDeviceExchange.cpp
   MeshHopPolicy.cpp
+  PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
 )
 

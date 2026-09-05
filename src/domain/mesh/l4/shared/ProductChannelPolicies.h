@@ -7,7 +7,7 @@
 
 namespace pp::amp {
 
-/** Realtime media frames for `/pp-browser/call-media/1.0.0`. */
+/** Realtime media frames for `/pp-browser/realtime/1.0.0`. */
 inline ChannelPolicy CallMediaChannelPolicy() {
   ChannelPolicy policy;
   policy.cls = ChannelClass::Realtime;
@@ -18,7 +18,7 @@ inline ChannelPolicy CallMediaChannelPolicy() {
   return policy;
 }
 
-/** Reliable hello/teardown leg for `/pp-browser/call-media/1.0.0` (AMP-CHANNEL). */
+/** Reliable hello/teardown leg for `/pp-browser/realtime/1.0.0` (AMP-CHANNEL). */
 inline ChannelPolicy CallMediaControlChannelPolicy() {
   ChannelPolicy policy;
   policy.cls = ChannelClass::RealtimeControl;
@@ -30,19 +30,22 @@ inline ChannelPolicy CallMediaControlChannelPolicy() {
   return policy;
 }
 
-inline ChannelPolicy ChatBlobChannelPolicy(bool read_once = false) {
-  ChannelPolicy policy;
-  policy.cls = ChannelClass::Bulk;
-  policy.drop = ChannelDropPolicy::Never;
-  policy.max_outbound_frames = AmpChannelLimits::kMaxControlOutboundFrames;
+/**
+ * Product Bulk OPEN for `/pp-browser/blob/1.0.0`.
+ * Wraps Amp `MakeBulkChannelPolicy()` (class + size) and adds read_once / timeout.
+ * Do not re-copy Bulk defaults here — see pp-cpp-amp docs/OWNERSHIP.md.
+ */
+inline ChannelPolicy BulkChannelPolicy(bool read_once) {
+  // Call MakeBulkChannelPolicy (not BulkChannelPolicy()) to avoid overload recursion
+  // with this (bool) product wrapper.
+  ChannelPolicy policy = MakeBulkChannelPolicy();
   policy.read_once = read_once;
-  policy.max_message_bytes = AmpChannelLimits::kMaxChatBlobFrameBytes;
   policy.read_timeout = std::chrono::milliseconds{8000};
   return policy;
 }
 
 /**
- * `/pp-browser/circuit-relay/1.0.0` tunnel: JSON bridge handshake then opaque DATA splice.
+ * `/pp-browser/circuit/1.0.0` tunnel: JSON bridge handshake then opaque DATA splice.
  * Reliable; not read_once (stays open for forward).
  */
 inline ChannelPolicy CircuitTunnelChannelPolicy(

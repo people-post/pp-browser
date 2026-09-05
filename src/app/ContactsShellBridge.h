@@ -1,8 +1,8 @@
 #pragma once
 
-#include "feature/ui/ContactsChromeSync.h"
-#include "feature/ui/ContactsSurfaceSnapshot.h"
-#include "feature/ui/ShellChromeApplyPorts.h"
+#include "gui/contacts/ContactsChromeSync.h"
+#include "gui/contacts/ContactsSurfaceSnapshot.h"
+#include "gui/shell/ShellChromeApplyPorts.h"
 
 namespace pbr {
 

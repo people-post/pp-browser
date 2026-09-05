@@ -13,7 +13,7 @@
 
 namespace pbr {
 
-/** Authz + local blob serve for `/pp-browser/chat-blob/1.0.0`. */
+/** Authz + local blob serve for `/pp-browser/blob/1.0.0`. */
 class ChatBlobResponder {
 public:
   static Roe<std::vector<uint8_t>> ServeFetch(IThreadStore& store, const ChatBlobRequest& request,

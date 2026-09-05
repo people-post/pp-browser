@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: linux-pp-node-ubuntu2404-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/pp_node_package_linux.sh') }}
+          key: linux-pp-node-ubuntu2404-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/platform/pp_node_package_linux.sh') }}
           restore-keys: |
             linux-pp-node-ubuntu2404-ccache-v1-
 
@@ -109,7 +109,7 @@ jobs:
         env:
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-        run: bash scripts/pp_node_package_linux.sh all
+        run: bash scripts/platform/pp_node_package_linux.sh all
 
       - name: ccache stats (post-build)
         if: always()
@@ -185,7 +185,7 @@ jobs:
             -p 18518:18518 \
             "${PRIMARY_TAG}"
           PP_NODE_STATUS_URL=http://127.0.0.1:18518 \
-            bash scripts/pp_node_image_smoke.sh --timeout 60
+            bash scripts/test/pp_node_image_smoke.sh --timeout 60
           docker rm -f pp-node-ci-smoke
 
       - name: Create GitHub Release

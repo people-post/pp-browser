@@ -8,7 +8,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/data/SchemaVersion.h"
 #include "common/StartupTiming.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformServices.h"
 #include "common/PbrCompat.h"
@@ -17,7 +17,7 @@ namespace pbr {
 
 namespace {
 
-Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, ProfileSecretsService& secrets,
+Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsService& secrets,
                                     const std::string& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
   return UnlockProfileSecretsAndReady(secrets, pin,
@@ -26,7 +26,7 @@ Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, ProfileSecretsServi
 
 } // namespace
 
-Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHub& messaging,
+Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, ConversationsHub& messaging,
                                     ProfileSecretsService& secrets) {
   PlatformServices::Register();
   InstallPlatformLogSink();
@@ -85,7 +85,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHu
   }
 
   if (auto hub = [&]() -> Roe<void> {
-        StartupPhase phase("Bootstrap::MessagingHub::Initialize");
+        StartupPhase phase("Bootstrap::ConversationsHub::Initialize");
         return messaging.Initialize(*config, profile_data_dir);
       }();
       !hub) {

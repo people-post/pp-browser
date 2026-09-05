@@ -79,7 +79,7 @@
 ## N012 — Reachability status + guided network help
 
 **Date:** 2026-07-26  
-**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; full AutoNAT / hole punch come later.  
+**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; AutoNAT-style probes and **Amp Coordinated Punch** ([H009](../media-hop-reachability/DECISIONS.md#h009--amp-coordinated-punch-acp)) come later in-stack.  
 **Rationale:** Mutual-help nodes fail silently behind NAT; users need to learn what is wrong and what they can do without feeling broken or blamed.
 
 ## N013 — Prefer IPv6 + UPnP/NAT-PMP before manual port forward
@@ -284,7 +284,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 | Track | Direction |
 |-------|-----------|
-| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); hole punch later as fork allows — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
+| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); **Amp Coordinated Punch** planned ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md), H009) — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
 | Discovery | Contacts ∪ bootstrap now; directory; DHT per N015 timing |
 | Transmission | N021 framing/QoS; lossy audio-friendly paths; budgets N019 |
 | Incentives | Quotes/ceilings; volunteer → paid as regulation (N020); contact-first admission |
@@ -366,7 +366,7 @@ Paid mode: never exceed the **accepted ceiling** without explicit re-accept (sam
 ## N025 — Mobile call-scoped listen on Wi‑Fi (not full Node)
 
 **Date:** 2026-08-01  
-**Status:** Accepted (**implemented** — gating in `MessagingHub` / `MobileEphemeralListenGate`; LAN QA pending)  
+**Status:** Accepted (**implemented** — gating in `ConversationsHub` / `MobileEphemeralListenGate`; LAN QA pending)  
 **Decision:** Mobile stays **Client by default** (N001). Add **narrow, gated listen** so phones can be **dialed by PeerId on LAN** and serve as **in-call hops** without always-on Node behavior.
 
 ### Participation modes (mobile)
@@ -489,3 +489,19 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Alternatives rejected:** Unpinned DNS dial as product bootstrap; teaching users PeerIds; making DHT a name registry; putting terminal ledger Beacon on public bootstrap; shipping a divergent “display name” system for v1.
 
 **Cross-link:** [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md), [platform-integration](../../../pp-ledger/docs/platform-integration.md).
+
+---
+
+## N030 — Adopt L4 protocol kinds gate
+
+**Date:** 2026-09-04  
+**Status:** Accepted (design)  
+**Normative:** [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md)  
+**Amends:** N017 (message_relay = rpc host role, not a new kind); N021 (media_relay stays the blind **realtime** hop — optional `datagram_relay` rename only); N028 (directory + dht remain **discover**, separate ids OK).  
+**Cross-link:** [A028](../adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes).
+
+**Decision:** Mesh product work follows the **seven L4 kinds** and the “no new `protocol_id` unless conversation contract is new” gate in [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md). New mesh features must map to **identify / discover / reach / circuit / rpc / blob / realtime** (or HTTP). Circuit multi-hop / `broker_media` extend **circuit** ops; SoftMigrate and hop pricing stay on **realtime** hop control; offline peer inbox (when/if) stays **rpc** semantics with a different retention role — HTTP Brief remains the durability fallback until then.
+
+**Rationale:** Mesh ADRs already forbade A/V-specific relay forks and premature message_relay packaging; A028 makes the complete set explicit for agents adding capabilities.
+
+**Alternatives rejected:** Open-ended `/pp-browser/<feature>/1.0.0` growth; packaging media hop and message durability as one protocol.

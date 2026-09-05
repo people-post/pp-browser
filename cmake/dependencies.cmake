@@ -6,7 +6,7 @@ function(pp_require_vendored name)
   if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/${name}/CMakeLists.txt")
     message(FATAL_ERROR
       "Missing vendored dependency '${name}' under third_party/.\n"
-      "  Run: ./scripts/vendor_import.sh")
+      "  Run: ./scripts/vendor/vendor_import.sh")
   endif()
 endfunction()
 

@@ -126,7 +126,7 @@ d0 (complete)
 
 **Note:** `third_party/libsodium` and `cmake/dependencies.cmake` already vendored — c1 completes **link to `pp_base`** and module code.
 
-- [x] Add `libsodium` to [scripts/vendor_import.sh](../../scripts/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
+- [x] Add `libsodium` to [scripts/vendor/vendor_import.sh](../../scripts/vendor/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
 - [x] [third_party/UPSTREAM.json](../../third_party/UPSTREAM.json) + [third_party/README.md](../../third_party/README.md)
 - [x] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
 - [x] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
@@ -140,7 +140,7 @@ d0 (complete)
 - [x] `MessageCipher` — XChaCha20-Poly1305 AEAD
 - [x] `EncryptedPayload` — blob codec + base64
 - [x] `ReplayWindow` — seq acceptance helper
-- [x] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/messaging/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
+- [x] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/conversations/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
 
 ### Tests
 

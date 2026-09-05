@@ -6,9 +6,11 @@ pp_browser_add_domain_library(pp_domain_messaging
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
+    ChatHistoryResponder.cpp
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     CallControlCodec.cpp
+    CallMediaKeyStore.cpp
     CallSessionLogic.cpp
     CallSessionStore.cpp
     CallTypes.cpp
@@ -22,6 +24,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     E2eIngestClassifier.cpp
     E2eRelayPayloadCodec.cpp
     EnvelopeSigner.cpp
+    EpochBumpCoordinator.cpp
     GroupE2ePayloadCodec.cpp
     GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
@@ -29,14 +32,22 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupTypes.cpp
     InitiationBillingCodec.cpp
     InitiationBillingStore.cpp
+    PaymentPromiseAvoid.cpp
+    PaymentPromiseCodec.cpp
+    PaymentPromiseStore.cpp
+    PaymentPromiseLifecycle.cpp
+    PaymentPromiseWireCodec.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp
+    PskSessionCoordinator.cpp
+    PublicPskLockCoordinator.cpp
     PeerKemKeyStore.cpp
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
     TranscriptCipher.cpp
+    SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp
     SyncStateCodec.cpp
   PUBLIC_LIBS

@@ -2,7 +2,7 @@
 
 **Project:** [p2p-mesh](README.md)  
 **ADRs:** [N023](DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) (scope model), [N014/N020](DECISIONS.md) (pick + incentives)  
-**Stack dialability:** [media-hop-reachability](../media-hop-reachability/) (in-libp2p; **not** this doc)  
+**Stack dialability:** [media-hop-reachability](../media-hop-reachability/) (Amp mesh; **not** this doc)  
 **Networking:** [NETWORKING.md](../../docs/architecture/NETWORKING.md)
 
 ## One-line goal
@@ -158,12 +158,12 @@ See [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summ
 
 | Layer | Owns |
 |-------|------|
-| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: peerstore, Identify, UPnP/dial-back, circuit evolution, `IsPeerDialable` |
+| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: addr book, ch0 ads, UPnP/dial-back, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
 | **This doc / p2p-mesh policy** | **Who** may relay, **which scope**, bridge score, escalate order, admission, quotes, settle |
 | **p2p-av-calls** | SoftMigrate **consumes** ranked hops + dialability |
 | **HTTP Brief** | Message inbox durability (global/org backstop) |
 
-Do **not** expand media-hop-reachability to cover scope routing or incentives — that splits ownership locked in [H001](../media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-libp2p).
+Do **not** expand media-hop-reachability to cover scope routing or incentives — that splits ownership locked in [H001](../media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-amp-mesh).
 
 ## Code anchors (ns1 landed → ns2 open)
 

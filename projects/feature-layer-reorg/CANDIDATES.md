@@ -1,0 +1,80 @@
+# Feature → domain / split candidates
+
+Confidence tags per [F002](DECISIONS.md#f002--confidence-tags-for-moves). Update when a peel lands or a candidate is demoted.
+
+## sure — peeled to domain (f1–f2 done)
+
+Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers): **no new top-level peers**; flat drop unless the peer already nests.
+
+| Files (now) | Home | Notes |
+|-------------|------|-------|
+| `domain/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Done |
+| `domain/messaging/CallMediaKeyStore.*` | `domain/messaging/` | Done — not `domain/media` |
+| `domain/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Done |
+| `domain/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Done; feature test still covers LinkDevice export case |
+| `domain/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Done |
+| `domain/people/ContactReachability.*` | `domain/people/` | Done |
+| `domain/people/PeerBriefRoute.*` | `domain/people/` | Done |
+| `domain/mesh/reachability/MobileEphemeralListenGate.*` | `domain/mesh/reachability/` | Done |
+| `domain/ui/PeoplePickerLogic.h` | `domain/ui/` | Done |
+| `domain/ui/CallConflictCopy.*` | `domain/ui/` | Done |
+
+### Demoted during f2
+
+| Files | Why |
+|-------|-----|
+| `feature/conversations/ProfileIconFetchUtil.*` | Uses `HttpClient` — people→net banned; keep in feature until download is injected via common/net port |
+
+**Not doing for f1–f3:** `domain/calls`, `domain/psk`, new `pp_domain_*` targets, or a messaging internal subfolder migration.
+
+## likely — after a short peel
+
+| Files | Target | Blocker |
+|-------|--------|---------|
+| Amp mesh-only façades (`AmpCircuitHopReach`, `AmpMediaRelayClient`) | `domain/mesh` | Audit: no messaging-store includes; better with f4v1 calls band |
+
+### Done in f3
+
+| Files | Home | Notes |
+|-------|------|-------|
+| `common/chat/IDirectMessageClient.h` | `common/chat/` | Dropped unused `domain/net` include |
+| `domain/messaging/ChatHistoryResponder.*` | `domain/messaging/` | `IdentityStore` replaced by account id + `SignBytesFn` |
+
+## blocked — stay feature (or need common first)
+
+| Files | Why |
+|-------|-----|
+| `DirectoryShadowCache.*` | net client + people DTOs |
+| `GroupInviteGate.*` | people + messaging stores |
+| `PeerDisplayResolver.*` | people + roster + shadow cache |
+| `RegistrationClientUtil.*` | net + people (+ UI labels) |
+| `ProfileIconFetchUtil.*` | people cache + `HttpClient` (people→net) |
+| `AttachmentClientUtil.*`, `AttachmentFetchUtil.*`, `ChatBlobRequestUtil.*` | multi-peer ladders |
+| `AttachmentDownloadService.*` | orchestration queue |
+| `ProfileIconClientUtil.*` | blob upload + identity |
+| `RelayDirectory*KeyResolver.*` | messaging store + directory |
+| `AmpDirectChatService.*`, `AmpChatHistoryService.*`, `AmpChatBlobService.*` | product Amp adapters (unless audit proves mesh-only) |
+| Hubs / pipelines / routers / controllers / ports | orchestration or UI seams |
+
+## structural — folder splits (f4–f7)
+
+| Move | Depends on | Notes |
+|------|------------|-------|
+| Nest `feature/calls/` | f1–f3; [F004](DECISIONS.md#f004--calls-home-nested-band-first-then-top-level) | **Done (f4v1)** — same CMake target |
+| Top-level `feature/calls` | Soft delivery/inbound ports | **Done** — `pp_feature_calls`; hub still owns `CallStack` |
+| App-owned `CallStack` | After top-level calls | Optional — hub stops owning call lifecycle |
+| Rename `messaging` → `conversations` | After hub ownership clean | **Done** — path + Hub/Facade/`pp_feature_conversations` |
+| Absorb `feature/chat` → `feature/ui/chat/` | f5 | **Done (f5v1)** |
+| Nest `feature/ui/shell/` + `contacts/` | f5 | **Done (f5v1)** — staging for gui |
+| Lift `feature/ui/**` → `src/gui/**` | f7; [F008](DECISIONS.md#f008--gui-layer-above-feature) | **Done (f7v1)** — `pp_gui`; ban feature→gui |
+| Top-level `pp_feature_shell` / `contacts` | — | **Superseded** by `src/gui/` bands |
+| App named wirers | f6 | **Done (f6v1)** |
+| Conversations→ai inbound port | f6 | **Done** — `AgentInboundPorts`; `AgentUiPorts` in `feature/ai/` |
+| Inbox presentation split | last | Highest product risk |
+
+## stay feature (orchestration) — do not lower
+
+`ConversationsHub`, `ConversationsFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
+
+**Moved (f7v1):** Rml presenters / shell / chrome controllers under `src/gui/`.
+

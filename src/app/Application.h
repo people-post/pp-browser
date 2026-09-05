@@ -10,7 +10,7 @@
 #include "domain/net/ClientCompat.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/conversations/ConversationsHub.h"
 
 #include <memory>
 #include <optional>
@@ -18,6 +18,10 @@
 #include "common/PbrCompat.h"
 
 class FontEngineInterfaceHarfBuzz;
+
+namespace Rml {
+class Context;
+}
 
 namespace pbr {
 
@@ -28,13 +32,14 @@ class CallUiBackend;
 class ClientCompatController;
 class FlowCoordinator;
 class InputCoordinator;
-class MessagingFacade;
+class ConversationsFacade;
 class PinGateController;
 class ProfileSecretsService;
 class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
 class ShellHost;
+struct SettingsToolPorts;
 class PeoplePickerController;
 class EmojiPickerController;
 class ChatController;
@@ -51,7 +56,7 @@ public:
   void Run();
   void Shutdown();
 
-  MessagingHub& Messaging();
+  ConversationsHub& Conversations();
   /** App-owned profile vault / DEK service (Bootstrap initializes it). */
   ProfileSecretsService& Secrets();
   SessionStore& Store() { return store_; }
@@ -65,11 +70,21 @@ public:
   static std::string AssetsPath(const std::string& relative);
 
 private:
+  bool InitializeUiHost(const char* window_title, int window_width, int window_height,
+                        const BootstrapResult& bootstrap, Rml::Context*& context);
+  SettingsToolPorts WireSettings(Rml::Context* context);
+  void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
+  void WireCalls();
+  void WireUnlockPinAndFlow();
+  void WireAgentAndConfig();
+  bool MountPresenters(Rml::Context* context);
+  void WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap);
+
   bool initialized_ = false;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsService> secrets_;
-  std::unique_ptr<MessagingHub> messaging_;
-  std::unique_ptr<MessagingFacade> messaging_facade_;
+  std::unique_ptr<ConversationsHub> messaging_;
+  std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;

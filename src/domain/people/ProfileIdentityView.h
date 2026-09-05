@@ -6,7 +6,7 @@ namespace pbr {
 
 /**
  * Presentation projection of local identity (Me → Profile, tools, etc.).
- * Filled by messaging (`MessagingHub::LoadProfileIdentityView`); not the on-disk LocalIdentity.
+ * Filled by messaging (`ConversationsHub::LoadProfileIdentityView`); not the on-disk LocalIdentity.
  */
 struct ProfileIdentityView {
   bool ready = false;
