@@ -10,6 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
+| **F — media tree** | **Spec only** — [MEDIA_TREE.md](MEDIA_TREE.md), [DECISIONS.md](DECISIONS.md) B001–B006, [PHASES.md](PHASES.md); code after C dogfood |
 
 ## Spine B landed
 

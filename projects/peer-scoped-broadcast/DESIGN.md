@@ -223,6 +223,34 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 
 ---
 
+## Media scale (multi-hop tree)
+
+Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscriber counts need a **degree-capped tree of blind SFUs** so seed / PreferLocal root egress stays ~`degree × bitrate`. That plan lives in **[MEDIA_TREE.md](MEDIA_TREE.md)** (ADRs [B001–B006](DECISIONS.md), phases B0–B3, program **Spine F**).
+
+Summary locked there:
+
+- Broadcast ≠ large group call (do not SoftMigrate / raise V007).
+- Keep encrypt-once AEAD; hops stay blind; stable session key + join ticket (no rotate-on-viewer-leave).
+- Viewers attach to **leaves**; relays are `help_media` Nodes.
+- Circuit multi-hop remains reachability only; media copies only at `media_relay` nodes.
+- Group calls keep one-hop SFU; multi-SFU media is **broadcast-only**.
+
+---
+
+## Media scale (multi-hop tree)
+
+Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscriber counts need a **degree-capped tree of blind SFUs** so seed / PreferLocal root egress stays ~`degree × bitrate`. That plan lives in **[MEDIA_TREE.md](MEDIA_TREE.md)** (ADRs [B001–B006](DECISIONS.md), phases B0–B3, program **Spine F**).
+
+Summary locked there:
+
+- Broadcast ≠ large group call (do not SoftMigrate / raise V007).
+- Keep encrypt-once AEAD; hops stay blind; stable session key + join ticket (no rotate-on-viewer-leave).
+- Viewers attach to **leaves**; relays are `help_media` Nodes.
+- Circuit multi-hop remains reachability only; media copies only at `media_relay` nodes.
+- Group calls keep one-hop SFU; multi-SFU media is **broadcast-only**.
+
+---
+
 ## Explicit non-goals
 
 - Open topics anyone can create or speak on  
@@ -232,10 +260,11 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 - Carrying live video (or large blobs) on announce/gossip  
 - Putting live chat bitstreams on realtime media frames  
 - Replacing chat DM, mesh DHT `FIND_PEER`, or content-cas provide/fetch  
-- Minting a new L4 kind such as `/pp-browser/broadcast/…` (use rpc + realtime + blob)
+- Minting a new L4 kind such as `/pp-browser/broadcast/…` (use rpc + realtime + blob)  
+- Multi-SFU media trees for **group calls** (broadcast tree is [MEDIA_TREE.md](MEDIA_TREE.md) / Spine F — not a call SoftMigrate extension)
 
 ---
 
 ## One-line summary
 
-**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; discovery via Notifications + optional live banner (not call ring); while live, publisher-paced heartbeat tips for late discovery; live picture on realtime hop; private DM or publisher-mediated on-screen overlay replies; optional recording in CAS; one helper relationship, explicit `help_announce` / `help_media` flags.**
+**Authenticated per-PeerId announcement feeds, optionally relayed by whitelisted helpers; discovery via Notifications + optional live banner (not call ring); while live, publisher-paced heartbeat tips for late discovery; live picture on realtime hop (scale via degree-capped blind SFU tree); private DM or publisher-mediated on-screen overlay replies; optional recording in CAS; one helper relationship, explicit `help_announce` / `help_media` flags.**

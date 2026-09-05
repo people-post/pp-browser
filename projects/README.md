@@ -54,6 +54,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [pricing](pricing/) | Initiation floor + media quote gates |
 | [p2p-mesh](p2p-mesh/) | Mesh deepen, relay scope, name directory / pre-chain |
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
+| [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [media-hop-reachability](media-hop-reachability/) | Circuit hop dial / SoftMigrate consume |
 | [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment scenarios (design) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |
