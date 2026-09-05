@@ -45,7 +45,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 
 ### Content CAS (planned)
 
-**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C010). `CasStore` on disk; attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
+**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C011). `CasStore` on disk; attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
 
 After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
 
@@ -65,7 +65,10 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 | **private** | Profile DEK wrap (PPBA) | BLAKE2b-256(plaintext) — R016 | Chat/E2E decrypt → memory → wrap; never auto-public |
 | **public** | Clear published payload (v1) | Hash(published bytes); new object on publish | Explicit **Share publicly…** only |
 
+**Private presentation (C011):** process RAM LRU (`AttachmentPlaintextMemoryCache`) for small private plaintext while unlocked; wiped with `blobs_view/` on ClearDek. Large private videos (> Soft 4 MiB) skip `blobs_view` until explicit open; CAS ingest unchanged. Public clear bytes need no DEK wipe path.
+
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
+
 ### PIN-related files (disk only)
 
 | File / field | Role |

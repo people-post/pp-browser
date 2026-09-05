@@ -113,8 +113,27 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 
 ---
 
+
+## C011 — Private presentation: RAM LRU + video size gate
+
+**Status:** Accepted  
+
+**Decision:**
+
+1. **Scope = private realm only.** Memory / session plaintext presentation policy applies to **private** objects (DEK-wrapped). Public realm stores clear bytes (C001); there is no equivalent privacy concern for keeping public plaintext off disk during view.
+2. **Images and video posters:** Prefer an in-process **RAM LRU** of private plaintext (`AttachmentPlaintextMemoryCache`), keyed by content-hash hex. Admit small objects only (≤8 MiB/entry; 64 entries / 64 MiB budget). Fill on save/load. **Clear the LRU on ClearDek** together with wiping all thread `blobs_view/` trees (`WipeAllAttachmentViewCaches`).
+3. **`blobs_view/` remains** a session on-disk plaintext materialization for RmlUi file `src` / OS open when needed. It is not durable truth (CAS is). Future work may replace file `src` with in-memory textures or stream decrypt without changing CAS.
+4. **Private video inline gate:** Videos larger than Soft auto-download (`kMaxInlinePrivateVideoBytes` = 4 MiB) skip session `blobs_view` materialization and true frame extract until **explicit open**. Use soft poster placeholder when over the gate. **Gate presentation / playback, not CAS ingest** — large videos still save to private CAS.
+5. **Non-blocking for later:** Size gate is an early workaround. On-demand chunk decrypt and alternate presenter backends remain allowed follow-ons.
+
+**Rationale:** ClearDek must not leave private plaintext in RAM or `blobs_view`. Images benefit from RAM without forcing large video plaintext onto disk for every scroll. Public objects need no DEK wipe path for clear bytes.
+
+**Rejected (for now):** Blocking CAS write of large videos; requiring full stream-decrypt before any video UI.
+
+---
 ## Amends
 
 - Amends attachment layout expectations in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (planned CAS section).  
 - Does not change L4 kinds; compositions for share/broadcast recorded in [L4_PROTOCOL_KINDS](../../docs/contracts/L4_PROTOCOL_KINDS.md).  
 - Supersedes durable-byte role of per-thread `blobs/` once P2 cutover lands (R016 paths become views/refs).
+- C011 amends attachment presentation expectations in [AT_REST_ENCRYPTION](../../docs/contracts/AT_REST_ENCRYPTION.md) and [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md).

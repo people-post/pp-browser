@@ -69,6 +69,19 @@ Publish: Get private → Put public → index
 
 Private and public blob **conversations** may use peer OPEN, circuit, or HTTP/CDN. CDN is an optional path for public objects (C009), not a second store.
 
+
+## Private presentation (C011)
+
+Private objects may be shown while the vault is unlocked without treating `blobs_view/` as durable storage:
+
+| Concern | Policy |
+|---------|--------|
+| Images / posters | Prefer `AttachmentPlaintextMemoryCache` (RAM LRU); wipe on ClearDek with `blobs_view/` |
+| Large private video | Above Soft 4 MiB: soft poster + open-on-demand; **do not** skip CAS ingest |
+| Public realm | Clear bytes (C001); no DEK-tied RAM wipe requirement for presentation |
+
+`blobs_view/` may still materialize plaintext for RmlUi file `src` / OS open. Future in-memory textures or stream decrypt are compatible with this split.
+
 ## Non-goals (this project)
 
 - Bitswap / Kubo wire compatibility  

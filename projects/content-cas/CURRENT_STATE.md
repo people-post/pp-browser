@@ -33,7 +33,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | Wipes | Per-thread wipe clears views/pending cipher (+ orphan `blobs/` dir if present); clear-all wipes `cas/private` |
 | Layout | Blocks `cas/private/blocks/{aa}/{bb}/{id}` (C010) |
 
-## Private presentation (post-P2)
+## Private presentation (post-P2, C011)
 
 | Piece | Change |
 |-------|--------|

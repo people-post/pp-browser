@@ -12,3 +12,5 @@ Ordering only. Status: [CURRENT_STATE.md](CURRENT_STATE.md).
 | **P5** | Optional piece/manifest mode inside realms | Multi-source assemble |
 
 P0 is this change set. P1+ are implementation.
+
+Post-P2 (same branch as cutover): private presentation policy **C011** (RAM LRU + inline video size gate) — see [DECISIONS](DECISIONS.md#c011--private-presentation-ram-lru--video-size-gate).
