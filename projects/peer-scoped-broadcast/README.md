@@ -1,6 +1,6 @@
 # Peer-scoped announce + live broadcast
 
-**Status:** Design sketch accepted (2026-09-05) — **not implemented**  
+**Status:** Design sketch accepted (2026-09-05); **Spine B thin started** (tip codec/feed) — see [CURRENT_STATE](CURRENT_STATE.md)  
 **Owner:** Hongwei + agents  
 **Related:** [p2p-mesh](../p2p-mesh/), [p2p-av-calls](../p2p-av-calls/), [content-cas](../content-cas/), [L4_PROTOCOL_KINDS](../../docs/contracts/L4_PROTOCOL_KINDS.md)
 
@@ -14,6 +14,7 @@ Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plu
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Planes, roles, whitelist, lifecycle, non-goals |
 | [PROGRAM.md](PROGRAM.md) | Multi-project spines — overall progress over single-project speed |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | Implementation progress |
 
 Live shows may use publisher-paced **re-announce heartbeats** (min interval + dedup) — see [DESIGN.md](DESIGN.md#live-re-announce-heartbeat).
 

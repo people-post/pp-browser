@@ -1,0 +1,188 @@
+#include "domain/messaging/PeerAnnounceCodec.h"
+
+#include "foundation/crypto/CryptoUtil.h"
+
+#include "common/ValueJson.h"
+
+#include <algorithm>
+#include <cmath>
+#include <sodium.h>
+#include <sstream>
+
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+void AppendField(std::ostringstream& out, const char* key, const std::string& value) {
+  out << key << '=' << value << '\n';
+}
+void AppendField(std::ostringstream& out, const char* key, const int64_t value) {
+  out << key << '=' << value << '\n';
+}
+void AppendField(std::ostringstream& out, const char* key, const uint64_t value) {
+  out << key << '=' << value << '\n';
+}
+
+Roe<ByteVector> ExpandEd25519SecretKey(const std::vector<uint8_t>& secret_key) {
+  EnsureSodiumInit();
+  if (secret_key.size() == crypto_sign_SECRETKEYBYTES) {
+    return ByteVector(secret_key.begin(), secret_key.end());
+  }
+  if (secret_key.size() == crypto_sign_SEEDBYTES) {
+    ByteVector sk(crypto_sign_SECRETKEYBYTES);
+    ByteVector pk(crypto_sign_PUBLICKEYBYTES);
+    if (crypto_sign_seed_keypair(pk.data(), sk.data(), secret_key.data()) != 0) {
+      return Error("Ed25519 seed expand failed");
+    }
+    return sk;
+  }
+  return Error("Ed25519 secret key must be 32-byte seed or 64-byte sodium sk");
+}
+
+} // namespace
+
+Roe<std::string> MakePeerAnnounceTopicId(const std::string_view peer_id, const std::string_view local_name,
+                                         const std::string_view app_ns) {
+  if (peer_id.empty() || local_name.empty() || app_ns.empty()) {
+    return Error("peer announce topic requires peer_id, app_ns, and local_name");
+  }
+  EnsureSodiumInit();
+  ByteVector material;
+  material.reserve(peer_id.size() + app_ns.size() + local_name.size() + 2);
+  material.insert(material.end(), peer_id.begin(), peer_id.end());
+  material.push_back(0);
+  material.insert(material.end(), app_ns.begin(), app_ns.end());
+  material.push_back(0);
+  material.insert(material.end(), local_name.begin(), local_name.end());
+
+  ByteVector digest(crypto_generichash_BYTES);
+  if (crypto_generichash(digest.data(), digest.size(), material.data(), material.size(), nullptr, 0) != 0) {
+    return Error("peer announce topic hash failed");
+  }
+  return BytesToHex(digest);
+}
+
+std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
+  std::ostringstream out;
+  AppendField(out, "v", static_cast<int64_t>(tip.schema_version));
+  AppendField(out, "peer_id", tip.peer_id);
+  AppendField(out, "topic_id", tip.topic_id);
+  AppendField(out, "program_id", tip.program_id);
+  AppendField(out, "state", std::string(PeerAnnounceStateToString(tip.state)));
+  AppendField(out, "seq", tip.seq);
+  AppendField(out, "epoch", tip.epoch);
+  AppendField(out, "created_at_ms", tip.created_at_ms);
+  AppendField(out, "join_handle", tip.join_handle);
+  AppendField(out, "body", tip.body);
+  AppendField(out, "content_id_hex", tip.content_id_hex);
+  return out.str();
+}
+
+Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
+  Object json;
+  json.set("schema_version", static_cast<int64_t>(tip.schema_version));
+  json.set("peer_id", tip.peer_id);
+  json.set("topic_id", tip.topic_id);
+  json.set("program_id", tip.program_id);
+  json.set("state", PeerAnnounceStateToString(tip.state));
+  json.set("seq", static_cast<int64_t>(tip.seq));
+  json.set("epoch", static_cast<int64_t>(tip.epoch));
+  json.set("created_at_ms", tip.created_at_ms);
+  json.set("join_handle", tip.join_handle);
+  json.set("body", tip.body);
+  json.set("content_id_hex", tip.content_id_hex);
+  json.set("signature_b64", tip.signature_b64);
+  return DumpJson(json);
+}
+
+Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
+  auto parsed = ParseObject(std::string(json));
+  if (!parsed) {
+    return parsed.error();
+  }
+  const Object& o = *parsed;
+  PeerAnnounceTip tip;
+  tip.schema_version =
+      static_cast<int>(ObjectInt64(o, "schema_version").value_or(kPeerAnnounceTipSchemaVersion));
+  if (tip.schema_version != kPeerAnnounceTipSchemaVersion) {
+    return Error("unsupported peer announce schema_version");
+  }
+  tip.peer_id = ObjectString(o, "peer_id").value_or("");
+  tip.topic_id = ObjectString(o, "topic_id").value_or("");
+  tip.program_id = ObjectString(o, "program_id").value_or("");
+  const auto state = PeerAnnounceStateFromString(ObjectString(o, "state").value_or(""));
+  if (!state) {
+    return Error("invalid peer announce state");
+  }
+  tip.state = *state;
+  tip.seq = ObjectNonNegInt(o, "seq").value_or(0);
+  tip.epoch = ObjectNonNegInt(o, "epoch").value_or(0);
+  tip.created_at_ms = ObjectInt64(o, "created_at_ms").value_or(0);
+  tip.join_handle = ObjectString(o, "join_handle").value_or("");
+  tip.body = ObjectString(o, "body").value_or("");
+  tip.content_id_hex = ObjectString(o, "content_id_hex").value_or("");
+  tip.signature_b64 = ObjectString(o, "signature_b64").value_or("");
+  if (tip.peer_id.empty() || tip.topic_id.empty() || tip.program_id.empty()) {
+    return Error("peer announce tip missing peer_id/topic_id/program_id");
+  }
+  return tip;
+}
+
+Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& ed25519_secret_key) {
+  auto sk = ExpandEd25519SecretKey(ed25519_secret_key);
+  if (!sk) {
+    return sk.error();
+  }
+  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
+  ByteVector signature(crypto_sign_BYTES);
+  unsigned long long sig_len = 0;
+  if (crypto_sign_detached(signature.data(), &sig_len, reinterpret_cast<const unsigned char*>(canonical.data()),
+                           canonical.size(), sk->data()) != 0) {
+    return Error("peer announce sign failed");
+  }
+  signature.resize(static_cast<size_t>(sig_len));
+  tip.signature_b64 = Base64Encode(signature);
+  return tip;
+}
+
+Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& ed25519_public_key) {
+  EnsureSodiumInit();
+  if (ed25519_public_key.size() != crypto_sign_PUBLICKEYBYTES) {
+    return Error("Ed25519 public key must be 32 bytes");
+  }
+  if (tip.signature_b64.empty()) {
+    return Error("peer announce tip missing signature");
+  }
+  auto signature = Base64Decode(tip.signature_b64);
+  if (!signature) {
+    return signature.error();
+  }
+  if (signature->size() != crypto_sign_BYTES) {
+    return Error("peer announce signature size invalid");
+  }
+  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
+  if (crypto_sign_verify_detached(signature->data(), reinterpret_cast<const unsigned char*>(canonical.data()),
+                                  canonical.size(), ed25519_public_key.data()) != 0) {
+    return Error("peer announce signature verify failed");
+  }
+  return {};
+}
+
+int64_t PeerAnnounceNextHeartbeatAtMs(const int64_t last_emit_ms, const double jitter_unit) {
+  const double u = std::clamp(jitter_unit, 0.0, 1.0);
+  const double span = static_cast<double>(kPeerAnnounceLiveHeartbeatMaxIntervalMs -
+                                          kPeerAnnounceLiveHeartbeatMinIntervalMs);
+  const auto interval =
+      kPeerAnnounceLiveHeartbeatMinIntervalMs + static_cast<int64_t>(std::llround(u * span));
+  return last_emit_ms + interval;
+}
+
+bool PeerAnnounceHeartbeatDue(const int64_t last_emit_ms, const int64_t now_ms) {
+  if (last_emit_ms <= 0) {
+    return true;
+  }
+  return now_ms - last_emit_ms >= kPeerAnnounceLiveHeartbeatMinIntervalMs;
+}
+
+} // namespace pbr
