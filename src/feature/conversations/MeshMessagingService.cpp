@@ -7,6 +7,7 @@
 #include "feature/conversations/AmpPeerAnnounceService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
+#include "domain/messaging/AnnounceDmReply.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
@@ -16,6 +17,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/people/PeerDisplayLabel.h"
 #include "domain/messaging/InitiationBillingCodec.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
@@ -206,6 +208,45 @@ Roe<PeerAnnounceTipAck> MeshMessagingService::PublishAndPushAnnounce(const std::
   }
   return peer_announce_->PushTip(peer_key, *tip);
 }
+
+Roe<ThreadMessage> MeshMessagingService::ReplyToAnnouncePublisher(const std::string& tip_peer_id,
+                                                                  const std::string& text) {
+  if (tip_peer_id.empty()) {
+    return Error("Missing announce publisher peer_id");
+  }
+  if (text.empty()) {
+    return Error("Empty announce reply");
+  }
+
+  std::string contact_id;
+  std::string account_id;
+  std::string title = tip_peer_id;
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+    if (*found) {
+      const Contact& contact = **found;
+      contact_id = contact.id;
+      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      title = FormatContactTitle(contact);
+      if (title.empty()) {
+        title = tip_peer_id;
+      }
+      RegisterContactDirectEndpoints(contact);
+    }
+  }
+
+  auto plan = PlanAnnounceDmReply(tip_peer_id, contact_id, account_id, title);
+  if (!plan) {
+    return plan.error();
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(plan->target, plan->contact_id, plan->thread_title);
+  if (!thread) {
+    return thread.error();
+  }
+  WarmPeerForThread(thread->id);
+  return SendUserMessage(thread->id, text);
+}
+
 
 void MeshMessagingService::RegisterPeerKemKey(const std::string& peer_identity_kind,
                                            const std::string& peer_identity_value,

@@ -1,5 +1,6 @@
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
+#include "domain/messaging/AnnounceDmReply.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -10,6 +11,7 @@
 #include "foundation/identity/PeerIdUtil.h"
 
 #include "common/directory/DirectoryJson.h"
+#include "common/thread/ThreadChannel.h"
 
 #include <gtest/gtest.h>
 #include <variant>
@@ -236,6 +238,30 @@ TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
   EXPECT_FALSE(
       ResolvePeerAnnouncePublisherKey("not-the-derived-peer-id", "other-local", {}, store));
   EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store));
+}
+
+
+TEST(AnnounceDmReplyTest, PrefersAccountThreadWhenContactKnown) {
+  auto plan = PlanAnnounceDmReply("12D3KooWPublisher", "c1", "account:alice", "Alice");
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(ContactIdKind::Account));
+  EXPECT_EQ(plan->target.peer_identity_value, "account:alice");
+  EXPECT_EQ(plan->target.channel, ThreadChannel::E2ePublic);
+  EXPECT_EQ(plan->contact_id, "c1");
+  EXPECT_EQ(plan->thread_title, "Alice");
+}
+
+TEST(AnnounceDmReplyTest, FallsBackToPeerIdThread) {
+  auto plan = PlanAnnounceDmReply("12D3KooWPublisher", "", "", "");
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(ContactIdKind::PeerId));
+  EXPECT_EQ(plan->target.peer_identity_value, "12D3KooWPublisher");
+  EXPECT_EQ(plan->thread_title, "12D3KooWPublisher");
+}
+
+TEST(AnnounceDmReplyTest, RejectsEmptyPeerId) {
+  auto plan = PlanAnnounceDmReply("", "c1", "account:alice", "Alice");
+  EXPECT_FALSE(plan);
 }
 
 } // namespace pbr

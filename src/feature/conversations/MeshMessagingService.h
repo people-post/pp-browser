@@ -130,6 +130,12 @@ public:
    */
   Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
                                                  const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
+  /**
+   * Spine B: reply to an announce publisher via DM (not in-topic speak).
+   * Resolves contact by tip PeerId when present; otherwise PeerId-keyed thread.
+   */
+  Roe<ThreadMessage> ReplyToAnnouncePublisher(const std::string& tip_peer_id, const std::string& text);
+
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
