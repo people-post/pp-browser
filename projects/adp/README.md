@@ -18,7 +18,8 @@
 | [DESIGN.md](DESIGN.md) | L1 wire, API, I/O, delivery |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 | [PHASES.md](PHASES.md) | L1 phases + AMP migration D0–D9 |
-| [DECISIONS.md](DECISIONS.md) | ADRs A001–A027 |
+| [DECISIONS.md](DECISIONS.md) | ADRs A001–A028 |
+| [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) | L4 conversation kinds + new-`protocol_id` gate (A028) |
 | [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md) | Amp call-media over circuit — nested Session (A024) |
 | [EXTRACTION_READINESS.md](EXTRACTION_READINESS.md) | Layer map, deps, test layout — prep for `pp-cpp-amp` |
 | [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md) · [L2_TEST_MATRIX.md](L2_TEST_MATRIX.md) · [L3_TEST_MATRIX.md](L3_TEST_MATRIX.md) · [LINK_TEST_MATRIX.md](LINK_TEST_MATRIX.md) | Tier A functional scorecards |

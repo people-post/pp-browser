@@ -25,6 +25,8 @@ L2 AEAD wraps **L3 frame bytes**. L4 payloads inside L3 DATA frames are unchange
 
 `protocol_id` is a UTF-8 string (e.g. `/pp-browser/chat/1.0.0`) carried in OPEN.
 
+L4 ids name **conversation kinds**, not product features — complete set and “when to mint a new id” gate: [L4_PROTOCOL_KINDS.md](L4_PROTOCOL_KINDS.md) ([A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes)).
+
 ## Channel classes
 
 | Class | ADP QoS | Duplex | Typical `protocol_id` |
