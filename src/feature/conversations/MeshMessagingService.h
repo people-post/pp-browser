@@ -22,6 +22,8 @@
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "domain/mesh/host/MeshPorts.h"
+#include "feature/conversations/AmpPeerAnnounceService.h"
+#include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/net/ServiceClients.h"
 
 #include <atomic>
@@ -35,6 +37,7 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
 
 class GroupMembershipService;
 class AttachmentDownloadService;
@@ -222,6 +225,8 @@ private:
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
+  std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
+  std::unique_ptr<AmpPeerAnnounceService> peer_announce_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

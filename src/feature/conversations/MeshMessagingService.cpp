@@ -4,6 +4,8 @@
 #include "feature/conversations/AmpChatBlobService.h"
 #include "feature/conversations/AmpChatHistoryService.h"
 #include "feature/conversations/AmpDirectChatService.h"
+#include "feature/conversations/AmpPeerAnnounceService.h"
+#include "domain/messaging/PeerAnnounceFeed.h"
 #include "feature/conversations/MeshMessagingService.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -143,7 +145,11 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
     chat->Start();
     peer_history_ = std::move(history);
     direct_chat_ = std::move(chat);
-    log().info << "direct chat/history/blob transport=amp";
+    peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
+    peer_announce_ = std::make_unique<AmpPeerAnnounceService>(*amp_links_, *peer_announce_feed_, amp_io_pump,
+                                                             worker);
+    peer_announce_->Start();
+    log().info << "direct chat/history/blob/peer-announce transport=amp";
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
