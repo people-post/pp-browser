@@ -464,7 +464,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       TearDownBundle(bundle, false, false, "amp call-media: no link for media channel");
       return;
     }
-    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy());
+    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy(std::chrono::milliseconds{0}));
     if (!channel_id) {
       TearDownBundle(bundle, false, false, channel_id.error().message);
       return;
@@ -534,7 +534,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     auto channel_session = std::make_shared<pp::amp::ChannelSession>();
     const std::string call_id = bundle.call_id;
     channel_session->Bind(
-        *link.Mux(), channel_id, pp::amp::CallMediaChannelPolicy(),
+        *link.Mux(), channel_id, pp::amp::CallMediaChannelPolicy(std::chrono::milliseconds{0}),
         [this, self = shared_from_this(), call_id](Roe<std::vector<uint8_t>> frame) {
           if (!frame) {
             return false;

@@ -13,6 +13,9 @@
 #include "common/directory/IdentityTypes.h"
 #include "domain/people/ProfileIdentityView.h"
 #include "domain/ui/ChatWidgetTypes.h"
+#include "domain/messaging/PaymentPromiseLifecycle.h"
+#include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/ChatSyncService.h"
@@ -162,6 +165,28 @@ public:
   bool IsInitiationOutboundBlocked(const std::string& peer_identity);
   Roe<void> SendChargeRequired(const std::string& peer_identity,
                                std::optional<int64_t> floor_minor = std::nullopt);
+
+  // --- Payment promises (P002 / P003) ----------------------------------------
+  Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
+  Roe<PaymentPromise> CreatePaymentPromiseOfferForThread(const std::string& thread_id,
+                                                         PaymentPromiseLifecycle::OfferParams params);
+  Roe<PaymentPromise> AcceptPaymentPromise(const std::string& promise_id);
+  Roe<PaymentPromise> MarkPaymentPromiseDelivering(const std::string& promise_id);
+  Roe<PaymentPromise> RecordPaymentPromiseOutcome(const std::string& promise_id, PaymentPromiseState outcome,
+                                                  const std::string& note = {});
+  Roe<void> AvoidPaymentPromiseCounterparty(const std::string& promise_id);
+  Roe<std::vector<PaymentPromise>> ListPaymentPromises();
+  Roe<std::optional<PaymentPromise>> GetPaymentPromise(const std::string& promise_id);
+  Roe<std::vector<PaymentPromise>> ListPendingInboundPaymentPromises();
+  Roe<std::optional<PaymentPromise>> GetPendingInboundPaymentPromise(const std::string& promise_id);
+  Roe<PaymentPromise> AcceptInboundPaymentPromise(const std::string& promise_id);
+  Roe<bool> IgnoreInboundPaymentPromise(const std::string& promise_id);
+  bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
+  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                       PaymentPromiseControlType type,
+                                                       const PaymentPromise& promise,
+                                                       const std::string& body_text);
+  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);

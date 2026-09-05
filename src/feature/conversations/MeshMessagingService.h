@@ -5,6 +5,7 @@
 #include "domain/people/IdentityStore.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
+#include "domain/messaging/PaymentPromiseStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "foundation/crypto/IPskSessionStore.h"
@@ -98,6 +99,7 @@ public:
   void BindCallControlInbound(CallControlInboundPorts ports);
   void SetGroupMembership(GroupMembershipService* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
+  void SetPaymentPromiseStore(PaymentPromiseStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentDownloadService* downloads);
   /** R019 peer-direct attachment blobs (null when mesh unavailable). */
@@ -212,6 +214,7 @@ private:
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  PaymentPromiseStore* payment_promises_ = nullptr;
   AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   IChatPeerLinks* amp_links_ = nullptr;

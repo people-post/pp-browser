@@ -5,7 +5,7 @@
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in libp2p), [p2p-av-calls](../p2p-av-calls/) (V026), [push-notifications](../push-notifications/), messaging under `src/feature/conversations/`
+**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in Amp mesh), [p2p-av-calls](../p2p-av-calls/) (V026), [push-notifications](../push-notifications/), messaging under `src/feature/conversations/`
 
 ## One-line goal
 
@@ -71,6 +71,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score |
 | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) | Per-stream attach SM design (N026) — docs before code |
 | [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
+| [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) | Amp Coordinated Punch plan — not implemented |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists and delivery order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |

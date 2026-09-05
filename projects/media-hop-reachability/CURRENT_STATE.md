@@ -1,12 +1,12 @@
 # Media hop reachability — current state
 
-> **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. libp2p fork removed — see [MESH.md](../../docs/architecture/MESH.md).
+> **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-09-04 (L3.25c complete)
 
 ## Direction
 
-Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_addrs` prototype **removed** (uncommitted); do not re-land without ADR.
+Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_addrs` prototype **removed**; do not re-land without ADR. Preference: **publish → punch → circuit → fail** (H002).
 
 **Spec:** [DESIGN.md](DESIGN.md) (concept-first). **Build order:** [PHASES.md](PHASES.md).
 
@@ -14,19 +14,20 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 
 | Area | State |
 |------|-------|
-| Project docs | Ownership: fork implements; SoftMigrate consumes |
-| ADRs | H001–H008; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker) |
-| **L1 peer address book** | `PeerAddressBook`, `PeerSessionManager` — upsert on bootstrap/register/connect/dial-success; `PreferredPeerMultiaddr` |
-| **L2 advertised listen set** | `BuildAdvertisedListenSet`, `IdentifyIntegrationService`, `AdvertisedAddrPublisher` |
-| **L3 circuit PeerId dial** | `CircuitBridgeTarget`, `TryEnsureHopViaCircuit` — **single-hop**; SoftMigrate circuit fallback via `ICircuitHopReach` |
-| **L3 compose (loopback)** | Shared `loopback_partition_fixture.h`; `CircuitCallMediaComposeTest` (call-media via R); `CircuitMediaRelayComposeTest` (quote/attach/fan-out via R); `IsReachableForProtocol` |
+| Project docs | Ownership: Amp mesh implements; SoftMigrate consumes |
+| ADRs | H001–H009; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker); punch plan H009 |
+| **L1 peer address book** | Stack upsert on bootstrap/register/connect/dial-success; preferred dial addr helpers |
+| **L2 advertised listen set** | Amp ch0 + dial-back / UPnP-derived ads |
+| **L3 circuit PeerId dial** | Circuit tunnel / hop reach — **single-hop**; SoftMigrate circuit fallback via `ICircuitHopReach` / `AmpCircuitHopReach` |
+| **L3 compose (loopback)** | Shared loopback partition fixture; call-media via R; media_relay quote/attach/fan-out via R |
 
 ## In progress / gaps
 
 | Area | State |
 |------|-------|
-| **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green** |
-| **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); later when single-hop cannot reach B |
+| **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a–c complete** — seed/contact introducer, PeerId upsert, punch-before-circuit, upgrade-from-circuit (R1→direct demote) — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
+| **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); parallel to punch |
+| **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green**; punch upsert flips `IsDialable` (L3.25b) |
 | **L5 directory / DHT** | Planned; closed-set for media hops |
 
 ## Code anchors (elsewhere)
@@ -34,13 +35,14 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Piece | Location |
 |-------|----------|
 | SoftMigrate hop pick | `MeshHopPolicy`, `CallTopologyController` |
-| Custom circuit | `CircuitRelayService` |
-| DialBack / Reachability / UPnP | mesh integration |
-| Identify | cpp fork |
-| Partition compose tests | `src/domain/mesh/tests/` (`circuit_*_compose_test`, loopback fixture) |
+| Custom circuit | `CircuitTunnelCoordinator`, circuit L4 |
+| DialBack / Reachability / UPnP | `src/domain/mesh/reachability/` |
+| Amp underlay | pp-cpp-amp (`PeerLink`, keepalive, `MaybeLearnPath`) |
+| Hop reach helper | `AmpCircuitHopReach` |
+| Partition compose tests | `src/domain/mesh/tests/` (`amp_circuit_*_compose_test`, loopback fixture) |
 | Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — not implemented |
 
 ## Next
 
-1. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can)
-2. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)
+1. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
+3. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)

@@ -394,6 +394,74 @@ Roe<void> ConversationsFacade::SendChargeRequired(const std::string& peer_identi
   return hub_.SendChargeRequired(peer_identity, floor_minor);
 }
 
+
+Roe<PaymentPromise> ConversationsFacade::CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params) {
+  return hub_.CreatePaymentPromiseOffer(params);
+}
+
+Roe<PaymentPromise> ConversationsFacade::CreatePaymentPromiseOfferForThread(
+    const std::string& thread_id, PaymentPromiseLifecycle::OfferParams params) {
+  return hub_.CreatePaymentPromiseOfferForThread(thread_id, std::move(params));
+}
+
+Roe<PaymentPromise> ConversationsFacade::AcceptPaymentPromise(const std::string& promise_id) {
+  return hub_.AcceptPaymentPromise(promise_id);
+}
+
+Roe<PaymentPromise> ConversationsFacade::MarkPaymentPromiseDelivering(const std::string& promise_id) {
+  return hub_.MarkPaymentPromiseDelivering(promise_id);
+}
+
+Roe<PaymentPromise> ConversationsFacade::RecordPaymentPromiseOutcome(const std::string& promise_id,
+                                                                const PaymentPromiseState outcome,
+                                                                const std::string& note) {
+  return hub_.RecordPaymentPromiseOutcome(promise_id, outcome, note);
+}
+
+Roe<void> ConversationsFacade::AvoidPaymentPromiseCounterparty(const std::string& promise_id) {
+  return hub_.AvoidPaymentPromiseCounterparty(promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> ConversationsFacade::ListPaymentPromises() {
+  return hub_.ListPaymentPromises();
+}
+
+Roe<std::optional<PaymentPromise>> ConversationsFacade::GetPaymentPromise(const std::string& promise_id) {
+  return hub_.GetPaymentPromise(promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> ConversationsFacade::ListPendingInboundPaymentPromises() {
+  return hub_.ListPendingInboundPaymentPromises();
+}
+
+Roe<std::optional<PaymentPromise>> ConversationsFacade::GetPendingInboundPaymentPromise(
+    const std::string& promise_id) {
+  return hub_.GetPendingInboundPaymentPromise(promise_id);
+}
+
+Roe<PaymentPromise> ConversationsFacade::AcceptInboundPaymentPromise(const std::string& promise_id) {
+  return hub_.AcceptInboundPaymentPromise(promise_id);
+}
+
+Roe<bool> ConversationsFacade::IgnoreInboundPaymentPromise(const std::string& promise_id) {
+  return hub_.IgnoreInboundPaymentPromise(promise_id);
+}
+
+bool ConversationsFacade::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {
+  return hub_.ShouldAvoidPaymentCounterparty(other_account_id);
+}
+
+Roe<ThreadMessage> ConversationsFacade::BuildPaymentPromiseControlMessage(const std::string& thread_id,
+                                                                      const PaymentPromiseControlType type,
+                                                                      const PaymentPromise& promise,
+                                                                      const std::string& body_text) {
+  return hub_.BuildPaymentPromiseControlMessage(thread_id, type, promise, body_text);
+}
+
+Roe<PaymentPromise> ConversationsFacade::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
+  return hub_.StagePaymentPromiseControlMessage(message);
+}
+
 // --- Settings / profile helpers ---------------------------------------------
 
 ProfileIdentityView ConversationsFacade::LoadProfileIdentityView() { return hub_.LoadProfileIdentityView(); }

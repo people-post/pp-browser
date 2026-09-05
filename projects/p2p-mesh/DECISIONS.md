@@ -79,7 +79,7 @@
 ## N012 — Reachability status + guided network help
 
 **Date:** 2026-07-26  
-**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; full AutoNAT / hole punch come later.  
+**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; AutoNAT-style probes and **Amp Coordinated Punch** ([H009](../media-hop-reachability/DECISIONS.md#h009--amp-coordinated-punch-acp)) come later in-stack.  
 **Rationale:** Mutual-help nodes fail silently behind NAT; users need to learn what is wrong and what they can do without feeling broken or blamed.
 
 ## N013 — Prefer IPv6 + UPnP/NAT-PMP before manual port forward
@@ -284,7 +284,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 | Track | Direction |
 |-------|-----------|
-| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); hole punch later as fork allows — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
+| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); **Amp Coordinated Punch** planned ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md), H009) — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
 | Discovery | Contacts ∪ bootstrap now; directory; DHT per N015 timing |
 | Transmission | N021 framing/QoS; lossy audio-friendly paths; budgets N019 |
 | Incentives | Quotes/ceilings; volunteer → paid as regulation (N020); contact-first admission |

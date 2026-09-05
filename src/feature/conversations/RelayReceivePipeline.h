@@ -22,6 +22,7 @@ namespace pbr {
 
 class GroupInviteGate;
 class InitiationBillingStore;
+class PaymentPromiseStore;
 
 struct RelayReceiveOutcome {
   bool persisted = false;
@@ -55,6 +56,7 @@ public:
 
   void BindCallControlInbound(CallControlInboundPorts ports) { call_control_ = std::move(ports); }
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
+  void SetPaymentPromiseStore(PaymentPromiseStore* store) { payment_promises_ = store; }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -93,6 +95,8 @@ private:
                                     std::optional<int64_t> relay_created_at_ms = std::nullopt,
                                     std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
   Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
+  /** P003: stage remote payment-promise receipts; never auto-commit. */
+  Roe<void> ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);
@@ -105,6 +109,7 @@ private:
   GroupInviteGate* invite_gate_ = nullptr;
   CallControlInboundPorts call_control_;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  PaymentPromiseStore* payment_promises_ = nullptr;
   PublicPskLockCoordinator public_lock_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
