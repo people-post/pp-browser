@@ -396,6 +396,11 @@ Roe<PaymentPromise> MessagingFacade::CreatePaymentPromiseOffer(const PaymentProm
   return hub_.CreatePaymentPromiseOffer(params);
 }
 
+Roe<PaymentPromise> MessagingFacade::CreatePaymentPromiseOfferForThread(
+    const std::string& thread_id, PaymentPromiseLifecycle::OfferParams params) {
+  return hub_.CreatePaymentPromiseOfferForThread(thread_id, std::move(params));
+}
+
 Roe<PaymentPromise> MessagingFacade::AcceptPaymentPromise(const std::string& promise_id) {
   return hub_.AcceptPaymentPromise(promise_id);
 }
@@ -420,6 +425,23 @@ Roe<std::vector<PaymentPromise>> MessagingFacade::ListPaymentPromises() {
 
 Roe<std::optional<PaymentPromise>> MessagingFacade::GetPaymentPromise(const std::string& promise_id) {
   return hub_.GetPaymentPromise(promise_id);
+}
+
+Roe<std::vector<PaymentPromise>> MessagingFacade::ListPendingInboundPaymentPromises() {
+  return hub_.ListPendingInboundPaymentPromises();
+}
+
+Roe<std::optional<PaymentPromise>> MessagingFacade::GetPendingInboundPaymentPromise(
+    const std::string& promise_id) {
+  return hub_.GetPendingInboundPaymentPromise(promise_id);
+}
+
+Roe<PaymentPromise> MessagingFacade::AcceptInboundPaymentPromise(const std::string& promise_id) {
+  return hub_.AcceptInboundPaymentPromise(promise_id);
+}
+
+Roe<bool> MessagingFacade::IgnoreInboundPaymentPromise(const std::string& promise_id) {
+  return hub_.IgnoreInboundPaymentPromise(promise_id);
 }
 
 bool MessagingFacade::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {

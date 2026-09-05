@@ -131,4 +131,58 @@ TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {
   EXPECT_TRUE((*got)->local_avoid);
 }
 
+TEST_F(PaymentPromiseTest, PendingInboundAcceptAndIgnore) {
+  PaymentPromiseStore store(data_dir_.string());
+  ASSERT_TRUE(static_cast<bool>(store.Load()));
+
+  PaymentPromise remote = SamplePromise();
+  remote.promise_id = "promise:inbound-1";
+  ASSERT_TRUE(static_cast<bool>(store.StageInbound(remote))) << "stage failed";
+
+  auto committed = store.Get("promise:inbound-1");
+  ASSERT_TRUE(static_cast<bool>(committed));
+  EXPECT_FALSE(committed->has_value());
+
+  auto pending = store.GetPendingInbound("promise:inbound-1");
+  ASSERT_TRUE(static_cast<bool>(pending));
+  ASSERT_TRUE(pending->has_value());
+  EXPECT_EQ((*pending)->amount_minor, 42);
+
+  auto accepted = store.AcceptInbound("promise:inbound-1");
+  ASSERT_TRUE(static_cast<bool>(accepted)) << accepted.error().message;
+  EXPECT_EQ(accepted->promise_id, "promise:inbound-1");
+
+  auto after_accept_pending = store.GetPendingInbound("promise:inbound-1");
+  ASSERT_TRUE(static_cast<bool>(after_accept_pending));
+  EXPECT_FALSE(after_accept_pending->has_value());
+  auto after_accept_committed = store.Get("promise:inbound-1");
+  ASSERT_TRUE(static_cast<bool>(after_accept_committed));
+  ASSERT_TRUE(after_accept_committed->has_value());
+
+  PaymentPromise ignored = SamplePromise();
+  ignored.promise_id = "promise:inbound-2";
+  ASSERT_TRUE(static_cast<bool>(store.StageInbound(ignored)));
+  auto drop = store.IgnoreInbound("promise:inbound-2");
+  ASSERT_TRUE(static_cast<bool>(drop));
+  EXPECT_TRUE(*drop);
+  auto still_pending = store.GetPendingInbound("promise:inbound-2");
+  ASSERT_TRUE(static_cast<bool>(still_pending));
+  EXPECT_FALSE(still_pending->has_value());
+  auto not_committed = store.Get("promise:inbound-2");
+  ASSERT_TRUE(static_cast<bool>(not_committed));
+  EXPECT_FALSE(not_committed->has_value());
+
+  // Reload persists pending + committed split.
+  {
+    PaymentPromiseStore again(data_dir_.string());
+    ASSERT_TRUE(static_cast<bool>(again.Load()));
+    auto listed_pending = again.ListPendingInbound();
+    ASSERT_TRUE(static_cast<bool>(listed_pending));
+    EXPECT_TRUE(listed_pending->empty());
+    auto listed = again.Get("promise:inbound-1");
+    ASSERT_TRUE(static_cast<bool>(listed));
+    ASSERT_TRUE(listed->has_value());
+  }
+}
+
 } // namespace

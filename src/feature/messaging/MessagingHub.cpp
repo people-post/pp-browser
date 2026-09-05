@@ -903,6 +903,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  p2p_->SetPaymentPromiseStore(payment_promises_.get());
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
@@ -965,6 +966,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 Sessions());
   p2p_->SetProfileDataDir(data_dir_);
   p2p_->SetInitiationBillingStore(initiation_billing_.get());
+  p2p_->SetPaymentPromiseStore(payment_promises_.get());
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
@@ -1567,6 +1569,16 @@ Roe<PaymentPromise> MessagingHub::CreatePaymentPromiseOffer(const PaymentPromise
   return PaymentPromiseLifecycle::CreateOffer(*payment_promises_, Identity(), params);
 }
 
+Roe<PaymentPromise> MessagingHub::CreatePaymentPromiseOfferForThread(const std::string& thread_id,
+                                                                     PaymentPromiseLifecycle::OfferParams params) {
+  if (thread_id.empty()) {
+    return Error("thread_id required");
+  }
+  params.service_ref = "thread:" + thread_id;
+  params.release_rule = PaymentPromiseReleaseRule::PayerAck;
+  return CreatePaymentPromiseOffer(params);
+}
+
 Roe<PaymentPromise> MessagingHub::AcceptPaymentPromise(const std::string& promise_id) {
   if (!payment_promises_) {
     return Error("payment promise store unavailable");
@@ -1611,6 +1623,35 @@ Roe<std::optional<PaymentPromise>> MessagingHub::GetPaymentPromise(const std::st
   return payment_promises_->Get(promise_id);
 }
 
+Roe<std::vector<PaymentPromise>> MessagingHub::ListPendingInboundPaymentPromises() const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->ListPendingInbound();
+}
+
+Roe<std::optional<PaymentPromise>> MessagingHub::GetPendingInboundPaymentPromise(
+    const std::string& promise_id) const {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->GetPendingInbound(promise_id);
+}
+
+Roe<PaymentPromise> MessagingHub::AcceptInboundPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->AcceptInbound(promise_id);
+}
+
+Roe<bool> MessagingHub::IgnoreInboundPaymentPromise(const std::string& promise_id) {
+  if (!payment_promises_) {
+    return Error("payment promise store unavailable");
+  }
+  return payment_promises_->IgnoreInbound(promise_id);
+}
+
 bool MessagingHub::ShouldAvoidPaymentCounterparty(const std::string& other_account_id) {
   if (!payment_promises_ || other_account_id.empty()) {
     return false;
@@ -1649,9 +1690,10 @@ Roe<PaymentPromise> MessagingHub::IngestPaymentPromiseControlMessage(const Threa
   if (!decoded) {
     return decoded.error();
   }
-  auto saved = payment_promises_->Upsert(*decoded);
-  if (!saved) {
-    return saved.error();
+  // P003: stage only — never auto-commit remote receipts.
+  auto staged = payment_promises_->StageInbound(*decoded);
+  if (!staged) {
+    return staged.error();
   }
   return *decoded;
 }

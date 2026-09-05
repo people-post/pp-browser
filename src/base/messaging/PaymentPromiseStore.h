@@ -14,8 +14,11 @@
 namespace pbr {
 
 /**
- * Local durable store for payment promise receipts (P002).
- * Persists under profile `payment_promises.json`. No settlement / wire yet.
+ * Local durable store for payment promise receipts (P002 / P003).
+ * Persists under profile `payment_promises.json`.
+ *
+ * Committed receipts live in `promises[]`. Inbound remote receipts stage in
+ * `pending_inbound[]` until the user Accepts or Ignores them (P003).
  */
 class PaymentPromiseStore : public Module {
 public:
@@ -32,6 +35,15 @@ public:
   Roe<void> Upsert(PaymentPromise promise);
   Roe<bool> Remove(const std::string& promise_id);
 
+  /** Stage a remote signed receipt without committing it (P003). */
+  Roe<void> StageInbound(PaymentPromise promise);
+  Roe<std::optional<PaymentPromise>> GetPendingInbound(const std::string& promise_id) const;
+  Roe<std::vector<PaymentPromise>> ListPendingInbound() const;
+  /** Move pending → committed (overwrites any existing committed row). */
+  Roe<PaymentPromise> AcceptInbound(const std::string& promise_id);
+  /** Drop a staged inbound receipt without committing. */
+  Roe<bool> IgnoreInbound(const std::string& promise_id);
+
   /** Mark local_avoid on the receipt (does not touch ContactsStore). */
   Roe<void> MarkLocalAvoid(const std::string& promise_id, bool avoided = true);
 
@@ -41,10 +53,12 @@ public:
 private:
   std::string Path() const;
   Roe<void> SaveUnlocked() const;
+  static Roe<void> DecodeArrayInto(const Array* arr, std::unordered_map<std::string, PaymentPromise>& out);
 
   std::string data_dir_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, PaymentPromise> rows_;
+  std::unordered_map<std::string, PaymentPromise> pending_inbound_;
 };
 
 } // namespace pbr

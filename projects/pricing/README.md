@@ -16,6 +16,7 @@ Currency stub: **`pp_credit`** (display “Credits”), integer **minor units**.
 - Local avoid helper stamps receipt + contact `Blocked` (no public reputation yet)
 - `PaymentPromiseLifecycle` create/accept/outcome/avoid; store owned by `MessagingHub`
 - Wire control codec + Hub/Facade APIs for offer/accept/outcome/avoid/ingest
+- **P003:** inbound receipts stage in `pending_inbound[]` (Accept/Ignore); peer-chat offer helper forces payer-ack + `thread:<id>` service_ref; receive pipeline stages (does not auto-commit)
 - Outbound chat/call blocked when offer `> 0` (rails unavailable); localized payment errors
 - Incoming call ring: offer copy + **Accept free** / disabled **Accept & charge**
 - `MessagingHub::SendChargeRequired` re-locks a peer (`charge_required` wire + local MarkClosed)

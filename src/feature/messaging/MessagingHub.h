@@ -209,8 +209,11 @@ public:
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_.get(); }
   PaymentPromiseStore* PaymentPromises() const { return payment_promises_.get(); }
 
-  /** P002: local signed payment-promise lifecycle (no settlement rails). */
+  /** P002/P003: local signed payment-promise lifecycle (no settlement rails). */
   Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
+  /** Peer-chat offer: forces `service_ref=thread:<id>` and payer-ack release (P003). */
+  Roe<PaymentPromise> CreatePaymentPromiseOfferForThread(const std::string& thread_id,
+                                                         PaymentPromiseLifecycle::OfferParams params);
   Roe<PaymentPromise> AcceptPaymentPromise(const std::string& promise_id);
   Roe<PaymentPromise> MarkPaymentPromiseDelivering(const std::string& promise_id);
   Roe<PaymentPromise> RecordPaymentPromiseOutcome(const std::string& promise_id, PaymentPromiseState outcome,
@@ -218,12 +221,18 @@ public:
   Roe<void> AvoidPaymentPromiseCounterparty(const std::string& promise_id);
   Roe<std::vector<PaymentPromise>> ListPaymentPromises() const;
   Roe<std::optional<PaymentPromise>> GetPaymentPromise(const std::string& promise_id) const;
+  Roe<std::vector<PaymentPromise>> ListPendingInboundPaymentPromises() const;
+  Roe<std::optional<PaymentPromise>> GetPendingInboundPaymentPromise(const std::string& promise_id) const;
+  /** Commit a staged inbound receipt into the local store (P003). */
+  Roe<PaymentPromise> AcceptInboundPaymentPromise(const std::string& promise_id);
+  /** Drop a staged inbound receipt without committing (P003). */
+  Roe<bool> IgnoreInboundPaymentPromise(const std::string& promise_id);
   bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
   Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
                                                        PaymentPromiseControlType type,
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
-  /** Upsert a remote signed receipt from an inbound control message. */
+  /** Stage a remote signed receipt from an inbound control message (does not commit; P003). */
   Roe<PaymentPromise> IngestPaymentPromiseControlMessage(const ThreadMessage& message);
 
   ReachabilitySnapshot Reachability() const;

@@ -13,6 +13,8 @@
 #include "base/messaging/InitiationBillingCodec.h"
 #include "base/messaging/InitiationBillingStore.h"
 #include "base/messaging/InitiationPricing.h"
+#include "base/messaging/PaymentPromiseStore.h"
+#include "base/messaging/PaymentPromiseWireCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
@@ -174,6 +176,31 @@ Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& messag
     return {};
   }
   }
+  return {};
+}
+
+Roe<void> RelayReceivePipeline::ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const {
+  if (!payment_promises_) {
+    return {};
+  }
+  if (!PaymentPromiseWireCodec::ControlTypeFromMessage(message)) {
+    return {};
+  }
+  auto payload = TryParseObject(message.payload_json);
+  auto detail_text = payload ? payload->getString("detail") : std::nullopt;
+  if (!detail_text || detail_text->empty()) {
+    return Error("payment promise control missing detail");
+  }
+  auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail_text);
+  if (!decoded) {
+    return decoded.error();
+  }
+  // P003: stage only — chat still shows the system message; commit needs AcceptInbound.
+  auto staged = payment_promises_->StageInbound(*decoded);
+  if (!staged) {
+    return staged.error();
+  }
+  log().info << "staged inbound payment promise id=" << decoded->promise_id;
   return {};
 }
 
@@ -812,6 +839,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       }
     }
     (void)ApplyInboundBillingMessage(side, envelope.sender_contact_id);
+    (void)ApplyInboundPaymentPromiseMessage(side);
   };
 
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
@@ -904,6 +932,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply billing update",
                        billing.error().message, resolved_thread_id);
+    return outcome;
+  }
+  if (auto promise = ApplyInboundPaymentPromiseMessage(persisted); !promise) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't stage payment promise",
+                       promise.error().message, resolved_thread_id);
     return outcome;
   }
 

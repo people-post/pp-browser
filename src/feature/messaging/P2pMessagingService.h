@@ -5,6 +5,7 @@
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/InitiationBillingStore.h"
+#include "base/messaging/PaymentPromiseStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
@@ -96,6 +97,7 @@ public:
   void SetCallSessionManager(CallSessionManager* calls);
   void SetGroupMembership(GroupMembershipService* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
+  void SetPaymentPromiseStore(PaymentPromiseStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentDownloadService* downloads);
   /** R019 peer-direct attachment blobs (null when libp2p unavailable). */
@@ -200,6 +202,7 @@ private:
   GroupRosterStore& group_roster_;
   GroupMembershipService* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
+  PaymentPromiseStore* payment_promises_ = nullptr;
   AttachmentDownloadService* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;

@@ -190,6 +190,13 @@ void P2pMessagingService::SetInitiationBillingStore(InitiationBillingStore* stor
   }
 }
 
+void P2pMessagingService::SetPaymentPromiseStore(PaymentPromiseStore* store) {
+  payment_promises_ = store;
+  if (receive_pipeline_) {
+    receive_pipeline_->SetPaymentPromiseStore(store);
+  }
+}
+
 void P2pMessagingService::SetCallSessionManager(CallSessionManager* calls) {
   call_sessions_ = calls;
   if (receive_pipeline_) {

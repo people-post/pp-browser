@@ -166,8 +166,10 @@ public:
   Roe<void> SendChargeRequired(const std::string& peer_identity,
                                std::optional<int64_t> floor_minor = std::nullopt);
 
-  // --- Payment promises (P002) -----------------------------------------------
+  // --- Payment promises (P002 / P003) ----------------------------------------
   Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
+  Roe<PaymentPromise> CreatePaymentPromiseOfferForThread(const std::string& thread_id,
+                                                         PaymentPromiseLifecycle::OfferParams params);
   Roe<PaymentPromise> AcceptPaymentPromise(const std::string& promise_id);
   Roe<PaymentPromise> MarkPaymentPromiseDelivering(const std::string& promise_id);
   Roe<PaymentPromise> RecordPaymentPromiseOutcome(const std::string& promise_id, PaymentPromiseState outcome,
@@ -175,6 +177,10 @@ public:
   Roe<void> AvoidPaymentPromiseCounterparty(const std::string& promise_id);
   Roe<std::vector<PaymentPromise>> ListPaymentPromises();
   Roe<std::optional<PaymentPromise>> GetPaymentPromise(const std::string& promise_id);
+  Roe<std::vector<PaymentPromise>> ListPendingInboundPaymentPromises();
+  Roe<std::optional<PaymentPromise>> GetPendingInboundPaymentPromise(const std::string& promise_id);
+  Roe<PaymentPromise> AcceptInboundPaymentPromise(const std::string& promise_id);
+  Roe<bool> IgnoreInboundPaymentPromise(const std::string& promise_id);
   bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
   Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
                                                        PaymentPromiseControlType type,
