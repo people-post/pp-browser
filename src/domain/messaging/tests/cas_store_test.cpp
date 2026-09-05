@@ -61,10 +61,12 @@ TEST_F(CasStoreTest, PrivatePutGetRoundTripAndPpbaMagic) {
   in.read(magic, 4);
   EXPECT_EQ(std::string(magic, 4), "PPBA");
 
-  const std::string path = store_->BlockPath(CasRealm::Private, *hash);
+  const std::filesystem::path path = store_->BlockPath(CasRealm::Private, *hash);
   const std::string hex = BytesToHex(*hash);
   ASSERT_GE(hex.size(), 4u);
-  EXPECT_NE(path.find("/blocks/" + hex.substr(0, 2) + "/" + hex.substr(2, 2) + "/" + hex), std::string::npos);
+  // generic_string() uses '/' on all platforms (Windows CI returns '\' from native paths).
+  const std::string generic = path.generic_string();
+  EXPECT_NE(generic.find("/blocks/" + hex.substr(0, 2) + "/" + hex.substr(2, 2) + "/" + hex), std::string::npos);
 }
 
 TEST_F(CasStoreTest, PrivateWrongDekFails) {

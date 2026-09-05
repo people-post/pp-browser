@@ -51,8 +51,10 @@ TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
   in.read(magic, 4);
   ASSERT_EQ(in.gcount(), 4);
   EXPECT_EQ(std::string(magic, 4), "PPBA");
-  EXPECT_NE(saved->find("/cas/private/blocks/"), std::string::npos);
-  EXPECT_EQ(saved->find("/blobs/"), std::string::npos);
+  // generic_string() uses '/' on all platforms (Windows CI returns '\' from native paths).
+  const std::string generic = std::filesystem::path(*saved).generic_string();
+  EXPECT_NE(generic.find("/cas/private/blocks/"), std::string::npos);
+  EXPECT_EQ(generic.find("/blobs/"), std::string::npos);
   EXPECT_TRUE(AttachmentBlobExists(profile_dir_, thread_id_, *hash));
 
   auto loaded = LoadAttachmentPlaintext(profile_dir_, thread_id_, *hash, "text/plain", "note.txt", dek, profile_id_);
