@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 #include "feature/settings/SettingsPortsViews.h"
+#include "foundation/crypto/CryptoTypes.h"
 
 #include <string>
 #include <vector>
