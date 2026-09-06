@@ -60,7 +60,7 @@ Product UI: see [`src/gui/README.md`](../gui/README.md).
 Start points when exploring:
 
 - Agent session → `ai/AgentSession.h`, `ai/TurnPlanner.h`, `ai/TurnExecutor.h`
-- Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshMessagingService.h`
+- Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshDeliveryOrchestrator.h`
 - Call session → `calls/CallStack.h`
 - Window shell → `gui/shell/ShellHost.h`
 - Chat screen → `gui/chat/ChatController.h`, `gui/chat/MessagingTools.h`

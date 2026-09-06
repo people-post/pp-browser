@@ -2,6 +2,7 @@ pp_browser_add_feature_library(pp_feature_settings
   SOURCES
     AboutSettingsSection.cpp
     AppearanceSettingsSection.cpp
+    CasLibraryCommands.cpp
     IntegrationsSettingsSection.cpp
     LlmSettingsSection.cpp
     NetworkSettingsSection.cpp
@@ -10,7 +11,9 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsSections.cpp
     SettingsTools.cpp
     StorageSettingsSection.cpp
-  PUBLIC_LIBS)
+  PUBLIC_LIBS
+    pp_domain_messaging
+    pp_domain_net)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

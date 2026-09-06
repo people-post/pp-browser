@@ -3,7 +3,7 @@
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/runtime/AppRuntime.h"

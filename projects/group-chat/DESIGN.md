@@ -29,9 +29,9 @@ flowchart TB
     Settings[ProfilePreferences]
   end
   subgraph feature [Feature messaging]
-    GMS[GroupMembershipService]
+    GMS[GroupMembershipWorkflow]
     GIP[GroupInvitePolicy]
-    P2P[MeshMessagingService]
+    P2P[MeshDeliveryOrchestrator]
     Pipe[RelayReceivePipeline]
   end
   subgraph base [Base messaging]

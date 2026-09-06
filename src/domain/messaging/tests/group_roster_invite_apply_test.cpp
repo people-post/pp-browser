@@ -215,7 +215,7 @@ TEST_F(GroupRosterInviteApplyTest, PendingSnapshotRoundTrip) {
 }
 
 TEST_F(GroupRosterInviteApplyTest, InviteeAcceptSeedsOwnerAndSelfForFanout) {
-  // Mirrors GroupMembershipService::AcceptInvite roster seeding on the invitee device.
+  // Mirrors GroupMembershipWorkflow::AcceptInvite roster seeding on the invitee device.
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
   auto pending = roster_->LoadPendingInvite("nonce-1");
   ASSERT_TRUE(pending && pending->has_value());

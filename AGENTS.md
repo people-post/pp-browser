@@ -83,7 +83,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Contacts UI / store | `src/gui/contacts/ContactsController.*`, `src/domain/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | Profile icons / chat attachments | [docs/contracts/SERVICE_ENDPOINTS.md](docs/contracts/SERVICE_ENDPOINTS.md), [projects/relay-blob-upload/](projects/relay-blob-upload/) |
 | E2E message crypto | `src/foundation/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md), [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
-| At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md), [projects/at-rest-crypto/](projects/at-rest-crypto/) |
+| At-rest encryption (PIN vault) | `ProfileSecretsEngine`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md), [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) |
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |
@@ -111,3 +111,36 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).
+
+### Naming drift (reorg / renames)
+
+Layer moves and renames leave stale names in chat memory, summaries, and project docs. **Headers on disk win.**
+
+- Before writing call sites, `rg` or read the owning `.h` for exact symbol names. Do not trust prior turns, PR text, or phase docs for APIs.
+- When you hit doc↔code or comment↔code drift in files you are already editing, fix that local drift in the same change (or a tiny adjacent doc tweak). Do **not** open a rename campaign.
+- Layer dual names can be intentional (e.g. domain `CasLibraryRow` vs settings port `CasLibraryItemView`) — match the vocabulary of the layer you are in; do not invent aliases.
+- Prefer documenting **paths** (`CasLibrary.h`, `CasLibraryCommands.*`) over restating full signatures that rot.
+- Keep app wiring thin (readiness + deps only); put orchestration in `feature/` / `domain/` so renames stay localized.
+
+### Role naming (avoid overloaded `*Service`)
+
+Prefer a role suffix that matches the type’s job. Do **not** add a new `*Service` unless it is a long-lived kernel capability with no better word (`LocalizationService` is an existing exception).
+
+| Role | Suffix / name | Examples / home |
+|------|----------------|-----------------|
+| App/domain capability | `*Engine` | `ProfileSecretsEngine` (foundation) |
+| Platform bootstrap hooks | `*Hooks` | `PlatformHooks` |
+| Product assembler | `*Hub` | `ConversationsHub` |
+| UI-safe surface | `*Facade` | `ConversationsFacade` |
+| Durable state | `*Store` | thread/CAS/contacts stores |
+| Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
+| Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
+| Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
+| Reachability engine | `*Engine` | `ReachabilityEngine` |
+| Feature Amp adapter | `*Transport` | `AmpDirectChatTransport`, `AmpChatBlobTransport`, … |
+| Delivery plane | `*Orchestrator` | `MeshDeliveryOrchestrator` |
+| Multi-step product flow | `*Workflow` | `ChatSyncWorkflow`, `AttachmentFetchWorkflow`, `GroupMembershipWorkflow` |
+| Session state machine | `*Coordinator` / `*Manager` | calls stack (prefer these over `*Service`) |
+| UI→functional edge | `*Ports` / `*Commands` | settings/CAS commands |
+
+**Agent one-liner:** Hub owns, Facade exposes, Store persists, Client speaks I/O, Protocol/Transport speaks Amp, Workflow orchestrates product steps, Engine is app/domain capability.

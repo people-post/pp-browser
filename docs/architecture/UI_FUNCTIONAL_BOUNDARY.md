@@ -137,7 +137,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 - `ConversationsFacade` — non-owning wrapper over `ConversationsHub&` (app-owned); chat, chat sub-presenters (`ChatThreadChrome`, `ChatTranscriptScroller`), messaging tools, and `Application` settings/badge wiring call its methods instead of peeking hub accessors. Event subscriptions (`SetOnMessagesChanged`, `SetOnThreadChanged`, …) keep `std::function` params. **Phase 6 done** — replaced the `MessagingChatPorts` mega-struct + `MakeMessagingChatPorts`.
 - `MessagingShellPorts` — status-bar cluster/popover snapshots + retest for shell chrome. Mesh reads (host running, reachability, relay load) come from `MeshHost*` (via `MakeMessagingShellPorts(hub)` passing `hub.Mesh()`); only hub-owned bits (messaging-ready, Brief health, help-network, last error) are projected off the hub.
-- `SettingsCommands` — register, UPnP, reset profile, appearance, locales, PIN status + Change PIN (`change_pin`); the app-owned `ProfileSecretsService` stays out of `SettingsController` (no `ProfileSecretsService::Instance()`)
+- `SettingsCommands` — register, UPnP, reset profile, appearance, locales, PIN status + Change PIN (`change_pin`); the app-owned `ProfileSecretsEngine` stays out of `SettingsController` (no `ProfileSecretsEngine::Instance()`)
 - `ChatSessionPorts` — select thread, finalize display, find someone
 - `CallActionsPorts` — start/accept/leave call chrome actions for chat, shell, people-picker (filled from `CallController`)
 - `CallFunctionalPorts` + `CallUiBackend` — sealed call session/lifecycle access for `CallController` (no raw CSM/Lifecycle pointers)
@@ -201,6 +201,9 @@ struct MessagingActions {
 ---
 
 ## Composition root responsibilities
+
+**Startup / readiness:** local `messaging_ready` vs async `mesh_ready` / `call_ready`, plus `agent_cloud_ready` for AI/Brief — see [SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md). Presenters gate Call on `call_ready` (= `mesh_ready`); compose/peer send on `messaging_ready`; AI turns on `agent_cloud_ready`. Do not block the startup cover on mesh bring-up.
+
 
 `Application` (`src/app/`) is the only place that:
 

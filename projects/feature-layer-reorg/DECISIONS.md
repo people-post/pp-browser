@@ -55,7 +55,7 @@ Do not promote **blocked** → domain to “clean the folder.”
 **Date:** 2026-09-03  
 **Status:** accepted; **top-level path shipped** (hub still owns `CallStack` until app ownership move)
 
-**Context:** Separating call session from conversations is desired, but `CallSessionManager` ↔ `MeshMessagingService` would cycle if both were hard-linked without ports.
+**Context:** Separating call session from conversations is desired, but `CallSessionManager` ↔ `MeshDeliveryOrchestrator` would cycle if both were hard-linked without ports.
 
 **Decision:**
 

@@ -1,18 +1,20 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
     AttachmentClientUtil.cpp
-    AttachmentDownloadService.cpp
+    AttachmentFetchWorkflow.cpp
     AttachmentFetchUtil.cpp
     ChatBlobRequestUtil.cpp
-    ChatSyncService.cpp
+    ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
     GroupInviteGate.cpp
-    GroupMembershipService.cpp
+    GroupMembershipWorkflow.cpp
     InboxController.cpp
-    AmpDirectChatService.cpp
-    AmpChatHistoryService.cpp
-    AmpChatBlobService.cpp
+    AmpDirectChatTransport.cpp
+    AmpPeerAnnounceTransport.cpp
+    AmpBroadcastTransport.cpp
+    AmpChatHistoryTransport.cpp
+    AmpChatBlobTransport.cpp
     MessageRouter.cpp
     ConversationsHub.cpp
     MessagingContactsPorts.cpp
@@ -21,7 +23,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingShellPorts.cpp
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
-    MeshMessagingService.cpp
+    MeshDeliveryOrchestrator.cpp
     PeerDisplayResolver.cpp
     ProfileIconClientUtil.cpp
     ProfileIconFetchUtil.cpp

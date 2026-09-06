@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-MessageRouter::MessageRouter(InboxController& inbox, MeshMessagingService& mesh_messaging,
+MessageRouter::MessageRouter(InboxController& inbox, MeshDeliveryOrchestrator& mesh_messaging,
                              AgentInboundPorts agent, IThreadStore& store)
     : mesh_messaging_(mesh_messaging), agent_(std::move(agent)), store_(store) {
   (void)inbox;

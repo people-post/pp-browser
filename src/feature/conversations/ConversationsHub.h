@@ -17,7 +17,7 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "feature/conversations/GroupMembershipService.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/calls/CallStack.h"
@@ -25,16 +25,16 @@
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/net/BlobClient.h"
 #include "domain/net/BlobQuotaUtil.h"
 #include "domain/net/HttpBlobClient.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/IPushDeviceClient.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/ReachabilityService.h"
+#include "domain/mesh/reachability/ReachabilityEngine.h"
 #include "domain/mesh/discovery/MeshDirectoryCache.h"
 #include "domain/mesh/discovery/NameDirectory.h"
 #include "domain/mesh/dht/DhtTypes.h"
@@ -44,6 +44,7 @@
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseWireCodec.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -55,7 +56,7 @@
 namespace pbr {
 
 class IPskSessionStore;
-class ProfileSecretsService;
+class ProfileSecretsEngine;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
@@ -124,7 +125,7 @@ public:
   ConversationsHub();
   ~ConversationsHub();
 
-  /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsService). */
+  /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsEngine). */
   Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
   Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
   void Shutdown();
@@ -136,20 +137,37 @@ public:
    */
   void AbortCallMediaForShutdown();
 
+  /**
+   * Mark app shutdown so an in-flight EnsureMessagingReady / StartMesh must not finish
+   * bring-up (and must discard a partial stack). Call before AppRuntime::Shutdown joins
+   * the unlock worker — otherwise mesh comes up during join and StopMesh runs with no pool.
+   */
+  void RequestShutdown();
+
   void BindSessionStore(SessionStore& store);
 
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
-  void BindSecrets(ProfileSecretsService& secrets);
+  void BindSecrets(ProfileSecretsEngine& secrets);
 
-  /** Amp / P2P stack ready after profile unlock + identity load. */
+  /**
+   * Local messaging stack ready (vault unlocked, identity loaded, relay-capable
+   * orchestrator). Does **not** imply Amp mesh is up — see IsMeshReady().
+   */
   bool IsMessagingReady() const { return messaging_ready_; }
 
-  /** Requires ProfileSecretsService unlocked; loads identity and starts Amp mesh. */
+  /** Amp mesh underlay running and attached after async bring-up. */
+  bool IsMeshReady() const { return mesh_ready_; }
+
+  /**
+   * Requires ProfileSecretsEngine unlocked; loads identity and builds the **local**
+   * messaging stack, then schedules Amp mesh start off the critical path.
+   * Returns once messaging_ready_ is set (cover / unlock_in_progress may clear).
+   */
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
-  MeshMessagingService& MeshMessaging();
-  GroupMembershipService& Groups();
+  MeshDeliveryOrchestrator& MeshMessaging();
+  GroupMembershipWorkflow& Groups();
   /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
   CallStack& CallStackRef() { return *call_stack_; }
   const CallStack& CallStackRef() const { return *call_stack_; }
@@ -162,7 +180,7 @@ public:
   ContactsStore& Contacts();
   IdentityStore& Identity();
   IPskSessionStore* PskStore();
-  ProfileSecretsService* Secrets();
+  ProfileSecretsEngine* Secrets();
   IDirectoryClient& Directory();
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
@@ -190,7 +208,7 @@ public:
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
-  AttachmentDownloadService& Attachments();
+  AttachmentFetchWorkflow& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
@@ -266,6 +284,8 @@ public:
   void SuspendMeshColdPeers();
 
   void SetOnMessagingReady(std::function<void()> callback);
+  /** Fired on UI thread when async mesh bring-up finishes (success or soft-fail). */
+  void SetOnMeshReady(std::function<void()> callback);
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
   void SetOnCallWake(std::function<void()> callback);
 
@@ -273,13 +293,15 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
-  void InstallServiceClients(const AppConfig& config);
-  void UpdateServiceClients(const AppConfig& config);
+  void InstallOrgBackendClients(const AppConfig& config);
+  void UpdateOrgBackendClients(const AppConfig& config);
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const AppConfig& config);
   void StopMesh();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
+  /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
+  void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
@@ -287,11 +309,18 @@ private:
   void RegisterContactEndpoints();
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
-  void ConfigureAmpDhtService();
-  void ConfigureAmpDirectoryService();
+  void ConfigureAmpDhtProtocol();
+  void ConfigureAmpDirectoryProtocol();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
+  /** Local (relay-capable) stack only — no StartMesh. */
+  Roe<void> BuildLocalMessagingStack();
+  /** Rebuild orchestrator/call stack with Amp links from a running mesh_. */
+  Roe<void> AttachAmpMessagingStack();
+  /** @deprecated Prefer BuildLocalMessagingStack + ScheduleMeshBringUp. Sync local+mesh. */
   Roe<void> BuildMessagingStack();
+  void ScheduleMeshBringUp();
   void NotifyMessagingReady();
+  void NotifyMeshReady();
 
   void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
@@ -312,7 +341,7 @@ private:
   AppConfig config_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
-  ProfileSecretsService* secrets_ = nullptr;
+  ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
   std::unique_ptr<SqliteThreadStore> store_;
@@ -328,12 +357,12 @@ private:
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
-  std::unique_ptr<GroupMembershipService> group_membership_;
+  std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
-  std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
+  std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -350,7 +379,7 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<MeshMessagingService> mesh_messaging_;
+  std::unique_ptr<MeshDeliveryOrchestrator> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
@@ -367,9 +396,13 @@ private:
   std::function<void()> on_reachability_updated_;
   std::function<void()> on_peer_icons_changed_;
   std::function<void()> on_messaging_ready_;
+  std::function<void()> on_mesh_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  bool mesh_ready_ = false;
+  std::atomic<bool> mesh_bringup_scheduled_{false};
+  std::atomic<bool> shutdown_requested_{false};
   uint64_t hub_policy_timer_id_ = 0;
   uint64_t amp_mesh_pump_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */

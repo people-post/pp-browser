@@ -85,11 +85,11 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsService`](../../src/foundation/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentDownloadService`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
+[`ProfileSecretsEngine`](../../src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
-2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
-3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
+2. Register via `ProfileSecretsEngine::RegisterDekConsumer` during init (typically from the feature that owns the store).
+3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsEngine::IsUnlocked()`.
 4. Document the on-disk path and AAD purpose here.
 
 **Messaging:** E2E/P2P actions also require `ConversationsHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/gui/PinGateController.h) is presentation only (identity fork / chooser / unlock / link-paste overlay).
@@ -115,14 +115,18 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 
 Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
 
-### Attachment blob AEAD (a5)
+### Attachment blob AEAD (a5 / C007 / C011)
 
 | Purpose | AAD |
 |---------|-----|
-| Local attachment cache | `attachment-blob\|{profile_id}\|{thread_id}\|{hash_hex}\|1` |
+| Private CAS block | `cas-private\|{profile_id}\|{content_id_hex}\|1` (`BuildCasPrivateAad`) |
 
-On-disk under `{profile}/threads/{thread_id}/blobs/`: magic `PPBA` (4 bytes) + `FileCipher` blob when a DEK is present; legacy plaintext when DEK is null (tests). Session plaintext for RmlUi `<img>` / OS open is materialized under `blobs_view/` while unlocked and wiped on `ClearDek` (`WipeAllAttachmentViewCaches`). Helpers: `BuildAttachmentBlobAad`, `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`.
+Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked and is wiped on `ClearDek` (`WipeAllAttachmentViewCaches`), which also clears `AttachmentPlaintextMemoryCache` (C011). Large private videos above Soft 4 MiB (`kMaxInlinePrivateVideoBytes` / `AttachmentAllowsInlinePrivateView`) skip `blobs_view` until explicit open; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`.
+
 
 ## Test fixtures
 
 Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
+
+
+Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).

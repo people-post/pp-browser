@@ -24,6 +24,9 @@ inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 
+/** Group SoftMigrate vs subscribe-only live broadcast (B001 / B0). */
+enum class CallSessionKind : uint8_t { Group = 0, Broadcast = 1 };
+
 enum class CallSessionState : uint8_t { Ringing = 0, Active = 1, Ended = 2 };
 
 enum class CallParticipantState : uint8_t {
@@ -77,6 +80,7 @@ struct CallSession {
   uint32_t media_epoch = 1;
   std::string media_key_id;
   std::optional<std::string> sfu_hint;
+  CallSessionKind session_kind = CallSessionKind::Group;
 };
 
 struct CallParticipant {
@@ -101,6 +105,7 @@ struct PendingCallInvite {
   int64_t created_at = 0;
   /** pending | accepted | declined | expired | missed */
   std::string status = "pending";
+  CallSessionKind session_kind = CallSessionKind::Group;
 };
 
 struct CallRosterEntry {
@@ -276,6 +281,9 @@ struct CallVideoRefreshDetail {
 std::string GenerateCallId();
 std::string CallMediaModeToString(CallMediaMode mode);
 CallMediaMode CallMediaModeFromString(const std::string& value);
+std::string CallSessionKindToString(CallSessionKind kind);
+CallSessionKind CallSessionKindFromString(const std::string& value);
+inline bool IsBroadcastSession(CallSessionKind kind) { return kind == CallSessionKind::Broadcast; }
 std::string CallSessionStateToString(CallSessionState state);
 CallSessionState CallSessionStateFromString(const std::string& value);
 std::string CallParticipantStateToString(CallParticipantState state);

@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpChatHistoryService.h"
+#include "feature/conversations/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -94,7 +94,7 @@ public:
   Thread thread;
 };
 
-class AmpChatHistoryServiceTest : public ::testing::Test {
+class AmpChatHistoryTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
@@ -104,9 +104,9 @@ protected:
     ASSERT_TRUE(static_cast<bool>(created));
     mesh_ = std::move(*created);
 
-    responder_history_ = std::make_unique<AmpChatHistoryService>(
+    responder_history_ = std::make_unique<AmpChatHistoryTransport>(
         mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
-    client_history_ = std::make_unique<AmpChatHistoryService>(
+    client_history_ = std::make_unique<AmpChatHistoryTransport>(
         mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
 
     ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
@@ -126,11 +126,11 @@ protected:
 
   std::unique_ptr<HistoryHarness> data_;
   std::unique_ptr<pbr::test::AmpMeshHarness> mesh_;
-  std::unique_ptr<AmpChatHistoryService> responder_history_;
-  std::unique_ptr<AmpChatHistoryService> client_history_;
+  std::unique_ptr<AmpChatHistoryTransport> responder_history_;
+  std::unique_ptr<AmpChatHistoryTransport> client_history_;
 };
 
-TEST_F(AmpChatHistoryServiceTest, FetchHistoryRoundTrip) {
+TEST_F(AmpChatHistoryTransportTest, FetchHistoryRoundTrip) {
   data_->SeedOutbound(1, "alpha");
   data_->SeedOutbound(2, "beta");
 

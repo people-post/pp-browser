@@ -1,7 +1,7 @@
 #include "app/Application.h"
 #include "app/ConfigApplyBridge.h"
 
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/SchemaVersion.h"
@@ -24,7 +24,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/platform/PlatformServices.h"
+#include "foundation/platform/PlatformHooks.h"
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -37,6 +37,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -191,7 +192,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
-  secrets_ = std::make_unique<ProfileSecretsService>();
+  secrets_ = std::make_unique<ProfileSecretsEngine>();
   messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
@@ -238,7 +239,7 @@ ConversationsHub& Application::Conversations() {
   return *messaging_;
 }
 
-ProfileSecretsService& Application::Secrets() {
+ProfileSecretsEngine& Application::Secrets() {
   return *secrets_;
 }
 
@@ -334,7 +335,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
-  if (Rml::FileInterface* packaged_files = PlatformServices::PackagedFileInterface()) {
+  if (Rml::FileInterface* packaged_files = PlatformHooks::PackagedFileInterface()) {
     Rml::SetFileInterface(packaged_files);
   }
 
@@ -439,6 +440,53 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.free_oldest_relay_blob_slot = [&facade]() { return facade.FreeOldestRelayBlobSlot(); };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
+  settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    return ListCasLibraryForSettings(secrets_->ProfileDataDir(), std::move(filter));
+  };
+  settings_commands.share_cas_publicly = [this](const std::string& private_content_id_hex) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsUnlocked()) {
+      return Error("Unlock your profile to share publicly");
+    }
+    DataKeyVault* vault = secrets_->Vault();
+    if (vault == nullptr) {
+      return Error("Vault unavailable");
+    }
+    auto dek = vault->Dek();
+    if (!dek) {
+      return dek.error();
+    }
+    return ShareCasPubliclyForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek,
+                                       private_content_id_hex);
+  };
+  settings_commands.unpublish_cas = [this](const std::string& public_content_id_hex) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
+  };
+
+  settings_commands.fetch_cas_public_tip = [this](const std::string& tip,
+                                                  const std::string& peer_relay_user_id) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    if (!messaging_ || !messaging_->IsInitialized()) {
+      return Error("Messaging is not ready");
+    }
+    auto* blob = messaging_->MeshMessaging().PeerBlobClient();
+    if (blob == nullptr) {
+      return Error("Peer blob client is not available");
+    }
+    auto local = messaging_->Identity().Get();
+    if (!local) {
+      return local.error();
+    }
+    return FetchCasPublicTipForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+                                        local->relay_user_id, tip, peer_relay_user_id);
+  };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
     if (result) {
@@ -485,6 +533,9 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
   settings_commands.messaging_ready = [&facade]() {
     return facade.IsInitialized() && facade.IsMessagingReady();
+  };
+  settings_commands.mesh_ready = [&facade]() {
+    return facade.IsInitialized() && facade.IsMeshReady();
   };
   settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
@@ -538,7 +589,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   };
   settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
-    ProfileSecretsService& secrets = *secrets_;
+    ProfileSecretsEngine& secrets = *secrets_;
     view.ready = secrets.IsInitialized() && secrets.HasVault();
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
@@ -1126,6 +1177,13 @@ void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult&
       settings_->OnNavTabActivated();
     }
   });
+  messaging.SetOnMeshReady([this]() {
+    chat_->OnMeshReady();
+    contacts_->Refresh();
+    if (badges_) {
+      badges_->Refresh();
+    }
+  });
   messaging.SetOnCallWake([this]() {
     if (call_) {
       call_->OnCallWake();
@@ -1400,6 +1458,7 @@ void Application::Shutdown() {
 
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
+    messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
@@ -1431,7 +1490,10 @@ void Application::Shutdown() {
 
     // Abort Connect / circuit waits, then join workers while ConversationsHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
+    // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
+    // the join (that left a live Amp stack for StopMesh after the pool was already gone).
     if (messaging_) {
+      messaging_->RequestShutdown();
       StartupPhase phase("Shutdown::AbortCallMedia");
       messaging_->AbortCallMediaForShutdown();
     }
@@ -1468,6 +1530,7 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
     if (messaging_) {
+      messaging_->RequestShutdown();
       messaging_->AbortCallMediaForShutdown();
     }
     if (AppRuntime::IsRunning()) {

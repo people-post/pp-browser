@@ -24,7 +24,7 @@ struct McpConfig {
 
 struct ServiceEndpointConfig {
   std::string base_url;
-  /** http now; amp = MeshHost AmpDirectoryService (N029 nd4; not CreateServiceClients). */
+  /** http now; amp = MeshHost AmpDirectoryProtocol (N029 nd4; not CreateOrgBackendClients). */
   std::string transport = "http";
 
   bool operator==(const ServiceEndpointConfig& other) const {

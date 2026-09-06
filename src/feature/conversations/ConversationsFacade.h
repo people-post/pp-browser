@@ -7,7 +7,7 @@
 #include "domain/messaging/SendRelayOptions.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/net/ServiceClients.h"
+#include "domain/net/OrgBackendClients.h"
 #include "domain/net/BlobQuotaUtil.h"
 #include "domain/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
@@ -18,10 +18,13 @@
 #include "foundation/data/PaymentPromiseTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/AgentInboundPorts.h"
-#include "feature/conversations/ChatSyncService.h"
+#include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
@@ -53,6 +56,7 @@ public:
   bool HasRouter();
   bool IsInitialized();
   bool IsMessagingReady();
+  bool IsMeshReady();
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
@@ -228,6 +232,24 @@ public:
    * Escape hatch for lifecycle / bridges that legitimately need the hub
    * (e.g. ConfigApplyBridge Apply slices). Prefer facade methods otherwise.
    */
+
+  // --- Peer-scoped live announce (Spine C) ----------------------------------
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
+  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                          const std::string& topic_id,
+                                                          const std::string& program_id);
+  /**
+   * Plan from tip then arm pending invite via Calls(). No SoftMigrate/media.
+   */
+  Roe<PendingCallInvite> ArmLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
+  Roe<PendingCallInvite> ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                       const std::string& topic_id,
+                                                       const std::string& program_id);
+  /** Accept an armed live-announce invite (no SoftMigrate / 1:1 media). */
+  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
+  /** Plan+arm from tip then accept (defers media when hop_peer_id absent). */
+  Roe<PendingCallInvite> JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip);
+
   ConversationsHub& Hub() { return hub_; }
 
 private:

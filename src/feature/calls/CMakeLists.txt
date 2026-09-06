@@ -1,11 +1,12 @@
 # Call session orchestration (F004 / F007). Delivery via CallDeliveryPorts;
-# conversations binds CallControlInboundPorts — no MeshMessagingService include.
+# conversations binds CallControlInboundPorts — no MeshDeliveryOrchestrator include.
 pp_browser_add_feature_library(pp_feature_calls
   SOURCES
     AmpCircuitHopReach.cpp
     AmpMediaRelayClient.cpp
     CallMediaBridge.cpp
     CallLifecycle.cpp
+    BroadcastSessionCoordinator.cpp
     CallInboundHandlers.cpp
     CallSessionManager.cpp
     CallStack.cpp

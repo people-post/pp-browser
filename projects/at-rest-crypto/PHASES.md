@@ -51,12 +51,12 @@
 
 - [x] `IDekConsumer` (`SetDek` / `ClearDek`) in `base/crypto`
 - [x] `IdentityStore` + `SqlitePskSessionStore` implement the interface
-- [x] Consumer registration on `ProfileSecretsService` (moved from hub in a8)
+- [x] Consumer registration on `ProfileSecretsEngine` (moved from hub in a8)
 - [x] Docs + ADR A008
 
-## a8 — ProfileSecretsService (A009)
+## a8 — ProfileSecretsEngine (A009)
 
-- [x] `ProfileSecretsService` in `base/crypto` — vault, unlock, DEK fan-out
+- [x] `ProfileSecretsEngine` in `base/crypto` — vault, unlock, DEK fan-out
 - [x] `ConversationsHub::EnsureMessagingReady` (libp2p/P2P after profile unlock)
 - [x] `PinGateController`, `Bootstrap`, Settings → profile service; messaging checks → hub
 - [x] Docs + ADR A009

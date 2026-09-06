@@ -174,7 +174,7 @@ Phones / real ISP NAT = **manual dogfood**, not automated Wave 6.
 | 25 | **N-HARD-LEDGER-DIR** | On-chain name → PeerId is product path |
 | 26 | **N-HARD-PAID-BROKER** | Quote/settle/SLA must be lab-visible |
 | 27 | **N-HARD-HOLEPUNCH** | Stack ships hole punch |
-| 28 | **N-HARD-MULTI-HOP-MEDIA** | Only if product allows multi-SFU media (today **non-goal**) |
+| 28 | **N-HARD-MULTI-HOP-MEDIA** | Group calls: still **non-goal**. Broadcast: after peer-scoped-broadcast Spine F / B1 ([MEDIA_TREE.md](../../projects/peer-scoped-broadcast/MEDIA_TREE.md)) |
 | 29 | Real multi-operator WAN | Never the only gate |
 
 ---

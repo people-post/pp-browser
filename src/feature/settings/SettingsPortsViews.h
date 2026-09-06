@@ -4,7 +4,7 @@
 
 namespace pbr {
 
-/** PIN vault readiness for Me → Security (app → ProfileSecretsService). */
+/** PIN vault readiness for Me → Security (app → ProfileSecretsEngine). */
 struct PinProtectionView {
   bool ready = false;    // secrets initialized + has vault
   bool unlocked = false;
@@ -29,6 +29,19 @@ struct SettingsReachabilityView {
   bool upnp_mapped = false;
   /** From ReachabilityHelpKey — empty when no sheet. */
   std::string help_kind;
+};
+
+
+/** Me → Storage CAS library row (P3 / C013). */
+struct CasLibraryItemView {
+  std::string content_id_hex;
+  std::string title;
+  std::string detail;
+  std::string realm_label;
+  std::string pin_label;
+  bool can_share_publicly = false;
+  bool can_unpublish = false;
+  bool can_copy_tip = false;
 };
 
 } // namespace pbr

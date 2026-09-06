@@ -93,5 +93,16 @@ TEST(SoftMigrateLogicTest, FreshGroupCallInitiatorPicks) {
   EXPECT_EQ(DecideSoftMigrate(in), SoftMigrateAction::PickHop);
 }
 
+TEST(SoftMigrateLogicTest, BroadcastIsNoOp) {
+  SoftMigrateDecisionInput in;
+  in.local_identity = "account:A";
+  in.initiator_identity = "account:A";
+  in.joined_identities = {"account:A", "account:B", "account:C"};
+  in.sfu_hint_empty = true;
+  in.trigger = SoftMigrateTrigger::RemoteAcceptObserved;
+  in.is_broadcast = true;
+  EXPECT_EQ(DecideSoftMigrate(in), SoftMigrateAction::NoOp);
+}
+
 } // namespace
 } // namespace pbr

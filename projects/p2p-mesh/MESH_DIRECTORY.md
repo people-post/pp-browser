@@ -93,7 +93,7 @@ flowchart LR
 
 - Extend `IRegistrationClient` / HTTP client with `entity_kind` + `capabilities`.
 - Extend `IDirectoryClient` with `ListMeshNodes` (HTTP).
-- Route `ConversationsHub` through `CreateServiceClients` (live pluggability).
+- Route `ConversationsHub` through `CreateOrgBackendClients` (live pluggability).
 - Config: `advertise_multiaddrs`; NodeEnvOverlay env.
 - **pp-node:** thin register/renew loop (no ConversationsHub) using advertise + local caps; `entity_kind=mesh_node`.
 - **pp-browser:** do not mesh-publish; keep person register/auto-renew; Identify advertise policy documented (org seed via pp-node).

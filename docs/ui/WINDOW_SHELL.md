@@ -97,7 +97,7 @@ Bottom chrome mounts into `#shell-emoji-keyboard-mount` (sibling of `#shell-root
 |------|-----|
 | Nav / badges / sheet / auxiliary bindings | `DirtyNavChrome()` |
 | Banner / toast / dialog bindings | `DirtyFeedback()` |
-| PIN gate / unlock_in_progress | `DirtyPinGate()` |
+| PIN gate / unlock_in_progress / startup cover | `DirtyPinGate()` |
 | Activity / statusbar / titlebar / fonts | `DirtyStatusChrome()` |
 | Full refresh after shell remount | `DirtyWindow()` (calls all domains; used by `SyncLayout`) |
 | Shell tree change (nav, panes, overlays, layout mode) | `RequestSyncLayout(reason)` |
@@ -122,6 +122,8 @@ Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-
 **Why not always-mounted `data-if` for the Accept layer?** Binding state can be true and the frame loop can Present while Rml `data-if` leaves the overlay at `display:none`. Dialogs already use presence-based mount (`SerializeDialog` empty vs HTML) into `#shell-dialog-mount`. Call chrome and PIN gate follow that pattern on dedicated mounts so chat panes stay intact. Inner `data-if` (conflict copy, video stage/PiP) remains fine for fields *inside* an already-mounted layer.
 
 Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close` → `RemountDialogChrome`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog. PIN gate show/dismiss uses `RemountPinGateChrome` via `ShellPinGatePorts::remount_pin_gate`.
+
+**Startup brand cover ([SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md): clears with unlock / local messaging_ready, not mesh_ready):** `#shell-startup-cover` in `window_shell.rml` is a full-bleed logo + “Preparing…” layer (`startup_cover_visible`). It is armed from first paint, follows silent `unlock_in_progress` after `SettleStartupCoverArm` (DeferredStartup), and hides when the PIN gate is active or cold-start prepare ends. It does not remount; titlebar stays above (z-index). Mid-session unlock does not re-show it.
 
 Timers (e.g. foreground relay poll) must never remount “just in case.”
 

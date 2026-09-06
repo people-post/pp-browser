@@ -7,11 +7,11 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SyncStateCodec.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/ChatSyncService.h"
+#include "feature/conversations/ChatSyncWorkflow.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/PeerDisplayResolver.h"
@@ -200,7 +200,7 @@ public:
   PeerDisplayResolver labels;
   InboxController inbox;
   RelayReceivePipeline receive_pipeline;
-  ChatSyncService sync;
+  ChatSyncWorkflow sync;
   Thread thread;
   std::string local_relay_id;
   std::string local_account_id;

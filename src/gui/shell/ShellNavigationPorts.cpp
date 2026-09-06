@@ -32,6 +32,7 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   };
   navigation.set_fonts_ready = [&shell](const bool ready) { shell.State().fonts_ready = ready; };
   navigation.fonts_ready = [&shell]() { return shell.State().fonts_ready; };
+  navigation.settle_startup_cover = [&shell]() { shell.SettleStartupCoverArm(); };
   navigation.set_nav_badges = [&shell](const NavBadgeState& badges) {
     shell.State().nav_badges = badges;
     shell.DirtyNavChrome();

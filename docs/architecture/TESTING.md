@@ -35,7 +35,7 @@ Smoke and hard-lab are **discovery** tools for deploy/topology reality. They are
 3. **If no** — document why (`covered-above`, `cost/flake`, or true multi-netns-only) in the purpose inventory / suite ledger.
 4. **Do not** leave “only `--suite hard` catches this” for a one-line reachability/policy mistake that loopback can prove.
 
-**Worked example:** hard-lab `B-HARD-MSG+CALL` failed because `AmpDirectChatService::IsPeerReachable` required `has_endpoint` and ignored nested-circuit `IsConnected`. Fix landed in the service; regression locked by in-process `AmpDirectChatCircuitNestedTest.NestedConnectedWithoutEndpointIsReachableAndSends` (A→R→B nested, **no** `RegisterEndpoint` for B). Hard lab remains the gate that A↛B namespaces still exercise the product path.
+**Worked example:** hard-lab `B-HARD-MSG+CALL` failed because `AmpDirectChatTransport::IsPeerReachable` required `has_endpoint` and ignored nested-circuit `IsConnected`. Fix landed in the service; regression locked by in-process `AmpDirectChatCircuitNestedTest.NestedConnectedWithoutEndpointIsReachableAndSends` (A→R→B nested, **no** `RegisterEndpoint` for B). Hard lab remains the gate that A↛B namespaces still exercise the product path.
 
 ---
 

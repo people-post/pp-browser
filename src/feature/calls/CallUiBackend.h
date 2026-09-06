@@ -2,6 +2,7 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/calls/CallLifecycle.h"
@@ -59,6 +60,15 @@ public:
   Roe<void> LeaveCall(const std::string& call_id);
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
+  /**
+   * Spine C: arm pending invite + ringing session from a live-join plan.
+   * Does not SoftMigrate or attach media — AcceptInvite remains the next step.
+   */
+  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
+                                                 const ArmLiveAnnounceJoinOpts& opts = {});
+  /** Spine C: accept armed live-announce invite (no SoftMigrate / 1:1 media). */
+  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
+
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
   void StopCallMedia(const std::string& call_id);
 

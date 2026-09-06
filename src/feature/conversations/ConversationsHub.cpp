@@ -6,14 +6,14 @@
 
 #include "domain/people/ContactReachability.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "feature/conversations/AttachmentDownloadService.h"
-#include "feature/conversations/GroupMembershipService.h"
+#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
 #include "feature/conversations/RelayDirectorySigningKeyResolver.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"
@@ -49,7 +49,7 @@
 #include "common/SettledWait.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/dht/DhtRecordCodec.h"
-#include "domain/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/discovery/AmpDirectoryProtocol.h"
 #include "domain/mesh/discovery/NameDirectory.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/reachability/NatTraversal.h"
@@ -180,7 +180,7 @@ void ConversationsHub::WireRelayAuthSigner() {
   }
 }
 
-void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
+void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
   const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
   const std::string relay_url =
       config.relay.base_url.empty() ? defaults.relay.base_url : config.relay.base_url;
@@ -225,7 +225,7 @@ void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
     for (const ServiceEndpointConfig& provider : providers) {
       const std::string transport = provider.transport.empty() ? "http" : provider.transport;
       if (transport != "http") {
-        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryService +
+        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryProtocol +
         // MeshDirectoryCache Amp-first fetcher (N029 nd4). Factory skips the same way.
         continue;
       }
@@ -272,12 +272,15 @@ void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
   }
 }
 
-void ConversationsHub::InstallServiceClients(const AppConfig& config) {
-  UpdateServiceClients(config);
+void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
+  UpdateOrgBackendClients(config);
 }
 
 Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   StartupPhase phase("ConversationsHub::StartMesh");
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   StopMesh();
   mesh_last_error_.clear();
 
@@ -299,12 +302,17 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_cfg.host_directory = role == MeshRole::Node;
   mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
-  mesh_cfg.start_reachability_probe = role == MeshRole::Node;
+  // Skip blocking UPnP/seed probe when the app is already quitting (sync probe when no post_worker).
+  mesh_cfg.start_reachability_probe =
+      role == MeshRole::Node && !shutdown_requested_.load(std::memory_order_acquire);
   if (role == MeshRole::Node) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
   mesh_cfg.on_reachability_updated = [this]() {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
     ApplyMeshAdmissionPolicies();
     PublishNodeAdvertisedAddrs();
     RegisterContactEndpoints();
@@ -325,16 +333,25 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     mesh_.reset();
     return started.error();
   }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    mesh_->Stop();
+    mesh_.reset();
+    return Error("shutdown in progress");
+  }
   if (mesh_cfg.mesh_enabled) {
     log().info << "amp stack listen=" << mesh_->AmpListenMultiaddr();
   } else {
     log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
-  ConfigureAmpDhtService();
-  ConfigureAmpDirectoryService();
+  ConfigureAmpDhtProtocol();
+  ConfigureAmpDirectoryProtocol();
   if (mesh_directory_cache_) {
     mesh_directory_cache_->RequestRefresh();
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    StopMesh();
+    return Error("shutdown in progress");
   }
   return {};
 }
@@ -557,6 +574,11 @@ void ConversationsHub::StopMesh() {
     lan_mdns_->Stop();
     lan_mdns_.reset();
   }
+  // Amp chat/announce/broadcast transports hold PeerLinks& — detach before MeshHost::Stop
+  // destroys Amp (otherwise ~AmpBroadcastTransport::Stop UAFs).
+  if (mesh_messaging_) {
+    mesh_messaging_->DetachAmpTransports();
+  }
   // MeshHost::Stop tears down media_relay, circuit, dial-back, and runtime (in that order).
   // Keep bridge + dial registry alive until the mesh host joins its workers — inbound
   // CallMediaKey wait and OpenStream completions may still touch them.
@@ -569,6 +591,57 @@ void ConversationsHub::StopMesh() {
 
 void ConversationsHub::AbortCallMediaForShutdown() {
   call_stack_->AbortCallMediaForShutdown();
+}
+
+void ConversationsHub::RequestShutdown() {
+  shutdown_requested_.store(true, std::memory_order_release);
+  // Unblock circuit / dial waits inside an in-flight StartMesh / EnsureMessagingReady.
+  AbortCallMediaForShutdown();
+  if (mesh_) {
+    mesh_->AbortInflightCircuitRequests();
+  }
+}
+
+void ConversationsHub::DiscardMessagingBringUp() {
+  StopCoordinatorTimers();
+  if (router_) {
+    router_->SetOnLocalAction(nullptr);
+    router_->SetSharedAiConfirmCallback(nullptr);
+    router_.reset();
+  }
+  if (actions_) {
+    actions_->SetOnActionMessage(nullptr);
+    actions_.reset();
+  }
+  if (mesh_messaging_) {
+    mesh_messaging_->SetOnMessagesChanged(nullptr);
+    mesh_messaging_->SetOnDeliveryNotice(nullptr);
+    mesh_messaging_->SetOnBackgroundUnread(nullptr);
+    mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetAttachmentDownloads(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetGroupMembership(nullptr);
+    inbox_->SetAttachmentDownloads(nullptr);
+  }
+  group_membership_.reset();
+  // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (mesh_messaging_) {
+      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+  }
+  StopMesh();
+  call_stack_->ResetSessions();
+  mesh_messaging_.reset();
+  messaging_ready_ = false;
+  mesh_ready_ = false;
+  mesh_bringup_scheduled_.store(false, std::memory_order_release);
 }
 
 void ConversationsHub::RegisterContactEndpoints() {
@@ -663,7 +736,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   }
 }
 
-void ConversationsHub::ConfigureAmpDhtService() {
+void ConversationsHub::ConfigureAmpDhtProtocol() {
   if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
     return;
   }
@@ -679,7 +752,7 @@ void ConversationsHub::ConfigureAmpDhtService() {
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
 
-  AmpDhtServiceConfig cfg;
+  AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
   if (!mesh_->AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
@@ -757,7 +830,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
 
 } // namespace
 
-void ConversationsHub::ConfigureAmpDirectoryService() {
+void ConversationsHub::ConfigureAmpDirectoryProtocol() {
   if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDirectory() || !identity_) {
     return;
   }
@@ -791,7 +864,7 @@ void ConversationsHub::ConfigureAmpDirectoryService() {
     query_keys.push_back(key);
   }
 
-  AmpDirectoryServiceConfig cfg;
+  AmpDirectoryProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
   cfg.query_peer_keys = std::move(query_keys);
   mesh_->ConfigureAmpDirectory(std::move(cfg));
@@ -876,7 +949,7 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
-    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtProtocol::FindPeerRoe result) {
       if (!result) {
         return;
       }
@@ -914,7 +987,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     (void)store_->ReconcileOutbox();
   }
 
-  InstallServiceClients(config);
+  InstallOrgBackendClients(config);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
@@ -978,8 +1051,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();
-      ConfigureAmpDhtService();
-      ConfigureAmpDirectoryService();
+      ConfigureAmpDhtProtocol();
+      ConfigureAmpDirectoryProtocol();
     });
     mesh_directory_cache_->RequestRefresh();
   }
@@ -994,7 +1067,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
-  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetProfileDataDir(data_dir_);
@@ -1002,7 +1075,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
@@ -1029,6 +1102,10 @@ void ConversationsHub::SetOnMessagingReady(std::function<void()> callback) {
   on_messaging_ready_ = std::move(callback);
 }
 
+void ConversationsHub::SetOnMeshReady(std::function<void()> callback) {
+  on_mesh_ready_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnCallWake(std::function<void()> callback) {
   on_call_wake_ = std::move(callback);
 }
@@ -1049,38 +1126,42 @@ void ConversationsHub::NotifyMessagingReady() {
   });
 }
 
-Roe<void> ConversationsHub::BuildMessagingStack() {
+void ConversationsHub::NotifyMeshReady() {
+  if (!on_mesh_ready_) {
+    return;
+  }
+  if (AppRuntime::CurrentlyOnUI()) {
+    on_mesh_ready_();
+    return;
+  }
+  AppRuntime::PostUI([this]() {
+    if (on_mesh_ready_) {
+      on_mesh_ready_();
+    }
+  });
+}
+
+Roe<void> ConversationsHub::BuildLocalMessagingStack() {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   WireRelayAuthSigner();
 
-  if (auto mesh_start = StartMesh(config_); !mesh_start) {
-    log().warning << "mesh host start failed: " << mesh_start.error().message
-                  << " (direct P2P unavailable; relay messaging may still work)";
-  }
-
+  // Local / relay-capable stack: Amp links stay null until AttachAmpMessagingStack.
   IChatPeerLinks* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
-  if (auto chat = mesh_ ? mesh_->ChatDeps() : std::nullopt; chat) {
-    amp_links = &chat->links;
-    amp_pump = std::move(chat->io.io_pump);
-    amp_worker = std::move(chat->io.post_worker);
-  }
-  if (mesh_ && amp_pump && !amp_worker) {
-    amp_worker = [](std::function<void()> task) {
-      AppRuntime::PostWorkerNormal(std::move(task));
-    };
-  }
 
-  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links,
-                                                std::move(amp_pump), std::move(amp_worker));
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(
+      *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
+      *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
+      std::move(amp_worker));
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
@@ -1099,15 +1180,138 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
   if (agent_inbound_.IsBound()) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
+  }
   return {};
+}
+
+Roe<void> ConversationsHub::AttachAmpMessagingStack() {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
+  if (!mesh_) {
+    return {};
+  }
+
+  IChatPeerLinks* amp_links = nullptr;
+  std::function<void()> amp_pump;
+  std::function<void(std::function<void()>)> amp_worker;
+  if (auto chat = mesh_->ChatDeps(); chat) {
+    amp_links = &chat->links;
+    amp_pump = std::move(chat->io.io_pump);
+    amp_worker = std::move(chat->io.post_worker);
+  }
+  if (amp_pump && !amp_worker) {
+    amp_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  }
+
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(
+      *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
+      *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
+      std::move(amp_worker));
+  mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
+  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
+  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  WireAttachmentDownloads();
+  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
+                                                               *group_invite_gate_, *mesh_messaging_);
+  inbox_->SetGroupMembership(group_membership_.get());
+  mesh_messaging_->SetGroupMembership(group_membership_.get());
+  call_stack_->BuildSessions(MakeCallStackDeps());
+  if (auto* calls = call_stack_->Calls()) {
+    calls->SetInitiationBillingStore(initiation_billing_.get());
+  }
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
+                                                       group_membership_.get(), registration_, mesh_messaging_.get());
+  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
+    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
+    group_invite_gate_->SetInboundPolicy(policy);
+    group_membership_->SetInboundPolicy(policy);
+  }
+  RegisterContactEndpoints();
+  if (agent_inbound_.IsBound()) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
+  }
+  return {};
+}
+
+Roe<void> ConversationsHub::BuildMessagingStack() {
+  // Legacy sync path (tests / callers that still want local+mesh together).
+  if (auto local = BuildLocalMessagingStack(); !local) {
+    return local.error();
+  }
+  if (auto mesh_start = StartMesh(config_); !mesh_start) {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return mesh_start.error();
+    }
+    log().warning << "mesh host start failed: " << mesh_start.error().message
+                  << " (direct P2P unavailable; relay messaging may still work)";
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
+  }
+  return AttachAmpMessagingStack();
+}
+
+void ConversationsHub::ScheduleMeshBringUp() {
+  if (mesh_bringup_scheduled_.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+  AppRuntime::PostWorkerNormal([this]() {
+    StartupPhase phase("ConversationsHub::MeshBringUpAsync");
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (auto mesh_start = StartMesh(config_); !mesh_start) {
+      if (shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      log().warning << "async mesh host start failed: " << mesh_start.error().message
+                    << " (direct P2P unavailable; relay messaging may still work)";
+    }
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    // Attach Amp + flip mesh_ready on the UI thread (orchestrator is UI-touched).
+    AppRuntime::PostUI([this]() {
+      if (shutdown_requested_.load(std::memory_order_acquire) || !messaging_ready_) {
+        return;
+      }
+      if (mesh_) {
+        if (auto attached = AttachAmpMessagingStack(); !attached) {
+          log().warning << "AttachAmpMessagingStack failed: " << attached.error().message;
+          mesh_ready_ = false;
+        } else {
+          mesh_ready_ = true;
+        }
+      } else {
+        mesh_ready_ = false;
+      }
+      NotifyMeshReady();
+    });
+  });
 }
 
 Roe<void> ConversationsHub::EnsureMessagingReady() {
   StartupPhase phase("ConversationsHub::EnsureMessagingReady");
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   if (!initialized_) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (messaging_ready_) {
+    if (!mesh_bringup_scheduled_.load(std::memory_order_acquire) && !mesh_ready_) {
+      ScheduleMeshBringUp();
+    }
     return {};
   }
   if (secrets_ == nullptr || !secrets_->IsUnlocked()) {
@@ -1126,13 +1330,20 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
     }
   }
 
-  if (auto built = BuildMessagingStack(); !built) {
+  // Interactive-ready = local stack only. Mesh (incl. Node reachability probe) is async.
+  if (auto built = BuildLocalMessagingStack(); !built) {
     return built.error();
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
   }
 
   messaging_ready_ = true;
+  mesh_ready_ = false;
   StartCoordinatorTimers();
   NotifyMessagingReady();
+  ScheduleMeshBringUp();
   return {};
 }
 
@@ -1142,7 +1353,7 @@ Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::str
   }
 
   config_ = config;
-  UpdateServiceClients(config);
+  UpdateOrgBackendClients(config);
   if (mesh_messaging_) {
     mesh_messaging_->SetRelayClient(relay_);
   }
@@ -1163,7 +1374,7 @@ void ConversationsHub::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
-void ConversationsHub::BindSecrets(ProfileSecretsService& secrets) {
+void ConversationsHub::BindSecrets(ProfileSecretsEngine& secrets) {
   secrets_ = &secrets;
 }
 
@@ -1590,12 +1801,13 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
   const ByteVector attachment_dek = Attachments().CopyDek();
-  const ByteVector* attachment_dek_ptr = attachment_dek.empty() ? nullptr : &attachment_dek;
 
   if (active.kind == ThreadKind::Group) {
     auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
     if (sent) {
-      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+      if (!attachment_dek.empty() && !profile_id_.empty()) {
+        (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+      }
       Attachments().MaybeBuildPoster(thread_id, *fields);
       if (attachment_downloads_) {
         attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
@@ -1605,7 +1817,9 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   }
   auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
   if (sent) {
-    (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek_ptr, profile_id_);
+    if (!attachment_dek.empty() && !profile_id_.empty()) {
+      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+    }
     Attachments().MaybeBuildPoster(thread_id, *fields);
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
@@ -1614,9 +1828,9 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   return sent;
 }
 
-AttachmentDownloadService& ConversationsHub::Attachments() {
+AttachmentFetchWorkflow& ConversationsHub::Attachments() {
   if (!attachment_downloads_) {
-    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
     attachment_downloads_->SetProfileDataDir(data_dir_);
     attachment_downloads_->SetProfileId(profile_id_);
   }
@@ -1630,7 +1844,7 @@ void ConversationsHub::WireAttachmentDownloads() {
     attachment_suppressions_->SetProfileDir(data_dir_);
   }
   if (!attachment_downloads_) {
-    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
   attachment_downloads_->SetProfileId(profile_id_);
@@ -1959,8 +2173,8 @@ void ConversationsHub::RefreshMeshCapabilities() {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
-  ConfigureAmpDhtService();
-  ConfigureAmpDirectoryService();
+  ConfigureAmpDhtProtocol();
+  ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1995,7 +2209,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
 
   if (service_urls_changed) {
-    UpdateServiceClients(config_);
+    UpdateOrgBackendClients(config_);
     if (mesh_messaging_) {
       mesh_messaging_->SetRelayClient(relay_);
     }
@@ -2146,6 +2360,8 @@ void ConversationsHub::Shutdown() {
     return;
   }
 
+  shutdown_requested_.store(true, std::memory_order_release);
+
   on_messaging_ready_ = nullptr;
   on_reachability_updated_ = nullptr;
   agent_inbound_ = {};
@@ -2183,10 +2399,8 @@ void ConversationsHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
-  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
-  StopMesh();
-  // Drop the call session manager before P2P — CSM holds a MeshMessagingService& reference.
-  call_stack_->ResetSessions();
+  // Unregister DEK consumers before StopMesh → DetachAmpTransports destroys peer_blob
+  // (otherwise ProfileSecretsEngine::Shutdown ClearDek UAFs the stale pointer).
   if (secrets_ != nullptr) {
     if (attachment_downloads_) {
       secrets_->UnregisterDekConsumer(attachment_downloads_.get());
@@ -2196,15 +2410,6 @@ void ConversationsHub::Shutdown() {
         secrets_->UnregisterDekConsumer(peer_blob);
       }
     }
-  }
-  // Destroy P2P before groups — P2P held a non-owning Groups pointer.
-  mesh_messaging_.reset();
-  group_membership_.reset();
-  group_invite_gate_.reset();
-  group_roster_.reset();
-  signing_resolver_.reset();
-  kem_resolver_.reset();
-  if (secrets_ != nullptr) {
     if (identity_) {
       secrets_->UnregisterDekConsumer(identity_.get());
     }
@@ -2218,6 +2423,17 @@ void ConversationsHub::Shutdown() {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
     }
   }
+  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
+  StopMesh();
+  // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
+  call_stack_->ResetSessions();
+  // Destroy P2P before groups — P2P held a non-owning Groups pointer.
+  mesh_messaging_.reset();
+  group_membership_.reset();
+  group_invite_gate_.reset();
+  group_roster_.reset();
+  signing_resolver_.reset();
+  kem_resolver_.reset();
   // Reset media engine / key store / session store after DEK unregister above.
   call_stack_->Shutdown();
   psk_store_.reset();
@@ -2244,6 +2460,8 @@ void ConversationsHub::Shutdown() {
   signing_key_store_.Clear();
   kem_key_store_.Clear();
   messaging_ready_ = false;
+  mesh_ready_ = false;
+  mesh_bringup_scheduled_.store(false, std::memory_order_release);
   initialized_ = false;
 }
 
@@ -2251,11 +2469,11 @@ InboxController& ConversationsHub::Inbox() {
   return *inbox_;
 }
 
-MeshMessagingService& ConversationsHub::MeshMessaging() {
+MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;
 }
 
-GroupMembershipService& ConversationsHub::Groups() {
+GroupMembershipWorkflow& ConversationsHub::Groups() {
   return *group_membership_;
 }
 
@@ -2291,7 +2509,7 @@ IPskSessionStore* ConversationsHub::PskStore() {
   return psk_store_.get();
 }
 
-ProfileSecretsService* ConversationsHub::Secrets() {
+ProfileSecretsEngine* ConversationsHub::Secrets() {
   return secrets_;
 }
 

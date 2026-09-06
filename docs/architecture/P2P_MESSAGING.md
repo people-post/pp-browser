@@ -8,12 +8,12 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 ## Service resolution
 
-[`CreateServiceClients`](../../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
+[`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) picks an implementation per endpoint:
 
 1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
 2. else client left unset (should not happen after defaults / empty coalesce)
 
-Native messaging code (`MeshMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
 **Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
@@ -208,10 +208,10 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/conversations/InboxController.*` | Active thread, display rows |
-| `src/feature/conversations/MeshMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |
-| `src/feature/conversations/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
 | `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |
 | `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |

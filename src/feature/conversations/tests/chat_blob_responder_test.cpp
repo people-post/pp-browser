@@ -140,12 +140,13 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
   ChatBlobResponderHarness harness("serve");
   const auto fields = harness.MakeAttachmentFields();
   harness.SeedAttachmentMessage(fields);
+  const ByteVector dek = TestDek();
   ASSERT_TRUE(static_cast<bool>(
       SaveAttachmentPlaintext(harness.profile_data_dir, harness.thread.id, fields.content_hash, fields.mime,
-                              harness.plain, fields.filename)));
+                              harness.plain, fields.filename, dek, "profile-a")));
 
   auto response = ChatBlobResponder::ServeFetch(harness.store, harness.MakeFetchRequest(fields),
-                                                harness.local_relay_id, harness.profile_data_dir);
+                                                harness.local_relay_id, harness.profile_data_dir, &dek, "profile-a");
   ASSERT_TRUE(static_cast<bool>(response));
 
   const ByteVector cipher_bytes(response->begin(), response->end());

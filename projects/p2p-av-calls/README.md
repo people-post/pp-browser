@@ -3,7 +3,7 @@
 **Status:** **a4 thin landed**; **V026 / m1** = libp2p voice (Android↔Android LAN dogfood OK 2026-08-02); **V034** libp2p **video_lo** (1:1 + group SFU); **m2** teardown done; **V033** session SM design  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
-**Related:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [p2p-mesh](../p2p-mesh/) (N022), [media-hop-reachability](../media-hop-reachability/), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md)
+**Related:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [p2p-mesh](../p2p-mesh/) (N022), [media-hop-reachability](../media-hop-reachability/), [peer-scoped-broadcast](../peer-scoped-broadcast/) ([program board](../peer-scoped-broadcast/PROGRAM.md)) (peer-scoped announce + live broadcast sketch), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md)
 
 ## One-line goal
 

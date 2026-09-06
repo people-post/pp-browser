@@ -407,6 +407,12 @@ struct ShellState {
   bool fonts_ready = true;
   /** Silent / deferred vault unlock in progress after first present. */
   bool unlock_in_progress = false;
+  /**
+   * Full-bleed brand cover until interactive-ready (silent unlock / messaging).
+   * Hidden while the PIN gate needs input. Armed from first paint until deferred
+   * unlock settles; then follows unlock_in_progress only.
+   */
+  bool startup_cover_visible = true;
 };
 
 } // namespace pbr

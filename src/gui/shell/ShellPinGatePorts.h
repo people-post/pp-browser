@@ -22,6 +22,8 @@ struct ShellPinGatePorts {
   std::function<void()> dirty_pin_gate;
   /** Presence remount into #shell-pin-gate-mount (not full SyncLayout). */
   std::function<void()> remount_pin_gate;
+  /** After deferred unlock decides: drop first-paint arm on the brand cover. */
+  std::function<void()> settle_startup_cover;
 };
 
 class ShellHost;

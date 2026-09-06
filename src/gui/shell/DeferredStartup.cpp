@@ -131,6 +131,10 @@ void OnFirstPresentDeferredStartup(ClientCompatController& client_compat, Profil
   // Kick vault unlock first (runs off-UI via ProfileUnlockPorts::run_heavy). Loading CJK
   // fallbacks on the UI thread used to serialize behind Argon2 and freeze first paint.
   unlock_gate.BeginDeferredUnlockAfterFirstPresent();
+  // Drop the first-paint arm: cover stays only while unlock_in_progress (PIN wins).
+  if (shell.settle_startup_cover) {
+    shell.settle_startup_cover();
+  }
   client_compat.CheckAsync();
   LoadDeferredFonts(shell);
 }

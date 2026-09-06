@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/Config.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -27,7 +27,7 @@ struct NodeBootstrapResult {
   std::string profile_id;
   std::string config_path;
   /** Node-owned profile vault / DEK service (holds identity DEK consumer). */
-  std::unique_ptr<ProfileSecretsService> secrets;
+  std::unique_ptr<ProfileSecretsEngine> secrets;
   std::unique_ptr<IdentityStore> identity;
   /** Shared Amp mesh host: AmpStack + L4 coordinators + reachability. */
   std::unique_ptr<MeshHost> mesh;

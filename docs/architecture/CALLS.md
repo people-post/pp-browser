@@ -158,7 +158,7 @@ flowchart TB
     Adapt[CallMediaAdaptation]
   end
   subgraph mesh [libp2p integration]
-    DM[Direct chat / MeshMessagingService]
+    DM[Direct chat / MeshDeliveryOrchestrator]
     MR[MediaRelayService]
   end
   CC --> CSM

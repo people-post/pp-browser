@@ -1,6 +1,6 @@
 #include "domain/net/BlobClient.h"
-#include "domain/net/ServiceClientFactory.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientFactory.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 
 #include <gtest/gtest.h>
 
@@ -19,10 +19,10 @@ TEST(BlobClientTest, MockUploadRelayBlobBytesPresignPutRetain) {
   EXPECT_EQ(blob.RetainedBlobIds().front(), uploaded.value().blob_id);
 }
 
-TEST(BlobClientTest, ServiceClientFactoryCreatesBlobClient) {
+TEST(BlobClientTest, OrgBackendClientFactoryCreatesBlobClient) {
   AppConfig config;
   config.registration.base_url = "https://registration.example";
-  auto clients = CreateServiceClients(config);
+  auto clients = CreateOrgBackendClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.blob));
 }
 

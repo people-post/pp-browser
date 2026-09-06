@@ -11,8 +11,8 @@ pp_browser_add_domain_library(pp_domain_net
     RelayInboxCursor.cpp
     RelaySignBytes.cpp
     RegistrationSignPayload.cpp
-    ServiceClientFactory.cpp
-    ServiceClientsImpl.cpp
+    OrgBackendClientFactory.cpp
+    OrgBackendClientsImpl.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_foundation_data

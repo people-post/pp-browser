@@ -10,7 +10,7 @@ AMP L1–L3 already provide association, crypto, mux, QoS, and fragmentation. **
 
 **Shared-code boundary:** Amp owns transport (OPEN/FRAG/Bulk QoS). pp-browser owns L4 conversation SMs (rpc/blob/realtime/…). pp-ledger owns `/pp-ledger/rpc/1.0.0` codecs and chain sync. Do not put swarm/piece selection or ledger tip-follow into Amp — see [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md). BitTorrent-style multi-peer fetch is future **blob** ops + **discover**, not a new kind.
 
-Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has two OPEN ids (chat vs history) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
+Wire `protocol_id` strings are **kind-aligned** (no dual advertise; product not released). Shipped ids: `/pp-browser/rpc/chat|rpc/history|rpc/peer-announce|blob|realtime|datagram-relay|circuit|reach/1.0.0` plus `/pp-mesh/directory|dht/1.0.0`. Kind **rpc** has multiple OPEN ids (chat vs history vs peer-announce) — demux by `protocol_id`, not first-frame `op`. `reach` uses `/reach/1.0.0` (dial-back) and `/reach/punch/1.0.0` (punch SM).
 
 ## Gate — when to add a `protocol_id`
 
@@ -69,6 +69,7 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | `/amp/circuit-carrier/1.0.0` | *(plumbing)* | Amp-owned nested-Session carrier (`kAmpCircuitCarrierProtocolId`); product uses Amp default — not a `/pp-browser/*` id |
 | `/pp-browser/rpc/chat/1.0.0` | **rpc** | Live chat envelopes |
 | `/pp-browser/rpc/history/1.0.0` | **rpc** | Peer history request/response |
+| `/pp-browser/rpc/peer-announce/1.0.0` | **rpc** | Peer-scoped announce tips (Spine B; own OPEN) |
 | `/pp-browser/blob/1.0.0` | **blob** | Content-addressed attachment bytes |
 | `/pp-browser/realtime/1.0.0` | **realtime** (E2E) | Call-media bundle |
 | `/pp-browser/datagram-relay/1.0.0` | **realtime** (blind hop) | Content-agnostic fan-out ([N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)) |
@@ -81,6 +82,8 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | Chat / receipts / presence / call signaling | **rpc** envelopes |
 | History / contact paste / small config pull | **rpc** |
 | Photos, docs, video files, icons | **blob** |
+| Content-addressed file share (IPFS-*like*; not Kubo/Bitswap wire) | **discover** (provider lookup) + **blob** (bytes; optional piece/manifest later) + **rpc** (announce / meta / ACL) — on-disk realms: [content-cas](../../projects/content-cas/) |
+| Live broadcast (one publish → many subscribe) | **rpc** (catalog / subscribe / token) + **realtime** blind hop (fan-out); optional **blob** for DVR/VOD of the same program — product sketch: [peer-scoped-broadcast](../../projects/peer-scoped-broadcast/) |
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |
@@ -89,6 +92,17 @@ Namespaces: **`/pp-mesh/*`** = mesh infrastructure discovery; **`/pp-browser/*`*
 | SoftMigrate attach | Existing **realtime** hop control ops ([N026](../../projects/p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)) |
 
 Policy (who may hop, pricing, MeshHopPolicy), codecs, and UI stay **above** the wire kinds.
+
+### Prepared compositions (no new kinds)
+
+These product goals are **in scope of the seven kinds**; they need swarm/fan-out *services* and on-disk realm separation, not new `protocol_id` families. Disk plan: [content-cas](../../projects/content-cas/).
+
+| Goal | Do | Don’t |
+|------|----|--------|
+| **File share by content id** | Keep **blob** as the bulk conversation; add provider advertise/lookup on **discover**/**rpc**; optional blob piece/manifest mode for multi-source assemble; HTTP/CDN remains a delivery path; **public** CAS realm only via explicit publish | Mint `/pp-browser/ipfs/…` or treat Bitswap as an L4 kind; require Kubo wire compatibility; promote chat decrypt into public CAS |
+| **Live broadcast** | Treat as **realtime** blind-hop topology (more subscribers) + **rpc** for channel control; identify caps may advertise `realtime_broadcast_fanout` | Mint `/pp-browser/broadcast/…` as a kind; conflate live fan-out with durable ordered blob/rpc logs |
+
+Cheap forward-compat: identify capability bits (`blob_pieces`, `blob_provide`, `realtime_broadcast_fanout`); leave blob APIs room for `content_id` + optional `manifest`. Defer full rarest-first swarm, provider-DHT product semantics, and broadcast SFU UX until attachments and 1:1/group calls + hop are solid.
 
 ## Behavior matrix (as implemented)
 
@@ -113,7 +127,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Latency sensitivity** | moderate (chat) | low–moderate (sync) | low (bulk) | **high** (media) | **high** |
 | **Lifetime** | short OPEN | short OPEN (longer read timeout) | short OPEN | **long-lived call SM** | **long-lived hop / SoftMigrate** |
 | **In-band “signal”** | envelope `op`s (call invite, attachment pointer, …) | history request fields | blob `op` fetch/push | bundle hello / channel admit | attach / quote / SoftMigrate ops |
-| **Code owner (approx.)** | `AmpDirectChatService` | `AmpChatHistoryService` | `AmpChatBlobService` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
+| **Code owner (approx.)** | `AmpDirectChatTransport` | `AmpChatHistoryTransport` | `AmpChatBlobTransport` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
 
 **Mental model:** `rpc/chat` is the small **send + tiny return** bus (product signals via envelope `op`). `rpc/history` is the same reliability class with **pull + larger return**. `blob` is **large reliable** transfer. `realtime` / `datagram-relay` are **time-sensitive**, lossy media allowed, drop-oldest, long-lived.
 

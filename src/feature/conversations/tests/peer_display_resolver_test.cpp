@@ -1,6 +1,6 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/people/ContactsStore.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/PeerDisplayResolver.h"

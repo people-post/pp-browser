@@ -7,12 +7,12 @@
 
 namespace pbr {
 
-class ProfileSecretsService;
+class ProfileSecretsEngine;
 
 class Bootstrap {
 public:
   static Roe<BootstrapResult> Run(const BootstrapOptions& options, ConversationsHub& messaging,
-                                  ProfileSecretsService& secrets);
+                                  ProfileSecretsEngine& secrets);
 };
 
 } // namespace pbr

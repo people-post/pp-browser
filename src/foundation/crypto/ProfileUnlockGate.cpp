@@ -13,7 +13,7 @@ ProfileUnlockGate::ProfileUnlockGate() {
   redirectLogger("ProfileUnlockGate");
 }
 
-Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsService& secrets, const std::string& pin,
+Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const std::string& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready) {
   {
     StartupPhase phase("ProfileUnlockGate::VaultUnlock");
@@ -27,7 +27,7 @@ Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsService& secrets, const std
   return ensure_messaging_ready();
 }
 
-void ProfileUnlockGate::BindSecrets(ProfileSecretsService& secrets) {
+void ProfileUnlockGate::BindSecrets(ProfileSecretsEngine& secrets) {
   secrets_ = &secrets;
 }
 
@@ -35,7 +35,7 @@ void ProfileUnlockGate::BindPorts(ProfileUnlockPorts ports) {
   ports_ = std::move(ports);
 }
 
-ProfileSecretsService& ProfileUnlockGate::Secrets() {
+ProfileSecretsEngine& ProfileUnlockGate::Secrets() {
   if (!secrets_) {
     throw std::runtime_error("ProfileUnlockGate secrets not bound");
   }

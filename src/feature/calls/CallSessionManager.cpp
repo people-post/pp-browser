@@ -3,6 +3,8 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/messaging/CallSessionLogic.h"
+#include "domain/messaging/AnnounceLiveJoinHandoff.h"
+#include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PeerCapsLogic.h"
@@ -48,9 +50,27 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                                        CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
-      topology_(*this, sessions, contacts, media) {
+      topology_(*this, sessions, contacts, media), broadcast_(sessions, contacts, media_keys) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  BroadcastSessionCoordinator::HostPorts ports;
+  ports.local_relay_identity = [this]() { return LocalRelayIdentity(); };
+  ports.local_mesh_peer_id = [this]() -> std::string {
+    if (!local_mesh_peer_id_) {
+      return {};
+    }
+    return local_mesh_peer_id_();
+  };
+  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
+  ports.sweep_expired_invites = [this]() { SweepExpiredInvites(); };
+  ports.leave_call_if_active_except = [this](const std::string& keep) {
+    return LeaveCallIfActiveExcept(keep);
+  };
+  ports.on_announce_viewer_joined = [this](const std::string& call_id,
+                                           const std::optional<std::string>& sfu_hint) {
+    return topology_.OnAnnounceViewerJoined(call_id, sfu_hint);
+  };
+  broadcast_.SetHostPorts(std::move(ports));
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -805,6 +825,11 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Call invite expired";
     return Error("Call invite expired");
   }
+  if (IsBroadcastSession((*pending)->session_kind)) {
+    log().warning << "AcceptInvite end call_id=" << call_id
+                  << " err=broadcast sessions use AcceptLiveAnnounceJoin";
+    return Error("Broadcast sessions use AcceptLiveAnnounceJoin");
+  }
 
   const std::string inviter = (*pending)->inviter_identity;
   int64_t offer_minor = 0;
@@ -945,6 +970,18 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
   return {};
 }
+
+
+Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
+                                                                   const ArmLiveAnnounceJoinOpts& opts) {
+  return broadcast_.ArmJoinFromLiveAnnounce(plan, opts);
+}
+
+
+Roe<void> CallSessionManager::AcceptLiveAnnounceJoin(const std::string& call_id) {
+  return broadcast_.AcceptLiveAnnounceJoin(call_id);
+}
+
 
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   auto local = LocalRelayIdentity();

@@ -1670,6 +1670,50 @@ select selectbox option {
   z-index: 55;
 }
 
+/* Full-bleed brand cover while vault/messaging prepare (below PIN / titlebar). */
+.shell-startup-cover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  focus: none;
+}
+
+.shell-startup-cover-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12dp;
+  padding: 24dp;
+}
+
+.shell-startup-cover-icon {
+  width: 96dp;
+  height: 96dp;
+  flex-shrink: 0;
+}
+
+.shell-startup-cover-name {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-startup-cover-status {
+  margin: 0;
+  text-align: center;
+}
+
 .shell-overlay-chrome-mount .shell-layer {
   pointer-events: auto;
 }

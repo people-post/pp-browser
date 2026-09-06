@@ -221,7 +221,7 @@ flowchart TB
 | Settings UI | register / rotate / UPnP / clear undelivered / reset profile / appearance / locales / reachability / PIN status | Via `SettingsCommands` (narrow args + views; app-filled); UI syncs state after — **no** `BindMessaging` / `Hub()` |
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
-| ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
+| ChatController | `SetOnMessagingReady / SetOnMeshReady ([SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md))` / reachability | **No** — Application owns |
 | Application Run loop | `ConversationsHub::TickMesh` | **Removed** — hub policy on coordinator timer (t4) |
 | UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
 | Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
@@ -253,7 +253,7 @@ flowchart TB
   subgraph pool["Worker pool 2–4"]
     Pool["WorkerPool<br/><small>Critical · Normal · Background</small>"]
     Http["HttpClient · AgentSession<br/><small>LLM / tools / libcurl</small>"]
-    P2pWork["MeshMessagingService · ConversationsHub<br/><small>relay sync / send</small>"]
+    P2pWork["MeshDeliveryOrchestrator · ConversationsHub<br/><small>relay sync / send</small>"]
     Pool --> Http
     Pool --> P2pWork
   end
@@ -302,7 +302,7 @@ Full model: [THREADING.md](THREADING.md).
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub, `ProfileSecretsService`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub, `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
@@ -319,7 +319,7 @@ Full model: [THREADING.md](THREADING.md).
 | **CallController** | `gui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
 | **PinGateController** | `gui/` | PIN overlay presentation; UI ports for ProfileUnlockGate; shell via `PinGateActionPorts` |
 | **PinGateActionPorts** | `gui/` | PIN overlay submit/cancel/chooser; app-filled from `PinGateController` |
-| **ProfileSecretsService** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `ConversationsHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
+| **ProfileSecretsEngine** | `foundation/crypto/` | Profile PIN vault + DEK fan-out; **app-owned** (`unique_ptr` on `Application`; node owns its own in `NodeBootstrap`) — not a singleton; injected into `ConversationsHub::BindSecrets`, `ProfileUnlockGate::BindSecrets`, `Bootstrap::Run` |
 | **ProfileUnlockGate** | `foundation/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports; presenters via `UnlockEnsurePorts`; secrets via `BindSecrets` |
 | **UnlockEnsurePorts** | `gui/` | Ensure unlocked / unlock-in-progress; app-filled from `ProfileUnlockGate` |
 | **ShellHost** | `gui/` | Window shell panes/nav; nested `ChromePrefs` |

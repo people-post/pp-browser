@@ -120,7 +120,7 @@ crypto
 | Path | Contents |
 |------|----------|
 | `domain/people/` | Identity and contacts stores; presentation DTOs |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |

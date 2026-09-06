@@ -25,6 +25,8 @@ bool ConversationsFacade::IsInitialized() { return hub_.IsInitialized(); }
 
 bool ConversationsFacade::IsMessagingReady() { return hub_.IsMessagingReady(); }
 
+bool ConversationsFacade::IsMeshReady() { return hub_.IsMeshReady(); }
+
 IThreadStore* ConversationsFacade::ThreadStore() { return &hub_.Store(); }
 
 void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
@@ -584,6 +586,64 @@ Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {
   return pbr::UpdateRegisteredNickname(hub_.Registration(), hub_.Identity(), nickname);
+}
+
+
+// --- Peer-scoped live announce (Spine C) ------------------------------------
+
+Roe<AnnounceLiveJoinPlan> ConversationsFacade::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) {
+  return hub_.MeshMessaging().PlanLiveJoinFromAnnounceTip(tip);
+}
+
+Roe<AnnounceLiveJoinPlan> ConversationsFacade::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                                              const std::string& topic_id,
+                                                                              const std::string& program_id) {
+  return hub_.MeshMessaging().PlanLiveJoinFromStoredAnnounce(peer_id, topic_id, program_id);
+}
+
+Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) {
+  auto plan = PlanLiveJoinFromAnnounceTip(tip);
+  if (!plan) {
+    return plan.error();
+  }
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return Error("Call session manager unavailable");
+  }
+  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
+}
+
+Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
+                                                                          const std::string& topic_id,
+                                                                          const std::string& program_id) {
+  auto plan = PlanLiveJoinFromStoredAnnounce(peer_id, topic_id, program_id);
+  if (!plan) {
+    return plan.error();
+  }
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return Error("Call session manager unavailable");
+  }
+  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
+}
+
+Roe<void> ConversationsFacade::AcceptLiveAnnounceJoin(const std::string& call_id) {
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return Error("Call session manager unavailable");
+  }
+  return calls->Broadcast().AcceptLiveAnnounceJoin(call_id);
+}
+
+Roe<PendingCallInvite> ConversationsFacade::JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip) {
+  auto armed = ArmLiveJoinFromAnnounceTip(tip);
+  if (!armed) {
+    return armed.error();
+  }
+  if (auto accepted = AcceptLiveAnnounceJoin(armed->call_id); !accepted) {
+    return accepted.error();
+  }
+  return armed;
 }
 
 } // namespace pbr

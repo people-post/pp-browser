@@ -12,17 +12,14 @@
     "common.delete": "Delete",
     "common.remove": "Remove",
     "common.share": "Share",
-
     "app.name": "PP",
     "app.tagline": "The internet, rendered for you.",
-
+    "startup.preparing": "Preparing…",
     "startup.still_preparing": "Still preparing… try again in a moment.",
-
     "nav.home": "Home",
     "nav.sessions": "Sessions",
     "nav.contacts": "Contacts",
     "nav.me": "Me",
-
     "shell.statusbar.direct_off": "Direct off",
     "shell.statusbar.brief_offline": "Brief offline",
     "shell.statusbar.brief_ok": "Online",
@@ -56,7 +53,6 @@
     "shell.statusbar.popover.circuit_load": "{count} circuit bridges",
     "shell.statusbar.popover.media_sessions": "{count} media sessions",
     "shell.statusbar.popover.media_participants": "{count} media participants",
-
     "settings.saved": "Settings saved",
     "settings.preferences": "Preferences",
     "settings.profile.title": "Profile",
@@ -80,31 +76,26 @@
     "compat.update_required.message": "This version of PP is too old to continue. Please update to the latest release.",
     "compat.update_required.action": "Update",
     "compat.update_available.message": "A newer version of PP is available.",
-
     "support.entry.title": "PP Support",
     "support.entry.subtitle": "Get help from the PP team",
     "support.unavailable": "PP Support is not available right now.",
-
     "settings.theme.label": "Theme",
     "settings.theme.system": "System",
     "settings.theme.light": "Light",
     "settings.theme.dark": "Dark",
     "settings.theme.help": "Follows your OS light/dark setting when set to System.",
-
     "settings.language.label": "Language",
     "settings.language.system": "System",
     "settings.language.en": "English",
     "settings.language.zh_hans": "简体中文",
     "settings.language.help": "App UI language. Changes apply immediately.",
     "settings.language.choose": "Choose language",
-
     "settings.reduce_transparency.label": "Reduce transparency",
     "settings.reduce_transparency.on": "On",
     "settings.reduce_transparency.off": "Off",
     "settings.reduce_transparency.help": "Uses opaque compact navigation and headers instead of backdrop blur.",
     "settings.call_diagnostics.label": "Call diagnostics",
     "settings.call_diagnostics.help": "Shows technical call-path details during calls (also enabled by --debug).",
-
     "settings.nickname": "Nickname",
     "settings.profile.change_photo": "Change photo…",
     "settings.profile.remove_photo": "Remove photo",
@@ -118,20 +109,17 @@
     "settings.notifications": "Show notifications",
     "settings.notifications.on": "On",
     "settings.notifications.off": "Off",
-
     "settings.llm.preset": "Preset",
     "settings.llm.base_url": "Base URL",
     "settings.llm.model": "Model",
     "settings.llm.api_key": "API key",
     "settings.llm.api_key_env": "API key env var",
-
     "settings.integrations.promoted_mcp": "Promoted MCP URL",
     "settings.integrations.search": "Search provider",
     "settings.integrations.add_mcp": "Add MCP server",
     "settings.integrations.mcp_url": "MCP URL",
     "settings.integrations.mcp_command": "Command",
     "settings.integrations.mcp_args": "Args",
-
     "settings.network.relay": "Relay base URL",
     "settings.network.directory": "Directory base URL",
     "settings.network.registration": "Registration base URL",
@@ -168,7 +156,6 @@
     "settings.network.dht_hint": "Help peers find each other on the mesh. Uses extra bandwidth when enabled.",
     "settings.network.prefer_contacts": "Friends first",
     "settings.network.prefer_contacts_hint": "Prefer your contacts when connecting, and when helping. Turn off to help the wider network too.",
-
     "settings.security.protection": "Protection:",
     "settings.security.current_pin": "Current PIN",
     "settings.security.new_pin": "New PIN",
@@ -203,7 +190,6 @@
     "settings.security.link_device.export_confirm_message": "Copies a 15-minute payload with your account keys and shared secret. Anyone with it can add a device. Paste it on the new device.",
     "settings.security.link_device.export_done": "Link payload copied",
     "settings.security.link_device.not_ready": "Unlock your profile before linking a device.",
-
     "settings.storage.config_dir": "Config directory",
     "settings.storage.data_dir": "Data directory",
     "settings.storage.profile_dir": "Profile directory",
@@ -224,10 +210,8 @@
     "settings.storage.clear_attachments_confirm_title": "Clear downloaded attachments?",
     "settings.storage.clear_attachments_confirm_message": "Removes saved attachment files on this device. Chat messages stay; auto-download will not bring them back unless you tap Download again.",
     "settings.storage.clear_attachments_done": "Downloaded attachments cleared",
-
     "settings.reset_defaults_confirm_title": "Reset to defaults?",
     "settings.reset_defaults_confirm_message": "This restores this section's settings to their defaults.",
-
     "pin.set_pin": "Set a PIN",
     "pin.just_continue": "Just continue",
     "pin.not_now": "Not now",
@@ -251,7 +235,6 @@
     "pin.link_paste_placeholder": "Link payload",
     "pin.link_paste_empty": "Paste a link payload first.",
     "pin.link_imported": "This device is now linked",
-
     "contacts.title": "Contacts",
     "contacts.add": "Add contact",
     "contacts.empty": "No contacts yet",
@@ -264,7 +247,6 @@
     "contacts.trust.trusted": "Trusted",
     "contacts.trust.untrusted": "Untrusted",
     "contacts.trust.unknown": "Unknown",
-
     "people_picker.title": "New conversation",
     "people_picker.title_add": "Add people",
     "people_picker.search_placeholder": "Search contacts",
@@ -291,7 +273,6 @@
     "people_picker.cta_start_call": "Start call…",
     "people_picker.allow_video": "Allow video",
     "people_picker.cta_invite_to_call": "Invite",
-
     "chat.new_chat": "New chat",
     "chat.empty_title": "Start a conversation",
     "chat.empty_body": "Ask anything, or open Sessions to continue a thread.",
@@ -320,7 +301,6 @@
     "chat.attachment.open_failed": "Couldn't open attachment",
     "chat.attachment.open_confirm_title": "Open this file?",
     "chat.attachment.open_confirm_body": "This file will open in another app on your device.",
-
     "blob.quota.title": "Relay upload space full",
     "blob.quota.message": "Cloud relay storage is full. Delete the oldest uploaded file to free space?\n\n{{detail}}\n\nChat history on this device stays unchanged.",
     "blob.quota.detail": "Oldest: {{purpose}} · {{size}} · {{date}}",
@@ -336,7 +316,6 @@
     "chat.device_lock.subtitle_this": "Encrypted · Only on this device",
     "chat.device_lock.subtitle_locked_out": "Encrypted · Continues on another device",
     "chat.device_lock.locked_out_body": "This chat continues on another device. You can still read older messages here.",
-
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.calling": "Calling…",
     "call.status.connecting": "Connecting…",
@@ -440,14 +419,12 @@
     "call.history.ended": "Call ended",
     "call.history.ended_duration": "Call ended · {duration}",
     "call.history.roster": "{count} people on the call",
-
     "hints.network.local_macos": "On Mac, allow Local Network for {product} in System Settings → Privacy & Security.",
     "hints.network.local_ios": "Allow microphone and local network access for {product} in Settings.",
     "hints.network.firewall_windows": "Check Windows microphone privacy and that the firewall allows {product}.",
     "hints.network.lan_linux": "Check both devices are on the same network and UDP is not blocked.",
     "hints.network.android_permissions": "Allow microphone (and camera) permission for {product}.",
     "hints.mic_blocked": "Microphone access looks blocked — enable it in system privacy settings.",
-
     "errors.auth.register_or_rotate": "Register or rotate your Brief API key in Me → Profile.",
     "errors.auth.busy": "Service is busy — try again shortly.",
     "errors.auth.failed": "Authentication failed — check Me → Profile / Assistant.",
@@ -465,6 +442,29 @@
     "errors.blob.quota_exceeded": "Relay upload space is full",
     "errors.blob.quota_nothing_to_delete": "Relay storage is full and there is nothing safe to remove remotely",
     "errors.blob.failed": "Relay upload failed — try again.",
-    "errors.internal": "Something went wrong — try again."
+    "errors.internal": "Something went wrong — try again.",
+    "settings.storage.library.title": "Files library",
+    "settings.storage.library.help": "Local CAS objects for this profile. Private stays encrypted; Share publicly… makes a clear public copy (Kept).",
+    "settings.storage.library.filter_all": "All",
+    "settings.storage.library.filter_private": "Private",
+    "settings.storage.library.filter_public": "Public",
+    "settings.storage.library.filter_cache": "Cache",
+    "settings.storage.library.empty": "No files in this filter",
+    "settings.storage.library.share_publicly": "Share publicly…",
+    "settings.storage.library.share_confirm_title": "Share publicly?",
+    "settings.storage.library.share_confirm_message": "Creates a clear public copy of this file in your library (Kept). Anyone with the content id may fetch it once provide is enabled.",
+    "settings.storage.library.share_done": "Shared publicly",
+    "settings.storage.library.unpublish": "Unpublish…",
+    "settings.storage.library.unpublish_confirm_title": "Unpublish?",
+    "settings.storage.library.unpublish_confirm_message": "Stops keeping this public file (moves to Cache). Bytes may remain until cleared.",
+    "settings.storage.library.unpublish_done": "Unpublished",
+    "settings.storage.library.copy_tip": "Copy tip…",
+    "settings.storage.library.copy_tip_done": "Tip copied",
+    "settings.storage.library.fetch_tip": "Fetch tip…",
+    "settings.storage.library.fetch_tip_title": "Fetch public tip",
+    "settings.storage.library.fetch_tip_message": "Paste a pp-cas:v1:… tip or 64-hex content id.",
+    "settings.storage.library.fetch_tip_peer_title": "Provider peer",
+    "settings.storage.library.fetch_tip_peer_message": "Relay user id of a peer that still Keeps this public object.",
+    "settings.storage.library.fetch_tip_done": "Fetched into Cache"
   }
 }

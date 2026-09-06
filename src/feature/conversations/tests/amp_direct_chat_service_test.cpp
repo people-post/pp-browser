@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpDirectChatService.h"
+#include "feature/conversations/AmpDirectChatTransport.h"
 
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
@@ -29,7 +29,7 @@ RelayEnvelope MakeTestEnvelope(const std::string& message_id, const std::string&
   return envelope;
 }
 
-class AmpDirectChatServiceTest : public ::testing::Test {
+class AmpDirectChatTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
@@ -40,8 +40,8 @@ protected:
     ASSERT_TRUE(static_cast<bool>(harness_->chat_a().RegisterEndpoint("b", harness_->ma_b)));
     ASSERT_TRUE(static_cast<bool>(harness_->chat_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_chat_ = std::make_unique<AmpDirectChatService>(harness_->chat_a(), [this] { harness_->PumpBoth(); });
-    b_chat_ = std::make_unique<AmpDirectChatService>(harness_->chat_b(), [this] { harness_->PumpBoth(); });
+    a_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_a(), [this] { harness_->PumpBoth(); });
+    b_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); });
     a_chat_->Start();
     b_chat_->Start();
   }
@@ -55,11 +55,11 @@ protected:
   }
 
   std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
-  std::unique_ptr<AmpDirectChatService> a_chat_;
-  std::unique_ptr<AmpDirectChatService> b_chat_;
+  std::unique_ptr<AmpDirectChatTransport> a_chat_;
+  std::unique_ptr<AmpDirectChatTransport> b_chat_;
 };
 
-TEST_F(AmpDirectChatServiceTest, SendEnvelopeRoundTrip) {
+TEST_F(AmpDirectChatTransportTest, SendEnvelopeRoundTrip) {
   std::mutex mu;
   std::condition_variable cv;
   bool got = false;

@@ -73,7 +73,7 @@ On **429 / quota**, show confirm dialog → delete oldest **remote** blobs via `
 | Sign bytes | `src/base/net/RelayBlobSignPayload.*` (or extend `RegistrationSignPayload`) | Domains: presign, retain, delete, list, profile-icon |
 | HTTP PUT | `HttpClient::Put` | Binary body + Content-Type + Content-Length must match presign |
 | Blob client | `src/base/net/IBlobClient` + `HttpBlobClient` | JSON POST + PUT orchestration |
-| Factory | `ServiceClientFactory` | Same base_url as registration |
+| Factory | `OrgBackendClientFactory` | Same base_url as registration |
 
 Sign domain field order matches www `SignatureVerifier.ts` (length-prefixed UTF-8, BE integers).
 
