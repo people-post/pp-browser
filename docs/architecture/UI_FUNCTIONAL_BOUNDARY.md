@@ -202,6 +202,9 @@ struct MessagingActions {
 
 ## Composition root responsibilities
 
+**Startup / readiness:** local `messaging_ready` vs async `mesh_ready` — see [SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md). Presenters gate Call on `mesh_ready`; compose/send on `messaging_ready`. Do not block the startup cover on mesh bring-up.
+
+
 `Application` (`src/app/`) is the only place that:
 
 - Owns service lifetimes (`ConversationsHub`, `AgentSession`, `ProfileUnlockGate`, `CallUiBackend`, …) — parent-only destroy: [OWNERSHIP.md](OWNERSHIP.md)

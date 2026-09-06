@@ -65,8 +65,8 @@ std::string ActiveThreadId(ConversationsFacade* facade) {
 
 } // namespace
 
-ChatThreadChrome::ChatThreadChrome(View view, bool& messaging_ready)
-    : view_(view), messaging_ready_(messaging_ready) {}
+ChatThreadChrome::ChatThreadChrome(View view, bool& messaging_ready, bool& mesh_ready)
+    : view_(view), messaging_ready_(messaging_ready), mesh_ready_(mesh_ready) {}
 
 void ChatThreadChrome::ResetPanelState() {
   view_.thread_title = "";
@@ -154,7 +154,8 @@ void ChatThreadChrome::Update() {
     view_.thread_is_group = visual_kind == "group";
     view_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
     view_.show_call_actions =
-        (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_;
+        (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_ &&
+        mesh_ready_;
     view_.show_attach_button = view_.show_call_actions && thread->kind != ThreadKind::Ai;
     view_.show_thread_actions = true;
     view_.show_forget_memory = thread->kind == ThreadKind::Ai;

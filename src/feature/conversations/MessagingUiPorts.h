@@ -12,6 +12,7 @@ namespace pbr {
 struct MessagingView {
   bool initialized = false;
   bool messaging_ready = false;
+  bool mesh_ready = false;
   bool has_router = false;
   std::string active_thread_id;
 };
@@ -20,6 +21,7 @@ inline MessagingView ProjectMessagingView(ConversationsHub& hub) {
   MessagingView view;
   view.initialized = hub.IsInitialized();
   view.messaging_ready = hub.IsMessagingReady();
+  view.mesh_ready = hub.IsMeshReady();
   view.has_router = hub.HasRouter();
   if (view.initialized) {
     view.active_thread_id = hub.Inbox().ActiveThreadId();

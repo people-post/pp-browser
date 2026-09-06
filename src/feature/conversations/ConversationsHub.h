@@ -149,10 +149,20 @@ public:
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsEngine& secrets);
 
-  /** Amp / P2P stack ready after profile unlock + identity load. */
+  /**
+   * Local messaging stack ready (vault unlocked, identity loaded, relay-capable
+   * orchestrator). Does **not** imply Amp mesh is up — see IsMeshReady().
+   */
   bool IsMessagingReady() const { return messaging_ready_; }
 
-  /** Requires ProfileSecretsEngine unlocked; loads identity and starts Amp mesh. */
+  /** Amp mesh underlay running and attached after async bring-up. */
+  bool IsMeshReady() const { return mesh_ready_; }
+
+  /**
+   * Requires ProfileSecretsEngine unlocked; loads identity and builds the **local**
+   * messaging stack, then schedules Amp mesh start off the critical path.
+   * Returns once messaging_ready_ is set (cover / unlock_in_progress may clear).
+   */
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
@@ -274,6 +284,8 @@ public:
   void SuspendMeshColdPeers();
 
   void SetOnMessagingReady(std::function<void()> callback);
+  /** Fired on UI thread when async mesh bring-up finishes (success or soft-fail). */
+  void SetOnMeshReady(std::function<void()> callback);
   /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
   void SetOnCallWake(std::function<void()> callback);
 
@@ -300,8 +312,15 @@ private:
   void ConfigureAmpDhtProtocol();
   void ConfigureAmpDirectoryProtocol();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
+  /** Local (relay-capable) stack only — no StartMesh. */
+  Roe<void> BuildLocalMessagingStack();
+  /** Rebuild orchestrator/call stack with Amp links from a running mesh_. */
+  Roe<void> AttachAmpMessagingStack();
+  /** @deprecated Prefer BuildLocalMessagingStack + ScheduleMeshBringUp. Sync local+mesh. */
   Roe<void> BuildMessagingStack();
+  void ScheduleMeshBringUp();
   void NotifyMessagingReady();
+  void NotifyMeshReady();
 
   void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
@@ -377,9 +396,12 @@ private:
   std::function<void()> on_reachability_updated_;
   std::function<void()> on_peer_icons_changed_;
   std::function<void()> on_messaging_ready_;
+  std::function<void()> on_mesh_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  bool mesh_ready_ = false;
+  std::atomic<bool> mesh_bringup_scheduled_{false};
   std::atomic<bool> shutdown_requested_{false};
   uint64_t hub_policy_timer_id_ = 0;
   uint64_t amp_mesh_pump_timer_id_ = 0;

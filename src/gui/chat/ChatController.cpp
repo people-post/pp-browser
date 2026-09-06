@@ -301,7 +301,8 @@ ChatController::ChatController()
                  .use_messages_layout = chat_.use_messages_layout,
                  .has_turns = chat_.has_turns,
              },
-             messaging_ready_) {
+             messaging_ready_,
+             mesh_ready_) {
   redirectLogger("ChatController");
   scroller_.SetDirtyTurns([]() { DirtyChatTurns(); });
   working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {
@@ -1147,6 +1148,7 @@ void ChatController::RefreshFromMessaging() {
 
 void ChatController::OnProfileDataReset() {
   messaging_ready_ = false;
+  mesh_ready_ = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -2951,6 +2953,13 @@ void ChatController::OnMessagingReady() {
   }
 }
 
+void ChatController::OnMeshReady() {
+  mesh_ready_ = true;
+  chrome_.Update();
+  DirtyChatChrome();
+  NotifySurfaceChanged();
+}
+
 ChatController::AgentConfig ChatController::ProjectAgent(const AppConfig& config) {
   return {.llm = config.llm,
           .llm_api_key_env = config.llm_api_key_env,
@@ -3083,6 +3092,7 @@ void ChatController::Shutdown() {
   }
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
   messaging_ready_ = false;
+  mesh_ready_ = false;
   pending_reply_.reset();
   context_ = nullptr;
   widgets_.ClearAll();

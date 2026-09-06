@@ -133,6 +133,7 @@ public:
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
   void OnMessagingReady();
+  void OnMeshReady();
   /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
   void ReloadAgentConfig();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
@@ -357,6 +358,7 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
+  bool mesh_ready_ = false;
   /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
   bool brief_guest_mint_attempted_ = false;
   std::string brief_guest_mint_user_hint_;

@@ -127,3 +127,6 @@ Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{con
 ## Test fixtures
 
 Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
+
+
+Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
