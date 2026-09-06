@@ -35,7 +35,7 @@
 | Component | Path |
 |-----------|------|
 | Smart / Always / On-demand policy | `AttachmentDownloadPolicy.*`, `ProfilePreferences.attachment_download_policy` |
-| Background fetch + UI | `AttachmentDownloadService`, `InboxController`, `ChatController` |
+| Background fetch + UI | `AttachmentFetchWorkflow`, `InboxController`, `ChatController` |
 | Me → Storage pref + backlog | `StorageSettingsSection`, `settings_section_storage.rml` |
 | Suppression tombstones | `AttachmentSuppressionStore.*` |
 | Clear-history blob wipe | `PrepareThreadHistoryClear`, `WipeThreadAttachmentBlobs` |

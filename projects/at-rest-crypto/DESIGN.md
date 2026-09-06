@@ -15,12 +15,12 @@
 ```
 app/Bootstrap
         │
-        ├─ ProfileSecretsService (base/crypto)  ← vault, Unlock, DEK fan-out
+        ├─ ProfileSecretsEngine (base/crypto)  ← vault, Unlock, DEK fan-out
         └─ ConversationsHub (feature/messaging)     ← EnsureMessagingReady after unlock
 
 base/crypto
   PinDefaults · PinKeyDeriver · DataKeyVault · FileCipher · PinResolver
-  ProfileSecretsService · IDekConsumer
+  ProfileSecretsEngine · IDekConsumer
         │
         ├─ people/IdentityStore  → identity.enc
         └─ SqlitePskSessionStore → chat_targets PSK columns
@@ -32,7 +32,7 @@ feature/ui
   SecuritySettingsSection  → Me → Security status + Change PIN
 ```
 
-**Unlock split:** `ProfileSecretsService::Unlock(pin)` creates/unlocks `vault.bin` and fans out DEK to registered `IDekConsumer`s. `ConversationsHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P (messaging-only). `PinGateController` calls both for E2E/register flows.
+**Unlock split:** `ProfileSecretsEngine::Unlock(pin)` creates/unlocks `vault.bin` and fans out DEK to registered `IDekConsumer`s. `ConversationsHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P (messaging-only). `PinGateController` calls both for E2E/register flows.
 
 ## Threat model (v1)
 

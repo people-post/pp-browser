@@ -10,7 +10,7 @@
 4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and tier-specific ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
 6. **Storage abstraction** — `IPskSessionStore` seam; v1 backing store is `profile.db` `chat_targets` (E008/D084); keychain backend later.
-7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `MeshMessagingService` dependencies.
+7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `MeshDeliveryOrchestrator` dependencies.
 
 ## Three chat tiers (E021 / D089)
 

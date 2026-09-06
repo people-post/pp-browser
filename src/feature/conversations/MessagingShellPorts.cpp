@@ -2,7 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/conversations/ConversationsHub.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/host/MeshHost.h"
@@ -11,13 +11,13 @@
 namespace pbr {
 namespace {
 
-BriefRelayHealth MapBriefHealth(MeshMessagingService::BriefRelayHealthState health) {
+BriefRelayHealth MapBriefHealth(MeshDeliveryOrchestrator::BriefRelayHealthState health) {
   switch (health) {
-  case MeshMessagingService::BriefRelayHealthState::Ok:
+  case MeshDeliveryOrchestrator::BriefRelayHealthState::Ok:
     return BriefRelayHealth::Ok;
-  case MeshMessagingService::BriefRelayHealthState::Failed:
+  case MeshDeliveryOrchestrator::BriefRelayHealthState::Failed:
     return BriefRelayHealth::Failed;
-  case MeshMessagingService::BriefRelayHealthState::Unknown:
+  case MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown:
   default:
     return BriefRelayHealth::Unknown;
   }

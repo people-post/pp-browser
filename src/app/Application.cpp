@@ -1,7 +1,7 @@
 #include "app/Application.h"
 #include "app/ConfigApplyBridge.h"
 
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/SchemaVersion.h"
@@ -24,7 +24,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
 #include "foundation/platform/Platform.h"
-#include "foundation/platform/PlatformServices.h"
+#include "foundation/platform/PlatformHooks.h"
 #include "foundation/platform/AppEventHooks.h"
 #include "foundation/platform/MobileWindowSizing.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -192,7 +192,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   AppRuntime::Initialize();
-  secrets_ = std::make_unique<ProfileSecretsService>();
+  secrets_ = std::make_unique<ProfileSecretsEngine>();
   messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
@@ -239,7 +239,7 @@ ConversationsHub& Application::Conversations() {
   return *messaging_;
 }
 
-ProfileSecretsService& Application::Secrets() {
+ProfileSecretsEngine& Application::Secrets() {
   return *secrets_;
 }
 
@@ -335,7 +335,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
-  if (Rml::FileInterface* packaged_files = PlatformServices::PackagedFileInterface()) {
+  if (Rml::FileInterface* packaged_files = PlatformHooks::PackagedFileInterface()) {
     Rml::SetFileInterface(packaged_files);
   }
 
@@ -586,7 +586,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   };
   settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
-    ProfileSecretsService& secrets = *secrets_;
+    ProfileSecretsEngine& secrets = *secrets_;
     view.ready = secrets.IsInitialized() && secrets.HasVault();
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;

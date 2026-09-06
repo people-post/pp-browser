@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateServiceClients`](../../src/base/net/ServiceClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
+Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateOrgBackendClients`](../../src/base/net/OrgBackendClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
 
 ## Resolution order
 
@@ -11,7 +11,7 @@ For each of `relay`, `directory`, and `registration`:
 | Priority | Condition | Implementation |
 |----------|-----------|----------------|
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
-| 2 | otherwise | Client not created (`CreateServiceClients` leaves unset); production defaults always fill Brief URLs |
+| 2 | otherwise | Client not created (`CreateOrgBackendClients` leaves unset); production defaults always fill Brief URLs |
 
 Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.global/api/relay`. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
@@ -31,7 +31,7 @@ Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.globa
 }
 ```
 
-`directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateServiceClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
+`directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateOrgBackendClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
 
 `transport` on relay/registration remains reserved (`http` now). Directory providers use the same vocabulary.
 

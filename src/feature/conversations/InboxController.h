@@ -7,7 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"
-#include "feature/conversations/AttachmentDownloadService.h"
+#include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 
 #include <functional>
@@ -18,14 +18,14 @@
 
 namespace pbr {
 
-class GroupMembershipService;
+class GroupMembershipWorkflow;
 
 class InboxController : public Module {
 public:
   InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
                   DirectoryShadowCache* shadows = nullptr);
 
-  void SetGroupMembership(GroupMembershipService* groups);
+  void SetGroupMembership(GroupMembershipWorkflow* groups);
 
   Roe<std::vector<Thread>> ListThreads();
   Roe<Thread> GetActiveThread() const;
@@ -73,7 +73,7 @@ public:
   void NotifyThreadChanged();
 
   void SetProfileDataDir(std::string profile_dir);
-  void SetAttachmentDownloads(AttachmentDownloadService* downloads);
+  void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
 
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
@@ -92,9 +92,9 @@ private:
   ContactsStore& contacts_;
   PeerDisplayResolver& labels_;
   DirectoryShadowCache* shadows_ = nullptr;
-  GroupMembershipService* groups_ = nullptr;
+  GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
-  AttachmentDownloadService* attachment_downloads_ = nullptr;
+  AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string active_thread_id_;
   ThreadChangedCallback on_thread_changed_;
 };

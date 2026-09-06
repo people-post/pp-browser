@@ -34,7 +34,7 @@ class FlowCoordinator;
 class InputCoordinator;
 class ConversationsFacade;
 class PinGateController;
-class ProfileSecretsService;
+class ProfileSecretsEngine;
 class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
@@ -58,7 +58,7 @@ public:
 
   ConversationsHub& Conversations();
   /** App-owned profile vault / DEK service (Bootstrap initializes it). */
-  ProfileSecretsService& Secrets();
+  ProfileSecretsEngine& Secrets();
   SessionStore& Store() { return store_; }
   const SessionStore& Store() const { return store_; }
 
@@ -82,7 +82,7 @@ private:
 
   bool initialized_ = false;
   SessionStore store_;
-  std::unique_ptr<ProfileSecretsService> secrets_;
+  std::unique_ptr<ProfileSecretsEngine> secrets_;
   std::unique_ptr<ConversationsHub> messaging_;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;

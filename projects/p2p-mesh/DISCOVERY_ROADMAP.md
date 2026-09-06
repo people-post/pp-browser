@@ -79,7 +79,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
   - Periodic refresh from configured directory provider(s) (same order as `directory.providers[]`).
   - TTL + backoff on failure; stale cache OK short-term.
   - Parse `MeshNodeHit` → `{ peer_id, endpoints[], capabilities, expires_at }`.
-- Trigger refresh from `ConversationsHub::TickMesh` (or `ReachabilityService` tick) when Node enabled or when circuit/media hop selection runs.
+- Trigger refresh from `ConversationsHub::TickMesh` (or `ReachabilityEngine` tick) when Node enabled or when circuit/media hop selection runs.
 - Unit tests: parse fixtures, TTL expiry, provider failover.
 
 #### n-dir-2 — Hop policy integration
@@ -95,7 +95,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 
 #### n-dir-3 — Endpoint registration
 
-- On cache refresh, call `MeshMessagingService::RegisterPeerDirectEndpoint` for each mesh node endpoint (same as contact endpoint upsert today).
+- On cache refresh, call `MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint` for each mesh node endpoint (same as contact endpoint upsert today).
 - Do **not** add mesh nodes to the contact book UI — infra only.
 
 #### n-dir-4 — Bridge score + docs
@@ -117,7 +117,7 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 - `src/base/people/MeshHopPolicy.{h,cpp}`
 - `src/feature/conversations/ConversationsHub.cpp`
 - `src/feature/conversations/CallStack.cpp`, `CallTopologyController.cpp`
-- `src/base/net/ServiceClients*`
+- `src/base/net/OrgBackendClients*`
 - New: `src/domain/mesh/discovery/MeshDirectoryCache.{h,cpp}`
 - Tests: `mesh_hop_policy_test`, new `mesh_directory_cache_test`
 
@@ -186,7 +186,7 @@ Decisions to lock:
 
 ### Acceptance (n2-core)
 
-- [x] v1 `AmpDhtService` on `/pp-mesh/dht/1.0.0` — self STORE + bootstrap FIND_PEER fan-out
+- [x] v1 `AmpDhtProtocol` on `/pp-mesh/dht/1.0.0` — self STORE + bootstrap FIND_PEER fan-out
 - [x] `MeshHost` + `ConversationsHub` wiring; Me → Network DHT checkbox (Node only, default off)
 - [x] Unit tests: `dht_record_codec_test`, `amp_dht_service_test` (incl. mutual discover)
 - [x] Two desktop Nodes with DHT enabled discover each other’s ADP addrs without Brief HTTP — `scripts/test/pp_node_dht_smoke.sh` + pp-node `ConfigureAmpDht` / warm FIND_PEER
@@ -228,7 +228,7 @@ Decisions to lock:
 - [x] Rate limit FIND_PEER / STORE per peer (`DhtRateLimiter`, config window)
 - [x] Reject STORE with bad signature, expired TTL, seq regression, not-self (typed error codes)
 - [x] Soft reputation: skip query peers after bad FIND_PEER replies (cooldown)
-- [x] Ops: `AmpDhtService::FormatOpsStatusJson` + pp-node `/status` `dht` / `dht_stats`
+- [x] Ops: `AmpDhtProtocol::FormatOpsStatusJson` + pp-node `/status` `dht` / `dht_stats`
 - [x] Enforce `max_concurrent_lookups` on outbound FIND_PEER
 
 ---

@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpDirectChatService.h"
+#include "feature/conversations/AmpDirectChatTransport.h"
 
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
@@ -36,7 +36,7 @@ RelayEnvelope MakeTestEnvelope(const std::string& message_id, const std::string&
 }
 
 /**
- * Regression: AmpDirectChatService must treat nested circuit IsConnected as reachable
+ * Regression: AmpDirectChatTransport must treat nested circuit IsConnected as reachable
  * even when A has no RegisterEndpoint for B (hard-lab / via-hop chat path).
  */
 class AmpDirectChatCircuitNestedTest : public ::testing::Test {
@@ -67,8 +67,8 @@ protected:
     circuit_a_->Start();
     circuit_a_->SetServeInbound(false);
 
-    a_chat_ = std::make_unique<AmpDirectChatService>(*chat_a_, [this] { harness_->PumpAll(); });
-    b_chat_ = std::make_unique<AmpDirectChatService>(*chat_b_, [this] { harness_->PumpAll(); });
+    a_chat_ = std::make_unique<AmpDirectChatTransport>(*chat_a_, [this] { harness_->PumpAll(); });
+    b_chat_ = std::make_unique<AmpDirectChatTransport>(*chat_b_, [this] { harness_->PumpAll(); });
     a_chat_->Start();
     b_chat_->Start();
   }
@@ -165,8 +165,8 @@ protected:
   std::unique_ptr<AmpCircuitHopRegistry> hops_;
   std::unique_ptr<CircuitTunnelCoordinator> circuit_r_;
   std::unique_ptr<CircuitTunnelCoordinator> circuit_a_;
-  std::unique_ptr<AmpDirectChatService> a_chat_;
-  std::unique_ptr<AmpDirectChatService> b_chat_;
+  std::unique_ptr<AmpDirectChatTransport> a_chat_;
+  std::unique_ptr<AmpDirectChatTransport> b_chat_;
 };
 
 TEST_F(AmpDirectChatCircuitNestedTest, NestedConnectedWithoutEndpointIsReachableAndSends) {

@@ -78,4 +78,4 @@ Background wake/poll must not unlock the DEK. If vault locked and alerts on → 
 | `IPushDeviceRegistrar` | Platform FCM token |
 | `IPushDeviceClient` | Signed HTTP register/unregister |
 | `BackgroundSyncScheduler` | Interval + WorkManager policy |
-| `MeshMessagingService::SyncInboxFromWake` | Poll ingest outside UI tick |
+| `MeshDeliveryOrchestrator::SyncInboxFromWake` | Poll ingest outside UI tick |

@@ -1,18 +1,18 @@
 #include "common/chat/MessagingJson.h"
-#include "domain/net/ServiceClientFactory.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientFactory.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 
 #include <gtest/gtest.h>
 
 #include <memory>
 
-TEST(ServiceClientFactoryTest, BuildsHttpClientsWhenConfigured) {
+TEST(OrgBackendClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   pbr::AppConfig config;
   config.relay.base_url = "https://relay.example";
   config.directory.base_url = "https://directory.example";
   config.registration.base_url = "https://registration.example";
 
-  auto clients = pbr::CreateServiceClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.relay));
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
@@ -36,9 +36,9 @@ TEST(ServiceClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   EXPECT_FALSE(static_cast<bool>(http_send));
 }
 
-TEST(ServiceClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
+TEST(OrgBackendClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
   pbr::AppConfig empty_config;
-  auto empty_clients = pbr::CreateServiceClients(empty_config);
+  auto empty_clients = pbr::CreateOrgBackendClients(empty_config);
   EXPECT_FALSE(static_cast<bool>(empty_clients.relay));
   EXPECT_FALSE(static_cast<bool>(empty_clients.directory));
   EXPECT_FALSE(static_cast<bool>(empty_clients.registration));
@@ -46,20 +46,20 @@ TEST(ServiceClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
   EXPECT_FALSE(static_cast<bool>(empty_clients.client_compat));
 }
 
-TEST(ServiceClientFactoryTest, BuildsFailoverDirectoryFromProviders) {
+TEST(OrgBackendClientFactoryTest, BuildsFailoverDirectoryFromProviders) {
   pbr::AppConfig config;
   config.directory.providers = {{"https://dir-a.example", "http"}, {"https://dir-b.example", "http"}};
-  auto clients = pbr::CreateServiceClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   // Failover client is opaque; a call fails against unreachable hosts but must route through the wrapper.
   const auto nodes = clients.directory->ListMeshNodes();
   EXPECT_FALSE(static_cast<bool>(nodes));
 }
 
-TEST(ServiceClientFactoryTest, SkipsNonHttpDirectoryProviders) {
+TEST(OrgBackendClientFactoryTest, SkipsNonHttpDirectoryProviders) {
   pbr::AppConfig config;
   config.directory.providers = {{"https://dir-a.example", "amp"}, {"https://dir-b.example", "http"}};
-  auto clients = pbr::CreateServiceClients(config);
+  auto clients = pbr::CreateOrgBackendClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.directory));
 }
 
@@ -99,7 +99,7 @@ private:
 
 } // namespace
 
-TEST(ServiceClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
+TEST(OrgBackendClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
   std::vector<std::unique_ptr<pbr::IDirectoryClient>> backends;
   auto first = std::make_unique<ScriptedDirectoryClient>(true);
   auto second = std::make_unique<ScriptedDirectoryClient>(false);
@@ -114,7 +114,7 @@ TEST(ServiceClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
   EXPECT_EQ(second_ptr->list_calls, 1);
 }
 
-TEST(ServiceClientFactoryTest, MockClientsRemainAvailableForTests) {
+TEST(OrgBackendClientFactoryTest, MockClientsRemainAvailableForTests) {
   pbr::MockRelayClient mock_relay;
 
   pbr::RelayEnvelope envelope;

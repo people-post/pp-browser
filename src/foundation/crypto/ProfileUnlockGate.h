@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -66,7 +66,7 @@ class ProfileUnlockGate : public Module {
 public:
   ProfileUnlockGate();
 
-  void BindSecrets(ProfileSecretsService& secrets);
+  void BindSecrets(ProfileSecretsEngine& secrets);
   void BindPorts(ProfileUnlockPorts ports);
 
   /** If secrets + messaging already ready, runs done(true). Otherwise shows UI / silent unlock. */
@@ -94,7 +94,7 @@ public:
   void Cancel();
 
 private:
-  ProfileSecretsService& Secrets();
+  ProfileSecretsEngine& Secrets();
   Roe<void> UnlockAndReady(const std::string& pin);
   void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);
   void RequestShowIdentityFork(std::function<void(bool)> done);
@@ -105,7 +105,7 @@ private:
   void DrainQueue(bool unlocked);
   void ReportError(const std::string& message);
 
-  ProfileSecretsService* secrets_ = nullptr;
+  ProfileSecretsEngine* secrets_ = nullptr;
   ProfileUnlockPorts ports_;
   std::vector<std::function<void(bool)>> pending_;
   bool showing_ = false;
@@ -114,7 +114,7 @@ private:
 };
 
 /** Shared bootstrap / CLI path: Unlock then ensure_messaging_ready. */
-Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsService& secrets, const std::string& pin,
+Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsEngine& secrets, const std::string& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready);
 
 } // namespace pbr

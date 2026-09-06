@@ -20,7 +20,7 @@ Forced-hop / discovery / impairment lab. **Wave 1 complete** (N-HARD-FORCE + B-H
 | `pp_hard_force_smoke.sh` | Isolation + circuit + media |
 | `pp_hard_call_smoke.sh` | B-HARD-CALL / `--with-chat` → B-HARD-MSG+CALL |
 | `--suite hard` | force → call → msg-call |
-| Nested-chat reachability | `AmpDirectChatService::IsPeerReachable` accepts `IsConnected` (circuit nested); gtest `AmpDirectChatCircuitNestedTest` |
+| Nested-chat reachability | `AmpDirectChatTransport::IsPeerReachable` accepts `IsConnected` (circuit nested); gtest `AmpDirectChatCircuitNestedTest` |
 
 ## Gaps
 

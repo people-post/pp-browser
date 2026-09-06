@@ -3,13 +3,13 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PinResolver.h"
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
 #include "domain/mesh/dht/DhtTypes.h"
-#include "domain/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/discovery/AmpDirectoryProtocol.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -54,7 +54,7 @@ void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppCon
   const bool participate = config.mesh.capabilities.dht;
   RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
 
-  AmpDhtServiceConfig cfg;
+  AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   if (!mesh.AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
@@ -80,7 +80,7 @@ void ConfigurePpNodeAmpDirectory(MeshHost& mesh, IdentityStore& identity, const 
   }
   RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
 
-  AmpDirectoryServiceConfig cfg;
+  AmpDirectoryProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   cfg.query_peer_keys = CollectBootstrapPeerKeys(config.mesh.bootstrap_peers);
   mesh.ConfigureAmpDirectory(std::move(cfg));
@@ -157,7 +157,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return pin.error();
   }
 
-  auto secrets = std::make_unique<ProfileSecretsService>();
+  auto secrets = std::make_unique<ProfileSecretsEngine>();
   if (auto initialized = secrets->Initialize(profile_data_dir); !initialized) {
     return initialized.error();
   }

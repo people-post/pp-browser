@@ -5,8 +5,8 @@
 | `AtomicFileWrite` | **Yes** | `src/foundation/data/AtomicFileWrite.*` |
 | JSON writers atomic | **Yes** | Config, prefs, registry, manifest, contacts, JsonThreadStore |
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/foundation/crypto/` |
-| `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
-| `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK + transcript store |
+| `ProfileSecretsEngine` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
+| `IDekConsumer` registry | **Yes** | `ProfileSecretsEngine::RegisterDekConsumer`; identity + PSK + transcript store |
 | `EnsureMessagingReady` | **Yes** | `ConversationsHub` after profile unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
 | Three-way chooser (A007) | **Yes** | After identity fork **I'm new**: Set PIN / default / Not now |

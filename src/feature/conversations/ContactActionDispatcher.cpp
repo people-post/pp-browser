@@ -7,8 +7,8 @@
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"
-#include "feature/conversations/GroupMembershipService.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -17,8 +17,8 @@ namespace pbr {
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
                                                  IdentityStore& identity, IThreadStore& store,
-                                                 GroupMembershipService* groups, IRegistrationClient* registration,
-                                                 MeshMessagingService* mesh_messaging)
+                                                 GroupMembershipWorkflow* groups, IRegistrationClient* registration,
+                                                 MeshDeliveryOrchestrator* mesh_messaging)
     : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
       registration_(registration), mesh_messaging_(mesh_messaging) {
   redirectLogger("ContactActionDispatcher");
@@ -28,7 +28,7 @@ void ContactActionDispatcher::SetRegistrationClient(IRegistrationClient* registr
   registration_ = registration;
 }
 
-void ContactActionDispatcher::SetGroupMembership(GroupMembershipService* groups) {
+void ContactActionDispatcher::SetGroupMembership(GroupMembershipWorkflow* groups) {
   groups_ = groups;
 }
 
@@ -38,7 +38,7 @@ void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::s
 
 namespace {
 
-void RegisterKeysFromHit(MeshMessagingService* mesh_messaging, const DirectoryHit& hit) {
+void RegisterKeysFromHit(MeshDeliveryOrchestrator* mesh_messaging, const DirectoryHit& hit) {
   if (!mesh_messaging) {
     return;
   }

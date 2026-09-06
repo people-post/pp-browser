@@ -137,8 +137,8 @@ carrier — not string copy alone.
 
 | Module | Primary files | Suggested `Err` themes | Status |
 |--------|---------------|------------------------|--------|
-| Dial-back | `reachability/AmpDialBackService.{h,cpp}` | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
-| DHT | `dht/AmpDhtService.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
+| Dial-back | `reachability/AmpDialBackProtocol.{h,cpp}` | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
+| DHT | `dht/AmpDhtProtocol.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
 | Circuit tunnel | `l4/circuit/CircuitTunnelCoordinator.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
 | Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
 | Media relay | `l4/media_relay/AmpMediaRelayCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
@@ -161,7 +161,7 @@ carrier — not string copy alone.
 
 ### Phase 3 — Feature Amp services
 
-- [ ] `AmpDirectChatService`, `AmpChatHistoryService`, `AmpChatBlobService`, `AmpCircuitHopReach`:
+- [ ] `AmpDirectChatTransport`, `AmpChatHistoryTransport`, `AmpChatBlobTransport`, `AmpCircuitHopReach`:
       `WrapL4Failure` (or wrap link where L4 not yet coded).
 - [ ] Retry/backoff branches on **`DialInBackoff`**, **`AssociationNotReady`**, **`EndpointNotRegistered`**
       via port/coordinator code — not message substring alone.

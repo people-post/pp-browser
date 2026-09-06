@@ -101,7 +101,7 @@ Config:
 
 For `transport: amp`, `base_url` is a PeerId (endpoint key) or ADP multiaddr (PeerId extracted). Product may also auto-prepend Amp against `mesh.bootstrap_peers` when the Amp stack is up.
 
-`CreateServiceClients` (HTTP-only factory) still skips `amp` — Amp backends need `PeerLinkManager` and are owned by `MeshHost` / `ConversationsHub`.
+`CreateOrgBackendClients` (HTTP-only factory) still skips `amp` — Amp backends need `PeerLinkManager` and are owned by `MeshHost` / `ConversationsHub`.
 
 ## Hardening (v1)
 

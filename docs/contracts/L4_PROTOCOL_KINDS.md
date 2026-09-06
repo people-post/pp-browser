@@ -127,7 +127,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Latency sensitivity** | moderate (chat) | low–moderate (sync) | low (bulk) | **high** (media) | **high** |
 | **Lifetime** | short OPEN | short OPEN (longer read timeout) | short OPEN | **long-lived call SM** | **long-lived hop / SoftMigrate** |
 | **In-band “signal”** | envelope `op`s (call invite, attachment pointer, …) | history request fields | blob `op` fetch/push | bundle hello / channel admit | attach / quote / SoftMigrate ops |
-| **Code owner (approx.)** | `AmpDirectChatService` | `AmpChatHistoryService` | `AmpChatBlobService` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
+| **Code owner (approx.)** | `AmpDirectChatTransport` | `AmpChatHistoryTransport` | `AmpChatBlobTransport` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
 
 **Mental model:** `rpc/chat` is the small **send + tiny return** bus (product signals via envelope `op`). `rpc/history` is the same reliability class with **pull + larger return**. `blob` is **large reliable** transfer. `realtime` / `datagram-relay` are **time-sensitive**, lossy media allowed, drop-oldest, long-lived.
 

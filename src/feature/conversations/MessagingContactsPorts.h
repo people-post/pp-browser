@@ -2,7 +2,7 @@
 
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/net/ServiceClients.h"
+#include "domain/net/OrgBackendClients.h"
 #include "domain/people/ContactTypes.h"
 #include "common/Error.h"
 #include "feature/conversations/MessagingUiPorts.h"

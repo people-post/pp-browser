@@ -4,7 +4,7 @@
 
 namespace pbr {
 
-/** PIN vault readiness for Me → Security (app → ProfileSecretsService). */
+/** PIN vault readiness for Me → Security (app → ProfileSecretsEngine). */
 struct PinProtectionView {
   bool ready = false;    // secrets initialized + has vault
   bool unlocked = false;

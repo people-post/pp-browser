@@ -14,7 +14,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     MessageCipher.cpp
     PinKeyDeriver.cpp
     PinResolver.cpp
-    ProfileSecretsService.cpp
+    ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp
     PskBundleCodec.cpp
     LinkDeviceCodec.cpp

@@ -3,7 +3,7 @@
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "foundation/crypto/LinkDeviceCodec.h"
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/people/LinkDeviceExchange.h"
 
@@ -30,7 +30,7 @@ public:
    * `secrets` may be null in tests; caller must SetDek on the PSK store first.
    */
   static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault, IPskSessionStore& psk_store,
-                                            ProfileSecretsService* secrets, const std::string& bundle_json,
+                                            ProfileSecretsEngine* secrets, const std::string& bundle_json,
                                             std::string_view pin, int64_t now_ms);
 };
 

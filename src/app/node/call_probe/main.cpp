@@ -13,7 +13,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "foundation/identity/PeerIdUtil.h"
-#include "feature/conversations/AmpDirectChatService.h"
+#include "feature/conversations/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
 
 #include "common/Logger.h"
@@ -51,7 +51,7 @@ void PrintUsage(const char* argv0) {
       << "  Listen/peer example: /ip4/127.0.0.1/udp/47100/adp/1.0.0[/p2p/<PeerId>]\n"
       << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
       << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
-      << "  --with-chat     AmpDirectChatService ping during and after the call.\n"
+      << "  --with-chat     AmpDirectChatTransport ping during and after the call.\n"
       << "                  With --via-hop, chat rides the nested Amp circuit link.\n";
 }
 
@@ -276,7 +276,7 @@ pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
   return env;
 }
 
-bool SendProbeChat(pbr::AmpDirectChatService& chat, const std::string& peer_key, const int cycle) {
+bool SendProbeChat(pbr::AmpDirectChatTransport& chat, const std::string& peer_key, const int cycle) {
   auto sent = chat.SendEnvelope(peer_key, MakeProbeChatEnvelope(cycle));
   if (!sent) {
     std::cerr << "error: chat send: " << sent.error().message << "\n";
@@ -353,13 +353,13 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   circuit->SetServeInbound(false);
 
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
-  std::unique_ptr<pbr::AmpDirectChatService> chat;
+  std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   std::atomic<int> chat_received{0};
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
     chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
-    chat = std::make_unique<pbr::AmpDirectChatService>(
-        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
+    chat = std::make_unique<pbr::AmpDirectChatTransport>(
+        *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
     chat->SetInboundHandler([&](pbr::RelayEnvelope) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
@@ -467,11 +467,11 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
   auto pump = [p = offerer->get()]() { p->Pump(); };
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
-  std::unique_ptr<pbr::AmpDirectChatService> chat;
+  std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   if (with_chat) {
     chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
-    chat = std::make_unique<pbr::AmpDirectChatService>(
-        *chat_links, pbr::AmpDirectChatService::IoPump{pump});
+    chat = std::make_unique<pbr::AmpDirectChatTransport>(
+        *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
   }
 
