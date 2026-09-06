@@ -1,6 +1,6 @@
 # Peer-scoped broadcast — current state
 
-**As of:** 2026-09-05  
+**As of:** 2026-09-06
 **Branch:** `cursor/live-broadcast-media-tree-668c`
 
 | Spine | Status |
@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastService` (ticket mint / viewer_attach / relay_slot_win); MeshHost advertise; SoftMigrate skip |
+| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastService`; `BroadcastSessionCoordinator` split; SoftMigrate skip |
 
 ## Spine B landed
 
@@ -57,6 +57,8 @@
 | Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshMessagingService` starts service + device key resolvers |
 | Tests | `amp_broadcast_service_test.cpp` (ticket / admit / slot-win round-trips) |
 
+| Broadcast join coordinator | `feature/calls/BroadcastSessionCoordinator.*` — Arm/Accept live-announce extracted from `CallSessionManager`; UI/facade via `Broadcast()`; SoftMigrate topology early-skip; `AcceptInvite` refuses Broadcast |
+
 **Still out of scope for this slice:** tip→ticket auto-mint from live program UI, live redirect/slot-win media fan-out runtime, SoftMigrate for announce (explicitly skipped).
 
 ## Spine C started (slice 0)
@@ -64,10 +66,10 @@
 | Piece | Path |
 |-------|------|
 | Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshMessagingService::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
-| Arm pending invite + ringing session from plan | `AnnounceLiveJoinHandoff.*`; `CallSessionManager::ArmJoinFromLiveAnnounce` (no SoftMigrate/media) |
-| UI / facade tip→arm entry points | `CallUiBackend::ArmJoinFromLiveAnnounce`; `ConversationsFacade::ArmLiveJoinFromAnnounceTip` / `ArmLiveJoinFromStoredAnnounce` |
+| Arm pending invite + ringing session from plan | `AnnounceLiveJoinHandoff.*`; `BroadcastSessionCoordinator::ArmJoinFromLiveAnnounce` via `CallSessionManager::Broadcast()` (no SoftMigrate/media) |
+| UI / facade tip→arm entry points | `CallUiBackend` / `ConversationsFacade` → `Broadcast().ArmJoinFromLiveAnnounce` |
 | Optional tip `hop_peer_id` → session `sfu_hint` | `PeerAnnounceTypes` / codec / publisher; plan + handoff carry through |
-| Accept without SoftMigrate / 1:1 media | `CallTopologyController::OnAnnounceViewerJoined`; `CallSessionManager::AcceptLiveAnnounceJoin`; facade `JoinLiveAnnounceFromTip` |
+| Accept without SoftMigrate / 1:1 media | `CallTopologyController::OnAnnounceViewerJoined`; `BroadcastSessionCoordinator::AcceptLiveAnnounceJoin`; facade `JoinLiveAnnounceFromTip` |
 | Tests | `AnnounceLiveJoinTest` in `peer_announce_test.cpp` |
 
 **Domain wire landed (bare minimum, schema v1 additive):** tip `kind` / `viewer_peer_id` / `viewer_msg_id`; `AnnounceOverlayReply` + rate helpers; `AnnounceNotificationInbox`; feed isolates `live_chat` from program `Latest()`; Mesh `ReplyToAnnounceOverlay` / `PublishLiveChatFromOverlay`; Amp `SetOnTipIngested` → inbox upsert.

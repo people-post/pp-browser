@@ -196,3 +196,8 @@ Horizon **N-HARD-MULTI-HOP-MEDIA** remains **off** for group calls. For broadcas
 ## One-line summary
 
 **Live scale = degree-capped blind `media_relay` tree; tip names online L1 whitelist only; ticket carries the key; each hop admits or redirects down; new relays can win slots and push piped viewers one rung down; circuit only reaches the chosen hop; calls stay single-hop.**
+
+
+## Implementation note (code split)
+
+Live-announce **arm/accept** lives in `feature/calls/BroadcastSessionCoordinator` (owned by `CallSessionManager::Broadcast()`). SoftMigrate early-skips Broadcast sessions; `AcceptInvite` refuses them so audience joins cannot fall onto the call SoftMigrate path.

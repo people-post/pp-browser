@@ -12,6 +12,8 @@ Delivery order for live **media capacity** (Spine F). Do not start B1 until Spin
 Prerequisite for tree work; may land as C ribs.
 
 - [x] Session flag / shape distinct from group SoftMigrate — `CallSessionKind::Broadcast` + SoftMigrate `is_broadcast` NoOp
+- [x] SoftMigrate topology early-skip + `AcceptInvite` refuse for Broadcast sessions
+- [x] Broadcast arm/accept extracted from call SoftMigrate stack — `BroadcastSessionCoordinator` (CSM / UI / facade delegate)
 - [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint/apply
 - [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/apply + unit tests
 - [x] Tip → ticket RPC codec (`ticket_request`/`ticket_response`) + arm apply

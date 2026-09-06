@@ -520,6 +520,12 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   }
 
   auto session = sessions_.LoadSession(call_id);
+  if (session && session->has_value() && IsBroadcastSession((*session)->session_kind)) {
+    // Belt-and-suspenders: broadcast audience must never SoftMigrate (B001 / is_broadcast NoOp).
+    log().info << "SoftMigrate skip broadcast session call_id=" << call_id
+               << " trigger=" << static_cast<int>(trigger);
+    return {};
+  }
   const bool first_attach =
       !session || !session->has_value() || !(*session)->sfu_hint || (*session)->sfu_hint->empty();
 
