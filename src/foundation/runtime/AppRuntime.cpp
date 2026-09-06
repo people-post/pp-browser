@@ -45,6 +45,13 @@ bool AppRuntime::IsRunning() {
 }
 
 void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
+  // Mid-shutdown: ThreadRuntime clears running_ before joining the pool. In-flight work may
+  // still PostWorker (unlock → directory refresh). No-op once !IsRunning so a nested task
+  // cannot race onto another live pool thread before WorkerPool::stopped_ is set. Testing
+  // overrides may post without a started ThreadRuntime.
+  if (!g_testing_worker_override && !IsRunning()) {
+    return;
+  }
   WorkerDispatch::Post(lane, std::move(task));
 }
 
