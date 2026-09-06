@@ -15,6 +15,7 @@ Prerequisite for tree work; may land as C ribs.
 - [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint/apply
 - [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/apply + unit tests
 - [x] Tip → ticket RPC codec (`ticket_request`/`ticket_response`) + arm apply
+- [x] Amp ticket mint handler (`AmpBroadcastService::RequestTicket` / inbound)
 - [x] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal) — `ArmJoinFromLiveAnnounce` applies ticket into CallMediaKeyStore (attach still needs hop)
 - [x] Encrypt-once AEAD mandatory; hops must copy opaque ciphertext (B003 locked)
 - [ ] Loopback / lab: publisher + hop + ≥2 viewers
@@ -30,8 +31,8 @@ Locks [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-re
 - [x] Tip / heartbeat lists publisher **L1 whitelist ∩ online** only (not full tree) — `l1_hop_peer_ids` on tip/codec/plan
 - [ ] Root/L0 fans out to ≤`degree` child relays and/or viewers
 - [ ] Child `media_relay` (`help_media`) subscribes upstream, fans out downstream (blind)
-- [x] **Admit-or-redirect:** domain `BroadcastLadderLogic` + `BroadcastRpcCodec` viewer_attach(_result)
-- [x] **Slot win:** domain + `BroadcastRpcCodec` relay_slot_win(_result); Amp handler later
+- [x] **Admit-or-redirect:** domain `BroadcastLadderLogic` + `BroadcastRpcCodec` viewer_attach(_result); `AmpBroadcastService` handler
+- [x] **Slot win:** domain + `BroadcastRpcCodec` relay_slot_win(_result); `AmpBroadcastService` handler
 - [ ] Degree + per-hop A↓ / ceiling enforced ([HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md))
 - [ ] Lab: root + ≥1 child; L1 full → redirect; new relay join demotes a viewer downward; root egress ≉ N × bitrate
 

@@ -12,6 +12,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     InboxController.cpp
     AmpDirectChatService.cpp
     AmpPeerAnnounceService.cpp
+    AmpBroadcastService.cpp
     AmpChatHistoryService.cpp
     AmpChatBlobService.cpp
     MessageRouter.cpp

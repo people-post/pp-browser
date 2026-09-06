@@ -23,6 +23,7 @@
 #include "feature/conversations/GroupInviteGate.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "feature/conversations/AmpPeerAnnounceService.h"
+#include "feature/conversations/AmpBroadcastService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
@@ -127,6 +128,7 @@ public:
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
   PeerAnnouncePublisher* PeerAnnouncePublisherOrNull() const { return peer_announce_publisher_.get(); }
   AmpPeerAnnounceService* PeerAnnounceServiceOrNull() const { return peer_announce_.get(); }
+  AmpBroadcastService* BroadcastServiceOrNull() const { return broadcast_.get(); }
   /**
    * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
    * Requires Amp peer-announce service + device identity keys.
@@ -273,6 +275,7 @@ private:
   std::unique_ptr<IDirectMessageClient> direct_chat_;
   std::unique_ptr<PeerAnnounceFeed> peer_announce_feed_;
   std::unique_ptr<AmpPeerAnnounceService> peer_announce_;
+  std::unique_ptr<AmpBroadcastService> broadcast_;
   std::unique_ptr<PeerAnnouncePublisher> peer_announce_publisher_;
   AnnounceNotificationInbox announce_notifications_;
   std::unique_ptr<ChatSyncService> chat_sync_;

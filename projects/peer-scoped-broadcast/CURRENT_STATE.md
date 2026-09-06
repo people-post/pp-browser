@@ -1,7 +1,7 @@
 # Peer-scoped broadcast — current state
 
 **As of:** 2026-09-05  
-**Branch:** `cursor/peer-scoped-announce-broadcast-8d53`
+**Branch:** `cursor/live-broadcast-media-tree-668c`
 
 | Spine | Status |
 |-------|--------|
@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0/B1 codecs** — `BroadcastRpcCodec` (ticket+ladder+slot-win), `CallSessionKind::Broadcast`, SoftMigrate skip; Amp handlers next |
+| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastService` (ticket mint / viewer_attach / relay_slot_win); MeshHost advertise; SoftMigrate skip |
 
 ## Spine B landed
 
@@ -53,7 +53,11 @@
 | Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp-browser/rpc/broadcast/1.0.0` |
 | Session shape | `CallSessionKind::Broadcast` on session/pending; SoftMigrate `is_broadcast` → NoOp |
 
-**Still out of scope for this slice:** Amp broadcast RPC handlers, tip→ticket mint service wiring, live redirect/slot-win over mesh, SoftMigrate for announce (explicitly skipped).
+| Amp broadcast RPC | `feature/conversations/AmpBroadcastService.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
+| Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshMessagingService` starts service + device key resolvers |
+| Tests | `amp_broadcast_service_test.cpp` (ticket / admit / slot-win round-trips) |
+
+**Still out of scope for this slice:** tip→ticket auto-mint from live program UI, live redirect/slot-win media fan-out runtime, SoftMigrate for announce (explicitly skipped).
 
 ## Spine C started (slice 0)
 

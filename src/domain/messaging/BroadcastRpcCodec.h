@@ -3,6 +3,7 @@
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/BroadcastLadderLogic.h"
 
+#include "common/chat/IDirectMessageClient.h"
 #include "common/Error.h"
 
 #include <cstdint>
@@ -16,8 +17,7 @@
 
 namespace pbr {
 
-/** Spine F control plane — ticket mint + ladder admit/redirect + slot-win. */
-inline constexpr const char* kRpcBroadcastProtocolId = "/pp-browser/rpc/broadcast/1.0.0";
+/** Spine F control plane — ticket mint + ladder admit/redirect + slot-win (protocol id: kRpcBroadcastProtocolId). */
 
 inline constexpr const char* kBroadcastOpTicketRequest = "ticket_request";
 inline constexpr const char* kBroadcastOpTicketResponse = "ticket_response";

@@ -1,6 +1,6 @@
 # Live broadcast — multi-hop media tree; BroadcastRpcCodec + CallSessionKind::Broadcast landed
 
-**Status:** Spec / ADR — discovery locked ([B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect)); domain ladder + L1 tip field + ticket arm + BroadcastRpcCodec + CallSessionKind::Broadcast started  
+**Status:** Spec / ADR — discovery locked ([B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect)); domain ladder + L1 tip field + ticket arm + BroadcastRpcCodec + CallSessionKind::Broadcast + AmpBroadcastService handlers started  
 **Stack ADRs:** [B001–B007](DECISIONS.md)  
 **Product home:** [DESIGN.md](DESIGN.md) (announce + live planes)  
 **Program spine:** [PROGRAM.md](PROGRAM.md) **Spine F**  
