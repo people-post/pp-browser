@@ -26,6 +26,8 @@ public:
     PeerAnnounceState state = PeerAnnounceState::Scheduled;
     std::string join_handle;
     std::string hop_peer_id;
+    /** B007 L1 hints (whitelist ∩ online); omit-empty on wire. */
+    std::vector<std::string> l1_hop_peer_ids;
     std::string body;
     std::string content_id_hex;
     /** Empty/program = schedule/live/end; live_chat = overlay tip. */

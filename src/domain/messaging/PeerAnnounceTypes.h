@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace pbr {
 
@@ -78,6 +79,12 @@ struct PeerAnnounceTip {
   std::string join_handle;
   /** Optional media_relay / SFU hop PeerId for Spine C viewers. */
   std::string hop_peer_id;
+  /**
+   * B007: publisher help_media whitelist ∩ online (L1 hints only).
+   * Additive — omit when empty so pre-ladder tips keep verifying.
+   * hop_peer_id remains the Spine C primary dial target (often l1[0]).
+   */
+  std::vector<std::string> l1_hop_peer_ids;
   /**
    * Tip kind (additive). Empty or "program" = schedule/live/end tips.
    * "live_chat" = publisher-signed on-screen overlay tip.

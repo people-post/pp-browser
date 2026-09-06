@@ -4,6 +4,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/InitiationBillingStore.h"
@@ -88,7 +89,9 @@ public:
    * Spine C (slice 1): arm a pending invite + ringing session from a live-join plan
    * so AcceptInvite can proceed later. Does not SoftMigrate or attach media.
    */
-  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan);
+
+  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
+                                                 const ArmLiveAnnounceJoinOpts& opts = {});
 
   /**
    * Spine C: accept an armed live-announce invite without SoftMigrate or 1:1 media.

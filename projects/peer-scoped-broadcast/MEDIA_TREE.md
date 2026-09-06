@@ -1,6 +1,6 @@
 # Live broadcast — multi-hop media tree
 
-**Status:** Spec / ADR — discovery locked ([B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect)); tree code not implemented  
+**Status:** Spec / ADR — discovery locked ([B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect)); domain ladder + L1 tip field + ticket arm wire started  
 **Stack ADRs:** [B001–B007](DECISIONS.md)  
 **Product home:** [DESIGN.md](DESIGN.md) (announce + live planes)  
 **Program spine:** [PROGRAM.md](PROGRAM.md) **Spine F**  

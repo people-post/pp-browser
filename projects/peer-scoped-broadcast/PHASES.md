@@ -14,7 +14,7 @@ Prerequisite for tree work; may land as C ribs.
 - [ ] Session flag / shape distinct from group SoftMigrate (subscribe-only viewers)
 - [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint/apply
 - [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/apply + unit tests
-- [ ] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal) — wire into accept path
+- [x] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal) — `ArmJoinFromLiveAnnounce` applies ticket into CallMediaKeyStore (attach still needs hop)
 - [x] Encrypt-once AEAD mandatory; hops must copy opaque ciphertext (B003 locked)
 - [ ] Loopback / lab: publisher + hop + ≥2 viewers
 
@@ -26,11 +26,11 @@ Prerequisite for tree work; may land as C ribs.
 
 Locks [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) at depth 2.
 
-- [ ] Tip / heartbeat lists publisher **L1 whitelist ∩ online** only (not full tree)
+- [x] Tip / heartbeat lists publisher **L1 whitelist ∩ online** only (not full tree) — `l1_hop_peer_ids` on tip/codec/plan
 - [ ] Root/L0 fans out to ≤`degree` child relays and/or viewers
 - [ ] Child `media_relay` (`help_media`) subscribes upstream, fans out downstream (blind)
-- [ ] **Admit-or-redirect:** full hop redirects viewer to whitelist∩online children (budget + jitter + scope)
-- [ ] **Slot win:** new whitelist relay can claim child slot; demote piped viewer(s) one rung with grace redirect
+- [x] **Admit-or-redirect:** domain `BroadcastLadderLogic` (budget + jitter); wire RPC later
+- [x] **Slot win:** domain `DecideBroadcastSlotWin` demotion policy; mesh wire later
 - [ ] Degree + per-hop A↓ / ceiling enforced ([HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md))
 - [ ] Lab: root + ≥1 child; L1 full → redirect; new relay join demotes a viewer downward; root egress ≉ N × bitrate
 

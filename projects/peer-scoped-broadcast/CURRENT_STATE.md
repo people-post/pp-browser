@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0 started; B007 locked** — join ticket + tests; recursive ladder discovery documented; attach + B1 next |
+| **F — media tree** | **B0 ticket wire + B1 domain ladder** — `BroadcastLadderLogic`, tip `l1_hop_peer_ids`, `ArmJoinFromLiveAnnounce` ticket apply; redirect/slot-win RPC next |
 
 ## Spine B landed
 
@@ -46,7 +46,11 @@
 **B003 locked:** encrypt-once AEAD mandatory; every hop must forward opaque blobs (no cleartext escape).  
 **B007 locked:** tip names online L1 whitelist only; hops admit-or-redirect; new relays may win slots and demote piped viewers one rung down.
 
-**Still out of scope for this slice:** tip→ticket RPC, accept-path auto-apply, admit/redirect wire, slot-win demotion code (B1).
+| Ladder admit/redirect + slot-win (pure) | `BroadcastLadderLogic.*` + `broadcast_ladder_logic_test.cpp` |
+| Tip L1 hints | `PeerAnnounceTip::l1_hop_peer_ids` (codec omit-empty) |
+| Arm path ticket apply | `ArmJoinFromLiveAnnounce(..., ArmLiveAnnounceJoinOpts)` → `ApplyBroadcastJoinTicket` |
+
+**Still out of scope for this slice:** tip→ticket RPC mint path, admit/redirect mesh RPC, slot-win over wire, SoftMigrate for announce.
 
 ## Spine C started (slice 0)
 

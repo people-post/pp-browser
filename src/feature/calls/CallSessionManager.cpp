@@ -4,6 +4,7 @@
 #include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/AnnounceLiveJoinHandoff.h"
+#include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PeerCapsLogic.h"
@@ -948,7 +949,8 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
 }
 
 
-Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan) {
+Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
+                                                                   const ArmLiveAnnounceJoinOpts& opts) {
   if (plan.call_id.empty()) {
     return Error("Live-join plan missing call_id");
   }
@@ -967,7 +969,34 @@ Roe<PendingCallInvite> CallSessionManager::ArmJoinFromLiveAnnounce(const Announc
     }
   }
 
-  auto handoff = BuildAnnounceLiveJoinHandoff(plan, *local, inviter, util::NowUnixMs(), true);
+  AnnounceLiveJoinPlan effective = plan;
+  if (opts.ticket != nullptr) {
+    if (opts.publisher_mldsa_public_key == nullptr || opts.publisher_mldsa_public_key->empty()) {
+      return Error("Live-announce ticket apply requires publisher ML-DSA public key");
+    }
+    const int64_t now_ms = opts.now_ms != 0 ? opts.now_ms : util::NowUnixMs();
+    std::string viewer_peer_id;
+    if (local_mesh_peer_id_) {
+      viewer_peer_id = local_mesh_peer_id_();
+    }
+    if (viewer_peer_id.empty()) {
+      viewer_peer_id = opts.ticket->viewer_peer_id;
+    }
+    auto applied = ApplyBroadcastJoinTicket(media_keys_, *opts.ticket, *opts.publisher_mldsa_public_key,
+                                            now_ms, viewer_peer_id, opts.viewer_pairwise_session_key);
+    if (!applied) {
+      return applied.error();
+    }
+    effective.media_epoch = applied->media_epoch;
+    effective.media_key_id = applied->media_key_id;
+    if (effective.hop_peer_id.empty() && !opts.ticket->hop_peer_id.empty()) {
+      effective.hop_peer_id = opts.ticket->hop_peer_id;
+    }
+    log().info << "ArmJoinFromLiveAnnounce applied ticket call_id=" << effective.call_id
+               << " media_epoch=" << effective.media_epoch << " media_key_id=" << effective.media_key_id;
+  }
+
+  auto handoff = BuildAnnounceLiveJoinHandoff(effective, *local, inviter, util::NowUnixMs(), true);
   if (!handoff) {
     return handoff.error();
   }
