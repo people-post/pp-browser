@@ -121,3 +121,26 @@ Layer moves and renames leave stale names in chat memory, summaries, and project
 - Layer dual names can be intentional (e.g. domain `CasLibraryRow` vs settings port `CasLibraryItemView`) — match the vocabulary of the layer you are in; do not invent aliases.
 - Prefer documenting **paths** (`CasLibrary.h`, `CasLibraryCommands.*`) over restating full signatures that rot.
 - Keep app wiring thin (readiness + deps only); put orchestration in `feature/` / `domain/` so renames stay localized.
+
+### Role naming (avoid overloaded `*Service`)
+
+Prefer a role suffix that matches the type’s job. Do **not** add a new `*Service` unless it is a long-lived kernel capability with no better word (`LocalizationService` is an existing exception).
+
+| Role | Suffix / name | Examples / home |
+|------|----------------|-----------------|
+| App/domain capability | `*Engine` | `ProfileSecretsEngine` (foundation) |
+| Platform bootstrap hooks | `*Hooks` | `PlatformHooks` |
+| Product assembler | `*Hub` | `ConversationsHub` |
+| UI-safe surface | `*Facade` | `ConversationsFacade` |
+| Durable state | `*Store` | thread/CAS/contacts stores |
+| Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
+| Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClientFactory`, `CreateOrgBackendClients`) |
+| Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
+| Reachability engine | `*Engine` | `ReachabilityEngine` |
+| Feature Amp adapter | `*Transport` | `AmpDirectChatTransport`, `AmpChatBlobTransport`, … |
+| Delivery plane | `*Orchestrator` | `MeshDeliveryOrchestrator` |
+| Multi-step product flow | `*Workflow` | `ChatSyncWorkflow`, `AttachmentFetchWorkflow`, `GroupMembershipWorkflow` |
+| Session state machine | `*Coordinator` / `*Manager` | calls stack (prefer these over `*Service`) |
+| UI→functional edge | `*Ports` / `*Commands` | settings/CAS commands |
+
+**Agent one-liner:** Hub owns, Facade exposes, Store persists, Client speaks I/O, Protocol/Transport speaks Amp, Workflow orchestrates product steps, Engine is app/domain capability.
