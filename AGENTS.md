@@ -111,3 +111,13 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).
+
+### Naming drift (reorg / renames)
+
+Layer moves and renames leave stale names in chat memory, summaries, and project docs. **Headers on disk win.**
+
+- Before writing call sites, `rg` or read the owning `.h` for exact symbol names. Do not trust prior turns, PR text, or phase docs for APIs.
+- When you hit doc↔code or comment↔code drift in files you are already editing, fix that local drift in the same change (or a tiny adjacent doc tweak). Do **not** open a rename campaign.
+- Layer dual names can be intentional (e.g. domain `CasLibraryRow` vs settings port `CasLibraryItemView`) — match the vocabulary of the layer you are in; do not invent aliases.
+- Prefer documenting **paths** (`CasLibrary.h`, `CasLibraryCommands.*`) over restating full signatures that rot.
+- Keep app wiring thin (readiness + deps only); put orchestration in `feature/` / `domain/` so renames stay localized.

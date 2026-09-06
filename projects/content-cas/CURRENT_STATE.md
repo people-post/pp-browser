@@ -57,9 +57,12 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | Pin defaults + share modes A–D | Locked in [DECISIONS](DECISIONS.md#c013--pin-defaults-share-modes-directory-vs-catalog) |
 | `ObjectIndex::List` | **Done** |
 | `CasStore::PublishFromPrivate` / `Unpublish` | **Done** |
-| `CasLibrary` helper | **Done** (`ListCasLibrary` / `ShareCasPublicly` / `UnpublishCasPublic`) |
+| `CasLibrary` helper | **Done** — domain tip/store/index; see `CasLibrary.h` (not signatures here) |
+| Settings orchestration | **Done** — `src/feature/settings/CasLibraryCommands.*`; app wires readiness only |
 | Me → Storage library UI | **Done** (filter All/Private/Public/Cache; Share publicly… / Unpublish…) |
 | Tip encode/copy (`pp-cas:v1:`) | **Done** |
 | Blob `fetch_public` provide (Kept public only) | **Done** |
 | Fetch tip → public Cache | **Done** (peer relay id prompt) |
 | Directory vs catalog wire/caps | Docs only; P4b |
+
+**Agent note:** symbol names move during reorg — verify against headers before editing; fix doc↔code drift you touch ([AGENTS.md § Naming drift](../../AGENTS.md#naming-drift-reorg--renames)).
