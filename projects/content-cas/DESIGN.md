@@ -69,6 +69,24 @@ Publish: Get private → Put public → index
 
 Private and public blob **conversations** may use peer OPEN, circuit, or HTTP/CDN. CDN is an optional path for public objects (C009), not a second store.
 
+## Library, pins, and discovery (C013)
+
+Product use cases: [USE_CASES.md](USE_CASES.md).
+
+| Concern | Rule |
+|---------|------|
+| Library listing | Profile CAS index only (not OS file manager) |
+| Realm vs pin | Private/Public = confidentiality; Kept/Cache = retention |
+| Publish | Explicit Share publicly… → new public object; not a move |
+| Open catalog | Node-gated; directory advertises capability, not per-file lists |
+| Link / contact share | Allowed without always-on Node |
+| CDN | Assist for public fetch while offline; not durable archive (R002) |
+
+```text
+name directory ──caps──► content_library / blob_provide
+serving PeerId/Node ──rpc──► kept-public catalog list
+content_id ──blob──► bytes (peer provide; optional CDN path)
+```
 
 ## Private presentation (C011)
 
@@ -97,4 +115,6 @@ Do **not** place CAS in `foundation`. Do **not** create an empty content peer wh
 - Bitswap / Kubo wire compatibility  
 - Link-scoped encryption for public objects (deferred; C001)  
 - Rarest-first piece swarm (P5 later)  
-- Live broadcast media filesystem (realtime; DVR may land as public/private objects later)
+- Live broadcast media filesystem (realtime; DVR may land as public/private objects later)  
+- Per-file catalogs stored on person / mesh directory records (C013)  
+- Durable hosted shelf as a silent upgrade of relay blob retention (needs explicit product decision)

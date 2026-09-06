@@ -62,7 +62,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |
 | [feature-layer-reorg](feature-layer-reorg/) | `app → feature → domain → …` cleanup |
 | [group-chat](group-chat/) | Group threads (design / follow-on) |
-| [content-cas](content-cas/) | Private/public CAS realms; big-bang attachment cutover; public publish |
+| [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
 
 ## Done / archived

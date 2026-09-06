@@ -1,14 +1,15 @@
 # Content CAS — current state
 
-**As of:** 2026-09-05
+**As of:** 2026-09-06
 
 | Phase | Status |
 |-------|--------|
 | **P0** — contracts | **Done** |
 | **P1** — private CasStore + ObjectIndex | **Done** (public clear put/get included for realm isolation; no publish UX) |
 | **P2** — big-bang attachment cutover | **Done** (AttachmentCache → private CAS only; legacy removed) |
-| **P3** — public publish UX + library | Not started |
-| **P4** — provide/fetch | Not started |
+| **P3** — public publish UX + library | Not started (use cases + **C013** sketched) |
+| **P4** — provide/fetch + link/tip | Not started |
+| **P4b** — Node-gated open library catalog | Not started |
 | **P5** — pieces | Not started |
 
 ## P1 landed
@@ -47,4 +48,12 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 |-----|-------|
 | Implementation under `src/domain/messaging/` (`CasStore`, `ObjectIndex`, `AttachmentCache`, `AttachmentPlaintextMemoryCache`, …) | Peel to `src/domain/content/` at P3/P4 when public share/library/provide-fetch needs CAS without linking messaging |
 | Chat-specific download/suppression/responders stay messaging/feature | Feature wires `common` contracts across peers |
+
+## Pin / share / discovery (C013)
+
+| Piece | Status |
+|-------|--------|
+| Use cases U1–U11 | [USE_CASES.md](USE_CASES.md) — docs only |
+| Pin defaults + share modes A–D | Locked in [DECISIONS](DECISIONS.md#c013--pin-defaults-share-modes-directory-vs-catalog) |
+| Directory vs catalog split | Docs only; wire/caps with P4/P4b |
 
