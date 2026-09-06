@@ -13,8 +13,8 @@ Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plu
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Planes, roles, pickup UX, replies/overlay, whitelist, lifecycle, non-goals |
-| [MEDIA_TREE.md](MEDIA_TREE.md) | Multi-hop blind SFU tree for massive live audiences (Spine F) |
-| [DECISIONS.md](DECISIONS.md) | ADRs B001–B006 (broadcast ≠ call; keep AEAD; ticket key; leaf attach) |
+| [MEDIA_TREE.md](MEDIA_TREE.md) | Multi-hop blind SFU tree + recursive L1 ladder discovery (Spine F / B007) |
+| [DECISIONS.md](DECISIONS.md) | ADRs B001–B007 (broadcast ≠ call; keep AEAD; ticket key; leaf attach) |
 | [PHASES.md](PHASES.md) | Media-scale checklist B0–B3 |
 | [PROGRAM.md](PROGRAM.md) | Multi-project spines — overall progress over single-project speed |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Implementation progress |

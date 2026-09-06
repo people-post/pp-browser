@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0 started** — join ticket mint/verify/apply + tests; encryption mandatory (B003); attach wiring next |
+| **F — media tree** | **B0 started; B007 locked** — join ticket + tests; recursive ladder discovery documented; attach + B1 next |
 
 ## Spine B landed
 
@@ -33,7 +33,7 @@
 
 
 
-## Spine F / B0 started (media key ticket)
+## Spine F / B0 started (media key ticket) + B007 discovery locked
 
 | Piece | Path |
 |-------|------|
@@ -41,10 +41,12 @@
 | Apply → `CallMediaKeyStore::PutEpochKey` | `ApplyBroadcastJoinTicket` |
 | Live-join plan carries `media_epoch` / `media_key_id` | `AnnounceLiveJoinPlan` + handoff |
 | Tests | `broadcast_join_ticket_test.cpp` (5 cases) |
+| Recursive ladder discovery (spec) | [MEDIA_TREE.md § B007](MEDIA_TREE.md#recursive-ladder-discovery-b007), [DECISIONS B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) |
 
-**B003 locked:** encrypt-once AEAD mandatory; every hop must forward opaque blobs (no cleartext escape).
+**B003 locked:** encrypt-once AEAD mandatory; every hop must forward opaque blobs (no cleartext escape).  
+**B007 locked:** tip names online L1 whitelist only; hops admit-or-redirect; new relays may win slots and demote piped viewers one rung down.
 
-**Still out of scope for this slice:** tip→ticket RPC, accept-path auto-apply, multi-hop tree (B1).
+**Still out of scope for this slice:** tip→ticket RPC, accept-path auto-apply, admit/redirect wire, slot-win demotion code (B1).
 
 ## Spine C started (slice 0)
 

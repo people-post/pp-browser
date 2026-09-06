@@ -225,9 +225,12 @@ Helpers use **one relationship** to an announcer (“I support PeerId X”), wit
 
 ## Media scale (multi-hop tree)
 
-Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscriber counts need a **degree-capped tree of blind SFUs** so seed / PreferLocal root egress stays ~`degree × bitrate`. That plan lives in **[MEDIA_TREE.md](MEDIA_TREE.md)** (ADRs [B001–B006](DECISIONS.md), phases B0–B3, program **Spine F**).
+Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscriber counts need a **degree-capped tree of blind SFUs** so seed / PreferLocal root egress stays ~`degree × bitrate`. Plan: **[MEDIA_TREE.md](MEDIA_TREE.md)** (ADRs [B001–B007](DECISIONS.md), phases B0–B3, program **Spine F**).
+
+**Audience finds capacity via a recursive whitelist ladder ([B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect)):** tip lists only the publisher’s **online L1** `help_media` PeerIds; each hop **admits** if it has a free viewer slot, else **redirects** to its own whitelist∩online children; a new whitelist relay may **win a slot** and push piped viewers one rung down. Publisher mints the media ticket (key); hops do not need a global leaf map.
 
 Summary locked there:
+
 
 - Broadcast ≠ large group call (do not SoftMigrate / raise V007).
 - Keep encrypt-once AEAD; hops stay blind; stable session key + join ticket (no rotate-on-viewer-leave).

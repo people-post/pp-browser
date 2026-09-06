@@ -1,7 +1,7 @@
 # Peer-scoped broadcast — phases (media tree)
 
 **Status:** Planning — checkboxes track **media scale** only. Announce spines stay in [PROGRAM.md](PROGRAM.md) / [CURRENT_STATE.md](CURRENT_STATE.md).  
-**Spec:** [MEDIA_TREE.md](MEDIA_TREE.md) · **ADRs:** [DECISIONS.md](DECISIONS.md) B001–B006
+**Spec:** [MEDIA_TREE.md](MEDIA_TREE.md) · **ADRs:** [DECISIONS.md](DECISIONS.md) B001–B007
 
 Delivery order for live **media capacity** (Spine F). Do not start B1 until Spine C tip→watch on a **single** hop is dogfoodable.
 
@@ -22,35 +22,40 @@ Prerequisite for tree work; may land as C ribs.
 
 ---
 
-## B1 — Two-tier media tree (first scale win) — Spine F exit
+## B1 — Two-tier tree + ladder discovery (first scale win) — Spine F exit
 
-- [ ] Root SFU fans out to ≤`degree` child relays and/or viewers
+Locks [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) at depth 2.
+
+- [ ] Tip / heartbeat lists publisher **L1 whitelist ∩ online** only (not full tree)
+- [ ] Root/L0 fans out to ≤`degree` child relays and/or viewers
 - [ ] Child `media_relay` (`help_media`) subscribes upstream, fans out downstream (blind)
-- [ ] Viewers **prefer leaf** attach; seed/root only as fallback
+- [ ] **Admit-or-redirect:** full hop redirects viewer to whitelist∩online children (budget + jitter + scope)
+- [ ] **Slot win:** new whitelist relay can claim child slot; demote piped viewer(s) one rung with grace redirect
 - [ ] Degree + per-hop A↓ / ceiling enforced ([HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md))
-- [ ] Lab: root + ≥1 child hop + N viewers; root egress ≉ N × bitrate
+- [ ] Lab: root + ≥1 child; L1 full → redirect; new relay join demotes a viewer downward; root egress ≉ N × bitrate
 
-**Exit:** Demonstrable seed/first-tier pressure relief under N ≫ degree.
+**Exit:** Demonstrable seed/first-tier pressure relief under N ≫ degree using ladder discovery (no central leaf map).
 
 ---
 
-## B2 — Depth, election, repair
+## B2 — Deeper ladder, election, repair
 
-- [ ] Depth >2 under config cap
-- [ ] Relay parent selection (free slots, depth, [RELAY_SCOPE](../p2p-mesh/RELAY_SCOPE.md) affinity)
+- [ ] Depth >2 under config cap (same admit-or-redirect at every hop)
+- [ ] Richer child pick (free slots, depth, [RELAY_SCOPE](../p2p-mesh/RELAY_SCOPE.md) affinity)
 - [ ] Capacity ads / refuse oversubscribed parents
-- [ ] Reparent on parent death; `tree_epoch` / root tip digest
-- [ ] Mid-show kick/ban → epoch bump + ticket refresh path
+- [ ] Reparent on parent death; `tree_epoch` / L1 tip refresh
+- [ ] Redirect loop defenses hardened; slot-win rate limits / hysteresis
+- [ ] Mid-show kick/ban → media epoch bump + ticket refresh path
 
-**Exit:** Tree survives single relay loss without full rebuild.
+**Exit:** Tree survives single relay loss and multi-rung redirects without full rebuild.
 
 ---
 
 ## B3 — Multi-root / overflow
 
-- [ ] Regional / multi-root option (still blind hops)
-- [ ] Paid / ops overflow seeds as additional roots or deep capacity
-- [ ] Hard-lab broadcast scenario (not call SoftMigrate overload)
+- [ ] Regional / multi-root option (still blind hops + ladder)
+- [ ] Paid / ops overflow seeds as additional L1s or deep capacity
+- [ ] Hard-lab broadcast scenario: L1 hints, redirect chain, slot-win demotion (not call SoftMigrate overload)
 - [ ] Promote wire / budgets to `docs/contracts/` as needed
 
 **Exit:** Ops can add capacity without rewriting viewer join.
@@ -62,4 +67,5 @@ Prerequisite for tree work; may land as C ribs.
 - Simulcast / `video_hi` for adaptive tree layers
 - Open helper marketplace (beyond whitelist)
 - Cleartext media (rejected — [B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast); hops must carry opaque blobs)
+- Coordinator-assigned leaf on every ticket (optional ops mode; not default — [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect))
 - Multi-SFU trees for **group calls** (remains non-goal)

@@ -91,13 +91,14 @@ If a task cannot name which **spine exit** it advances, it waits.
 | | |
 |--|--|
 | **Owners** | peer-scoped-broadcast + [p2p-av-calls](../p2p-av-calls/) + [p2p-mesh](../p2p-mesh/) |
-| **Spec** | [MEDIA_TREE.md](MEDIA_TREE.md), [DECISIONS.md](DECISIONS.md) B001–B006, [PHASES.md](PHASES.md) B0–B3 |
-| **Exit (first)** | **B1** — degree-capped 2-tier blind `media_relay` tree; viewers prefer leaves; root egress ≉ N × bitrate |
-| **Why after C** | Tip→watch on one hop must be dogfoodable before relay-of-relay / reparent |
+| **Spec** | [MEDIA_TREE.md](MEDIA_TREE.md), [DECISIONS.md](DECISIONS.md) B001–B007, [PHASES.md](PHASES.md) B0–B3 |
+| **Discovery** | **B007** recursive whitelist ladder — tip names online L1 only; hops admit-or-redirect; slot-win demotion |
+| **Exit (first)** | **B1** — 2-tier blind tree + L1 tip hints + redirect when full + relay slot-win demotes piped viewers; root egress ≉ N × bitrate |
+| **Why after C** | Tip→watch on one hop must be dogfoodable before redirect chains / demotion |
 | **Why not D** | `help_announce` epidemic is orthogonal; **`help_media` tree roles** feed F and may land as F ribs |
 
-**Ribs:** B0 (stable session key + join ticket on one hop) may finish inside C; mesh capacity ads / `help_media` whitelist shape for tree parents; hard-lab broadcast scenario after B1 (not call SoftMigrate overload).  
-**Parking until F:** multi-root / paid overflow (B3); simulcast `video_hi` tree layers.
+**Ribs:** B0 (stable session key + join ticket on one hop) may finish inside C; mesh capacity ads / per-hop `help_media` whitelist; hard-lab ladder scenario after B1 (not call SoftMigrate overload).  
+**Parking until F:** multi-root / paid overflow (B3); coordinator leaf-assign mode; simulcast `video_hi` tree layers.
 
 ---
 
@@ -134,7 +135,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 | C — tip + live | **In progress** | plan/arm/accept (no SoftMigrate); UI pickup chrome still parking-lot; B0 ticket/key may land here |
 | D — announce helpers | Blocked on C | Orthogonal to F |
 | E — CAS replay | Blocked on C (product); P3/P4 not started | |
-| F — media tree | **B0 started** | Join ticket + tests landed; tip→ticket attach + B1 next |
+| F — media tree | **B0 started; B007 discovery locked** | Join ticket + tests; ladder discovery documented; tip→ticket attach + B1 next |
 
 Update this table when a spine **exits**; link dogfood evidence in the owning projects’ CURRENT_STATE.
 
