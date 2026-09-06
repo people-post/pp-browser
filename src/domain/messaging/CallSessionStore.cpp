@@ -353,12 +353,13 @@ Roe<void> CallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite)
   const char* sql =
       "INSERT INTO pending_call_invites (call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
       "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, invitee_identity) DO UPDATE SET inviter_identity=excluded.inviter_identity, "
       "media_mode=excluded.media_mode, video_allowed=excluded.video_allowed, "
       "origin_thread_id=excluded.origin_thread_id, "
       "origin_group_id=excluded.origin_group_id, sfu_hint=excluded.sfu_hint, expires_at=excluded.expires_at, "
-      "created_at=excluded.created_at, status=excluded.status;";
+      "created_at=excluded.created_at, status=excluded.status, "
+      "session_kind=excluded.session_kind;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare pending call invite upsert");
@@ -375,6 +376,8 @@ Roe<void> CallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite)
   BindOptInt64(stmt, 9, invite.expires_at);
   sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(invite.created_at));
   sqlite3_bind_text(stmt, 11, invite.status.c_str(), -1, SQLITE_TRANSIENT);
+  const std::string session_kind = CallSessionKindToString(invite.session_kind);
+  sqlite3_bind_text(stmt, 12, session_kind.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(*db);
@@ -394,7 +397,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionStore::LoadPendingInvite(
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
+                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind FROM "
                          "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
@@ -416,6 +419,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionStore::LoadPendingInvite(
     invite.expires_at = ColumnOptInt64(stmt, 8);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 9));
     invite.status = ColumnText(stmt, 10);
+    invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     result = std::move(invite);
   }
   sqlite3_finalize(stmt);
@@ -432,7 +436,7 @@ Roe<std::vector<PendingCallInvite>> CallSessionStore::ListPendingInvitesForInvit
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
+                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind FROM "
                          "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
                          "created_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
@@ -454,6 +458,7 @@ Roe<std::vector<PendingCallInvite>> CallSessionStore::ListPendingInvitesForInvit
     invite.expires_at = ColumnOptInt64(stmt, 8);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 9));
     invite.status = ColumnText(stmt, 10);
+    invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     rows.push_back(std::move(invite));
   }
   sqlite3_finalize(stmt);
