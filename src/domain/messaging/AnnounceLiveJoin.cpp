@@ -1,4 +1,5 @@
 #include "domain/messaging/AnnounceLiveJoin.h"
+#include "domain/messaging/BroadcastLadderLogic.h"
 
 namespace pbr {
 
@@ -26,7 +27,8 @@ Roe<AnnounceLiveJoinPlan> PlanAnnounceLiveJoin(const PeerAnnounceTip& tip) {
   plan.publisher_peer_id = tip.peer_id;
   plan.topic_id = tip.topic_id;
   plan.program_id = tip.program_id;
-  plan.hop_peer_id = tip.hop_peer_id;
+  plan.l1_hop_peer_ids = tip.l1_hop_peer_ids;
+  plan.hop_peer_id = PrimaryBroadcastHopPeerId(tip.hop_peer_id, tip.l1_hop_peer_ids);
   plan.seq = tip.seq;
   plan.epoch = tip.epoch;
   return plan;

@@ -608,7 +608,7 @@ Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromAnnounceTip(const Pee
   if (!calls) {
     return Error("Call session manager unavailable");
   }
-  return calls->ArmJoinFromLiveAnnounce(*plan);
+  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
 }
 
 Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
@@ -622,7 +622,7 @@ Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromStoredAnnounce(const 
   if (!calls) {
     return Error("Call session manager unavailable");
   }
-  return calls->ArmJoinFromLiveAnnounce(*plan);
+  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
 }
 
 Roe<void> ConversationsFacade::AcceptLiveAnnounceJoin(const std::string& call_id) {
@@ -630,7 +630,7 @@ Roe<void> ConversationsFacade::AcceptLiveAnnounceJoin(const std::string& call_id
   if (!calls) {
     return Error("Call session manager unavailable");
   }
-  return calls->AcceptLiveAnnounceJoin(call_id);
+  return calls->Broadcast().AcceptLiveAnnounceJoin(call_id);
 }
 
 Roe<PendingCallInvite> ConversationsFacade::JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip) {

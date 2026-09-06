@@ -520,6 +520,12 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   }
 
   auto session = sessions_.LoadSession(call_id);
+  if (session && session->has_value() && IsBroadcastSession((*session)->session_kind)) {
+    // Belt-and-suspenders: broadcast audience must never SoftMigrate (B001 / is_broadcast NoOp).
+    log().info << "SoftMigrate skip broadcast session call_id=" << call_id
+               << " trigger=" << static_cast<int>(trigger);
+    return {};
+  }
   const bool first_attach =
       !session || !session->has_value() || !(*session)->sfu_hint || (*session)->sfu_hint->empty();
 
@@ -529,8 +535,11 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     decision_in.joined_identities = joined_ids;
     decision_in.initiator_identity = SelectCallInitiator(joined_peers);
     decision_in.sfu_hint_empty = first_attach;
-    decision_in.trigger = trigger;
+        decision_in.trigger = trigger;
     decision_in.already_on_sfu = sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+    if (session && session->has_value()) {
+      decision_in.is_broadcast = IsBroadcastSession((*session)->session_kind);
+    }
 
     SoftMigrateAction action = DecideSoftMigrate(decision_in);
     // PreferLocal durable Node hosts media_relay for the call (V029). Sticky-initiator

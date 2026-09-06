@@ -9,6 +9,7 @@
 #include <cmath>
 #include <sodium.h>
 #include <sstream>
+#include <vector>
 
 #include "common/PbrCompat.h"
 
@@ -27,6 +28,45 @@ void AppendField(std::ostringstream& out, const char* key, const uint64_t value)
 
 ByteVector ToBytes(const std::string& text) {
   return ByteVector(text.begin(), text.end());
+}
+
+std::string JoinL1HopPeerIds(const std::vector<std::string>& ids) {
+  std::string out;
+  for (const std::string& id : ids) {
+    if (id.empty()) {
+      continue;
+    }
+    if (!out.empty()) {
+      out.push_back(',');
+    }
+    out += id;
+  }
+  return out;
+}
+
+std::vector<std::string> ReadL1HopPeerIds(const Object& o) {
+  std::vector<std::string> out;
+  if (const Array* arr = o.getArray("l1_hop_peer_ids")) {
+    for (const auto& item : arr->elements) {
+      if (auto s = asString(item)) {
+        if (!s->empty()) {
+          out.push_back(*s);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+Value L1HopPeerIdsArray(const std::vector<std::string>& ids) {
+  std::vector<Value> items;
+  items.reserve(ids.size());
+  for (const std::string& id : ids) {
+    if (!id.empty()) {
+      items.emplace_back(id);
+    }
+  }
+  return ArrayValue(std::move(items));
 }
 
 } // namespace
@@ -67,6 +107,10 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
   if (!tip.hop_peer_id.empty()) {
     AppendField(out, "hop_peer_id", tip.hop_peer_id);
   }
+  // Additive B007 L1 list (omit empty).
+  if (const std::string joined = JoinL1HopPeerIds(tip.l1_hop_peer_ids); !joined.empty()) {
+    AppendField(out, "l1_hop_peer_ids", joined);
+  }
   // Additive kind / viewer attribution (omit defaults for legacy verify).
   if (!tip.kind.empty()) {
     AppendField(out, "kind", tip.kind);
@@ -95,6 +139,9 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   json.set("join_handle", tip.join_handle);
   if (!tip.hop_peer_id.empty()) {
     json.set("hop_peer_id", tip.hop_peer_id);
+  }
+  if (!tip.l1_hop_peer_ids.empty()) {
+    json.set("l1_hop_peer_ids", L1HopPeerIdsArray(tip.l1_hop_peer_ids));
   }
   if (!tip.kind.empty()) {
     json.set("kind", tip.kind);
@@ -136,6 +183,7 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   tip.created_at_ms = ObjectInt64(o, "created_at_ms").value_or(0);
   tip.join_handle = ObjectString(o, "join_handle").value_or("");
   tip.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
+  tip.l1_hop_peer_ids = ReadL1HopPeerIds(o);
   tip.kind = ObjectString(o, "kind").value_or("");
   tip.viewer_peer_id = ObjectString(o, "viewer_peer_id").value_or("");
   tip.viewer_msg_id = ObjectString(o, "viewer_msg_id").value_or("");

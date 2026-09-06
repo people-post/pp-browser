@@ -32,7 +32,7 @@ This doc plans **multi-hop custom circuit** (`/pp-browser/circuit-relay`) evolut
 - libp2p circuit v2 as the product path (stay on custom `/pp-browser/circuit-relay` evolution).
 - Consumer-visible hop-by-hop quote UI (A sees one quote from R1).
 - Hardcoded maximum relay count in protocol or binary (limit comes from **config only**).
-- Multi-hop **media bit paths** through several SFUs — brokered calls still use **one** subcontracted blind `media_relay` hop B behind R1; circuit multi-hop is reachability plumbing ([H005](DECISIONS.md#h005--circuit-last-resort-bill-media-hop) direct vs brokered).
+- Multi-hop **media bit paths** through several SFUs for **group calls** — brokered calls still use **one** subcontracted blind `media_relay` hop B behind R1; circuit multi-hop is reachability plumbing ([H005](DECISIONS.md#h005--circuit-last-resort-bill-media-hop) direct vs brokered). Live **broadcast** may use a degree-capped media tree under [peer-scoped-broadcast MEDIA_TREE](../peer-scoped-broadcast/MEDIA_TREE.md) (Spine F) — still not via circuit legs.
 
 ## Topology model
 

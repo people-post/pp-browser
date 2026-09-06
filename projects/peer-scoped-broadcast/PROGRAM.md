@@ -86,6 +86,20 @@ If a task cannot name which **spine exit** it advances, it waits.
 
 **C012:** peel to `domain/content` only when Spine E (or library) is a **second** CAS owner outside messaging.
 
+### Spine F — Live media tree (scale)
+
+| | |
+|--|--|
+| **Owners** | peer-scoped-broadcast + [p2p-av-calls](../p2p-av-calls/) + [p2p-mesh](../p2p-mesh/) |
+| **Spec** | [MEDIA_TREE.md](MEDIA_TREE.md), [DECISIONS.md](DECISIONS.md) B001–B007, [PHASES.md](PHASES.md) B0–B3 |
+| **Discovery** | **B007** recursive whitelist ladder — tip names online L1 only; hops admit-or-redirect; slot-win demotion |
+| **Exit (first)** | **B1** — 2-tier blind tree + L1 tip hints + redirect when full + relay slot-win demotes piped viewers; root egress ≉ N × bitrate |
+| **Why after C** | Tip→watch on one hop must be dogfoodable before redirect chains / demotion |
+| **Why not D** | `help_announce` epidemic is orthogonal; **`help_media` tree roles** feed F and may land as F ribs |
+
+**Ribs:** B0 (stable session key + join ticket on one hop) may finish inside C; mesh capacity ads / per-hop `help_media` whitelist; hard-lab ladder scenario after B1 (not call SoftMigrate overload).  
+**Parking until F:** multi-root / paid overflow (B3); coordinator leaf-assign mode; simulcast `video_hi` tree layers.
+
 ---
 
 ## Parking lot (explicitly not spines yet)
@@ -97,6 +111,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 - Piece swarm (content-cas P5)  
 - `domain/content` peel before Spine E has a second owner  
 - Directory/DHT **content** provider routing (mesh DHT stays FIND_PEER-oriented for now)
+- Multi-SFU trees for **group calls** (broadcast-only — [MEDIA_TREE.md](MEDIA_TREE.md))
 
 ---
 
@@ -117,9 +132,10 @@ If a task cannot name which **spine exit** it advances, it waits.
 |-------|--------|-------|
 | A — hop trustworthy | **Still prerequisite** (parallel) | Track in p2p-av-calls / p2p-mesh CURRENT_STATE |
 | B — tips without mesh | **Exit met** | Amp 1:1 + IdentityStore + DM reply — see CURRENT_STATE |
-| C — tip + live | **In progress** | plan/arm/accept (no SoftMigrate); UI pickup chrome still parking-lot |
-| D — announce helpers | Blocked on C | |
+| C — tip + live | **In progress** | plan/arm/accept (no SoftMigrate); UI pickup chrome still parking-lot; B0 ticket/key may land here |
+| D — announce helpers | Blocked on C | Orthogonal to F |
 | E — CAS replay | Blocked on C (product); P3/P4 not started | |
+| F — media tree | **B0 started; B007 discovery locked** | Join ticket + tests; ladder discovery documented; tip→ticket attach + B1 next |
 
 Update this table when a spine **exits**; link dogfood evidence in the owning projects’ CURRENT_STATE.
 
@@ -127,4 +143,4 @@ Update this table when a spine **exits**; link dogfood evidence in the owning pr
 
 ## One-line program summary
 
-**A (hop) → B (tips) → C (tip+live) → D (announce helpers) → E (CAS replay)** — finish shared exits, not isolated project bars.
+**A (hop) → B (tips) → C (tip+live) → D (announce helpers) ∥ F (media tree) → E (CAS replay)** — finish shared exits; F scales live egress after C.

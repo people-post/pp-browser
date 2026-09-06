@@ -387,6 +387,8 @@ TEST(AnnounceLiveJoinTest, CopiesHopPeerIdIntoPlanAndHandoffSfuHint) {
   EXPECT_EQ(*handoff->pending.sfu_hint, "12D3KooWMediaHop");
   ASSERT_TRUE(handoff->session.sfu_hint.has_value());
   EXPECT_EQ(*handoff->session.sfu_hint, "12D3KooWMediaHop");
+  EXPECT_EQ(handoff->session.session_kind, CallSessionKind::Broadcast);
+  EXPECT_EQ(handoff->pending.session_kind, CallSessionKind::Broadcast);
 }
 
 TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
@@ -513,6 +515,45 @@ TEST(AnnounceNotificationInboxTest, UpsertsProgramTipsAndLiveBanner) {
   EXPECT_TRUE(inbox.DismissBanner(key));
   EXPECT_TRUE(inbox.ListLiveBanners().empty());
   EXPECT_FALSE(inbox.ListActive().empty());
+}
+
+
+TEST(PeerAnnounceL1HopPeerIdsTest, JsonAndSignRoundTripAdditive) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto tip = SampleTip("topic-l1");
+  tip.hop_peer_id = "12D3KooWL1a";
+  tip.l1_hop_peer_ids = {"12D3KooWL1a", "12D3KooWL1b"};
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys->public_key));
+
+  auto json = EncodePeerAnnounceTipJson(*signed_tip);
+  ASSERT_TRUE(json);
+  auto decoded = DecodePeerAnnounceTipJson(*json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->hop_peer_id, "12D3KooWL1a");
+  ASSERT_EQ(decoded->l1_hop_peer_ids.size(), 2u);
+  EXPECT_EQ(decoded->l1_hop_peer_ids[0], "12D3KooWL1a");
+  EXPECT_EQ(decoded->l1_hop_peer_ids[1], "12D3KooWL1b");
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
+
+  tip.l1_hop_peer_ids.clear();
+  tip.hop_peer_id.clear();
+  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
+  EXPECT_EQ(canonical.find("l1_hop_peer_ids="), std::string::npos);
+}
+
+TEST(AnnounceLiveJoinTest, FallsBackHopPeerIdFromL1Hints) {
+  auto tip = SampleTip("topic-l1");
+  tip.state = PeerAnnounceState::Live;
+  tip.join_handle = "session-live-l1";
+  tip.hop_peer_id.clear();
+  tip.l1_hop_peer_ids = {"12D3KooWL1a", "12D3KooWL1b"};
+  auto plan = PlanAnnounceLiveJoin(tip);
+  ASSERT_TRUE(plan) << plan.error().message;
+  EXPECT_EQ(plan->hop_peer_id, "12D3KooWL1a");
+  ASSERT_EQ(plan->l1_hop_peer_ids.size(), 2u);
 }
 
 } // namespace pbr

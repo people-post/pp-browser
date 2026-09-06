@@ -13,6 +13,9 @@ Authenticated **per-PeerId announcement feeds** (optional voluntary helpers) plu
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Planes, roles, pickup UX, replies/overlay, whitelist, lifecycle, non-goals |
+| [MEDIA_TREE.md](MEDIA_TREE.md) | Multi-hop blind SFU tree + recursive L1 ladder discovery (Spine F / B007) |
+| [DECISIONS.md](DECISIONS.md) | ADRs B001–B007 (broadcast ≠ call; keep AEAD; ticket key; ladder discovery) |
+| [PHASES.md](PHASES.md) | Media-scale checklist B0–B3 |
 | [PROGRAM.md](PROGRAM.md) | Multi-project spines — overall progress over single-project speed |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Implementation progress |
 
@@ -21,6 +24,7 @@ Product notes locked in design:
 - **Pickup:** Notifications tab + optional live banner — not call ringing ([DESIGN § Product pickup UX](DESIGN.md#product-pickup-ux--not-call-ringing)).
 - **Replies:** Private DM, or on-screen via publisher-mediated rebroadcast + rate limits ([DESIGN § Speak / reply](DESIGN.md#speak--reply-rules)).
 - **Heartbeats:** publisher-paced re-announce while live ([DESIGN § Heartbeat](DESIGN.md#live-re-announce-heartbeat)).
+- **Scale:** degree-capped media tree after Spine C ([MEDIA_TREE.md](MEDIA_TREE.md); program Spine F).
 
 ## Why this project exists
 

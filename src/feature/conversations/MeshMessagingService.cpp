@@ -5,6 +5,7 @@
 #include "feature/conversations/AmpChatHistoryService.h"
 #include "feature/conversations/AmpDirectChatService.h"
 #include "feature/conversations/AmpPeerAnnounceService.h"
+#include "feature/conversations/AmpBroadcastService.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/AnnounceDmReply.h"
@@ -179,7 +180,26 @@ MeshMessagingService::MeshMessagingService(IThreadStore& store, ContactsStore& c
       log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
     }
     peer_announce_->Start();
-    log().info << "direct chat/history/blob/peer-announce transport=amp";
+    broadcast_ = std::make_unique<AmpBroadcastService>(*amp_links_, amp_io_pump, worker);
+    broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
+      std::string local_peer_id;
+      std::vector<uint8_t> local_pk;
+      if (auto local_identity = identity_.Get()) {
+        local_peer_id = local_identity->peer_id;
+      }
+      if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+        local_pk = *pk;
+      }
+      return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
+    });
+    broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
+      if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
+        return *sk;
+      }
+      return std::nullopt;
+    });
+    broadcast_->Start();
+    log().info << "direct chat/history/blob/peer-announce/broadcast transport=amp";
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
