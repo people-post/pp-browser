@@ -7,8 +7,8 @@
 | **P0** — contracts | **Done** |
 | **P1** — private CasStore + ObjectIndex | **Done** (public clear put/get included for realm isolation; no publish UX) |
 | **P2** — big-bang attachment cutover | **Done** (AttachmentCache → private CAS only; legacy removed) |
-| **P3** — public publish UX + library | **In progress** — local library list + Share publicly… / Unpublish… (C013) |
-| **P4** — provide/fetch + link/tip | Not started |
+| **P3** — public publish UX + library | **Done** — local library list + Share publicly… / Unpublish… (C013) |
+| **P4** — provide/fetch + link/tip | **Thin landed** — Copy tip… / Fetch tip…; blob `fetch_public` serves Kept public only; peer fetch → Cache |
 | **P4b** — Node-gated open library catalog | Not started |
 | **P5** — pieces | Not started |
 
@@ -59,4 +59,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | `CasStore::PublishFromPrivate` / `Unpublish` | **Done** |
 | `CasLibrary` helper | **Done** (`ListCasLibrary` / `ShareCasPublicly` / `UnpublishCasPublic`) |
 | Me → Storage library UI | **Done** (filter All/Private/Public/Cache; Share publicly… / Unpublish…) |
-| Directory vs catalog wire/caps | Docs only; P4/P4b |
+| Tip encode/copy (`pp-cas:v1:`) | **Done** |
+| Blob `fetch_public` provide (Kept public only) | **Done** |
+| Fetch tip → public Cache | **Done** (peer relay id prompt) |
+| Directory vs catalog wire/caps | Docs only; P4b |

@@ -41,6 +41,7 @@ CasLibraryRow ToRow(const CasObjectMeta& meta) {
   row.pinned = meta.pinned;
   row.can_share_publicly = meta.realm == CasRealm::Private && meta.pinned;
   row.can_unpublish = meta.realm == CasRealm::Public && meta.pinned;
+  row.can_copy_tip = meta.realm == CasRealm::Public && meta.pinned;
   return row;
 }
 
@@ -89,6 +90,59 @@ Roe<void> UnpublishCasPublic(const std::string& profile_dir, const std::string& 
                              const ByteVector& public_content_id) {
   CasStore store(profile_dir, profile_id);
   return store.Unpublish(public_content_id);
+}
+
+std::string FormatCasPublicTip(const std::string& content_id_hex) {
+  return std::string(kCasPublicTipPrefix) + content_id_hex;
+}
+
+Roe<ByteVector> ParseCasPublicTip(const std::string_view tip) {
+  std::string hex(tip);
+  while (!hex.empty() && (hex.back() == '\n' || hex.back() == '\r' || hex.back() == ' ')) {
+    hex.pop_back();
+  }
+  while (!hex.empty() && hex.front() == ' ') {
+    hex.erase(hex.begin());
+  }
+  constexpr std::string_view kPrefix = kCasPublicTipPrefix;
+  if (hex.size() >= kPrefix.size() && hex.compare(0, kPrefix.size(), kPrefix) == 0) {
+    hex = hex.substr(kPrefix.size());
+  }
+  if (hex.size() != kCasContentIdSize * 2) {
+    return Error("CAS tip must be pp-cas:v1:<64-hex> or a 64-hex content id");
+  }
+  auto id = HexToBytes(hex);
+  if (!id) {
+    return id.error();
+  }
+  if (id->size() != kCasContentIdSize) {
+    return Error("Invalid CAS content id in tip");
+  }
+  return id;
+}
+
+Roe<ByteVector> LoadPinnedPublicCasBytes(const std::string& profile_dir, const std::string& profile_id,
+                                         const ByteVector& content_id) {
+  CasStore store(profile_dir, profile_id);
+  auto meta = store.Index().Lookup(CasRealm::Public, content_id);
+  if (!meta) {
+    return meta.error();
+  }
+  if (!meta->has_value()) {
+    return Error("Public CAS object not found");
+  }
+  if (!(*meta)->pinned) {
+    return Error("Public CAS object is not Kept (provide refused)");
+  }
+  return store.GetPublic(content_id);
+}
+
+Roe<void> CacheFetchedPublicCas(const std::string& profile_dir, const std::string& profile_id,
+                                const ByteVector& content_id, const ByteVector& bytes,
+                                const std::string_view mime, const std::string_view filename) {
+  CasStore store(profile_dir, profile_id);
+  // Peer-fetched public → unpinned Cache (C013).
+  return store.PutPublic(content_id, bytes, mime, filename, /*published_from_hex=*/{}, /*pinned=*/false);
 }
 
 } // namespace pbr

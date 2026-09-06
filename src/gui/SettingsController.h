@@ -56,6 +56,7 @@ public:
     Rml::String pin_label;
     bool can_share_publicly = false;
     bool can_unpublish = false;
+    bool can_copy_tip = false;
   };
 
   SettingsController();
@@ -200,13 +201,20 @@ private:
                                       const Rml::VariantList& args);
   static void UnpublishCasCallback(Rml::DataModelHandle model, Rml::Event& ev,
                                   const Rml::VariantList& args);
+  static void CopyCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                               const Rml::VariantList& args);
+  static void FetchCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                const Rml::VariantList& args);
   void RefreshCasLibrary();
   void PushCasLibraryBindings();
   void OnSetCasLibraryFilter(const std::string& filter);
   void OnShareCasPublicly(int index);
   void OnUnpublishCas(int index);
+  void OnCopyCasTip(int index);
+  void OnFetchCasTip();
   void PerformShareCasPublicly(const std::string& content_id_hex);
   void PerformUnpublishCas(const std::string& content_id_hex);
+  void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

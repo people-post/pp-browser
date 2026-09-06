@@ -26,6 +26,7 @@ struct CasLibraryRow {
   bool pinned = true;
   bool can_share_publicly = false;
   bool can_unpublish = false;
+  bool can_copy_tip = false;
 };
 
 inline const char* CasLibraryFilterToString(const CasLibraryFilter filter) {
@@ -66,5 +67,19 @@ Roe<ByteVector> ShareCasPublicly(const std::string& profile_dir, const std::stri
                                  const ByteVector& dek, const ByteVector& private_content_id);
 Roe<void> UnpublishCasPublic(const std::string& profile_dir, const std::string& profile_id,
                              const ByteVector& public_content_id);
+
+/** Link/tip share (U9): `pp-cas:v1:<64-hex>` or raw 64-hex content id. */
+inline constexpr const char* kCasPublicTipPrefix = "pp-cas:v1:";
+std::string FormatCasPublicTip(const std::string& content_id_hex);
+Roe<ByteVector> ParseCasPublicTip(std::string_view tip);
+
+/** Serve gate (P4): pinned public only — never private, never Cache. */
+Roe<ByteVector> LoadPinnedPublicCasBytes(const std::string& profile_dir, const std::string& profile_id,
+                                       const ByteVector& content_id);
+
+/** Peer-fetched public object → public Cache (C013). */
+Roe<void> CacheFetchedPublicCas(const std::string& profile_dir, const std::string& profile_id,
+                              const ByteVector& content_id, const ByteVector& bytes,
+                              std::string_view mime = {}, std::string_view filename = {});
 
 } // namespace pbr

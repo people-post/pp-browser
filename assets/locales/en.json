@@ -456,6 +456,14 @@
     "settings.storage.library.unpublish": "Unpublish…",
     "settings.storage.library.unpublish_confirm_title": "Unpublish?",
     "settings.storage.library.unpublish_confirm_message": "Stops keeping this public file (moves to Cache). Bytes may remain until cleared.",
-    "settings.storage.library.unpublish_done": "Unpublished"
+    "settings.storage.library.unpublish_done": "Unpublished",
+    "settings.storage.library.copy_tip": "Copy tip…",
+    "settings.storage.library.copy_tip_done": "Tip copied",
+    "settings.storage.library.fetch_tip": "Fetch tip…",
+    "settings.storage.library.fetch_tip_title": "Fetch public tip",
+    "settings.storage.library.fetch_tip_message": "Paste a pp-cas:v1:… tip or 64-hex content id.",
+    "settings.storage.library.fetch_tip_peer_title": "Provider peer",
+    "settings.storage.library.fetch_tip_peer_message": "Relay user id of a peer that still Keeps this public object.",
+    "settings.storage.library.fetch_tip_done": "Fetched into Cache"
   }
 }

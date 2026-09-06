@@ -771,6 +771,8 @@ std::string ChatBlobOpToString(const ChatBlobOp op) {
     return "fetch";
   case ChatBlobOp::Push:
     return "push";
+  case ChatBlobOp::FetchPublic:
+    return "fetch_public";
   }
   return "fetch";
 }
@@ -778,6 +780,9 @@ std::string ChatBlobOpToString(const ChatBlobOp op) {
 ChatBlobOp ChatBlobOpFromString(const std::string& value) {
   if (value == "push") {
     return ChatBlobOp::Push;
+  }
+  if (value == "fetch_public") {
+    return ChatBlobOp::FetchPublic;
   }
   return ChatBlobOp::Fetch;
 }
@@ -797,25 +802,39 @@ Object ChatBlobRequestToJson(const ChatBlobRequest& request) {
 
 Roe<ChatBlobRequest> ChatBlobRequestFromJson(const Object& json) {
   ChatBlobRequest request;
+  if (auto op = json.getString("op")) {
+    request.op = ChatBlobOpFromString(*op);
+  }
   auto requester_kind = json.getString("requester_identity_kind");
   auto requester_value = json.getString("requester_identity_value");
   auto peer_kind = json.getString("peer_identity_kind");
   auto peer_value = json.getString("peer_identity_value");
-  auto thread_id = json.getString("thread_id");
   auto content_hash = json.getString("content_hash_hex");
-  auto channel = json.getString("channel");
-  if (!requester_kind || !requester_value || !peer_kind || !peer_value || !thread_id || !content_hash || !channel) {
+  if (!requester_kind || !requester_value || !peer_kind || !peer_value || !content_hash) {
     return Error("Incomplete ChatBlobRequest");
-  }
-  if (auto op = json.getString("op")) {
-    request.op = ChatBlobOpFromString(*op);
   }
   request.requester_identity_kind = *requester_kind;
   request.requester_identity_value = *requester_value;
   request.peer_identity_kind = *peer_kind;
   request.peer_identity_value = *peer_value;
-  request.thread_id = *thread_id;
   request.content_hash_hex = *content_hash;
+  if (request.op == ChatBlobOp::FetchPublic) {
+    if (auto thread_id = json.getString("thread_id")) {
+      request.thread_id = *thread_id;
+    }
+    if (auto channel = json.getString("channel")) {
+      request.channel = ThreadChannelFromString(*channel);
+    } else {
+      request.channel = ThreadChannel::E2e;
+    }
+    return request;
+  }
+  auto thread_id = json.getString("thread_id");
+  auto channel = json.getString("channel");
+  if (!thread_id || !channel) {
+    return Error("Incomplete ChatBlobRequest");
+  }
+  request.thread_id = *thread_id;
   request.channel = ThreadChannelFromString(*channel);
   return request;
 }

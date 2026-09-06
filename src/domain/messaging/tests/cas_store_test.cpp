@@ -1,4 +1,5 @@
 #include "domain/messaging/CasStore.h"
+#include "domain/messaging/CasLibrary.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -184,6 +185,40 @@ TEST_F(CasStoreTest, PublishFromPrivatePinsPublicAndUnpublishCaches) {
   ASSERT_TRUE(public_cache);
   EXPECT_EQ(public_cache->size(), 1u);
 }
+
+
+TEST_F(CasStoreTest, PublicTipRoundTripAndPinnedProvideGate) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  ASSERT_TRUE(store_->PutPublic(*hash, plain_, "text/plain", "pub.txt", "", true));
+
+  const std::string tip = FormatCasPublicTip(BytesToHex(*hash));
+  auto parsed = ParseCasPublicTip(tip);
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_EQ(*parsed, *hash);
+  auto parsed_raw = ParseCasPublicTip(BytesToHex(*hash));
+  ASSERT_TRUE(parsed_raw);
+  EXPECT_EQ(*parsed_raw, *hash);
+
+  auto served = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *hash);
+  ASSERT_TRUE(served) << served.error().message;
+  EXPECT_EQ(*served, plain_);
+
+  ASSERT_TRUE(store_->Unpublish(*hash));
+  auto refused = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *hash);
+  EXPECT_FALSE(static_cast<bool>(refused));
+
+  const ByteVector other{'c', 'a', 'c', 'h', 'e'};
+  auto other_hash = AttachmentContentHash(other);
+  ASSERT_TRUE(other_hash);
+  ASSERT_TRUE(CacheFetchedPublicCas(dir_.string(), "profile-a", *other_hash, other, "text/plain", "cached.txt"));
+  auto cached = store_->Index().Lookup(CasRealm::Public, *other_hash);
+  ASSERT_TRUE(cached && cached->has_value());
+  EXPECT_FALSE((*cached)->pinned);
+  auto cache_refuse = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *other_hash);
+  EXPECT_FALSE(static_cast<bool>(cache_refuse));
+}
+
 
 } // namespace
 } // namespace pbr

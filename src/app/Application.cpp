@@ -40,6 +40,8 @@
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "domain/messaging/CasLibrary.h"
+#include "common/thread/ChatBlobTypes.h"
+#include "common/directory/DirectoryJson.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/CallActionsPorts.h"
@@ -460,7 +462,8 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
                      .realm_label = row.realm_label,
                      .pin_label = row.pin_label,
                      .can_share_publicly = row.can_share_publicly,
-                     .can_unpublish = row.can_unpublish});
+                     .can_unpublish = row.can_unpublish,
+                     .can_copy_tip = row.can_copy_tip});
     }
     return out;
   };
@@ -495,6 +498,48 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
       return id.error();
     }
     return UnpublishCasPublic(secrets_->ProfileDataDir(), secrets_->ProfileId(), *id);
+  };
+
+  settings_commands.fetch_cas_public_tip = [this](const std::string& tip,
+                                                  const std::string& peer_relay_user_id) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    if (!messaging_ || !messaging_->IsInitialized()) {
+      return Error("Messaging is not ready");
+    }
+    auto* blob = messaging_->MeshMessaging().PeerBlobClient();
+    if (blob == nullptr) {
+      return Error("Peer blob client is not available");
+    }
+    if (!blob->IsPeerReachable(peer_relay_user_id)) {
+      return Error("Peer is not reachable for CAS tip fetch");
+    }
+    auto content_id = ParseCasPublicTip(tip);
+    if (!content_id) {
+      return content_id.error();
+    }
+    auto local = messaging_->Identity().Get();
+    if (!local) {
+      return local.error();
+    }
+    if (local->relay_user_id.empty()) {
+      return Error("Local relay identity missing");
+    }
+    ChatBlobRequest request;
+    request.op = ChatBlobOp::FetchPublic;
+    request.requester_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+    request.requester_identity_value = local->relay_user_id;
+    request.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+    request.peer_identity_value = peer_relay_user_id;
+    request.content_hash_hex = BytesToHex(*content_id);
+    request.channel = ThreadChannel::E2e;
+    auto bytes = blob->FetchChatBlob(request);
+    if (!bytes) {
+      return bytes.error();
+    }
+    return CacheFetchedPublicCas(secrets_->ProfileDataDir(), secrets_->ProfileId(), *content_id,
+                                 ByteVector(bytes->begin(), bytes->end()));
   };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);

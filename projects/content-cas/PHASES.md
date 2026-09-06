@@ -21,3 +21,5 @@ Post-P2 (same branch as cutover): private presentation policy **C011** (RAM LRU 
 **C013:** pin defaults + share modes (link/contact before open library); use cases in [USE_CASES.md](USE_CASES.md). Durable hosted shelf remains an explicit later product, not a silent CDN archive.
 
 **P3 thin slice (landed):** `ObjectIndex::List`, `PublishFromPrivate` / `Unpublish`, Me → Storage Files library (filters + Share publicly… / Unpublish…). Provide/fetch and Node-gated open catalog remain P4/P4b.
+
+**P4 thin slice (landed):** `pp-cas:v1:` tip Format/Parse; Me → Storage Copy tip… / Fetch tip…; `/pp-browser/blob/1.0.0` op `fetch_public` serves **Kept public** clear bytes only (Unpublish stops provide); peer fetch stores **public Cache**. CDN assist and Node-gated open catalog remain later/P4b.

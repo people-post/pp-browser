@@ -456,6 +456,14 @@
     "settings.storage.library.unpublish": "取消发布…",
     "settings.storage.library.unpublish_confirm_title": "取消发布？",
     "settings.storage.library.unpublish_confirm_message": "停止保留此公开文件（移入缓存）。字节可能保留到清理为止。",
-    "settings.storage.library.unpublish_done": "已取消发布"
+    "settings.storage.library.unpublish_done": "已取消发布",
+    "settings.storage.library.copy_tip": "复制 tip…",
+    "settings.storage.library.copy_tip_done": "已复制 tip",
+    "settings.storage.library.fetch_tip": "获取 tip…",
+    "settings.storage.library.fetch_tip_title": "获取公开 tip",
+    "settings.storage.library.fetch_tip_message": "粘贴 pp-cas:v1:… tip 或 64 位十六进制内容 ID。",
+    "settings.storage.library.fetch_tip_peer_title": "提供方对等节点",
+    "settings.storage.library.fetch_tip_peer_message": "仍保留（Kept）该公开对象的对等节点的 relay 用户 ID。",
+    "settings.storage.library.fetch_tip_done": "已获取到缓存"
   }
 }

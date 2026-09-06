@@ -53,7 +53,7 @@ public:
    */
   Roe<ByteVector> PublishFromPrivate(const ByteVector& private_content_id, const ByteVector& dek);
 
-  /** Unpublish thin slice (C006 / C013): unpin public row (stop-provide lands with P4). */
+  /** Unpublish (C006 / C013): unpin public row; provide refuses unpinned public (P4). */
   Roe<void> Unpublish(const ByteVector& public_content_id);
 
 private:

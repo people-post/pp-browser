@@ -13,6 +13,7 @@ struct CasLibraryRowUiState {
   std::string pin_label;
   bool can_share_publicly = false;
   bool can_unpublish = false;
+  bool can_copy_tip = false;
 };
 
 struct McpServerUiState {
