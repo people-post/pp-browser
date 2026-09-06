@@ -231,10 +231,10 @@ Single-hop `media_relay` (Spine C) is enough for small audiences. Massive subscr
 
 Summary locked there:
 
-
 - Broadcast ≠ large group call (do not SoftMigrate / raise V007).
 - Keep encrypt-once AEAD; hops stay blind; stable session key + join ticket (no rotate-on-viewer-leave).
-- Viewers attach to **leaves**; relays are `help_media` Nodes.
+- **B007:** tip names online L1 whitelist only; hops admit-or-redirect; slot-win demotion pushes piped viewers down.
+- Viewers settle where capacity exists; relays are `help_media` Nodes.
 - Circuit multi-hop remains reachability only; media copies only at `media_relay` nodes.
 - Group calls keep one-hop SFU; multi-SFU media is **broadcast-only**.
 
