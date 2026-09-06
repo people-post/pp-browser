@@ -170,7 +170,7 @@ Shared helpers: `StreamFrameIo` / `StreamJsonFrame` (`Blocking*` for legacy cont
 5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
 6. **UI mailbox liveness** — power-save is an optimization; it must not defer `RunUITasks` / Present until user input.
 7. **Media is special** — do not run Opus/H264 in the general pool.
-8. **Join on shutdown** — pool and coordinator stop accepting work and join.
+8. **Join on shutdown** — pool and coordinator stop accepting work and join. `AppRuntime::Shutdown` joins **before** uninstalling `WorkerDispatch`, so in-flight tasks (e.g. unlock → `EnsureMessagingReady` → directory refresh) that `PostWorker` hit `WorkerPool::Post` no-op-on-stopped rather than asserting.
 
 ---
 
