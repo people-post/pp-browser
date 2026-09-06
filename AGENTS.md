@@ -134,7 +134,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | UI-safe surface | `*Facade` | `ConversationsFacade` |
 | Durable state | `*Store` | thread/CAS/contacts stores |
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
-| Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClientFactory`, `CreateOrgBackendClients`) |
+| Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |
 | Feature Amp adapter | `*Transport` | `AmpDirectChatTransport`, `AmpChatBlobTransport`, … |
