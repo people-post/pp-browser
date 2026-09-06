@@ -41,6 +41,9 @@ public:
   DataKeyVault* Vault();
   const DataKeyVault* Vault() const;
 
+  const std::string& ProfileDataDir() const { return profile_data_dir_; }
+  const std::string& ProfileId() const { return profile_id_; }
+
   void RegisterDekConsumer(IDekConsumer* consumer);
   void UnregisterDekConsumer(IDekConsumer* consumer);
 

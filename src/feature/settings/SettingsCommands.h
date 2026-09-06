@@ -36,6 +36,10 @@ struct SettingsCommands {
   std::function<Roe<void>()> free_oldest_relay_blob_slot;
   std::function<void()> drain_pending_attachment_media;
   std::function<Roe<void>()> clear_downloaded_attachments;
+  /** CAS library (P3): filter all|private|public|cache. */
+  std::function<Roe<std::vector<CasLibraryItemView>>(std::string filter)> list_cas_library;
+  std::function<Roe<void>(const std::string& private_content_id_hex)> share_cas_publicly;
+  std::function<Roe<void>(const std::string& public_content_id_hex)> unpublish_cas;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;

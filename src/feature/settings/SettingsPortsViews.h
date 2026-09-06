@@ -31,4 +31,16 @@ struct SettingsReachabilityView {
   std::string help_kind;
 };
 
+
+/** Me → Storage CAS library row (P3 / C013). */
+struct CasLibraryItemView {
+  std::string content_id_hex;
+  std::string title;
+  std::string detail;
+  std::string realm_label;
+  std::string pin_label;
+  bool can_share_publicly = false;
+  bool can_unpublish = false;
+};
+
 } // namespace pbr

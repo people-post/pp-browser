@@ -124,5 +124,66 @@ TEST_F(CasStoreTest, DeleteRemovesBlockAndIndex) {
   EXPECT_FALSE(meta->has_value());
 }
 
+
+TEST_F(CasStoreTest, ListFiltersByRealmAndPinned) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x31);
+  ASSERT_TRUE(store_->PutPrivate(*hash, plain_, dek, "text/plain", "kept.txt", true));
+
+  const ByteVector other_plain{'c', 'a', 'c', 'h', 'e', '-', 'b', 'y', 't', 'e', 's', '!'};
+  auto other_hash = AttachmentContentHash(other_plain);
+  ASSERT_TRUE(other_hash);
+  ASSERT_TRUE(store_->PutPrivate(*other_hash, other_plain, dek, "text/plain", "cache.txt", false));
+
+  auto all_private = store_->Index().List(CasRealm::Private, std::nullopt);
+  ASSERT_TRUE(all_private) << all_private.error().message;
+  EXPECT_EQ(all_private->size(), 2u);
+
+  auto kept = store_->Index().List(CasRealm::Private, true);
+  ASSERT_TRUE(kept);
+  ASSERT_EQ(kept->size(), 1u);
+  EXPECT_EQ((*kept)[0].filename, "kept.txt");
+  EXPECT_TRUE((*kept)[0].pinned);
+
+  auto cache = store_->Index().List(CasRealm::Private, false);
+  ASSERT_TRUE(cache);
+  ASSERT_EQ(cache->size(), 1u);
+  EXPECT_EQ((*cache)[0].filename, "cache.txt");
+  EXPECT_FALSE((*cache)[0].pinned);
+}
+
+TEST_F(CasStoreTest, PublishFromPrivatePinsPublicAndUnpublishCaches) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x55);
+  ASSERT_TRUE(store_->PutPrivate(*hash, plain_, dek, "image/png", "photo.png"));
+
+  auto published = store_->PublishFromPrivate(*hash, dek);
+  ASSERT_TRUE(published) << published.error().message;
+  EXPECT_EQ(*published, *hash); // v1 published bytes == plaintext
+  EXPECT_TRUE(store_->Exists(CasRealm::Public, *published));
+
+  auto pub_meta = store_->Index().Lookup(CasRealm::Public, *published);
+  ASSERT_TRUE(pub_meta && pub_meta->has_value());
+  EXPECT_TRUE((*pub_meta)->pinned);
+  EXPECT_EQ((*pub_meta)->published_from_hex, BytesToHex(*hash));
+  EXPECT_EQ((*pub_meta)->filename, "photo.png");
+
+  auto public_kept = store_->Index().List(CasRealm::Public, true);
+  ASSERT_TRUE(public_kept);
+  EXPECT_EQ(public_kept->size(), 1u);
+
+  ASSERT_TRUE(store_->Unpublish(*published));
+  auto after = store_->Index().Lookup(CasRealm::Public, *published);
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_FALSE((*after)->pinned);
+  EXPECT_TRUE(store_->Exists(CasRealm::Public, *published)); // bytes remain until wipe/GC
+
+  auto public_cache = store_->Index().List(CasRealm::Public, false);
+  ASSERT_TRUE(public_cache);
+  EXPECT_EQ(public_cache->size(), 1u);
+}
+
 } // namespace
 } // namespace pbr

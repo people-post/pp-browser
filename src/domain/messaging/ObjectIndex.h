@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct sqlite3;
 
@@ -29,6 +30,13 @@ public:
   Roe<std::optional<CasObjectMeta>> Lookup(CasRealm realm, const ByteVector& content_id) const;
   Roe<void> Remove(CasRealm realm, const ByteVector& content_id);
   Roe<void> SetPinned(CasRealm realm, const ByteVector& content_id, bool pinned);
+
+  /**
+   * List index rows. Pass nullopt realm/pinned to leave that axis unconstrained.
+   * Ordered by created_at_ms DESC, then content_id_hex ASC.
+   */
+  Roe<std::vector<CasObjectMeta>> List(std::optional<CasRealm> realm = std::nullopt,
+                                       std::optional<bool> pinned = std::nullopt) const;
 
   const std::string& DbPath() const { return db_path_; }
 

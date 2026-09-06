@@ -7,7 +7,7 @@
 | **P0** — contracts | **Done** |
 | **P1** — private CasStore + ObjectIndex | **Done** (public clear put/get included for realm isolation; no publish UX) |
 | **P2** — big-bang attachment cutover | **Done** (AttachmentCache → private CAS only; legacy removed) |
-| **P3** — public publish UX + library | Not started (use cases + **C013** sketched) |
+| **P3** — public publish UX + library | **In progress** — local library list + Share publicly… / Unpublish… (C013) |
 | **P4** — provide/fetch + link/tip | Not started |
 | **P4b** — Node-gated open library catalog | Not started |
 | **P5** — pieces | Not started |
@@ -53,7 +53,10 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 
 | Piece | Status |
 |-------|--------|
-| Use cases U1–U11 | [USE_CASES.md](USE_CASES.md) — docs only |
+| Use cases U1–U11 | [USE_CASES.md](USE_CASES.md) |
 | Pin defaults + share modes A–D | Locked in [DECISIONS](DECISIONS.md#c013--pin-defaults-share-modes-directory-vs-catalog) |
-| Directory vs catalog split | Docs only; wire/caps with P4/P4b |
-
+| `ObjectIndex::List` | **Done** |
+| `CasStore::PublishFromPrivate` / `Unpublish` | **Done** |
+| `CasLibrary` helper | **Done** (`ListCasLibrary` / `ShareCasPublicly` / `UnpublishCasPublic`) |
+| Me → Storage library UI | **Done** (filter All/Private/Public/Cache; Share publicly… / Unpublish…) |
+| Directory vs catalog wire/caps | Docs only; P4/P4b |

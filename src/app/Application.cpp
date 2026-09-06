@@ -39,6 +39,8 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
+#include "domain/messaging/CasLibrary.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
@@ -439,6 +441,61 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.free_oldest_relay_blob_slot = [&facade]() { return facade.FreeOldestRelayBlobSlot(); };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
+  settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    auto parsed = CasLibraryFilterFromString(filter);
+    const CasLibraryFilter lib_filter = parsed.value_or(CasLibraryFilter::All);
+    auto rows = ListCasLibrary(secrets_->ProfileDataDir(), lib_filter);
+    if (!rows) {
+      return rows.error();
+    }
+    std::vector<CasLibraryItemView> out;
+    out.reserve(rows->size());
+    for (const CasLibraryRow& row : *rows) {
+      out.push_back({.content_id_hex = row.content_id_hex,
+                     .title = row.title,
+                     .detail = row.detail,
+                     .realm_label = row.realm_label,
+                     .pin_label = row.pin_label,
+                     .can_share_publicly = row.can_share_publicly,
+                     .can_unpublish = row.can_unpublish});
+    }
+    return out;
+  };
+  settings_commands.share_cas_publicly = [this](const std::string& private_content_id_hex) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsUnlocked()) {
+      return Error("Unlock your profile to share publicly");
+    }
+    DataKeyVault* vault = secrets_->Vault();
+    if (vault == nullptr) {
+      return Error("Vault unavailable");
+    }
+    auto dek = vault->Dek();
+    if (!dek) {
+      return dek.error();
+    }
+    auto id = HexToBytes(private_content_id_hex);
+    if (!id) {
+      return id.error();
+    }
+    auto published = ShareCasPublicly(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek, *id);
+    if (!published) {
+      return published.error();
+    }
+    return {};
+  };
+  settings_commands.unpublish_cas = [this](const std::string& public_content_id_hex) -> Roe<void> {
+    if (!secrets_ || !secrets_->IsInitialized()) {
+      return Error("Profile secrets are not ready");
+    }
+    auto id = HexToBytes(public_content_id_hex);
+    if (!id) {
+      return id.error();
+    }
+    return UnpublishCasPublic(secrets_->ProfileDataDir(), secrets_->ProfileId(), *id);
+  };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
     if (result) {

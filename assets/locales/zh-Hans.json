@@ -12,17 +12,13 @@
     "common.delete": "删除",
     "common.remove": "移除",
     "common.share": "分享",
-
     "app.name": "PP",
     "app.tagline": "为你渲染的互联网",
-
     "startup.still_preparing": "正在准备…请稍后再试。",
-
     "nav.home": "首页",
     "nav.sessions": "会话",
     "nav.contacts": "联系人",
     "nav.me": "我",
-
     "shell.statusbar.direct_off": "直连关闭",
     "shell.statusbar.brief_offline": "Brief 离线",
     "shell.statusbar.brief_ok": "在线",
@@ -56,7 +52,6 @@
     "shell.statusbar.popover.circuit_load": "{count} 条电路中继",
     "shell.statusbar.popover.media_sessions": "{count} 个媒体会话",
     "shell.statusbar.popover.media_participants": "{count} 位媒体参与者",
-
     "settings.saved": "设置已保存",
     "settings.preferences": "偏好设置",
     "settings.profile.title": "个人资料",
@@ -80,31 +75,26 @@
     "compat.update_required.message": "当前 PP 版本过旧，请更新到最新版本后继续使用。",
     "compat.update_required.action": "更新",
     "compat.update_available.message": "有新版本的 PP 可用。",
-
     "support.entry.title": "PP 支持",
     "support.entry.subtitle": "向 PP 团队求助",
     "support.unavailable": "目前无法使用 PP 支持。",
-
     "settings.theme.label": "主题",
     "settings.theme.system": "跟随系统",
     "settings.theme.light": "浅色",
     "settings.theme.dark": "深色",
     "settings.theme.help": "选择“跟随系统”时，将使用操作系统的浅色/深色设置。",
-
     "settings.language.label": "语言",
     "settings.language.system": "跟随系统",
     "settings.language.en": "English",
     "settings.language.zh_hans": "简体中文",
     "settings.language.help": "应用界面语言，更改后立即生效。",
     "settings.language.choose": "选择语言",
-
     "settings.reduce_transparency.label": "降低透明度",
     "settings.reduce_transparency.on": "开启",
     "settings.reduce_transparency.off": "关闭",
     "settings.reduce_transparency.help": "紧凑布局下使用不透明导航与标题栏，禁用背景模糊。",
     "settings.call_diagnostics.label": "通话诊断",
     "settings.call_diagnostics.help": "通话中显示技术路径详情（使用 --debug 时也会启用）。",
-
     "settings.nickname": "昵称",
     "settings.profile.change_photo": "更换头像…",
     "settings.profile.remove_photo": "移除头像",
@@ -118,20 +108,17 @@
     "settings.notifications": "显示通知",
     "settings.notifications.on": "开",
     "settings.notifications.off": "关",
-
     "settings.llm.preset": "预设",
     "settings.llm.base_url": "接口地址",
     "settings.llm.model": "模型",
     "settings.llm.api_key": "API 密钥",
     "settings.llm.api_key_env": "API 密钥环境变量",
-
     "settings.integrations.promoted_mcp": "推荐 MCP 地址",
     "settings.integrations.search": "搜索提供方",
     "settings.integrations.add_mcp": "添加 MCP 服务器",
     "settings.integrations.mcp_url": "MCP 地址",
     "settings.integrations.mcp_command": "命令",
     "settings.integrations.mcp_args": "参数",
-
     "settings.network.relay": "中继地址",
     "settings.network.directory": "目录地址",
     "settings.network.registration": "注册地址",
@@ -168,7 +155,6 @@
     "settings.network.dht_hint": "帮助其他节点在 mesh 上互相发现。开启后会占用额外带宽。",
     "settings.network.prefer_contacts": "好友优先",
     "settings.network.prefer_contacts_hint": "连接与协助时优先联系人。关闭后也会协助更广的网络。",
-
     "settings.security.protection": "保护状态：",
     "settings.security.current_pin": "当前 PIN",
     "settings.security.new_pin": "新 PIN",
@@ -203,7 +189,6 @@
     "settings.security.link_device.export_confirm_message": "将复制一份 15 分钟有效的载荷，包含账号密钥与共享密钥。持有它的人可以添加设备。请在新设备上粘贴。",
     "settings.security.link_device.export_done": "已复制关联载荷",
     "settings.security.link_device.not_ready": "请先解锁个人资料，再关联设备。",
-
     "settings.storage.config_dir": "配置目录",
     "settings.storage.data_dir": "数据目录",
     "settings.storage.profile_dir": "个人资料目录",
@@ -224,10 +209,8 @@
     "settings.storage.clear_attachments_confirm_title": "清除已下载附件？",
     "settings.storage.clear_attachments_confirm_message": "将删除本设备上已保存的附件文件。聊天记录保留；除非再次点击下载，否则不会自动重新下载。",
     "settings.storage.clear_attachments_done": "已清除下载的附件",
-
     "settings.reset_defaults_confirm_title": "恢复默认？",
     "settings.reset_defaults_confirm_message": "这将把本节设置恢复为默认值。",
-
     "pin.set_pin": "设置 PIN",
     "pin.just_continue": "直接继续",
     "pin.not_now": "暂不",
@@ -251,7 +234,6 @@
     "pin.link_paste_placeholder": "关联载荷",
     "pin.link_paste_empty": "请先粘贴关联载荷。",
     "pin.link_imported": "本机已关联",
-
     "contacts.title": "联系人",
     "contacts.add": "添加联系人",
     "contacts.empty": "暂无联系人",
@@ -264,7 +246,6 @@
     "contacts.trust.trusted": "已信任",
     "contacts.trust.untrusted": "未信任",
     "contacts.trust.unknown": "未知",
-
     "people_picker.title": "新建对话",
     "people_picker.title_add": "添加成员",
     "people_picker.search_placeholder": "搜索联系人",
@@ -291,7 +272,6 @@
     "people_picker.cta_start_call": "发起通话…",
     "people_picker.allow_video": "允许视频",
     "people_picker.cta_invite_to_call": "邀请",
-
     "chat.new_chat": "新对话",
     "chat.empty_title": "开始对话",
     "chat.empty_body": "随便问点什么，或打开“会话”继续已有线程。",
@@ -320,7 +300,6 @@
     "chat.attachment.open_failed": "无法打开附件",
     "chat.attachment.open_confirm_title": "打开此文件？",
     "chat.attachment.open_confirm_body": "此文件将在您设备上的其他应用中打开。",
-
     "blob.quota.title": "中继上传空间已满",
     "blob.quota.message": "云端中继存储已满。删除最早上传的文件以释放空间？\n\n{{detail}}\n\n此设备上的聊天记录不会受影响。",
     "blob.quota.detail": "最早：{{purpose}} · {{size}} · {{date}}",
@@ -336,7 +315,6 @@
     "chat.device_lock.subtitle_this": "加密 · 仅此设备",
     "chat.device_lock.subtitle_locked_out": "加密 · 在另一台设备上继续",
     "chat.device_lock.locked_out_body": "此聊天在另一台设备上继续。你仍可在此阅读旧消息。",
-
     "call.status.couldnt_connect": "无法连接",
     "call.status.calling": "呼叫中…",
     "call.status.connecting": "连接中…",
@@ -440,14 +418,12 @@
     "call.history.ended": "通话已结束",
     "call.history.ended_duration": "通话已结束 · {duration}",
     "call.history.roster": "通话中有 {count} 人",
-
     "hints.network.local_macos": "在 Mac 上，请于“系统设置 → 隐私与安全性”中允许 {product} 使用本地网络。",
     "hints.network.local_ios": "请在“设置”中允许 {product} 使用麦克风和本地网络。",
     "hints.network.firewall_windows": "请检查 Windows 麦克风隐私设置，并确认防火墙允许 {product}。",
     "hints.network.lan_linux": "请确认两台设备在同一网络，且 UDP 未被拦截。",
     "hints.network.android_permissions": "请允许 {product} 使用麦克风（以及摄像头）权限。",
     "hints.mic_blocked": "麦克风访问似乎被阻止 — 请在系统隐私设置中启用。",
-
     "errors.auth.register_or_rotate": "请在“我 → 个人资料”中注册或轮换 Brief API 密钥。",
     "errors.auth.busy": "服务繁忙，请稍后再试。",
     "errors.auth.failed": "身份验证失败 — 请检查“我 → 个人资料 / 助手”。",
@@ -465,6 +441,21 @@
     "errors.blob.quota_exceeded": "中继上传空间已满",
     "errors.blob.quota_nothing_to_delete": "中继存储已满，没有可安全远程删除的内容",
     "errors.blob.failed": "中继上传失败 — 请重试。",
-    "errors.internal": "出现问题 — 请重试。"
+    "errors.internal": "出现问题 — 请重试。",
+    "settings.storage.library.title": "文件库",
+    "settings.storage.library.help": "此配置下的本地 CAS 对象。私有保持加密；公开分享… 会生成明文公开副本（保留）。",
+    "settings.storage.library.filter_all": "全部",
+    "settings.storage.library.filter_private": "私有",
+    "settings.storage.library.filter_public": "公开",
+    "settings.storage.library.filter_cache": "缓存",
+    "settings.storage.library.empty": "此筛选下没有文件",
+    "settings.storage.library.share_publicly": "公开分享…",
+    "settings.storage.library.share_confirm_title": "公开分享？",
+    "settings.storage.library.share_confirm_message": "将在库中创建此文件的明文公开副本（保留）。启用提供后，持有内容 ID 的人可能获取它。",
+    "settings.storage.library.share_done": "已公开分享",
+    "settings.storage.library.unpublish": "取消发布…",
+    "settings.storage.library.unpublish_confirm_title": "取消发布？",
+    "settings.storage.library.unpublish_confirm_message": "停止保留此公开文件（移入缓存）。字节可能保留到清理为止。",
+    "settings.storage.library.unpublish_done": "已取消发布"
   }
 }

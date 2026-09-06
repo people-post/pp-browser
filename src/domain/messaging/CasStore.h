@@ -47,6 +47,15 @@ public:
 
   Roe<void> Delete(CasRealm realm, const ByteVector& content_id);
 
+  /**
+   * Share publicly… (C002 / C013): load private plaintext → put new public object (pinned),
+   * with published_from_hex → private id. Returns the public content id.
+   */
+  Roe<ByteVector> PublishFromPrivate(const ByteVector& private_content_id, const ByteVector& dek);
+
+  /** Unpublish thin slice (C006 / C013): unpin public row (stop-provide lands with P4). */
+  Roe<void> Unpublish(const ByteVector& public_content_id);
+
 private:
   Roe<void> WriteBlockFile(const std::string& path, const ByteVector& bytes) const;
   Roe<ByteVector> ReadBlockFile(const std::string& path) const;
