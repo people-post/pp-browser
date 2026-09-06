@@ -16,6 +16,41 @@
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="clear_downloaded_attachments()">{{i18n:settings.storage.clear_attachments}}</button>
         </div>
+        <p class="text">{{i18n:settings.storage.library.title}}</p>
+        <p class="text muted">{{i18n:settings.storage.library.help}}</p>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button"
+                  data-event-click="set_cas_library_filter('all')">{{i18n:settings.storage.library.filter_all}}</button>
+          <button class="btn btn-secondary" type="button"
+                  data-event-click="set_cas_library_filter('private')">{{i18n:settings.storage.library.filter_private}}</button>
+          <button class="btn btn-secondary" type="button"
+                  data-event-click="set_cas_library_filter('public')">{{i18n:settings.storage.library.filter_public}}</button>
+          <button class="btn btn-secondary" type="button"
+                  data-event-click="set_cas_library_filter('cache')">{{i18n:settings.storage.library.filter_cache}}</button>
+        </div>
+        <p class="text muted" data-if="cas_library_rows.size == 0" data-rml="cas_library_empty_label"></p>
+        <div data-for="item, item_index : cas_library_rows" class="settings-subsection stack">
+          <div class="row">
+            <p class="text" data-rml="item.title"></p>
+            <p class="text muted"> · </p>
+            <p class="text muted" data-rml="item.realm_label"></p>
+            <p class="text muted"> · </p>
+            <p class="text muted" data-rml="item.pin_label"></p>
+          </div>
+          <p class="text muted" data-rml="item.detail"></p>
+          <div class="settings-actions row">
+            <button class="btn btn-secondary" type="button" data-if="item.can_share_publicly"
+                    data-event-click="share_cas_publicly(item_index)">{{i18n:settings.storage.library.share_publicly}}</button>
+            <button class="btn btn-secondary" type="button" data-if="item.can_unpublish"
+                    data-event-click="unpublish_cas(item_index)">{{i18n:settings.storage.library.unpublish}}</button>
+            <button class="btn btn-secondary" type="button" data-if="item.can_copy_tip"
+                    data-event-click="copy_cas_tip(item_index)">{{i18n:settings.storage.library.copy_tip}}</button>
+          </div>
+        </div>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button"
+                  data-event-click="fetch_cas_tip()">{{i18n:settings.storage.library.fetch_tip}}</button>
+        </div>
         <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
         <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
         <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>

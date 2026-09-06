@@ -5,6 +5,17 @@
 
 namespace pbr {
 
+struct CasLibraryRowUiState {
+  std::string content_id_hex;
+  std::string title;
+  std::string detail;
+  std::string realm_label;
+  std::string pin_label;
+  bool can_share_publicly = false;
+  bool can_unpublish = false;
+  bool can_copy_tip = false;
+};
+
 struct McpServerUiState {
   std::string id;
   std::string url;
@@ -86,6 +97,10 @@ struct SettingsUiState {
   std::string profile_dir;
   std::string profile_size_label;
   std::string attachment_cache_size_label;
+  /** all | private | public | cache */
+  std::string cas_library_filter = "all";
+  std::string cas_library_empty_label;
+  std::vector<CasLibraryRowUiState> cas_library_rows;
   /** R021 — smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
   std::string attachment_download_policy_label;

@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpBroadcastService.h"
+#include "feature/conversations/AmpBroadcastTransport.h"
 
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
@@ -24,7 +24,7 @@ ByteVector TestKeyBytes(uint8_t seed) {
   return bytes;
 }
 
-class AmpBroadcastServiceTest : public ::testing::Test {
+class AmpBroadcastTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
     auto created = pbr::test::AmpMeshHarness::Create();
@@ -43,9 +43,9 @@ protected:
     sk_a_ = keys_a->secret_key;
     pk_b_ = keys_b->public_key;
 
-    AmpBroadcastService::WorkerPost no_worker;
-    a_svc_ = std::make_unique<AmpBroadcastService>(harness_->chat_a(), [this] { harness_->PumpBoth(); }, no_worker);
-    b_svc_ = std::make_unique<AmpBroadcastService>(harness_->chat_b(), [this] { harness_->PumpBoth(); }, no_worker);
+    AmpBroadcastTransport::WorkerPost no_worker;
+    a_svc_ = std::make_unique<AmpBroadcastTransport>(harness_->chat_a(), [this] { harness_->PumpBoth(); }, no_worker);
+    b_svc_ = std::make_unique<AmpBroadcastTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); }, no_worker);
 
     auto resolve = [this](const std::string& peer_id) -> std::optional<ByteVector> {
       if (peer_id == "publisher-a") {
@@ -62,7 +62,7 @@ protected:
     a_svc_->SetNowMsResolver([]() { return int64_t{1'900'000'000'000}; });
     b_svc_->SetNowMsResolver([]() { return int64_t{1'900'000'000'000}; });
 
-    AmpBroadcastService::LiveProgramKey live;
+    AmpBroadcastTransport::LiveProgramKey live;
     live.publisher_peer_id = "publisher-a";
     live.media_key_bytes = TestKeyBytes(0x40);
     live.media_epoch = 1;
@@ -72,13 +72,13 @@ protected:
     a_svc_->PutLiveProgramKey("show-1", "live:show-1", live);
 
     a_svc_->SetHopAttachResolver([](const std::string&, const std::string&) {
-      AmpBroadcastService::HopAttachContext hop;
+      AmpBroadcastTransport::HopAttachContext hop;
       hop.free_viewer_slots = 1;
       hop.self_peer_id = "hop-a";
       return hop;
     });
     a_svc_->SetHopSlotWinResolver([](const std::string&, const std::string&, const std::string&) {
-      AmpBroadcastService::HopSlotWinContext hop;
+      AmpBroadcastTransport::HopSlotWinContext hop;
       hop.free_child_slots = 0;
       hop.candidate_on_whitelist = true;
       hop.demotable_viewer_peer_ids = {"viewer-piped"};
@@ -103,14 +103,14 @@ protected:
   }
 
   std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
-  std::unique_ptr<AmpBroadcastService> a_svc_;
-  std::unique_ptr<AmpBroadcastService> b_svc_;
+  std::unique_ptr<AmpBroadcastTransport> a_svc_;
+  std::unique_ptr<AmpBroadcastTransport> b_svc_;
   ByteVector pk_a_;
   ByteVector pk_b_;
   ByteVector sk_a_;
 };
 
-TEST_F(AmpBroadcastServiceTest, RequestTicketRoundTripMintsSignedTicket) {
+TEST_F(AmpBroadcastTransportTest, RequestTicketRoundTripMintsSignedTicket) {
   BroadcastTicketRequest req;
   req.program_id = "show-1";
   req.join_handle = "live:show-1";
@@ -128,7 +128,7 @@ TEST_F(AmpBroadcastServiceTest, RequestTicketRoundTripMintsSignedTicket) {
   ASSERT_TRUE(verified) << verified.error().message;
 }
 
-TEST_F(AmpBroadcastServiceTest, RequestViewerAttachAdmitsWithValidTicket) {
+TEST_F(AmpBroadcastTransportTest, RequestViewerAttachAdmitsWithValidTicket) {
   BroadcastTicketRequest treq;
   treq.program_id = "show-1";
   treq.join_handle = "live:show-1";
@@ -152,7 +152,7 @@ TEST_F(AmpBroadcastServiceTest, RequestViewerAttachAdmitsWithValidTicket) {
   EXPECT_EQ(aresp->admitted_hop_peer_id, "hop-a");
 }
 
-TEST_F(AmpBroadcastServiceTest, RequestRelaySlotWinDemotesViewerWhenFull) {
+TEST_F(AmpBroadcastTransportTest, RequestRelaySlotWinDemotesViewerWhenFull) {
   BroadcastRelaySlotWinRequest req;
   req.program_id = "show-1";
   req.join_handle = "live:show-1";

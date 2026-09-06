@@ -38,9 +38,9 @@ struct StatusHttpSnapshot {
   bool circuit_relay = false;
   bool media_relay = false;
   bool dht = false;
-  /** Object JSON from ReachabilityService::FormatOpsStatusJson() (or "{}"). */
+  /** Object JSON from ReachabilityEngine::FormatOpsStatusJson() (or "{}"). */
   std::string reachability_json = "{}";
-  /** Object JSON from AmpDhtService::FormatOpsStatusJson() when DHT is up. */
+  /** Object JSON from AmpDhtProtocol::FormatOpsStatusJson() when DHT is up. */
   std::string dht_json;
 };
 

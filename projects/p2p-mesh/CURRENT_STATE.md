@@ -51,7 +51,7 @@
 
 | Area | State |
 |------|-------|
-| Probe | `ReachabilityService` — seed dial + dial-back + IP classification |
+| Probe | `ReachabilityEngine` — seed dial + dial-back + IP classification |
 | Status | Reachable / Outbound only / Blocked / Unknown / Checking |
 | GUI | Me → Network Connection card; Me / Network attention dots (ack via Got it — use relay); guided help sheets |
 | Ops | `pp-node --status` JSON |

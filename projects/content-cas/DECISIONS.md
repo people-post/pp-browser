@@ -151,6 +151,25 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 **Rejected (for now):** Immediate `domain/content` (or `domain/cas`) split; placing CAS in foundation.
 
 ---
+
+## C013 — Pin defaults, share modes, directory vs catalog
+
+**Status:** Accepted  
+
+**Decision:**
+
+1. **Pin is retention, not confidentiality.** Realm (private/public) is the privacy boundary. Pin marks **Kept** (do not GC / keep hosting) vs **Cache** (helper or revoked bytes, GC-able). Product language prefers Kept / Cache; Pin / Unpin may appear in advanced Storage UI.
+2. **Default pins:** new private attachments and imports → pinned; explicit Share publicly… → public row pinned (no second “pin” step); peer-fetched public objects → unpinned; unpublish → unpin + stop provide.
+3. **Publish is copy/promote, not move.** Share publicly… creates a new public object (`published_from` → private id). Private may remain (C002 / C005).
+4. **Share modes:** (A) link/tip of one `content_id`, (B) contact/thread push, (C) open kept-public library, (D) durable hosted shelf (deferred product). **A/B do not require** a stable always-on Node. **C does:** reachable desktop Node, Home Node, or `pp-node` with provide/library capability.
+5. **Directory ≠ file catalog.** Mesh / name directory (N027 / N029) may advertise `content_library` / `blob_provide` (+ optional manifest tip). It must **not** store per-file lists on person/mesh records. Catalog list is answered by the serving PeerId / Home Node over rpc; bytes stay blob provide/fetch. CDN remains a delivery assist for public objects (C009), not an archive (R002) unless a separate hosted-shelf product decides otherwise.
+6. **Open-library ACL (v1 preference):** Contacts or unguessable link-manifest; fully public internet browse is opt-in later.
+
+**Rationale:** Matches IPFS-like pin/cache intent without conflating it with private/public; keeps the phone book small; lets phones/laptops share via tip without pretending they are durable infra; aligns open shelf with existing “pp-node / Home Node = persistent serve” policy.
+
+**Follow-up:** Use-case narrative in [USE_CASES.md](USE_CASES.md). Wire capability bits and catalog rpc land with P3/P4; do not block P3 local library UI on directory ads.
+
+---
 ## Amends
 
 - Amends attachment layout expectations in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (planned CAS section).  
@@ -158,3 +177,4 @@ Locked **2026-09-05**. Design: [DESIGN.md](DESIGN.md).
 - Supersedes durable-byte role of per-thread `blobs/` once P2 cutover lands (R016 paths become views/refs).
 - C011 amends attachment presentation expectations in [AT_REST_ENCRYPTION](../../docs/contracts/AT_REST_ENCRYPTION.md) and [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md).
 - C012 records deferred `domain/content` peel; amends domain peer table intent in [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md).
+- C013 records pin defaults + share-mode / directory-catalog split; product detail in [USE_CASES.md](USE_CASES.md); relates to [N027](../p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory) / [N029](../p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md) (phone book scope) and [R002](../relay-blob-upload/DECISIONS.md#r002--relay-is-delivery-only-local-is-source-of-truth).

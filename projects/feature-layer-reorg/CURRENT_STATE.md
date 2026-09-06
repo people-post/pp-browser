@@ -28,4 +28,4 @@ Link order: `conversations → calls`; app fills AI inbound ports; hub fills cal
 1. Optional: move `CallStack` ownership from hub to app.
 2. Optional `gui/` band nesting (`call/`, `settings/`, `shared/`).
 3. Inbox presentation extraction.
-4. Optional rename residual `Messaging*Ports` / `MeshMessagingService` names.
+4. Optional rename residual `Messaging*Ports` / `MeshDeliveryOrchestrator` names.

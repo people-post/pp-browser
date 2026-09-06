@@ -10,7 +10,7 @@
 - [x] `kBackgroundRelayPollIntervalMs` in MessagingLimits
 - [x] `show_notifications` on ProfilePreferences
 - [x] `ILocalNotifier`, `IPushDeviceRegistrar`, `IPushDeviceClient`
-- [x] PlatformServices wiring
+- [x] PlatformHooks wiring
 
 ## p2 — Relay provider gateway
 
@@ -21,7 +21,7 @@
 
 - [x] Foreground 2s / background 45s while alive
 - [x] Bounded IO resume for background sync
-- [x] `MeshMessagingService::SyncInboxFromWake`
+- [x] `MeshDeliveryOrchestrator::SyncInboxFromWake`
 - [x] Android WorkManager worker (JNI)
 
 ## p4 — Android FCM E2E

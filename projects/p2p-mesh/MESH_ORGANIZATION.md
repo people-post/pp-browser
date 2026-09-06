@@ -12,7 +12,7 @@ src/foundation/identity (PeerId — native, no libp2p fork)
      ↑
 src/base/mesh (host + reachability + l4 coordinators)
      ↑
-src/feature/conversations (MeshMessagingService, CallMediaBridge, hub)
+src/feature/conversations (MeshDeliveryOrchestrator, CallMediaBridge, hub)
 ```
 
 Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media_relay,call_media}/`.
@@ -34,7 +34,7 @@ Subdirectories: `host/`, `identity/`, `reachability/`, `l4/{shared,circuit,media
 |------|-------|
 | Config JSON key | `"mesh"` (legacy `"libp2p"` still read) |
 | Host type | `MeshHost` |
-| Messaging service | `MeshMessagingService` |
+| Messaging service | `MeshDeliveryOrchestrator` |
 | Call bridge | `CallMediaBridge` |
 
 ## Wire names (unchanged)

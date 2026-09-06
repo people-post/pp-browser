@@ -50,10 +50,10 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | `RegistrationClientUtil.*` | net + people (+ UI labels) |
 | `ProfileIconFetchUtil.*` | people cache + `HttpClient` (people→net) |
 | `AttachmentClientUtil.*`, `AttachmentFetchUtil.*`, `ChatBlobRequestUtil.*` | multi-peer ladders |
-| `AttachmentDownloadService.*` | orchestration queue |
+| `AttachmentFetchWorkflow.*` | orchestration queue |
 | `ProfileIconClientUtil.*` | blob upload + identity |
 | `RelayDirectory*KeyResolver.*` | messaging store + directory |
-| `AmpDirectChatService.*`, `AmpChatHistoryService.*`, `AmpChatBlobService.*` | product Amp adapters (unless audit proves mesh-only) |
+| `AmpDirectChatTransport.*`, `AmpChatHistoryTransport.*`, `AmpChatBlobTransport.*` | product Amp adapters (unless audit proves mesh-only) |
 | Hubs / pipelines / routers / controllers / ports | orchestration or UI seams |
 
 ## structural — folder splits (f4–f7)
@@ -74,7 +74,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 
 ## stay feature (orchestration) — do not lower
 
-`ConversationsHub`, `ConversationsFacade`, `MeshMessagingService`, `RelayReceivePipeline`, `ChatSyncService`, `MessageRouter`, `InboxController`, `GroupMembershipService`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
+`ConversationsHub`, `ConversationsFacade`, `MeshDeliveryOrchestrator`, `RelayReceivePipeline`, `ChatSyncWorkflow`, `MessageRouter`, `InboxController`, `GroupMembershipWorkflow`, `ContactActionDispatcher`, `PushDeviceCoordinator`, `LinkDeviceCoordinator`, all `*Ports*` that are feature façades, `AgentSession`, settings apply orchestration.
 
 **Moved (f7v1):** Rml presenters / shell / chrome controllers under `src/gui/`.
 

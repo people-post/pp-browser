@@ -1,14 +1,15 @@
 # Content CAS — current state
 
-**As of:** 2026-09-05
+**As of:** 2026-09-06
 
 | Phase | Status |
 |-------|--------|
 | **P0** — contracts | **Done** |
 | **P1** — private CasStore + ObjectIndex | **Done** (public clear put/get included for realm isolation; no publish UX) |
 | **P2** — big-bang attachment cutover | **Done** (AttachmentCache → private CAS only; legacy removed) |
-| **P3** — public publish UX + library | Not started |
-| **P4** — provide/fetch | Not started |
+| **P3** — public publish UX + library | **Done** — local library list + Share publicly… / Unpublish… (C013) |
+| **P4** — provide/fetch + link/tip | **Thin landed** — Copy tip… / Fetch tip…; blob `fetch_public` serves Kept public only; peer fetch → Cache |
+| **P4b** — Node-gated open library catalog | Not started |
 | **P5** — pieces | Not started |
 
 ## P1 landed
@@ -48,3 +49,20 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 | Implementation under `src/domain/messaging/` (`CasStore`, `ObjectIndex`, `AttachmentCache`, `AttachmentPlaintextMemoryCache`, …) | Peel to `src/domain/content/` at P3/P4 when public share/library/provide-fetch needs CAS without linking messaging |
 | Chat-specific download/suppression/responders stay messaging/feature | Feature wires `common` contracts across peers |
 
+## Pin / share / discovery (C013)
+
+| Piece | Status |
+|-------|--------|
+| Use cases U1–U11 | [USE_CASES.md](USE_CASES.md) |
+| Pin defaults + share modes A–D | Locked in [DECISIONS](DECISIONS.md#c013--pin-defaults-share-modes-directory-vs-catalog) |
+| `ObjectIndex::List` | **Done** |
+| `CasStore::PublishFromPrivate` / `Unpublish` | **Done** |
+| `CasLibrary` helper | **Done** — domain tip/store/index; see `CasLibrary.h` (not signatures here) |
+| Settings orchestration | **Done** — `src/feature/settings/CasLibraryCommands.*`; app wires readiness only |
+| Me → Storage library UI | **Done** (filter All/Private/Public/Cache; Share publicly… / Unpublish…) |
+| Tip encode/copy (`pp-cas:v1:`) | **Done** |
+| Blob `fetch_public` provide (Kept public only) | **Done** |
+| Fetch tip → public Cache | **Done** (peer relay id prompt) |
+| Directory vs catalog wire/caps | Docs only; P4b |
+
+**Agent note:** symbol names move during reorg — verify against headers before editing; fix doc↔code drift you touch ([AGENTS.md § Naming drift](../../AGENTS.md#naming-drift-reorg--renames)).

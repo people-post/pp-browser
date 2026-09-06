@@ -4,6 +4,7 @@
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/CasLibrary.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/PbrCompat.h"
@@ -69,6 +70,33 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
                                                         const std::string& local_relay_user_id,
                                                         const std::string& profile_data_dir, const ByteVector* dek,
                                                         std::string_view profile_id) {
+  if (request.op == ChatBlobOp::FetchPublic) {
+    if (local_relay_user_id.empty()) {
+      return Error("Local relay identity missing");
+    }
+    if (request.peer_identity_value != local_relay_user_id) {
+      return Error("Chat-blob request targets a different peer stream");
+    }
+    if (request.requester_identity_value.empty()) {
+      return Error("Public CAS fetch missing requester identity");
+    }
+    if (profile_id.empty()) {
+      return Error("Public CAS fetch requires profile_id");
+    }
+    auto content_id = HexToBytes(request.content_hash_hex);
+    if (!content_id || content_id->size() != kCasContentIdSize) {
+      return Error("Invalid public CAS content id");
+    }
+    auto bytes = LoadPinnedPublicCasBytes(profile_data_dir, std::string(profile_id), *content_id);
+    if (!bytes) {
+      return bytes.error();
+    }
+    if (bytes->size() > kMaxChatAttachmentPlaintextBytes) {
+      return Error("Public CAS object too large");
+    }
+    return std::vector<uint8_t>(bytes->begin(), bytes->end());
+  }
+
   if (request.op != ChatBlobOp::Fetch) {
     return Error("Expected fetch chat-blob request");
   }

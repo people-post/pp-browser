@@ -219,4 +219,46 @@ Roe<void> CasStore::Delete(const CasRealm realm, const ByteVector& content_id) {
   return {};
 }
 
+
+Roe<ByteVector> CasStore::PublishFromPrivate(const ByteVector& private_content_id, const ByteVector& dek) {
+  auto plaintext = GetPrivate(private_content_id, dek);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  auto meta = index_.Lookup(CasRealm::Private, private_content_id);
+  if (!meta) {
+    return meta.error();
+  }
+  if (!meta->has_value()) {
+    return Error("Private CAS object not found in index");
+  }
+
+  auto public_id = AttachmentContentHash(*plaintext);
+  if (!public_id) {
+    return public_id.error();
+  }
+
+  const std::string from_hex = BytesToHex(private_content_id);
+  if (auto put = PutPublic(*public_id, *plaintext, (*meta)->mime, (*meta)->filename, from_hex,
+                           /*pinned=*/true);
+      !put) {
+    return put.error();
+  }
+  return public_id;
+}
+
+Roe<void> CasStore::Unpublish(const ByteVector& public_content_id) {
+  if (auto valid = ValidateContentId(public_content_id); !valid) {
+    return valid.error();
+  }
+  auto meta = index_.Lookup(CasRealm::Public, public_content_id);
+  if (!meta) {
+    return meta.error();
+  }
+  if (!meta->has_value()) {
+    return Error("Public CAS object not found");
+  }
+  return index_.SetPinned(CasRealm::Public, public_content_id, false);
+}
+
 } // namespace pbr

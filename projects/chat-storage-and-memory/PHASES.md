@@ -128,7 +128,7 @@ Existing foundation this project builds on.
 
 - [x] `IThreadStore` + `JsonThreadStore` (index + one file per thread) — **to be replaced by SqliteThreadStore in v2a**
 - [x] `Thread` / `ThreadMessage` types and JSON serde
-- [x] `MeshMessagingService` send, poll, message-id dedup
+- [x] `MeshDeliveryOrchestrator` send, poll, message-id dedup
 - [x] `MessageRouter` (AI thread, direct relay, `@ai` assist)
 - [x] `AgentSession::SubmitToThread` + thread context policy
 - [x] Sliding window / turn coordinator for AI
@@ -216,7 +216,7 @@ Existing foundation this project builds on.
 - [x] `profile.db`: **`chat_targets`**, **`outbox`** populated; **`threads.group_id`** nullable column (D076)
 - [x] **`FindOrCreateDirectThread(DirectChatTarget)`** — **outbound only**; inbound lookup existing target (D062)
 - [x] **Startup reconciliation** — outbox ↔ messages (D047)
-- [x] `HasMessageId(thread_id, message_id)`; update `MeshMessagingService` poll path (D034)
+- [x] `HasMessageId(thread_id, message_id)`; update `MeshDeliveryOrchestrator` poll path (D034)
 - [x] `DeleteThread` — direct: keep **`chat_targets`** (D056)
 - [x] Unit tests: DirectChatTarget routing, reject wire `thread_id`, ChatPayload roundtrip, outbox reconciliation (`p2p_relay_wire_test.cpp`)
 - [x] **Close conversation** = delete thread + `profile.db` cleanup (outbox rows; `chat_targets` link cleared)
@@ -457,7 +457,7 @@ Existing foundation this project builds on.
 
 | Chat-storage gate | E2E phase | Work |
 |-------------------|-----------|------|
-| v2b channel split | c2 | `MeshMessagingService` encrypt/decrypt on `channel=e2e` |
+| v2b channel split | c2 | `MeshDeliveryOrchestrator` encrypt/decrypt on `channel=e2e` |
 | v6 envelope + seq | c2–c3 | AAD binds `sender_seq`; `ChatPayload` plaintext (E010) |
 | v6 receive pipeline | c2 | `PeerSigningKeyStore` + inbound verify (E016, D081) |
 | v6 peer history (D060) | libp2p integration | `/pp-browser/rpc/1.0.0` responder + requester |

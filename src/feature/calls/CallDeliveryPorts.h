@@ -12,7 +12,7 @@ namespace pbr {
 
 /**
  * Delivery ops CallSessionManager needs from conversations (consumer-declared).
- * Softens calls→conversations: calls must not include MeshMessagingService.
+ * Softens calls→conversations: calls must not include MeshDeliveryOrchestrator.
  */
 struct CallDeliveryPorts {
   std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text,

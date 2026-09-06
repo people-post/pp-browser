@@ -1,7 +1,7 @@
 #include "app/Bootstrap.h"
 
 #include "foundation/crypto/PinResolver.h"
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/Config.h"
@@ -10,14 +10,14 @@
 #include "common/StartupTiming.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
-#include "foundation/platform/PlatformServices.h"
+#include "foundation/platform/PlatformHooks.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsService& secrets,
+Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets,
                                     const std::string& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
   return UnlockProfileSecretsAndReady(secrets, pin,
@@ -27,8 +27,8 @@ Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsS
 } // namespace
 
 Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, ConversationsHub& messaging,
-                                    ProfileSecretsService& secrets) {
-  PlatformServices::Register();
+                                    ProfileSecretsEngine& secrets) {
+  PlatformHooks::Register();
   InstallPlatformLogSink();
 
   auto config = Config::Load(options.argc, options.argv);

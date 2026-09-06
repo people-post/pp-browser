@@ -6,14 +6,14 @@
 
 #include "domain/people/ContactReachability.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "feature/conversations/AttachmentDownloadService.h"
-#include "feature/conversations/GroupMembershipService.h"
+#include "feature/conversations/AttachmentFetchWorkflow.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
 #include "feature/conversations/RelayDirectorySigningKeyResolver.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
-#include "foundation/crypto/ProfileSecretsService.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"
@@ -49,7 +49,7 @@
 #include "common/SettledWait.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/dht/DhtRecordCodec.h"
-#include "domain/mesh/discovery/AmpDirectoryService.h"
+#include "domain/mesh/discovery/AmpDirectoryProtocol.h"
 #include "domain/mesh/discovery/NameDirectory.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/reachability/NatTraversal.h"
@@ -180,7 +180,7 @@ void ConversationsHub::WireRelayAuthSigner() {
   }
 }
 
-void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
+void ConversationsHub::UpdateOrgBackendClients(const AppConfig& config) {
   const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
   const std::string relay_url =
       config.relay.base_url.empty() ? defaults.relay.base_url : config.relay.base_url;
@@ -225,7 +225,7 @@ void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
     for (const ServiceEndpointConfig& provider : providers) {
       const std::string transport = provider.transport.empty() ? "http" : provider.transport;
       if (transport != "http") {
-        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryService +
+        // Amp backends need MeshHost / PeerLinkManager — wired in ConfigureAmpDirectoryProtocol +
         // MeshDirectoryCache Amp-first fetcher (N029 nd4). Factory skips the same way.
         continue;
       }
@@ -272,8 +272,8 @@ void ConversationsHub::UpdateServiceClients(const AppConfig& config) {
   }
 }
 
-void ConversationsHub::InstallServiceClients(const AppConfig& config) {
-  UpdateServiceClients(config);
+void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
+  UpdateOrgBackendClients(config);
 }
 
 Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
@@ -331,8 +331,8 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     log().info << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }
   StartMeshServices();
-  ConfigureAmpDhtService();
-  ConfigureAmpDirectoryService();
+  ConfigureAmpDhtProtocol();
+  ConfigureAmpDirectoryProtocol();
   if (mesh_directory_cache_) {
     mesh_directory_cache_->RequestRefresh();
   }
@@ -663,7 +663,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   }
 }
 
-void ConversationsHub::ConfigureAmpDhtService() {
+void ConversationsHub::ConfigureAmpDhtProtocol() {
   if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
     return;
   }
@@ -679,7 +679,7 @@ void ConversationsHub::ConfigureAmpDhtService() {
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
 
-  AmpDhtServiceConfig cfg;
+  AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
   if (!mesh_->AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
@@ -757,7 +757,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
 
 } // namespace
 
-void ConversationsHub::ConfigureAmpDirectoryService() {
+void ConversationsHub::ConfigureAmpDirectoryProtocol() {
   if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDirectory() || !identity_) {
     return;
   }
@@ -791,7 +791,7 @@ void ConversationsHub::ConfigureAmpDirectoryService() {
     query_keys.push_back(key);
   }
 
-  AmpDirectoryServiceConfig cfg;
+  AmpDirectoryProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
   cfg.query_peer_keys = std::move(query_keys);
   mesh_->ConfigureAmpDirectory(std::move(cfg));
@@ -876,7 +876,7 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
-    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtService::FindPeerRoe result) {
+    mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtProtocol::FindPeerRoe result) {
       if (!result) {
         return;
       }
@@ -914,7 +914,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     (void)store_->ReconcileOutbox();
   }
 
-  InstallServiceClients(config);
+  InstallOrgBackendClients(config);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
@@ -978,8 +978,8 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();
-      ConfigureAmpDhtService();
-      ConfigureAmpDirectoryService();
+      ConfigureAmpDhtProtocol();
+      ConfigureAmpDirectoryProtocol();
     });
     mesh_directory_cache_->RequestRefresh();
   }
@@ -994,7 +994,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
-  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetProfileDataDir(data_dir_);
@@ -1002,7 +1002,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
@@ -1071,7 +1071,7 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
     };
   }
 
-  mesh_messaging_ = std::make_unique<MeshMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links,
                                                 std::move(amp_pump), std::move(amp_worker));
@@ -1080,7 +1080,7 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *mesh_messaging_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
@@ -1142,7 +1142,7 @@ Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::str
   }
 
   config_ = config;
-  UpdateServiceClients(config);
+  UpdateOrgBackendClients(config);
   if (mesh_messaging_) {
     mesh_messaging_->SetRelayClient(relay_);
   }
@@ -1163,7 +1163,7 @@ void ConversationsHub::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
-void ConversationsHub::BindSecrets(ProfileSecretsService& secrets) {
+void ConversationsHub::BindSecrets(ProfileSecretsEngine& secrets) {
   secrets_ = &secrets;
 }
 
@@ -1617,9 +1617,9 @@ Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& t
   return sent;
 }
 
-AttachmentDownloadService& ConversationsHub::Attachments() {
+AttachmentFetchWorkflow& ConversationsHub::Attachments() {
   if (!attachment_downloads_) {
-    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
     attachment_downloads_->SetProfileDataDir(data_dir_);
     attachment_downloads_->SetProfileId(profile_id_);
   }
@@ -1633,7 +1633,7 @@ void ConversationsHub::WireAttachmentDownloads() {
     attachment_suppressions_->SetProfileDir(data_dir_);
   }
   if (!attachment_downloads_) {
-    attachment_downloads_ = std::make_unique<AttachmentDownloadService>();
+    attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
   attachment_downloads_->SetProfileId(profile_id_);
@@ -1962,8 +1962,8 @@ void ConversationsHub::RefreshMeshCapabilities() {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
-  ConfigureAmpDhtService();
-  ConfigureAmpDirectoryService();
+  ConfigureAmpDhtProtocol();
+  ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
   SyncMobileEphemeralListen();
@@ -1998,7 +1998,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
 
   if (service_urls_changed) {
-    UpdateServiceClients(config_);
+    UpdateOrgBackendClients(config_);
     if (mesh_messaging_) {
       mesh_messaging_->SetRelayClient(relay_);
     }
@@ -2188,7 +2188,7 @@ void ConversationsHub::Shutdown() {
   actions_.reset();
   // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
   StopMesh();
-  // Drop the call session manager before P2P — CSM holds a MeshMessagingService& reference.
+  // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
   call_stack_->ResetSessions();
   if (secrets_ != nullptr) {
     if (attachment_downloads_) {
@@ -2254,11 +2254,11 @@ InboxController& ConversationsHub::Inbox() {
   return *inbox_;
 }
 
-MeshMessagingService& ConversationsHub::MeshMessaging() {
+MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;
 }
 
-GroupMembershipService& ConversationsHub::Groups() {
+GroupMembershipWorkflow& ConversationsHub::Groups() {
   return *group_membership_;
 }
 
@@ -2294,7 +2294,7 @@ IPskSessionStore* ConversationsHub::PskStore() {
   return psk_store_.get();
 }
 
-ProfileSecretsService* ConversationsHub::Secrets() {
+ProfileSecretsEngine* ConversationsHub::Secrets() {
   return secrets_;
 }
 

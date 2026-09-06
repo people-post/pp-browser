@@ -46,7 +46,7 @@ struct CallStackDeps {
   ContactsStore* contacts = nullptr;
   IdentityStore* identity = nullptr;
   SqlitePskSessionStore* psk = nullptr;
-  /** Delivery + dial registration; filled from MeshMessagingService without typing it here. */
+  /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
   /** Wire inbound call-control into conversations receive path after CSM is built. */
   std::function<void(CallControlInboundPorts ports)> bind_call_control;

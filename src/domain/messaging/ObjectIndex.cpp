@@ -215,4 +215,93 @@ Roe<void> ObjectIndex::SetPinned(const CasRealm realm, const ByteVector& content
   return {};
 }
 
+
+Roe<std::vector<CasObjectMeta>> ObjectIndex::List(const std::optional<CasRealm> realm,
+                                                  const std::optional<bool> pinned) const {
+  std::lock_guard lock(mutex_);
+  if (auto opened = EnsureOpen(); !opened) {
+    return opened.error();
+  }
+
+  std::string sql =
+      "SELECT realm, content_id_hex, mime, filename, byte_length, published_from_hex, pinned, created_at_ms "
+      "FROM cas_objects WHERE 1=1";
+  if (realm.has_value()) {
+    sql += " AND realm=?";
+  }
+  if (pinned.has_value()) {
+    sql += " AND pinned=?";
+  }
+  sql += " ORDER BY created_at_ms DESC, content_id_hex ASC";
+
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error(sqlite3_errmsg(db_));
+  }
+
+  int bind = 1;
+  if (realm.has_value()) {
+    sqlite3_bind_text(stmt, bind++, CasRealmToString(*realm), -1, SQLITE_TRANSIENT);
+  }
+  if (pinned.has_value()) {
+    sqlite3_bind_int(stmt, bind++, *pinned ? 1 : 0);
+  }
+
+  std::vector<CasObjectMeta> rows;
+  while (true) {
+    const int rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    if (rc != SQLITE_ROW) {
+      const std::string message = sqlite3_errmsg(db_);
+      sqlite3_finalize(stmt);
+      return Error(message);
+    }
+
+    CasObjectMeta meta;
+    std::string realm_text;
+    if (const auto* text_col = sqlite3_column_text(stmt, 0); text_col != nullptr) {
+      realm_text = reinterpret_cast<const char*>(text_col);
+    }
+    if (auto parsed = CasRealmFromString(realm_text); parsed.has_value()) {
+      meta.realm = *parsed;
+    } else {
+      sqlite3_finalize(stmt);
+      return Error("Invalid CAS realm in object_index");
+    }
+
+    std::string id_hex;
+    if (const auto* text_col = sqlite3_column_text(stmt, 1); text_col != nullptr) {
+      id_hex = reinterpret_cast<const char*>(text_col);
+    }
+    auto content_id = HexToBytes(id_hex);
+    if (!content_id) {
+      sqlite3_finalize(stmt);
+      return content_id.error();
+    }
+    if (content_id->size() != kCasContentIdSize) {
+      sqlite3_finalize(stmt);
+      return Error("Invalid CAS content id in object_index");
+    }
+    meta.content_id = std::move(*content_id);
+
+    if (const auto* text_col = sqlite3_column_text(stmt, 2); text_col != nullptr) {
+      meta.mime = reinterpret_cast<const char*>(text_col);
+    }
+    if (const auto* text_col = sqlite3_column_text(stmt, 3); text_col != nullptr) {
+      meta.filename = reinterpret_cast<const char*>(text_col);
+    }
+    meta.byte_length = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    if (const auto* text_col = sqlite3_column_text(stmt, 5); text_col != nullptr) {
+      meta.published_from_hex = reinterpret_cast<const char*>(text_col);
+    }
+    meta.pinned = sqlite3_column_int(stmt, 6) != 0;
+    meta.created_at_ms = sqlite3_column_int64(stmt, 7);
+    rows.push_back(std::move(meta));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
 } // namespace pbr

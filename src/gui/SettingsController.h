@@ -48,6 +48,17 @@ public:
     bool enabled = true;
   };
 
+  struct CasLibraryRow {
+    Rml::String content_id_hex;
+    Rml::String title;
+    Rml::String detail;
+    Rml::String realm_label;
+    Rml::String pin_label;
+    bool can_share_publicly = false;
+    bool can_unpublish = false;
+    bool can_copy_tip = false;
+  };
+
   SettingsController();
   ~SettingsController() override = default;
 
@@ -98,6 +109,8 @@ private:
     Rml::String promoted_mcp_url;
     Rml::String search_provider = "duckduckgo";
     std::vector<McpServerRow> mcp_servers;
+    std::vector<CasLibraryRow> cas_library_rows;
+    Rml::String cas_library_empty_label;
     Rml::String relay_base_url;
     Rml::String directory_base_url;
     Rml::String registration_base_url;
@@ -182,6 +195,26 @@ private:
                                                   const Rml::VariantList& args);
   static void ClearDownloadedAttachmentsCallback(Rml::DataModelHandle model, Rml::Event& ev,
                                                  const Rml::VariantList& args);
+  static void SetCasLibraryFilterCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                         const Rml::VariantList& args);
+  static void ShareCasPubliclyCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                      const Rml::VariantList& args);
+  static void UnpublishCasCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                  const Rml::VariantList& args);
+  static void CopyCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                               const Rml::VariantList& args);
+  static void FetchCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                const Rml::VariantList& args);
+  void RefreshCasLibrary();
+  void PushCasLibraryBindings();
+  void OnSetCasLibraryFilter(const std::string& filter);
+  void OnShareCasPublicly(int index);
+  void OnUnpublishCas(int index);
+  void OnCopyCasTip(int index);
+  void OnFetchCasTip();
+  void PerformShareCasPublicly(const std::string& content_id_hex);
+  void PerformUnpublishCas(const std::string& content_id_hex);
+  void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastService`; `BroadcastSessionCoordinator` split; SoftMigrate skip |
+| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastTransport`; `BroadcastSessionCoordinator` split; SoftMigrate skip |
 
 ## Spine B landed
 
@@ -21,10 +21,10 @@
 | In-memory verify + seq/epoch dedup feed | `PeerAnnounceFeed.*` |
 | Local publisher (seq/epoch, go-live/end, live heartbeat) | `PeerAnnouncePublisher.*` |
 | Tip push/ack JSON + `/pp-browser/rpc/peer-announce/1.0.0` | `PeerAnnounceRpcCodec.*`, protocol id in DM client headers, L4 table |
-| Amp 1:1 tip transport | `feature/conversations/AmpPeerAnnounceService.*` |
+| Amp 1:1 tip transport | `feature/conversations/AmpPeerAnnounceTransport.*` |
 | Mesh advertise | `MeshHost` includes peer-announce protocol id |
-| Device publisher + inbound key resolve | `PeerAnnounceKeyResolve.*`; `MeshMessagingService` wires IdentityStore device ML-DSA + `PeerSigningKeyStore` kind `peer_id`; `PublishAndPushAnnounce` |
-| DM reply path (no in-topic speak) | `AnnounceDmReply.*` planner; `MeshMessagingService::ReplyToAnnouncePublisher` |
+| Device publisher + inbound key resolve | `PeerAnnounceKeyResolve.*`; `MeshDeliveryOrchestrator` wires IdentityStore device ML-DSA + `PeerSigningKeyStore` kind `peer_id`; `PublishAndPushAnnounce` |
+| DM reply path (no in-topic speak) | `AnnounceDmReply.*` planner; `MeshDeliveryOrchestrator::ReplyToAnnouncePublisher` |
 | Tests | `peer_announce_test.cpp` (codec/feed/publisher/rpc/key resolve/DM plan); `amp_peer_announce_service_test.cpp` |
 
 **Signing:** tips use **device ML-DSA-65** (PeerId-bound). Account-kind signing keys are **not** used for tip verify.
@@ -53,8 +53,8 @@
 | Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp-browser/rpc/broadcast/1.0.0` |
 | Session shape | `CallSessionKind::Broadcast` on session/pending; SoftMigrate `is_broadcast` → NoOp |
 
-| Amp broadcast RPC | `feature/conversations/AmpBroadcastService.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
-| Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshMessagingService` starts service + device key resolvers |
+| Amp broadcast RPC | `feature/conversations/AmpBroadcastTransport.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
+| Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshDeliveryOrchestrator` starts service + device key resolvers |
 | Tests | `amp_broadcast_service_test.cpp` (ticket / admit / slot-win round-trips) |
 
 | Broadcast join coordinator | `feature/calls/BroadcastSessionCoordinator.*` — Arm/Accept live-announce extracted from `CallSessionManager`; UI/facade via `Broadcast()`; SoftMigrate topology early-skip; `AcceptInvite` refuses Broadcast |
@@ -65,7 +65,7 @@
 
 | Piece | Path |
 |-------|------|
-| Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshMessagingService::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
+| Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshDeliveryOrchestrator::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
 | Arm pending invite + ringing session from plan | `AnnounceLiveJoinHandoff.*`; `BroadcastSessionCoordinator::ArmJoinFromLiveAnnounce` via `CallSessionManager::Broadcast()` (no SoftMigrate/media) |
 | UI / facade tip→arm entry points | `CallUiBackend` / `ConversationsFacade` → `Broadcast().ArmJoinFromLiveAnnounce` |
 | Optional tip `hop_peer_id` → session `sfu_hint` | `PeerAnnounceTypes` / codec / publisher; plan + handoff carry through |

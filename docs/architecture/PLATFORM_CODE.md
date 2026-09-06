@@ -35,7 +35,7 @@ Hard rules:
 |------|------|
 | `foundation/runtime/` | `AppRuntime`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
 | `foundation/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
-| `foundation/platform/PlatformServices.*` | Registers Android/iOS/desktop implementations at startup |
+| `foundation/platform/PlatformHooks.*` | Registers Android/iOS/desktop implementations at startup |
 | `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
 | `foundation/platform/ui/` | `RmlUi_Backend.h`, `BrowserHost`, overlays, desktop window chrome, navigation-via-Backend |
 | `foundation/platform/os/` | Low-level OS primitives (`OsFile`, `OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
@@ -99,4 +99,4 @@ Allowed paths for OS preprocessor branches:
 3. If it is a syscall used by many modules (file sync, subprocess) → add to `foundation/platform/os/`. Civil time → `common/CivilTime` (re-exported as `pbr::os::`).
 4. If it is GL/GLES or SDL window backend → pp-cpp-ui `backend/` (shared) or `foundation/platform/ui/` (product host/overlays).
 5. If it is a fat backend used by one module (codec, camera, audio session, raw sockets, net-if) → colocated `*_Win32.cpp` / `*_Android.cpp` / … behind a portable header in that module. Wire with CMake source-selection.
-6. Wire registration in `PlatformServices::Register()` for mobile overrides of `I*` facades; desktop defaults stay in interface singletons.
+6. Wire registration in `PlatformHooks::Register()` for mobile overrides of `I*` facades; desktop defaults stay in interface singletons.

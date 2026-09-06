@@ -1,4 +1,4 @@
-#include "feature/conversations/AmpPeerAnnounceService.h"
+#include "feature/conversations/AmpPeerAnnounceTransport.h"
 
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
@@ -24,7 +24,7 @@
 namespace pbr {
 namespace {
 
-class AmpPeerAnnounceServiceTest : public ::testing::Test {
+class AmpPeerAnnounceTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
     auto created = pbr::test::AmpMeshHarness::Create();
@@ -52,10 +52,10 @@ protected:
       return std::nullopt;
     };
 
-    AmpPeerAnnounceService::WorkerPost no_worker;
-    a_svc_ = std::make_unique<AmpPeerAnnounceService>(
+    AmpPeerAnnounceTransport::WorkerPost no_worker;
+    a_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
         harness_->chat_a(), feed_a_, [this] { harness_->PumpBoth(); }, no_worker, resolve);
-    b_svc_ = std::make_unique<AmpPeerAnnounceService>(
+    b_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
         harness_->chat_b(), feed_b_, [this] { harness_->PumpBoth(); }, no_worker, resolve);
     a_svc_->Start();
     b_svc_->Start();
@@ -76,14 +76,14 @@ protected:
   std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   PeerAnnounceFeed feed_a_;
   PeerAnnounceFeed feed_b_;
-  std::unique_ptr<AmpPeerAnnounceService> a_svc_;
-  std::unique_ptr<AmpPeerAnnounceService> b_svc_;
+  std::unique_ptr<AmpPeerAnnounceTransport> a_svc_;
+  std::unique_ptr<AmpPeerAnnounceTransport> b_svc_;
   std::vector<uint8_t> pk_a_;
   std::vector<uint8_t> pk_b_;
   std::vector<uint8_t> sk_a_;
 };
 
-TEST_F(AmpPeerAnnounceServiceTest, PushTipRoundTripIngestsOnPeer) {
+TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripIngestsOnPeer) {
   auto topic = MakePeerAnnounceTopicId("publisher-a", "live");
   ASSERT_TRUE(topic);
 
@@ -109,7 +109,7 @@ TEST_F(AmpPeerAnnounceServiceTest, PushTipRoundTripIngestsOnPeer) {
   EXPECT_EQ(latest->signature_b64, tip->signature_b64);
 }
 
-TEST_F(AmpPeerAnnounceServiceTest, PushTipFailsAckWhenPublisherKeyUnknown) {
+TEST_F(AmpPeerAnnounceTransportTest, PushTipFailsAckWhenPublisherKeyUnknown) {
   auto topic = MakePeerAnnounceTopicId("unknown-publisher", "live");
   ASSERT_TRUE(topic);
 
@@ -129,7 +129,7 @@ TEST_F(AmpPeerAnnounceServiceTest, PushTipFailsAckWhenPublisherKeyUnknown) {
   EXPECT_FALSE(feed_b_.Latest("unknown-publisher", *topic, "show-1"));
 }
 
-TEST_F(AmpPeerAnnounceServiceTest, PushTipRoundTripWithStoreBackedResolver) {
+TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
   auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);

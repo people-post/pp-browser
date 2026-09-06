@@ -4,7 +4,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/net/BlobClient.h"
-#include "domain/net/ServiceClients.h"
+#include "domain/net/OrgBackendClients.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 

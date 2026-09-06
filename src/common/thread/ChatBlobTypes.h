@@ -10,7 +10,7 @@ namespace pbr {
 inline constexpr const char* kBlobProtocolId = "/pp-browser/blob/1.0.0";
 inline constexpr const char* kChatBlobProtocolId = kBlobProtocolId;
 
-enum class ChatBlobOp { Fetch, Push };
+enum class ChatBlobOp { Fetch, Push, FetchPublic };
 
 struct ChatBlobRequest {
   ChatBlobOp op = ChatBlobOp::Fetch;

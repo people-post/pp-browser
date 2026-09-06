@@ -17,7 +17,7 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "feature/conversations/GroupMembershipService.h"
+#include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/calls/CallStack.h"
@@ -25,16 +25,16 @@
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
-#include "feature/conversations/MeshMessagingService.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/net/BlobClient.h"
 #include "domain/net/BlobQuotaUtil.h"
 #include "domain/net/HttpBlobClient.h"
-#include "domain/net/ServiceClientsImpl.h"
+#include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/IPushDeviceClient.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/ReachabilityService.h"
+#include "domain/mesh/reachability/ReachabilityEngine.h"
 #include "domain/mesh/discovery/MeshDirectoryCache.h"
 #include "domain/mesh/discovery/NameDirectory.h"
 #include "domain/mesh/dht/DhtTypes.h"
@@ -55,7 +55,7 @@
 namespace pbr {
 
 class IPskSessionStore;
-class ProfileSecretsService;
+class ProfileSecretsEngine;
 class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
@@ -124,7 +124,7 @@ public:
   ConversationsHub();
   ~ConversationsHub();
 
-  /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsService). */
+  /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsEngine). */
   Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
   Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
   void Shutdown();
@@ -139,17 +139,17 @@ public:
   void BindSessionStore(SessionStore& store);
 
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
-  void BindSecrets(ProfileSecretsService& secrets);
+  void BindSecrets(ProfileSecretsEngine& secrets);
 
   /** Amp / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
 
-  /** Requires ProfileSecretsService unlocked; loads identity and starts Amp mesh. */
+  /** Requires ProfileSecretsEngine unlocked; loads identity and starts Amp mesh. */
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
-  MeshMessagingService& MeshMessaging();
-  GroupMembershipService& Groups();
+  MeshDeliveryOrchestrator& MeshMessaging();
+  GroupMembershipWorkflow& Groups();
   /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
   CallStack& CallStackRef() { return *call_stack_; }
   const CallStack& CallStackRef() const { return *call_stack_; }
@@ -162,7 +162,7 @@ public:
   ContactsStore& Contacts();
   IdentityStore& Identity();
   IPskSessionStore* PskStore();
-  ProfileSecretsService* Secrets();
+  ProfileSecretsEngine* Secrets();
   IDirectoryClient& Directory();
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
@@ -190,7 +190,7 @@ public:
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
-  AttachmentDownloadService& Attachments();
+  AttachmentFetchWorkflow& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
@@ -273,8 +273,8 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
-  void InstallServiceClients(const AppConfig& config);
-  void UpdateServiceClients(const AppConfig& config);
+  void InstallOrgBackendClients(const AppConfig& config);
+  void UpdateOrgBackendClients(const AppConfig& config);
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const AppConfig& config);
   void StopMesh();
@@ -287,8 +287,8 @@ private:
   void RegisterContactEndpoints();
   void RegisterMeshDirectoryEndpoints();
   void RegisterDhtBootstrapEndpoints();
-  void ConfigureAmpDhtService();
-  void ConfigureAmpDirectoryService();
+  void ConfigureAmpDhtProtocol();
+  void ConfigureAmpDirectoryProtocol();
   void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -312,7 +312,7 @@ private:
   AppConfig config_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
-  ProfileSecretsService* secrets_ = nullptr;
+  ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
   std::unique_ptr<SqliteThreadStore> store_;
@@ -328,12 +328,12 @@ private:
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
-  std::unique_ptr<GroupMembershipService> group_membership_;
+  std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
-  std::unique_ptr<AttachmentDownloadService> attachment_downloads_;
+  std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;
@@ -350,7 +350,7 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<MeshMessagingService> mesh_messaging_;
+  std::unique_ptr<MeshDeliveryOrchestrator> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 

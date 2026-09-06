@@ -49,7 +49,7 @@ Make the **desktop status bar** (and a **click → popover**) a reliable ambient
 flowchart LR
   subgraph sources [Status sources]
     Host[Libp2pHost]
-    Reach[ReachabilityService]
+    Reach[ReachabilityEngine]
     Help[Node / relay services]
     Stats[RelayRuntimeStats — counts]
   end
