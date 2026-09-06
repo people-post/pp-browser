@@ -37,12 +37,9 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
-#include "domain/messaging/CasLibrary.h"
-#include "common/thread/ChatBlobTypes.h"
-#include "common/directory/DirectoryJson.h"
-#include "foundation/crypto/CryptoUtil.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
@@ -447,25 +444,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
     if (!secrets_ || !secrets_->IsInitialized()) {
       return Error("Profile secrets are not ready");
     }
-    auto parsed = CasLibraryFilterFromString(filter);
-    const CasLibraryFilter lib_filter = parsed.value_or(CasLibraryFilter::All);
-    auto rows = ListCasLibrary(secrets_->ProfileDataDir(), lib_filter);
-    if (!rows) {
-      return rows.error();
-    }
-    std::vector<CasLibraryItemView> out;
-    out.reserve(rows->size());
-    for (const CasLibraryRow& row : *rows) {
-      out.push_back({.content_id_hex = row.content_id_hex,
-                     .title = row.title,
-                     .detail = row.detail,
-                     .realm_label = row.realm_label,
-                     .pin_label = row.pin_label,
-                     .can_share_publicly = row.can_share_publicly,
-                     .can_unpublish = row.can_unpublish,
-                     .can_copy_tip = row.can_copy_tip});
-    }
-    return out;
+    return ListCasLibraryForSettings(secrets_->ProfileDataDir(), std::move(filter));
   };
   settings_commands.share_cas_publicly = [this](const std::string& private_content_id_hex) -> Roe<void> {
     if (!secrets_ || !secrets_->IsUnlocked()) {
@@ -479,25 +458,14 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
     if (!dek) {
       return dek.error();
     }
-    auto id = HexToBytes(private_content_id_hex);
-    if (!id) {
-      return id.error();
-    }
-    auto published = ShareCasPublicly(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek, *id);
-    if (!published) {
-      return published.error();
-    }
-    return {};
+    return ShareCasPubliclyForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek,
+                                       private_content_id_hex);
   };
   settings_commands.unpublish_cas = [this](const std::string& public_content_id_hex) -> Roe<void> {
     if (!secrets_ || !secrets_->IsInitialized()) {
       return Error("Profile secrets are not ready");
     }
-    auto id = HexToBytes(public_content_id_hex);
-    if (!id) {
-      return id.error();
-    }
-    return UnpublishCasPublic(secrets_->ProfileDataDir(), secrets_->ProfileId(), *id);
+    return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
   };
 
   settings_commands.fetch_cas_public_tip = [this](const std::string& tip,
@@ -512,34 +480,12 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
     if (blob == nullptr) {
       return Error("Peer blob client is not available");
     }
-    if (!blob->IsPeerReachable(peer_relay_user_id)) {
-      return Error("Peer is not reachable for CAS tip fetch");
-    }
-    auto content_id = ParseCasPublicTip(tip);
-    if (!content_id) {
-      return content_id.error();
-    }
     auto local = messaging_->Identity().Get();
     if (!local) {
       return local.error();
     }
-    if (local->relay_user_id.empty()) {
-      return Error("Local relay identity missing");
-    }
-    ChatBlobRequest request;
-    request.op = ChatBlobOp::FetchPublic;
-    request.requester_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
-    request.requester_identity_value = local->relay_user_id;
-    request.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
-    request.peer_identity_value = peer_relay_user_id;
-    request.content_hash_hex = BytesToHex(*content_id);
-    request.channel = ThreadChannel::E2e;
-    auto bytes = blob->FetchChatBlob(request);
-    if (!bytes) {
-      return bytes.error();
-    }
-    return CacheFetchedPublicCas(secrets_->ProfileDataDir(), secrets_->ProfileId(), *content_id,
-                                 ByteVector(bytes->begin(), bytes->end()));
+    return FetchCasPublicTipForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+                                        local->relay_user_id, tip, peer_relay_user_id);
   };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
