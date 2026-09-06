@@ -111,6 +111,11 @@ public:
   void SetPaymentPromiseStore(PaymentPromiseStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /**
+   * Stop Amp protocol handlers and drop transport objects while MeshHost/Amp is still alive.
+   * Required before MeshHost::Stop — otherwise ~Amp*Transport::Stop UAFs PeerLinks.
+   */
+  void DetachAmpTransports();
   /** R019 peer-direct attachment blobs (null when mesh unavailable). */
   IChatBlobPeerClient* PeerBlobClient() const;
   IChatBlobPeerService* PeerBlobService() const;

@@ -574,6 +574,11 @@ void ConversationsHub::StopMesh() {
     lan_mdns_->Stop();
     lan_mdns_.reset();
   }
+  // Amp chat/announce/broadcast transports hold PeerLinks& — detach before MeshHost::Stop
+  // destroys Amp (otherwise ~AmpBroadcastTransport::Stop UAFs).
+  if (mesh_messaging_) {
+    mesh_messaging_->DetachAmpTransports();
+  }
   // MeshHost::Stop tears down media_relay, circuit, dial-back, and runtime (in that order).
   // Keep bridge + dial registry alive until the mesh host joins its workers — inbound
   // CallMediaKey wait and OpenStream completions may still touch them.
@@ -620,8 +625,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     inbox_->SetAttachmentDownloads(nullptr);
   }
   group_membership_.reset();
-  StopMesh();
-  call_stack_->ResetSessions();
+  // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
   if (secrets_ != nullptr) {
     if (attachment_downloads_) {
       secrets_->UnregisterDekConsumer(attachment_downloads_.get());
@@ -632,6 +636,8 @@ void ConversationsHub::DiscardMessagingBringUp() {
       }
     }
   }
+  StopMesh();
+  call_stack_->ResetSessions();
   mesh_messaging_.reset();
   messaging_ready_ = false;
 }
@@ -2274,10 +2280,8 @@ void ConversationsHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
-  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
-  StopMesh();
-  // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
-  call_stack_->ResetSessions();
+  // Unregister DEK consumers before StopMesh → DetachAmpTransports destroys peer_blob
+  // (otherwise ProfileSecretsEngine::Shutdown ClearDek UAFs the stale pointer).
   if (secrets_ != nullptr) {
     if (attachment_downloads_) {
       secrets_->UnregisterDekConsumer(attachment_downloads_.get());
@@ -2287,15 +2291,6 @@ void ConversationsHub::Shutdown() {
         secrets_->UnregisterDekConsumer(peer_blob);
       }
     }
-  }
-  // Destroy P2P before groups — P2P held a non-owning Groups pointer.
-  mesh_messaging_.reset();
-  group_membership_.reset();
-  group_invite_gate_.reset();
-  group_roster_.reset();
-  signing_resolver_.reset();
-  kem_resolver_.reset();
-  if (secrets_ != nullptr) {
     if (identity_) {
       secrets_->UnregisterDekConsumer(identity_.get());
     }
@@ -2309,6 +2304,17 @@ void ConversationsHub::Shutdown() {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
     }
   }
+  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
+  StopMesh();
+  // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
+  call_stack_->ResetSessions();
+  // Destroy P2P before groups — P2P held a non-owning Groups pointer.
+  mesh_messaging_.reset();
+  group_membership_.reset();
+  group_invite_gate_.reset();
+  group_roster_.reset();
+  signing_resolver_.reset();
+  kem_resolver_.reset();
   // Reset media engine / key store / session store after DEK unregister above.
   call_stack_->Shutdown();
   psk_store_.reset();

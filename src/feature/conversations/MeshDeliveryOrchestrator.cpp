@@ -2074,6 +2074,21 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
   }
 }
 
+void MeshDeliveryOrchestrator::DetachAmpTransports() {
+  if (chat_sync_) {
+    chat_sync_->SetPeerHistoryClient(nullptr);
+  }
+  // Destructors call Stop() → RemoveProtocolHandler on PeerLinks; Amp must still be alive.
+  broadcast_.reset();
+  peer_announce_.reset();
+  peer_announce_publisher_.reset();
+  peer_announce_feed_.reset();
+  direct_chat_.reset();
+  peer_history_.reset();
+  peer_blob_.reset();
+  amp_links_ = nullptr;
+}
+
 void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayEnvelope& envelope,
                                                            const std::string& thread_id) {
   if (!attachment_downloads_) {
