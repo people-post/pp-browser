@@ -1479,7 +1479,10 @@ void Application::Shutdown() {
 
     // Abort Connect / circuit waits, then join workers while ConversationsHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
+    // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
+    // the join (that left a live Amp stack for StopMesh after the pool was already gone).
     if (messaging_) {
+      messaging_->RequestShutdown();
       StartupPhase phase("Shutdown::AbortCallMedia");
       messaging_->AbortCallMediaForShutdown();
     }
@@ -1516,6 +1519,7 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
     if (messaging_) {
+      messaging_->RequestShutdown();
       messaging_->AbortCallMediaForShutdown();
     }
     if (AppRuntime::IsRunning()) {

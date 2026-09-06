@@ -14,6 +14,7 @@
     "common.share": "Share",
     "app.name": "PP",
     "app.tagline": "The internet, rendered for you.",
+    "startup.preparing": "Preparing…",
     "startup.still_preparing": "Still preparing… try again in a moment.",
     "nav.home": "Home",
     "nav.sessions": "Sessions",

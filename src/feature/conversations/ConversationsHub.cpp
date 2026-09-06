@@ -278,6 +278,9 @@ void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
 
 Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   StartupPhase phase("ConversationsHub::StartMesh");
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   StopMesh();
   mesh_last_error_.clear();
 
@@ -299,12 +302,17 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_cfg.host_directory = role == MeshRole::Node;
   mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
   mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
-  mesh_cfg.start_reachability_probe = role == MeshRole::Node;
+  // Skip blocking UPnP/seed probe when the app is already quitting (sync probe when no post_worker).
+  mesh_cfg.start_reachability_probe =
+      role == MeshRole::Node && !shutdown_requested_.load(std::memory_order_acquire);
   if (role == MeshRole::Node) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
   mesh_cfg.on_reachability_updated = [this]() {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
     ApplyMeshAdmissionPolicies();
     PublishNodeAdvertisedAddrs();
     RegisterContactEndpoints();
@@ -325,6 +333,11 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     mesh_.reset();
     return started.error();
   }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    mesh_->Stop();
+    mesh_.reset();
+    return Error("shutdown in progress");
+  }
   if (mesh_cfg.mesh_enabled) {
     log().info << "amp stack listen=" << mesh_->AmpListenMultiaddr();
   } else {
@@ -335,6 +348,10 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   ConfigureAmpDirectoryProtocol();
   if (mesh_directory_cache_) {
     mesh_directory_cache_->RequestRefresh();
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    StopMesh();
+    return Error("shutdown in progress");
   }
   return {};
 }
@@ -569,6 +586,54 @@ void ConversationsHub::StopMesh() {
 
 void ConversationsHub::AbortCallMediaForShutdown() {
   call_stack_->AbortCallMediaForShutdown();
+}
+
+void ConversationsHub::RequestShutdown() {
+  shutdown_requested_.store(true, std::memory_order_release);
+  // Unblock circuit / dial waits inside an in-flight StartMesh / EnsureMessagingReady.
+  AbortCallMediaForShutdown();
+  if (mesh_) {
+    mesh_->AbortInflightCircuitRequests();
+  }
+}
+
+void ConversationsHub::DiscardMessagingBringUp() {
+  StopCoordinatorTimers();
+  if (router_) {
+    router_->SetOnLocalAction(nullptr);
+    router_->SetSharedAiConfirmCallback(nullptr);
+    router_.reset();
+  }
+  if (actions_) {
+    actions_->SetOnActionMessage(nullptr);
+    actions_.reset();
+  }
+  if (mesh_messaging_) {
+    mesh_messaging_->SetOnMessagesChanged(nullptr);
+    mesh_messaging_->SetOnDeliveryNotice(nullptr);
+    mesh_messaging_->SetOnBackgroundUnread(nullptr);
+    mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetAttachmentDownloads(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetGroupMembership(nullptr);
+    inbox_->SetAttachmentDownloads(nullptr);
+  }
+  group_membership_.reset();
+  StopMesh();
+  call_stack_->ResetSessions();
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (mesh_messaging_) {
+      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+  }
+  mesh_messaging_.reset();
+  messaging_ready_ = false;
 }
 
 void ConversationsHub::RegisterContactEndpoints() {
@@ -1050,11 +1115,21 @@ void ConversationsHub::NotifyMessagingReady() {
 }
 
 Roe<void> ConversationsHub::BuildMessagingStack() {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   WireRelayAuthSigner();
 
   if (auto mesh_start = StartMesh(config_); !mesh_start) {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return mesh_start.error();
+    }
     log().warning << "mesh host start failed: " << mesh_start.error().message
                   << " (direct P2P unavailable; relay messaging may still work)";
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
   }
 
   IChatPeerLinks* amp_links = nullptr;
@@ -1099,11 +1174,18 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
   if (agent_inbound_.IsBound()) {
     router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
   }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
+  }
   return {};
 }
 
 Roe<void> ConversationsHub::EnsureMessagingReady() {
   StartupPhase phase("ConversationsHub::EnsureMessagingReady");
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return Error("shutdown in progress");
+  }
   if (!initialized_) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
@@ -1128,6 +1210,10 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
 
   if (auto built = BuildMessagingStack(); !built) {
     return built.error();
+  }
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    DiscardMessagingBringUp();
+    return Error("shutdown in progress");
   }
 
   messaging_ready_ = true;
@@ -2148,6 +2234,8 @@ void ConversationsHub::Shutdown() {
   if (!initialized_) {
     return;
   }
+
+  shutdown_requested_.store(true, std::memory_order_release);
 
   on_messaging_ready_ = nullptr;
   on_reachability_updated_ = nullptr;

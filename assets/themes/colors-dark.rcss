@@ -721,6 +721,14 @@ select selectbox option:hover {
   background-color: #00000099;
 }
 
+.shell-startup-cover {
+  background-color: #111827;
+}
+
+.shell-startup-cover-name {
+  color: #f9fafb;
+}
+
 .shell-frame {
   background-color: #1f2937;
 }

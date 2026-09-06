@@ -188,5 +188,13 @@
       </button>
     </div>
   </div>
+  <!-- Brand cover until interactive-ready; below titlebar (z 120), below PIN (z 55). -->
+  <div id="shell-startup-cover" class="shell-startup-cover" data-if="startup_cover_visible" focus="none">
+    <div class="shell-startup-cover-inner stack">
+      <img class="shell-startup-cover-icon" src="../branding/app-icon.png" width="96" height="96"/>
+      <h1 class="shell-startup-cover-name">{{i18n:app.name}}</h1>
+      <p class="text-sm muted shell-startup-cover-status">{{i18n:startup.preparing}}</p>
+    </div>
+  </div>
 </body>
 </rml>

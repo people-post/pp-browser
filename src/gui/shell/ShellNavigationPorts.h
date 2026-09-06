@@ -73,6 +73,8 @@ struct ShellNavigationPorts {
   /** Bootstrap / deferred font load — UI-owned chrome readiness flag (apply / read-only). */
   std::function<void(bool)> set_fonts_ready;
   std::function<bool()> fonts_ready;
+  /** After deferred unlock decision — drop first-paint arm on the brand cover. */
+  std::function<void()> settle_startup_cover;
   std::function<void(const NavBadgeState& badges)> set_nav_badges;
   std::function<void(bool available)> set_auxiliary_available;
   std::function<void()> open_auxiliary;

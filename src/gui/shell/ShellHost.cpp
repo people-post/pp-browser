@@ -266,6 +266,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("window_maximized", &host.state_.window_maximized);
     ctor.Bind("fonts_ready", &host.state_.fonts_ready);
     ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
+    ctor.Bind("startup_cover_visible", &host.state_.startup_cover_visible);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
@@ -802,6 +803,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+  DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
 
 void ShellHost::DirtyStatusChrome() {
@@ -933,6 +935,29 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
+  ReconcileStartupCover();
+}
+
+void ShellHost::ReconcileStartupCover() {
+  // Cold-start only: once arm is settled and unlock is idle, never re-show (mid-session
+  // EnsureUnlocked / messaging prepare must not flash the logo).
+  if (!startup_cover_armed_ && !state_.unlock_in_progress) {
+    startup_cover_enabled_ = false;
+  }
+  // PIN / identity chooser must be reachable; logo cover only masks silent prepare.
+  const bool show = startup_cover_enabled_ && !state_.pin_gate.active &&
+                    (startup_cover_armed_ || state_.unlock_in_progress);
+  if (state_.startup_cover_visible == show) {
+    return;
+  }
+  state_.startup_cover_visible = show;
+  DataModelHost::Instance().Dirty("window", "startup_cover_visible");
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::SettleStartupCoverArm() {
+  startup_cover_armed_ = false;
+  ReconcileStartupCover();
 }
 
 void ShellHost::RequestRemountNavRail() {

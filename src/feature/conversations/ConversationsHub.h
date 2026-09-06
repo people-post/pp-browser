@@ -44,6 +44,7 @@
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseWireCodec.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -135,6 +136,13 @@ public:
    * Safe to call multiple times; no-op if media is not up.
    */
   void AbortCallMediaForShutdown();
+
+  /**
+   * Mark app shutdown so an in-flight EnsureMessagingReady / StartMesh must not finish
+   * bring-up (and must discard a partial stack). Call before AppRuntime::Shutdown joins
+   * the unlock worker — otherwise mesh comes up during join and StopMesh runs with no pool.
+   */
+  void RequestShutdown();
 
   void BindSessionStore(SessionStore& store);
 
@@ -280,6 +288,8 @@ private:
   void StopMesh();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
+  /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
+  void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
@@ -370,6 +380,7 @@ private:
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  std::atomic<bool> shutdown_requested_{false};
   uint64_t hub_policy_timer_id_ = 0;
   uint64_t amp_mesh_pump_timer_id_ = 0;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
