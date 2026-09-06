@@ -387,6 +387,8 @@ TEST(AnnounceLiveJoinTest, CopiesHopPeerIdIntoPlanAndHandoffSfuHint) {
   EXPECT_EQ(*handoff->pending.sfu_hint, "12D3KooWMediaHop");
   ASSERT_TRUE(handoff->session.sfu_hint.has_value());
   EXPECT_EQ(*handoff->session.sfu_hint, "12D3KooWMediaHop");
+  EXPECT_EQ(handoff->session.session_kind, CallSessionKind::Broadcast);
+  EXPECT_EQ(handoff->pending.session_kind, CallSessionKind::Broadcast);
 }
 
 TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {

@@ -52,6 +52,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     AnnounceLiveJoinHandoff.cpp
     BroadcastJoinTicket.cpp
     BroadcastLadderLogic.cpp
+    BroadcastRpcCodec.cpp
     InitiationPricing.cpp
     JsonThreadStore.cpp
     PskRotateCodec.cpp

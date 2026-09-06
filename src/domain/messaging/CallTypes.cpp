@@ -26,6 +26,23 @@ CallMediaMode CallMediaModeFromString(const std::string& value) {
   return CallMediaMode::Voice;
 }
 
+std::string CallSessionKindToString(const CallSessionKind kind) {
+  switch (kind) {
+  case CallSessionKind::Broadcast:
+    return "broadcast";
+  case CallSessionKind::Group:
+    return "group";
+  }
+  return "group";
+}
+
+CallSessionKind CallSessionKindFromString(const std::string& value) {
+  if (value == "broadcast") {
+    return CallSessionKind::Broadcast;
+  }
+  return CallSessionKind::Group;
+}
+
 std::string CallSessionStateToString(const CallSessionState state) {
   switch (state) {
   case CallSessionState::Ringing:

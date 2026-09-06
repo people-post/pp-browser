@@ -62,6 +62,8 @@ struct SoftMigrateDecisionInput {
   bool sfu_hint_empty = true;
   SoftMigrateTrigger trigger = SoftMigrateTrigger::RemoteAcceptObserved;
   bool already_on_sfu = false;
+  /** Live announce / broadcast viewers never SoftMigrate (B001). */
+  bool is_broadcast = false;
 };
 
 /**

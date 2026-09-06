@@ -10,7 +10,7 @@
 | **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0 ticket wire + B1 domain ladder** — `BroadcastLadderLogic`, tip `l1_hop_peer_ids`, `ArmJoinFromLiveAnnounce` ticket apply; redirect/slot-win RPC next |
+| **F — media tree** | **B0/B1 codecs** — `BroadcastRpcCodec` (ticket+ladder+slot-win), `CallSessionKind::Broadcast`, SoftMigrate skip; Amp handlers next |
 
 ## Spine B landed
 
@@ -50,7 +50,10 @@
 | Tip L1 hints | `PeerAnnounceTip::l1_hop_peer_ids` (codec omit-empty) |
 | Arm path ticket apply | `ArmJoinFromLiveAnnounce(..., ArmLiveAnnounceJoinOpts)` → `ApplyBroadcastJoinTicket` |
 
-**Still out of scope for this slice:** tip→ticket RPC mint path, admit/redirect mesh RPC, slot-win over wire, SoftMigrate for announce.
+| Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp-browser/rpc/broadcast/1.0.0` |
+| Session shape | `CallSessionKind::Broadcast` on session/pending; SoftMigrate `is_broadcast` → NoOp |
+
+**Still out of scope for this slice:** Amp broadcast RPC handlers, tip→ticket mint service wiring, live redirect/slot-win over mesh, SoftMigrate for announce (explicitly skipped).
 
 ## Spine C started (slice 0)
 

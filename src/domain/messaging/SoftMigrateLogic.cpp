@@ -26,6 +26,9 @@ std::string SelectCallInitiator(const std::vector<SoftMigrateJoinedPeer>& joined
 }
 
 SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in) {
+  if (in.is_broadcast) {
+    return SoftMigrateAction::NoOp;
+  }
   if (in.already_on_sfu) {
     return SoftMigrateAction::NoOp;
   }
