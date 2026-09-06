@@ -123,7 +123,7 @@ Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-
 
 Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close` → `RemountDialogChrome`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog. PIN gate show/dismiss uses `RemountPinGateChrome` via `ShellPinGatePorts::remount_pin_gate`.
 
-**Startup brand cover:** `#shell-startup-cover` in `window_shell.rml` is a full-bleed logo + “Preparing…” layer (`startup_cover_visible`). It is armed from first paint, follows silent `unlock_in_progress` after `SettleStartupCoverArm` (DeferredStartup), and hides when the PIN gate is active or cold-start prepare ends. It does not remount; titlebar stays above (z-index). Mid-session unlock does not re-show it.
+**Startup brand cover ([SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md): clears with unlock / local messaging_ready, not mesh_ready):** `#shell-startup-cover` in `window_shell.rml` is a full-bleed logo + “Preparing…” layer (`startup_cover_visible`). It is armed from first paint, follows silent `unlock_in_progress` after `SettleStartupCoverArm` (DeferredStartup), and hides when the PIN gate is active or cold-start prepare ends. It does not remount; titlebar stays above (z-index). Mid-session unlock does not re-show it.
 
 Timers (e.g. foreground relay poll) must never remount “just in case.”
 

@@ -16,6 +16,11 @@ class IThreadStore;
 /** Read-only agent turn chrome for chat UI binding. */
 struct AgentView {
   bool configured = false;
+  /**
+   * Configured and able to run a cloud/mock turn from the agent service's point of view.
+   * Chat may still require a Brief guest/registered key — see ChatController::AgentCloudReady().
+   */
+  bool cloud_ready = false;
   bool turn_active = false;
   std::string visible_tool_name;
   std::string status_hint;
