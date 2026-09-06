@@ -61,6 +61,8 @@ struct SettingsCommands {
 
   /** Messaging status without holding ConversationsHub*. */
   std::function<bool()> messaging_ready;
+  /** Amp mesh attached (async after messaging_ready). Node connection card uses this. */
+  std::function<bool()> mesh_ready;
   std::function<std::string()> last_mesh_error;
   /** Runtime Amp listen multiaddr (empty when mesh is down). */
   std::function<std::string()> amp_listen_multiaddr;

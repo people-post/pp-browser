@@ -534,6 +534,9 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.messaging_ready = [&facade]() {
     return facade.IsInitialized() && facade.IsMessagingReady();
   };
+  settings_commands.mesh_ready = [&facade]() {
+    return facade.IsInitialized() && facade.IsMeshReady();
+  };
   settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
       return {};

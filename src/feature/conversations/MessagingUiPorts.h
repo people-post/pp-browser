@@ -13,6 +13,8 @@ struct MessagingView {
   bool initialized = false;
   bool messaging_ready = false;
   bool mesh_ready = false;
+  /** MVP alias of mesh_ready — Call entry; signaling/media split deferred. */
+  bool call_ready = false;
   bool has_router = false;
   std::string active_thread_id;
 };
@@ -22,6 +24,7 @@ inline MessagingView ProjectMessagingView(ConversationsHub& hub) {
   view.initialized = hub.IsInitialized();
   view.messaging_ready = hub.IsMessagingReady();
   view.mesh_ready = hub.IsMeshReady();
+  view.call_ready = view.mesh_ready;
   view.has_router = hub.HasRouter();
   if (view.initialized) {
     view.active_thread_id = hub.Inbox().ActiveThreadId();

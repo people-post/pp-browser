@@ -202,7 +202,7 @@ struct MessagingActions {
 
 ## Composition root responsibilities
 
-**Startup / readiness:** local `messaging_ready` vs async `mesh_ready` — see [SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md). Presenters gate Call on `mesh_ready`; compose/send on `messaging_ready`. Do not block the startup cover on mesh bring-up.
+**Startup / readiness:** local `messaging_ready` vs async `mesh_ready` / `call_ready`, plus `agent_cloud_ready` for AI/Brief — see [SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md). Presenters gate Call on `call_ready` (= `mesh_ready`); compose/peer send on `messaging_ready`; AI turns on `agent_cloud_ready`. Do not block the startup cover on mesh bring-up.
 
 
 `Application` (`src/app/`) is the only place that:

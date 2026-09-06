@@ -335,6 +335,8 @@ private:
 
   bool AgentReady() const;
   bool AgentConfigured() const;
+  /** Agent session + cloud/mock LLM usable (Brief/API key resolved). Peer relay ignores this. */
+  bool AgentCloudReady() const;
 
   Rml::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;

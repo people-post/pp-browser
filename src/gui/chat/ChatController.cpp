@@ -389,6 +389,47 @@ bool ChatController::AgentConfigured() const {
   return false;
 }
 
+bool ChatController::AgentCloudReady() const {
+  if (!AgentReady() || !Store().IsInitialized()) {
+    return false;
+  }
+  const AppConfig& config = Store().Snapshot().config;
+  // Mock replies (no base_url) are always usable once the agent session exists.
+  if (config.llm.base_url.empty()) {
+    return true;
+  }
+  if (agent_ports_.snapshot) {
+    if (!agent_ports_.snapshot().cloud_ready) {
+      return false;
+    }
+  } else if (!AgentConfigured()) {
+    return false;
+  }
+  if (ResolvePreset(config) == "brief") {
+    std::string registered;
+    std::string guest;
+    if (MessagingReady() && facade_) {
+      if (auto identity = facade_->GetIdentity()) {
+        registered = identity->brief_llm_api_key;
+        guest = identity->brief_llm_guest_api_key;
+      }
+    }
+    std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
+    if (brief_key.empty()) {
+      AppConfig last_probe;
+      last_probe.llm = last_agent_runtime_.llm;
+      if (ResolvePreset(last_probe) == "brief") {
+        brief_key = last_agent_runtime_.llm.api_key;
+      }
+    }
+    return !brief_key.empty();
+  }
+  if (config.llm.require_api_key) {
+    return !config.llm.api_key.empty() || !last_agent_runtime_.llm.api_key.empty();
+  }
+  return true;
+}
+
 void ChatController::BindShellSetup(ShellSetupPorts ports) {
   shell_setup_ = std::move(ports);
 }
@@ -2199,6 +2240,12 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     expect_agent_work = true;
   }
 
+  // Peer relay send only needs messaging_ready; AI / Brief / mock turns need agent_cloud_ready.
+  if (expect_agent_work && !AgentCloudReady()) {
+    RefreshLlmSetupBanner();
+    return;
+  }
+
   if (expect_agent_work) {
     chat_.loading = true;
     chat_.status = "";
@@ -2948,13 +2995,27 @@ bool ChatController::Setup(Rml::Context* context) {
 
 void ChatController::OnMessagingReady() {
   WireMessagingBindings();
+  if (facade_) {
+    mesh_ready_ = facade_->Snapshot().mesh_ready;
+  } else if (messaging_ui_.snapshot) {
+    mesh_ready_ = messaging_ui_.snapshot().call_ready;
+  }
+  chrome_.Update();
+  DirtyChatChrome();
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
     OnHomeTabActivated();
   }
 }
 
 void ChatController::OnMeshReady() {
-  mesh_ready_ = true;
+  // NotifyMeshReady also fires when StartMesh/attach failed — sync the real flag.
+  if (facade_) {
+    mesh_ready_ = facade_->Snapshot().mesh_ready;
+  } else if (messaging_ui_.snapshot) {
+    mesh_ready_ = messaging_ui_.snapshot().call_ready;
+  } else {
+    mesh_ready_ = false;
+  }
   chrome_.Update();
   DirtyChatChrome();
   NotifySurfaceChanged();

@@ -10,6 +10,8 @@ AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
   ports.snapshot = [&agent]() {
     AgentView view;
     view.configured = agent.IsConfigured();
+    // Service-level cloud readiness; ChatController may still require a resolved API key.
+    view.cloud_ready = view.configured;
     return view;
   };
   ports.has_session = [] { return true; };
