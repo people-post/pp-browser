@@ -25,9 +25,12 @@
             {{i18n:settings.profile.remove_photo}}
           </button>
         </div>
-        <p class="text muted me-profile-meta">
-          {{i18n:settings.nickname}}: <span data-rml="profile_nickname"></span>
-        </p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.nickname}}</span>
+          <input class="field" type="text" data-value="profile_nickname" lang=""
+                 data-event-blur="on_profile_nickname_commit()"
+                 placeholder="Your display name"/>
+        </label>
         <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
           Peer ID: <span data-rml="profile_peer_id"></span>
         </p>
