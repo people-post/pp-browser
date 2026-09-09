@@ -15,6 +15,8 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
+#include <functional>
+#include <optional>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -157,11 +159,18 @@ void CallStack::WireMediaRelayDeps() {
     return;
   }
   MeshHost* m = mesh();
+  // Prefer MeshHost L4 io (empty pump when MeshPump owns Drive) over Tick-from-waiters.
+  std::function<void()> io_pump;
+  std::function<void(std::function<void()>)> post_io;
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
+    io_pump = chat->io.io_pump;
+    post_io = chat->io.post_io;
+  }
   const bool use_amp_relay =
       m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
   if (use_amp_relay) {
     media_relay_client_ = std::make_unique<AmpMediaRelayClient>(
-        *m->AmpMediaRelayCoord(), [m]() { m->Tick(); }, m->Amp()->LocalPeerId());
+        *m->AmpMediaRelayCoord(), io_pump, m->Amp()->LocalPeerId(), post_io);
     log().info << "media-relay transport=amp";
   } else {
     media_relay_client_.reset();
@@ -184,7 +193,7 @@ void CallStack::WireMediaRelayDeps() {
       } else {
         IChatPeerLinks* punch_links = &circuit->links;
         circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
-            circuit->tunnel, circuit->hops, circuit->links, [m]() { m->Tick(); },
+            circuit->tunnel, circuit->hops, circuit->links, io_pump,
             [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
             [this, m, punch_links](const std::string& target_peer_id) -> Roe<void> {
               auto* punch = m->AmpPunch();
