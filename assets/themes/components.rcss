@@ -1670,6 +1670,50 @@ select selectbox option {
   z-index: 55;
 }
 
+/* Full-bleed brand cover while vault/messaging prepare (below PIN / titlebar). */
+.shell-startup-cover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  focus: none;
+}
+
+.shell-startup-cover-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12dp;
+  padding: 24dp;
+}
+
+.shell-startup-cover-icon {
+  width: 96dp;
+  height: 96dp;
+  flex-shrink: 0;
+}
+
+.shell-startup-cover-name {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-startup-cover-status {
+  margin: 0;
+  text-align: center;
+}
+
 .shell-overlay-chrome-mount .shell-layer {
   pointer-events: auto;
 }
@@ -2772,6 +2816,60 @@ call-video-tile {
   gap: 6dp;
 }
 
+/* Expanded/compact Me index: single-row identity (avatar | name | actions). */
+.me-identity-header {
+  align-items: center;
+  gap: 10dp;
+  padding: 8dp 10dp;
+  margin-bottom: 8dp;
+}
+
+.me-identity-main {
+  flex: 1;
+  min-width: 0;
+  gap: 2dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.me-identity-name {
+  margin: 0;
+  font-size: 15dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.me-identity-actions {
+  flex-shrink: 0;
+  gap: 6dp;
+  align-items: center;
+}
+
+.me-identity-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  min-height: 36dp;
+  padding: 0;
+  border-radius: 8dp;
+  line-height: normal;
+}
+
+.me-identity-status {
+  flex-shrink: 0;
+  margin: 0 0 8dp 0;
+  font-size: 12dp;
+}
+
 .me-profile-meta {
   margin-top: 0;
   margin-bottom: 0;
@@ -2805,6 +2903,12 @@ call-video-tile {
   cursor: pointer;
 }
 
+.me-profile-avatar-frame--compact {
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
+}
+
 .me-profile-avatar-frame--disabled {
   cursor: auto;
   opacity: 0.6;
@@ -2817,8 +2921,17 @@ call-video-tile {
   object-fit: cover;
 }
 
+.me-profile-avatar-image--compact {
+  width: 48dp;
+  height: 48dp;
+}
+
 .me-profile-avatar-frame .avatar-letter {
   font-size: 24dp;
+}
+
+.me-profile-avatar-frame--compact .avatar-letter {
+  font-size: 18dp;
 }
 
 .me-profile-avatar-btn {
@@ -2942,6 +3055,14 @@ call-video-tile {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Support (and similar): content-sized; do not share flex growth with Preferences. */
+.settings-list--pinned {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+  margin-bottom: 4dp;
 }
 
 .settings-row {

@@ -221,7 +221,7 @@ flowchart TB
 | Settings UI | register / rotate / UPnP / clear undelivered / reset profile / appearance / locales / reachability / PIN status | Via `SettingsCommands` (narrow args + views; app-filled); UI syncs state after — **no** `BindMessaging` / `Hub()` |
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
-| ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
+| ChatController | `SetOnMessagingReady / SetOnMeshReady ([SERVICE_CAPABILITIES.md](SERVICE_CAPABILITIES.md))` / reachability | **No** — Application owns |
 | Application Run loop | `ConversationsHub::TickMesh` | **Removed** — hub policy on coordinator timer (t4) |
 | UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
 | Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |

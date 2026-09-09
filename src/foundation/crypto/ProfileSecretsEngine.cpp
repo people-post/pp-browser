@@ -89,6 +89,7 @@ void ProfileSecretsEngine::ClearDekConsumers() {
       consumer->ClearDek();
     }
   }
+  dek_consumers_.clear();
 }
 
 void ProfileSecretsEngine::NotifyUnlocked() {

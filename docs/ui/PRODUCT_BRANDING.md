@@ -68,6 +68,7 @@ Exploratory alternates live under [`design/branding/icon-candidates/`](../../des
 |---------|--------|
 | SDL window title | `kProductName` (PP) |
 | Desktop in-app title bar | PP (`i18n:app.name` in `#shell-titlebar`) |
+| Startup brand cover | `app-icon.png` + `i18n:app.name` / `startup.preparing` (`#shell-startup-cover`) |
 | Linux `notify-send --app-name` | PP |
 | HTTP User-Agent (web search tool) | `PP/<version> …` |
 | Locales `app.name` / `app.tagline` | PP + tagline (EN, zh-Hans) |

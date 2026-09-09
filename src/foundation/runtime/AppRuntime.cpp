@@ -30,10 +30,13 @@ void AppRuntime::Shutdown() {
   if (!IsRunning()) {
     return;
   }
+  // Join while WorkerDispatch still points at the pool. In-flight work (e.g. unlock →
+  // EnsureMessagingReady → MeshDirectoryCache::RequestRefresh) may PostWorker; the pool
+  // no-ops once stopped_. Uninstalling first asserted in WorkerDispatch::Post.
+  g_thread_runtime->Shutdown();
   if (!g_testing_worker_override) {
     WorkerDispatch::Uninstall();
   }
-  g_thread_runtime->Shutdown();
   g_thread_runtime.reset();
 }
 
@@ -42,6 +45,13 @@ bool AppRuntime::IsRunning() {
 }
 
 void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
+  // Mid-shutdown: ThreadRuntime clears running_ before joining the pool. In-flight work may
+  // still PostWorker (unlock → directory refresh). No-op once !IsRunning so a nested task
+  // cannot race onto another live pool thread before WorkerPool::stopped_ is set. Testing
+  // overrides may post without a started ThreadRuntime.
+  if (!g_testing_worker_override && !IsRunning()) {
+    return;
+  }
   WorkerDispatch::Post(lane, std::move(task));
 }
 
@@ -92,7 +102,7 @@ void AppRuntime::ResumeBackgroundWork() {
 }
 
 void AppRuntime::PostCoordinator(CoordinatorPriority priority, std::function<void()> task) {
-  if (!g_thread_runtime || !task) {
+  if (!IsRunning() || !task) {
     return;
   }
   g_thread_runtime->Coordinator().Post(priority, std::move(task));
@@ -112,7 +122,9 @@ void AppRuntime::PostCoordinatorBackground(std::function<void()> task) {
 
 uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
                                                   std::function<void()> fn) {
-  if (!g_thread_runtime) {
+  // Mid-shutdown: ThreadRuntime clears running_ before joining workers; in-flight unlock
+  // may still call StartCoordinatorTimers — no-op instead of Coordinator() assert.
+  if (!IsRunning()) {
     return 0;
   }
   return g_thread_runtime->Coordinator().ScheduleRepeating(interval, std::move(fn));
@@ -120,14 +132,14 @@ uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds inte
 
 uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
                                                 std::function<void()> fn) {
-  if (!g_thread_runtime) {
+  if (!IsRunning()) {
     return 0;
   }
   return g_thread_runtime->Coordinator().ScheduleOneShot(delay, std::move(fn));
 }
 
 void AppRuntime::CancelCoordinatorTimer(uint64_t timer_id) {
-  if (!g_thread_runtime || timer_id == 0) {
+  if (!IsRunning() || timer_id == 0) {
     return;
   }
   g_thread_runtime->Coordinator().CancelTimer(timer_id);

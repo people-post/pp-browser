@@ -534,6 +534,9 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.messaging_ready = [&facade]() {
     return facade.IsInitialized() && facade.IsMessagingReady();
   };
+  settings_commands.mesh_ready = [&facade]() {
+    return facade.IsInitialized() && facade.IsMeshReady();
+  };
   settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
       return {};
@@ -1174,6 +1177,13 @@ void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult&
       settings_->OnNavTabActivated();
     }
   });
+  messaging.SetOnMeshReady([this]() {
+    chat_->OnMeshReady();
+    contacts_->Refresh();
+    if (badges_) {
+      badges_->Refresh();
+    }
+  });
   messaging.SetOnCallWake([this]() {
     if (call_) {
       call_->OnCallWake();
@@ -1448,6 +1458,7 @@ void Application::Shutdown() {
 
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
+    messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
@@ -1477,9 +1488,12 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
 
-    // Abort Connect / circuit waits, then join MeshControlPool + MeshPump via hub StopMesh
-    // while AppRuntime is still up (StopCoordinatorTimers). Connect no longer parks WorkerPool.
+    // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
+    // join. Then abort Connect / circuit waits and join MeshControlPool + MeshPump via hub
+    // StopMesh while AppRuntime is still up (StopCoordinatorTimers). Connect no longer parks
+    // WorkerPool — destroying the hub first previously UAFd workers under AppRuntime::Shutdown.
     if (messaging_) {
+      messaging_->RequestShutdown();
       StartupPhase phase("Shutdown::AbortCallMedia");
       messaging_->AbortCallMediaForShutdown();
     }
@@ -1515,6 +1529,7 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
     if (messaging_) {
+      messaging_->RequestShutdown();
       messaging_->AbortCallMediaForShutdown();
     }
     ShutdownMessaging();

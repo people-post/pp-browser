@@ -1601,9 +1601,10 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
 }
 
 void SettingsController::ApplyReachability() {
-  const bool messaging_ready = commands_.messaging_ready && commands_.messaging_ready();
+  const bool mesh_ready = commands_.mesh_ready ? commands_.mesh_ready()
+                                               : (commands_.messaging_ready && commands_.messaging_ready());
   ui_state_.show_connection_card =
-      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && messaging_ready;
+      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && mesh_ready;
   ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_media_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_dht_toggle = ui_state_.show_connection_card;
@@ -1639,7 +1640,11 @@ bool SettingsController::ComputeNetworkAttention() const {
   if (!commands_.session_store || !commands_.load_reachability) {
     return false;
   }
-  if (!commands_.messaging_ready || !commands_.messaging_ready()) {
+  if (!commands_.mesh_ready) {
+    if (!commands_.messaging_ready || !commands_.messaging_ready()) {
+      return false;
+    }
+  } else if (!commands_.mesh_ready()) {
     return false;
   }
   const SettingsReachabilityView view = commands_.load_reachability();

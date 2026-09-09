@@ -25,6 +25,8 @@ bool ConversationsFacade::IsInitialized() { return hub_.IsInitialized(); }
 
 bool ConversationsFacade::IsMessagingReady() { return hub_.IsMessagingReady(); }
 
+bool ConversationsFacade::IsMeshReady() { return hub_.IsMeshReady(); }
+
 IThreadStore* ConversationsFacade::ThreadStore() { return &hub_.Store(); }
 
 void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {

@@ -41,7 +41,7 @@ void PinGateController::SetUnlockInProgressUi(const bool in_progress) {
   }
   if (in_progress) {
     if (shell_pin_gate_.set_activity) {
-      shell_pin_gate_.set_activity(true, "Preparing...");
+      shell_pin_gate_.set_activity(true, Tr("startup.preparing").c_str());
     }
   } else if (shell_pin_gate_.set_activity) {
     shell_pin_gate_.set_activity(false, {});

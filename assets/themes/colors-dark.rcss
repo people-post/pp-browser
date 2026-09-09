@@ -721,6 +721,14 @@ select selectbox option:hover {
   background-color: #00000099;
 }
 
+.shell-startup-cover {
+  background-color: #111827;
+}
+
+.shell-startup-cover-name {
+  color: #f9fafb;
+}
+
 .shell-frame {
   background-color: #1f2937;
 }
@@ -1059,6 +1067,14 @@ select selectbox option:hover {
 .me-profile-card {
   background-color: #1f2937;
   border: 1dp #374151;
+}
+
+.me-identity-name {
+  color: #f9fafb;
+}
+
+.me-identity-action {
+  color: #e5e7eb;
 }
 
 .settings-row {

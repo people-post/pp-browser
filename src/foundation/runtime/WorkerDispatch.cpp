@@ -8,11 +8,13 @@ namespace pbr {
 namespace {
 
 WorkerPool* g_pool = nullptr;
+bool g_ever_installed = false;
 
 } // namespace
 
 void WorkerDispatch::Install(WorkerPool* pool) {
   g_pool = pool;
+  g_ever_installed = true;
 }
 
 void WorkerDispatch::Uninstall() {
@@ -28,7 +30,10 @@ void WorkerDispatch::Post(WorkerLane lane, std::function<void()> task) {
     return;
   }
   if (!g_pool) {
-    assert(false && "WorkerDispatch not installed (AppRuntime::Initialize)");
+    // Before Initialize: programming error. After Uninstall: expected (shutdown race).
+    if (!g_ever_installed) {
+      assert(false && "WorkerDispatch not installed (AppRuntime::Initialize)");
+    }
     return;
   }
   g_pool->Post(lane, std::move(task));

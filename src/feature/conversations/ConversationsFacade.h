@@ -56,6 +56,7 @@ public:
   bool HasRouter();
   bool IsInitialized();
   bool IsMessagingReady();
+  bool IsMeshReady();
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);

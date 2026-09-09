@@ -14,6 +14,7 @@
     "common.share": "分享",
     "app.name": "PP",
     "app.tagline": "为你渲染的互联网",
+    "startup.preparing": "正在准备…",
     "startup.still_preparing": "正在准备…请稍后再试。",
     "nav.home": "首页",
     "nav.sessions": "会话",

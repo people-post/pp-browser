@@ -154,6 +154,13 @@ public:
   void ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update);
   /** Copy presenter PIN gate snapshot into State (binding target). */
   void ApplyPinGateState(const PinGateState& state);
+  /**
+   * Recompute startup_cover_visible from armed + unlock_in_progress + pin gate.
+   * PIN input always wins (cover hides).
+   */
+  void ReconcileStartupCover();
+  /** Clear the first-paint arm after deferred unlock has decided what to do. */
+  void SettleStartupCoverArm();
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
@@ -325,6 +332,10 @@ private:
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
+  /** True from first paint until SettleStartupCoverArm (deferred unlock decision). */
+  bool startup_cover_armed_ = true;
+  /** Cleared after cold-start prepare ends — blocks mid-session unlock from re-showing the logo. */
+  bool startup_cover_enabled_ = true;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;

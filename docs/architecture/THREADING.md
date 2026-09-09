@@ -178,14 +178,15 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
 6. **UI mailbox liveness** — power-save is an optimization; it must not defer `RunUITasks` / Present until user input.
 7. **Media is special** — do not run Opus/H264 in the general pool.
-8. **Join on shutdown** — abort inflight → join MeshControl → join MeshPump → join general pool / coordinator.
+8. **Join on shutdown** — abort inflight → join MeshControl → join MeshPump → join general pool / coordinator. `AppRuntime::Shutdown` clears `ThreadRuntime::running_` then joins **before** uninstalling `WorkerDispatch`. In-flight `PostWorker` no-ops once `!IsRunning()` (and the pool no-ops once `stopped_`), so nested posts during join neither assert nor race onto another live worker. `ConversationsHub::RequestShutdown` must run **before** that join so unlock → `EnsureMessagingReady` discards mesh bring-up instead of finishing Amp during join (StopMesh after a dead pool segfaulted).
 
 ---
 
 ## Shutdown order (product)
 
 ```text
-AbortCallMediaForShutdown
+RequestShutdown
+→ AbortCallMediaForShutdown
 → MeshHost::Stop (abort L4 → join MeshControlPool → join MeshPump)
 → AppRuntime::Shutdown (coordinator + general WorkerPool)
 → destroy hub / secrets / UI

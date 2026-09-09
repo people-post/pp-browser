@@ -60,7 +60,7 @@ public:
     bool& has_turns;
   };
 
-  ChatThreadChrome(View view, bool& messaging_ready);
+  ChatThreadChrome(View view, bool& messaging_ready, bool& mesh_ready);
   void BindConversationsFacade(ConversationsFacade* facade);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
@@ -99,6 +99,7 @@ public:
 
   View view_;
   bool& messaging_ready_;
+  bool& mesh_ready_;
   std::function<void()> refresh_;
   std::function<void(std::function<void()>)> with_secrets_;
   std::function<void()> on_scroller_reset_;

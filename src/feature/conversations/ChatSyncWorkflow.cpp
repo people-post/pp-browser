@@ -29,6 +29,10 @@ void ChatSyncWorkflow::SetAttachmentDownloads(AttachmentFetchWorkflow* downloads
   attachment_downloads_ = downloads;
 }
 
+void ChatSyncWorkflow::SetPeerHistoryClient(IChatHistoryPeerClient* peer_client) {
+  peer_client_ = peer_client;
+}
+
 Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, const uint32_t session_epoch,
                                                       const uint64_t history_floor_seq,
                                                       const std::optional<uint64_t> min_sender_seq,

@@ -16,6 +16,7 @@ namespace pbr {
 class ContactsStore;
 class InboxController;
 class AttachmentFetchWorkflow;
+class IChatHistoryPeerClient;
 
 struct ChatSyncResult {
   size_t ingested = 0;
@@ -41,6 +42,8 @@ public:
 
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /** Clear Amp history client before MeshHost/Amp teardown (non-owning). */
+  void SetPeerHistoryClient(IChatHistoryPeerClient* peer_client);
 
 private:
   Roe<ChatSyncResult> RepairKnownGap(const std::string& thread_id);
