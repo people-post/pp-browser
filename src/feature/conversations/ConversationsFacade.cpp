@@ -496,6 +496,11 @@ Roe<ThreadMessage> ConversationsFacade::SendAttachmentFromPath(const std::string
   return hub_.SendAttachmentFromPath(thread_id, path);
 }
 
+void ConversationsFacade::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
+                                                      std::function<void(Roe<ThreadMessage>)> on_done) {
+  hub_.SendAttachmentFromPathAsync(thread_id, path, std::move(on_done));
+}
+
 void ConversationsFacade::EnsureThreadAttachments(const std::string& thread_id) {
   hub_.Attachments().EnsureThreadQueued(thread_id, hub_.Store());
 }

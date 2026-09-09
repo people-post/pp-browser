@@ -24,13 +24,15 @@ class AmpPeerAnnounceTransport {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
   /** Resolve publisher ML-DSA-65 public key for tip.peer_id (device key). */
   using ResolvePublisherKey = std::function<std::optional<std::vector<uint8_t>>(const std::string& peer_id)>;
   /** Fired after a tip is verified and ingested into the local feed (any thread). */
   using OnTipIngested = std::function<void(const PeerAnnounceTip& tip)>;
 
   AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
-                         WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {});
+                         WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {},
+                         IoPost post_io = {});
   ~AmpPeerAnnounceTransport();
 
   AmpPeerAnnounceTransport(const AmpPeerAnnounceTransport&) = delete;
@@ -44,6 +46,9 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const;
 
+  /** Prefer PushTipAsync when MeshPump + PostToIo are available; sync PushTip parks. */
+  void PushTipAsync(const std::string& peer_key, const PeerAnnounceTip& tip,
+                    std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   /** Push an already-signed tip; waits for tip_ack. */
   Roe<PeerAnnounceTipAck> PushTip(const std::string& peer_key, const PeerAnnounceTip& tip);
 
@@ -57,6 +62,7 @@ private:
   PeerAnnounceFeed& feed_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

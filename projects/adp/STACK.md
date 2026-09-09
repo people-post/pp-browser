@@ -163,12 +163,15 @@ Listen: one UDP socket per host (`Endpoint` demuxes many associations). Dial: cr
 
 | Thread | Work |
 |--------|------|
-| **IO** | `Endpoint::Pump` → Session decrypt → Channel demux → L4 dispatch (fast) |
-| **Worker** | SQLite history serve, heavy decrypt/parse (unchanged from today) |
+| **MeshPump (MeshHost-owned)** | `MeshRuntime::Drive` ~5ms → Endpoint drain → Session decrypt → Channel demux → L4 dispatch (fast) |
+| **MeshControlPool (MeshHost-owned, 1–2)** | Blocking Connect / `IoPumpUntil` facades; may call `MeshHost::Tick` while waiting |
+| **WorkerPool (shared)** | SQLite history serve, Brief HTTP, heavy decrypt/parse — **not** Amp dial waits |
 
-L3 channel objects are **io-thread affine** (same rule as `DuplexFrameSession` today). See [THREADING.md](../../docs/architecture/THREADING.md).
+L3 channel objects are **pump/control affine** (same rule as former io-thread affinity). See [THREADING.md](../../docs/architecture/THREADING.md).
 
-**Product pump:** `MeshHost::Tick` → `MeshRuntime::Drive()` is mutex-serialized so Connect waiters (worker `io_pump`) and `ConversationsHub::TickMesh` (coordinator) may both call Tick without racing PeerLink/Mux.
+**Product pump:** Amp has no async reactor. `MeshHost::Start` owns a joinable `MeshPumpThread` that calls `Tick()` → `MeshRuntime::Drive()`. `AttachAmpStack` (tests) installs `MeshControlPool` only and leaves Tick to the harness — VirtualClock is not continuous-pump safe. `Drive` is mutex-serialized so MeshControl waiters’ nested `Tick` and the pump do not race PeerLink/Mux.
+
+**Known debt:** many L4 facades still use sync `IoPumpUntil` on MeshControlPool. Prefer A022-style non-blocking callbacks (`StartBridge` + completion) when touching a path; async `Connect(cb)` for call-media is deferred ([SESSION_MACHINES](../p2p-av-calls/SESSION_MACHINES.md)).
 
 ## Code layout (planned)
 

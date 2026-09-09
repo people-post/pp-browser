@@ -7,6 +7,7 @@
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <atomic>
 #include <chrono>
@@ -41,17 +42,10 @@ struct AmpDirectChatTransport::Impl {
   IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
+  IoPost post_io;
   std::mutex handler_mutex;
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
-
-  void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
-    while (!done() && Clock::now() < deadline) {
-      if (io_pump) {
-        io_pump();
-      }
-    }
-  }
 
   void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links) {
@@ -99,11 +93,14 @@ struct AmpDirectChatTransport::Impl {
   }
 };
 
-AmpDirectChatTransport::AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)), post_worker_(std::move(post_worker)) {
+AmpDirectChatTransport::AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
+                                               IoPost post_io)
+    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
+  impl_->post_io = post_io_;
 }
 
 AmpDirectChatTransport::~AmpDirectChatTransport() {
@@ -135,39 +132,42 @@ void AmpDirectChatTransport::SetInboundHandler(InboundHandler handler) {
 }
 
 bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_value) const {
-  // Nested circuit links are Connected without a registered dial endpoint (same as
-  // AmpChatBlobTransport / CallMediaLegCoordinator).
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint ||
          links_.IsConnected(peer_identity_value);
 }
 
-Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) {
+void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_user_id,
+                                               const RelayEnvelope& envelope,
+                                               std::function<void(Roe<void>)> on_done) {
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto finish_once = std::make_shared<std::function<void(Roe<void>)>>();
+  *finish_once = [on_done = std::move(on_done), settled](Roe<void> value) {
+    if (settled->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!started_) {
-    return Error("amp direct chat service not started");
+    (*finish_once)(Error("amp direct chat service not started"));
+    return;
   }
   if (!IsPeerReachable(peer_relay_user_id)) {
-    return Error("Peer-direct endpoint not registered")
-        .WithUser("No usable peer address — add a dialable multiaddr on the contact.");
+    (*finish_once)(Error("Peer-direct endpoint not registered")
+                       .WithUser("No usable peer address — add a dialable multiaddr on the contact."));
+    return;
   }
 
   const std::string envelope_json = DumpJson(RelayEnvelopeToJson(envelope));
   constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
   const auto deadline = Clock::now() + kSendTimeout;
-
-  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
-  auto result_future = result_promise->get_future();
-  auto settled = std::make_shared<std::atomic<bool>>(false);
   auto session = std::make_shared<pp::amp::ChannelSession>();
-
-  auto finish = [settled, result_promise, session](Roe<void> value) {
-    if (settled->exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
+  auto finish = std::make_shared<std::function<void(Roe<void>)>>();
+  *finish = [finish_once, session](Roe<void> value) {
     session->Close();
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
-    }
+    (*finish_once)(std::move(value));
   };
 
   const std::string peer_key = peer_relay_user_id;
@@ -175,53 +175,84 @@ Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_use
                      [this, peer_key, envelope_json, finish, settled, session,
                       deadline](IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
-                         finish(Error(channel.error().message));
+                         (*finish)(Error(channel.error().message));
                          return;
                        }
-                       impl_->IoPumpUntil(
-                           [&] {
+                       AmpScheduleWhenChannelOpen(
+                           post_io_, io_pump_,
+                           [this, peer_key, channel_id = *channel]() {
                              auto* link = links_.FindLink(peer_key);
                              return link && link->Mux() &&
-                                    link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
+                                    link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
                            },
-                           deadline);
-                       auto* link = links_.FindLink(peer_key);
-                       if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                         finish(Error("amp direct chat: channel open failed")
-                                    .WithUser("Direct send didn't confirm — will use relay if available."));
-                         return;
-                       }
+                           deadline,
+                           [this, peer_key, channel_id = *channel, envelope_json, finish, settled, session,
+                            deadline](bool open) mutable {
+                             if (!open) {
+                               (*finish)(Error("amp direct chat: channel open failed")
+                                             .WithUser(
+                                                 "Direct send didn't confirm — will use relay if available."));
+                               return;
+                             }
+                             auto* link = links_.FindLink(peer_key);
+                             if (!link || !link->Mux() ||
+                                 link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+                               (*finish)(Error("amp direct chat: channel open failed")
+                                             .WithUser(
+                                                 "Direct send didn't confirm — will use relay if available."));
+                               return;
+                             }
 
-                       session->Bind(*link->Mux(), *channel, pp::amp::ControlJsonChannelPolicy(),
-                                     [finish](Roe<std::vector<uint8_t>> ack) {
-                                       if (!ack) {
-                                         finish(Error("Failed to read direct chat ack")
-                                                    .WithUser("Direct send didn't confirm — will use relay if available."));
-                                         return false;
-                                       }
-                                       finish({});
-                                       return false;
-                                     });
+                             session->Bind(*link->Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
+                                           [finish](Roe<std::vector<uint8_t>> ack) {
+                                             if (!ack) {
+                                               (*finish)(
+                                                   Error("Failed to read direct chat ack")
+                                                       .WithUser("Direct send didn't confirm — will use "
+                                                                 "relay if available."));
+                                               return false;
+                                             }
+                                             (*finish)({});
+                                             return false;
+                                           });
 
-                       if (!session->EnqueueOutbound(JsonToBody(envelope_json))) {
-                         finish(Error("Failed to send direct chat envelope")
-                                    .WithUser("Direct send didn't confirm — will use relay if available."));
-                         return;
-                       }
-
-                       impl_->IoPumpUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline);
-                       if (!settled->load(std::memory_order_acquire)) {
-                         finish(Error("amp direct chat send timed out")
-                                    .WithUser("Direct send didn't confirm — will use relay if available."));
-                       }
+                             if (!session->EnqueueOutbound(JsonToBody(envelope_json))) {
+                               (*finish)(Error("Failed to send direct chat envelope")
+                                             .WithUser(
+                                                 "Direct send didn't confirm — will use relay if available."));
+                               return;
+                             }
+                             if (io_pump_) {
+                               io_pump_();
+                             }
+                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                               (*finish)(Error("amp direct chat send timed out")
+                                             .WithUser("Direct send didn't confirm — will use relay if "
+                                                       "available."));
+                             });
+                           },
+                           [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                      });
+}
 
-  impl_->IoPumpUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline);
+Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_user_id,
+                                               const RelayEnvelope& envelope) {
+  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
+  auto result_future = result_promise->get_future();
+  constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
+  const auto deadline = Clock::now() + kSendTimeout;
+
+  SendEnvelopeAsync(peer_relay_user_id, envelope, [result_promise](Roe<void> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    finish(Error("amp direct chat send timed out")
-               .WithUser("Direct send didn't confirm — will use relay if available."));
     return Error("amp direct chat send timed out")
         .WithUser("Direct send didn't confirm — will use relay if available.");
   }

@@ -12,9 +12,8 @@
 namespace pbr {
 
 /**
- * Blocking Connect facade over CallMediaLegCoordinator for CallMediaBridge ([A020]/ [A021]).
- * `io_pump` (MeshHost::Tick) may run on the Connect waiter while ConversationsHub also ticks —
- * MeshRuntime serializes Drive/PostToIo.
+ * Amp call-media transport over CallMediaLegCoordinator ([A020]/ [A021]).
+ * Prefer ConnectAsync — MeshHost MeshPump drives Amp; sync Connect is for tests/harnesses.
  */
 class CallMediaAmpTransport : public ICallMediaTransport {
 public:
@@ -38,6 +37,9 @@ public:
   CallMediaDirectConnectParams ActiveParams() const override;
   CallMediaSessionPhase Phase() const override;
   void Detach() override;
+
+  void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                    std::function<void(Roe<void>)> on_done, int timeout_ms = 15000) override;
 
   Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms = 15000) override;

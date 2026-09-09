@@ -48,6 +48,7 @@
 #include "domain/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "common/Logger.h"
 #include "foundation/platform/os/OsTime.h"
 
@@ -124,7 +125,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
-                                         std::function<void(std::function<void()>)> amp_worker_post)
+                                         std::function<void(std::function<void()>)> amp_worker_post,
+                                         std::function<void(std::function<void()>)> amp_post_io)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
@@ -137,23 +139,24 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   if (amp_links_) {
     auto worker = amp_worker_post;
     if (!worker) {
-      worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+      worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
     }
-    auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker);
+    auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io);
     blob->Start();
     peer_blob_ = std::move(blob);
 
     auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
-                                                           worker);
+                                                           worker, amp_post_io);
     history->Start();
-    auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker);
+    auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     chat->Start();
     peer_history_ = std::move(history);
     direct_chat_ = std::move(chat);
     peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
     peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump,
-                                                             worker);
+                                                             worker, AmpPeerAnnounceTransport::ResolvePublisherKey{},
+                                                             amp_post_io);
     peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
       std::string local_peer_id;
       std::vector<uint8_t> local_pk;
@@ -180,7 +183,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
     }
     peer_announce_->Start();
-    broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker);
+    broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
     broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
       std::string local_peer_id;
       std::vector<uint8_t> local_pk;
@@ -219,6 +222,24 @@ void MeshDeliveryOrchestrator::RegisterPeerSigningKey(const std::string& peer_id
   record.signing_public_key_b64 = signing_public_key_b64;
   record.source = source;
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
+}
+
+void MeshDeliveryOrchestrator::PublishAndPushAnnounceAsync(
+    const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft, const int64_t now_ms,
+    std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
+    return;
+  }
+  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
+  if (!tip) {
+    on_done(tip.error());
+    return;
+  }
+  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
 }
 
 Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishAndPushAnnounce(const std::string& peer_key,
@@ -311,6 +332,31 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnounceOverlay(const std::s
   }
   WarmPeerForThread(thread->id);
   return SendUserMessage(thread->id, plan->message_body);
+}
+
+void MeshDeliveryOrchestrator::PublishLiveChatFromOverlayAsync(
+    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
+    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+    const int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
+    return;
+  }
+  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
+  if (!draft) {
+    on_done(draft.error());
+    return;
+  }
+  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
+  if (!tip) {
+    on_done(tip.error());
+    return;
+  }
+  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
+  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
 }
 
 Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(
@@ -989,7 +1035,10 @@ Roe<void> MeshDeliveryOrchestrator::MarkPskVerified(const std::string& thread_id
 
 void MeshDeliveryOrchestrator::ScrollBackfill(const std::string& thread_id,
                                          std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->ScrollBackfill(thread_id); },
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->ScrollBackfillAsync(thread_id, std::move(done));
+              },
               std::move(on_complete));
 }
 
@@ -1001,13 +1050,13 @@ void MeshDeliveryOrchestrator::TailSyncActiveE2eThread() {
   MaybeTailSync(active_id);
 }
 
-void MeshDeliveryOrchestrator::RunSyncOnIo(const std::string& thread_id,
-                                      std::function<Roe<ChatSyncResult>()> task,
-                                      std::function<void(Roe<ChatSyncResult>)> on_complete) {
+void MeshDeliveryOrchestrator::RunSyncOnIo(
+    const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
+    std::function<void(Roe<ChatSyncResult>)> on_complete) {
   if (!chat_sync_ || !IsE2ePrivateThread(thread_id)) {
     if (on_complete) {
       AppRuntime::PostUI(
-                              [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
+          [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
     }
     return;
   }
@@ -1022,35 +1071,37 @@ void MeshDeliveryOrchestrator::RunSyncOnIo(const std::string& thread_id,
     return;
   }
 
-  AppRuntime::PostWorkerNormal([this, thread_id, task = std::move(task),
-                                                  on_complete = std::move(on_complete)]() mutable {
-    struct SyncGuard {
-      std::atomic<bool>& pending;
-      ~SyncGuard() { pending = false; }
-    } guard{sync_pending_};
-
-    Roe<ChatSyncResult> result = task();
-    if (result && on_messages_changed_) {
-      AppRuntime::PostUI([this]() { on_messages_changed_(); });
-    }
-    if (on_complete) {
-      AppRuntime::PostUI(
-                              [on_complete = std::move(on_complete), result = std::move(result)]() mutable {
-                                on_complete(std::move(result));
-                              });
-    }
+  AppRuntime::PostWorkerNormal([this, task = std::move(task), on_complete = std::move(on_complete)]() mutable {
+    task([this, on_complete = std::move(on_complete)](Roe<ChatSyncResult> result) mutable {
+      sync_pending_.store(false, std::memory_order_release);
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+      if (on_complete) {
+        AppRuntime::PostUI([on_complete = std::move(on_complete), result = std::move(result)]() mutable {
+          on_complete(std::move(result));
+        });
+      }
+    });
   });
 }
 
 void MeshDeliveryOrchestrator::SyncWithPeer(const std::string& thread_id,
                                        std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->UserInitiatedSync(thread_id); },
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->UserInitiatedSyncAsync(thread_id, std::move(done));
+              },
               std::move(on_complete));
 }
 
 void MeshDeliveryOrchestrator::RetryGapSync(const std::string& thread_id,
                                        std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->RetryGapSync(thread_id); }, std::move(on_complete));
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->RetryGapSyncAsync(thread_id, std::move(done));
+              },
+              std::move(on_complete));
 }
 
 std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayId(const Thread& thread) const {
@@ -1183,7 +1234,13 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
   if (!chat_sync_) {
     return;
   }
-  AppRuntime::PostWorkerNormal([this, thread_id]() { (void)chat_sync_->TailSync(thread_id); });
+  AppRuntime::PostWorkerNormal([this, thread_id]() {
+    chat_sync_->TailSyncAsync(thread_id, [this](Roe<ChatSyncResult> result) {
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  });
 }
 
 void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {
@@ -1199,7 +1256,13 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   }
   const uint64_t gap_min = sync_state->contiguous_peer_seq + 1;
   const uint64_t gap_max = envelope.sender_seq - 1;
-  (void)chat_sync_->RepairGap(thread_id, gap_min, gap_max);
+  AppRuntime::PostWorkerNormal([this, thread_id, gap_min, gap_max]() {
+    chat_sync_->RepairGapAsync(thread_id, gap_min, gap_max, [this](Roe<ChatSyncResult> result) {
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  });
 }
 
 void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
@@ -1481,50 +1544,70 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   // Amp dial key is Account ID (invite listen multiaddrs / contact endpoints). Brief uses relay:.
   auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
                     peer_relay_id, critical_lane = options.critical_lane]() mutable {
-    bool tried_direct = false;
+    auto post_continue = [critical_lane](std::function<void()> fn) {
+      if (critical_lane) {
+        AppRuntime::PostWorkerCritical(std::move(fn));
+      } else {
+        AppRuntime::PostWorkerNormal(std::move(fn));
+      }
+    };
+    auto finish_relay = [this, thread_id, message_id, envelope, peer_relay_id,
+                         critical_lane](bool tried_direct) mutable {
+      if (!peer_relay_id) {
+        ApplySendResult(thread_id, message_id, false,
+                        tried_direct ? "mesh dial failed" : "Direct thread missing peer relay id");
+        return;
+      }
+      if (!relay_) {
+        ApplySendResult(thread_id, message_id, false,
+                        tried_direct ? "mesh dial failed" : "Relay client not configured");
+        return;
+      }
+      const auto result = relay_->Send(envelope);
+      if (!result) {
+        log().warning << "Relay Send failed message_id=" << message_id << " peer=" << *peer_relay_id
+                      << " err=" << result.error().message;
+        EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
+                                      .attempt_count = 1});
+        ApplySendResult(thread_id, message_id, false, result.error().message);
+        return;
+      }
+      if (critical_lane) {
+        log().info << "Relay Send ok (call-control) message_id=" << message_id
+                   << " peer=" << *peer_relay_id;
+      }
+      ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
+    };
+
     // Call-control (critical_lane): Amp chat Open+ack-per-message races SoftMigrate/media and
     // burns up to ~4s before Brief — noisy WARNINGs for 10–20s while signaling still works via
     // relay. Prefer Brief when a relay route is known; Amp remains for Amp-only peers.
     const bool try_amp = direct_chat_ && !amp_peer_key.empty() &&
                          direct_chat_->IsPeerReachable(amp_peer_key) &&
                          !(critical_lane && peer_relay_id.has_value());
-    if (try_amp) {
-      tried_direct = true;
-      const auto direct = direct_chat_->SendEnvelope(amp_peer_key, envelope);
-      if (direct) {
-        ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
-        return;
-      }
-      if (critical_lane) {
-        log().warning << "Amp call-control send failed message_id=" << message_id
-                      << " peer=" << amp_peer_key << " err=" << direct.error().message
-                      << " (will try Brief if relay route known)";
-      }
-    }
-    if (!peer_relay_id) {
-      ApplySendResult(thread_id, message_id, false,
-                      tried_direct ? "mesh dial failed" : "Direct thread missing peer relay id");
+    if (!try_amp) {
+      finish_relay(false);
       return;
     }
-    if (!relay_) {
-      ApplySendResult(thread_id, message_id, false,
-                      tried_direct ? "mesh dial failed" : "Relay client not configured");
-      return;
-    }
-    const auto result = relay_->Send(envelope);
-    if (!result) {
-      log().warning << "Relay Send failed message_id=" << message_id << " peer=" << *peer_relay_id
-                    << " err=" << result.error().message;
-      EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
-                                    .attempt_count = 1});
-      ApplySendResult(thread_id, message_id, false, result.error().message);
-      return;
-    }
-    if (critical_lane) {
-      log().info << "Relay Send ok (call-control) message_id=" << message_id
-                 << " peer=" << *peer_relay_id;
-    }
-    ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
+    // Fire-and-forget Amp send: free this worker while MeshPump drives Open+ack.
+    direct_chat_->SendEnvelopeAsync(
+        amp_peer_key, envelope,
+        [this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
+         finish_relay = std::move(finish_relay)](Roe<void> direct) mutable {
+          post_continue([this, thread_id, message_id, amp_peer_key, critical_lane, direct = std::move(direct),
+                         finish_relay = std::move(finish_relay)]() mutable {
+            if (direct) {
+              ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
+              return;
+            }
+            if (critical_lane) {
+              log().warning << "Amp call-control send failed message_id=" << message_id
+                            << " peer=" << amp_peer_key << " err=" << direct.error().message
+                            << " (will try Brief if relay route known)";
+            }
+            finish_relay(true);
+          });
+        });
   };
   if (options.critical_lane) {
     // Call-control (MediaKey/Accept) must not sit behind PollInbox on Normal workers.
@@ -1840,47 +1923,67 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
                           std::make_move_iterator(pending.end()));
       return;
     }
-    std::vector<PendingRelaySend> still_pending;
-    for (PendingRelaySend& item : pending) {
-      if (IsThreadCompromised(item.thread_id)) {
-        continue;
-      }
-      if (item.envelope.recipient_contact_id && direct_chat_ &&
-          direct_chat_->IsPeerReachable(*item.envelope.recipient_contact_id)) {
-        if (direct_chat_->SendEnvelope(*item.envelope.recipient_contact_id, item.envelope)) {
-          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
-          continue;
+    auto still_pending = std::make_shared<std::vector<PendingRelaySend>>();
+    auto process = std::make_shared<std::function<void(size_t)>>();
+    *process = [this, pending = std::move(pending), still_pending, process](size_t index) mutable {
+      auto finish_all = [this, still_pending]() {
+        if (!still_pending->empty()) {
+          std::lock_guard lock(retry_mutex_);
+          retry_queue_.insert(retry_queue_.end(), std::make_move_iterator(still_pending->begin()),
+                              std::make_move_iterator(still_pending->end()));
         }
+      };
+      if (index >= pending.size()) {
+        finish_all();
+        return;
+      }
+      PendingRelaySend item = std::move(pending[index]);
+      if (IsThreadCompromised(item.thread_id)) {
+        (*process)(index + 1);
+        return;
+      }
+      auto try_relay = [this, still_pending, process, index](PendingRelaySend item,
+                                                             bool tried_direct) mutable {
         const auto result = relay_->Send(item.envelope);
         if (result) {
-          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay, true);
-          continue;
+          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay, tried_direct);
+          (*process)(index + 1);
+          return;
         }
         if (item.attempt_count < kMaxOutboxRetryAttempts) {
           item.attempt_count += 1;
-          still_pending.push_back(std::move(item));
-          continue;
+          still_pending->push_back(std::move(item));
+          (*process)(index + 1);
+          return;
         }
         ApplySendResult(item.thread_id, item.message_id, false, result.error().message);
-        continue;
+        (*process)(index + 1);
+      };
+
+      if (item.envelope.recipient_contact_id && direct_chat_ &&
+          direct_chat_->IsPeerReachable(*item.envelope.recipient_contact_id)) {
+        const std::string peer_key = *item.envelope.recipient_contact_id;
+        const RelayEnvelope envelope = item.envelope;
+        direct_chat_->SendEnvelopeAsync(
+            peer_key, envelope,
+            [this, still_pending, process, index, item = std::move(item),
+             try_relay = std::move(try_relay)](Roe<void> direct) mutable {
+              AppRuntime::PostWorkerNormal([this, still_pending, process, index, item = std::move(item),
+                                            try_relay = std::move(try_relay),
+                                            direct = std::move(direct)]() mutable {
+                if (direct) {
+                  ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
+                  (*process)(index + 1);
+                  return;
+                }
+                try_relay(std::move(item), true);
+              });
+            });
+        return;
       }
-      const auto result = relay_->Send(item.envelope);
-      if (result) {
-        ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay);
-        continue;
-      }
-      if (item.attempt_count < kMaxOutboxRetryAttempts) {
-        item.attempt_count += 1;
-        still_pending.push_back(std::move(item));
-        continue;
-      }
-      ApplySendResult(item.thread_id, item.message_id, false, result.error().message);
-    }
-    if (!still_pending.empty()) {
-      std::lock_guard lock(retry_mutex_);
-      retry_queue_.insert(retry_queue_.end(), std::make_move_iterator(still_pending.begin()),
-                          std::make_move_iterator(still_pending.end()));
-    }
+      try_relay(std::move(item), false);
+    };
+    (*process)(0);
   });
 }
 

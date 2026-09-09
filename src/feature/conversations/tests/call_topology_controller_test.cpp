@@ -7,6 +7,8 @@
 #include "domain/messaging/SfuAttachFanout.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
+#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
@@ -594,6 +596,8 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   AppRuntime::Initialize();
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
+  MeshControlPool control(1);
+  MeshControlDispatch::Install(&control);
 
   const std::string call_id = "call:defer-inbound";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -628,6 +632,8 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
+  MeshControlDispatch::Uninstall();
+  control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
 }

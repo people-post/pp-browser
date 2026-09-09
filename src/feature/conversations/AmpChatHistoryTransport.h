@@ -19,9 +19,10 @@ class AmpChatHistoryTransport : public IChatHistoryPeerClient {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
 
   AmpChatHistoryTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                        IPskSessionStore& psk_store, WorkerPost post_worker = {});
+                        IPskSessionStore& psk_store, WorkerPost post_worker = {}, IoPost post_io = {});
   ~AmpChatHistoryTransport() override;
 
   AmpChatHistoryTransport(const AmpChatHistoryTransport&) = delete;
@@ -34,6 +35,8 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
+  void FetchChatHistoryAsync(const ChatHistoryRequest& request,
+                             std::function<void(Roe<ChatHistoryResponse>)> on_done) override;
 
 private:
   struct Impl;
@@ -41,6 +44,7 @@ private:
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

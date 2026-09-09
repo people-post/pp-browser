@@ -24,9 +24,10 @@ class AmpChatBlobTransport : public IChatBlobPeerService {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
 
   AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                     WorkerPost post_worker = {});
+                     WorkerPost post_worker = {}, IoPost post_io = {});
   ~AmpChatBlobTransport() override;
 
   AmpChatBlobTransport(const AmpChatBlobTransport&) = delete;
@@ -44,12 +45,18 @@ public:
   Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) override;
   Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) override;
 
+  void FetchChatBlobAsync(const ChatBlobRequest& request,
+                          std::function<void(Roe<std::vector<uint8_t>>)> on_done) override;
+  void PushChatBlobAsync(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext,
+                         std::function<void(Roe<void>)> on_done) override;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

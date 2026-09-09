@@ -128,7 +128,13 @@ public:
   Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id, SoftMigrateTrigger trigger,
                                   const std::string& prefer_hop_peer_id = {},
                                   uint64_t expected_gen = 0);
+  /** SoftMigrate without parking MeshControl on quote/attach (product MeshControl paths). */
+  void MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
+                                  const std::string& prefer_hop_peer_id, uint64_t expected_gen,
+                                  std::function<void(Roe<void>)> on_done);
   Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
+                             std::function<void(Roe<void>)> on_done);
 
   /** Group (N≥3) ICE failed — recover via soft-migrate (posted to UI by caller if needed). */
   void TryRecoverViaSfu(const std::string& call_id);
@@ -194,6 +200,13 @@ private:
   void OnGuestSfuTransportLost();
   /** Quote + AcceptAndAttach + reader + subscribe; keeps existing StartSfu send path. */
   Roe<void> ReattachGuestSfuTransport(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                      std::function<void(Roe<void>)> on_done);
+  /** StartSfu + fan-out bookkeeping after media-relay attach (or local hop) succeeds. */
+  Roe<void> CompleteAttachLocalToSfu(const std::string& call_id, CallSfuAttachDetail attach, bool self_hop,
+                                     int64_t a_up_bps, uint64_t gen_at_start,
+                                     const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
+                                     const std::vector<uint8_t>& media_key, uint32_t media_epoch);
 
   CallTopologyHost& host_;
   CallSessionStore& sessions_;

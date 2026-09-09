@@ -26,10 +26,26 @@ public:
   virtual Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
                                             const MediaRelayQuoteRequest& request,
                                             int timeout_ms = 8000) = 0;
+  /** Prefer over sync RequestQuote when MeshPump + PostToIo are available. */
+  virtual void RequestQuoteAsync(const std::string& hop_peer_key, const MediaRelayQuoteRequest& request,
+                                 std::function<void(Roe<MediaRelayQuote>)> on_done, int timeout_ms = 8000) {
+    if (on_done) {
+      on_done(RequestQuote(hop_peer_key, request, timeout_ms));
+    }
+  }
   virtual Roe<MediaRelayAttachResult> AcceptAndAttach(
       const std::string& hop_peer_key, const std::string& quote_id, const std::string& call_id,
       const std::string& auth_stub, std::function<void(MediaDataFrame)> on_frame,
       int timeout_ms = 8000) = 0;
+  virtual void AcceptAndAttachAsync(const std::string& hop_peer_key, const std::string& quote_id,
+                                    const std::string& call_id, const std::string& auth_stub,
+                                    std::function<void(MediaDataFrame)> on_frame,
+                                    std::function<void(Roe<MediaRelayAttachResult>)> on_done,
+                                    int timeout_ms = 8000) {
+    if (on_done) {
+      on_done(AcceptAndAttach(hop_peer_key, quote_id, call_id, auth_stub, std::move(on_frame), timeout_ms));
+    }
+  }
   /** After AcceptAndAttach + StartSfu — begin inbound frame delivery. */
   virtual void StartClientFrameReader() = 0;
   /**
@@ -70,12 +86,31 @@ public:
   virtual ~ICircuitHopReach() = default;
   /** Reach a media_relay hop (topology / prefetch). */
   virtual Roe<void> TryEnsureHopReachable(const std::string& hop_peer_id) = 0;
+  /** Prefer over sync when MeshPump + PostToIo are available. */
+  virtual void TryEnsureHopReachableAsync(const std::string& hop_peer_id,
+                                          std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureHopReachable(hop_peer_id));
+    }
+  }
   /** Reach a call peer for 1:1 call-media when not directly dialable. */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
+  virtual void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureCallMediaReachable(peer_key));
+    }
+  }
   /** L3.25c: punch via circuit R1 as introducer, then demote the circuit hop. */
   virtual Roe<void> TryUpgradeToDirect(const std::string& peer_key) {
     (void)peer_key;
     return Error("circuit upgrade not available");
+  }
+  virtual void TryUpgradeToDirectAsync(const std::string& peer_key,
+                                       std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryUpgradeToDirect(peer_key));
+    }
   }
 };
 

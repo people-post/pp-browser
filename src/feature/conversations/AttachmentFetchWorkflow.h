@@ -79,12 +79,13 @@ private:
   bool ShouldAutoDownload(const Job& job) const;
   void EnqueueJob(Job job, bool force);
   void DrainQueue();
-  void RunJob(const Job& job);
+  void RunJobAsync(Job job, std::function<void()> on_done);
   void MarkFailed(const std::string& key);
   void MarkReady(const std::string& key);
   void MarkPending(const std::string& key);
   void NotifyChanged();
   ByteVector CopyDekUnlocked() const;
+  void ContinueDrainOnWorker();
 
   std::string profile_dir_;
   std::string profile_id_;

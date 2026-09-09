@@ -10,10 +10,14 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/reachability/PunchLogic.h"
+#include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
+#include <functional>
+#include <optional>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -74,8 +78,8 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     }
   });
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    // Warm only; must not run RequestBridge on Browser IO ahead of AcceptInvite.
-    AppRuntime::PostWorkerNormal([this, identity]() {
+    // Warm only; must not run RequestBridge on Critical ahead of AcceptInvite.
+    MeshControlDispatch::Post([this, identity]() {
       if (deps_.prefetch_peer_reachability) {
         deps_.prefetch_peer_reachability(identity);
       }
@@ -120,7 +124,7 @@ void CallStack::OnMeshServicesStarted() {
   }
   auto pump = [m]() { m->Tick(); };
   CallMediaAmpTransport::WorkerPost worker = [](std::function<void()> task) {
-    AppRuntime::PostWorkerNormal(std::move(task));
+    MeshControlDispatch::Post(std::move(task));
   };
   call_media_amp_ =
       std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump), std::move(worker));
@@ -156,11 +160,18 @@ void CallStack::WireMediaRelayDeps() {
     return;
   }
   MeshHost* m = mesh();
+  // Prefer MeshHost L4 io (empty pump when MeshPump owns Drive) over Tick-from-waiters.
+  std::function<void()> io_pump;
+  std::function<void(std::function<void()>)> post_io;
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
+    io_pump = chat->io.io_pump;
+    post_io = chat->io.post_io;
+  }
   const bool use_amp_relay =
       m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
   if (use_amp_relay) {
     media_relay_client_ = std::make_unique<AmpMediaRelayClient>(
-        *m->AmpMediaRelayCoord(), [m]() { m->Tick(); }, m->Amp()->LocalPeerId());
+        *m->AmpMediaRelayCoord(), io_pump, m->Amp()->LocalPeerId(), post_io);
     log().info << "media-relay transport=amp";
   } else {
     media_relay_client_.reset();
@@ -183,12 +194,17 @@ void CallStack::WireMediaRelayDeps() {
       } else {
         IChatPeerLinks* punch_links = &circuit->links;
         circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
-            circuit->tunnel, circuit->hops, circuit->links, [m]() { m->Tick(); },
+            circuit->tunnel, circuit->hops, circuit->links, io_pump,
             [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
-            [this, m, punch_links](const std::string& target_peer_id) -> Roe<void> {
+            [this, m, punch_links](const std::string& target_peer_id,
+                                  std::function<void(Roe<void>)> on_done) {
+              if (!on_done) {
+                return;
+              }
               auto* punch = m->AmpPunch();
               if (!punch || !punch->IsStarted()) {
-                return Error("amp punch unavailable");
+                on_done(Error("amp punch unavailable"));
+                return;
               }
               std::vector<std::string> contact_ids;
               if (deps_.contacts) {
@@ -215,34 +231,50 @@ void CallStack::WireMediaRelayDeps() {
                   },
                   [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
               if (!intro) {
-                return Error("no punch introducer");
+                on_done(Error("no punch introducer"));
+                return;
               }
-              auto punched =
-                  punch->TryColdPunch(*intro, target_peer_id, punch->LocalCandidateAddrs(), 2000);
-              if (!punched) {
-                return Error(punched.error().message);
-              }
-              if (!punched->ok) {
-                return Error(punched->error.empty() ? "punch failed" : punched->error);
-              }
-              return {};
+              punch->TryColdPunchAsync(
+                  *intro, target_peer_id, punch->LocalCandidateAddrs(),
+                  [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+                    if (!punched) {
+                      on_done(Error(punched.error().message));
+                      return;
+                    }
+                    if (!punched->ok) {
+                      on_done(Error(punched->error.empty() ? "punch failed" : punched->error));
+                      return;
+                    }
+                    on_done(Roe<void>());
+                  },
+                  2000);
             },
-            [m](const std::string& introducer_peer_key,
-                const std::string& target_peer_id) -> Roe<void> {
+            [m](const std::string& introducer_peer_key, const std::string& target_peer_id,
+                std::function<void(Roe<void>)> on_done) {
+              if (!on_done) {
+                return;
+              }
               auto* punch = m->AmpPunch();
               if (!punch || !punch->IsStarted()) {
-                return Error("amp punch unavailable");
+                on_done(Error("amp punch unavailable"));
+                return;
               }
-              auto punched = punch->TryUpgradePunch(introducer_peer_key, target_peer_id,
-                                                    punch->LocalCandidateAddrs(), 2000);
-              if (!punched) {
-                return Error(punched.error().message);
-              }
-              if (!punched->ok) {
-                return Error(punched->error.empty() ? "upgrade punch failed" : punched->error);
-              }
-              return {};
-            });
+              punch->TryUpgradePunchAsync(
+                  introducer_peer_key, target_peer_id, punch->LocalCandidateAddrs(),
+                  [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+                    if (!punched) {
+                      on_done(Error(punched.error().message));
+                      return;
+                    }
+                    if (!punched->ok) {
+                      on_done(Error(punched->error.empty() ? "upgrade punch failed" : punched->error));
+                      return;
+                    }
+                    on_done(Roe<void>());
+                  },
+                  2000);
+            },
+            post_io);
         log().info << "circuit-hop reach=amp";
       }
     } else {

@@ -103,12 +103,13 @@ void Apply(XxxEvent ev, /* small context */);
 
 | Work | Thread | Rule |
 |------|--------|------|
-| `setProtocolHandler` entry | Host **io** | Hop immediately for any work that might block a pool thread |
-| Call-media hello/ack (stream R/W) | Host **io** (async) | **Never** `BlockingRead`/`BlockingWrite` on WorkerPool — peer may stall forever |
-| Inbound handler / key fill (app logic) | Worker **Normal** | May hop after async hello read; must not hold a live stream wait |
-| Other control RPC still on Blocking* (dial-back, some circuit/relay JSON) | Worker **Normal** | Never Critical; migrate to async+deadline when touched (see remaining work) |
+| `setProtocolHandler` entry | Amp **MeshPump** | Hop immediately for any work that might block a general pool thread |
+| Call-media hello/ack (stream R/W) | Amp pump / async | **Never** `BlockingRead`/`BlockingWrite` on general WorkerPool — peer may stall forever |
+| Inbound handler / key fill (app logic) | Worker **Normal** or MeshControl | May hop after async hello read; must not hold a live stream wait on Critical |
+| Blocking Connect / `IoPumpUntil` facades | **MeshControlPool** (MeshHost-owned) | Interim until async `Connect(cb)` / A022-style callbacks; never park general WorkerPool |
+| Sync L4 RPC wrappers (test/harness façades) | MeshControlPool (default 1) or caller | SoftMigrate/attach/reattach, circuit hop reach, punch, and CallMediaBridge peer-reach product paths are Async; sync wrappers remain for tests |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
-| Duplex media R/W | Host **io** | Async pump; no BlockingWrite for fan-out |
+| Duplex media R/W | Amp pump | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |
 | Detach / Stop / ClearInboundHandler | Same SM strand | Completes waiters; **reset** streams; rejects further adopts |
 
@@ -241,10 +242,10 @@ stateDiagram-v2
 
 | Item | Why not done yet |
 |------|------------------|
-| **Async `Connect(cb)` API** | Bridge (`CallMediaBridge`) still uses blocking `Connect()` on a worker for retry loops. Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler (s1 freeze kept blocking Connect for s2). |
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait and peer-reach (`EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`) no longer park MeshControl. Sync `Connect()` remains for tests/harnesses. |
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
-| **Other protocols still on `Blocking*`** | Dial-back, some circuit / media-relay attach JSON still use WorkerPool `BlockingRead`/`Write`. Migrate when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
+| **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
 
 ---

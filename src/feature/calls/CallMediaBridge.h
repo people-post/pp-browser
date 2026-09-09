@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -78,9 +79,21 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity, uint64_t connect_gen);
-  Roe<void> ConnectOffererWithRetry(const CallMediaDirectConnectParams& params,
-                                    const CallMediaDirectCallbacks& cbs);
+  /** Circuit/punch reach without parking MeshControl (TryEnsureCallMediaReachableAsync). */
+  void EnsurePeerReachableAsync(const std::string& peer_identity, uint64_t connect_gen,
+                                std::function<void(Roe<void>)> on_done);
+  /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
+  void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
+  void ScheduleOffererGracePoll(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
+                                int64_t grace_deadline_ms);
+  void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
+                           int attempt);
+  void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
+                                            uint64_t gen, int attempt);
+  void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
+                                int attempt, Roe<void> connected);
+  void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
+  void CancelConnectTimers();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
@@ -104,11 +117,13 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Connect worker runs on Normal (not Critical) so hello/inbound are not starved. */
+  /** Connect sequence in flight (async ConnectAsync / grace poll / reachability). */
   std::atomic<bool> connect_worker_inflight_{false};
   /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
+  uint64_t offerer_grace_timer_id_ = 0;
+  uint64_t connect_retry_timer_id_ = 0;
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */

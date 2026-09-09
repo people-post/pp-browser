@@ -28,6 +28,7 @@ class AmpBroadcastTransport {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
   /** Resolve publisher ML-DSA-65 public key (device key) for ticket verify. */
   using ResolvePublisherKey = std::function<std::optional<ByteVector>(const std::string& peer_id)>;
   /** Local publisher secret for minting tickets (device ML-DSA). */
@@ -71,7 +72,7 @@ public:
   using ResolveHopSlotWinContext = std::function<HopSlotWinContext(
       const std::string& program_id, const std::string& join_handle, const std::string& relay_peer_id)>;
 
-  AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {}, IoPost post_io = {});
   ~AmpBroadcastTransport();
 
   AmpBroadcastTransport(const AmpBroadcastTransport&) = delete;
@@ -99,7 +100,20 @@ public:
   Roe<BroadcastRelaySlotWinResult> RequestRelaySlotWin(const std::string& peer_key,
                                                        const BroadcastRelaySlotWinRequest& req);
 
+  void RequestTicketAsync(const std::string& peer_key, const BroadcastTicketRequest& req,
+                          std::function<void(Roe<BroadcastTicketResponse>)> on_done);
+  void RequestViewerAttachAsync(const std::string& peer_key, const BroadcastViewerAttachRequest& req,
+                                std::function<void(Roe<BroadcastViewerAttachResult>)> on_done);
+  void RequestRelaySlotWinAsync(const std::string& peer_key, const BroadcastRelaySlotWinRequest& req,
+                                std::function<void(Roe<BroadcastRelaySlotWinResult>)> on_done);
+
 private:
+  template <typename ResponseT>
+  void RoundTripAsync(const std::string& peer_key, const std::string& request_json, const char* expect_label,
+                      std::function<bool(const BroadcastRpcMessage&)> is_response,
+                      std::function<ResponseT(BroadcastRpcMessage&&)> take_response,
+                      std::function<void(Roe<ResponseT>)> on_done);
+
   template <typename ResponseT>
   Roe<ResponseT> RoundTrip(const std::string& peer_key, const std::string& request_json, const char* expect_label,
                            std::function<bool(const BroadcastRpcMessage&)> is_response,
@@ -110,6 +124,7 @@ private:
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 
