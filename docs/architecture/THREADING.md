@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Blocking `Connect()` / `IoPumpUntil` facades | Amp L4 + `CallMediaBridge` | On MeshControlPool interim; async `Connect(cb)` / callback APIs deferred — [SESSION_MACHINES](../../projects/p2p-av-calls/SESSION_MACHINES.md) |
+| Blocking `Connect()` / `IoPumpUntil` facades | Amp L4 + reachability | Call-media uses **ConnectAsync** (bridge). Remaining `IoPumpUntil` on dial-back/punch/chat/blob/directory/DHT — migrate A022-style; then shrink MeshControlPool |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |

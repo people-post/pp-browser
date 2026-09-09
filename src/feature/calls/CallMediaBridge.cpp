@@ -355,90 +355,188 @@ Roe<void> CallMediaBridge::EnsurePeerReachableOnIo(const std::string& peer_ident
   return last_error;
 }
 
-Roe<void> CallMediaBridge::ConnectOffererWithRetry(const CallMediaDirectConnectParams& params,
-                                                         const CallMediaDirectCallbacks& cbs) {
-  const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
+void CallMediaBridge::CancelConnectTimers() {
+  if (offerer_grace_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(offerer_grace_timer_id_);
+    offerer_grace_timer_id_ = 0;
+  }
+  if (connect_retry_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(connect_retry_timer_id_);
+    connect_retry_timer_id_ = 0;
+  }
+}
+
+void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::string& call_id,
+                                            Roe<void> connected, const char* role) {
+  if (connect_generation_.load(std::memory_order_acquire) != gen) {
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    return;
+  }
+  connect_worker_inflight_.store(false, std::memory_order_release);
+  AppRuntime::PostUI([this, connected = std::move(connected), call_id, role = std::string(role ? role : "")]() {
+    if (direct_.IsActive()) {
+      CommitDirectConnected(call_id);
+      return;
+    }
+    if (!connected) {
+      log().warning << "Call-media give up call_id=" << call_id << " role=" << role
+                    << " err=" << connected.error().message;
+      mesh_connect_failed_ = true;
+      host_.P2pSetLastMediaError(connected.error().message);
+      if (lifecycle_) {
+        lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      }
+      host_.P2pNotifyRingChanged();
+    }
+  });
+}
+
+void CallMediaBridge::ScheduleOffererGracePoll(CallMediaDirectConnectParams params,
+                                               CallMediaDirectCallbacks cbs, const uint64_t gen,
+                                               const int64_t grace_deadline_ms) {
+  if (connect_generation_.load(std::memory_order_acquire) != gen ||
+      stopping_.load(std::memory_order_acquire)) {
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    return;
+  }
   if (direct_.IsActive()) {
-    log().info << "Call-media already active (peer dialed us) call_id=" << params.call_id;
-    return {};
+    log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
+    FinishConnectSequence(gen, params.call_id, {}, "offerer");
+    return;
+  }
+  if (util::NowUnixMs() >= grace_deadline_ms) {
+    log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
+    BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
+    return;
+  }
+  offerer_grace_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(50),
+      [this, params = std::move(params), cbs = std::move(cbs), gen, grace_deadline_ms]() mutable {
+        offerer_grace_timer_id_ = 0;
+        ScheduleOffererGracePoll(std::move(params), std::move(cbs), gen, grace_deadline_ms);
+      });
+}
+
+void CallMediaBridge::OnConnectAttemptFinished(CallMediaDirectConnectParams params,
+                                               CallMediaDirectCallbacks cbs, const uint64_t gen,
+                                               const int attempt, Roe<void> connected) {
+  if (connect_generation_.load(std::memory_order_acquire) != gen ||
+      stopping_.load(std::memory_order_acquire)) {
+    direct_.Detach();
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    return;
+  }
+  if (connected || direct_.IsActive()) {
+    log().info << "Call-media Connect ok call_id=" << params.call_id
+               << " role=" << (params.offerer ? "offerer" : "answerer");
+    FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
+    return;
+  }
+  log().warning << "Call-media Connect failed attempt=" << attempt
+                << " err=" << connected.error().message;
+  if (dial_) {
+    dial_->AbortInflightDial(params.peer_key);
+    dial_->ClearDialBackoff(params.peer_key);
+  }
+  if (attempt >= kConnectAttempts) {
+    FinishConnectSequence(gen, params.call_id, connected, params.offerer ? "offerer" : "answerer");
+    return;
+  }
+  // Drain abandoned stream callbacks before the next attempt (coordinator, not MeshControl sleep).
+  connect_retry_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(1500),
+      [this, params = std::move(params), cbs = std::move(cbs), gen, attempt]() mutable {
+        connect_retry_timer_id_ = 0;
+        BeginConnectAttempt(std::move(params), std::move(cbs), gen, attempt + 1);
+      });
+}
+
+void CallMediaBridge::BeginConnectAttempt(CallMediaDirectConnectParams params,
+                                          CallMediaDirectCallbacks cbs, const uint64_t gen,
+                                          const int attempt) {
+  if (connect_generation_.load(std::memory_order_acquire) != gen ||
+      stopping_.load(std::memory_order_acquire)) {
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    return;
+  }
+  if (direct_.IsActive()) {
+    FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
+    return;
   }
 
-  Roe<void> ready = EnsurePeerReachableOnIo(params.peer_key, gen);
-  if (!ready) {
-    return ready;
-  }
-
-  // Brief settle after reachability; long sleeps here stacked with grace and caused dual dial.
-  for (int i = 0; i < 20; ++i) {
-    if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      return Error("call-media aborted");
+  // Reachability may still IoPumpUntil (Phase B) — keep that off the UI/coordinator.
+  MeshControlDispatch::Post([this, params = std::move(params), cbs = std::move(cbs), gen, attempt]() mutable {
+    if (connect_generation_.load(std::memory_order_acquire) != gen ||
+        stopping_.load(std::memory_order_acquire)) {
+      connect_worker_inflight_.store(false, std::memory_order_release);
+      return;
     }
-    if (direct_.IsActive()) {
-      return {};
+    Roe<void> ready = EnsurePeerReachableOnIo(params.peer_key, gen);
+    if (!ready) {
+      FinishConnectSequence(gen, params.call_id, ready, params.offerer ? "offerer" : "answerer");
+      return;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-
-  Error last_error("call-media connect failed");
-  for (int attempt = 1; attempt <= kConnectAttempts; ++attempt) {
-    if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      log().info << "Call-media Connect aborted call_id=" << params.call_id;
-      return Error("call-media aborted");
-    }
-    if (direct_.IsActive()) {
-      log().info << "Call-media already active mid-retry call_id=" << params.call_id;
-      return {};
+    for (int i = 0; i < 20; ++i) {
+      if (connect_generation_.load(std::memory_order_acquire) != gen ||
+          stopping_.load(std::memory_order_acquire)) {
+        connect_worker_inflight_.store(false, std::memory_order_release);
+        return;
+      }
+      if (direct_.IsActive()) {
+        FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
       dial_->ClearDialBackoff(params.peer_key);
       if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
         log().info << "Call-media dial ma=" << *ma << " peer=" << params.peer_key
-                      << " role=" << (params.offerer ? "offerer" : "answerer");
+                   << " role=" << (params.offerer ? "offerer" : "answerer");
       }
     }
-    // Offerer resends key each attempt — answerer Defers until Inbound CallMediaKey.
     if (params.offerer) {
       host_.P2pResendMediaKey(params.call_id, params.peer_key);
     }
-    // Prior attempt may have left a half-open stream after hello reject / timeout.
     if (!direct_.IsActive()) {
       direct_.Detach();
     }
-    log().info << "Call-media Connect attempt=" << attempt << "/" << kConnectAttempts
+    log().info << "Call-media ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
                << " call_id=" << params.call_id << " peer=" << params.peer_key
                << " role=" << (params.offerer ? "offerer" : "answerer")
                << " timeout_ms=" << kConnectAttemptTimeoutMs;
-    Roe<void> connected = direct_.Connect(params, cbs, kConnectAttemptTimeoutMs);
-    if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      direct_.Detach();
-      log().info << "Call-media Connect aborted after attempt call_id=" << params.call_id;
-      return Error("call-media aborted");
-    }
-    if (connected) {
-      log().info << "Call-media Connect ok call_id=" << params.call_id
-                    << " role=" << (params.offerer ? "offerer" : "answerer");
-      return {};
-    }
-    if (direct_.IsActive()) {
-      log().info << "Call-media peer connected us during attempt call_id=" << params.call_id;
-      return {};
-    }
-    last_error = connected.error();
-    log().warning << "Call-media Connect failed attempt=" << attempt << " err=" << last_error.message;
+    // Release MeshControl for the Connect wait — MeshPump + StartLeg drive Amp.
+    direct_.ConnectAsync(
+        params, cbs,
+        [this, params, cbs, gen, attempt](Roe<void> connected) mutable {
+          AppRuntime::PostCoordinatorNormal([this, params = std::move(params), cbs = std::move(cbs), gen,
+                                             attempt, connected = std::move(connected)]() mutable {
+            OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
+                                     std::move(connected));
+          });
+        },
+        kConnectAttemptTimeoutMs);
+  });
+}
+
+void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
+                                           CallMediaDirectCallbacks cbs, const uint64_t gen) {
+  connect_worker_inflight_.store(true, std::memory_order_release);
+  CancelConnectTimers();
+  if (params.offerer) {
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
-      dial_->ClearDialBackoff(params.peer_key);
     }
-    // Let abandoned newStream callbacks drain before the next attempt (interruptible).
-    for (int i = 0; i < 150; ++i) {
-      if (connect_generation_.load(std::memory_order_acquire) != gen) {
-        return Error("call-media aborted");
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    log().info << "Offerer waiting for inbound call-media call_id=" << params.call_id
+               << " grace_ms=" << kOffererInboundGraceMs;
+    const int64_t grace_deadline = util::NowUnixMs() + kOffererInboundGraceMs;
+    ScheduleOffererGracePoll(std::move(params), std::move(cbs), gen, grace_deadline);
+    return;
   }
-  return last_error;
+  log().info << "Connect sequence enter call_id=" << params.call_id << " peer=" << params.peer_key
+             << " role=answerer";
+  BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
 }
 
 Roe<ByteVector> CallMediaBridge::LoadActiveMediaKey(const std::string& call_id) const {
@@ -624,82 +722,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   // Prefer answerer reverse-dial (inbound on offerer). Simultaneous offerer↔answerer newStream
   // used to hang (Critical-pool hello/ack deadlock); CallMediaDirect now claims one stream and
   // runs handshake on Normal. Offerer still waits briefly for inbound before fallback dial.
-  if (params.offerer) {
-    // Drop any Prefetch/warm dial toward the answerer so the host can accept inbound first.
-    if (dial_) {
-      dial_->AbortInflightDial(params.peer_key);
-    }
-  }
-
-  connect_worker_inflight_.store(true);
   const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
-  const char* role = params.offerer ? "offerer" : "answerer";
-  // Normal lane historically — must not occupy Critical. MeshControlPool keeps general
-  // WorkerPool free for HTTP / Accept while Connect / grace waits run.
-  MeshControlDispatch::Post([this, params, cbs, gen, role]() {
-    if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      connect_worker_inflight_.store(false);
-      log().info << "Connect worker aborted before dial call_id=" << params.call_id;
-      return;
-    }
-
-    Roe<void> connected = {};
-    if (params.offerer) {
-      log().info << "Offerer waiting for inbound call-media call_id=" << params.call_id
-                 << " grace_ms=" << kOffererInboundGraceMs;
-      const int64_t grace_deadline = util::NowUnixMs() + kOffererInboundGraceMs;
-      while (util::NowUnixMs() < grace_deadline) {
-        if (connect_generation_.load(std::memory_order_acquire) != gen ||
-            stopping_.load(std::memory_order_acquire)) {
-          connect_worker_inflight_.store(false);
-          log().info << "Connect worker aborted during inbound grace call_id=" << params.call_id;
-          return;
-        }
-        if (direct_.IsActive()) {
-          log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
-          connect_worker_inflight_.store(false);
-          // Inbound on_connected may have run before StartSfu — re-commit once capture is live.
-          AppRuntime::PostUI([this, call_id = params.call_id]() {
-                CommitDirectConnected(call_id);
-          });
-          return;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-      if (direct_.IsActive()) {
-        connect_worker_inflight_.store(false);
-        AppRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
-        return;
-      }
-      log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
-    }
-
-    log().info << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
-               << " role=" << role;
-    connected = ConnectOffererWithRetry(params, cbs);
-    connect_worker_inflight_.store(false);
-    if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      log().info << "Connect worker aborted after dial call_id=" << params.call_id;
-      return;
-    }
-    AppRuntime::PostUI([this, connected, call_id = params.call_id, role = std::string(role)]() {
-      // Dial may have lost the race to inbound; stream up always wins for chrome.
-      if (direct_.IsActive()) {
-        CommitDirectConnected(call_id);
-        return;
-      }
-      if (!connected) {
-        log().warning << "Call-media give up call_id=" << call_id << " role=" << role
-                      << " err=" << connected.error().message;
-        mesh_connect_failed_ = true;
-        host_.P2pSetLastMediaError(connected.error().message);
-        if (lifecycle_) {
-          lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
-        }
-        host_.P2pNotifyRingChanged();
-      }
-    });
-  });
+  StartConnectSequence(std::move(params), std::move(cbs), gen);
 
   mesh_connect_missing_mic_ = false;
   host_.P2pNotifyRingChanged();
@@ -843,9 +867,10 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
-  // Abort any Connect worker before Detach — LeaveCall can run while Connect is mid-dial.
-  // Do not clear connect_worker_inflight_ here — only the worker clears it (shutdown waits).
+  // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
+  // Do not clear connect_worker_inflight_ here — only the sequence clears it (shutdown waits).
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  CancelConnectTimers();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -877,6 +902,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
 void CallMediaBridge::ReleaseDirectTransport() {
   // SoftMigrate: drop 1:1 transport; keep CallMediaEngine capture feeding media_relay.
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  CancelConnectTimers();
   const std::string peer = media_peer_identity_;
   if (dial_ && !peer.empty()) {
     dial_->AbortInflightDial(peer);
@@ -914,6 +940,7 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   stopping_.store(true, std::memory_order_release);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  CancelConnectTimers();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
@@ -933,16 +960,16 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
       std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(0, timeout_ms));
   while (connect_worker_inflight_.load(std::memory_order_acquire)) {
     if (!AppRuntime::IsRunning()) {
-      // Pool already joined (or never started) — queued Connect tasks were dropped.
+      // Runtime already joined — queued MeshControl / coordinator tasks were dropped.
       connect_worker_inflight_.store(false, std::memory_order_release);
       break;
     }
     if (std::chrono::steady_clock::now() >= deadline) {
-      log().warning << "PrepareForTeardown: Connect worker still inflight after " << timeout_ms
-                    << "ms — proceeding (WorkerPool join may still wait on the task)";
+      log().warning << "PrepareForTeardown: Connect sequence still inflight after " << timeout_ms
+                    << "ms — proceeding (MeshControl/reachability may still be draining)";
       break;
     }
-    // Keep poking the dial/stream so a blocked Connect returns and sees the generation bump.
+    // Keep poking the dial/stream so a blocked reachability wait returns and sees the generation bump.
     if (dial_ && !peer.empty()) {
       dial_->AbortInflightDial(peer);
     }

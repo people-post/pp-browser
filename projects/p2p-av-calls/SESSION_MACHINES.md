@@ -242,7 +242,7 @@ stateDiagram-v2
 
 | Item | Why not done yet |
 |------|------------------|
-| **Async `Connect(cb)` API** | Bridge (`CallMediaBridge`) still uses blocking `Connect()` on **MeshControlPool** for retry loops (interim: keeps general WorkerPool free for HTTP/Accept). Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler — may shrink/remove MeshControlPool when landed. |
+| **Async `Connect(cb)` API** | **Landed (interim):** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait no longer parks MeshControl for the full dial timeout. Reachability/`TryEnsureCallMediaReachable` may still use MeshControl briefly until Phase B. Sync `Connect()` remains for tests/harnesses. |
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Other protocols still on `IoPumpUntil` / Blocking*** | Dial-back, chat/blob, directory/DHT facades run on MeshControlPool today. Migrate to A022-style callbacks when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
