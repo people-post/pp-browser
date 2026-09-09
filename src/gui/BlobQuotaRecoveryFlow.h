@@ -27,6 +27,16 @@ struct BlobQuotaRecoveryFlow {
     Detail::RunUploadImpl(std::move(upload), std::move(on_complete), std::move(plan_recovery), std::move(free_slot));
   }
 
+  /** Prefer for Amp peer-direct uploads — does not park a worker on PushChatBlob. */
+  template <typename T>
+  static void RunUploadAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
+                             std::function<void(Roe<T>)> on_complete,
+                             std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
+                             std::function<Roe<void>()> free_slot) {
+    Detail::RunUploadAsyncImpl(std::move(upload), std::move(on_complete), std::move(plan_recovery),
+                               std::move(free_slot));
+  }
+
 private:
   struct Detail {
     static std::string BuildQuotaConfirmMessage(const BlobQuotaRecoveryPlan& plan);
@@ -35,6 +45,69 @@ private:
     static void FinishUpload(std::function<void(Roe<T>)> on_complete, Roe<T> result) {
       AppRuntime::PostUI([on_complete = std::move(on_complete), result = std::move(result)]() mutable {
         on_complete(std::move(result));
+      });
+    }
+
+    template <typename T>
+    static void PromptQuotaRecoveryAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
+                                         std::function<void(Roe<T>)> on_complete,
+                                         std::function<Roe<void>()> free_slot, Roe<BlobQuotaRecoveryPlan> plan) {
+      AppRuntime::PostUI([upload = std::move(upload), on_complete = std::move(on_complete),
+                          free_slot = std::move(free_slot), plan = std::move(plan)]() mutable {
+        if (!plan) {
+          FinishUpload(on_complete, Roe<T>{plan.error()});
+          return;
+        }
+
+        UserFeedback::Confirm(
+            Tr("blob.quota.title"), BuildQuotaConfirmMessage(*plan),
+            [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot)](
+                const bool confirmed) mutable {
+              if (!confirmed) {
+                FinishUpload(on_complete, Roe<T>{Error(Tr("blob.quota.cancelled"))});
+                return;
+              }
+              AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
+                                            free_slot = std::move(free_slot)]() mutable {
+                auto freed = free_slot();
+                if (!freed) {
+                  FinishUpload(on_complete, Roe<T>{freed.error()});
+                  return;
+                }
+                upload([on_complete = std::move(on_complete)](Roe<T> result) mutable {
+                  FinishUpload(std::move(on_complete), std::move(result));
+                });
+              });
+            },
+            Tr("blob.quota.confirm"));
+      });
+    }
+
+    template <typename T>
+    static void BeginUploadAttemptAsync(std::function<void(std::function<void(Roe<T>)>)> upload,
+                                        std::function<void(Roe<T>)> on_complete,
+                                        std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
+                                        std::function<Roe<void>()> free_slot) {
+      AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
+                                    plan_recovery = std::move(plan_recovery),
+                                    free_slot = std::move(free_slot)]() mutable {
+        upload([upload, on_complete = std::move(on_complete), plan_recovery = std::move(plan_recovery),
+                free_slot = std::move(free_slot)](Roe<T> result) mutable {
+          if (result) {
+            FinishUpload(std::move(on_complete), std::move(result));
+            return;
+          }
+          if (!IsBlobQuotaError(result.error())) {
+            FinishUpload(std::move(on_complete), Roe<T>{result.error()});
+            return;
+          }
+          AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
+                                        plan_recovery = std::move(plan_recovery),
+                                        free_slot = std::move(free_slot)]() mutable {
+            PromptQuotaRecoveryAsync(std::move(upload), std::move(on_complete), std::move(free_slot),
+                                     plan_recovery());
+          });
+        });
       });
     }
 
@@ -100,6 +173,15 @@ private:
                               std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
                               std::function<Roe<void>()> free_slot) {
       BeginUploadAttempt(std::move(upload), std::move(on_complete), std::move(plan_recovery), std::move(free_slot));
+    }
+
+    template <typename T>
+    static void RunUploadAsyncImpl(std::function<void(std::function<void(Roe<T>)>)> upload,
+                                   std::function<void(Roe<T>)> on_complete,
+                                   std::function<Roe<BlobQuotaRecoveryPlan>()> plan_recovery,
+                                   std::function<Roe<void>()> free_slot) {
+      BeginUploadAttemptAsync(std::move(upload), std::move(on_complete), std::move(plan_recovery),
+                              std::move(free_slot));
     }
   };
 };

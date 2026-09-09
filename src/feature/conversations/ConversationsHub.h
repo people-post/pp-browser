@@ -208,6 +208,8 @@ public:
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
+                                   std::function<void(Roe<ThreadMessage>)> on_done);
   AttachmentFetchWorkflow& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);

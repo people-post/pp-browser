@@ -1364,27 +1364,27 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
   DirtyChatChrome();
   DirtyChatHeader();
 
-  AppRuntime::PostWorkerNormal([this, thread_id, path]() {
-    BlobQuotaRecoveryFlow::RunUpload<ThreadMessage>(
-        [this, thread_id, path]() { return facade_->SendAttachmentFromPath(thread_id, path); },
-        [this](Roe<ThreadMessage> sent) {
-          chat_.attachment_uploading = false;
-          chat_.attachment_draft_name = "";
-          chat_.status = "";
-          SyncComposerInputState();
-          DirtyChatChrome();
-          DirtyChatHeader();
-          if (!sent) {
-            UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
-            return;
-          }
-          SyncDisplayFromThread();
-          scroller_.RequestScrollToLatest();
-          UpdateSidebarPreview(sent->text);
-        },
-        [this]() { return facade_->PlanRelayQuotaRecovery(); },
-        [this]() { return facade_->FreeOldestRelayBlobSlot(); });
-  });
+  BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
+      [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
+      },
+      [this](Roe<ThreadMessage> sent) {
+        chat_.attachment_uploading = false;
+        chat_.attachment_draft_name = "";
+        chat_.status = "";
+        SyncComposerInputState();
+        DirtyChatChrome();
+        DirtyChatHeader();
+        if (!sent) {
+          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+          return;
+        }
+        SyncDisplayFromThread();
+        scroller_.RequestScrollToLatest();
+        UpdateSidebarPreview(sent->text);
+      },
+      [this]() { return facade_->PlanRelayQuotaRecovery(); },
+      [this]() { return facade_->FreeOldestRelayBlobSlot(); });
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {

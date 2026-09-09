@@ -207,6 +207,8 @@ public:
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
+  void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
+                                   std::function<void(Roe<ThreadMessage>)> on_done);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,

@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Remaining sync L4 parks | outbound peer blob push | UI sync (`RunSyncOnIo`), TailSync, attachment peer fetch, history/blob/announce/broadcast Async APIs landed; `PushChatBlob` sync wrapper remains for upload |
+| Remaining sync L4 parks | announce PublishAndPush* sync | Product attachment upload uses `PushChatBlobAsync` end-to-end; sync wrappers remain for tests / unused announce helpers |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |

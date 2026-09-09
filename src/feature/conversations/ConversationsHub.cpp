@@ -63,6 +63,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <future>
+#include <thread>
 #include <unordered_set>
 
 #include "common/ValueJson.h"
@@ -1767,75 +1769,125 @@ Roe<void> ConversationsHub::FreeOldestRelayBlobSlot() {
 }
 
 Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  auto result_promise = std::make_shared<std::promise<Roe<ThreadMessage>>>();
+  auto result_future = result_promise->get_future();
+  SendAttachmentFromPathAsync(thread_id, path, [result_promise](Roe<ThreadMessage> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(90000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Attachment upload timed out");
+  }
+  return result_future.get();
+}
+
+void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
+                                                   std::function<void(Roe<ThreadMessage>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    finish(Error("Messaging hub not initialized"));
+    return;
   }
   if (!IsMessagingReady()) {
-    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
+    finish(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments"));
+    return;
   }
   if (!blob_) {
-    return Error("Blob client not configured");
+    finish(Error("Blob client not configured"));
+    return;
   }
   if (thread_id.empty()) {
-    return Error("No active thread");
+    finish(Error("No active thread"));
+    return;
   }
 
   auto thread = Store().GetThread(thread_id);
   if (!thread) {
-    return thread.error();
+    finish(thread.error());
+    return;
   }
   if (!*thread) {
-    return Error("Thread not found");
+    finish(Error("Thread not found"));
+    return;
   }
-  const Thread& active = **thread;
+  Thread active = **thread;
   if (active.kind == ThreadKind::Ai) {
-    return Error("Attachments are not supported in assistant threads");
+    finish(Error("Attachments are not supported in assistant threads"));
+    return;
   }
   if (active.kind != ThreadKind::Direct && active.kind != ThreadKind::Group) {
-    return Error("Attachments are not supported in this thread");
+    finish(Error("Attachments are not supported in this thread"));
+    return;
   }
 
   ChatAttachmentUploadOptions upload_opts;
   upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
   upload_opts.contacts = contacts_.get();
-  upload_opts.thread = &active;
+  upload_opts.thread = active;
   upload_opts.thread_id = thread_id;
-  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path, upload_opts);
-  if (!fields) {
-    return fields.error();
-  }
 
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::Attachment;
-  opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
-  const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
+  UploadChatAttachmentFromFileAsync(
+      *blob_, Identity(), path, std::move(upload_opts),
+      [this, thread_id, path, active = std::move(active), finish](Roe<ChatAttachmentFields> fields) mutable {
+        auto continue_send = [this, thread_id, path, active = std::move(active), finish = std::move(finish),
+                              fields = std::move(fields)]() mutable {
+          if (!fields) {
+            finish(fields.error());
+            return;
+          }
 
-  const ByteVector attachment_dek = Attachments().CopyDek();
+          SendRelayOptions opts;
+          opts.content_type = ChatContentType::Attachment;
+          opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+          const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
-  if (active.kind == ThreadKind::Group) {
-    auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
-    if (sent) {
-      if (!attachment_dek.empty() && !profile_id_.empty()) {
-        (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
-      }
-      Attachments().MaybeBuildPoster(thread_id, *fields);
-      if (attachment_downloads_) {
-        attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-      }
-    }
-    return sent;
-  }
-  auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
-  if (sent) {
-    if (!attachment_dek.empty() && !profile_id_.empty()) {
-      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
-    }
-    Attachments().MaybeBuildPoster(thread_id, *fields);
-    if (attachment_downloads_) {
-      attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-    }
-  }
-  return sent;
+          const ByteVector attachment_dek = Attachments().CopyDek();
+
+          if (active.kind == ThreadKind::Group) {
+            auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
+            if (sent) {
+              if (!attachment_dek.empty() && !profile_id_.empty()) {
+                (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+              }
+              Attachments().MaybeBuildPoster(thread_id, *fields);
+              if (attachment_downloads_) {
+                attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+              }
+            }
+            finish(std::move(sent));
+            return;
+          }
+          auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
+          if (sent) {
+            if (!attachment_dek.empty() && !profile_id_.empty()) {
+              (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+            }
+            Attachments().MaybeBuildPoster(thread_id, *fields);
+            if (attachment_downloads_) {
+              attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+            }
+          }
+          finish(std::move(sent));
+        };
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostWorkerNormal(std::move(continue_send));
+        } else {
+          continue_send();
+        }
+      });
 }
 
 AttachmentFetchWorkflow& ConversationsHub::Attachments() {
