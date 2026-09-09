@@ -1030,16 +1030,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   if (directory_) {
     mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
-      // N029 nd4: Amp directory twin first, then HTTP INameDirectory.
-      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
-        auto amp_nodes = mesh_->AmpDirectory()->ListMeshNodes();
-        if (amp_nodes) {
-          auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
-          if (!rows.empty()) {
-            return rows;
-          }
-        }
-      }
+      // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
       if (!directory_) {
         return std::vector<MeshDirectoryNode>{};
       }
@@ -1049,6 +1040,39 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         return records.error();
       }
       return MeshDirectoryNodesFromNameRecords(*records);
+    });
+    // N029 nd4: Amp directory twin first (no worker park), then HTTP on Normal.
+    mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<MeshDirectoryNode>>)> done) {
+      auto fetch_http = [this, done]() {
+        AppRuntime::PostWorkerNormal([this, done]() {
+          if (!directory_) {
+            done(std::vector<MeshDirectoryNode>{});
+            return;
+          }
+          DirectoryClientNameDirectory names(*directory_);
+          auto records = names.ListService("mesh_node");
+          if (!records) {
+            done(records.error());
+            return;
+          }
+          done(MeshDirectoryNodesFromNameRecords(*records));
+        });
+      };
+      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+        mesh_->AmpDirectory()->ListMeshNodesAsync(
+            [done, fetch_http](AmpDirectoryProtocol::ListRoe amp_nodes) {
+              if (amp_nodes) {
+                auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
+                if (!rows.empty()) {
+                  done(std::move(rows));
+                  return;
+                }
+              }
+              fetch_http();
+            });
+        return;
+      }
+      fetch_http();
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();

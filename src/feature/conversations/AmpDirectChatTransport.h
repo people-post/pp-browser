@@ -41,7 +41,7 @@ public:
   Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 
   void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
-                         std::function<void(Roe<void>)> on_done);
+                         std::function<void(Roe<void>)> on_done) override;
 
 private:
   struct Impl;
