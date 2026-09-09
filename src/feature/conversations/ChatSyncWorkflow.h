@@ -31,7 +31,10 @@ public:
                   IChatHistoryPeerClient* peer_client = nullptr);
 
   Roe<ChatSyncResult> FetchChatTargetMessages(const std::string& thread_id, ChatHistoryRequest request);
+  void FetchChatTargetMessagesAsync(const std::string& thread_id, ChatHistoryRequest request,
+                                    std::function<void(Roe<ChatSyncResult>)> on_done);
   Roe<ChatSyncResult> TailSync(const std::string& thread_id);
+  void TailSyncAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
   Roe<ChatSyncResult> RepairGap(const std::string& thread_id, uint64_t gap_min, uint64_t gap_max);
   /** D059 — tail + known gap repair + one older-history page when applicable. */
   Roe<ChatSyncResult> UserInitiatedSync(const std::string& thread_id);

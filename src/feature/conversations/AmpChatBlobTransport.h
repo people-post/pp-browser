@@ -45,6 +45,11 @@ public:
   Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) override;
   Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) override;
 
+  void FetchChatBlobAsync(const ChatBlobRequest& request,
+                          std::function<void(Roe<std::vector<uint8_t>>)> on_done) override;
+  void PushChatBlobAsync(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext,
+                         std::function<void(Roe<void>)> on_done) override;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

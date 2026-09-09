@@ -225,26 +225,11 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                              if (io_pump_) {
                                io_pump_();
                              }
-                             if (post_io_) {
-                               auto poll = std::make_shared<std::function<void()>>();
-                               *poll = [this, finish, deadline, settled, poll]() {
-                                 if (settled->load(std::memory_order_acquire)) {
-                                   return;
-                                 }
-                                 if (Clock::now() >= deadline) {
-                                   (*finish)(Error("amp direct chat send timed out")
-                                                 .WithUser("Direct send didn't confirm — will use relay if "
-                                                           "available."));
-                                   return;
-                                 }
-                                 post_io_([poll, settled]() {
-                                   if (!settled->load(std::memory_order_acquire)) {
-                                     (*poll)();
-                                   }
-                                 });
-                               };
-                               post_io_([poll]() { (*poll)(); });
-                             }
+                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                               (*finish)(Error("amp direct chat send timed out")
+                                             .WithUser("Direct send didn't confirm — will use relay if "
+                                                       "available."));
+                             });
                            },
                            [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                      });

@@ -35,6 +35,8 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
+  void FetchChatHistoryAsync(const ChatHistoryRequest& request,
+                             std::function<void(Roe<ChatHistoryResponse>)> on_done) override;
 
 private:
   struct Impl;

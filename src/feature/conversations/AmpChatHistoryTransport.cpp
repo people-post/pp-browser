@@ -153,31 +153,44 @@ bool AmpChatHistoryTransport::IsPeerReachable(const std::string& peer_identity_v
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint;
 }
 
-Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHistoryRequest& request) {
+void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& request,
+                                                    std::function<void(Roe<ChatHistoryResponse>)> on_done) {
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto finish_once = std::make_shared<std::function<void(Roe<ChatHistoryResponse>)>>();
+  *finish_once = [on_done = std::move(on_done), settled](Roe<ChatHistoryResponse> value) {
+    if (settled->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!started_) {
-    return Error("amp chat-history service not started");
+    (*finish_once)(Error("amp chat-history service not started"));
+    return;
   }
   if (!IsPeerReachable(request.peer_identity_value)) {
-    return Error("Peer-direct endpoint not registered");
+    (*finish_once)(Error("Peer-direct endpoint not registered"));
+    return;
   }
 
   constexpr auto kFetchTimeout = std::chrono::milliseconds(8000);
   const auto deadline = Clock::now() + kFetchTimeout;
-
-  auto result_promise = std::make_shared<std::promise<Roe<std::string>>>();
-  auto result_future = result_promise->get_future();
-  auto settled = std::make_shared<std::atomic<bool>>(false);
   auto session = std::make_shared<pp::amp::ChannelSession>();
-
-  auto finish = [settled, result_promise, session](Roe<std::string> value) {
-    if (settled->exchange(true, std::memory_order_acq_rel)) {
+  auto finish = std::make_shared<std::function<void(Roe<std::string>)>>();
+  *finish = [finish_once, session](Roe<std::string> value) {
+    session->Close();
+    if (!value) {
+      (*finish_once)(value.error());
       return;
     }
-    session->Close();
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
+    auto root = TryParseObject(*value);
+    if (!root) {
+      (*finish_once)(Error("Invalid chat-history response JSON"));
+      return;
     }
+    (*finish_once)(ChatHistoryResponseFromJson(*root));
   };
 
   const std::string peer_key = request.peer_identity_value;
@@ -187,14 +200,14 @@ Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHis
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session, deadline,
                                       read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
-      finish(Error(assoc.error().message));
+      (*finish)(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatHistoryProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
                        [this, peer_key, request_json, finish, settled, session, deadline,
                         read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
-                           finish(Error(channel.error().message));
+                           (*finish)(Error(channel.error().message));
                            return;
                          }
                          AmpScheduleWhenChannelOpen(
@@ -208,75 +221,59 @@ Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHis
                              [this, peer_key, channel_id = *channel, request_json, finish, settled, session, deadline,
                               read_timeout](bool open) mutable {
                                if (!open) {
-                                 finish(Error("amp chat-history: channel open failed"));
+                                 (*finish)(Error("amp chat-history: channel open failed"));
                                  return;
                                }
                                auto* link = links_.FindLink(peer_key);
                                if (!link || !link->Mux() ||
                                    link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
-                                 finish(Error("amp chat-history: channel open failed"));
+                                 (*finish)(Error("amp chat-history: channel open failed"));
                                  return;
                                }
 
                                session->Bind(*link->Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(read_timeout),
                                              [finish](Roe<std::vector<uint8_t>> frame) {
                                                if (!frame) {
-                                                 finish(Error("Failed to read chat-history response"));
+                                                 (*finish)(Error("Failed to read chat-history response"));
                                                  return false;
                                                }
-                                               finish(std::string(frame->begin(), frame->end()));
+                                               (*finish)(std::string(frame->begin(), frame->end()));
                                                return false;
                                              });
 
                                if (!session->EnqueueOutbound(JsonToBody(request_json))) {
-                                 finish(Error("Failed to send chat-history request"));
+                                 (*finish)(Error("Failed to send chat-history request"));
                                  return;
                                }
 
-                               if (post_io_) {
-                                 auto poll = std::make_shared<std::function<void()>>();
-                                 *poll = [this, finish, deadline, settled, poll]() {
-                                   if (settled->load(std::memory_order_acquire)) {
-                                     return;
-                                   }
-                                   if (Clock::now() >= deadline) {
-                                     finish(Error("amp chat-history fetch timed out"));
-                                     return;
-                                   }
-                                   post_io_([poll, settled]() {
-                                     if (!settled->load(std::memory_order_acquire)) {
-                                       (*poll)();
-                                     }
-                                   });
-                                 };
-                                 post_io_([poll]() { (*poll)(); });
-                               } else {
-                                 AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
-                                              io_pump_);
-                                 if (!settled->load(std::memory_order_acquire)) {
-                                   finish(Error("amp chat-history fetch timed out"));
-                                 }
-                               }
+                               AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                                 (*finish)(Error("amp chat-history fetch timed out"));
+                               });
                              },
                              [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                        });
   });
+}
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
+Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHistoryRequest& request) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatHistoryResponse>>>();
+  auto result_future = result_promise->get_future();
+  constexpr auto kFetchTimeout = std::chrono::milliseconds(8000);
+  const auto deadline = Clock::now() + kFetchTimeout;
 
+  FetchChatHistoryAsync(request, [result_promise](Roe<ChatHistoryResponse> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    finish(Error("amp chat-history fetch timed out"));
     return Error("amp chat-history fetch timed out");
   }
-  auto response_json = result_future.get();
-  if (!response_json) {
-    return response_json.error();
-  }
-  auto root = TryParseObject(*response_json);
-  if (!root) {
-    return Error("Invalid chat-history response JSON");
-  }
-  return ChatHistoryResponseFromJson(*root);
+  return result_future.get();
 }
 
 } // namespace pbr

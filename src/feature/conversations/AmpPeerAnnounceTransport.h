@@ -46,6 +46,9 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const;
 
+  /** Prefer PushTipAsync when MeshPump + PostToIo are available; sync PushTip parks. */
+  void PushTipAsync(const std::string& peer_key, const PeerAnnounceTip& tip,
+                    std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   /** Push an already-signed tip; waits for tip_ack. */
   Roe<PeerAnnounceTipAck> PushTip(const std::string& peer_key, const PeerAnnounceTip& tip);
 

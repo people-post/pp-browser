@@ -1186,7 +1186,13 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
   if (!chat_sync_) {
     return;
   }
-  AppRuntime::PostWorkerNormal([this, thread_id]() { (void)chat_sync_->TailSync(thread_id); });
+  AppRuntime::PostWorkerNormal([this, thread_id]() {
+    chat_sync_->TailSyncAsync(thread_id, [this](Roe<ChatSyncResult> result) {
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  });
 }
 
 void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {

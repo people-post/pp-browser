@@ -193,37 +193,41 @@ bool AmpPeerAnnounceTransport::IsPeerReachable(const std::string& peer_identity_
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
 }
 
-Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& peer_key, const PeerAnnounceTip& tip) {
+void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const PeerAnnounceTip& tip,
+                                            std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto finish_once = std::make_shared<std::function<void(Roe<PeerAnnounceTipAck>)>>();
+  *finish_once = [on_done = std::move(on_done), settled](Roe<PeerAnnounceTipAck> value) {
+    if (settled->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!started_) {
-    return Error("amp peer-announce service not started");
+    (*finish_once)(Error("amp peer-announce service not started"));
+    return;
   }
   if (!IsPeerReachable(peer_key)) {
-    return Error("Peer-direct endpoint not registered")
-        .WithUser("No usable peer address — add a dialable multiaddr on the contact.");
+    (*finish_once)(Error("Peer-direct endpoint not registered")
+                       .WithUser("No usable peer address — add a dialable multiaddr on the contact."));
+    return;
   }
 
   auto push_json = EncodePeerAnnounceTipPush(tip);
   if (!push_json) {
-    return push_json.error();
+    (*finish_once)(push_json.error());
+    return;
   }
 
   constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
   const auto deadline = Clock::now() + kSendTimeout;
-
-  auto result_promise = std::make_shared<std::promise<Roe<PeerAnnounceTipAck>>>();
-  auto result_future = result_promise->get_future();
-  auto settled = std::make_shared<std::atomic<bool>>(false);
   auto session = std::make_shared<pp::amp::ChannelSession>();
-
-  auto finish = [settled, result_promise, session](Roe<PeerAnnounceTipAck> value) {
-    if (settled->exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
+  auto finish = [finish_once, session](Roe<PeerAnnounceTipAck> value) {
     session->Close();
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
-    }
+    (*finish_once)(std::move(value));
   };
 
   links_.OpenChannel(peer_key, kRpcPeerAnnounceProtocolId, pp::amp::ControlJsonChannelPolicy(),
@@ -283,40 +287,31 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
                                return;
                              }
 
-                             if (post_io_) {
-                               auto poll = std::make_shared<std::function<void()>>();
-                               *poll = [this, finish, deadline, settled, poll]() {
-                                 if (settled->load(std::memory_order_acquire)) {
-                                   return;
-                                 }
-                                 if (Clock::now() >= deadline) {
-                                   finish(Error("amp peer-announce send timed out")
-                                              .WithUser("Direct tip push timed out."));
-                                   return;
-                                 }
-                                 post_io_([poll, settled]() {
-                                   if (!settled->load(std::memory_order_acquire)) {
-                                     (*poll)();
-                                   }
-                                 });
-                               };
-                               post_io_([poll]() { (*poll)(); });
-                             } else {
-                               AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
-                                            io_pump_);
-                               if (!settled->load(std::memory_order_acquire)) {
-                                 finish(Error("amp peer-announce send timed out")
-                                            .WithUser("Direct tip push timed out."));
-                               }
-                             }
+                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                               finish(Error("amp peer-announce send timed out")
+                                          .WithUser("Direct tip push timed out."));
+                             });
                            },
                            [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                      });
+}
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
+Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& peer_key, const PeerAnnounceTip& tip) {
+  auto result_promise = std::make_shared<std::promise<Roe<PeerAnnounceTipAck>>>();
+  auto result_future = result_promise->get_future();
+  constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
+  const auto deadline = Clock::now() + kSendTimeout;
 
+  PushTipAsync(peer_key, tip, [result_promise](Roe<PeerAnnounceTipAck> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    finish(Error("amp peer-announce send timed out").WithUser("Direct tip push timed out."));
     return Error("amp peer-announce send timed out").WithUser("Direct tip push timed out.");
   }
   return result_future.get();

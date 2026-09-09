@@ -11,6 +11,10 @@
 #include "domain/people/ContactsStore.h"
 
 #include <algorithm>
+#include <chrono>
+#include <future>
+#include <thread>
+#include "foundation/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -256,20 +260,53 @@ void ChatSyncWorkflow::AdvanceContiguousThroughStoredSeqs(const std::string& thr
 
 Roe<ChatSyncResult> ChatSyncWorkflow::FetchChatTargetMessages(const std::string& thread_id,
                                                              ChatHistoryRequest request) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  FetchChatTargetMessagesAsync(thread_id, std::move(request), [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  // Tests / sync callers: peer path may complete on Amp callbacks; park briefly.
+  constexpr auto kWait = std::chrono::milliseconds(12000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
+  }
+  return result_future.get();
+}
+
+void ChatSyncWorkflow::FetchChatTargetMessagesAsync(const std::string& thread_id, ChatHistoryRequest request,
+                                                    std::function<void(Roe<ChatSyncResult>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatSyncResult> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
-    return Error("Thread not found");
+    finish(Error("Thread not found"));
+    return;
   }
   if ((*thread)->kind != ThreadKind::Direct || !ThreadChannelIsE2e((*thread)->channel)) {
-    return Error("Sync requires E2E direct thread");
+    finish(Error("Sync requires E2E direct thread"));
+    return;
   }
 
   auto sync_state = store_.GetPeerSyncState(thread_id, request.session_epoch);
   if (!sync_state) {
-    return sync_state.error();
+    finish(sync_state.error());
+    return;
   }
   if (sync_state->phase == PeerSyncPhase::Compromised) {
-    return Error("Sync disabled while thread is compromised");
+    finish(Error("Sync disabled while thread is compromised"));
+    return;
   }
 
   if (request.limit == 0) {
@@ -277,39 +314,106 @@ Roe<ChatSyncResult> ChatSyncWorkflow::FetchChatTargetMessages(const std::string&
   }
   request.limit = std::min(request.limit, kMaxPollBatchMessages);
 
-  if (peer_client_ && peer_client_->IsPeerReachable(request.peer_identity_value)) {
-    auto peer_response = peer_client_->FetchChatHistory(request);
-    if (peer_response) {
-      return IngestHistoryResponse(thread_id, request, *peer_response, MessageTransport::Direct);
+  auto ingest_and_finish = [this, thread_id, request, finish](Roe<ChatHistoryResponse> response,
+                                                              MessageTransport transport) {
+    if (!response) {
+      finish(response.error());
+      return;
     }
+    finish(IngestHistoryResponse(thread_id, request, *response, transport));
+  };
+
+  if (peer_client_ && peer_client_->IsPeerReachable(request.peer_identity_value)) {
+    peer_client_->FetchChatHistoryAsync(
+        request, [this, thread_id, request, finish, ingest_and_finish](Roe<ChatHistoryResponse> peer_response) {
+          auto continue_on_worker = [this, thread_id, request, finish, ingest_and_finish,
+                                     peer_response = std::move(peer_response)]() mutable {
+            if (peer_response) {
+              ingest_and_finish(std::move(peer_response), MessageTransport::Direct);
+              return;
+            }
+            if (!relay_) {
+              finish(Error("Relay client not configured"));
+              return;
+            }
+            auto response = relay_->FetchChatHistory(request);
+            if (!response) {
+              finish(response.error());
+              return;
+            }
+            ingest_and_finish(std::move(response), MessageTransport::Relay);
+          };
+          // Amp completions may arrive off-worker; tests often have no AppRuntime pool.
+          if (AppRuntime::IsRunning()) {
+            AppRuntime::PostWorkerNormal(std::move(continue_on_worker));
+          } else {
+            continue_on_worker();
+          }
+        });
+    return;
   }
 
   if (!relay_) {
-    return Error("Relay client not configured");
+    finish(Error("Relay client not configured"));
+    return;
   }
-
   auto response = relay_->FetchChatHistory(request);
   if (!response) {
-    return response.error();
+    finish(response.error());
+    return;
   }
-  return IngestHistoryResponse(thread_id, request, *response, MessageTransport::Relay);
+  ingest_and_finish(std::move(response), MessageTransport::Relay);
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::TailSync(const std::string& thread_id) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  TailSyncAsync(thread_id, [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(12000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
+  }
+  return result_future.get();
+}
+
+void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
+                                     std::function<void(Roe<ChatSyncResult>)> on_done) {
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
-    return Error("Thread not found");
+    if (on_done) {
+      on_done(Error("Thread not found"));
+    }
+    return;
   }
   auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
   if (!session_epoch) {
-    return session_epoch.error();
+    if (on_done) {
+      on_done(session_epoch.error());
+    }
+    return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
   if (!sync_state) {
-    return sync_state.error();
+    if (on_done) {
+      on_done(sync_state.error());
+    }
+    return;
   }
   if (sync_state->phase == PeerSyncPhase::Compromised) {
-    return Error("Sync disabled while thread is compromised");
+    if (on_done) {
+      on_done(Error("Sync disabled while thread is compromised"));
+    }
+    return;
   }
 
   std::optional<uint64_t> tail_min_seq;
@@ -320,9 +424,12 @@ Roe<ChatSyncResult> ChatSyncWorkflow::TailSync(const std::string& thread_id) {
   auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, tail_min_seq, std::nullopt,
                               kDefaultTailSyncLimit, "desc");
   if (!request) {
-    return request.error();
+    if (on_done) {
+      on_done(request.error());
+    }
+    return;
   }
-  return FetchChatTargetMessages(thread_id, *request);
+  FetchChatTargetMessagesAsync(thread_id, *request, std::move(on_done));
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RepairGap(const std::string& thread_id, const uint64_t gap_min,

@@ -269,29 +269,34 @@ bool AmpChatBlobTransport::IsPeerReachable(const std::string& peer_identity_valu
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
 }
 
-Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequest& request) {
-  if (!started_) {
-    return Error("amp chat-blob service not started");
-  }
-  if (!IsPeerReachable(request.peer_identity_value)) {
-    return Error("Peer-direct endpoint not registered");
-  }
-
-  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
-  auto result_promise = std::make_shared<std::promise<Roe<std::vector<uint8_t>>>>();
-  auto result_future = result_promise->get_future();
+void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
+                                              std::function<void(Roe<std::vector<uint8_t>>)> on_done) {
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto session = std::make_shared<pp::amp::ChannelSession>();
-
-  auto finish = [settled, result_promise, session](Roe<std::vector<uint8_t>> value) {
+  auto finish_once = std::make_shared<std::function<void(Roe<std::vector<uint8_t>>)>>();
+  *finish_once = [on_done = std::move(on_done), settled](Roe<std::vector<uint8_t>> value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
-    session->Close();
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
+    if (on_done) {
+      on_done(std::move(value));
     }
+  };
+
+  if (!started_) {
+    (*finish_once)(Error("amp chat-blob service not started"));
+    return;
+  }
+  if (!IsPeerReachable(request.peer_identity_value)) {
+    (*finish_once)(Error("Peer-direct endpoint not registered"));
+    return;
+  }
+
+  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
+  auto session = std::make_shared<pp::amp::ChannelSession>();
+
+  auto finish = [finish_once, session](Roe<std::vector<uint8_t>> value) {
+    session->Close();
+    (*finish_once)(std::move(value));
   };
 
   const std::string peer_key = request.peer_identity_value;
@@ -349,70 +354,67 @@ Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequ
                                  return;
                                }
 
-                               if (post_io_) {
-                                 auto poll = std::make_shared<std::function<void()>>();
-                                 *poll = [this, finish, deadline, settled, poll]() {
-                                   if (settled->load(std::memory_order_acquire)) {
-                                     return;
-                                   }
-                                   if (Clock::now() >= deadline) {
-                                     finish(Error("amp chat-blob fetch timed out"));
-                                     return;
-                                   }
-                                   post_io_([poll, settled]() {
-                                     if (!settled->load(std::memory_order_acquire)) {
-                                       (*poll)();
-                                     }
-                                   });
-                                 };
-                                 post_io_([poll]() { (*poll)(); });
-                               } else {
-                                 AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
-                                              io_pump_);
-                                 if (!settled->load(std::memory_order_acquire)) {
-                                   finish(Error("amp chat-blob fetch timed out"));
-                                 }
-                               }
+                               AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                                 finish(Error("amp chat-blob fetch timed out"));
+                               });
                              },
                              [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                        });
   });
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
+}
+
+Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequest& request) {
+  auto result_promise = std::make_shared<std::promise<Roe<std::vector<uint8_t>>>>();
+  auto result_future = result_promise->get_future();
+  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
+  FetchChatBlobAsync(request, [result_promise](Roe<std::vector<uint8_t>> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    finish(Error("amp chat-blob fetch timed out"));
     return Error("amp chat-blob fetch timed out");
   }
   return result_future.get();
 }
 
-Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
-                                           const std::vector<uint8_t>& ciphertext) {
-  if (!started_) {
-    return Error("amp chat-blob service not started");
-  }
-  if (!IsPeerReachable(request.peer_identity_value)) {
-    return Error("Peer-direct endpoint not registered");
-  }
-  if (ciphertext.empty()) {
-    return Error("Empty chat-blob push body");
-  }
-
-  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
-  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
-  auto result_future = result_promise->get_future();
+void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
+                                             const std::vector<uint8_t>& ciphertext,
+                                             std::function<void(Roe<void>)> on_done) {
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto session = std::make_shared<pp::amp::ChannelSession>();
-
-  auto finish = [settled, result_promise, session](Roe<void> value) {
+  auto finish_once = std::make_shared<std::function<void(Roe<void>)>>();
+  *finish_once = [on_done = std::move(on_done), settled](Roe<void> value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
-    session->Close();
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
+    if (on_done) {
+      on_done(std::move(value));
     }
+  };
+
+  if (!started_) {
+    (*finish_once)(Error("amp chat-blob service not started"));
+    return;
+  }
+  if (!IsPeerReachable(request.peer_identity_value)) {
+    (*finish_once)(Error("Peer-direct endpoint not registered"));
+    return;
+  }
+  if (ciphertext.empty()) {
+    (*finish_once)(Error("Empty chat-blob push body"));
+    return;
+  }
+
+  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
+  auto session = std::make_shared<pp::amp::ChannelSession>();
+
+  auto finish = [finish_once, session](Roe<void> value) {
+    session->Close();
+    (*finish_once)(std::move(value));
   };
 
   const std::string peer_key = request.peer_identity_value;
@@ -476,37 +478,30 @@ Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
                       return;
                     }
 
-                    if (post_io_) {
-                      auto poll = std::make_shared<std::function<void()>>();
-                      *poll = [this, finish, deadline, settled, poll]() {
-                        if (settled->load(std::memory_order_acquire)) {
-                          return;
-                        }
-                        if (Clock::now() >= deadline) {
-                          finish(Error("amp chat-blob push timed out"));
-                          return;
-                        }
-                        post_io_([poll, settled]() {
-                          if (!settled->load(std::memory_order_acquire)) {
-                            (*poll)();
-                          }
-                        });
-                      };
-                      post_io_([poll]() { (*poll)(); });
-                    } else {
-                      AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
-                      if (!settled->load(std::memory_order_acquire)) {
-                        finish(Error("amp chat-blob push timed out"));
-                      }
-                    }
+                    AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                      finish(Error("amp chat-blob push timed out"));
+                    });
                   },
                   [this]() { return impl_->stopped.load(std::memory_order_acquire); });
             });
       });
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
+}
+
+Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
+                                           const std::vector<uint8_t>& ciphertext) {
+  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
+  auto result_future = result_promise->get_future();
+  const auto deadline = Clock::now() + kChatBlobOperationTimeout;
+  PushChatBlobAsync(request, ciphertext, [result_promise](Roe<void> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    finish(Error("amp chat-blob push timed out"));
     return Error("amp chat-blob push timed out");
   }
   return result_future.get();
