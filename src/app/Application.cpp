@@ -1477,18 +1477,17 @@ void Application::Shutdown() {
       call_->PrepareForShutdown();
     }
 
-    // Abort Connect / circuit waits, then join workers while ConversationsHub still owns the bridge.
-    // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
+    // Abort Connect / circuit waits, then join MeshControlPool + MeshPump via hub StopMesh
+    // while AppRuntime is still up (StopCoordinatorTimers). Connect no longer parks WorkerPool.
     if (messaging_) {
       StartupPhase phase("Shutdown::AbortCallMedia");
       messaging_->AbortCallMediaForShutdown();
     }
+    ShutdownMessaging();
     if (AppRuntime::IsRunning()) {
       StartupPhase phase("Shutdown::AppRuntime");
       AppRuntime::Shutdown();
     }
-
-    ShutdownMessaging();
 
     AppRuntime::RunUITasks();
 
@@ -1518,11 +1517,11 @@ void Application::Shutdown() {
     if (messaging_) {
       messaging_->AbortCallMediaForShutdown();
     }
+    ShutdownMessaging();
     if (AppRuntime::IsRunning()) {
       StartupPhase phase("Shutdown::AppRuntime");
       AppRuntime::Shutdown();
     }
-    ShutdownMessaging();
   }
 
   // Always tear down runners — Initialize may have started them before failing.

@@ -38,6 +38,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/data/PlatformDefaults.h"
@@ -414,7 +415,7 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
 
 
 void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
-  AppRuntime::PostWorkerNormal([this, peer]() {
+  MeshControlDispatch::Post([this, peer]() {
     if (peer.peer_id_base58.empty()) {
       return;
     }
@@ -1067,7 +1068,7 @@ Roe<void> ConversationsHub::BuildMessagingStack() {
   }
   if (mesh_ && amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) {
-      AppRuntime::PostWorkerNormal(std::move(task));
+      MeshControlDispatch::Post(std::move(task));
     };
   }
 
@@ -1171,18 +1172,11 @@ PeerSigningKeyStore& ConversationsHub::SigningKeys() {
   return signing_key_store_;
 }
 
-void ConversationsHub::TickAmpMesh() {
-  if (!messaging_ready_ || !mesh_) {
-    return;
-  }
-  mesh_->Tick();
-}
-
 void ConversationsHub::TickMesh() {
   if (!messaging_ready_) {
     return;
   }
-  // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
+  // Mesh UDP drain is MeshHost MeshPumpThread (~5ms). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
   }
@@ -1199,17 +1193,11 @@ void ConversationsHub::TickMesh() {
 
 namespace {
 
-/** Amp has no async reactor — product must Drive often enough for call-media / SFU / chat. */
-constexpr auto kAmpMeshPumpInterval = std::chrono::milliseconds(5);
 constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 
 } // namespace
 
 void ConversationsHub::StartCoordinatorTimers() {
-  if (amp_mesh_pump_timer_id_ == 0 && mesh_) {
-    amp_mesh_pump_timer_id_ =
-        AppRuntime::ScheduleCoordinatorRepeating(kAmpMeshPumpInterval, [this]() { TickAmpMesh(); });
-  }
   if (hub_policy_timer_id_ == 0) {
     hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
       TickMesh();
@@ -1234,10 +1222,6 @@ void ConversationsHub::StartCoordinatorTimers() {
 }
 
 void ConversationsHub::StopCoordinatorTimers() {
-  if (amp_mesh_pump_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(amp_mesh_pump_timer_id_);
-    amp_mesh_pump_timer_id_ = 0;
-  }
   if (hub_policy_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;
@@ -2186,7 +2170,7 @@ void ConversationsHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
-  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
+  // Stop mesh (joins MeshControlPool + MeshPump) before dropping session façade.
   StopMesh();
   // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
   call_stack_->ResetSessions();

@@ -12,6 +12,7 @@
 #include "domain/mesh/reachability/PunchLogic.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <vector>
@@ -74,8 +75,8 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     }
   });
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    // Warm only; must not run RequestBridge on Browser IO ahead of AcceptInvite.
-    AppRuntime::PostWorkerNormal([this, identity]() {
+    // Warm only; must not run RequestBridge on Critical ahead of AcceptInvite.
+    MeshControlDispatch::Post([this, identity]() {
       if (deps_.prefetch_peer_reachability) {
         deps_.prefetch_peer_reachability(identity);
       }
@@ -120,7 +121,7 @@ void CallStack::OnMeshServicesStarted() {
   }
   auto pump = [m]() { m->Tick(); };
   CallMediaAmpTransport::WorkerPost worker = [](std::function<void()> task) {
-    AppRuntime::PostWorkerNormal(std::move(task));
+    MeshControlDispatch::Post(std::move(task));
   };
   call_media_amp_ =
       std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump), std::move(worker));

@@ -11,6 +11,7 @@
 #include "domain/people/PeerDisplayLabel.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
@@ -1063,7 +1064,7 @@ void CallTopologyController::OnGuestSfuTransportLost() {
                 << " hop=" << attach.hop_peer_id << " call_id=" << call_id;
   host_.TopologySetMediaActivity(Tr("call.status.reconnecting"));
 
-  AppRuntime::PostWorkerNormal([this, call_id, attach, gen, attempt]() {
+  MeshControlDispatch::Post([this, call_id, attach, gen, attempt]() {
     if (!IsMigrateGenerationCurrent(gen)) {
       AppRuntime::PostUI([this]() { guest_reattach_in_flight_ = false; });
       return;
@@ -1225,7 +1226,7 @@ void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
   const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
   soft_migrate_flight_gen_ = gen;
   soft_migrate_in_flight_ = true;
-  AppRuntime::PostWorkerNormal([this, call_id, gen]() {
+  MeshControlDispatch::Post([this, call_id, gen]() {
     Roe<void> migrated = MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, {}, gen);
     const bool attached = sfu_attached_ && media_.IsSfuMode();
     AppRuntime::PostUI([this, call_id, migrated, attached, gen]() {
@@ -1272,7 +1273,7 @@ bool CallTopologyController::OnAnnounceViewerJoined(const std::string& call_id,
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
-    AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
+    MeshControlDispatch::Post([this, call_id, attach, gen]() {
       Roe<void> ok = AttachLocalToSfu(call_id, attach);
       AppRuntime::PostUI([this, call_id, ok, gen]() {
         if (!IsMigrateGenerationCurrent(gen)) {
@@ -1320,7 +1321,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
-    AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
+    MeshControlDispatch::Post([this, call_id, attach, gen]() {
       Roe<void> ok = AttachLocalToSfu(call_id, attach);
       AppRuntime::PostUI([this, call_id, ok, gen]() {
         if (!IsMigrateGenerationCurrent(gen)) {
@@ -1355,7 +1356,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
-    AppRuntime::PostWorkerNormal([this, call_id, gen]() {
+    MeshControlDispatch::Post([this, call_id, gen]() {
       Roe<void> mig =
           MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint, {}, gen);
       const bool attached = sfu_attached_;
@@ -1441,7 +1442,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
-    AppRuntime::PostWorkerNormal([this, call_id, joiner_identity, gen]() {
+    MeshControlDispatch::Post([this, call_id, joiner_identity, gen]() {
       Roe<void> mig =
           MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen);
       AppRuntime::PostUI([this, call_id, joiner_identity, mig, gen]() {
@@ -1514,7 +1515,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
   soft_migrate_flight_gen_ = gen;
   soft_migrate_in_flight_ = true;
-  AppRuntime::PostWorkerNormal([this, call_id, gen]() {
+  MeshControlDispatch::Post([this, call_id, gen]() {
     Roe<void> mig =
         MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen);
     AppRuntime::PostUI([this, call_id, mig, gen]() {
@@ -1576,7 +1577,7 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
   soft_migrate_flight_gen_ = gen;
   soft_migrate_in_flight_ = true;
-  AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
+  MeshControlDispatch::Post([this, call_id, attach, gen]() {
     if (!IsMigrateGenerationCurrent(gen)) {
       log().info << "OnInboundSfuAttach worker skip stale gen=" << gen;
       AppRuntime::PostUI([this, gen]() {
@@ -1780,7 +1781,7 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
   soft_migrate_flight_gen_ = gen;
   soft_migrate_in_flight_ = true;
   const std::string prefer = decision.preferred_hop_peer_id;
-  AppRuntime::PostWorkerNormal([this, call_id = detail.call_id, prefer, guest, gen]() {
+  MeshControlDispatch::Post([this, call_id = detail.call_id, prefer, guest, gen]() {
     Roe<void> mig =
         MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, prefer, gen);
     AppRuntime::PostUI([this, call_id, mig, guest, gen]() {

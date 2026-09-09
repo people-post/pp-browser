@@ -4,6 +4,7 @@
 #include "domain/messaging/SfuAttachFanout.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "common/Utilities.h"
 
 #include <atomic>
@@ -633,8 +634,9 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   connect_worker_inflight_.store(true);
   const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
   const char* role = params.offerer ? "offerer" : "answerer";
-  // Normal lane — must not occupy Critical for grace/dial waits (inbox + hello need workers).
-  AppRuntime::PostWorkerNormal([this, params, cbs, gen, role]() {
+  // Normal lane historically — must not occupy Critical. MeshControlPool keeps general
+  // WorkerPool free for HTTP / Accept while Connect / grace waits run.
+  MeshControlDispatch::Post([this, params, cbs, gen, role]() {
     if (connect_generation_.load(std::memory_order_acquire) != gen) {
       connect_worker_inflight_.store(false);
       log().info << "Connect worker aborted before dial call_id=" << params.call_id;
