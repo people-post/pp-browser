@@ -137,8 +137,11 @@ public:
   AmpBroadcastTransport* BroadcastServiceOrNull() const { return broadcast_.get(); }
   /**
    * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
+   * Prefer Async when MeshPump is available; sync parks on PushTip.
    * Requires Amp peer-announce service + device identity keys.
    */
+  void PublishAndPushAnnounceAsync(const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft,
+                                   int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
                                                  const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
   /**
@@ -152,7 +155,11 @@ public:
    */
   Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
                                             const std::string& text, const std::string& viewer_msg_id);
-  /** Publisher: sign+push a live_chat tip from a decoded overlay request. */
+  /** Publisher: sign+push a live_chat tip from a decoded overlay request. Prefer Async. */
+  void PublishLiveChatFromOverlayAsync(const std::string& peer_key, const std::string& topic_id,
+                                       const std::string& program_id, const std::string& join_handle,
+                                       const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+                                       int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
                                                      const std::string& program_id, const std::string& join_handle,
                                                      const std::string& viewer_peer_id,

@@ -224,6 +224,24 @@ void MeshDeliveryOrchestrator::RegisterPeerSigningKey(const std::string& peer_id
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
 }
 
+void MeshDeliveryOrchestrator::PublishAndPushAnnounceAsync(
+    const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft, const int64_t now_ms,
+    std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
+    return;
+  }
+  auto tip = peer_announce_publisher_->Publish(draft, now_ms);
+  if (!tip) {
+    on_done(tip.error());
+    return;
+  }
+  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
+}
+
 Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishAndPushAnnounce(const std::string& peer_key,
                                                                      const PeerAnnouncePublisher::Draft& draft,
                                                                      const int64_t now_ms) {
@@ -314,6 +332,31 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnounceOverlay(const std::s
   }
   WarmPeerForThread(thread->id);
   return SendUserMessage(thread->id, plan->message_body);
+}
+
+void MeshDeliveryOrchestrator::PublishLiveChatFromOverlayAsync(
+    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
+    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+    const int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!peer_announce_ || !peer_announce_publisher_) {
+    on_done(Error("peer-announce not ready (Amp or device identity missing)"));
+    return;
+  }
+  auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
+  if (!draft) {
+    on_done(draft.error());
+    return;
+  }
+  auto tip = peer_announce_publisher_->Publish(*draft, now_ms);
+  if (!tip) {
+    on_done(tip.error());
+    return;
+  }
+  announce_notifications_.UpsertFromTip(*tip, now_ms);  // no-op for live_chat
+  peer_announce_->PushTipAsync(peer_key, *tip, std::move(on_done));
 }
 
 Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(

@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Remaining sync L4 parks | announce PublishAndPush* sync | Product attachment upload uses `PushChatBlobAsync` end-to-end; sync wrappers remain for tests / unused announce helpers |
+| Remaining sync L4 parks | circuit hop / punch / media-relay SettledWait | Reachability probe + announce PublishAndPush* are async; CallStack still uses sync Try*Punch inside AmpCircuitHopReach; sync L4 wrappers remain for tests |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
@@ -222,6 +222,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | Reachability probe async (ProbeAsync + PostToIo); announce PublishAndPush*Async; MeshControl no longer parks on seed dial |
 | 2026-09-09 | Amp MeshPump + MeshControlPool owned by MeshHost; coordinator no longer 5ms Amp drain; docs drop libp2p reactor assumptions |
 | 2026-08-03 | Call Accept layer: `RemountCallChrome` (dedicated mounts); not always-mounted `data-if` + Dirty alone |
 | 2026-08-03 | Relay poll owned by `ConversationsHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
