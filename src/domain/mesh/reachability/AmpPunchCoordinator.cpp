@@ -282,6 +282,7 @@ struct AmpPunchCoordinator::Impl {
   pp::amp::PeerLinkManager* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
+  IoPost post_io;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   std::vector<std::string>* local_addrs = nullptr;
@@ -551,12 +552,13 @@ struct AmpPunchCoordinator::Impl {
 };
 
 AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump io_pump,
-                                         WorkerPost post_worker)
+                                         WorkerPost post_worker, IoPost post_io)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
+  impl_->post_io = post_io_;
   impl_->local_addrs = &local_addrs_;
 }
 
@@ -588,6 +590,20 @@ void AmpPunchCoordinator::Stop() {
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
 }
 
+void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,
+                                            const std::string& target_peer_id,
+                                            const std::vector<std::string>& my_addrs,
+                                            std::function<void(PunchRoe)> on_done, int window_ms) {
+  RunPunchAsync(introducer_peer_key, target_peer_id, my_addrs, window_ms, "cold", std::move(on_done));
+}
+
+void AmpPunchCoordinator::TryUpgradePunchAsync(const std::string& introducer_peer_key,
+                                               const std::string& target_peer_id,
+                                               const std::vector<std::string>& my_addrs,
+                                               std::function<void(PunchRoe)> on_done, int window_ms) {
+  RunPunchAsync(introducer_peer_key, target_peer_id, my_addrs, window_ms, "upgrade", std::move(on_done));
+}
+
 AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::string& introducer_peer_key,
                                                                 const std::string& target_peer_id,
                                                                 const std::vector<std::string>& my_addrs,
@@ -606,19 +622,47 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& i
                                                             const std::string& target_peer_id,
                                                             const std::vector<std::string>& my_addrs,
                                                             int window_ms, const std::string& reason) {
+  SettledWait<PunchResult, Failure> wait;
+  const int window = window_ms > 0 ? window_ms : 2000;
+  const auto deadline = Clock::now() + std::chrono::milliseconds(window + 4000);
+  RunPunchAsync(introducer_peer_key, target_peer_id, my_addrs, window_ms, reason,
+                [wait](PunchRoe value) { wait.Finish(std::move(value)); });
+  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, io_pump_);
+  return wait.Wait(std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: cold punch timed out"));
+}
+
+void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
+                                        const std::string& target_peer_id,
+                                        const std::vector<std::string>& my_addrs, int window_ms,
+                                        const std::string& reason, std::function<void(PunchRoe)> on_done) {
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto finish_once = std::make_shared<std::function<void(PunchRoe)>>();
+  *finish_once = [on_done = std::move(on_done), settled](PunchRoe value) {
+    if (settled->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!started_) {
-    return PunchRoe::error(Failure::Of(Err::NotStarted, "amp punch coordinator not started"));
+    (*finish_once)(PunchRoe::error(Failure::Of(Err::NotStarted, "amp punch coordinator not started")));
+    return;
   }
   if (!links_.GetLinkSnapshot(introducer_peer_key).has_endpoint) {
-    return PunchRoe::error(
-        Failure::Of(Err::EndpointNotRegistered, "introducer endpoint not registered"));
+    (*finish_once)(
+        PunchRoe::error(Failure::Of(Err::EndpointNotRegistered, "introducer endpoint not registered")));
+    return;
   }
   if (target_peer_id.empty()) {
-    return PunchRoe::error(Failure::Of(Err::InvalidRequest, "empty target_peer_id"));
+    (*finish_once)(PunchRoe::error(Failure::Of(Err::InvalidRequest, "empty target_peer_id")));
+    return;
   }
   const auto sanitized = SanitizePunchAddrs(my_addrs);
   if (sanitized.empty()) {
-    return PunchRoe::error(Failure::Of(Err::InvalidRequest, "no my_addrs"));
+    (*finish_once)(PunchRoe::error(Failure::Of(Err::InvalidRequest, "no my_addrs")));
+    return;
   }
   const int window = window_ms > 0 ? window_ms : 2000;
   const auto deadline = Clock::now() + std::chrono::milliseconds(window + 4000);
@@ -630,122 +674,144 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& i
   req.reason = reason.empty() ? "cold" : reason;
   const std::string request_json = EncodePunchConnect(req);
 
-  SettledWait<PunchResult, Failure> wait;
   auto session = std::make_shared<pp::amp::ChannelSession>();
-  auto settled = std::make_shared<std::atomic<bool>>(false);
-
-  auto finish = [settled, wait, session](PunchRoe value) {
-    if (settled->exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
+  auto finish = std::make_shared<std::function<void(PunchRoe)>>();
+  *finish = [finish_once, session](PunchRoe value) {
     session->Close();
-    wait.Finish(std::move(value));
+    (*finish_once)(std::move(value));
   };
 
   const auto read_timeout = RemainingTimeout(deadline);
   links_.EnsureAssociation(
       introducer_peer_key, [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline,
-                            read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
+                            read_timeout, settled](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
         if (!assoc) {
-          finish(PunchRoe::error(WrapLinkFailure(assoc.error())));
+          (*finish)(PunchRoe::error(WrapLinkFailure(assoc.error())));
           return;
         }
         links_.OpenChannel(
             introducer_peer_key, kAmpPunchProtocolId, PunchJsonChannelPolicy(read_timeout),
-            [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline,
-             read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+            [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline, read_timeout,
+             settled](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
               if (!channel) {
-                finish(PunchRoe::error(WrapLinkFailure(channel.error())));
+                (*finish)(PunchRoe::error(WrapLinkFailure(channel.error())));
                 return;
               }
-              AmpParkUntil(
-                  [&] {
+              AmpScheduleWhenChannelOpen(
+                  post_io_, io_pump_,
+                  [this, introducer_peer_key, channel_id = *channel]() {
                     auto* link = links_.FindLink(introducer_peer_key);
                     return link && link->Mux() &&
-                           link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                  }, deadline, io_pump_);
-              auto* link = links_.FindLink(introducer_peer_key);
-              if (!link || !link->Mux() ||
-                  link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                finish(PunchRoe::error(
-                    Failure::Of(Err::ChannelFailed, "punch: introducer channel open failed")));
-                return;
-              }
-              session->Bind(
-                  *link->Mux(), *channel, PunchJsonChannelPolicy(read_timeout),
-                  [this, finish, target_peer_id](Roe<std::vector<uint8_t>> frame) {
-                    if (!frame) {
-                      finish(PunchRoe::error(
-                          Failure::Of(Err::ProtocolError, "punch: failed to read introducer frame")));
-                      return false;
+                           link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
+                  },
+                  deadline,
+                  [this, introducer_peer_key, channel_id = *channel, target_peer_id, request_json, finish, session,
+                   deadline, read_timeout, settled](bool open) mutable {
+                    if (!open) {
+                      (*finish)(PunchRoe::error(
+                          Failure::Of(Err::ChannelFailed, "punch: introducer channel open failed")));
+                      return;
                     }
-                    auto root = TryParseObject(std::string(frame->begin(), frame->end()));
-                    if (!root) {
-                      finish(PunchRoe::error(
-                          Failure::Of(Err::ProtocolError, "punch: invalid introducer frame")));
-                      return false;
+                    auto* link = links_.FindLink(introducer_peer_key);
+                    if (!link || !link->Mux() ||
+                        link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+                      (*finish)(PunchRoe::error(
+                          Failure::Of(Err::ChannelFailed, "punch: introducer channel open failed")));
+                      return;
                     }
-                    const std::string op = PunchOp(*root).value_or("");
-                    if (op == "result") {
-                      auto result = DecodePunchResult(*root);
-                      if (!result) {
-                        finish(PunchRoe::error(
-                            Failure::Of(Err::ProtocolError, "punch: invalid result frame")));
-                        return false;
-                      }
-                      if (result->ok) {
-                        PublishPunchWinnerAddrs(links_, target_peer_id, result->winner_multiaddr);
-                        finish(*result);
-                      } else {
-                        finish(PunchRoe::error(Failure::Of(
-                            Err::PunchFailed, result->error.empty() ? "punch failed" : result->error)));
-                      }
-                      return false;
-                    }
-                    if (op == "sync") {
-                      auto sync = DecodePunchSync(*root);
-                      if (!sync) {
-                        finish(PunchRoe::error(
-                            Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
-                        return false;
-                      }
-                      for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
-                        if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                          if (!parsed->peer_id.empty()) {
-                            (void)links_.RegisterEndpoint(parsed->peer_id, ma);
+                    session->Bind(
+                        *link->Mux(), channel_id, PunchJsonChannelPolicy(read_timeout),
+                        [this, finish, target_peer_id](Roe<std::vector<uint8_t>> frame) {
+                          if (!frame) {
+                            (*finish)(PunchRoe::error(
+                                Failure::Of(Err::ProtocolError, "punch: failed to read introducer frame")));
+                            return false;
                           }
-                        }
-                      }
-                      auto burst =
-                          BurstDialCandidates(links_, io_pump_, sync->peer_addrs, sync->window_ms);
-                      PublishIfPunchConnected(links_, target_peer_id, burst);
-                      PunchResult result;
-                      result.epoch_id = sync->epoch_id;
-                      result.ok = burst.ok;
-                      result.winner_multiaddr = burst.dialed;
-                      result.error = burst.ok ? "" : burst.error;
-                      if (burst.ok) {
-                        finish(result);
-                      } else {
-                        finish(PunchRoe::error(Failure::Of(
-                            Err::PunchFailed, burst.error.empty() ? "punch burst failed" : burst.error)));
-                      }
-                      return false;
+                          auto root = TryParseObject(std::string(frame->begin(), frame->end()));
+                          if (!root) {
+                            (*finish)(PunchRoe::error(
+                                Failure::Of(Err::ProtocolError, "punch: invalid introducer frame")));
+                            return false;
+                          }
+                          const std::string op = PunchOp(*root).value_or("");
+                          if (op == "result") {
+                            auto result = DecodePunchResult(*root);
+                            if (!result) {
+                              (*finish)(PunchRoe::error(
+                                  Failure::Of(Err::ProtocolError, "punch: invalid result frame")));
+                              return false;
+                            }
+                            if (result->ok) {
+                              PublishPunchWinnerAddrs(links_, target_peer_id, result->winner_multiaddr);
+                              (*finish)(*result);
+                            } else {
+                              (*finish)(PunchRoe::error(Failure::Of(
+                                  Err::PunchFailed, result->error.empty() ? "punch failed" : result->error)));
+                            }
+                            return false;
+                          }
+                          if (op == "sync") {
+                            auto sync = DecodePunchSync(*root);
+                            if (!sync) {
+                              (*finish)(PunchRoe::error(
+                                  Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
+                              return false;
+                            }
+                            for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
+                              if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                                if (!parsed->peer_id.empty()) {
+                                  (void)links_.RegisterEndpoint(parsed->peer_id, ma);
+                                }
+                              }
+                            }
+                            auto burst =
+                                BurstDialCandidates(links_, io_pump_, sync->peer_addrs, sync->window_ms);
+                            PublishIfPunchConnected(links_, target_peer_id, burst);
+                            PunchResult result;
+                            result.epoch_id = sync->epoch_id;
+                            result.ok = burst.ok;
+                            result.winner_multiaddr = burst.dialed;
+                            result.error = burst.ok ? "" : burst.error;
+                            if (burst.ok) {
+                              (*finish)(result);
+                            } else {
+                              (*finish)(PunchRoe::error(Failure::Of(
+                                  Err::PunchFailed, burst.error.empty() ? "punch burst failed" : burst.error)));
+                            }
+                            return false;
+                          }
+                          return true;
+                        });
+                    if (!session->EnqueueOutbound(JsonToBody(request_json))) {
+                      (*finish)(PunchRoe::error(Failure::Of(Err::ProtocolError, "punch: failed to send connect")));
+                      return;
                     }
-                    return true;
-                  });
-              if (!session->EnqueueOutbound(JsonToBody(request_json))) {
-                finish(PunchRoe::error(Failure::Of(Err::ProtocolError, "punch: failed to send connect")));
-                return;
-              }
-              if (io_pump_) {
-                io_pump_();
-              }
+                    if (io_pump_) {
+                      io_pump_();
+                    }
+                    if (post_io_) {
+                      auto poll = std::make_shared<std::function<void()>>();
+                      *poll = [this, finish, deadline, settled, poll]() {
+                        if (settled->load(std::memory_order_acquire)) {
+                          return;
+                        }
+                        if (Clock::now() >= deadline) {
+                          (*finish)(PunchRoe::error(
+                              Failure::Of(Err::Timeout, "punch: cold punch timed out")));
+                          return;
+                        }
+                        post_io_([poll, settled]() {
+                          if (!settled->load(std::memory_order_acquire)) {
+                            (*poll)();
+                          }
+                        });
+                      };
+                      post_io_([poll]() { (*poll)(); });
+                    }
+                  },
+                  [this]() { return impl_->stopped.load(std::memory_order_acquire); });
             });
       });
-
-  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, io_pump_);
-  return wait.Wait(std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: cold punch timed out"));
 }
 
 } // namespace pbr

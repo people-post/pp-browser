@@ -125,7 +125,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
-                                         std::function<void(std::function<void()>)> amp_worker_post)
+                                         std::function<void(std::function<void()>)> amp_worker_post,
+                                         std::function<void(std::function<void()>)> amp_post_io)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
@@ -147,7 +148,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
                                                            worker);
     history->Start();
-    auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker);
+    auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     chat->Start();
     peer_history_ = std::move(history);

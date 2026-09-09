@@ -1199,10 +1199,12 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   IChatPeerLinks* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
+  std::function<void(std::function<void()>)> amp_post_io;
   if (auto chat = mesh_->ChatDeps(); chat) {
     amp_links = &chat->links;
     amp_pump = std::move(chat->io.io_pump);
     amp_worker = std::move(chat->io.post_worker);
+    amp_post_io = std::move(chat->io.post_io);
   }
   if (amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
@@ -1211,7 +1213,7 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(
       *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
       *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
-      std::move(amp_worker));
+      std::move(amp_worker), std::move(amp_post_io));
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());

@@ -71,7 +71,8 @@ public:
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
-                      std::function<void(std::function<void()>)> amp_worker_post = {});
+                      std::function<void(std::function<void()>)> amp_worker_post = {},
+                      std::function<void(std::function<void()>)> amp_post_io = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
