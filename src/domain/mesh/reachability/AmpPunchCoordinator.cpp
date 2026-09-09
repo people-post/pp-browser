@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 namespace pbr {
 namespace {
@@ -285,15 +286,6 @@ struct AmpPunchCoordinator::Impl {
   std::atomic<bool> stopped{false};
   std::vector<std::string>* local_addrs = nullptr;
 
-  void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
-    while (!done() && Clock::now() < deadline) {
-      if (io_pump) {
-        io_pump();
-      } else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-    }
-  }
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
                    const std::string& error) {
@@ -352,13 +344,12 @@ struct AmpPunchCoordinator::Impl {
                   finish_candidates(CodedRoe<PunchCandidates, Err>::error(WrapLinkFailure(channel.error())));
                   return;
                 }
-                IoPumpUntil(
+                AmpParkUntil(
                     [&] {
                       auto* link = links->FindLink(target_key);
                       return link && link->Mux() &&
                              link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                    },
-                    deadline);
+                    }, deadline, io_pump);
                 auto* link = links->FindLink(target_key);
                 if (!link || !link->Mux() ||
                     link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
@@ -406,13 +397,7 @@ struct AmpPunchCoordinator::Impl {
               });
         });
 
-    while (Clock::now() < deadline && !candidates_wait.IsSettled()) {
-      if (io_pump) {
-        io_pump();
-      } else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-    }
+    AmpParkUntil([&] { return candidates_wait.IsSettled(); }, deadline, io_pump);
     auto candidates = candidates_wait.Wait(
         std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: waiting for target candidates timed out"));
     if (!candidates) {
@@ -673,13 +658,12 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& i
                 finish(PunchRoe::error(WrapLinkFailure(channel.error())));
                 return;
               }
-              impl_->IoPumpUntil(
+              AmpParkUntil(
                   [&] {
                     auto* link = links_.FindLink(introducer_peer_key);
                     return link && link->Mux() &&
                            link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                  },
-                  deadline);
+                  }, deadline, io_pump_);
               auto* link = links_.FindLink(introducer_peer_key);
               if (!link || !link->Mux() ||
                   link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
@@ -760,13 +744,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& i
             });
       });
 
-  while (Clock::now() < deadline && !wait.IsSettled()) {
-    if (io_pump_) {
-      io_pump_();
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  }
+  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, io_pump_);
   return wait.Wait(std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: cold punch timed out"));
 }
 

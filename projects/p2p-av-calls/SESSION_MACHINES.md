@@ -107,7 +107,7 @@ void Apply(XxxEvent ev, /* small context */);
 | Call-media hello/ack (stream R/W) | Amp pump / async | **Never** `BlockingRead`/`BlockingWrite` on general WorkerPool — peer may stall forever |
 | Inbound handler / key fill (app logic) | Worker **Normal** or MeshControl | May hop after async hello read; must not hold a live stream wait on Critical |
 | Blocking Connect / `IoPumpUntil` facades | **MeshControlPool** (MeshHost-owned) | Interim until async `Connect(cb)` / A022-style callbacks; never park general WorkerPool |
-| Other control RPC still on Blocking* (dial-back, some circuit/relay JSON) | MeshControlPool | Never Critical general-pool; migrate to async+deadline when touched (see remaining work) |
+| Other control RPC still sync-parked (punch, some chat/blob) | MeshControlPool (default 1) | Dial-back **ProbeAsync** landed; parks use `AmpParkUntil` (MeshPump drives; no Tick from control). Full A022 async when touched |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
 | Duplex media R/W | Amp pump | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |

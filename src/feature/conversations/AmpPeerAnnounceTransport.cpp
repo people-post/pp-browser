@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 namespace pbr {
 namespace {
@@ -50,13 +51,6 @@ struct AmpPeerAnnounceTransport::Impl {
   OnTipIngested on_tip_ingested;
   std::atomic<bool> stopped{false};
 
-  void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
-    while (!done() && Clock::now() < deadline) {
-      if (io_pump) {
-        io_pump();
-      }
-    }
-  }
 
   std::optional<std::vector<uint8_t>> ResolveKey(const std::string& peer_id) {
     ResolvePublisherKey resolver;
@@ -237,13 +231,12 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
                          finish(Error(channel.error().message));
                          return;
                        }
-                       impl_->IoPumpUntil(
+                       AmpParkUntil(
                            [&] {
                              auto* link = links_.FindLink(peer_key);
                              return link && link->Mux() &&
                                     link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                           },
-                           deadline);
+                           }, deadline, io_pump_);
                        auto* link = links_.FindLink(peer_key);
                        if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
                          finish(Error("amp peer-announce: channel open failed")
@@ -278,14 +271,13 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
                          return;
                        }
 
-                       impl_->IoPumpUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline);
+                       AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
                        if (!settled->load(std::memory_order_acquire)) {
                          finish(Error("amp peer-announce send timed out").WithUser("Direct tip push timed out."));
                        }
                      });
 
-  impl_->IoPumpUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline);
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     finish(Error("amp peer-announce send timed out").WithUser("Direct tip push timed out."));

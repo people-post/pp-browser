@@ -11,14 +11,15 @@
 namespace pbr {
 
 /**
- * Fixed 1–2 thread pool for Amp control waits (Connect / IoPumpUntil).
+ * Fixed 1–2 thread pool for Amp control waits (reachability / remaining IoPumpUntil facades).
  * Owned by MeshHost — not the general AppRuntime WorkerPool.
+ * Default 1 after ConnectAsync + MeshPump-driven parks; raise to 2 if control wait fan-out grows.
  */
 class MeshControlPool {
 public:
   static constexpr size_t kMinThreadCount = 1;
   static constexpr size_t kMaxThreadCount = 2;
-  static constexpr size_t kDefaultThreadCount = 2;
+  static constexpr size_t kDefaultThreadCount = 1;
 
   explicit MeshControlPool(size_t thread_count = kDefaultThreadCount);
   ~MeshControlPool();

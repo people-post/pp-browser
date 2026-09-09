@@ -19,6 +19,7 @@
 #include <vector>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 namespace pbr {
 namespace {
@@ -108,13 +109,6 @@ struct AmpChatBlobTransport::Impl {
     return dek;
   }
 
-  void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
-    while (!done() && Clock::now() < deadline) {
-      if (io_pump) {
-        io_pump();
-      }
-    }
-  }
 
   void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !link.Mux()) {
@@ -315,13 +309,12 @@ Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequ
                            finish(Error(channel.error().message));
                            return;
                          }
-                         impl_->IoPumpUntil(
+                         AmpParkUntil(
                              [&] {
                                auto* link = links_.FindLink(peer_key);
                                return link && link->Mux() &&
                                       link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                             },
-                             deadline);
+                             }, deadline, io_pump_);
                          auto* link = links_.FindLink(peer_key);
                          if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
                            finish(Error("amp chat-blob: channel open failed"));
@@ -345,15 +338,14 @@ Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequ
                            return;
                          }
 
-                         impl_->IoPumpUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline);
+                         AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
                          if (!settled->load(std::memory_order_acquire)) {
                            finish(Error("amp chat-blob fetch timed out"));
                          }
                        });
   });
 
-  impl_->IoPumpUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline);
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     finish(Error("amp chat-blob fetch timed out"));
     return Error("amp chat-blob fetch timed out");
@@ -409,12 +401,11 @@ Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
                 finish(Error(channel.error().message));
                 return;
               }
-              impl_->IoPumpUntil(
+              AmpParkUntil(
                   [&] {
                     auto* link = links_.FindLink(peer_key);
                     return link && link->Mux() && link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                  },
-                  deadline);
+                  }, deadline, io_pump_);
               auto* link = links_.FindLink(peer_key);
               if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
                 finish(Error("amp chat-blob: channel open failed"));
@@ -442,15 +433,14 @@ Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
                 return;
               }
 
-              impl_->IoPumpUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline);
+              AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
               if (!settled->load(std::memory_order_acquire)) {
                 finish(Error("amp chat-blob push timed out"));
               }
             });
       });
 
-  impl_->IoPumpUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline);
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     finish(Error("amp chat-blob push timed out"));
     return Error("amp chat-blob push timed out");

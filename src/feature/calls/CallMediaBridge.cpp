@@ -464,7 +464,7 @@ void CallMediaBridge::BeginConnectAttempt(CallMediaDirectConnectParams params,
     return;
   }
 
-  // Reachability may still IoPumpUntil (Phase B) — keep that off the UI/coordinator.
+  // Reachability may still park briefly (AmpParkUntil); keep off UI/coordinator.
   MeshControlDispatch::Post([this, params = std::move(params), cbs = std::move(cbs), gen, attempt]() mutable {
     if (connect_generation_.load(std::memory_order_acquire) != gen ||
         stopping_.load(std::memory_order_acquire)) {

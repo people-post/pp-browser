@@ -7,6 +7,7 @@
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/L3/Types.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <atomic>
 #include <chrono>
@@ -44,14 +45,6 @@ struct AmpDirectChatTransport::Impl {
   std::mutex handler_mutex;
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
-
-  void IoPumpUntil(const std::function<bool()>& done, const Clock::time_point deadline) {
-    while (!done() && Clock::now() < deadline) {
-      if (io_pump) {
-        io_pump();
-      }
-    }
-  }
 
   void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links) {
@@ -178,13 +171,13 @@ Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_use
                          finish(Error(channel.error().message));
                          return;
                        }
-                       impl_->IoPumpUntil(
+                       AmpParkUntil(
                            [&] {
                              auto* link = links_.FindLink(peer_key);
                              return link && link->Mux() &&
                                     link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
                            },
-                           deadline);
+                           deadline, io_pump_);
                        auto* link = links_.FindLink(peer_key);
                        if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
                          finish(Error("amp direct chat: channel open failed")
@@ -209,15 +202,16 @@ Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_use
                          return;
                        }
 
-                       impl_->IoPumpUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline);
+                       AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
+                                    io_pump_);
                        if (!settled->load(std::memory_order_acquire)) {
                          finish(Error("amp direct chat send timed out")
                                     .WithUser("Direct send didn't confirm — will use relay if available."));
                        }
                      });
 
-  impl_->IoPumpUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline);
+  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+               deadline, io_pump_);
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     finish(Error("amp direct chat send timed out")

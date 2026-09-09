@@ -58,7 +58,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
 | **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
-| **4** | **Mesh control** | `MeshHost` (`MeshControlPool`, 1–2) | Yes — dial / `IoPumpUntil` waits | Call-media Connect grace, Amp L4 facades that pump Amp while waiting; **not** general HTTP |
+| **4** | **Mesh control** | `MeshHost` (`MeshControlPool`, default 1) | Yes — remaining sync L4 parks | Reachability probe / punch / chat waits; product parks sleep while MeshPump Drives (no Tick from control) |
 | **5** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain |
 | **6** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |
 
@@ -68,7 +68,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
 
-~**main + coordinator + MeshPump + MeshControl (1–2) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
+~**main + coordinator + MeshPump + MeshControl (1) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
 
 During an active call, add SDL capture/video/ringtone threads.
 
@@ -162,7 +162,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Class | Dispatch | Examples |
 |-------|----------|----------|
 | **Pump** | `MeshPumpThread` | `MeshRuntime::Drive`, DHT host tick |
-| **Control** | `MeshControlPool` | dial waits, `IoPumpUntil` L4 facades, call-media Connect grace |
+| **Control** | `MeshControlPool` | reachability / remaining sync L4 parks (ConnectAsync no longer holds a control thread) |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
 Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Blocking `Connect()` / `IoPumpUntil` facades | Amp L4 + reachability | Call-media uses **ConnectAsync** (bridge). Remaining `IoPumpUntil` on dial-back/punch/chat/blob/directory/DHT — migrate A022-style; then shrink MeshControlPool |
+| Remaining sync L4 facades | punch / chat / blob / directory / DHT | Dial-back has **ProbeAsync** + MeshPump/`PostToIo` channel-open; product IoPump empty when MeshPump runs (`AmpParkUntil`). Further A022 async APIs can drop MeshControl parks |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
