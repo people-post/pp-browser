@@ -86,12 +86,31 @@ public:
   virtual ~ICircuitHopReach() = default;
   /** Reach a media_relay hop (topology / prefetch). */
   virtual Roe<void> TryEnsureHopReachable(const std::string& hop_peer_id) = 0;
+  /** Prefer over sync when MeshPump + PostToIo are available. */
+  virtual void TryEnsureHopReachableAsync(const std::string& hop_peer_id,
+                                          std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureHopReachable(hop_peer_id));
+    }
+  }
   /** Reach a call peer for 1:1 call-media when not directly dialable. */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
+  virtual void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureCallMediaReachable(peer_key));
+    }
+  }
   /** L3.25c: punch via circuit R1 as introducer, then demote the circuit hop. */
   virtual Roe<void> TryUpgradeToDirect(const std::string& peer_key) {
     (void)peer_key;
     return Error("circuit upgrade not available");
+  }
+  virtual void TryUpgradeToDirectAsync(const std::string& peer_key,
+                                       std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryUpgradeToDirect(peer_key));
+    }
   }
 };
 

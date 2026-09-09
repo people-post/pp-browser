@@ -743,10 +743,10 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     }
     const MeshHopCandidate& hop = (*ranked_ptr)[index];
     const bool self_hop = !local_peer_id.empty() && hop.peer_id == local_peer_id;
-    if (!self_hop && relay_deps_.circuit_reach && relay_deps_.dial &&
-        !relay_deps_.dial->IsDialable(hop.peer_id)) {
-      (void)relay_deps_.circuit_reach->TryEnsureHopReachable(hop.peer_id);
-    }
+
+    auto continue_hop = [this, call_id, local_peer_id, local, session, ranked_ptr, hop_failures, try_hop,
+                         index, on_done, self_hop]() mutable {
+    const MeshHopCandidate& hop = (*ranked_ptr)[index];
     if (!self_hop && (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id))) {
       const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
       hop_failures->push_back(detail);
@@ -823,6 +823,18 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
       }
       on_done(Roe<void>());
     });
+    };
+
+    if (!self_hop && relay_deps_.circuit_reach && relay_deps_.dial &&
+        !relay_deps_.dial->IsDialable(hop.peer_id)) {
+      const std::string hop_peer_id = hop.peer_id;
+      relay_deps_.circuit_reach->TryEnsureHopReachableAsync(
+          hop_peer_id, [continue_hop = std::move(continue_hop)](Roe<void>) mutable {
+            PostControlOrRun(std::move(continue_hop));
+          });
+      return;
+    }
+    continue_hop();
   };
   (*try_hop)(0);
   });
@@ -1066,9 +1078,13 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
     (void)relay_deps_.dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
     relay_deps_.dial->ClearDialBackoff(attach.hop_peer_id);
   }
-  if (!relay_deps_.dial->IsDialable(attach.hop_peer_id) && relay_deps_.circuit_reach) {
-    (void)relay_deps_.circuit_reach->TryEnsureHopReachable(attach.hop_peer_id);
-  }
+
+  const std::string hop_for_ensure = attach.hop_peer_id;
+  const bool need_circuit =
+      !relay_deps_.dial->IsDialable(hop_for_ensure) && relay_deps_.circuit_reach != nullptr;
+  auto continue_quote = [this, call_id, attach = std::move(attach), on_sfu_frame = std::move(on_sfu_frame),
+                         finish_complete = std::move(finish_complete),
+                         on_done]() mutable {
   if (!relay_deps_.dial->IsDialable(attach.hop_peer_id)) {
     on_done(Error("hop not dialable"));
     return;
@@ -1119,6 +1135,16 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
             8000);
       },
       5000);
+  };
+
+  if (need_circuit) {
+    relay_deps_.circuit_reach->TryEnsureHopReachableAsync(
+        hop_for_ensure, [continue_quote = std::move(continue_quote)](Roe<void>) mutable {
+          PostControlOrRun(std::move(continue_quote));
+        });
+    return;
+  }
+  continue_quote();
 }
 
 Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
@@ -1267,9 +1293,12 @@ void CallTopologyController::ReattachGuestSfuTransportAsync(const std::string& c
       (void)relay_deps_.dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
       relay_deps_.dial->ClearDialBackoff(attach.hop_peer_id);
     }
-    if (!relay_deps_.dial->IsDialable(attach.hop_peer_id) && relay_deps_.circuit_reach) {
-      (void)relay_deps_.circuit_reach->TryEnsureHopReachable(attach.hop_peer_id);
-    }
+
+    const std::string hop_for_ensure = attach.hop_peer_id;
+    const bool need_circuit =
+        !relay_deps_.dial->IsDialable(hop_for_ensure) && relay_deps_.circuit_reach != nullptr;
+    auto continue_quote = [this, call_id, attach = std::move(attach), gen_at_start,
+                           on_sfu_frame = std::move(on_sfu_frame), on_done]() mutable {
     if (!relay_deps_.dial->IsDialable(attach.hop_peer_id)) {
       on_done(Error("hop not dialable"));
       return;
@@ -1343,6 +1372,16 @@ void CallTopologyController::ReattachGuestSfuTransportAsync(const std::string& c
               8000);
         },
         5000);
+    };
+
+    if (need_circuit) {
+      relay_deps_.circuit_reach->TryEnsureHopReachableAsync(
+          hop_for_ensure, [continue_quote = std::move(continue_quote)](Roe<void>) mutable {
+            PostControlOrRun(std::move(continue_quote));
+          });
+      return;
+    }
+    continue_quote();
   });
 }
 
