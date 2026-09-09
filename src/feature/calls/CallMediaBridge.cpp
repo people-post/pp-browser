@@ -4,10 +4,10 @@
 #include "domain/messaging/SfuAttachFanout.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "common/Utilities.h"
 
 #include <atomic>
+#include <memory>
 #include <chrono>
 #include <thread>
 #include "common/PbrCompat.h"
@@ -307,52 +307,87 @@ bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/)
   return dial_ != nullptr;
 }
 
-Roe<void> CallMediaBridge::EnsurePeerReachableOnIo(const std::string& peer_identity,
-                                                        const uint64_t connect_gen) {
-  if (!dial_) {
-    return Error("dial registry not available");
+void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
+                                                   const uint64_t connect_gen,
+                                                   std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
   }
+  if (!dial_) {
+    on_done(Error("dial registry not available"));
+    return;
+  }
+  if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
+      stopping_.load(std::memory_order_acquire)) {
+    on_done(Error("call-media aborted"));
+    return;
+  }
+  if (dial_->IsDialable(peer_identity)) {
+    log().info << "Call-media peer dialable peer=" << peer_identity;
+    on_done({});
+    return;
+  }
+  // Do not start circuit Ensure once shutdown/Leave has begun.
+  if (stopping_.load(std::memory_order_acquire)) {
+    on_done(Error("call-media aborted"));
+    return;
+  }
+
   const int64_t deadline = util::NowUnixMs() + kDialWaitBudgetMs;
-  Error last_error("call peer not dialable");
-  while (util::NowUnixMs() < deadline) {
+  auto last_error = std::make_shared<Error>(Error("call peer not dialable"));
+  auto circuit_started = std::make_shared<bool>(false);
+  auto tick = std::make_shared<std::function<void()>>();
+  *tick = [this, peer_identity, connect_gen, on_done = std::move(on_done), deadline, last_error,
+           circuit_started, tick]() mutable {
     if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
         stopping_.load(std::memory_order_acquire)) {
-      return Error("call-media aborted");
+      on_done(Error("call-media aborted"));
+      return;
+    }
+    if (!dial_) {
+      on_done(Error("dial registry not available"));
+      return;
     }
     if (dial_->IsDialable(peer_identity)) {
       log().info << "Call-media peer dialable peer=" << peer_identity;
-      return {};
+      on_done({});
+      return;
     }
-    // Do not enter a multi-second circuit RequestBridge once shutdown/Leave has begun —
-    // AbortInflightRequests only helps after the wait starts; skipping avoids new hangs.
-    if (stopping_.load(std::memory_order_acquire)) {
-      return Error("call-media aborted");
+    if (util::NowUnixMs() >= deadline) {
+      log().warning << "Call-media peer still undialable peer=" << peer_identity
+                    << " last=" << last_error->message;
+      on_done(*last_error);
+      return;
     }
-    if (circuit_reach_) {
-      auto via_circuit = circuit_reach_->TryEnsureCallMediaReachable(peer_identity);
-      if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
-          stopping_.load(std::memory_order_acquire)) {
-        return Error("call-media aborted");
-      }
-      if (via_circuit) {
-        log().info << "Call-media peer reachable via circuit peer=" << peer_identity;
-        return {};
-      }
-      last_error = via_circuit.error();
-    } else {
-      last_error = Error("call peer not dialable");
+    if (circuit_reach_ && !*circuit_started) {
+      *circuit_started = true;
+      circuit_reach_->TryEnsureCallMediaReachableAsync(
+          peer_identity,
+          [this, peer_identity, connect_gen, on_done, last_error, tick](Roe<void> via) mutable {
+            AppRuntime::PostCoordinatorNormal(
+                [this, peer_identity, connect_gen, on_done = std::move(on_done), last_error, tick,
+                 via = std::move(via)]() mutable {
+                  if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
+                      stopping_.load(std::memory_order_acquire)) {
+                    on_done(Error("call-media aborted"));
+                    return;
+                  }
+                  if (via || (dial_ && dial_->IsDialable(peer_identity))) {
+                    log().info << "Call-media peer reachable via circuit peer=" << peer_identity;
+                    on_done({});
+                    return;
+                  }
+                  *last_error = via.error();
+                  (void)AppRuntime::ScheduleCoordinatorOneShot(
+                      std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
+                });
+          });
+      return;
     }
-    for (int i = 0; i < kDialPollMs / 10; ++i) {
-      if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
-          stopping_.load(std::memory_order_acquire)) {
-        return Error("call-media aborted");
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-  }
-  log().warning << "Call-media peer still undialable peer=" << peer_identity
-                << " last=" << last_error.message;
-  return last_error;
+    (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
+                                                 [tick]() { (*tick)(); });
+  };
+  (*tick)();
 }
 
 void CallMediaBridge::CancelConnectTimers() {
@@ -464,60 +499,66 @@ void CallMediaBridge::BeginConnectAttempt(CallMediaDirectConnectParams params,
     return;
   }
 
-  // SoftMigrate / circuit reach may still AmpParkUntil on MeshControl; keep off UI/coordinator.
-  MeshControlDispatch::Post([this, params = std::move(params), cbs = std::move(cbs), gen, attempt]() mutable {
-    if (connect_generation_.load(std::memory_order_acquire) != gen ||
-        stopping_.load(std::memory_order_acquire)) {
-      connect_worker_inflight_.store(false, std::memory_order_release);
-      return;
+  // Prefer Async circuit reach — never AmpParkUntil / sleep on MeshControl.
+  EnsurePeerReachableAsync(
+      params.peer_key, gen,
+      [this, params = std::move(params), cbs = std::move(cbs), gen, attempt](Roe<void> ready) mutable {
+        AppRuntime::PostCoordinatorNormal([this, params = std::move(params), cbs = std::move(cbs), gen,
+                                           attempt, ready = std::move(ready)]() mutable {
+          if (connect_generation_.load(std::memory_order_acquire) != gen ||
+              stopping_.load(std::memory_order_acquire)) {
+            connect_worker_inflight_.store(false, std::memory_order_release);
+            return;
+          }
+          if (!ready) {
+            FinishConnectSequence(gen, params.call_id, ready, params.offerer ? "offerer" : "answerer");
+            return;
+          }
+          ContinueConnectAttemptAfterReachable(std::move(params), std::move(cbs), gen, attempt);
+        });
+      });
+}
+
+void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params,
+                                                           CallMediaDirectCallbacks cbs,
+                                                           const uint64_t gen, const int attempt) {
+  if (connect_generation_.load(std::memory_order_acquire) != gen ||
+      stopping_.load(std::memory_order_acquire)) {
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    return;
+  }
+  if (direct_.IsActive()) {
+    FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
+    return;
+  }
+  if (dial_) {
+    dial_->AbortInflightDial(params.peer_key);
+    dial_->ClearDialBackoff(params.peer_key);
+    if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
+      log().info << "Call-media dial ma=" << *ma << " peer=" << params.peer_key
+                 << " role=" << (params.offerer ? "offerer" : "answerer");
     }
-    Roe<void> ready = EnsurePeerReachableOnIo(params.peer_key, gen);
-    if (!ready) {
-      FinishConnectSequence(gen, params.call_id, ready, params.offerer ? "offerer" : "answerer");
-      return;
-    }
-    for (int i = 0; i < 20; ++i) {
-      if (connect_generation_.load(std::memory_order_acquire) != gen ||
-          stopping_.load(std::memory_order_acquire)) {
-        connect_worker_inflight_.store(false, std::memory_order_release);
-        return;
-      }
-      if (direct_.IsActive()) {
-        FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    if (dial_) {
-      dial_->AbortInflightDial(params.peer_key);
-      dial_->ClearDialBackoff(params.peer_key);
-      if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
-        log().info << "Call-media dial ma=" << *ma << " peer=" << params.peer_key
-                   << " role=" << (params.offerer ? "offerer" : "answerer");
-      }
-    }
-    if (params.offerer) {
-      host_.P2pResendMediaKey(params.call_id, params.peer_key);
-    }
-    if (!direct_.IsActive()) {
-      direct_.Detach();
-    }
-    log().info << "Call-media ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
-               << " call_id=" << params.call_id << " peer=" << params.peer_key
-               << " role=" << (params.offerer ? "offerer" : "answerer")
-               << " timeout_ms=" << kConnectAttemptTimeoutMs;
-    // Release MeshControl for the Connect wait — MeshPump + StartLeg drive Amp.
-    direct_.ConnectAsync(
-        params, cbs,
-        [this, params, cbs, gen, attempt](Roe<void> connected) mutable {
-          AppRuntime::PostCoordinatorNormal([this, params = std::move(params), cbs = std::move(cbs), gen,
-                                             attempt, connected = std::move(connected)]() mutable {
-            OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
-                                     std::move(connected));
-          });
-        },
-        kConnectAttemptTimeoutMs);
-  });
+  }
+  if (params.offerer) {
+    host_.P2pResendMediaKey(params.call_id, params.peer_key);
+  }
+  if (!direct_.IsActive()) {
+    direct_.Detach();
+  }
+  log().info << "Call-media ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
+             << " call_id=" << params.call_id << " peer=" << params.peer_key
+             << " role=" << (params.offerer ? "offerer" : "answerer")
+             << " timeout_ms=" << kConnectAttemptTimeoutMs;
+  direct_.ConnectAsync(
+      params, cbs,
+      [this, params, cbs, gen, attempt](Roe<void> connected) mutable {
+        AppRuntime::PostCoordinatorNormal([this, params = std::move(params), cbs = std::move(cbs), gen,
+                                           attempt, connected = std::move(connected)]() mutable {
+          OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
+                                   std::move(connected));
+        });
+      },
+      kConnectAttemptTimeoutMs);
 }
 
 void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,

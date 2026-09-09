@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -78,13 +79,17 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity, uint64_t connect_gen);
+  /** Circuit/punch reach without parking MeshControl (TryEnsureCallMediaReachableAsync). */
+  void EnsurePeerReachableAsync(const std::string& peer_identity, uint64_t connect_gen,
+                                std::function<void(Roe<void>)> on_done);
   /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
   void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
   void ScheduleOffererGracePoll(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                                 int64_t grace_deadline_ms);
   void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                            int attempt);
+  void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
+                                            uint64_t gen, int attempt);
   void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                                 int attempt, Roe<void> connected);
   void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
