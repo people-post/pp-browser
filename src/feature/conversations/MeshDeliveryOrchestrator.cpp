@@ -992,7 +992,10 @@ Roe<void> MeshDeliveryOrchestrator::MarkPskVerified(const std::string& thread_id
 
 void MeshDeliveryOrchestrator::ScrollBackfill(const std::string& thread_id,
                                          std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->ScrollBackfill(thread_id); },
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->ScrollBackfillAsync(thread_id, std::move(done));
+              },
               std::move(on_complete));
 }
 
@@ -1004,13 +1007,13 @@ void MeshDeliveryOrchestrator::TailSyncActiveE2eThread() {
   MaybeTailSync(active_id);
 }
 
-void MeshDeliveryOrchestrator::RunSyncOnIo(const std::string& thread_id,
-                                      std::function<Roe<ChatSyncResult>()> task,
-                                      std::function<void(Roe<ChatSyncResult>)> on_complete) {
+void MeshDeliveryOrchestrator::RunSyncOnIo(
+    const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
+    std::function<void(Roe<ChatSyncResult>)> on_complete) {
   if (!chat_sync_ || !IsE2ePrivateThread(thread_id)) {
     if (on_complete) {
       AppRuntime::PostUI(
-                              [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
+          [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
     }
     return;
   }
@@ -1025,35 +1028,37 @@ void MeshDeliveryOrchestrator::RunSyncOnIo(const std::string& thread_id,
     return;
   }
 
-  AppRuntime::PostWorkerNormal([this, thread_id, task = std::move(task),
-                                                  on_complete = std::move(on_complete)]() mutable {
-    struct SyncGuard {
-      std::atomic<bool>& pending;
-      ~SyncGuard() { pending = false; }
-    } guard{sync_pending_};
-
-    Roe<ChatSyncResult> result = task();
-    if (result && on_messages_changed_) {
-      AppRuntime::PostUI([this]() { on_messages_changed_(); });
-    }
-    if (on_complete) {
-      AppRuntime::PostUI(
-                              [on_complete = std::move(on_complete), result = std::move(result)]() mutable {
-                                on_complete(std::move(result));
-                              });
-    }
+  AppRuntime::PostWorkerNormal([this, task = std::move(task), on_complete = std::move(on_complete)]() mutable {
+    task([this, on_complete = std::move(on_complete)](Roe<ChatSyncResult> result) mutable {
+      sync_pending_.store(false, std::memory_order_release);
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+      if (on_complete) {
+        AppRuntime::PostUI([on_complete = std::move(on_complete), result = std::move(result)]() mutable {
+          on_complete(std::move(result));
+        });
+      }
+    });
   });
 }
 
 void MeshDeliveryOrchestrator::SyncWithPeer(const std::string& thread_id,
                                        std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->UserInitiatedSync(thread_id); },
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->UserInitiatedSyncAsync(thread_id, std::move(done));
+              },
               std::move(on_complete));
 }
 
 void MeshDeliveryOrchestrator::RetryGapSync(const std::string& thread_id,
                                        std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->RetryGapSync(thread_id); }, std::move(on_complete));
+  RunSyncOnIo(thread_id,
+              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+                chat_sync_->RetryGapSyncAsync(thread_id, std::move(done));
+              },
+              std::move(on_complete));
 }
 
 std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayId(const Thread& thread) const {
@@ -1208,7 +1213,13 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   }
   const uint64_t gap_min = sync_state->contiguous_peer_seq + 1;
   const uint64_t gap_max = envelope.sender_seq - 1;
-  (void)chat_sync_->RepairGap(thread_id, gap_min, gap_max);
+  AppRuntime::PostWorkerNormal([this, thread_id, gap_min, gap_max]() {
+    chat_sync_->RepairGapAsync(thread_id, gap_min, gap_max, [this](Roe<ChatSyncResult> result) {
+      if (result && on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  });
 }
 
 void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,

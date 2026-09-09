@@ -243,7 +243,8 @@ private:
                        bool relay_after_direct_attempt = false);
   void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
-  void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
+  void RunSyncOnIo(const std::string& thread_id,
+                   std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;

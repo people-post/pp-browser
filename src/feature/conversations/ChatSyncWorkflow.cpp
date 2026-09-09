@@ -434,33 +434,66 @@ void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RepairGap(const std::string& thread_id, const uint64_t gap_min,
                                                const uint64_t gap_max) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  RepairGapAsync(thread_id, gap_min, gap_max, [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(12000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
+  }
+  return result_future.get();
+}
+
+void ChatSyncWorkflow::RepairGapAsync(const std::string& thread_id, const uint64_t gap_min, const uint64_t gap_max,
+                                      std::function<void(Roe<ChatSyncResult>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatSyncResult> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
-    return Error("Thread not found");
+    finish(Error("Thread not found"));
+    return;
   }
   auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
   if (!session_epoch) {
-    return session_epoch.error();
+    finish(session_epoch.error());
+    return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
   if (!sync_state) {
-    return sync_state.error();
+    finish(sync_state.error());
+    return;
   }
   if (sync_state->phase == PeerSyncPhase::Compromised) {
-    return Error("Sync disabled while thread is compromised");
+    finish(Error("Sync disabled while thread is compromised"));
+    return;
   }
 
   const auto range = ClampGapRange(gap_min, gap_max, sync_state->history_floor_seq);
   if (!range) {
-    return ChatSyncResult{};
+    finish(ChatSyncResult{});
+    return;
   }
 
   auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, range->first, range->second,
                               kMaxPollBatchMessages, "asc");
   if (!request) {
-    return request.error();
+    finish(request.error());
+    return;
   }
-  return FetchChatTargetMessages(thread_id, *request);
+  FetchChatTargetMessagesAsync(thread_id, *request, std::move(finish));
 }
 
 void ChatSyncWorkflow::MergeSyncResult(ChatSyncResult& aggregate, const ChatSyncResult& partial) const {
@@ -469,75 +502,176 @@ void ChatSyncWorkflow::MergeSyncResult(ChatSyncResult& aggregate, const ChatSync
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RepairKnownGap(const std::string& thread_id) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  RepairKnownGapAsync(thread_id, [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(12000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
+  }
+  return result_future.get();
+}
+
+void ChatSyncWorkflow::RepairKnownGapAsync(const std::string& thread_id,
+                                           std::function<void(Roe<ChatSyncResult>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatSyncResult> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
   auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
   if (!session_epoch) {
-    return session_epoch.error();
+    finish(session_epoch.error());
+    return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
   if (!sync_state) {
-    return sync_state.error();
+    finish(sync_state.error());
+    return;
   }
   if (sync_state->phase != PeerSyncPhase::Gap) {
-    return ChatSyncResult{};
+    finish(ChatSyncResult{});
+    return;
   }
   if (sync_state->loaded_max_seq <= sync_state->contiguous_peer_seq + 1) {
-    return ChatSyncResult{};
+    finish(ChatSyncResult{});
+    return;
   }
-  return RepairGap(thread_id, sync_state->contiguous_peer_seq + 1, sync_state->loaded_max_seq - 1);
+  RepairGapAsync(thread_id, sync_state->contiguous_peer_seq + 1, sync_state->loaded_max_seq - 1, std::move(finish));
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::ScrollBackfill(const std::string& thread_id) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  ScrollBackfillAsync(thread_id, [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(12000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
+  }
+  return result_future.get();
+}
+
+void ChatSyncWorkflow::ScrollBackfillAsync(const std::string& thread_id,
+                                           std::function<void(Roe<ChatSyncResult>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatSyncResult> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
-    return Error("Thread not found");
+    finish(Error("Thread not found"));
+    return;
   }
   auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
   if (!session_epoch) {
-    return session_epoch.error();
+    finish(session_epoch.error());
+    return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
   if (!sync_state) {
-    return sync_state.error();
+    finish(sync_state.error());
+    return;
   }
   if (sync_state->loaded_min_seq <= sync_state->history_floor_seq + 1) {
-    return ChatSyncResult{};
+    finish(ChatSyncResult{});
+    return;
   }
 
   const uint64_t max_seq = sync_state->loaded_min_seq - 1;
   auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, std::nullopt, max_seq,
                               kUserSyncOlderHistoryLimit, "desc");
   if (!request) {
-    return request.error();
+    finish(request.error());
+    return;
   }
-  return FetchChatTargetMessages(thread_id, *request);
+  FetchChatTargetMessagesAsync(thread_id, *request, std::move(finish));
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::UserInitiatedSync(const std::string& thread_id) {
-  ChatSyncResult aggregate;
-
-  auto tail = TailSync(thread_id);
-  if (!tail) {
-    return tail.error();
+  auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
+  auto result_future = result_promise->get_future();
+  UserInitiatedSyncAsync(thread_id, [result_promise](Roe<ChatSyncResult> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(36000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  MergeSyncResult(aggregate, *tail);
-
-  auto gap = RepairKnownGap(thread_id);
-  if (!gap) {
-    return gap.error();
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Chat history sync timed out");
   }
-  MergeSyncResult(aggregate, *gap);
+  return result_future.get();
+}
 
-  auto older = ScrollBackfill(thread_id);
-  if (!older) {
-    return older.error();
-  }
-  MergeSyncResult(aggregate, *older);
-
-  return aggregate;
+void ChatSyncWorkflow::UserInitiatedSyncAsync(const std::string& thread_id,
+                                              std::function<void(Roe<ChatSyncResult>)> on_done) {
+  auto aggregate = std::make_shared<ChatSyncResult>();
+  TailSyncAsync(thread_id, [this, thread_id, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> tail) mutable {
+    if (!tail) {
+      if (on_done) {
+        on_done(tail.error());
+      }
+      return;
+    }
+    MergeSyncResult(*aggregate, *tail);
+    RepairKnownGapAsync(thread_id, [this, thread_id, aggregate, on_done = std::move(on_done)](
+                                        Roe<ChatSyncResult> gap) mutable {
+      if (!gap) {
+        if (on_done) {
+          on_done(gap.error());
+        }
+        return;
+      }
+      MergeSyncResult(*aggregate, *gap);
+      ScrollBackfillAsync(thread_id, [this, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> older) {
+        if (!older) {
+          if (on_done) {
+            on_done(older.error());
+          }
+          return;
+        }
+        MergeSyncResult(*aggregate, *older);
+        if (on_done) {
+          on_done(*aggregate);
+        }
+      });
+    });
+  });
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RetryGapSync(const std::string& thread_id) {
   return RepairKnownGap(thread_id);
+}
+
+void ChatSyncWorkflow::RetryGapSyncAsync(const std::string& thread_id,
+                                         std::function<void(Roe<ChatSyncResult>)> on_done) {
+  RepairKnownGapAsync(thread_id, std::move(on_done));
 }
 
 } // namespace pbr
