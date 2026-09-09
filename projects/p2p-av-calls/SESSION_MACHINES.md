@@ -107,7 +107,7 @@ void Apply(XxxEvent ev, /* small context */);
 | Call-media hello/ack (stream R/W) | Amp pump / async | **Never** `BlockingRead`/`BlockingWrite` on general WorkerPool — peer may stall forever |
 | Inbound handler / key fill (app logic) | Worker **Normal** or MeshControl | May hop after async hello read; must not hold a live stream wait on Critical |
 | Blocking Connect / `IoPumpUntil` facades | **MeshControlPool** (MeshHost-owned) | Interim until async `Connect(cb)` / A022-style callbacks; never park general WorkerPool |
-| Sync L4 RPC wrappers (still park on MeshControl) | MeshControlPool (default 1) | SoftMigrate/attach/reattach product paths Async; circuit hop reach + punch still sync-park briefly on control |
+| Sync L4 RPC wrappers (test/harness façades) | MeshControlPool (default 1) or caller | SoftMigrate/attach/reattach, circuit hop reach, punch, and CallMediaBridge peer-reach product paths are Async; sync wrappers remain for tests |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
 | Duplex media R/W | Amp pump | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |
@@ -242,10 +242,10 @@ stateDiagram-v2
 
 | Item | Why not done yet |
 |------|------------------|
-| **Async `Connect(cb)` API** | **Landed (interim):** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait no longer parks MeshControl for the full dial timeout. Reachability/`TryEnsureCallMediaReachable` may still use MeshControl briefly until Phase B. Sync `Connect()` remains for tests/harnesses. |
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait and peer-reach (`EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`) no longer park MeshControl. Sync `Connect()` remains for tests/harnesses. |
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
-| **Sync L4 RPC still parks until reply** | SoftMigrate/attach/reattach are Async on product paths. AmpCircuitHopReach + CallStack punch still sync on MeshControl. Test sync wrappers remain. |
+| **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
 
 ---

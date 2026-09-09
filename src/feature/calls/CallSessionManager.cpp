@@ -247,13 +247,18 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
       if (topology_.IsSfuAttachWaitActive() || !topology_.IsSfuAttached()) {
         const std::string call_id = (*active)->call_id;
-        AppRuntime::PostWorkerNormal([this, call_id]() {
-          if (topology_.IsOnSfuForCall(call_id)) {
-            return;
-          }
-          (void)topology_.MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
-          NotifyRingChanged();
-        });
+        if (topology_.IsOnSfuForCall(call_id)) {
+          return;
+        }
+        // SoftMigrateAsync posts MeshControl work; do not park a Worker on quote/attach.
+        topology_.MaybeSoftMigrateToSfuAsync(
+            call_id, SoftMigrateTrigger::JoinedCountObserved, {}, 0,
+            [this](Roe<void> mig) {
+              if (!mig) {
+                log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
+              }
+              AppRuntime::PostUI([this]() { NotifyRingChanged(); });
+            });
       }
     }
   }
