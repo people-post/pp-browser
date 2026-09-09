@@ -345,56 +345,67 @@ struct AmpPunchCoordinator::Impl {
                   finish_candidates(CodedRoe<PunchCandidates, Err>::error(WrapLinkFailure(channel.error())));
                   return;
                 }
-                AmpParkUntil(
-                    [&] {
+                AmpScheduleWhenChannelOpen(
+                    post_io, io_pump,
+                    [this, target_key, channel_id = *channel]() {
                       auto* link = links->FindLink(target_key);
                       return link && link->Mux() &&
-                             link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                    }, deadline, io_pump);
-                auto* link = links->FindLink(target_key);
-                if (!link || !link->Mux() ||
-                    link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                  finish_candidates(CodedRoe<PunchCandidates, Err>::error(
-                      Failure::Of(Err::ChannelFailed, "punch: target channel open failed")));
-                  return;
-                }
-                target_session->Bind(
-                    *link->Mux(), *channel, PunchJsonChannelPolicy(read_timeout),
-                    [finish_candidates](Roe<std::vector<uint8_t>> frame) {
-                      if (!frame) {
+                             link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
+                    },
+                    deadline,
+                    [this, target_key, channel_id = *channel, initiator_peer_id, req, epoch_id, window_ms,
+                     finish_candidates, target_session, read_timeout](bool open) mutable {
+                      if (!open) {
                         finish_candidates(CodedRoe<PunchCandidates, Err>::error(
-                            Failure::Of(Err::ProtocolError, "punch: failed to read target candidates")));
-                        return false;
+                            Failure::Of(Err::ChannelFailed, "punch: target channel open failed")));
+                        return;
                       }
-                      auto root = TryParseObject(std::string(frame->begin(), frame->end()));
-                      if (!root) {
+                      auto* link = links->FindLink(target_key);
+                      if (!link || !link->Mux() ||
+                          link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
                         finish_candidates(CodedRoe<PunchCandidates, Err>::error(
-                            Failure::Of(Err::ProtocolError, "punch: invalid target candidates json")));
-                        return false;
+                            Failure::Of(Err::ChannelFailed, "punch: target channel open failed")));
+                        return;
                       }
-                      auto decoded = DecodePunchCandidates(*root);
-                      if (!decoded) {
-                        finish_candidates(CodedRoe<PunchCandidates, Err>::error(
-                            Failure::Of(Err::ProtocolError, "punch: target candidates decode failed")));
-                        return false;
-                      }
-                      finish_candidates(*decoded);
-                      return true; // keep open for sync
-                    });
+                      target_session->Bind(
+                          *link->Mux(), channel_id, PunchJsonChannelPolicy(read_timeout),
+                          [finish_candidates](Roe<std::vector<uint8_t>> frame) {
+                            if (!frame) {
+                              finish_candidates(CodedRoe<PunchCandidates, Err>::error(
+                                  Failure::Of(Err::ProtocolError, "punch: failed to read target candidates")));
+                              return false;
+                            }
+                            auto root = TryParseObject(std::string(frame->begin(), frame->end()));
+                            if (!root) {
+                              finish_candidates(CodedRoe<PunchCandidates, Err>::error(
+                                  Failure::Of(Err::ProtocolError, "punch: invalid target candidates json")));
+                              return false;
+                            }
+                            auto decoded = DecodePunchCandidates(*root);
+                            if (!decoded) {
+                              finish_candidates(CodedRoe<PunchCandidates, Err>::error(
+                                  Failure::Of(Err::ProtocolError, "punch: target candidates decode failed")));
+                              return false;
+                            }
+                            finish_candidates(*decoded);
+                            return true; // keep open for sync
+                          });
 
-                PunchOffer offer;
-                offer.initiator_peer_id = initiator_peer_id;
-                offer.addrs = SanitizePunchAddrs(req.addrs);
-                offer.epoch_id = epoch_id;
-                offer.window_ms = window_ms;
-                if (!target_session->EnqueueOutbound(JsonToBody(EncodePunchOffer(offer)))) {
-                  finish_candidates(CodedRoe<PunchCandidates, Err>::error(
-                      Failure::Of(Err::ProtocolError, "punch: failed to send offer")));
-                  return;
-                }
-                if (io_pump) {
-                  io_pump();
-                }
+                      PunchOffer offer;
+                      offer.initiator_peer_id = initiator_peer_id;
+                      offer.addrs = SanitizePunchAddrs(req.addrs);
+                      offer.epoch_id = epoch_id;
+                      offer.window_ms = window_ms;
+                      if (!target_session->EnqueueOutbound(JsonToBody(EncodePunchOffer(offer)))) {
+                        finish_candidates(CodedRoe<PunchCandidates, Err>::error(
+                            Failure::Of(Err::ProtocolError, "punch: failed to send offer")));
+                        return;
+                      }
+                      if (io_pump) {
+                        io_pump();
+                      }
+                    },
+                    [this]() { return stopped.load(std::memory_order_acquire); });
               });
         });
 

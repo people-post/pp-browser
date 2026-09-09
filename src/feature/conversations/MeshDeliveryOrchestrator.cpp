@@ -141,12 +141,12 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     if (!worker) {
       worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
     }
-    auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker);
+    auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io);
     blob->Start();
     peer_blob_ = std::move(blob);
 
     auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
-                                                           worker);
+                                                           worker, amp_post_io);
     history->Start();
     auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
     chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
@@ -155,7 +155,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     direct_chat_ = std::move(chat);
     peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
     peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump,
-                                                             worker);
+                                                             worker, AmpPeerAnnounceTransport::ResolvePublisherKey{},
+                                                             amp_post_io);
     peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
       std::string local_peer_id;
       std::vector<uint8_t> local_pk;
@@ -182,7 +183,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
     }
     peer_announce_->Start();
-    broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker);
+    broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
     broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
       std::string local_peer_id;
       std::vector<uint8_t> local_pk;

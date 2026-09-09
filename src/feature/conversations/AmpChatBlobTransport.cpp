@@ -99,6 +99,7 @@ struct AmpChatBlobTransport::Impl {
   IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
+  IoPost post_io;
   std::atomic<bool> stopped{false};
 
   ByteVector CopyDek() const {
@@ -205,12 +206,13 @@ struct AmpChatBlobTransport::Impl {
 };
 
 AmpChatBlobTransport::AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                       IdentityStore& identity, WorkerPost post_worker)
+                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io)
     : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
+  impl_->post_io = post_io_;
 }
 
 AmpChatBlobTransport::~AmpChatBlobTransport() {
@@ -309,39 +311,70 @@ Roe<std::vector<uint8_t>> AmpChatBlobTransport::FetchChatBlob(const ChatBlobRequ
                            finish(Error(channel.error().message));
                            return;
                          }
-                         AmpParkUntil(
-                             [&] {
+                         AmpScheduleWhenChannelOpen(
+                             post_io_, io_pump_,
+                             [this, peer_key, channel_id = *channel]() {
                                auto* link = links_.FindLink(peer_key);
                                return link && link->Mux() &&
-                                      link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                             }, deadline, io_pump_);
-                         auto* link = links_.FindLink(peer_key);
-                         if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                           finish(Error("amp chat-blob: channel open failed"));
-                           return;
-                         }
+                                      link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
+                             },
+                             deadline,
+                             [this, peer_key, channel_id = *channel, request_json, finish, settled, session, deadline,
+                              read_timeout](bool open) mutable {
+                               if (!open) {
+                                 finish(Error("amp chat-blob: channel open failed"));
+                                 return;
+                               }
+                               auto* link = links_.FindLink(peer_key);
+                               if (!link || !link->Mux() ||
+                                   link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+                                 finish(Error("amp chat-blob: channel open failed"));
+                                 return;
+                               }
 
-                         auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
-                         policy.read_timeout = read_timeout;
-                         session->Bind(*link->Mux(), *channel, std::move(policy),
-                                       [finish](Roe<std::vector<uint8_t>> frame) {
-                                         if (!frame) {
-                                           finish(Error("Failed to read chat-blob response"));
-                                           return false;
-                                         }
-                                         finish(ParseFetchResponseBody(*frame));
-                                         return false;
-                                       });
+                               auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
+                               policy.read_timeout = read_timeout;
+                               session->Bind(*link->Mux(), channel_id, std::move(policy),
+                                             [finish](Roe<std::vector<uint8_t>> frame) {
+                                               if (!frame) {
+                                                 finish(Error("Failed to read chat-blob response"));
+                                                 return false;
+                                               }
+                                               finish(ParseFetchResponseBody(*frame));
+                                               return false;
+                                             });
 
-                         if (!session->EnqueueOutbound(JsonToBody(request_json))) {
-                           finish(Error("Failed to send chat-blob request"));
-                           return;
-                         }
+                               if (!session->EnqueueOutbound(JsonToBody(request_json))) {
+                                 finish(Error("Failed to send chat-blob request"));
+                                 return;
+                               }
 
-                         AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
-                         if (!settled->load(std::memory_order_acquire)) {
-                           finish(Error("amp chat-blob fetch timed out"));
-                         }
+                               if (post_io_) {
+                                 auto poll = std::make_shared<std::function<void()>>();
+                                 *poll = [this, finish, deadline, settled, poll]() {
+                                   if (settled->load(std::memory_order_acquire)) {
+                                     return;
+                                   }
+                                   if (Clock::now() >= deadline) {
+                                     finish(Error("amp chat-blob fetch timed out"));
+                                     return;
+                                   }
+                                   post_io_([poll, settled]() {
+                                     if (!settled->load(std::memory_order_acquire)) {
+                                       (*poll)();
+                                     }
+                                   });
+                                 };
+                                 post_io_([poll]() { (*poll)(); });
+                               } else {
+                                 AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
+                                              io_pump_);
+                                 if (!settled->load(std::memory_order_acquire)) {
+                                   finish(Error("amp chat-blob fetch timed out"));
+                                 }
+                               }
+                             },
+                             [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                        });
   });
 
@@ -401,42 +434,73 @@ Roe<void> AmpChatBlobTransport::PushChatBlob(const ChatBlobRequest& request,
                 finish(Error(channel.error().message));
                 return;
               }
-              AmpParkUntil(
-                  [&] {
+              AmpScheduleWhenChannelOpen(
+                  post_io_, io_pump_,
+                  [this, peer_key, channel_id = *channel]() {
                     auto* link = links_.FindLink(peer_key);
-                    return link && link->Mux() && link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                  }, deadline, io_pump_);
-              auto* link = links_.FindLink(peer_key);
-              if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                finish(Error("amp chat-blob: channel open failed"));
-                return;
-              }
+                    return link && link->Mux() &&
+                           link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
+                  },
+                  deadline,
+                  [this, peer_key, channel_id = *channel, request_json, ciphertext, finish, settled, session, deadline,
+                   read_timeout](bool open) mutable {
+                    if (!open) {
+                      finish(Error("amp chat-blob: channel open failed"));
+                      return;
+                    }
+                    auto* link = links_.FindLink(peer_key);
+                    if (!link || !link->Mux() ||
+                        link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+                      finish(Error("amp chat-blob: channel open failed"));
+                      return;
+                    }
 
-              auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
-              policy.read_timeout = read_timeout;
-              session->Bind(*link->Mux(), *channel, std::move(policy),
-                            [finish](Roe<std::vector<uint8_t>> frame) {
-                              if (!frame) {
-                                finish(Error("Failed to read chat-blob ack"));
-                                return false;
-                              }
-                              finish(ParsePushAckBody(*frame));
-                              return false;
-                            });
+                    auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/true);
+                    policy.read_timeout = read_timeout;
+                    session->Bind(*link->Mux(), channel_id, std::move(policy),
+                                  [finish](Roe<std::vector<uint8_t>> frame) {
+                                    if (!frame) {
+                                      finish(Error("Failed to read chat-blob ack"));
+                                      return false;
+                                    }
+                                    finish(ParsePushAckBody(*frame));
+                                    return false;
+                                  });
 
-              if (!session->EnqueueOutbound(JsonToBody(request_json))) {
-                finish(Error("Failed to send chat-blob request"));
-                return;
-              }
-              if (!session->EnqueueOutbound(ciphertext)) {
-                finish(Error("Failed to send chat-blob body"));
-                return;
-              }
+                    if (!session->EnqueueOutbound(JsonToBody(request_json))) {
+                      finish(Error("Failed to send chat-blob request"));
+                      return;
+                    }
+                    if (!session->EnqueueOutbound(ciphertext)) {
+                      finish(Error("Failed to send chat-blob body"));
+                      return;
+                    }
 
-              AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
-              if (!settled->load(std::memory_order_acquire)) {
-                finish(Error("amp chat-blob push timed out"));
-              }
+                    if (post_io_) {
+                      auto poll = std::make_shared<std::function<void()>>();
+                      *poll = [this, finish, deadline, settled, poll]() {
+                        if (settled->load(std::memory_order_acquire)) {
+                          return;
+                        }
+                        if (Clock::now() >= deadline) {
+                          finish(Error("amp chat-blob push timed out"));
+                          return;
+                        }
+                        post_io_([poll, settled]() {
+                          if (!settled->load(std::memory_order_acquire)) {
+                            (*poll)();
+                          }
+                        });
+                      };
+                      post_io_([poll]() { (*poll)(); });
+                    } else {
+                      AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
+                      if (!settled->load(std::memory_order_acquire)) {
+                        finish(Error("amp chat-blob push timed out"));
+                      }
+                    }
+                  },
+                  [this]() { return impl_->stopped.load(std::memory_order_acquire); });
             });
       });
 

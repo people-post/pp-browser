@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Remaining sync L4 facades | punch introducer / blob / history / directory / DHT | Punch client + direct chat have **Async** + `AmpScheduleWhenChannelOpen` (`PostToIo`). Sync wrappers remain for CallStack / delivery |
+| Remaining sync L4 parks | outer SettledWait on MeshControl | Channel-open uses **AmpScheduleWhenChannelOpen** across dial-back/punch/chat/blob/history/broadcast/announce/DHT/directory. Sync RPC wrappers still park until reply |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |

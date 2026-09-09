@@ -24,9 +24,10 @@ class AmpChatBlobTransport : public IChatBlobPeerService {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
 
   AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                     WorkerPost post_worker = {});
+                     WorkerPost post_worker = {}, IoPost post_io = {});
   ~AmpChatBlobTransport() override;
 
   AmpChatBlobTransport(const AmpChatBlobTransport&) = delete;
@@ -50,6 +51,7 @@ private:
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

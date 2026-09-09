@@ -28,6 +28,7 @@ class AmpBroadcastTransport {
 public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
   /** Resolve publisher ML-DSA-65 public key (device key) for ticket verify. */
   using ResolvePublisherKey = std::function<std::optional<ByteVector>(const std::string& peer_id)>;
   /** Local publisher secret for minting tickets (device ML-DSA). */
@@ -71,7 +72,7 @@ public:
   using ResolveHopSlotWinContext = std::function<HopSlotWinContext(
       const std::string& program_id, const std::string& join_handle, const std::string& relay_peer_id)>;
 
-  AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {}, IoPost post_io = {});
   ~AmpBroadcastTransport();
 
   AmpBroadcastTransport(const AmpBroadcastTransport&) = delete;
@@ -110,6 +111,7 @@ private:
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

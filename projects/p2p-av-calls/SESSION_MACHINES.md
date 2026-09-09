@@ -107,7 +107,7 @@ void Apply(XxxEvent ev, /* small context */);
 | Call-media hello/ack (stream R/W) | Amp pump / async | **Never** `BlockingRead`/`BlockingWrite` on general WorkerPool — peer may stall forever |
 | Inbound handler / key fill (app logic) | Worker **Normal** or MeshControl | May hop after async hello read; must not hold a live stream wait on Critical |
 | Blocking Connect / `IoPumpUntil` facades | **MeshControlPool** (MeshHost-owned) | Interim until async `Connect(cb)` / A022-style callbacks; never park general WorkerPool |
-| Other control RPC still sync-parked (blob/history; punch introducer) | MeshControlPool (default 1) | Dial-back / punch client / direct chat **Async** + `AmpScheduleWhenChannelOpen`; parks use MeshPump |
+| Sync L4 RPC wrappers (still park on MeshControl) | MeshControlPool (default 1) | Channel-open is `AmpScheduleWhenChannelOpen` + MeshPump; full fire-and-forget async send APIs next |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
 | Duplex media R/W | Amp pump | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |
@@ -245,7 +245,7 @@ stateDiagram-v2
 | **Async `Connect(cb)` API** | **Landed (interim):** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait no longer parks MeshControl for the full dial timeout. Reachability/`TryEnsureCallMediaReachable` may still use MeshControl briefly until Phase B. Sync `Connect()` remains for tests/harnesses. |
 | **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
-| **Other protocols still on `IoPumpUntil` / Blocking*** | Dial-back, chat/blob, directory/DHT facades run on MeshControlPool today. Migrate to A022-style callbacks when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
+| **Sync L4 RPC still parks until reply** | Channel-open is `AmpScheduleWhenChannelOpen` (dial-back/punch/chat/blob/history/broadcast/announce/DHT/directory). Outer SettledWait/`future` still parks MeshControl until RPC completes — fire-and-forget async send APIs next. Not in call-media SM scope. |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
 
 ---

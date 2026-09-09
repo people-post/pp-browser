@@ -45,6 +45,7 @@ struct AmpPeerAnnounceTransport::Impl {
   PeerAnnounceFeed* feed = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
+  IoPost post_io;
   std::mutex feed_mutex;
   std::mutex resolver_mutex;
   ResolvePublisherKey resolve_key;
@@ -144,13 +145,14 @@ struct AmpPeerAnnounceTransport::Impl {
 };
 
 AmpPeerAnnounceTransport::AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
-                                               WorkerPost post_worker, ResolvePublisherKey resolve_key)
+                                               WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io)
     : impl_(std::make_unique<Impl>()), links_(links), feed_(feed), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
   impl_->feed = &feed_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
+  impl_->post_io = post_io_;
   impl_->resolve_key = std::move(resolve_key);
 }
 
@@ -231,50 +233,84 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
                          finish(Error(channel.error().message));
                          return;
                        }
-                       AmpParkUntil(
-                           [&] {
+                       AmpScheduleWhenChannelOpen(
+                           post_io_, io_pump_,
+                           [this, peer_key, channel_id = *channel]() {
                              auto* link = links_.FindLink(peer_key);
                              return link && link->Mux() &&
-                                    link->Mux()->State(*channel) == pp::amp::ChannelState::Open;
-                           }, deadline, io_pump_);
-                       auto* link = links_.FindLink(peer_key);
-                       if (!link || !link->Mux() || link->Mux()->State(*channel) != pp::amp::ChannelState::Open) {
-                         finish(Error("amp peer-announce: channel open failed")
-                                    .WithUser("Direct tip push didn't confirm."));
-                         return;
-                       }
+                                    link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
+                           },
+                           deadline,
+                           [this, peer_key, channel_id = *channel, push_json, finish, settled, session,
+                            deadline](bool open) mutable {
+                             if (!open) {
+                               finish(Error("amp peer-announce: channel open failed")
+                                          .WithUser("Direct tip push didn't confirm."));
+                               return;
+                             }
+                             auto* link = links_.FindLink(peer_key);
+                             if (!link || !link->Mux() ||
+                                 link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+                               finish(Error("amp peer-announce: channel open failed")
+                                          .WithUser("Direct tip push didn't confirm."));
+                               return;
+                             }
 
-                       session->Bind(*link->Mux(), *channel, pp::amp::ControlJsonChannelPolicy(),
-                                     [finish](Roe<std::vector<uint8_t>> ack_frame) {
-                                       if (!ack_frame) {
-                                         finish(Error("Failed to read peer-announce tip_ack")
-                                                    .WithUser("Direct tip push didn't confirm."));
-                                         return false;
-                                       }
-                                       const std::string json(ack_frame->begin(), ack_frame->end());
-                                       auto decoded = DecodePeerAnnounceRpcJson(json);
-                                       if (!decoded) {
-                                         finish(decoded.error());
-                                         return false;
-                                       }
-                                       if (!std::holds_alternative<PeerAnnounceTipAck>(*decoded)) {
-                                         finish(Error("peer-announce response was not tip_ack"));
-                                         return false;
-                                       }
-                                       finish(std::get<PeerAnnounceTipAck>(*decoded));
-                                       return false;
-                                     });
+                             session->Bind(*link->Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
+                                           [finish](Roe<std::vector<uint8_t>> ack_frame) {
+                                             if (!ack_frame) {
+                                               finish(Error("Failed to read peer-announce tip_ack")
+                                                          .WithUser("Direct tip push didn't confirm."));
+                                               return false;
+                                             }
+                                             const std::string json(ack_frame->begin(), ack_frame->end());
+                                             auto decoded = DecodePeerAnnounceRpcJson(json);
+                                             if (!decoded) {
+                                               finish(decoded.error());
+                                               return false;
+                                             }
+                                             if (!std::holds_alternative<PeerAnnounceTipAck>(*decoded)) {
+                                               finish(Error("peer-announce response was not tip_ack"));
+                                               return false;
+                                             }
+                                             finish(std::get<PeerAnnounceTipAck>(*decoded));
+                                             return false;
+                                           });
 
-                       if (!session->EnqueueOutbound(JsonToBody(push_json))) {
-                         finish(Error("Failed to send peer-announce tip_push")
-                                    .WithUser("Direct tip push didn't confirm."));
-                         return;
-                       }
+                             if (!session->EnqueueOutbound(JsonToBody(push_json))) {
+                               finish(Error("Failed to send peer-announce tip_push")
+                                          .WithUser("Direct tip push didn't confirm."));
+                               return;
+                             }
 
-                       AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline, io_pump_);
-                       if (!settled->load(std::memory_order_acquire)) {
-                         finish(Error("amp peer-announce send timed out").WithUser("Direct tip push timed out."));
-                       }
+                             if (post_io_) {
+                               auto poll = std::make_shared<std::function<void()>>();
+                               *poll = [this, finish, deadline, settled, poll]() {
+                                 if (settled->load(std::memory_order_acquire)) {
+                                   return;
+                                 }
+                                 if (Clock::now() >= deadline) {
+                                   finish(Error("amp peer-announce send timed out")
+                                              .WithUser("Direct tip push timed out."));
+                                   return;
+                                 }
+                                 post_io_([poll, settled]() {
+                                   if (!settled->load(std::memory_order_acquire)) {
+                                     (*poll)();
+                                   }
+                                 });
+                               };
+                               post_io_([poll]() { (*poll)(); });
+                             } else {
+                               AmpParkUntil([settled] { return settled->load(std::memory_order_acquire); }, deadline,
+                                            io_pump_);
+                               if (!settled->load(std::memory_order_acquire)) {
+                                 finish(Error("amp peer-announce send timed out")
+                                            .WithUser("Direct tip push timed out."));
+                               }
+                             }
+                           },
+                           [this]() { return impl_->stopped.load(std::memory_order_acquire); });
                      });
 
   AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline, io_pump_);
