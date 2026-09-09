@@ -681,9 +681,19 @@ void Backend::RequestExit()
 	RMLUI_ASSERT(data);
 
 	data->running = false;
+	// Close feel: hide before Application::Shutdown joins mesh/runtime (can take hundreds of ms).
+	HideWindow();
 	// Unblock SDL_WaitEventTimeout in ProcessEvents so titlebar close is not capped
 	// by the power-save idle wait (up to 2s).
 	WakeEventLoop();
+}
+
+void Backend::HideWindow()
+{
+	if (!data || !data->window) {
+		return;
+	}
+	SDL_HideWindow(data->window);
 }
 
 void Backend::WakeEventLoop()

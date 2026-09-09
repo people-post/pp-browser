@@ -185,12 +185,22 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 ## Shutdown order (product)
 
 ```text
-RequestShutdown
-→ AbortCallMediaForShutdown
-→ MeshHost::Stop (abort L4 → join MeshControlPool → join MeshPump)
+RequestExit → HideWindow (<100ms close feel)
+→ RequestShutdown → AbortCallMediaForShutdown (PrepareForTeardown non-blocking)
+→ MeshHost::Stop (abort L4 → MeshControlPool::Shutdown(≤500ms) → join MeshPump)
 → AppRuntime::Shutdown (coordinator + general WorkerPool)
-→ destroy hub / secrets / UI
+→ destroy hub / secrets / RmlUi / Backend::Shutdown
 ```
+
+**Budgets (initial):**
+- Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
+- `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
+- `MeshControlPool::Shutdown`: join ≤500ms; on timeout detach workers and leak pool until process exit
+- Full graceful exit target: ~3s wall clock (dogfood); measure with `[startup]` shutdown marks
+
+Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
+`shutdown_abort_call_media_done`, `shutdown_stop_mesh_done`, `shutdown_runtime_join_done`,
+`shutdown_backend_quit_done`, `shutdown_complete`.
 
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).
 
@@ -200,7 +210,9 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product SoftMigrate, circuit hop reach, punch, and CallMediaBridge peer-reach use Async; sync wrappers remain for tests/harnesses (empty-pump park, no Tick-from-waiters) |
+| WorkerPool / coordinator join still unbounded | `pp-cpp-common` WorkerPool + AppRuntime | Needs tagged common release for `Shutdown(deadline)`; MeshControlPool already budgeted |
+| Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park) |
+| Detached MeshControl on join timeout | MeshHost::StopOwnedThreads | Loud log + `unique_ptr::release`; process must exit soon after |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
@@ -222,6 +234,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
 | 2026-09-09 | CallMediaBridge peer-reach Async; CallSessionManager SoftMigrate nudge uses SoftMigrateAsync (no Worker park) |
 | 2026-09-09 | Circuit hop TryEnsure*Async + CallStack punch Async; SoftMigrate/Attach/Reattach await dialability Async |
 | 2026-09-09 | SoftMigrate/AttachLocalToSfu/ReattachGuest Async — MeshControl no longer parks on media-relay quote/attach |

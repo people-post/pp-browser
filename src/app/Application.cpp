@@ -1358,6 +1358,10 @@ void Application::Run() {
 void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
+  // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
+  // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
+  Backend::HideWindow();
+  StartupMark("shutdown_window_hidden");
 
   settings_->BindCommands({});
   settings_->BindShellNavigation({});
@@ -1489,19 +1493,23 @@ void Application::Shutdown() {
     }
 
     // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
-    // join. Then abort Connect / circuit waits and join MeshControlPool + MeshPump via hub
-    // StopMesh while AppRuntime is still up (StopCoordinatorTimers). Connect no longer parks
-    // WorkerPool — destroying the hub first previously UAFd workers under AppRuntime::Shutdown.
+    // join. It already AbortCallMediaForShutdown (PrepareForTeardown is non-blocking). Then
+    // StopMesh via ShutdownMessaging joins MeshControlPool + MeshPump while AppRuntime is up.
     if (messaging_) {
+      StartupPhase phase("Shutdown::RequestShutdown");
       messaging_->RequestShutdown();
-      StartupPhase phase("Shutdown::AbortCallMedia");
-      messaging_->AbortCallMediaForShutdown();
+      StartupMark("shutdown_abort_call_media_done");
     }
-    ShutdownMessaging();
+    {
+      StartupPhase phase("Shutdown::MessagingAndMesh");
+      ShutdownMessaging();
+    }
+    StartupMark("shutdown_stop_mesh_done");
     if (AppRuntime::IsRunning()) {
       StartupPhase phase("Shutdown::AppRuntime");
       AppRuntime::Shutdown();
     }
+    StartupMark("shutdown_runtime_join_done");
 
     AppRuntime::RunUITasks();
 
@@ -1520,8 +1528,10 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::Backend");
       Backend::Shutdown();
     }
+    StartupMark("shutdown_backend_quit_done");
 
     log().info << "Shutdown complete";
+    StartupMark("shutdown_complete");
     initialized_ = false;
   } else {
     // Initialize may have failed after Bootstrap left hub/secrets open.

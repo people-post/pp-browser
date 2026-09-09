@@ -61,10 +61,11 @@ public:
   void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
 
   /**
-   * Abort in-flight Connect and wait until the worker exits (or timeout).
+   * Abort in-flight Connect (generation bump + Detach). Prefer timeout_ms=0 on shutdown so
+   * the UI/shutdown strand does not sleep-spin; late Connect callbacks no-op on generation.
    * Must run before destroying this bridge / CallMediaDirectService / mesh host.
    */
-  void PrepareForTeardown(int timeout_ms = 2000);
+  void PrepareForTeardown(int timeout_ms = 0);
 
   /** True after PrepareForTeardown / StopMeshMedia — inbound hello wait must exit. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
