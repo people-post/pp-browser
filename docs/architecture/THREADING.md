@@ -200,7 +200,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Remaining sync L4 parks | circuit hop / SoftMigrate quote+attach sync | Media-relay has Async APIs; CallStack no longer Ticks from waiters (MeshPump owns Drive). SoftMigrate / AmpCircuitHopReach still sync-park on MeshControl |
+| Remaining sync L4 parks | AmpCircuitHopReach circuit bridge / punch | SoftMigrate quote+attach product paths use Async (MeshControl free during peer wait); circuit TryEnsureHopReachable still sync-parks briefly |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
@@ -222,6 +222,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | SoftMigrate/AttachLocalToSfu/ReattachGuest Async — MeshControl no longer parks on media-relay quote/attach |
 | 2026-09-09 | Media-relay RequestQuoteAsync/AcceptAndAttachAsync; CallStack uses MeshHost io_pump (no Tick-from-waiters); circuit hop AmpParkUntil |
 | 2026-09-09 | Reachability probe async (ProbeAsync + PostToIo); announce PublishAndPush*Async; MeshControl no longer parks on seed dial |
 | 2026-09-09 | Amp MeshPump + MeshControlPool owned by MeshHost; coordinator no longer 5ms Amp drain; docs drop libp2p reactor assumptions |
