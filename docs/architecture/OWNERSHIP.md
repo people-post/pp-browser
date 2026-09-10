@@ -62,3 +62,15 @@ Callbacks and listeners are **non-owning** (`weak_ptr`, raw under a documented p
 - [ ] Can a callback drop the last owner before it returns?
 - [ ] Is teardown posted to the correct affinity?
 - [ ] Any `erase` / `reset` after which code still uses the object?
+
+## Stop / join before destroy (IStoppable)
+
+Long-lived thread owners follow the same stop contract documented in [THREADING.md](THREADING.md):
+
+```text
+RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
+```
+
+Do **not** destroy (or `unique_ptr::reset`) an object while a detached / still-running worker may touch it — on join timeout, **leak until process exit** (`release()`), matching `MeshHost` / `ThreadRuntime` shutdown.
+
+Primary owners: `CallStack`/`CallMediaBridge`, `ConversationsHub`/`MeshHost`, `AppRuntime`, LAN mDNS, `ILocalNotifier`, `CallRingtone`.

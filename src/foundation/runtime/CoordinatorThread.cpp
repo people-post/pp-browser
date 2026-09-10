@@ -1,14 +1,22 @@
 #include "foundation/runtime/CoordinatorThread.h"
 
+#include "common/Logger.h"
+
 #include <algorithm>
 #include <cassert>
 
 namespace pbr {
+namespace {
+logging::Logger& CoordLog() {
+  static logging::Logger log = logging::getLogger("CoordinatorThread");
+  return log;
+}
+} // namespace
 
 CoordinatorThread::CoordinatorThread() = default;
 
 CoordinatorThread::~CoordinatorThread() {
-  Shutdown();
+  (void)Shutdown(kDefaultShutdownJoinBudget);
 }
 
 void CoordinatorThread::Start() {
@@ -17,14 +25,15 @@ void CoordinatorThread::Start() {
     return;
   }
   started_ = true;
+  thread_exited_.store(false, std::memory_order_release);
   thread_ = std::thread([this]() { ThreadMain(); });
 }
 
-void CoordinatorThread::Shutdown() {
+bool CoordinatorThread::Shutdown(std::chrono::milliseconds join_budget) {
   {
     std::lock_guard lock(mutex_);
     if (!started_ || stopped_) {
-      return;
+      return !thread_.joinable() || thread_exited_.load(std::memory_order_acquire);
     }
     stopped_ = true;
     critical_queue_.clear();
@@ -35,12 +44,37 @@ void CoordinatorThread::Shutdown() {
     }
   }
   cv_.notify_all();
-  if (thread_.joinable()) {
-    thread_.join();
+
+  if (!thread_.joinable()) {
+    started_ = false;
+    stopped_ = false;
+    timers_.clear();
+    return true;
   }
-  started_ = false;
-  stopped_ = false;
-  timers_.clear();
+
+  const auto deadline = std::chrono::steady_clock::now() + join_budget;
+  {
+    std::unique_lock lock(mutex_);
+    cv_.wait_until(lock, deadline, [this]() {
+      return thread_exited_.load(std::memory_order_acquire);
+    });
+  }
+
+  const bool exited = thread_exited_.load(std::memory_order_acquire);
+  if (exited) {
+    thread_.join();
+    started_ = false;
+    stopped_ = false;
+    timers_.clear();
+    return true;
+  }
+
+  CoordLog().warning << "CoordinatorThread::Shutdown: thread still live after "
+                     << join_budget.count() << "ms — detaching (process exit must follow)";
+  thread_.detach();
+  // Leave started_/stopped_ as-is so a second Shutdown is a no-op; do not clear timers while
+  // a detached ThreadMain may still touch them — owner must leak this object until process exit.
+  return false;
 }
 
 void CoordinatorThread::Post(CoordinatorPriority priority, std::function<void()> task) {
@@ -160,6 +194,8 @@ void CoordinatorThread::ThreadMain() {
 
     cv_.wait_until(lock, deadline, [this]() { return stopped_ || HasWorkLocked(); });
   }
+  thread_exited_.store(true, std::memory_order_release);
+  cv_.notify_all();
 }
 
 bool CoordinatorThread::DequeueOneLocked(std::function<void()>* out) {

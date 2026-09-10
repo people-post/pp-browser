@@ -2,7 +2,13 @@
 
 #include "foundation/runtime/ThreadRuntime.h"
 #include "foundation/runtime/WorkerDispatch.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
+
+#include <atomic>
+#include <cstdlib>
+#include <mutex>
+#include <thread>
 
 namespace pbr {
 
@@ -10,6 +16,17 @@ namespace {
 
 std::unique_ptr<ThreadRuntime> g_thread_runtime;
 bool g_testing_worker_override = false;
+
+std::mutex g_shutdown_mu;
+bool g_shutting_down = false;
+uint64_t g_shutdown_generation = 0;
+std::chrono::steady_clock::time_point g_shutdown_deadline{};
+bool g_watchdog_armed = false;
+
+logging::Logger& RuntimeLog() {
+  static logging::Logger log = logging::getLogger("AppRuntime");
+  return log;
+}
 
 } // namespace
 
@@ -24,6 +41,68 @@ void AppRuntime::Initialize(const AppRuntimeConfig& config) {
   if (!g_testing_worker_override) {
     WorkerDispatch::Install(&g_thread_runtime->Workers());
   }
+}
+
+void AppRuntime::BeginShutdown() {
+  std::chrono::steady_clock::time_point deadline;
+  uint64_t gen = 0;
+  bool arm_watchdog = false;
+  {
+    std::lock_guard lock(g_shutdown_mu);
+    if (g_shutting_down) {
+      return;
+    }
+    g_shutting_down = true;
+    ++g_shutdown_generation;
+    gen = g_shutdown_generation;
+    g_shutdown_deadline = std::chrono::steady_clock::now() + kShutdownDeadlineBudget;
+    deadline = g_shutdown_deadline;
+    if (!g_watchdog_armed) {
+      g_watchdog_armed = true;
+      arm_watchdog = true;
+    }
+  }
+  RuntimeLog().info << "BeginShutdown gen=" << gen << " deadline_ms="
+                    << kShutdownDeadlineBudget.count();
+  if (!arm_watchdog) {
+    return;
+  }
+  // Last resort: if graceful joins hang past the product quit budget, abandon the process.
+  // Documented in THREADING.md — not a substitute for budgeted Shutdown joins.
+  std::thread([deadline, gen]() {
+    for (;;) {
+      const auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    RuntimeLog().error << "AppRuntime shutdown watchdog: deadline exceeded gen=" << gen
+                       << " — std::_Exit(0) (last resort; process was still alive)";
+    std::_Exit(0);
+  }).detach();
+}
+
+bool AppRuntime::IsShuttingDown() {
+  std::lock_guard lock(g_shutdown_mu);
+  return g_shutting_down;
+}
+
+uint64_t AppRuntime::ShutdownGeneration() {
+  std::lock_guard lock(g_shutdown_mu);
+  return g_shutdown_generation;
+}
+
+std::chrono::steady_clock::time_point AppRuntime::ShutdownDeadline() {
+  std::lock_guard lock(g_shutdown_mu);
+  return g_shutdown_deadline;
+}
+
+size_t AppRuntime::WorkerTotalQueuedCount() {
+  if (!IsRunning() || !g_thread_runtime) {
+    return 0;
+  }
+  return g_thread_runtime->Workers().TotalQueuedCount();
 }
 
 void AppRuntime::Shutdown() {

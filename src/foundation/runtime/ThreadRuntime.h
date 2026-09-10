@@ -27,6 +27,11 @@ public:
   ThreadRuntime& operator=(const ThreadRuntime&) = delete;
 
   void Start(const ThreadRuntimeConfig& config = {});
+  /**
+   * Budgeted join: coordinator ≤500ms, WorkerPool ≤500ms.
+   * On WorkerPool / coordinator detach timeout, ownership is released (leak until process exit)
+   * so we do not destroy while detached workers still run.
+   */
   void Shutdown();
 
   bool IsRunning() const { return running_; }

@@ -186,34 +186,74 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 
 ```text
 RequestExit → HideWindow (<100ms close feel)
+→ AppRuntime::BeginShutdown (gen + 3s deadline + watchdog)
 → RequestShutdown → AbortCallMediaForShutdown (PrepareForTeardown non-blocking)
 → MeshHost::Stop (abort L4 → MeshControlPool::Shutdown(≤500ms) → join MeshPump)
-→ AppRuntime::Shutdown (coordinator + general WorkerPool)
+→ AppRuntime::Shutdown (coordinator ≤500ms + WorkerPool ≤500ms; detach+leak on timeout)
 → destroy hub / secrets / RmlUi / Backend::Shutdown
 ```
 
-**Budgets (initial):**
+**Budgets:**
 - Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
 - `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
-- `MeshControlPool::Shutdown`: join ≤500ms; on timeout detach workers and leak pool until process exit
-- Full graceful exit target: ~3s wall clock (dogfood); measure with `[startup]` shutdown marks
+- `CallRingtone::StopAndJoin(≤500ms)`, `CallMediaEngine::Stop` capture/playout/video ≤500ms
+- `MeshControlPool::Shutdown` / `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
+- Full graceful exit target: ~3s wall clock; `AppRuntime` watchdog calls `std::_Exit(0)` at deadline as **last resort** if joins hang
 
 Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
+`shutdown_context` (call_active / connect_inflight / worker_queued),
 `shutdown_abort_call_media_done`, `shutdown_stop_mesh_done`, `shutdown_runtime_join_done`,
 `shutdown_backend_quit_done`, `shutdown_complete`.
 
+### IStoppable lifecycle (shutdown contract)
+
+Owners stop children with a fixed sequence — do not destroy while a joinable thread may still run:
+
+```text
+RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
+```
+
+| Owner | Notes |
+|-------|--------|
+| `CallStack` / `CallMediaBridge` | bump connect generation; `PrepareForTeardown(0)`; media engine budgeted joins |
+| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; MeshControl ≤500ms then MeshPump |
+| `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
+| LAN mDNS | stop advertise / join watcher before mesh destroy |
+| `ILocalNotifier` | `Shutdown` before UI mailbox teardown |
+| `CallRingtone` | `StopAndJoin(budget)` before `SDL_Quit` |
+
+Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `Error("shutdown in progress")`):
+`CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsureCallMediaReachable`,
+`CallTopologyController::MaybeSoftMigrateToSfu` (+ Async),
+`AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsureCallMediaReachable`,
+`CallMediaBridge::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
+
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).
 
+### Dogfood matrix (shutdown latency)
+
+Manual scenarios (success metrics):
+
+| Scenario | What to stress | Pass |
+|----------|----------------|------|
+| Idle mesh | messaging up, no call | p95 close→window-gone &lt;100ms; p95 process-exit &lt;3s |
+| Mid-ring | ringtone playing | same; ringtone join ≤500ms or detach |
+| Mid-connect | call-media Connect inflight | `shutdown_context connect_inflight=1`; no hang |
+| Mid-SoftMigrate | SoftMigrate / SFU attach in flight | SoftMigrate rejects after BeginShutdown |
+| Mid-attachment sync | attachment fetch / peer blob on WorkerPool | WorkerPool join ≤500ms or detach+leak |
+
+Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during group SoftMigrate, quit during unlock→EnsureMessagingReady. Headless quit CI is optional; this matrix is sufficient for now. Grep logs for `[startup] shutdown_*` and watchdog / detach warnings.
+
+**Watchdog (last resort):** `AppRuntime::BeginShutdown` arms a detached thread that `std::_Exit(0)`s at the 3s deadline if the process is still alive. Prefer budgeted joins; the watchdog only covers stuck cases that ignore budgets.
 ---
 
 ## Known debt
 
 | Item | Location | Notes |
 |------|----------|-------|
-| WorkerPool / coordinator join still unbounded | `pp-cpp-common` WorkerPool + AppRuntime | Needs tagged common release for `Shutdown(deadline)`; MeshControlPool already budgeted |
-| Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park) |
-| Detached MeshControl on join timeout | MeshHost::StopOwnedThreads | Loud log + `unique_ptr::release`; process must exit soon after |
-| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
+| Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park); gated when `IsShuttingDown` |
+| Detached MeshControl / WorkerPool / coordinator on join timeout | MeshHost::StopOwnedThreads / ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
+| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 
@@ -234,6 +274,7 @@ Parent-only destroy: children request stop; only the owner joins and drops (`OWN
 
 | Date | Change |
 |------|--------|
+| 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |
 | 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
 | 2026-09-09 | CallMediaBridge peer-reach Async; CallSessionManager SoftMigrate nudge uses SoftMigrateAsync (no Worker park) |
 | 2026-09-09 | Circuit hop TryEnsure*Async + CallStack punch Async; SoftMigrate/Attach/Reattach await dialability Async |

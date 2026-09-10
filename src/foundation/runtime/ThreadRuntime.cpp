@@ -1,11 +1,18 @@
 #include "foundation/runtime/ThreadRuntime.h"
 
 #include "foundation/runtime/CoordinatorThread.h"
+#include "common/Logger.h"
 
 #include <cassert>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+namespace {
+logging::Logger& ThreadRuntimeLog() {
+  static logging::Logger log = logging::getLogger("ThreadRuntime");
+  return log;
+}
+} // namespace
 
 ThreadRuntime::ThreadRuntime() = default;
 
@@ -29,12 +36,22 @@ void ThreadRuntime::Shutdown() {
   }
   running_ = false;
   if (coordinator_) {
-    coordinator_->Shutdown();
-    coordinator_.reset();
+    if (!coordinator_->Shutdown(CoordinatorThread::kDefaultShutdownJoinBudget)) {
+      ThreadRuntimeLog().warning
+          << "ThreadRuntime::Shutdown: coordinator join budget exceeded — leaking until process exit";
+      (void)coordinator_.release();
+    } else {
+      coordinator_.reset();
+    }
   }
   if (worker_pool_) {
-    worker_pool_->Shutdown();
-    worker_pool_.reset();
+    if (!worker_pool_->Shutdown(WorkerPool::kDefaultShutdownJoinBudget)) {
+      ThreadRuntimeLog().warning
+          << "ThreadRuntime::Shutdown: WorkerPool join budget exceeded — leaking until process exit";
+      (void)worker_pool_.release();
+    } else {
+      worker_pool_.reset();
+    }
   }
 }
 

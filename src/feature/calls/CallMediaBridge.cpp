@@ -563,6 +563,14 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
 
 void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
                                            CallMediaDirectCallbacks cbs, const uint64_t gen) {
+  if (AppRuntime::IsShuttingDown() || stopping_.load(std::memory_order_acquire)) {
+    log().debug << "StartConnectSequence rejected: shutting down call_id=" << params.call_id;
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    if (cbs.on_failed) {
+      cbs.on_failed("shutdown in progress");
+    }
+    return;
+  }
   connect_worker_inflight_.store(true, std::memory_order_release);
   CancelConnectTimers();
   if (params.offerer) {

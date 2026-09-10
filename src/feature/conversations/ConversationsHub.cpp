@@ -281,7 +281,7 @@ void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
 
 Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   StartupPhase phase("ConversationsHub::StartMesh");
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
+  if (shutdown_requested_.load(std::memory_order_acquire) || AppRuntime::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   StopMesh();
@@ -1331,7 +1331,7 @@ void ConversationsHub::ScheduleMeshBringUp() {
 
 Roe<void> ConversationsHub::EnsureMessagingReady() {
   StartupPhase phase("ConversationsHub::EnsureMessagingReady");
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
+  if (shutdown_requested_.load(std::memory_order_acquire) || AppRuntime::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   if (!initialized_) {

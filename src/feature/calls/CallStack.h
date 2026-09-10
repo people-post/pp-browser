@@ -96,6 +96,8 @@ public:
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();
+  /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
+  bool IsConnectWorkerInflight() const;
   void WireMediaRelayDeps();
   void EnsureCallLifecycleBound();
   void SetEphemeralListenDesire(bool want);

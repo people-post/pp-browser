@@ -1358,11 +1358,25 @@ void Application::Run() {
 void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
+  AppRuntime::BeginShutdown();
   // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
 
+  // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
+  {
+    const bool call_active =
+        messaging_ != nullptr && messaging_->CallStackRef().HasActiveLocalCall();
+    const bool connect_inflight =
+        messaging_ != nullptr && messaging_->CallStackRef().IsConnectWorkerInflight();
+    const size_t worker_queued =
+        AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
+    StartupLog().info << "[startup] shutdown_context call_active=" << (call_active ? 1 : 0)
+                      << " connect_inflight=" << (connect_inflight ? 1 : 0)
+                      << " worker_queued=" << worker_queued
+                      << " shutdown_gen=" << AppRuntime::ShutdownGeneration();
+  }
   settings_->BindCommands({});
   settings_->BindShellNavigation({});
   settings_->BindShellFeedback({});

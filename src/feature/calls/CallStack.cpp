@@ -409,6 +409,10 @@ void CallStack::AbortCallMediaForShutdown() {
   }
 }
 
+bool CallStack::IsConnectWorkerInflight() const {
+  return call_media_bridge_ && call_media_bridge_->IsConnectWorkerInflight();
+}
+
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   MeshHost* m = mesh();
   const bool amp_up = m && m->Amp() && !m->AmpListenMultiaddr().empty();
@@ -540,6 +544,10 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
 }
 
 Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCircuitHopReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
   if (!circuit_hop_reach_) {
     return Error("Amp circuit reach required");
   }
@@ -550,6 +558,10 @@ Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id
 }
 
 Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCallMediaReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
   if (!circuit_hop_reach_) {
     return Error("Amp required");
   }

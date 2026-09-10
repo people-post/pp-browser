@@ -26,9 +26,24 @@ struct AppRuntimeConfig {
  */
 class AppRuntime {
 public:
+  /** Soft process-exit budget after BeginShutdown (watchdog last resort). */
+  static constexpr std::chrono::milliseconds kShutdownDeadlineBudget{3000};
+
   static void Initialize(const AppRuntimeConfig& config = {});
   static void Shutdown();
   static bool IsRunning();
+
+  /**
+   * Mark product quit: bumps generation, records now+3s deadline, arms watchdog `_Exit`.
+   * Idempotent. Call from Backend::RequestExit (after HideWindow) and Application::Shutdown.
+   */
+  static void BeginShutdown();
+  static bool IsShuttingDown();
+  static uint64_t ShutdownGeneration();
+  static std::chrono::steady_clock::time_point ShutdownDeadline();
+
+  /** Queued worker tasks across lanes (0 if runtime not running). */
+  static size_t WorkerTotalQueuedCount();
 
   // --- UI mailbox (GUI; drained by Application each frame) ---
   static void InitializeUI();

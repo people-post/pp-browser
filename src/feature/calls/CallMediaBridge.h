@@ -67,6 +67,11 @@ public:
    */
   void PrepareForTeardown(int timeout_ms = 0);
 
+  /** True while an async Connect sequence is in flight (shutdown measurement). */
+  bool IsConnectWorkerInflight() const {
+    return connect_worker_inflight_.load(std::memory_order_acquire);
+  }
+
   /** True after PrepareForTeardown / StopMeshMedia — inbound hello wait must exit. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
 

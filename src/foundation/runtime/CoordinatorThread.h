@@ -2,6 +2,7 @@
 
 #include "common/Module.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -18,6 +19,8 @@ enum class CoordinatorPriority { Critical, Normal, Background };
 /** Dedicated joinable thread: priority mailbox + repeating/one-shot timers. Handlers must be fast. */
 class CoordinatorThread : public Module {
 public:
+  static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
+
   CoordinatorThread();
   ~CoordinatorThread();
 
@@ -25,7 +28,13 @@ public:
   CoordinatorThread& operator=(const CoordinatorThread&) = delete;
 
   void Start();
-  void Shutdown();
+  void Shutdown() { (void)Shutdown(kDefaultShutdownJoinBudget); }
+  /**
+   * Stop mailbox/timers and join the coordinator thread.
+   * On timeout detaches the thread (leak until process exit) — only safe on product quit.
+   * Returns false if the thread was detached after the budget.
+   */
+  bool Shutdown(std::chrono::milliseconds join_budget);
 
   void Post(CoordinatorPriority priority, std::function<void()> task);
 
@@ -69,6 +78,7 @@ private:
   bool started_ = false;
   bool stopped_ = false;
   bool paused_ = false;
+  std::atomic<bool> thread_exited_{false};
 };
 
 } // namespace pbr
