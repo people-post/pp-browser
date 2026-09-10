@@ -135,74 +135,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
-  // Blob + chat/history: Amp single entry ([A020] / D10).
-  if (amp_links_) {
-    auto worker = amp_worker_post;
-    if (!worker) {
-      worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
-    }
-    auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io);
-    blob->Start();
-    peer_blob_ = std::move(blob);
-
-    auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
-                                                           worker, amp_post_io);
-    history->Start();
-    auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
-    chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
-    chat->Start();
-    peer_history_ = std::move(history);
-    direct_chat_ = std::move(chat);
-    peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
-    peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump,
-                                                             worker, AmpPeerAnnounceTransport::ResolvePublisherKey{},
-                                                             amp_post_io);
-    peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
-      std::string local_peer_id;
-      std::vector<uint8_t> local_pk;
-      if (auto local_identity = identity_.Get()) {
-        local_peer_id = local_identity->peer_id;
-      }
-      if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-        local_pk = *pk;
-      }
-      return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
-    });
-    peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
-      const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
-      announce_notifications_.UpsertFromTip(tip, now_ms);
-    });
-    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-      if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
-        peer_announce_publisher_ =
-            std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
-      } else {
-        log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
-      }
-    } else {
-      log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
-    }
-    peer_announce_->Start();
-    broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
-    broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
-      std::string local_peer_id;
-      std::vector<uint8_t> local_pk;
-      if (auto local_identity = identity_.Get()) {
-        local_peer_id = local_identity->peer_id;
-      }
-      if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-        local_pk = *pk;
-      }
-      return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
-    });
-    broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
-      if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
-        return *sk;
-      }
-      return std::nullopt;
-    });
-    broadcast_->Start();
-    log().info << "direct chat/history/blob/peer-announce/broadcast transport=amp";
+  // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
+  if (amp_links) {
+    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io));
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
@@ -2175,6 +2110,93 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
   if (chat_sync_) {
     chat_sync_->SetAttachmentDownloads(downloads);
   }
+}
+
+void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+                                                   std::function<void(std::function<void()>)> amp_worker_post,
+                                                   std::function<void(std::function<void()>)> amp_post_io) {
+  if (!amp_links) {
+    log().warning << "AttachAmpTransports: amp_links is null";
+    return;
+  }
+  // Idempotent when already bound to the same PeerLinks with live transports.
+  if (amp_links_ == amp_links && direct_chat_ && peer_history_ && peer_blob_) {
+    return;
+  }
+  DetachAmpTransports();
+  amp_links_ = amp_links;
+
+  auto worker = std::move(amp_worker_post);
+  if (!worker) {
+    worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
+  }
+
+  auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io);
+  blob->Start();
+  peer_blob_ = std::move(blob);
+
+  auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
+                                                         worker, amp_post_io);
+  history->Start();
+  auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
+  chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
+  chat->Start();
+  peer_history_ = std::move(history);
+  direct_chat_ = std::move(chat);
+  peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
+  peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump, worker,
+                                                           AmpPeerAnnounceTransport::ResolvePublisherKey{},
+                                                           amp_post_io);
+  peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
+    std::string local_peer_id;
+    std::vector<uint8_t> local_pk;
+    if (auto local_identity = identity_.Get()) {
+      local_peer_id = local_identity->peer_id;
+    }
+    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+      local_pk = *pk;
+    }
+    return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
+  });
+  peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
+    const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
+    announce_notifications_.UpsertFromTip(tip, now_ms);
+  });
+  if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
+    if (auto local_identity = identity_.Get(); local_identity && !local_identity->peer_id.empty()) {
+      peer_announce_publisher_ =
+          std::make_unique<PeerAnnouncePublisher>(local_identity->peer_id, *sk, peer_announce_feed_.get());
+    } else {
+      log().warning << "peer-announce publisher skipped (identity peer_id unavailable)";
+    }
+  } else {
+    log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
+  }
+  peer_announce_->Start();
+  broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
+  broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
+    std::string local_peer_id;
+    std::vector<uint8_t> local_pk;
+    if (auto local_identity = identity_.Get()) {
+      local_peer_id = local_identity->peer_id;
+    }
+    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+      local_pk = *pk;
+    }
+    return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
+  });
+  broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
+    if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
+      return *sk;
+    }
+    return std::nullopt;
+  });
+  broadcast_->Start();
+
+  if (chat_sync_) {
+    chat_sync_->SetPeerHistoryClient(peer_history_.get());
+  }
+  log().info << "direct chat/history/blob/peer-announce/broadcast transport=amp";
 }
 
 void MeshDeliveryOrchestrator::DetachAmpTransports() {

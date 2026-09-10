@@ -113,6 +113,14 @@ public:
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /**
+   * Bind Amp chat/history/blob/announce/broadcast on an existing orchestrator.
+   * Prefer this over destroying/recreating the orchestrator after messaging is ready —
+   * in-flight SyncInbox / PostWorker lambdas still hold `this`.
+   */
+  void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
+                           std::function<void(std::function<void()>)> amp_worker_post = {},
+                           std::function<void(std::function<void()>)> amp_post_io = {});
+  /**
    * Stop Amp protocol handlers and drop transport objects while MeshHost/Amp is still alive.
    * Required before MeshHost::Stop — otherwise ~Amp*Transport::Stop UAFs PeerLinks.
    */
