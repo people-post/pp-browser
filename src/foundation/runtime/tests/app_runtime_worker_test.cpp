@@ -130,3 +130,35 @@ TEST(AppRuntimeWorkerTest, ShutdownToleratesInFlightNestedPost) {
   EXPECT_TRUE(nested_post_survived.load());
   EXPECT_FALSE(nested_task_ran.load());
 }
+
+TEST(AppRuntimeWorkerTest, ShutdownBudgetReturnsWhileWorkerBlocked) {
+  pbr::AppRuntime::Initialize();
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool release_worker = false;
+  std::atomic<bool> entered{false};
+
+  pbr::AppRuntime::PostWorkerNormal([&]() {
+    entered.store(true);
+    std::unique_lock lock(mu);
+    cv.wait(lock, [&]() { return release_worker; });
+  });
+
+  WaitUntil([&]() { return entered.load(); }, std::chrono::milliseconds(2000));
+  ASSERT_TRUE(entered.load());
+
+  const auto t0 = std::chrono::steady_clock::now();
+  pbr::AppRuntime::Shutdown();
+  const auto elapsed = std::chrono::steady_clock::now() - t0;
+  // WorkerPool join budget is 500ms; wall clock should stay well under a few seconds.
+  EXPECT_LT(elapsed, std::chrono::milliseconds(2000));
+  EXPECT_FALSE(pbr::AppRuntime::IsRunning());
+
+  {
+    std::lock_guard lock(mu);
+    release_worker = true;
+  }
+  cv.notify_all();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}

@@ -1358,7 +1358,25 @@ void Application::Run() {
 void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
+  AppRuntime::BeginShutdown();
+  // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
+  // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
+  Backend::HideWindow();
+  StartupMark("shutdown_window_hidden");
 
+  // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
+  {
+    const bool call_active =
+        messaging_ != nullptr && messaging_->CallStackRef().HasActiveLocalCall();
+    const bool connect_inflight =
+        messaging_ != nullptr && messaging_->CallStackRef().IsConnectWorkerInflight();
+    const size_t worker_queued =
+        AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
+    StartupLog().info << "[startup] shutdown_context call_active=" << (call_active ? 1 : 0)
+                      << " connect_inflight=" << (connect_inflight ? 1 : 0)
+                      << " worker_queued=" << worker_queued
+                      << " shutdown_gen=" << AppRuntime::ShutdownGeneration();
+  }
   settings_->BindCommands({});
   settings_->BindShellNavigation({});
   settings_->BindShellFeedback({});
@@ -1489,19 +1507,23 @@ void Application::Shutdown() {
     }
 
     // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
-    // join. Then abort Connect / circuit waits and join MeshControlPool + MeshPump via hub
-    // StopMesh while AppRuntime is still up (StopCoordinatorTimers). Connect no longer parks
-    // WorkerPool — destroying the hub first previously UAFd workers under AppRuntime::Shutdown.
+    // join. It already AbortCallMediaForShutdown (PrepareForTeardown is non-blocking). Then
+    // StopMesh via ShutdownMessaging joins MeshControlPool + MeshPump while AppRuntime is up.
     if (messaging_) {
+      StartupPhase phase("Shutdown::RequestShutdown");
       messaging_->RequestShutdown();
-      StartupPhase phase("Shutdown::AbortCallMedia");
-      messaging_->AbortCallMediaForShutdown();
+      StartupMark("shutdown_abort_call_media_done");
     }
-    ShutdownMessaging();
+    {
+      StartupPhase phase("Shutdown::MessagingAndMesh");
+      ShutdownMessaging();
+    }
+    StartupMark("shutdown_stop_mesh_done");
     if (AppRuntime::IsRunning()) {
       StartupPhase phase("Shutdown::AppRuntime");
       AppRuntime::Shutdown();
     }
+    StartupMark("shutdown_runtime_join_done");
 
     AppRuntime::RunUITasks();
 
@@ -1520,8 +1542,10 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::Backend");
       Backend::Shutdown();
     }
+    StartupMark("shutdown_backend_quit_done");
 
     log().info << "Shutdown complete";
+    StartupMark("shutdown_complete");
     initialized_ = false;
   } else {
     // Initialize may have failed after Bootstrap left hub/secrets open.

@@ -12,6 +12,7 @@
 #include <opus.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <deque>
@@ -441,16 +442,54 @@ struct CallMediaEngine::Impl {
 
   void JoinCaptureThread() {
     capture_running = false;
-    if (capture_thread.joinable()) {
-      capture_thread.join();
-    }
+    JoinThreadBudgeted(capture_thread, std::chrono::milliseconds::max(), "capture");
   }
 
   void JoinPlayoutThread() {
     playout_running = false;
-    if (playout_thread.joinable()) {
-      playout_thread.join();
+    JoinThreadBudgeted(playout_thread, std::chrono::milliseconds::max(), "playout");
+  }
+
+  /** Product quit: cap capture/playout joins so SDL device close cannot hang Shutdown. */
+  void JoinCaptureThreadBudgeted(std::chrono::milliseconds budget) {
+    capture_running = false;
+    JoinThreadBudgeted(capture_thread, budget, "capture");
+  }
+
+  void JoinPlayoutThreadBudgeted(std::chrono::milliseconds budget) {
+    playout_running = false;
+    JoinThreadBudgeted(playout_thread, budget, "playout");
+  }
+
+  void JoinThreadBudgeted(std::thread& thread, std::chrono::milliseconds budget, const char* name) {
+    if (!thread.joinable()) {
+      return;
     }
+    if (budget == std::chrono::milliseconds::max() || budget.count() <= 0) {
+      thread.join();
+      return;
+    }
+    auto finished = std::make_shared<std::atomic<bool>>(false);
+    std::thread waiter([finishing = std::move(thread), finished]() mutable {
+      if (finishing.joinable()) {
+        finishing.join();
+      }
+      finished->store(true, std::memory_order_release);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (!finished->load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (finished->load(std::memory_order_acquire)) {
+      if (waiter.joinable()) {
+        waiter.join();
+      }
+      return;
+    }
+    SDL_Log("CallMediaEngine: %s join still live after %lldms — detaching (process exit must follow)",
+            name, static_cast<long long>(budget.count()));
+    waiter.detach();
   }
 
   void StartPlayoutLoop() {
@@ -1324,8 +1363,14 @@ void CallMediaEngine::Stop() {
   {
     std::lock_guard drain(impl_->sfu_send_call_mu);
   }
-  impl_->JoinCaptureThread();
-  impl_->JoinPlayoutThread();
+  static constexpr std::chrono::milliseconds kShutdownJoinBudget{500};
+  impl_->JoinCaptureThreadBudgeted(kShutdownJoinBudget);
+  impl_->JoinPlayoutThreadBudgeted(kShutdownJoinBudget);
+  {
+    // Stop camera encode before TearDownAudioLocked so CloseCameraLocked does not unbounded-join.
+    impl_->video_running = false;
+    impl_->JoinThreadBudgeted(impl_->video_thread, kShutdownJoinBudget, "video");
+  }
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();

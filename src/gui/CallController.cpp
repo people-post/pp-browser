@@ -242,8 +242,10 @@ void CallController::PrepareForShutdown() {
   ringing_call_id_.clear();
   ring_started_ms_ = 0;
   ring_ = {};
-  // Must join before SDL_Quit — async Stop leaves the playback worker holding the device.
-  ringtone_.StopAndJoin();
+  // Budgeted join before SDL_Quit — do not hang product quit on SDL device close.
+  if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
+    log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
+  }
 }
 
 void CallController::ClearInCall() {

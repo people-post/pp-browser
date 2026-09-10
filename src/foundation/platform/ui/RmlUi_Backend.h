@@ -46,6 +46,8 @@ void RecoverAfterDeviceReset(Rml::Context* context);
 
 bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);
 void RequestExit();
+/** Hide the product window immediately (close feel); SDL destroy still happens in Shutdown. */
+void HideWindow();
 
 // Thread-safe: push an SDL user event (always push; do not coalesce-drop).
 void WakeEventLoop();

@@ -7,7 +7,9 @@
 
 namespace pbr {
 
-ThreadRuntime::ThreadRuntime() = default;
+ThreadRuntime::ThreadRuntime() {
+  redirectLogger("Runtime.ThreadRuntime");
+}
 
 ThreadRuntime::~ThreadRuntime() {
   Shutdown();
@@ -29,12 +31,22 @@ void ThreadRuntime::Shutdown() {
   }
   running_ = false;
   if (coordinator_) {
-    coordinator_->Shutdown();
-    coordinator_.reset();
+    if (!coordinator_->Shutdown(CoordinatorThread::kDefaultShutdownJoinBudget)) {
+      log().warning << "ThreadRuntime::Shutdown: coordinator join budget exceeded — "
+                       "leaking until process exit";
+      (void)coordinator_.release();
+    } else {
+      coordinator_.reset();
+    }
   }
   if (worker_pool_) {
-    worker_pool_->Shutdown();
-    worker_pool_.reset();
+    if (!worker_pool_->Shutdown(WorkerPool::kDefaultShutdownJoinBudget)) {
+      log().warning << "ThreadRuntime::Shutdown: WorkerPool join budget exceeded — "
+                       "leaking until process exit";
+      (void)worker_pool_.release();
+    } else {
+      worker_pool_.reset();
+    }
   }
 }
 

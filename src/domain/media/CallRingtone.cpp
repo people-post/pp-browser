@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 #include <utility>
 
@@ -162,6 +163,50 @@ void CallRingtone::Stop() {
 
 void CallRingtone::StopAndJoin() {
   RequestStop(/*wait=*/true);
+}
+
+bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
+  RequestStop(/*wait=*/false);
+
+  std::thread to_join;
+  {
+    std::lock_guard lock(mutex_);
+    if (joiner_.joinable()) {
+      to_join = std::move(joiner_);
+    } else if (thread_.joinable()) {
+      // RequestStop with empty joiner left playback on thread_ (no prior async Stop).
+      to_join = std::move(thread_);
+    }
+  }
+  if (!to_join.joinable()) {
+    return true;
+  }
+
+  auto finished = std::make_shared<std::atomic<bool>>(false);
+  std::thread waiter([finishing = std::move(to_join), finished]() mutable {
+    if (finishing.joinable()) {
+      finishing.join();
+    }
+    finished->store(true, std::memory_order_release);
+  });
+
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  while (!finished->load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  if (finished->load(std::memory_order_acquire)) {
+    if (waiter.joinable()) {
+      waiter.join();
+    }
+    return true;
+  }
+
+  SDL_Log("CallRingtone::StopAndJoin: still live after %lldms — detaching (process exit must follow)",
+          static_cast<long long>(budget.count()));
+  waiter.detach();
+  return false;
 }
 
 void CallRingtone::RunLoop() {

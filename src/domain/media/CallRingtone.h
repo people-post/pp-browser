@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -10,6 +11,8 @@ namespace pbr {
 /** Loops assets/sounds/call_ring.wav on the default playback device while Start()'d. */
 class CallRingtone {
 public:
+  static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
+
   CallRingtone();
   ~CallRingtone();
 
@@ -19,8 +22,16 @@ public:
   void Start();
   /** Async (safe from UI/Accept). Does not join — use StopAndJoin before SDL_Quit. */
   void Stop();
-  /** Signal stop and join playback + any async joiner. Call on the UI thread before Backend::Shutdown. */
+  /**
+   * Signal stop and join playback + any async joiner (unlimited).
+   * Prefer the budgeted overload on product quit.
+   */
   void StopAndJoin();
+  /**
+   * After RequestStop(wait=false), wait up to `budget` for playback+joiner.
+   * On timeout detaches with a loud log. Returns false if detach occurred.
+   */
+  bool StopAndJoin(std::chrono::milliseconds budget);
   bool IsPlaying() const { return playing_.load(); }
   /**
    * True while an SDL playback stream from Start() may still be open.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <condition_variable>
 #include <deque>
@@ -20,6 +22,8 @@ public:
   static constexpr size_t kMinThreadCount = 1;
   static constexpr size_t kMaxThreadCount = 2;
   static constexpr size_t kDefaultThreadCount = 1;
+  /** Soft join budget on product shutdown (abort should make workers exit sooner). */
+  static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
 
   explicit MeshControlPool(size_t thread_count = kDefaultThreadCount);
   ~MeshControlPool();
@@ -29,7 +33,13 @@ public:
 
   void Post(std::function<void()> task);
   /** Stop accepting work, drop queued tasks, join workers (in-flight tasks still finish). */
-  void Shutdown();
+  void Shutdown() { Shutdown(kDefaultShutdownJoinBudget); }
+  /**
+   * Like Shutdown(), but abandon join after `join_budget` if a worker is stuck mid-task.
+   * Detached workers are leaked until process exit — only safe on product quit.
+   * Returns false if any worker was detached after the budget.
+   */
+  bool Shutdown(std::chrono::milliseconds join_budget);
 
   size_t ThreadCount() const { return thread_count_; }
   bool IsRunning() const;
@@ -44,6 +54,7 @@ private:
   std::condition_variable cv_;
   std::deque<std::function<void()>> queue_;
   bool stopped_ = false;
+  std::atomic<size_t> live_workers_{0};
 };
 
 } // namespace pbr

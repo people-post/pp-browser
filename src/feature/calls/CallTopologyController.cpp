@@ -501,6 +501,10 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
                                                         SoftMigrateTrigger trigger,
                                                         const std::string& prefer_hop_peer_id,
                                                         uint64_t expected_gen) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "MaybeSoftMigrateToSfu rejected: shutting down call_id=" << call_id;
+    return Error("shutdown in progress");
+  }
   SettledWait<void> wait;
   MaybeSoftMigrateToSfuAsync(call_id, trigger, prefer_hop_peer_id, expected_gen,
                              [wait](Roe<void> value) { wait.Finish(std::move(value)); });
@@ -515,6 +519,11 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
                                                          uint64_t expected_gen,
                                                          std::function<void(Roe<void>)> on_done) {
   if (!on_done) {
+    return;
+  }
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "MaybeSoftMigrateToSfuAsync rejected: shutting down call_id=" << call_id;
+    on_done(Error("shutdown in progress"));
     return;
   }
   PostControlOrRun([this, call_id, trigger, prefer_hop_peer_id, expected_gen,

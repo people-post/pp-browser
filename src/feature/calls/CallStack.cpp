@@ -363,7 +363,8 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
   // Connect worker holds `this` on the bridge — abort + wait before delete (shutdown segfault).
   // Detach completes in-flight Connect() immediately; dial/reachability loops check generation.
   if (call_media_bridge_) {
-    call_media_bridge_->PrepareForTeardown(2000);
+    // Non-blocking abort on mesh stop / shutdown (no 2s sleep-spin).
+    call_media_bridge_->PrepareForTeardown(0);
   }
   if (abort_inflight_circuit) {
     abort_inflight_circuit();
@@ -400,12 +401,16 @@ void CallStack::AbortCallMediaForShutdown() {
     }
   }
   if (call_media_bridge_) {
-    // LeaveCall already bumps connect_generation_; wait for the worker to observe abort.
-    call_media_bridge_->PrepareForTeardown(2000);
+    // LeaveCall already bumps connect_generation_; do not park shutdown on Connect drain.
+    call_media_bridge_->PrepareForTeardown(0);
   }
   if (ICallMediaTransport* transport = CallMediaTransport()) {
     transport->Detach();
   }
+}
+
+bool CallStack::IsConnectWorkerInflight() const {
+  return call_media_bridge_ && call_media_bridge_->IsConnectWorkerInflight();
 }
 
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
@@ -539,6 +544,10 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
 }
 
 Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCircuitHopReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
   if (!circuit_hop_reach_) {
     return Error("Amp circuit reach required");
   }
@@ -549,6 +558,10 @@ Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id
 }
 
 Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCallMediaReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
   if (!circuit_hop_reach_) {
     return Error("Amp required");
   }

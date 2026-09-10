@@ -563,6 +563,14 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
 
 void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
                                            CallMediaDirectCallbacks cbs, const uint64_t gen) {
+  if (AppRuntime::IsShuttingDown() || stopping_.load(std::memory_order_acquire)) {
+    log().debug << "StartConnectSequence rejected: shutting down call_id=" << params.call_id;
+    connect_worker_inflight_.store(false, std::memory_order_release);
+    if (cbs.on_failed) {
+      cbs.on_failed("shutdown in progress");
+    }
+    return;
+  }
   connect_worker_inflight_.store(true, std::memory_order_release);
   CancelConnectTimers();
   if (params.offerer) {
@@ -997,25 +1005,32 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   media_call_id_.clear();
   ClearMeshConnectFailed();
 
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(0, timeout_ms));
-  while (connect_worker_inflight_.load(std::memory_order_acquire)) {
-    if (!AppRuntime::IsRunning()) {
-      // Runtime already joined — queued MeshControl / coordinator tasks were dropped.
-      connect_worker_inflight_.store(false, std::memory_order_release);
-      break;
+  // Shutdown path: do not sleep-spin on the caller (was up to 2s and dominated close latency).
+  // ConnectAsync / EnsurePeerReachableAsync observe stopping_ + connect_generation_ and exit.
+  if (timeout_ms <= 0) {
+    if (connect_worker_inflight_.load(std::memory_order_acquire)) {
+      log().info << "PrepareForTeardown: Connect still inflight — continuing without wait "
+                    "(gen abort; MeshControl may still drain)";
     }
-    if (std::chrono::steady_clock::now() >= deadline) {
-      log().warning << "PrepareForTeardown: Connect sequence still inflight after " << timeout_ms
-                    << "ms — proceeding (MeshControl/reachability may still be draining)";
-      break;
+  } else {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (connect_worker_inflight_.load(std::memory_order_acquire)) {
+      if (!AppRuntime::IsRunning()) {
+        connect_worker_inflight_.store(false, std::memory_order_release);
+        break;
+      }
+      if (std::chrono::steady_clock::now() >= deadline) {
+        log().warning << "PrepareForTeardown: Connect sequence still inflight after " << timeout_ms
+                      << "ms — proceeding (MeshControl/reachability may still be draining)";
+        break;
+      }
+      if (dial_ && !peer.empty()) {
+        dial_->AbortInflightDial(peer);
+      }
+      direct_.Detach();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    // Keep poking the dial/stream so a blocked reachability wait returns and sees the generation bump.
-    if (dial_ && !peer.empty()) {
-      dial_->AbortInflightDial(peer);
-    }
-    direct_.Detach();
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   if (!call_id.empty() && media_.IsActive() && media_.ActiveCallId() == call_id) {

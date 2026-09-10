@@ -1,5 +1,8 @@
 #pragma once
 
+#include "common/Logger.h"
+#include "common/PbrCompat.h"
+
 #include <functional>
 
 namespace pbr {
@@ -8,6 +11,10 @@ enum class AppLifecycleState { Foreground, Background };
 
 class AppLifecycle {
 public:
+  /** Bind `Runtime.Lifecycle`. Idempotent. Called from AppRuntime::Initialize. */
+  static void InitLogging();
+  static logging::Logger& logger();
+
   static AppLifecycleState Current();
   static bool IsForeground();
 
