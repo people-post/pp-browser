@@ -13,7 +13,7 @@ How code obtains a logger. Prefer **one style per ownership shape** — do not m
 |------|------|---------|
 | **`Module` instance** | In the constructor call `redirectLogger("…")`; use `log()` for the object’s lifetime | `WorkerPool`, `CoordinatorThread`, `BackgroundSyncScheduler`, `Application` |
 | **Static façade** | Provide `InitLogging()` (idempotent); call it from `Initialize` / process bring-up; expose `logger()` (avoid naming the method `log()` — Android `#define log` clashes) | `AppRuntime`, `AppLifecycle` |
-| **Free function / lambda at a boundary** | Take `logging::Logger&` (or a by-value `Logger` handle) explicitly — no hidden globals | Shutdown watchdog thread, posted worker callbacks that log |
+| **Free function / lambda at a boundary** | Take `logging::Logger&` explicitly (do not copy `Logger` — `LogProxy` binds to `this`); re-resolve via façade `logger()` / `getLogger` inside detached threads | Shutdown watchdog thread, posted worker callbacks that log |
 
 Dotted names create hierarchy (`getLogger("Runtime.AppRuntime")` → parent `Runtime`, child `AppRuntime`). Prefer a shared parent for a subsystem so dogfood can raise `Runtime.*=DEBUG` without renaming every leaf.
 
