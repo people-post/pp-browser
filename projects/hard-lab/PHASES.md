@@ -19,9 +19,10 @@ Ordering only. Ladder detail: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)
 - [x] Inventory status → scaffold in TEST_STRATEGY
 ## h2 — Wave 2 path quality
 
-- [ ] `tc netem` / `tbf` profile hooks (`lossy`, `asym`, `bw`)
-- [ ] **N-HARD-LOSSY**, **N-HARD-ASYM**; optional **N-HARD-BW**
-- [ ] Document flake/retry policy from first evidence
+- [x] `tc netem` / `tbf` profile hooks (`lossy`, `asym`, `bw`) on peer veth (`NET_ADMIN`)
+- [x] **N-HARD-LOSSY**, **N-HARD-ASYM**; optional **N-HARD-BW** (`pp_hard_link_smoke.sh`)
+- [x] Document flake/retry policy (one netem retry in `pp_hard_run_with_netem_retry`)
+- [x] `--suite hard-w2` driver entry
 
 ## h3 — Wave 3 discovery
 

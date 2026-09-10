@@ -40,7 +40,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | Amp underlay | pp-cpp-amp (`PeerLink`, keepalive, `MaybeLearnPath`) |
 | Hop reach helper | `AmpCircuitHopReach` |
 | Partition compose tests | `src/domain/mesh/tests/` (`amp_circuit_*_compose_test`, loopback fixture) |
-| Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — not implemented |
+| Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — Wave 1–2 scaffold |
 
 ## Next
 

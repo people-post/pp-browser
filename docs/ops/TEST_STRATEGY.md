@@ -224,6 +224,9 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-CHAOS | **Covered** (scaffold) | [`scripts/test/pp_node_chaos_smoke.sh`](../../scripts/test/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
 | N-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_hop_smoke.sh`](../../scripts/test/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
 | N-HARD-FORCE | **Scaffold** | [`docker-compose.hard-lab.yml`](../../packaging/pp-node/docker-compose.hard-lab.yml) + [`scripts/test/pp_hard_force_smoke.sh`](../../scripts/test/pp_hard_force_smoke.sh); driver `--suite hard`. Isolation + circuit + media via hop. |
+| N-HARD-LOSSY | **Scaffold** | [`pp_hard_link_smoke.sh`](../../scripts/test/pp_hard_link_smoke.sh) `--profile lossy`; driver `--suite hard-w2`. Netem both peer legs; N-HARD-FORCE under impairment; one retry. |
+| N-HARD-ASYM | **Scaffold** | `pp_hard_link_smoke.sh --profile asym`; `--suite hard-w2`. Netem peer-a only. |
+| N-HARD-BW | **Scaffold** | `pp_hard_link_smoke.sh --profile bw`; `--suite hard-w2`. `tbf` both legs; B-HARD-CALL under cap. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---
@@ -301,7 +304,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ## Soft designs — hard lab (Gate F)
 
-**Status:** Wave 1 **N-HARD-FORCE** scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+**Status:** Wave 1 + Wave 2 scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 **Problem:** Relay-smoke + host probes do not force **A↛B**. Deployment risk needs isolated nets + optional impairments.
 
@@ -310,7 +313,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 ```text
 Wave 0  loopback + L0–L2 + B-CALL-HOP     (keep green)
 Wave 1  forced hop clean                  N-HARD-FORCE + B-HARD-CALL + B-HARD-MSG+CALL (**scaffold**)
-Wave 2  lossy / asym / bw
+Wave 2  lossy / asym / bw                 N-HARD-LOSSY + ASYM + BW (**scaffold**; `--suite hard-w2`)
 Wave 3  stale / seed / dir / DHT / admit
 Wave 4  multi-hop circuit                 (after media-hop L3.5)
 Wave 5  NAT shapes / UPnP / v6            (weekly/manual)
@@ -320,7 +323,7 @@ Wave 7  horizons                          (placeholders)
 
 **Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable in CI.
 
-**Driver:** `pp_local_test.sh run --suite hard` (Wave 1 trio; ports **18618**). Do not conflate with `--suite node` / relay-smoke (**18518**).
+**Driver:** `pp_local_test.sh run --suite hard` (Wave 1 trio) / `--suite hard-w2` (Wave 2 link profiles); ports **18618**. Do not conflate with `--suite node` / relay-smoke (**18518**).
 
 
 ---
@@ -373,4 +376,4 @@ Later work is intentionally underspecified until evidence exists:
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
 5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); **N-HARD-FORCE** scaffold via `--suite hard`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
+6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 via `--suite hard`; Wave 2 netem via `--suite hard-w2`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

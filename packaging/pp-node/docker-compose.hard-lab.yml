@@ -1,14 +1,15 @@
-# Hard lab Wave 1: forced hop — peers on isolated nets (no A↔B route).
+# Hard lab: forced hop — peers on isolated nets (no A↔B route).
 #
 #   peer-a ── net_a ── hop ── net_b ── peer-b
 #                └── net_ops (status HTTP to host)
 #
 # Host ports default 18617/18618 so relay-smoke (18517/18518) can coexist.
-# Driver: scripts/test/pp_hard_force_smoke.sh / pp_local_test.sh --suite hard
+# Driver: scripts/test/pp_hard_*_smoke.sh / pp_local_test.sh --suite hard|hard-w2
 # Design: HARD_LAB.md
 #
 # Build context for hop: ../../dist/pp-node/docker (package first).
 # Peer image: Dockerfile.hard-peer (Debian trixie + libstdc++ for host probes).
+# Peers get NET_ADMIN so Wave 2 can apply tc netem/tbf on the peer veth.
 
 name: pp-hard-lab
 
@@ -43,6 +44,8 @@ services:
       dockerfile: Dockerfile.hard-peer
     image: pp-hard-peer:local
     container_name: pp-hard-lab-peer-a
+    cap_add:
+      - NET_ADMIN
     networks:
       - net_a
     volumes:
@@ -56,6 +59,8 @@ services:
       dockerfile: Dockerfile.hard-peer
     image: pp-hard-peer:local
     container_name: pp-hard-lab-peer-b
+    cap_add:
+      - NET_ADMIN
     networks:
       - net_b
     volumes:
