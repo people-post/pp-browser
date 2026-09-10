@@ -1,7 +1,7 @@
 # Threading and async execution
 
 **Tier:** architecture  
-**Related:** [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (runtime wiring), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (cross-thread UI rules), [CALLS.md](CALLS.md) (call media thread policy), [PLATFORMS.md](PLATFORMS.md) (wake / background sync), [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy / abort-before-join).
+**Related:** [LOGGING.md](LOGGING.md) (Module / façade / free-fn logger rules), [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (runtime wiring), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (cross-thread UI rules), [CALLS.md](CALLS.md) (call media thread policy), [PLATFORMS.md](PLATFORMS.md) (wake / background sync), [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy / abort-before-join).
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, Amp mesh pump, mesh-control waiters, and bounded worker pool.
 

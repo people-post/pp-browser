@@ -23,14 +23,44 @@ uint64_t g_shutdown_generation = 0;
 std::chrono::steady_clock::time_point g_shutdown_deadline{};
 bool g_watchdog_armed = false;
 
-logging::Logger& RuntimeLog() {
-  static logging::Logger log = logging::getLogger("AppRuntime");
-  return log;
+std::mutex g_log_mu;
+logging::Logger* g_log = nullptr;
+
+/** Boundary helper: takes Logger& (do not copy Logger — LogProxy binds to `this`). */
+void RunShutdownWatchdog(logging::Logger& log, uint64_t gen,
+                         std::chrono::steady_clock::time_point deadline) {
+  for (;;) {
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= deadline) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  log.error << "AppRuntime shutdown watchdog: deadline exceeded gen=" << gen
+            << " — std::_Exit(0) (last resort; process was still alive)";
+  std::_Exit(0);
 }
 
 } // namespace
 
+
+void AppRuntime::InitLogging() {
+  std::lock_guard lock(g_log_mu);
+  if (g_log != nullptr) {
+    return;
+  }
+  (void)logging::getLogger("Runtime");
+  static logging::Logger instance = logging::getLogger("Runtime.AppRuntime");
+  g_log = &instance;
+}
+
+logging::Logger& AppRuntime::logger() {
+  InitLogging();
+  return *g_log;
+}
+
 void AppRuntime::Initialize(const AppRuntimeConfig& config) {
+  InitLogging();
   if (IsRunning()) {
     return;
   }
@@ -44,6 +74,7 @@ void AppRuntime::Initialize(const AppRuntimeConfig& config) {
 }
 
 void AppRuntime::BeginShutdown() {
+  InitLogging();
   std::chrono::steady_clock::time_point deadline;
   uint64_t gen = 0;
   bool arm_watchdog = false;
@@ -62,24 +93,16 @@ void AppRuntime::BeginShutdown() {
       arm_watchdog = true;
     }
   }
-  RuntimeLog().info << "BeginShutdown gen=" << gen << " deadline_ms="
-                    << kShutdownDeadlineBudget.count();
+  logger().info << "BeginShutdown gen=" << gen << " deadline_ms=" << kShutdownDeadlineBudget.count();
   if (!arm_watchdog) {
     return;
   }
   // Last resort: if graceful joins hang past the product quit budget, abandon the process.
   // Documented in THREADING.md — not a substitute for budgeted Shutdown joins.
+  // Pass process-lifetime façade Logger& into the free helper (Logger is not safely copyable).
   std::thread([deadline, gen]() {
-    for (;;) {
-      const auto now = std::chrono::steady_clock::now();
-      if (now >= deadline) {
-        break;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    RuntimeLog().error << "AppRuntime shutdown watchdog: deadline exceeded gen=" << gen
-                       << " — std::_Exit(0) (last resort; process was still alive)";
-    std::_Exit(0);
+    InitLogging();
+    RunShutdownWatchdog(logger(), gen, deadline);
   }).detach();
 }
 

@@ -1,19 +1,13 @@
 #include "foundation/runtime/CoordinatorThread.h"
 
-#include "common/Logger.h"
-
 #include <algorithm>
 #include <cassert>
 
 namespace pbr {
-namespace {
-logging::Logger& CoordLog() {
-  static logging::Logger log = logging::getLogger("CoordinatorThread");
-  return log;
-}
-} // namespace
 
-CoordinatorThread::CoordinatorThread() = default;
+CoordinatorThread::CoordinatorThread() {
+  redirectLogger("Runtime.Coordinator");
+}
 
 CoordinatorThread::~CoordinatorThread() {
   (void)Shutdown(kDefaultShutdownJoinBudget);
@@ -69,7 +63,7 @@ bool CoordinatorThread::Shutdown(std::chrono::milliseconds join_budget) {
     return true;
   }
 
-  CoordLog().warning << "CoordinatorThread::Shutdown: thread still live after "
+  log().warning << "CoordinatorThread::Shutdown: thread still live after "
                      << join_budget.count() << "ms — detaching (process exit must follow)";
   thread_.detach();
   // Leave started_/stopped_ as-is so a second Shutdown is a no-op; do not clear timers while

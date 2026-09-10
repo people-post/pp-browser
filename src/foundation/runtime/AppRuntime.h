@@ -2,6 +2,7 @@
 
 #include "foundation/runtime/CoordinatorThread.h"
 #include "foundation/runtime/WorkerDispatch.h"
+#include "common/Logger.h"
 #include "common/WorkerPool.h"
 
 #include <chrono>
@@ -32,6 +33,14 @@ public:
   static void Initialize(const AppRuntimeConfig& config = {});
   static void Shutdown();
   static bool IsRunning();
+
+  /**
+   * Bind `Runtime.AppRuntime` (and parent `Runtime`). Idempotent.
+   * Called from Initialize; also safe from tests / early BeginShutdown.
+   * See docs/architecture/LOGGING.md.
+   */
+  static void InitLogging();
+  static logging::Logger& logger();
 
   /**
    * Mark product quit: bumps generation, records now+3s deadline, arms watchdog `_Exit`.
