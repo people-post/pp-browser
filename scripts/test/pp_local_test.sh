@@ -5,11 +5,12 @@
 # Default hop compose: packaging/pp-node/docker-compose.relay-smoke.yml
 # (do not run alongside packaging/pp-node/docker-compose.yml — same host ports).
 #
-# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | all
+# Suites: unit | call | conflict | msg-call | node | cap | soak | chaos | call-hop | msg-call-hop | mix | hard | hard-w2 | hard-w3 | all
 # --suite node stays cheap (L0/L1/fanout + N-CAP N=4). Stress is cap/soak/chaos.
 # --suite mix is nightly: browser parallel + shrunk hop parallel + same-session hop chat.
 # --suite hard is Wave 1 forced-hop (isolated nets; separate compose/ports 18618).
 # --suite hard-w2 is Wave 2 netem/tbf (N-HARD-LOSSY / ASYM / BW) on the same compose.
+# --suite hard-w3 is Wave 3 discovery (N-HARD-STALE-ADDR / SEED-ONLY).
 #
 # See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
@@ -49,7 +50,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -74,6 +75,7 @@ Examples:
   $(basename "$0") run --suite msg-call-hop
   $(basename "$0") run --suite hard
   $(basename "$0") run --suite hard-w2
+  $(basename "$0") run --suite hard-w3
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -402,6 +404,23 @@ run_hard_w2() {
   bash "${ROOT}/scripts/test/pp_hard_link_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --profile bw
 }
 
+run_hard_w3() {
+  cmake_build_probes
+  stage_hop_binary_if_newer
+  ensure_docker_context
+  echo "=== suite hard-w3 (Wave 3: N-HARD-STALE-ADDR + N-HARD-SEED-ONLY) ==="
+  export PP_HARD_STATUS_URL="${HARD_STATUS_URL}"
+  export PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node"
+  export PP_HARD_SHARE_DIR="${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-share}"
+  local args=(up -d --force-recreate)
+  if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
+    args+=(--build)
+  fi
+  hard_compose "${args[@]}"
+  bash "${ROOT}/scripts/test/pp_hard_disco_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --profile stale-addr
+  bash "${ROOT}/scripts/test/pp_hard_disco_smoke.sh" --status-url "${HARD_STATUS_URL}" --skip-up --profile seed-only
+}
+
 cmd_run() {
   case "${SUITE}" in
     unit) run_unit ;;
@@ -417,6 +436,7 @@ cmd_run() {
     mix) run_mix ;;
     hard) run_hard ;;
     hard-w2) run_hard_w2 ;;
+    hard-w3) run_hard_w3 ;;
     all)
       run_unit
       run_call
@@ -424,10 +444,10 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
-    if [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" ]]; then
+    if [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" || "${SUITE}" == "hard-w3" ]]; then
       echo "hard-lab compose stop project=${HARD_COMPOSE_PROJECT}"
       hard_compose stop
     else
@@ -435,7 +455,7 @@ cmd_run() {
     fi
   elif [[ "${SUITE}" =~ ^(node|cap|soak|chaos|call-hop|msg-call-hop|mix|all)$ ]]; then
     echo "hop left running; $(basename "$0") stop | clear when done"
-  elif [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" ]]; then
+  elif [[ "${SUITE}" == "hard" || "${SUITE}" == "hard-w2" || "${SUITE}" == "hard-w3" ]]; then
     echo "hard-lab left running; $(basename "$0") clear when done (or: docker compose -p ${HARD_COMPOSE_PROJECT} -f ${HARD_COMPOSE_FILE} stop)"
   fi
   echo "pp-local-test run PASSED suite=${SUITE}"

@@ -6,7 +6,7 @@ Local Docker/netns lab so peers that **cannot** reach each other directly must d
 |-----|------|
 | [DESIGN.md](DESIGN.md) | Goals, ownership, non-goals |
 | [PHASES.md](PHASES.md) | Wave delivery order |
-| [CURRENT_STATE.md](CURRENT_STATE.md) | Status (Wave 1 + Wave 2 scaffold) |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | Status (Wave 1–3 partial scaffold) |
 | [DECISIONS.md](DECISIONS.md) | ADRs |
 | Canonical ladder / topology | [`packaging/pp-node/HARD_LAB.md`](../../packaging/pp-node/HARD_LAB.md) |
 | Purpose IDs / CI | [`docs/ops/TEST_STRATEGY.md`](../../docs/ops/TEST_STRATEGY.md) |

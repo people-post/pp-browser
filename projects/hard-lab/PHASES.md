@@ -26,10 +26,11 @@ Ordering only. Ladder detail: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)
 
 ## h3 — Wave 3 discovery
 
-- [ ] **N-HARD-STALE-ADDR**, **N-HARD-SEED-ONLY**
+- [x] **N-HARD-STALE-ADDR**, **N-HARD-SEED-ONLY** (`pp_hard_disco_smoke.sh`; probe `direct-expect-fail` / `--peer-id-only` / `--warm-hop`)
 - [ ] **N-HARD-DIR** when directory lab hooks exist
 - [ ] **N-HARD-DHT** extending `pp_node_dht_smoke` into hard nets
 - [ ] **N-ADMIT-HARD** (closes deploy-profile gap on forced topo)
+- [x] `--suite hard-w3` driver entry (stale-addr → seed-only)
 
 ## h4 — Wave 4 multi-hop (blocked on L3.5)
 

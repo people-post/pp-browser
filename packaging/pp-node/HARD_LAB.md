@@ -1,6 +1,6 @@
 # Hard lab — forced-hop / NAT / impairment design
 
-**Status:** Wave 1 scaffold green; Wave 2 netem/tbf scaffold (**N-HARD-LOSSY** / **ASYM** / **BW**) via `--suite hard-w2` — compose + probes + link profiles; Wave 3+ open  
+**Status:** Wave 1–2 scaffold green; Wave 3 discovery scaffold (**N-HARD-STALE-ADDR** / **SEED-ONLY**) via `--suite hard-w3`; DIR/DHT/ADMIT-HARD still gated  
 **Tier:** ops / Tier C (multi-netns smoke)  
 **Doctrine:** [TESTING.md](../../docs/architecture/TESTING.md)  
 **Purposes / CI:** [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (`N-HARD-*`, `B-HARD-*`)  
@@ -218,11 +218,14 @@ scripts/test/pp_hard_lab_lib.sh                 # topology + link profile helper
 scripts/test/pp_hard_force_smoke.sh             # N-HARD-FORCE runner
 scripts/test/pp_hard_call_smoke.sh              # B-HARD-CALL / MSG+CALL
 scripts/test/pp_hard_link_smoke.sh              # Wave 2: --profile lossy|asym|bw
+scripts/test/pp_hard_disco_smoke.sh             # Wave 3: --profile stale-addr|seed-only
 scripts/test/pp_local_test.sh run --suite hard       # Wave 1 entry
 scripts/test/pp_local_test.sh run --suite hard-w2    # Wave 2 entry
-pp-node-probe --mode bridge-target|bridge-via-hop|media-recv|media-send
+scripts/test/pp_local_test.sh run --suite hard-w3    # Wave 3 entry
+pp-node-probe --mode bridge-target|bridge-via-hop|direct-expect-fail|media-recv|media-send
 ```
 
 **Landed (Wave 1):** isolation + circuit/media force + product call + chat-during-call on forced nets.  
 **Landed (Wave 2 scaffold):** netem/tbf profiles + `N-HARD-LOSSY` / `ASYM` / `BW` via `--suite hard-w2`.  
-**Next:** Wave 3 discovery — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
+**Landed (Wave 3 scaffold):** `N-HARD-STALE-ADDR` / `SEED-ONLY` via `--suite hard-w3` (DIR/DHT/ADMIT-HARD still gated).  
+**Next:** Wave 3 remainder when directory/DHT/admit hooks exist — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

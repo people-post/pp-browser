@@ -18,6 +18,7 @@ Examples:
 ./scripts/platform/pp_node_package_linux.sh all
 ./scripts/test/pp_local_test.sh run --suite hard
 ./scripts/test/pp_local_test.sh run --suite hard-w2
+./scripts/test/pp_local_test.sh run --suite hard-w3
 ./scripts/dev/wipe_local_profile.sh --dry-run
 ```
 

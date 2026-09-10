@@ -227,6 +227,8 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-HARD-LOSSY | **Scaffold** | [`pp_hard_link_smoke.sh`](../../scripts/test/pp_hard_link_smoke.sh) `--profile lossy`; driver `--suite hard-w2`. Netem both peer legs; N-HARD-FORCE under impairment; one retry. |
 | N-HARD-ASYM | **Scaffold** | `pp_hard_link_smoke.sh --profile asym`; `--suite hard-w2`. Netem peer-a only. |
 | N-HARD-BW | **Scaffold** | `pp_hard_link_smoke.sh --profile bw`; `--suite hard-w2`. `tbf` both legs; B-HARD-CALL under cap. |
+| N-HARD-STALE-ADDR | **Scaffold** | [`pp_hard_disco_smoke.sh`](../../scripts/test/pp_hard_disco_smoke.sh) `--profile stale-addr`; `--suite hard-w3`. Stale direct fails; hop path with real MA. |
+| N-HARD-SEED-ONLY | **Scaffold** | `pp_hard_disco_smoke.sh --profile seed-only`; `--suite hard-w3`. Warm-hop + PeerId-only StartBridge. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---
@@ -304,7 +306,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ## Soft designs — hard lab (Gate F)
 
-**Status:** Wave 1 + Wave 2 scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+**Status:** Wave 1–3 (STALE/SEED) scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 **Problem:** Relay-smoke + host probes do not force **A↛B**. Deployment risk needs isolated nets + optional impairments.
 
@@ -314,7 +316,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 Wave 0  loopback + L0–L2 + B-CALL-HOP     (keep green)
 Wave 1  forced hop clean                  N-HARD-FORCE + B-HARD-CALL + B-HARD-MSG+CALL (**scaffold**)
 Wave 2  lossy / asym / bw                 N-HARD-LOSSY + ASYM + BW (**scaffold**; `--suite hard-w2`)
-Wave 3  stale / seed / dir / DHT / admit
+Wave 3  stale / seed / dir / DHT / admit  STALE-ADDR + SEED-ONLY (**scaffold**; `--suite hard-w3`); DIR/DHT/ADMIT gated
 Wave 4  multi-hop circuit                 (after media-hop L3.5)
 Wave 5  NAT shapes / UPnP / v6            (weekly/manual)
 Wave 6  product stress on hard topo
@@ -323,7 +325,7 @@ Wave 7  horizons                          (placeholders)
 
 **Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable in CI.
 
-**Driver:** `pp_local_test.sh run --suite hard` (Wave 1 trio) / `--suite hard-w2` (Wave 2 link profiles); ports **18618**. Do not conflate with `--suite node` / relay-smoke (**18518**).
+**Driver:** `pp_local_test.sh run --suite hard` / `hard-w2` / `hard-w3`; ports **18618**. Do not conflate with `--suite node` / relay-smoke (**18518**).
 
 
 ---
@@ -376,4 +378,4 @@ Later work is intentionally underspecified until evidence exists:
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
 5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 via `--suite hard`; Wave 2 netem via `--suite hard-w2`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
+6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 `--suite hard`; Wave 2 `--suite hard-w2`; Wave 3 STALE/SEED `--suite hard-w3`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
