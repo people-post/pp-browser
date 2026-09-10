@@ -7,13 +7,14 @@
 # this file exports PP_BROWSER_SDL3_* for platform/media/render.
 
 include(FetchContent)
+include(PpFetchPin)
 
 set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-set(PP_CPP_UI_GIT_TAG "v0.2.1"
-  CACHE STRING "Release tag on pp-cpp-ui main (not a branch name)")
+pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.2.1"
+  "Release tag on pp-cpp-ui main (not a branch name)")
 
 # RmlUi unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
 # Enabling RMLUI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
