@@ -767,21 +767,23 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
    - `Site` if every remote is private-IPv4 and local is private (v1)
    - Else `Wide` (cross-net / unknown). **Empty remotes map or a remote with missing listen MAs → `Wide`** (fail closed toward public hop).
 2. **First hop** (`SelectCallMediaHop`):
-   - `Link`/`Site` + durable Node + local advertise MA → PreferLocal first
+   - `Link` + durable Node + local advertise MA + **LAN reachability confirmed** (Amp connected / mDNS) → PreferLocal first
+   - `Site` → **never** PreferLocal (different private subnets cannot dial PreferLocal MA)
+   - Unconfirmed `Link` (same-/24 alone — common CGNAT/home collision) → treat PreferLocal as disallowed; pick org/directory public MA
    - `Wide` → **never** PreferLocal with a private advertise MA; pick first dialable OrgSeed / DirectoryNode / DhtDiscovered with non-private MA
    - PreferLocal on `Wide` only when local advertise MA is non-private
    - Contact hops remain V030-gated (`media_relay` ad)
-3. **Fan-out** — PreferLocal `CallSfuAttach` with RFC1918 MA only when hop is PreferLocal **and** scope is Link/Site.
+3. **Fan-out** — PreferLocal `CallSfuAttach` with RFC1918 MA only when hop is PreferLocal **and** Link is LAN-confirmed. Never put RFC1918 PreferLocal MA on `CallSfuAttach` for Wide/unconfirmed calls.
 4. **Migration FSM** (per `call_id` on owner Topology):
    - `Idle` → `Attaching(hop)` → `Attached(hop)`
    - Same hop → re-fan-out only (no Detach)
    - At most one SoftMigrate in flight; further hop-hints coalesce to `pending_hop_prefer_` and flush once
    - `migrate_generation_` bumps on Leave/teardown — not on every hop-hint
-5. **Guest path** — Keep private-MA fail-fast off-LAN. Hop-hint is a rare re-pick after one attach failure to the *planned* hop, not the primary WAN path.
+5. **Guest path** — Private hop MA only when same /24, local is private-only, **and** hop peer is LAN-confirmed; else fail-fast `call_sfu_attach_failed`. Ignore inbound attach/refuse for non-active `call_id`. Hop-hint is a rare re-pick after one attach failure to the *planned* hop, not the primary WAN path.
 
 **Supersedes / amends:** V028§3 PreferLocal-first ranking; V029 hop-hint as primary recovery (hints remain under FSM as rare re-pick). Keeps V021 owner pick, V025 no 1:1 auto-SFU, V027/V029 no phone PreferLocal host, V030 caps filter.
 
-**Rationale:** Cross-net dogfood PreferLocal-prepended private LAN MA into `CallSfuAttach` → guest timeout → hop-hint SoftMigrate gen stampede / stuck Connecting. Scope-aware first pick + idempotent migration matches [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md).
+**Rationale:** Cross-net dogfood PreferLocal-prepended private LAN MA into `CallSfuAttach` → guest timeout → hop-hint SoftMigrate gen stampede / stuck Connecting. Same RFC1918 /24 across different LANs falsely inferred Link — PreferLocal requires Amp/mDNS confirmation. Scope-aware first pick + idempotent migration matches [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md).
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021–V030; mesh N023.
 

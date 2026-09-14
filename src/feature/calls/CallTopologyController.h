@@ -102,6 +102,11 @@ public:
      */
     std::function<std::unordered_map<std::string, std::vector<std::string>>()>
         resolve_remote_listen_by_peer;
+    /**
+     * V035: true when peer is LAN-confirmed (mDNS / Amp connected on link).
+     * PreferLocal for private advertise requires this — same-/24 alone is insufficient.
+     */
+    std::function<bool(const std::string& peer_id)> peer_lan_confirmed;
   };
 
   CallTopologyController(CallTopologyHost& host, CallSessionStore& sessions, ContactsStore& contacts,
@@ -194,7 +199,11 @@ private:
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
   std::string ResolveLocalAdvertiseMa(const std::string& local_peer_id) const;
+  std::vector<std::string> ResolveLocalAdvertiseMas() const;
   CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
+  bool LanReachabilityConfirmedForCall(const std::string& call_id,
+                                       const std::string& local_identity) const;
+  bool IsActiveCallForTopology(const std::string& call_id) const;
   void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
                              const std::string& local_identity);
   void FlushPendingHopPrefer(const std::string& call_id);

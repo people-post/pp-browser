@@ -313,6 +313,25 @@ void CallStack::WireMediaRelayDeps() {
     return call_sessions_->ListMediaRelayCapablePeerIds();
   };
   deps.resolve_remote_listen_by_peer = [this]() { return call_peer_listen_mas_; };
+  deps.peer_lan_confirmed = [this](const std::string& peer_id) {
+    if (peer_id.empty()) {
+      return false;
+    }
+    if (call_lan_confirmed_peers_.count(peer_id) > 0) {
+      return true;
+    }
+    // Amp already connected on link → PreferLocal safe (true LAN SoftMigrate).
+    MeshHost* m = mesh();
+    if (!m) {
+      return false;
+    }
+    if (auto chat = m->ChatDeps()) {
+      if (chat->links.IsConnected(peer_id)) {
+        return true;
+      }
+    }
+    return false;
+  };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();

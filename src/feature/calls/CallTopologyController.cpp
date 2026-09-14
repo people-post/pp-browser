@@ -389,37 +389,36 @@ bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
 }
 
 std::string CallTopologyController::ResolveLocalAdvertiseMa(const std::string& local_peer_id) const {
-  std::string local_ma;
-  if (relay_deps_.resolve_local_advertise) {
-    const auto live = relay_deps_.resolve_local_advertise();
-    if (!live.empty()) {
-      local_ma = live.front();
-    }
+  const auto mas = ResolveLocalAdvertiseMas();
+  if (mas.empty()) {
+    return {};
   }
-  if (local_ma.empty() && !relay_deps_.local_advertise_multiaddrs.empty()) {
-    local_ma = relay_deps_.local_advertise_multiaddrs.front();
-  }
-  if (local_ma.empty() && !relay_deps_.local_listen_multiaddr.empty()) {
-    local_ma = relay_deps_.local_listen_multiaddr;
-    if (!local_peer_id.empty() && local_ma.find("/p2p/") == std::string::npos) {
-      local_ma += "/p2p/" + local_peer_id;
-    }
+  std::string local_ma = mas.front();
+  if (!local_peer_id.empty() && local_ma.find("/p2p/") == std::string::npos) {
+    local_ma += "/p2p/" + local_peer_id;
   }
   return local_ma;
 }
 
-CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
-                                                       const std::string& local_identity) const {
-  std::vector<std::string> local_mas = relay_deps_.local_advertise_multiaddrs;
-  if (local_mas.empty() && !relay_deps_.local_listen_multiaddr.empty()) {
-    local_mas.push_back(relay_deps_.local_listen_multiaddr);
-  }
+std::vector<std::string> CallTopologyController::ResolveLocalAdvertiseMas() const {
   if (relay_deps_.resolve_local_advertise) {
     const auto live = relay_deps_.resolve_local_advertise();
     if (!live.empty()) {
-      local_mas = live;
+      return live;
     }
   }
+  if (!relay_deps_.local_advertise_multiaddrs.empty()) {
+    return relay_deps_.local_advertise_multiaddrs;
+  }
+  if (!relay_deps_.local_listen_multiaddr.empty()) {
+    return {relay_deps_.local_listen_multiaddr};
+  }
+  return {};
+}
+
+CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
+                                                       const std::string& local_identity) const {
+  const std::vector<std::string> local_mas = ResolveLocalAdvertiseMas();
 
   std::unordered_map<std::string, std::vector<std::string>> remotes;
   if (relay_deps_.resolve_remote_listen_by_peer) {
@@ -443,6 +442,77 @@ CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_i
     remotes = std::move(joined_remotes);
   }
   return InferCallHopScope(local_mas, remotes);
+}
+
+bool CallTopologyController::LanReachabilityConfirmedForCall(
+    const std::string& call_id, const std::string& local_identity) const {
+  if (!relay_deps_.peer_lan_confirmed) {
+    return false;
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return false;
+  }
+  std::unordered_map<std::string, std::vector<std::string>> remotes;
+  if (relay_deps_.resolve_remote_listen_by_peer) {
+    remotes = relay_deps_.resolve_remote_listen_by_peer();
+  }
+  for (const CallParticipant& p : *participants) {
+    if (p.state != CallParticipantState::Joined || p.identity.empty() ||
+        p.identity == local_identity) {
+      continue;
+    }
+    if (relay_deps_.peer_lan_confirmed(p.identity)) {
+      return true;
+    }
+    auto it = remotes.find(p.identity);
+    if (it == remotes.end()) {
+      continue;
+    }
+    for (const std::string& ma : it->second) {
+      const auto p2p = ma.rfind("/p2p/");
+      if (p2p == std::string::npos) {
+        continue;
+      }
+      std::string peer_id = ma.substr(p2p + 5);
+      const auto slash = peer_id.find('/');
+      if (slash != std::string::npos) {
+        peer_id.resize(slash);
+      }
+      if (!peer_id.empty() && relay_deps_.peer_lan_confirmed(peer_id)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id) const {
+  if (call_id.empty()) {
+    return false;
+  }
+  if (!media_.ActiveCallId().empty() && media_.ActiveCallId() == call_id) {
+    return true;
+  }
+  if (!active_sfu_call_id_.empty() && active_sfu_call_id_ == call_id) {
+    return true;
+  }
+  if (!soft_migrate_call_id_.empty() && soft_migrate_call_id_ == call_id) {
+    return true;
+  }
+  if (!sfu_attach_wait_call_id_.empty() && sfu_attach_wait_call_id_ == call_id) {
+    return true;
+  }
+  auto active = sessions_.ListActiveSessions();
+  if (!active) {
+    return false;
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == call_id) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void CallTopologyController::FanOutSfuAttachForHop(const std::string& call_id,
@@ -722,7 +792,7 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     }
 
     SoftMigrateAction action = DecideSoftMigrate(decision_in);
-    // PreferLocal durable Node hosts media_relay when scope allows (V035 Link/Site).
+    // PreferLocal durable Node hosts media_relay when Link + LAN confirmed (V035).
     // Sticky-initiator WaitForAttach must not block PreferLocal SoftMigrate on LAN.
     const CallHopScope scope = InferScopeForCall(call_id, *local);
     std::string local_peer_for_scope;
@@ -730,12 +800,13 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
       local_peer_for_scope = *pid;
     }
     const std::string local_ma_for_scope = ResolveLocalAdvertiseMa(local_peer_for_scope);
+    const bool lan_ok = LanReachabilityConfirmedForCall(call_id, *local);
     const bool prefer_local_ok =
         PreferLocalAllowedForScope(scope, relay_deps_.prefer_local_as_hop && relay_deps_.relay->IsStarted(),
-                                   local_ma_for_scope);
+                                   local_ma_for_scope, lan_ok);
     if (action == SoftMigrateAction::WaitForAttach && prefer_local_ok) {
       log().info << "SoftMigrate PreferLocal Node overrides WaitForAttach → PickHop call_id="
-                 << call_id << " scope=" << static_cast<int>(scope);
+                 << call_id << " scope=" << static_cast<int>(scope) << " lan_ok=" << (lan_ok ? 1 : 0);
       action = SoftMigrateAction::PickHop;
     } else if (action == SoftMigrateAction::PickHop && !relay_deps_.prefer_local_as_hop) {
       // Phones must not PickHop when a durable media_relay Node is available — quote hits
@@ -854,14 +925,16 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
   }
   const std::string local_ma = ResolveLocalAdvertiseMa(local_peer_id);
   const CallHopScope hop_scope = InferScopeForCall(call_id, *local);
+  const bool lan_ok = LanReachabilityConfirmedForCall(call_id, *local);
   const bool prefer_local_flag =
       relay_deps_.prefer_local_as_hop && relay_deps_.relay->IsStarted() && !local_peer_id.empty();
   if (prefer_local_flag && local_ma.empty()) {
     log().warning << "PreferLocal skipped: no advertise multiaddr for local hop";
   }
-  ranked = SelectCallMediaHop(std::move(ranked), hop_scope, local_peer_id, prefer_local_flag, local_ma);
+  ranked = SelectCallMediaHop(std::move(ranked), hop_scope, local_peer_id, prefer_local_flag, local_ma,
+                              lan_ok);
   log().info << "SoftMigrate PickHop scope=" << static_cast<int>(hop_scope)
-             << " prefer_local=" << (prefer_local_flag ? 1 : 0)
+             << " lan_ok=" << (lan_ok ? 1 : 0) << " prefer_local=" << (prefer_local_flag ? 1 : 0)
              << " first=" << (ranked.empty() ? "" : ranked.front().peer_id)
              << " call_id=" << call_id;
   if (!prefer_hop_peer_id.empty()) {
@@ -1908,6 +1981,11 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   log().info << "OnInboundSfuAttach call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " sfu=" << (sfu_attached_ ? 1 : 0) << " inflight=" << (soft_migrate_in_flight_ ? 1 : 0);
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "OnInboundSfuAttach ignored (not active call) call_id=" << call_id
+               << " media_active=" << media_.ActiveCallId();
+    return {};
+  }
   if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
     // Already attached (duplicate fan-out / late roster / peer publisher announce).
     NoteRemotePublisherFromAttach(attach);
@@ -1937,24 +2015,14 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   // Cross-net: PreferLocal often fans a private LAN MA. Fail fast and ask owner to re-pick a
   // shared public hop instead of waiting for media-relay timeout.
   if (!attach.hop_multiaddr.empty() && MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
-    bool same_lan = false;
-    auto consider = [&](const std::string& local_ma) {
-      if (!local_ma.empty() && IsSameIpv4Subnet24(attach.hop_multiaddr, local_ma)) {
-        same_lan = true;
-      }
-    };
-    consider(relay_deps_.local_listen_multiaddr);
-    for (const std::string& ma : relay_deps_.local_advertise_multiaddrs) {
-      consider(ma);
-    }
-    if (relay_deps_.resolve_local_advertise) {
-      for (const std::string& ma : relay_deps_.resolve_local_advertise()) {
-        consider(ma);
-      }
-    }
-    if (!same_lan) {
-      log().warning << "OnInboundSfuAttach skip private hop MA (not same LAN) hop="
-                    << attach.hop_peer_id << " ma=" << attach.hop_multiaddr;
+    const auto local_mas = ResolveLocalAdvertiseMas();
+    const bool may_dial = GuestMayDialPrivateHopMa(attach.hop_multiaddr, local_mas);
+    const bool lan_hop =
+        relay_deps_.peer_lan_confirmed && relay_deps_.peer_lan_confirmed(attach.hop_peer_id);
+    if (!may_dial || !lan_hop) {
+      log().warning << "OnInboundSfuAttach skip private hop MA hop=" << attach.hop_peer_id
+                    << " ma=" << attach.hop_multiaddr << " may_dial=" << (may_dial ? 1 : 0)
+                    << " lan_hop=" << (lan_hop ? 1 : 0);
       BeginSfuAttachWait(call_id);
       host_.TopologySetMediaActivity(Tr("call.status.looking_for_another_path"));
       host_.TopologyNotifyRingChanged();
@@ -2243,6 +2311,10 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
 }
 
 void CallTopologyController::OnInboundHopRefuse(const CallHopRefuseDetail& detail) {
+  if (!IsActiveCallForTopology(detail.call_id)) {
+    log().info << "CallHopRefuse ignored (not active call) call_id=" << detail.call_id;
+    return;
+  }
   auto local = host_.TopologyLocalIdentity();
   if (!local) {
     return;

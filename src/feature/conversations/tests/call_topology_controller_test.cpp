@@ -301,6 +301,8 @@ protected:
       (*remotes)[id] = {subnet_prefix + std::to_string(host++) + "/tcp/1/p2p/remote"};
     }
     deps.resolve_remote_listen_by_peer = [remotes]() { return *remotes; };
+    // PreferLocal private advertise requires LAN confirmation (not same-/24 alone).
+    deps.peer_lan_confirmed = [](const std::string& /*peer_id*/) { return true; };
   }
 
   std::filesystem::path data_dir_;
@@ -749,6 +751,65 @@ TEST_F(CallTopologyControllerTest, WideMissingRemotesPicksSeed) {
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 0);
   EXPECT_EQ(relay_->last_quote_hop, seed);
+}
+
+TEST_F(CallTopologyControllerTest, LinkWithoutLanConfirmedPicksSeed) {
+  // Coincidental same-/24 without Amp/mDNS confirmation must not PreferLocal (dogfood WAN).
+  const std::string call_id = "call:false-link";
+  const std::string seed = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
+  relay_->started = true;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = true;
+  deps.local_advertise_multiaddrs = {"/ip4/192.168.1.10/tcp/18517/p2p/" + relay_->local_peer_id};
+  deps.bootstrap_peers = {"/ip4/54.1.2.3/tcp/443/p2p/" + seed};
+  auto remotes = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
+  (*remotes)["account:B"] = {"/ip4/192.168.1.20/tcp/1/p2p/b"};
+  (*remotes)["account:C"] = {"/ip4/192.168.1.30/tcp/1/p2p/c"};
+  deps.resolve_remote_listen_by_peer = [remotes]() { return *remotes; };
+  // No peer_lan_confirmed → PreferLocal denied.
+  topo_->SetMediaRelayDeps(std::move(deps));
+  dial_->force_dialable[seed] = true;
+
+  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  ASSERT_TRUE(ok) << ok.error().message;
+  EXPECT_EQ(relay_->local_hop_calls, 0);
+  EXPECT_EQ(relay_->last_quote_hop, seed);
+}
+
+TEST_F(CallTopologyControllerTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall) {
+  const std::string active = "call:active-now";
+  const std::string stale = "call:stale-old";
+  SeedJoinedCall(active, {"account:A", "account:B", "account:C"}, 1000);
+  // Stale session left in store but not Active.
+  CallSession old_session;
+  old_session.call_id = stale;
+  old_session.origin_thread_id = "thread-1";
+  old_session.media_mode = CallMediaMode::Voice;
+  old_session.state = CallSessionState::Ended;
+  old_session.created_at = 1;
+  old_session.media_epoch = 1;
+  ASSERT_TRUE(sessions_->UpsertSession(old_session));
+  host_->local_identity = "account:B";
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.local_advertise_multiaddrs = {"/ip4/10.0.0.20/tcp/1/p2p/guest"};
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail attach;
+  attach.call_id = stale;
+  attach.hop_peer_id = "12D3KooWPreferLocal";
+  attach.hop_multiaddr = "/ip4/192.168.1.132/udp/59286/adp/1.0.0/p2p/12D3KooWPreferLocal";
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(stale, attach));
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_EQ(relay_->quote_calls, 0);
+  EXPECT_TRUE(host_->directs.empty()) << "must not ReportSfuAttachFailed for stale call";
 }
 
 TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {

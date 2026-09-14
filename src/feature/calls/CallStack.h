@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -146,6 +147,8 @@ private:
   bool ephemeral_listen_desired_ = false;
   /** Invite/accept listen multiaddrs by peer identity (V035 SoftMigrate scope). */
   std::unordered_map<std::string, std::vector<std::string>> call_peer_listen_mas_;
+  /** PeerIds confirmed on LAN (mDNS / note_lan) for PreferLocal gating (V035). */
+  std::unordered_set<std::string> call_lan_confirmed_peers_;
 
   ICallMediaTransport* CallMediaTransport();
 };
