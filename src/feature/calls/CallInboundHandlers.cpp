@@ -237,6 +237,13 @@ Roe<void> CallSessionManager::HandleInboundAccept(const std::string& detail_json
   }
   (void)sessions_.UpdateInviteStatus(accept->call_id, identity, "accepted");
 
+  if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
+    log().info << "Inbound CallAccept ignored (ended session) call_id=" << accept->call_id
+               << " from=" << identity;
+    NotifyRingChanged();
+    return {};
+  }
+
   if (session && session->has_value()) {
     const uint32_t epoch = (*session)->media_epoch;
     auto key_bytes = media_keys_.LoadEpochKey(accept->call_id, epoch);

@@ -12,7 +12,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
 | ADRs | V001–**V035** |
-| **V035 SoftMigrate scope** | First hop from Link/Site/Wide; PreferLocal only when remotes share LAN; Wide → org/directory public MA; migration FSM (no PreferLocal-first + hop-hint stampede) |
+| **V035 SoftMigrate scope** | PreferLocal only for **LAN-confirmed Link**; Site/Wide → org seed; ignore stale CallSfuAttach/HopRefuse/**CallAccept** when another call is bound (WaitForAttach / media ActiveCallId exclusive — zombie sessions no longer steal topology) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |

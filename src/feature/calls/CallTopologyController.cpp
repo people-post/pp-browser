@@ -491,17 +491,20 @@ bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id)
   if (call_id.empty()) {
     return false;
   }
-  if (!media_.ActiveCallId().empty() && media_.ActiveCallId() == call_id) {
-    return true;
+  // When media or an in-flight topology bind is set, only that call is active — do not fall
+  // through to ListActiveSessions (zombie non-Ended sessions from prior calls stay "Active").
+  const std::string media_id = media_.ActiveCallId();
+  if (!media_id.empty()) {
+    return media_id == call_id;
   }
-  if (!active_sfu_call_id_.empty() && active_sfu_call_id_ == call_id) {
-    return true;
+  if (!soft_migrate_call_id_.empty()) {
+    return soft_migrate_call_id_ == call_id;
   }
-  if (!soft_migrate_call_id_.empty() && soft_migrate_call_id_ == call_id) {
-    return true;
+  if (!sfu_attach_wait_call_id_.empty()) {
+    return sfu_attach_wait_call_id_ == call_id;
   }
-  if (!sfu_attach_wait_call_id_.empty() && sfu_attach_wait_call_id_ == call_id) {
-    return true;
+  if (!active_sfu_call_id_.empty()) {
+    return active_sfu_call_id_ == call_id;
   }
   auto active = sessions_.ListActiveSessions();
   if (!active) {
@@ -1824,6 +1827,12 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
 
 bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
                                                   const std::string& joiner_identity) {
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "OnRemoteAcceptJoined ignored (not active call) call_id=" << call_id
+               << " joiner=" << joiner_identity << " media_active=" << media_.ActiveCallId();
+    // true → caller must not ScheduleStartDirectMedia for a stale/zombie call.
+    return true;
+  }
   if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     log().info << "OnRemoteAcceptJoined call_id=" << call_id << " n=" << n_joined
                << " joiner=" << joiner_identity << " sfu=" << (sfu_attached_ ? 1 : 0)

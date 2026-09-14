@@ -812,6 +812,23 @@ TEST_F(CallTopologyControllerTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall
   EXPECT_TRUE(host_->directs.empty()) << "must not ReportSfuAttachFailed for stale call";
 }
 
+TEST_F(CallTopologyControllerTest, StaleRemoteAcceptIgnoredWhenWaitingOtherCall) {
+  // Dogfood: zombie non-Ended session still in ListActiveSessions while guest WaitForAttach
+  // on a new call — must not SoftMigrate / ScheduleStartDirectMedia for the old call_id.
+  const std::string active = "call:active-wait";
+  const std::string stale = "call:zombie-outbound";
+  SeedJoinedCall(active, {"account:A", "account:B", "account:C"}, 2000);
+  SeedJoinedCall(stale, {"account:A", "account:Z"}, 1000);
+  host_->local_identity = "account:A";
+  topo_->BeginSfuAttachWait(active);
+
+  const size_t fanouts_before = host_->fanouts.size();
+  // true = topology "handled" (ignore) so caller must not ScheduleStartDirectMedia.
+  EXPECT_TRUE(topo_->OnRemoteAcceptJoined(stale, 3, "account:Z"));
+  EXPECT_EQ(host_->fanouts.size(), fanouts_before);
+  EXPECT_FALSE(topo_->IsSoftMigrateInFlight());
+}
+
 TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {
   const std::string call_id = "call:hint-refanout";
   const std::string seed = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
