@@ -188,6 +188,13 @@ void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
   seed_reserve_ = std::move(reserve);
 }
 
+std::string CallMediaBridge::MediaPathKind() const {
+  if (!media_peer_identity_.empty() && dial_ && dial_->HasCallMediaCircuitHop(media_peer_identity_)) {
+    return "circuit";
+  }
+  return media_path_kind_;
+}
+
 void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
@@ -362,10 +369,16 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       return;
     }
     if (dial_->IsDialable(peer_identity)) {
-      if (media_path_kind_.empty()) {
-        media_path_kind_ = dial_->HasCallMediaCircuitHop(peer_identity) ? "circuit" : "direct";
+      if (dial_->HasCallMediaCircuitHop(peer_identity)) {
+        media_path_kind_ = "circuit";
+      } else if (*circuit_started) {
+        // Punch (or concurrent Session) made the peer dialable without a circuit hop.
+        media_path_kind_ = "punched";
+      } else if (media_path_kind_.empty()) {
+        media_path_kind_ = "direct";
       }
-      log().info << "Call-media peer dialable peer=" << peer_identity;
+      log().info << "Call-media peer dialable peer=" << peer_identity
+                 << " path=" << media_path_kind_;
       on_done({});
       return;
     }
@@ -990,6 +1003,7 @@ void CallMediaBridge::ReleaseDirectTransport() {
   }
   direct_.Detach();
   media_peer_identity_.clear();
+  media_path_kind_.clear();
   inbound_deferred_peer_id_.clear();
   inbound_remote_stream_.store(0, std::memory_order_release);
   // Do not ClearRemoteAudioTracks here — SoftMigrate+2s would wipe live media_relay tracks

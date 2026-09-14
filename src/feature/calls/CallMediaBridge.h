@@ -88,7 +88,7 @@ public:
   void SetLifecycle(CallLifecycle* lifecycle);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
-  std::string MediaPathKind() const { return media_path_kind_; }
+  std::string MediaPathKind() const;
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
