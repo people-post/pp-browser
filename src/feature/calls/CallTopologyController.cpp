@@ -1152,19 +1152,29 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     relay_deps_.relay->Detach();
     return Error("attach aborted");
   }
-  if (!IsMigrateGenerationCurrent(gen_at_start)) {
-    log().info << "AttachLocalToSfu continuing StartSfu despite stale migrate gen want="
-               << gen_at_start
+  const bool gen_current = IsMigrateGenerationCurrent(gen_at_start);
+  if (!gen_current) {
+    log().info << "AttachLocalToSfu stale migrate gen want=" << gen_at_start
                << " have=" << migrate_generation_.load(std::memory_order_acquire)
-               << " call_id=" << call_id;
+               << " call_id=" << call_id << " sfu=" << (sfu_attached_ ? 1 : 0)
+               << " media=" << media_.ActiveCallId();
   }
-  // Dogfood: parallel CallSfuAttach AcceptAndAttach storms re-enter StartSfu → send-swap clears
-  // RX tracks (intermittent audio) while UI stays Connecting (ReleaseDirect gated on stale gen).
-  const bool already_live = sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id &&
-                            !attached_hop_peer_id_.empty() && attached_hop_peer_id_ == attach.hop_peer_id;
+  // Dogfood: parallel CallSfuAttach AcceptAndAttach storms re-enter StartSfu → send-swap /
+  // Detach clears RX (quality flips, brief audio, reconnecting flash). Once this call already
+  // owns SFU duplex, skip StartSfu — even when hop differs or migrate gen is stale.
+  const bool duplex_live =
+      media_.IsSfuMode() && media_.ActiveCallId() == call_id && (sfu_attached_ || media_.IsActive());
+  const bool same_hop =
+      !attached_hop_peer_id_.empty() && attached_hop_peer_id_ == attach.hop_peer_id;
+  // Skip StartSfu when duplex already live on this hop, or when this worker is stale
+  // (newer SoftMigrate/attach owns the generation). Intentional hop switch (current gen,
+  // different hop) still StartSfu send-swap so TX follows the new AcceptAndAttach.
+  const bool already_live = duplex_live && (same_hop || !gen_current);
   if (already_live) {
     log().info << "AttachLocalToSfu skip StartSfu (already live) call_id=" << call_id
-               << " hop=" << attach.hop_peer_id;
+               << " hop=" << attach.hop_peer_id
+               << " attached_hop=" << attached_hop_peer_id_ << " same_hop=" << (same_hop ? 1 : 0)
+               << " gen_current=" << (gen_current ? 1 : 0);
     sfu_frames_ready->store(true, std::memory_order_release);
     attaching_hop_peer_id_.clear();
     awaiting_sfu_recovery_ = false;
@@ -1173,15 +1183,27 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
       active_sfu_call_id_ = call_id;
       sfu_guest_reattach_attempts_ = 0;
     }
+    if (!attach.hop_peer_id.empty()) {
+      attached_hop_peer_id_ = attach.hop_peer_id;
+    }
+    sfu_attached_ = true;
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
     AnnounceLocalPublisher(call_id, attach);
     host_.TopologyClearMediaPeerIdentity();
     ClearSfuAttachWait();
     RefreshAdaptation(call_id);
-    host_.TopologyReleaseDirectMedia();
+    // Do not ReleaseDirect / DirectConnected again — duplicate completes flash chrome.
     host_.TopologyClearMediaActivity();
     log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
+    return {};
+  }
+  // Superseded worker: a newer SoftMigrate/attach owns the flight — do not StartSfu (and do not
+  // Detach; that would kill the newer AcceptAndAttach).
+  if (!gen_current && !attaching_hop_peer_id_.empty() &&
+      attaching_hop_peer_id_ != attach.hop_peer_id) {
+    log().info << "AttachLocalToSfu skip StartSfu (superseded hop) call_id=" << call_id
+               << " want_hop=" << attach.hop_peer_id << " in_flight=" << attaching_hop_peer_id_;
     return {};
   }
   if (!self_hop) {
@@ -1305,13 +1327,26 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
   log().info << "AttachLocalToSfu begin call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " already_sfu=" << (sfu_attached_ ? 1 : 0);
-  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id &&
-      !attached_hop_peer_id_.empty() && attached_hop_peer_id_ == attach.hop_peer_id) {
-    log().info << "AttachLocalToSfu no-op already on hop=" << attach.hop_peer_id
-               << " call_id=" << call_id;
+  // Same call already owns SFU duplex — never open a parallel AcceptAndAttach (Detach kills RX).
+  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+    log().info << "AttachLocalToSfu no-op already duplex call_id=" << call_id
+               << " hop=" << attach.hop_peer_id << " attached_hop=" << attached_hop_peer_id_;
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
+    if (!attach.hop_peer_id.empty()) {
+      attached_hop_peer_id_ = attach.hop_peer_id;
+    }
     host_.TopologyClearMediaActivity();
+    on_done(Roe<void>());
+    return;
+  }
+  // SoftMigrate sets attaching_hop before calling us — same hop means we own this attempt.
+  // A different in-flight hop must not start a parallel AcceptAndAttach (Detach kills RX).
+  if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ != attach.hop_peer_id) {
+    log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
+               << " in_flight_hop=" << attaching_hop_peer_id_ << " requested=" << attach.hop_peer_id;
+    NoteRemotePublisherFromAttach(attach);
+    BeginSfuAttachWait(call_id);
     on_done(Roe<void>());
     return;
   }
@@ -2125,9 +2160,17 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     return {};
   }
   // Same hop already dialing — coalesce even if soft_migrate_in_flight_ briefly cleared.
-  if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ == attach.hop_peer_id) {
-    log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
-               << " hop=" << attach.hop_peer_id;
+  if (!attaching_hop_peer_id_.empty()) {
+    if (attaching_hop_peer_id_ == attach.hop_peer_id) {
+      log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
+                 << " hop=" << attach.hop_peer_id;
+    } else {
+      // Different hop while AcceptAndAttach in flight — defer; do not parallel Detach.
+      pending_inbound_sfu_attach_ = attach;
+      pending_inbound_sfu_attach_call_id_ = call_id;
+      log().info << "OnInboundSfuAttach deferred (attach in flight) call_id=" << call_id
+                 << " in_flight_hop=" << attaching_hop_peer_id_ << " requested=" << attach.hop_peer_id;
+    }
     BeginSfuAttachWait(call_id);
     return {};
   }
@@ -2137,12 +2180,6 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     if (!soft_migrate_call_id_.empty() && call_id != soft_migrate_call_id_) {
       log().info << "OnInboundSfuAttach ignored (SoftMigrate in flight for other call)"
                  << " pending_call=" << soft_migrate_call_id_ << " call_id=" << call_id;
-      return {};
-    }
-    if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ == attach.hop_peer_id) {
-      log().info << "OnInboundSfuAttach coalesce (already attaching same hop) call_id=" << call_id
-                 << " hop=" << attach.hop_peer_id;
-      BeginSfuAttachWait(call_id);
       return {};
     }
     pending_inbound_sfu_attach_ = attach;
@@ -2187,15 +2224,25 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
                  << " have=" << migrate_generation_.load(std::memory_order_acquire)
                  << " attached=" << (sfu_attached_ ? 1 : 0) << " ok=" << (ok ? 1 : 0);
       AppRuntime::PostUI([this, gen, call_id, attach, ok]() {
-        // StartSfu may have completed despite migrate_generation_ stampede.
-        if (ok && sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
-          soft_migrate_in_flight_ = false;
-          soft_migrate_call_id_.clear();
-          pending_inbound_sfu_attach_.reset();
-          pending_inbound_sfu_attach_call_id_.clear();
-          ClearSfuAttachWait();
-          SyncSfuSubscriptions(call_id);
-          host_.TopologyClearMediaActivity();
+        const bool duplex =
+            sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+        // Attach finished successfully (StartSfu may still be settling on another worker).
+        // Never ReportSfuAttachFailed here — that makes the owner RefuseGuest → CallHopRefuse →
+        // LeaveCall mid-call (dogfood: Connected then aborted).
+        if (ok || duplex) {
+          if (soft_migrate_flight_gen_ == gen || duplex) {
+            soft_migrate_in_flight_ = false;
+            soft_migrate_call_id_.clear();
+          }
+          if (duplex) {
+            pending_inbound_sfu_attach_.reset();
+            pending_inbound_sfu_attach_call_id_.clear();
+            ClearSfuAttachWait();
+            SyncSfuSubscriptions(call_id);
+            host_.TopologyClearMediaActivity();
+          } else if (soft_migrate_flight_gen_ == gen) {
+            FlushPendingInboundSfuAttach();
+          }
           host_.TopologyNotifyRingChanged();
           return;
         }
@@ -2204,13 +2251,9 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
           soft_migrate_call_id_.clear();
           FlushPendingInboundSfuAttach();
         }
-        // Stale-gen abort left guest without StartSfu — ask owner to re-fan-out.
-        if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
-          BeginSfuAttachWait(call_id);
-          ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id,
-                                           "attach aborted (stale migrate gen)");
-          host_.TopologyNotifyRingChanged();
-        }
+        // True failure under a superseded gen — wait for a fresh fan-out, do not refuse.
+        BeginSfuAttachWait(call_id);
+        host_.TopologyNotifyRingChanged();
       });
       return;
     }
