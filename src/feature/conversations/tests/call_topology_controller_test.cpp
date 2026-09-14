@@ -943,6 +943,54 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   AppRuntime::ShutdownUI();
 }
 
+TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
+  // Dogfood: CallSfuAttach AcceptAndAttach ok then OnLocalAcceptJoined bumped migrate gen →
+  // aborted before StartSfu; caller Connected, guest stuck Connecting (streams=0).
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+  AppRuntime::PauseWorkers();
+  MeshControlPool control(1);
+  MeshControlDispatch::Install(&control);
+
+  const std::string call_id = "call:accept-keeps-attach";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  attach.hop_multiaddr =
+      "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
+  dial_->force_dialable[attach.hop_peer_id] = true;
+
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+  EXPECT_TRUE(topo_->IsSoftMigrateInFlight());
+
+  EXPECT_TRUE(topo_->OnLocalAcceptJoined(call_id, 3, std::nullopt));
+  EXPECT_TRUE(topo_->IsSoftMigrateInFlight()) << "must not cancel inbound attach";
+
+  AppRuntime::ResumeWorkers();
+  bool attached = false;
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (topo_->IsSfuAttached()) {
+      attached = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(attached) << "inbound attach must reach StartSfu after LocalAccept";
+  EXPECT_GE(relay_->attach_calls, 1);
+  EXPECT_EQ(relay_->detach_calls, 0);
+
+  MeshControlDispatch::Uninstall();
+  control.Shutdown();
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
 TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
   // Samsung dogfood: SyncSfuSubscriptions peers=1 (roster missing Moto) while Moto TX'd.
   // Peer CallSfuAttach publisher_stream_id must still Subscribe.

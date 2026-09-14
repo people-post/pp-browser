@@ -1108,7 +1108,9 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   host_.TopologyNoteMediaAttempted(call_id);
   host_.TopologyBindMediaCallId(call_id);
   if (!IsMigrateGenerationCurrent(gen_at_start)) {
-    log().info << "AttachLocalToSfu aborted before StartSfu (media stopped) call_id=" << call_id;
+    log().info << "AttachLocalToSfu aborted before StartSfu (stale migrate gen want=" << gen_at_start
+               << " have=" << migrate_generation_.load(std::memory_order_acquire)
+               << ") call_id=" << call_id;
     relay_deps_.relay->Detach();
     return Error("attach aborted");
   }
@@ -1149,7 +1151,9 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     return started.error();
   }
   if (!IsMigrateGenerationCurrent(gen_at_start)) {
-    log().info << "AttachLocalToSfu aborted after StartSfu (media stopped) call_id=" << call_id;
+    log().info << "AttachLocalToSfu aborted after StartSfu (stale migrate gen want=" << gen_at_start
+               << " have=" << migrate_generation_.load(std::memory_order_acquire)
+               << ") call_id=" << call_id;
     relay_deps_.relay->Detach();
     media_.Stop();
     sfu_attached_ = false;
@@ -1747,6 +1751,14 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     BeginSfuAttachWait(call_id);
     host_.TopologySetMediaActivity(Tr("call.status.connecting_media_relay"));
     host_.TopologyNotifyRingChanged();
+    if (soft_migrate_in_flight_ &&
+        (soft_migrate_call_id_.empty() || soft_migrate_call_id_ == call_id)) {
+      // Inbound CallSfuAttach already dialing — do not bump migrate_generation_.
+      log().info << "OnLocalAcceptJoined keep in-flight attach (invite hint) call_id=" << call_id;
+      pending_inbound_sfu_attach_ = attach;
+      pending_inbound_sfu_attach_call_id_ = call_id;
+      return true;
+    }
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
@@ -1783,6 +1795,28 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     BeginSfuAttachWait(call_id);
     host_.TopologySetMediaActivity(Tr("call.status.setting_up_group"));
     host_.TopologyNotifyRingChanged();
+    if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+      ClearSfuAttachWait();
+      SyncSfuSubscriptions(call_id);
+      return true;
+    }
+    // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes.
+    // Bumping migrate_generation_ here aborts that worker before StartSfu — caller shows
+    // Connected, guest stuck Connecting with streams=0.
+    if (soft_migrate_in_flight_ &&
+        (soft_migrate_call_id_.empty() || soft_migrate_call_id_ == call_id)) {
+      log().info << "OnLocalAcceptJoined keep in-flight SoftMigrate/attach call_id=" << call_id;
+      return true;
+    }
+    // PreferLocal Node may PickHop on LocalJoinedWithoutHint; phones/guests WaitForAttach.
+    // WaitForAttach must not bump gen or hold soft_migrate_in_flight_ (defers inbound attach).
+    const bool may_prefer_local =
+        relay_deps_.prefer_local_as_hop && relay_deps_.relay && relay_deps_.relay->IsStarted();
+    if (!may_prefer_local) {
+      log().info << "OnLocalAcceptJoined WaitForAttach call_id=" << call_id << " n=" << n_joined;
+      FlushPendingInboundSfuAttach();
+      return true;
+    }
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
@@ -2051,11 +2085,18 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, attach, gen](Roe<void> ok) {
     if (!IsMigrateGenerationCurrent(gen)) {
       log().info << "OnInboundSfuAttach worker skip stale gen=" << gen;
-      AppRuntime::PostUI([this, gen]() {
+      AppRuntime::PostUI([this, gen, call_id, attach]() {
         if (soft_migrate_flight_gen_ == gen) {
           soft_migrate_in_flight_ = false;
           soft_migrate_call_id_.clear();
           FlushPendingInboundSfuAttach();
+        }
+        // Stale-gen abort left guest without StartSfu — ask owner to re-fan-out.
+        if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
+          BeginSfuAttachWait(call_id);
+          ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id,
+                                           "attach aborted (stale migrate gen)");
+          host_.TopologyNotifyRingChanged();
         }
       });
       return;
