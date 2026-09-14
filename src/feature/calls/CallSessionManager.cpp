@@ -4,6 +4,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
+#include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
@@ -301,11 +302,23 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
   const bool was = PeerHasMediaRelayCap(peer_id);
   peer_media_relay_caps_[peer_id] = media_relay;
   // Phone initiator SoftMigrate may have run before this desktop Accept — nudge re-pick.
+  // Only for N≥3 / already waiting on hop. Dogfood 1:1: cap learn SoftMigrated PreferLocal
+  // ("Connecting group media…") while answerer stayed DirectConnecting → no duplex.
   if (media_relay && !was) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
       if (topology_.IsSfuAttachWaitActive() || !topology_.IsSfuAttached()) {
         const std::string call_id = (*active)->call_id;
         if (topology_.IsOnSfuForCall(call_id)) {
+          return;
+        }
+        size_t n_joined = 0;
+        if (auto joined = sessions_.CountJoined(call_id)) {
+          n_joined = *joined;
+        }
+        if (!CallMediaTopology::ShouldUseMediaRelay(n_joined) &&
+            !topology_.IsSfuAttachWaitActive()) {
+          log().info << "SoftMigrate relay-cap nudge skipped (1:1 stay Direct) call_id=" << call_id
+                     << " n_joined=" << n_joined << " peer=" << peer_id;
           return;
         }
         // SoftMigrateAsync posts MeshControl work; do not park a Worker on quote/attach.
@@ -880,12 +893,21 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   }
   // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
   // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
+  // Never Release/Stop the call we are accepting (empty ActiveCallId used to target accept id
+  // and PostUIFront-Stop raced answerer StartSfu).
   if (Media().IsActive() || Media().IsSfuMode()) {
     const std::string leftover = Media().ActiveCallId();
-    if (leftover != call_id) {
+    if (!leftover.empty() && leftover != call_id) {
       log().info << "AcceptInvite stopping leftover media call_id=" << leftover
                  << " accept=" << call_id;
-      StopMediaIfCall(leftover.empty() ? call_id : leftover);
+      StopMediaIfCall(leftover);
+    } else if (leftover.empty()) {
+      log().info << "AcceptInvite stopping zombie engine (no ActiveCallId) accept=" << call_id;
+      if (call_media_bridge_) {
+        call_media_bridge_->StopMeshMedia({});
+      } else if (Media().IsActive() || Media().IsSfuMode()) {
+        Media().Stop();
+      }
     }
   }
   auto pending = sessions_.LoadPendingInvite(call_id, *local);
@@ -986,6 +1008,8 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     if (lifecycle_) {
       lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
     }
+    // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
+    TopologyClearMediaActivity();
     // Remember peer for Lifecycle KickAnswerer (UI) — PeerIdentityForCall can lag roster.
     pending_answerer_kick_call_id_ = call_id;
     pending_answerer_kick_peer_ = inviter;

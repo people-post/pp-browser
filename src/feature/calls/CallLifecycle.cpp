@@ -505,8 +505,32 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     NotifyChrome();
     // Answerer media must start on UI after Status is visible (worker ScheduleStart alone
     // can PostUI before AcceptSucceeded and silently no-op if Status/session race).
-    if (sessions_ && AllowsDirectPath()) {
-      sessions_->KickAnswererDirectMediaIfArmed(call_id_.empty() ? call_id : call_id_);
+    // Log tokens include StartSfu so dogfood filters that omit CallSessionManager still see it.
+    {
+      const std::string kick_id = call_id_.empty() ? call_id : call_id_;
+      if (sessions_ && AllowsDirectPath()) {
+        log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
+                   << " status=" << CallMediaStatusName(status_);
+        sessions_->KickAnswererDirectMediaIfArmed(kick_id);
+        // Worker PostUIFront can lose to leftover Stop / chrome; re-arm shortly if still Direct*.
+        AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), [this, kick_id]() {
+          AppRuntime::PostUI([this, kick_id]() {
+            if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
+              return;
+            }
+            if (sessions_->Media().IsActive() && sessions_->Media().ActiveCallId() == kick_id) {
+              return;
+            }
+            log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
+                       << kick_id << " status=" << CallMediaStatusName(status_);
+            sessions_->KickAnswererDirectMediaIfArmed(kick_id);
+          });
+        });
+      } else {
+        log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id
+                   << " sessions=" << (sessions_ ? 1 : 0)
+                   << " status=" << CallMediaStatusName(status_);
+      }
     }
     break;
 

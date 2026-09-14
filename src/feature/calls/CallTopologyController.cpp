@@ -767,9 +767,28 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     on_done(Error("shutdown in progress"));
     return;
   }
-  // V037: SoftMigrate from Direct* enters Migrating; otherwise Status must already arm Hop.
+  // V037: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer re-pick).
+  // Relay-cap nudge used expected_gen=0 and promoted 1:1 DirectConnecting → Migrating PreferLocal
+  // while the peer stayed on circuit — dogfood "Connecting group media…" vs Connecting.
   if (lifecycle_) {
     const auto st = lifecycle_->Status();
+    size_t n_joined = 0;
+    if (auto joined = sessions_.CountJoined(call_id)) {
+      n_joined = *joined;
+    }
+    const bool n_requires_hop = CallMediaTopology::ShouldUseMediaRelay(n_joined);
+    const bool ice_or_prefer =
+        trigger == SoftMigrateTrigger::IceRecover || !prefer_hop_peer_id.empty();
+    if (!n_requires_hop && !ice_or_prefer &&
+        (st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
+         st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
+         st == CallMediaStatus::None)) {
+      log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
+                 << " n_joined=" << n_joined << " status=" << CallMediaStatusName(st)
+                 << " trigger=" << static_cast<int>(trigger);
+      on_done(Roe<void>());
+      return;
+    }
     if (st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
         st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
         st == CallMediaStatus::None) {
@@ -2170,6 +2189,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
   attaching_hop_peer_id_.clear();
   pending_inbound_sfu_attach_.reset();
   pending_inbound_sfu_attach_call_id_.clear();
+  host_.TopologyClearMediaActivity();
   log().info << "OnLocalAcceptJoined → P2P ScheduleStart call_id=" << call_id
              << " n=" << n_joined;
   return false;
@@ -2268,6 +2288,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
              << " joiner=" << joiner_identity;
   ClearSfuAttachWait();
   awaiting_sfu_recovery_ = false;
+  host_.TopologyClearMediaActivity();
   return false;
 }
 

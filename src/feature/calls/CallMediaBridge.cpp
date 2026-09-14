@@ -1031,6 +1031,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       pending_answerer_peer_ = peer_identity;
       media_attempted_calls_.insert(call_id);
       if (lifecycle_) {
+        // CallLifecycle log is dogfood-visible; Bridge module is filtered out.
         lifecycle_->Apply(CallLifecycleEvent::MediaDeferred, call_id);
       }
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
@@ -1071,20 +1072,17 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       });
       return;
     }
-    log().info << "ScheduleStartMediaAsAnswerer key ready — BeginSession call_id=" << call_id;
+    log().info << "ScheduleStartMediaAsAnswerer key ready — BeginSession StartSfu call_id=" << call_id;
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
       host_.P2pNotifyRingChanged();
     }
   };
-  // KickAnswerer runs on UI — start inline so we do not depend on a second PostUI turn.
-  if (AppRuntime::CurrentlyOnUI()) {
-    run();
-    return;
-  }
-  // Front of queue: must run before chrome/orphan work; worker Accept used to lose this hop.
-  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id;
+  // Always PostUIFront — never run StartSfu on the Accept worker even if CurrentlyOnUI is
+  // mis-bound (SequencedTaskRunner thread_id). Kick from AcceptSucceeded also lands here.
+  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id
+             << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
   AppRuntime::PostUIFront(std::move(run));
 }
 
