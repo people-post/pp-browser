@@ -119,21 +119,34 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
   if (call_id.empty()) {
+    log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
     return;
   }
   if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+    log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
+               << " status=" << CallMediaStatusName(lifecycle_->Status());
     return;
   }
   if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
     return;
   }
-  auto peer = PeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
+  std::string peer;
+  if (pending_answerer_kick_call_id_ == call_id && !pending_answerer_kick_peer_.empty()) {
+    peer = pending_answerer_kick_peer_;
+  } else {
+    auto resolved = PeerIdentityForCall(call_id);
+    if (resolved && resolved->has_value()) {
+      peer = **resolved;
+    }
+  }
+  if (peer.empty()) {
     log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
     return;
   }
-  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << **peer;
-  ScheduleStartDirectMedia(call_id, **peer, false);
+  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
+             << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
+  ScheduleStartDirectMedia(call_id, peer, false);
 }
 
 CallHopHealth CallSessionManager::HopHealth() const {
@@ -964,6 +977,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   }
   const bool topology_took_media =
       topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint);
+  bool schedule_answerer_direct = false;
   if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
@@ -972,10 +986,14 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     if (lifecycle_) {
       lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
     }
-    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
-               << " inviter=" << inviter << " n_joined=" << n_joined;
-    ScheduleStartDirectMedia(call_id, inviter, false);
+    // Remember peer for Lifecycle KickAnswerer (UI) — PeerIdentityForCall can lag roster.
+    pending_answerer_kick_call_id_ = call_id;
+    pending_answerer_kick_peer_ = inviter;
+    // ScheduleStart after CallAccept is on the wire so offerer can arm inbound while we dial.
+    schedule_answerer_direct = true;
   } else {
+    pending_answerer_kick_call_id_.clear();
+    pending_answerer_kick_peer_.clear();
     log().info << "AcceptInvite topology owns media (no ScheduleStart) call_id=" << call_id
                << " n_joined=" << n_joined
                << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
@@ -1013,6 +1031,14 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     log().warning << "CallAccept send failed call_id=" << call_id << " err=" << sent.error().message;
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
+  }
+
+  if (schedule_answerer_direct) {
+    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
+               << " inviter=" << inviter << " n_joined=" << n_joined
+               << " listen_mas=" << accept.listen_multiaddrs.size()
+               << " peer_id=" << (accept.libp2p_peer_id.empty() ? 0 : 1);
+    ScheduleStartDirectMedia(call_id, inviter, false);
   }
 
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
@@ -1166,6 +1192,10 @@ Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::opti
 }
 
 Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
+  if (pending_answerer_kick_call_id_ == call_id) {
+    pending_answerer_kick_call_id_.clear();
+    pending_answerer_kick_peer_.clear();
+  }
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();

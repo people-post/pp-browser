@@ -96,8 +96,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. Keep **rd** green via gtest/compose/smoke/hard-lab purpose IDs — not new device checklists.
-2. Close `B-CALL-DIRECT` Partial: more `CallMediaBridge` in-process coverage when touching Accept/Kick.
+1. **Re-dogfood 1:1 NAT** with rebuilt `pp-browser`: expect `ScheduleStartMediaAsAnswerer UI enter` → `key ready — BeginSession` → `Call-media Connect` (not JoinedLocal+DirectConnecting / `tx_frames=0`). Caller should leave “connecting to media”.
+2. Keep **rd** green via gtest/compose/smoke/hard-lab purpose IDs — not new device checklists.
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps

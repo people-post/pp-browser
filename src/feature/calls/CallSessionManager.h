@@ -265,6 +265,9 @@ private:
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
+  /** Answerer AcceptInvite → Lifecycle KickAnswerer peer (UI), until Leave. */
+  std::string pending_answerer_kick_call_id_;
+  std::string pending_answerer_kick_peer_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

@@ -994,7 +994,10 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
-  AppRuntime::PostUI([this, call_id, peer_identity]() {
+  auto run = [this, call_id, peer_identity]() {
+    log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id
+               << " peer=" << peer_identity
+               << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
       log().info << "ScheduleStartMediaAsAnswerer skip (no active session) call_id=" << call_id
@@ -1003,8 +1006,9 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                  << (session && session->has_value() ? static_cast<int>((*session)->state) : -1);
       return;
     }
-    if (media_.IsActive() && media_.ActiveCallId() == call_id && media_.IsSfuMode()) {
-      log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id;
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id
+                 << " sfu_mode=" << (media_.IsSfuMode() ? 1 : 0);
       return;
     }
     // Worker may have SetMediaStatus before this PostUI; if Status is still None, arm Bridge now.
@@ -1020,6 +1024,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
     auto key = LoadActiveMediaKey(call_id);
     if (!key) {
       // V015: epoch-1 key is sent by offerer on CallAccept — defer until it lands.
+      // Embedded invite key should already be in store; missing here usually means unwrap/DEK failure.
       log().info << "Defer answerer media until CallMediaKey call_id=" << call_id
                     << " reason=" << key.error().message;
       pending_answerer_call_id_ = call_id;
@@ -1066,12 +1071,21 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       });
       return;
     }
+    log().info << "ScheduleStartMediaAsAnswerer key ready — BeginSession call_id=" << call_id;
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
       host_.P2pNotifyRingChanged();
     }
-  });
+  };
+  // KickAnswerer runs on UI — start inline so we do not depend on a second PostUI turn.
+  if (AppRuntime::CurrentlyOnUI()) {
+    run();
+    return;
+  }
+  // Front of queue: must run before chrome/orphan work; worker Accept used to lose this hop.
+  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id;
+  AppRuntime::PostUIFront(std::move(run));
 }
 
 void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
