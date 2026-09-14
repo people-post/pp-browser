@@ -84,6 +84,9 @@ public:
   /** V036 Phase 2 dual-FSM: chrome Connected only when SeatMediaLive. */
   CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const;
   bool SeatMediaLive(const std::string& call_id) const;
+  /** V037: InCall + DirectLive|HopLive. */
+  bool MediaChromeLive() const;
+  CallMediaStatus MediaStatus() const;
 
   // Lifecycle
   const std::string& LastError() const;

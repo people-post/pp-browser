@@ -376,6 +376,9 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   log().warning << "Call-media TX-only on path=" << (media_path_kind_.empty() ? "unknown" : media_path_kind_)
                 << " — escalate via circuit call_id=" << call_id << " peer=" << peer
                 << " tx_frames=" << snap.tx_audio_frames;
+  if (lifecycle_) {
+    lifecycle_->SetMediaStatus(CallMediaStatus::DegradedTxOnly, call_id);
+  }
   EscalateTxOnlyViaCircuit(call_id, peer);
 }
 
@@ -748,6 +751,11 @@ Roe<ByteVector> CallMediaBridge::LoadActiveMediaKey(const std::string& call_id) 
 
 Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::string& peer_identity,
                                               bool offerer) {
+  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+    log().info << "BeginSession skipped (Status disallows Bridge) call_id=" << call_id
+               << " status=" << CallMediaStatusName(lifecycle_->Status());
+    return Error("direct path not armed");
+  }
   auto key = LoadActiveMediaKey(call_id);
   if (!key) {
     return key.error();

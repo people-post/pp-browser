@@ -819,6 +819,28 @@ TEST_F(CallTopologyControllerTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall
   EXPECT_TRUE(host_->directs.empty()) << "must not ReportSfuAttachFailed for stale call";
 }
 
+TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredOnOneToOne) {
+  // Dogfood 1cee3df4: Accept chose P2P ScheduleStart; inbound CallSfuAttach still StartSfu'd
+  // (stale gen) → brief media_relay audio then chrome "direct" / silence.
+  const std::string call_id = "call:p2p-ignore-sfu";
+  SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000);
+  host_->local_identity = "account:B";
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  attach.hop_multiaddr =
+      "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
+  dial_->force_dialable[attach.hop_peer_id] = true;
+
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_EQ(relay_->quote_calls, 0);
+  EXPECT_FALSE(topo_->IsSfuAttached());
+  EXPECT_FALSE(topo_->IsSoftMigrateInFlight());
+}
+
 TEST_F(CallTopologyControllerTest, StaleRemoteAcceptIgnoredWhenWaitingOtherCall) {
   // Dogfood: zombie non-Ended session still in ListActiveSessions while guest WaitForAttach
   // on a new call — must not SoftMigrate / ScheduleStartDirectMedia for the old call_id.
@@ -876,7 +898,7 @@ TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachSkipsPrivateHopOffLan) {
   const std::string call_id = "call:private-hop";
-  SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000);
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
 
   CallTopologyController::MediaRelayDeps deps;
@@ -1133,7 +1155,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:dup-inbound-attach";
-  SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000);
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
   relay_->started = true;
 
@@ -1196,7 +1218,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";
-  SeedJoinedCall(old_id, {"account:A", "account:B"}, 1000);
+  SeedJoinedCall(old_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
   relay_->started = true;
 
@@ -1241,7 +1263,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   EXPECT_TRUE(seat.BoundCallId().empty());
   EXPECT_EQ(media_->ActiveCallId(), old_id) << "engine leftover without Stop is the dogfood case";
 
-  SeedJoinedCall(new_id, {"account:A", "account:B"}, 2000);
+  SeedJoinedCall(new_id, {"account:A", "account:B", "account:C"}, 2000);
 
   CallSfuAttachDetail new_attach = old_attach;
   new_attach.call_id = new_id;

@@ -117,6 +117,10 @@ void CallTopologyController::SetMediaSeat(CallMediaSeat* seat) {
   media_seat_ = seat;
 }
 
+void CallTopologyController::SetLifecycle(CallLifecycle* lifecycle) {
+  lifecycle_ = lifecycle;
+}
+
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
   return awaiting_sfu_recovery_ || soft_migrate_in_flight_ || !sfu_attach_wait_call_id_.empty() ||
          guest_reattach_in_flight_;
@@ -763,6 +767,20 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     on_done(Error("shutdown in progress"));
     return;
   }
+  // V037: SoftMigrate from Direct* enters Migrating; otherwise Status must already arm Hop.
+  if (lifecycle_) {
+    const auto st = lifecycle_->Status();
+    if (st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
+        st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
+        st == CallMediaStatus::None) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::Migrating, call_id);
+    } else if (!lifecycle_->AllowsHopPath()) {
+      log().info << "MaybeSoftMigrateToSfuAsync skipped (Status disallows Hop) call_id=" << call_id
+                 << " status=" << CallMediaStatusName(st);
+      on_done(Error("hop path not armed"));
+      return;
+    }
+  }
   PostControlOrRun([this, call_id, trigger, prefer_hop_peer_id, expected_gen,
                     on_done = std::move(on_done)]() mutable {
   if (!IsMigrateGenerationCurrent(expected_gen)) {
@@ -1140,7 +1158,8 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
 
 Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     const std::string& call_id, CallSfuAttachDetail attach, const bool self_hop, const int64_t a_up_bps,
-    const uint64_t gen_at_start, const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
+    const uint64_t gen_at_start, const uint64_t cancel_gen_at_start,
+    const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
     const std::vector<uint8_t>& media_key, const uint32_t media_epoch) {
   last_quote_a_up_bps_ = a_up_bps;
   CallAdaptationInput in;
@@ -1163,6 +1182,19 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
       relay_deps_.relay->Detach();
       return Error("media seat token rejected for hop path");
     }
+  }
+  // V037: Status must arm Topology; cancel gen must still match Deciding/Leave bumps.
+  if (lifecycle_ && !lifecycle_->AllowsHopPath()) {
+    log().info << "AttachLocalToSfu aborted (Status disallows Hop) call_id=" << call_id
+               << " status=" << CallMediaStatusName(lifecycle_->Status());
+    relay_deps_.relay->Detach();
+    return Error("attach aborted");
+  }
+  if (lifecycle_ && lifecycle_->MediaCancelGen() != cancel_gen_at_start) {
+    log().info << "AttachLocalToSfu aborted (media_cancel_gen moved) call_id=" << call_id
+               << " want=" << cancel_gen_at_start << " have=" << lifecycle_->MediaCancelGen();
+    relay_deps_.relay->Detach();
+    return Error("attach aborted");
   }
   // After AcceptAndAttach succeeded, finish StartSfu whenever this call is still the active
   // topology call. migrate_generation_ stampede (duplicate CallSfuAttach / SoftMigrate) must not
@@ -1217,9 +1249,13 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     RefreshAdaptation(call_id);
     // Do not ReleaseDirect / DirectConnected again — duplicate completes flash chrome.
     host_.TopologyClearMediaActivity();
-    if (media_seat_) {
+    // Also NoteLive in already_live branch
+  if (media_seat_) {
       media_seat_->NoteLive(call_id);
       media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+    }
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::HopLive, call_id);
     }
     log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
     return {};
@@ -1231,6 +1267,28 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     log().info << "AttachLocalToSfu skip StartSfu (superseded hop) call_id=" << call_id
                << " want_hop=" << attach.hop_peer_id << " in_flight=" << attaching_hop_peer_id_;
     return {};
+  }
+  // Dogfood 1cee3df4: zombie AcceptAndAttach (gen 85→169 across Leave cycles) still StartSfu'd
+  // onto a fresh 1:1 — brief media_relay audio then chrome flipped to "direct" / silence.
+  // Stampede (duplicate CallSfuAttach) still owns attaching_hop or soft_migrate_flight_gen_.
+  if (!gen_current && !duplex_live) {
+    const bool owns_flight =
+        soft_migrate_flight_gen_ == gen_at_start ||
+        (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ == attach.hop_peer_id) ||
+        // Stampede may Leave-bump gen while guest WaitForAttach is still armed for this call.
+        (sfu_attach_wait_call_id_ == call_id);
+    if (!owns_flight) {
+      log().info << "AttachLocalToSfu abort StartSfu (stale gen, no flight ownership) call_id="
+                 << call_id << " want=" << gen_at_start
+                 << " have=" << migrate_generation_.load(std::memory_order_acquire)
+                 << " flight_gen=" << soft_migrate_flight_gen_
+                 << " attaching=" << attaching_hop_peer_id_;
+      relay_deps_.relay->Detach();
+      if (media_seat_) {
+        media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+      }
+      return Error("attach aborted");
+    }
   }
   if (!self_hop) {
     relay_deps_.relay->StartClientFrameReader();
@@ -1319,6 +1377,9 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     media_seat_->NoteLive(call_id);
     media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
   }
+  if (lifecycle_) {
+    lifecycle_->SetMediaStatus(CallMediaStatus::HopLive, call_id);
+  }
   host_.TopologyReleaseDirectMedia();
   host_.TopologyClearMediaActivity();
   auto do_release = [this, call_id, release_gen, release_fanout, self_hop]() {
@@ -1353,6 +1414,7 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
     return;
   }
   const uint64_t gen_at_start = migrate_generation_.load(std::memory_order_acquire);
+  const uint64_t cancel_gen_at_start = lifecycle_ ? lifecycle_->MediaCancelGen() : 0;
   if (!relay_deps_.relay || !relay_deps_.dial) {
     on_done(Error("media_relay not available"));
     return;
@@ -1505,13 +1567,14 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
         return false;
       }());
 
-  auto finish_complete = [this, call_id, attach, self_hop, gen_at_start, sfu_frames_ready, media_key,
-                          media_epoch, on_done](int64_t bps) mutable {
-    PostControlOrRun([this, call_id, attach = std::move(attach), self_hop, bps, gen_at_start, sfu_frames_ready,
-                      media_key, media_epoch, on_done = std::move(on_done)]() mutable {
+  auto finish_complete = [this, call_id, attach, self_hop, gen_at_start, cancel_gen_at_start,
+                          sfu_frames_ready, media_key, media_epoch, on_done](int64_t bps) mutable {
+    PostControlOrRun([this, call_id, attach = std::move(attach), self_hop, bps, gen_at_start,
+                      cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch,
+                      on_done = std::move(on_done)]() mutable {
       std::lock_guard<std::mutex> attach_lock(sfu_attach_mu_);
       on_done(CompleteAttachLocalToSfu(call_id, std::move(attach), self_hop, bps, gen_at_start,
-                                       sfu_frames_ready, media_key, media_epoch));
+                                       cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch));
     });
   };
 
@@ -1531,7 +1594,7 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
       return;
     }
     on_done(CompleteAttachLocalToSfu(call_id, std::move(attach), self_hop, a_up_bps, gen_at_start,
-                                     sfu_frames_ready, media_key, media_epoch));
+                                     cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch));
     return;
   }
 
@@ -1950,6 +2013,9 @@ bool CallTopologyController::OnAnnounceViewerJoined(const std::string& call_id,
 bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                                                  const std::optional<std::string>& sfu_hint) {
   if (n_joined >= 3 && sfu_hint && !sfu_hint->empty()) {
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::HopAttaching, call_id);
+    }
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = *sfu_hint;
@@ -2006,6 +2072,9 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
       ClearSfuAttachWait();
       SyncSfuSubscriptions(call_id);
+      if (lifecycle_) {
+        lifecycle_->SetMediaStatus(CallMediaStatus::HopLive, call_id);
+      }
       return true;
     }
     // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes.
@@ -2014,6 +2083,9 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     if (soft_migrate_in_flight_ &&
         (soft_migrate_call_id_.empty() || soft_migrate_call_id_ == call_id)) {
       log().info << "OnLocalAcceptJoined keep in-flight SoftMigrate/attach call_id=" << call_id;
+      if (lifecycle_) {
+        lifecycle_->SetMediaStatus(CallMediaStatus::HopAttaching, call_id);
+      }
       return true;
     }
     // PreferLocal Node may PickHop on LocalJoinedWithoutHint; phones/guests WaitForAttach.
@@ -2022,8 +2094,14 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
         relay_deps_.prefer_local_as_hop && relay_deps_.relay && relay_deps_.relay->IsStarted();
     if (!may_prefer_local) {
       log().info << "OnLocalAcceptJoined WaitForAttach call_id=" << call_id << " n=" << n_joined;
+      if (lifecycle_) {
+        lifecycle_->SetMediaStatus(CallMediaStatus::HopWaiting, call_id);
+      }
       FlushPendingInboundSfuAttach();
       return true;
+    }
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::HopAttaching, call_id);
     }
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
@@ -2064,6 +2142,14 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
   }
   ClearSfuAttachWait();
   awaiting_sfu_recovery_ = false;
+  // Cancel any leftover SoftMigrate / inbound AcceptAndAttach so it cannot StartSfu on this 1:1
+  // after ScheduleStartDirectMedia (dogfood: stale gen StartSfu → brief hop audio → "direct").
+  migrate_generation_.fetch_add(1, std::memory_order_acq_rel);
+  soft_migrate_in_flight_ = false;
+  soft_migrate_call_id_.clear();
+  attaching_hop_peer_id_.clear();
+  pending_inbound_sfu_attach_.reset();
+  pending_inbound_sfu_attach_call_id_.clear();
   log().info << "OnLocalAcceptJoined → P2P ScheduleStart call_id=" << call_id
              << " n=" << n_joined;
   return false;
@@ -2120,6 +2206,9 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     BeginSfuAttachWait(call_id);
     host_.TopologySetMediaActivity(Tr("call.status.setting_up_group"));
     host_.TopologyNotifyRingChanged();
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::Migrating, call_id);
+    }
     const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
     soft_migrate_flight_gen_ = gen;
     soft_migrate_in_flight_ = true;
@@ -2194,6 +2283,9 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   BeginSfuAttachWait(call_id);
   host_.TopologySetMediaActivity(Tr("call.status.setting_up_group"));
   host_.TopologyNotifyRingChanged();
+  if (lifecycle_) {
+    lifecycle_->SetMediaStatus(CallMediaStatus::Migrating, call_id);
+  }
   const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;
   soft_migrate_flight_gen_ = gen;
   soft_migrate_in_flight_ = true;
@@ -2238,6 +2330,28 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     log().info << "OnInboundSfuAttach ignored (not active call) call_id=" << call_id
                << " media_active=" << media_.ActiveCallId();
     return {};
+  }
+  // 1:1 must stay on call-media duplex. Owner SoftMigrate / inflated roster can still fan
+  // CallSfuAttach; accepting it races ScheduleStartDirectMedia (intermittent hop sound → "direct").
+  // Allow only when Status arms Topology (V037) or we are waiting / SoftMigrating this call.
+  size_t n_joined = 0;
+  if (auto joined = sessions_.CountJoined(call_id)) {
+    n_joined = *joined;
+  }
+  const bool status_allows_hop = !lifecycle_ || lifecycle_->AllowsHopPath();
+  const bool expect_group_attach =
+      status_allows_hop &&
+      (CallMediaTopology::ShouldUseMediaRelay(n_joined) || sfu_attach_wait_call_id_ == call_id ||
+       (soft_migrate_in_flight_ && soft_migrate_call_id_ == call_id) || sfu_attached_);
+  if (!expect_group_attach) {
+    log().info << "OnInboundSfuAttach ignored (1:1 / Status disallows Hop) call_id=" << call_id
+               << " n_joined=" << n_joined << " hop=" << attach.hop_peer_id
+               << " status="
+               << (lifecycle_ ? CallMediaStatusName(lifecycle_->Status()) : "null");
+    return {};
+  }
+  if (lifecycle_ && lifecycle_->Status() == CallMediaStatus::HopWaiting) {
+    lifecycle_->SetMediaStatus(CallMediaStatus::HopAttaching, call_id);
   }
   if (sfu_attached_ && media_.ActiveCallId() == call_id &&
       (media_.IsSfuMode() || attached_hop_peer_id_ == attach.hop_peer_id)) {

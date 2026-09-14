@@ -11,6 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallLifecycle.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -119,6 +120,8 @@ public:
   void SetMediaKeyStore(CallMediaKeyStore* keys);
   /** V036 exclusive media bind / epoch. */
   void SetMediaSeat(CallMediaSeat* seat);
+  /** V037 Status arming — null = permissive (unit tests). */
+  void SetLifecycle(CallLifecycle* lifecycle);
 
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
@@ -231,7 +234,7 @@ private:
                                       std::function<void(Roe<void>)> on_done);
   /** StartSfu + fan-out bookkeeping after media-relay attach (or local hop) succeeds. */
   Roe<void> CompleteAttachLocalToSfu(const std::string& call_id, CallSfuAttachDetail attach, bool self_hop,
-                                     int64_t a_up_bps, uint64_t gen_at_start,
+                                     int64_t a_up_bps, uint64_t gen_at_start, uint64_t cancel_gen_at_start,
                                      const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
                                      const std::vector<uint8_t>& media_key, uint32_t media_epoch);
 
@@ -241,6 +244,7 @@ private:
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallMediaSeat* media_seat_ = nullptr;
+  CallLifecycle* lifecycle_ = nullptr;
   MediaRelayDeps relay_deps_;
   int64_t last_quote_a_up_bps_ = 0;
   bool sfu_attached_ = false;

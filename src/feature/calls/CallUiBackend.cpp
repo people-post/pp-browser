@@ -271,6 +271,20 @@ bool CallUiBackend::SeatMediaLive(const std::string& call_id) const {
   return false;
 }
 
+bool CallUiBackend::MediaChromeLive() const {
+  if (auto* life = stack_.Lifecycle()) {
+    return life->MediaChromeLive();
+  }
+  return false;
+}
+
+CallMediaStatus CallUiBackend::MediaStatus() const {
+  if (auto* life = stack_.Lifecycle()) {
+    return life->Status();
+  }
+  return CallMediaStatus::None;
+}
+
 const std::string& CallUiBackend::LastError() const {
   if (auto* life = stack_.Lifecycle()) {
     return life->LastError();

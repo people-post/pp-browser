@@ -76,6 +76,8 @@ public:
   void SetCallMediaBridge(CallMediaBridge* bridge);
   /** V036 exclusive media epoch — Leave/Accept/Start gates. */
   void SetMediaSeat(CallMediaSeat* seat);
+  /** V037 State+Status planner arming. */
+  void SetLifecycle(CallLifecycle* lifecycle);
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
@@ -253,6 +255,7 @@ private:
   BroadcastSessionCoordinator broadcast_;
   CallMediaBridge* call_media_bridge_ = nullptr;
   CallMediaSeat* media_seat_ = nullptr;
+  CallLifecycle* lifecycle_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;

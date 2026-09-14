@@ -31,6 +31,46 @@ const char* CallPhaseName(const CallPhase phase) {
   return "Unknown";
 }
 
+const char* CallMediaStatusName(const CallMediaStatus status) {
+  switch (status) {
+  case CallMediaStatus::None:
+    return "None";
+  case CallMediaStatus::Deciding:
+    return "Deciding";
+  case CallMediaStatus::DirectConnecting:
+    return "DirectConnecting";
+  case CallMediaStatus::HopWaiting:
+    return "HopWaiting";
+  case CallMediaStatus::HopAttaching:
+    return "HopAttaching";
+  case CallMediaStatus::DirectLive:
+    return "DirectLive";
+  case CallMediaStatus::HopLive:
+    return "HopLive";
+  case CallMediaStatus::Migrating:
+    return "Migrating";
+  case CallMediaStatus::DegradedTxOnly:
+    return "DegradedTxOnly";
+  case CallMediaStatus::Failed:
+    return "Failed";
+  }
+  return "Unknown";
+}
+
+const char* CallArmedPlannerName(const CallArmedPlanner planner) {
+  switch (planner) {
+  case CallArmedPlanner::None:
+    return "None";
+  case CallArmedPlanner::Lifecycle:
+    return "Lifecycle";
+  case CallArmedPlanner::Bridge:
+    return "Bridge";
+  case CallArmedPlanner::Topology:
+    return "Topology";
+  }
+  return "Unknown";
+}
+
 const char* CallLifecycleEventName(const CallLifecycleEvent ev) {
   switch (ev) {
   case CallLifecycleEvent::InviteSeen:
@@ -78,6 +118,8 @@ void CallLifecycle::Bind(CallSessionManager* sessions) {
 void CallLifecycle::ClearBinding() {
   sessions_ = nullptr;
   phase_ = CallPhase::Idle;
+  status_ = CallMediaStatus::None;
+  media_cancel_gen_ = 0;
   call_id_.clear();
   accepting_call_id_.clear();
   want_ephemeral_listen_ = false;
@@ -90,6 +132,91 @@ void CallLifecycle::SetOnChromeRefresh(ChromeRefreshFn fn) {
 
 void CallLifecycle::SetOnListenDesireChanged(ListenDesireFn fn) {
   on_listen_desire_ = std::move(fn);
+}
+
+CallArmedPlanner CallLifecycle::ArmedPlanner() const {
+  switch (status_) {
+  case CallMediaStatus::None:
+    return CallArmedPlanner::None;
+  case CallMediaStatus::Deciding:
+    return CallArmedPlanner::Lifecycle;
+  case CallMediaStatus::DirectConnecting:
+  case CallMediaStatus::DirectLive:
+  case CallMediaStatus::DegradedTxOnly:
+    return CallArmedPlanner::Bridge;
+  case CallMediaStatus::HopWaiting:
+  case CallMediaStatus::HopAttaching:
+  case CallMediaStatus::HopLive:
+  case CallMediaStatus::Migrating:
+    return CallArmedPlanner::Topology;
+  case CallMediaStatus::Failed:
+    return CallArmedPlanner::None;
+  }
+  return CallArmedPlanner::None;
+}
+
+bool CallLifecycle::AllowsDirectPath() const {
+  return status_ == CallMediaStatus::DirectConnecting ||
+         status_ == CallMediaStatus::DegradedTxOnly ||
+         status_ == CallMediaStatus::DirectLive;
+}
+
+bool CallLifecycle::AllowsHopPath() const {
+  return status_ == CallMediaStatus::HopWaiting || status_ == CallMediaStatus::HopAttaching ||
+         status_ == CallMediaStatus::HopLive || status_ == CallMediaStatus::Migrating;
+}
+
+bool CallLifecycle::MediaChromeLive() const {
+  return phase_ == CallPhase::InCall &&
+         (status_ == CallMediaStatus::DirectLive || status_ == CallMediaStatus::HopLive);
+}
+
+uint64_t CallLifecycle::BumpMediaCancelGen() {
+  return ++media_cancel_gen_;
+}
+
+void CallLifecycle::SetStatusInternal(const CallMediaStatus next, const std::string& call_id,
+                                      const char* reason) {
+  const CallMediaStatus prev = status_;
+  if (next == CallMediaStatus::Deciding && prev != CallMediaStatus::Deciding) {
+    BumpMediaCancelGen();
+  }
+  status_ = next;
+  if (!call_id.empty()) {
+    call_id_ = call_id;
+  }
+  if (next == CallMediaStatus::DirectLive || next == CallMediaStatus::HopLive) {
+    if (phase_ != CallPhase::InCall && phase_ != CallPhase::Idle) {
+      const CallPhase prev_phase = phase_;
+      phase_ = CallPhase::InCall;
+      log().info << "phase=" << CallPhaseName(prev_phase) << "->InCall"
+                 << " status=" << CallMediaStatusName(prev) << "->" << CallMediaStatusName(next)
+                 << " reason=" << (reason ? reason : "") << " call_id=" << call_id_
+                 << " cancel_gen=" << media_cancel_gen_
+                 << " armed=" << CallArmedPlannerName(ArmedPlanner());
+      UpdateListenDesire();
+      return;
+    }
+  }
+  if (next == CallMediaStatus::Failed && phase_ != CallPhase::Idle) {
+    const CallPhase prev_phase = phase_;
+    phase_ = CallPhase::ConnectFailed;
+    log().info << "phase=" << CallPhaseName(prev_phase) << "->ConnectFailed"
+               << " status=" << CallMediaStatusName(prev) << "->Failed"
+               << " reason=" << (reason ? reason : "") << " call_id=" << call_id_
+               << " cancel_gen=" << media_cancel_gen_;
+    UpdateListenDesire();
+    return;
+  }
+  log().info << "status=" << CallMediaStatusName(prev) << "->" << CallMediaStatusName(next)
+             << " phase=" << CallPhaseName(phase_) << " reason=" << (reason ? reason : "")
+             << " call_id=" << call_id_ << " cancel_gen=" << media_cancel_gen_
+             << " armed=" << CallArmedPlannerName(ArmedPlanner());
+}
+
+void CallLifecycle::SetMediaStatus(const CallMediaStatus status, const std::string& call_id) {
+  SetStatusInternal(status, call_id, "SetMediaStatus");
+  NotifyChrome();
 }
 
 bool CallLifecycle::ShouldSuppressRing(const std::string& call_id) const {
@@ -111,8 +238,10 @@ void CallLifecycle::NoteRingCallId(const std::string& call_id) {
   }
 }
 
-void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id, const CallLifecycleEvent ev) {
+void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id,
+                             const CallLifecycleEvent ev) {
   const CallPhase prev = phase_;
+  const CallMediaStatus prev_status = status_;
   phase_ = next;
   if (!call_id.empty()) {
     call_id_ = call_id;
@@ -120,9 +249,36 @@ void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id, c
   if (next == CallPhase::Idle) {
     call_id_.clear();
     accepting_call_id_.clear();
+    status_ = CallMediaStatus::None;
+    BumpMediaCancelGen();
+  } else if (next == CallPhase::Ringing || next == CallPhase::Accepting) {
+    status_ = CallMediaStatus::None;
+  } else if (next == CallPhase::JoinedLocal && status_ == CallMediaStatus::None) {
+    // Accept path will Deciding → Direct/Hop; start as Deciding so gates see Lifecycle armed.
+    SetStatusInternal(CallMediaStatus::Deciding, call_id_, "AcceptJoined");
+  } else if (next == CallPhase::MediaConnecting &&
+             (status_ == CallMediaStatus::None || status_ == CallMediaStatus::Deciding)) {
+    // Key ready / retry without an explicit path yet — prefer Direct until SoftMigrate.
+    SetStatusInternal(CallMediaStatus::DirectConnecting, call_id_, "MediaConnecting");
+  } else if (next == CallPhase::ConnectFailed) {
+    status_ = CallMediaStatus::Failed;
+  } else if (next == CallPhase::InCall &&
+             (status_ == CallMediaStatus::None || status_ == CallMediaStatus::Deciding ||
+              status_ == CallMediaStatus::DirectConnecting ||
+              status_ == CallMediaStatus::HopAttaching || status_ == CallMediaStatus::HopWaiting)) {
+    // Legacy DirectConnected without prior SetMediaStatus — assume direct Live.
+    if (status_ != CallMediaStatus::HopAttaching && status_ != CallMediaStatus::HopWaiting &&
+        status_ != CallMediaStatus::HopLive && status_ != CallMediaStatus::Migrating) {
+      status_ = CallMediaStatus::DirectLive;
+    } else if (status_ == CallMediaStatus::HopAttaching || status_ == CallMediaStatus::HopWaiting) {
+      status_ = CallMediaStatus::HopLive;
+    }
   }
   log().info << "phase=" << CallPhaseName(prev) << "->" << CallPhaseName(next)
-                << " event=" << CallLifecycleEventName(ev) << " call_id=" << call_id_;
+             << " status=" << CallMediaStatusName(prev_status) << "->" << CallMediaStatusName(status_)
+             << " event=" << CallLifecycleEventName(ev) << " call_id=" << call_id_
+             << " cancel_gen=" << media_cancel_gen_
+             << " armed=" << CallArmedPlannerName(ArmedPlanner());
   UpdateListenDesire();
 }
 
@@ -135,7 +291,8 @@ void CallLifecycle::UpdateListenDesire() {
     return;
   }
   want_ephemeral_listen_ = want;
-  log().info << "WantEphemeralListen=" << (want ? 1 : 0) << " phase=" << CallPhaseName(phase_);
+  log().info << "WantEphemeralListen=" << (want ? 1 : 0) << " phase=" << CallPhaseName(phase_)
+             << " status=" << CallMediaStatusName(status_);
   if (on_listen_desire_) {
     on_listen_desire_(want);
   }
@@ -182,7 +339,8 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, 
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+      WorkerLane::Normal,
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -191,7 +349,8 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
       },
       [this, call_id](Roe<void> declined) {
         if (!declined) {
-          log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
+          log().warning << "DeclineInvite failed call_id=" << call_id
+                        << " err=" << declined.error().message;
         }
         Apply(CallLifecycleEvent::DeclineDone, call_id);
       });
@@ -201,7 +360,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
   // StopMeshMedia aborts Connect via connect_generation_.
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Critical, 
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+      WorkerLane::Critical,
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -218,7 +378,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, 
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+      WorkerLane::Normal,
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -227,7 +388,8 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
       },
       [this, call_id](Roe<void> retried) {
         if (!retried) {
-          log().warning << "RetryP2pMedia failed call_id=" << call_id << " err=" << retried.error().message;
+          log().warning << "RetryP2pMedia failed call_id=" << call_id
+                        << " err=" << retried.error().message;
           Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
           return;
         }
@@ -265,6 +427,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   case CallLifecycleEvent::OutboundStarted:
     SetPhase(CallPhase::OutboundCalling, call_id, ev);
+    SetStatusInternal(CallMediaStatus::Deciding, call_id, "OutboundStarted");
     NotifyChrome();
     break;
 
@@ -365,6 +528,13 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     break;
 
   case CallLifecycleEvent::DirectConnected:
+    // Prefer existing Live/path Status; otherwise DirectLive.
+    if (status_ == CallMediaStatus::HopAttaching || status_ == CallMediaStatus::HopWaiting ||
+        status_ == CallMediaStatus::HopLive || status_ == CallMediaStatus::Migrating) {
+      SetStatusInternal(CallMediaStatus::HopLive, call_id, "DirectConnected");
+    } else if (status_ != CallMediaStatus::DirectLive && status_ != CallMediaStatus::HopLive) {
+      SetStatusInternal(CallMediaStatus::DirectLive, call_id, "DirectConnected");
+    }
     SetPhase(CallPhase::InCall, call_id, ev);
     NotifyChrome();
     break;

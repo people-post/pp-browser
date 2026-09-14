@@ -713,6 +713,7 @@ void CallStack::EnsureCallLifecycleBound() {
   }
   call_lifecycle_->Bind(call_sessions_.get());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
+  call_sessions_->SetLifecycle(call_lifecycle_.get());
   if (call_media_bridge_) {
     call_media_bridge_->SetLifecycle(call_lifecycle_.get());
   }

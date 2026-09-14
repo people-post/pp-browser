@@ -87,12 +87,23 @@ void CallSessionManager::SetMediaSeat(CallMediaSeat* seat) {
   topology_.SetMediaSeat(seat);
 }
 
+void CallSessionManager::SetLifecycle(CallLifecycle* lifecycle) {
+  lifecycle_ = lifecycle;
+  topology_.SetLifecycle(lifecycle);
+}
+
 void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {
   topology_.OnMediaStopped(call_id);
 }
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
+  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+    log().info << "ScheduleStartDirectMedia skipped (Status disallows Bridge) call_id=" << call_id
+               << " status=" << CallMediaStatusName(lifecycle_->Status())
+               << " armed=" << CallArmedPlannerName(lifecycle_->ArmedPlanner());
+    return;
+  }
   if (!call_media_bridge_) {
     log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
     last_media_error_ = "Call media unavailable";
@@ -940,6 +951,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
+    }
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
     }
     log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
                << " inviter=" << inviter << " n_joined=" << n_joined;

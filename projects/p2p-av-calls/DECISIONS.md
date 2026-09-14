@@ -827,3 +827,49 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021 SoftMigrate; V026 Amp media; V035 scope-aware hop.
 
 ---
+
+## V037 — CallLifecycle State + Status (one planner armed)
+
+**Date:** 2026-09-14
+**Status:** Accepted (phased)
+**Decision:** Evolve **`CallLifecycle`** into a hierarchical FSM: **`CallPhase` = State** (ring/accept/chrome shell) and **`CallMediaStatus` = Status** (which media planner may run). At most one planner is **armed** per `(phase, status)`. Seat bind/epoch ([V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) remains the exclusive media resource lock; Status is the **planner arming** authority (supersedes informal dual-FSM chrome wording where Status and seat Live diverge).
+
+### Status (under Calling-like phases / InCall)
+
+| Status | Armed | Allowed |
+|--------|-------|---------|
+| `None` | — | Idle / Ringing / Accepting |
+| `Deciding` | Lifecycle | Sync N/hint; choose next status; bump `media_cancel_gen` |
+| `DirectConnecting` | Bridge | 1:1 reach / Connect / StartSfu |
+| `HopWaiting` | Topology | WaitForAttach; reject ScheduleStart |
+| `HopAttaching` | Topology | AcceptAndAttach / StartSfu(hop) |
+| `DirectLive` / `HopLive` | Bridge / Topology | Health; chrome Connected |
+| `Migrating` | Topology | SoftMigrate sequence; Bridge must not ScheduleStart |
+| `DegradedTxOnly` | Bridge | TX-only escalate; chrome not Connected |
+| `Failed` | — | Retry / Leave |
+
+**Calling-like phases** (planner arming aliases until enum rename): `JoinedLocal`, `MediaPending`, `MediaConnecting`, plus `OutboundCalling` when media has started.
+
+### Invariants
+
+1. `ScheduleStartDirectMedia` / Bridge BeginSession only when Status arms Bridge (`DirectConnecting`, `DegradedTxOnly`).
+2. `OnInboundSfuAttach` / SoftMigrate start / CompleteAttach `StartSfu` only when Status arms Topology (`HopWaiting`, `HopAttaching`, `Migrating`).
+3. Entering `Deciding` or Leave bumps **`media_cancel_gen`**; late AcceptAndAttach must match gen + Status before StartSfu.
+4. Chrome **Connected** only for `InCall` + (`DirectLive` | `HopLive`) — not TX-only, not StartSfu alone.
+5. SoftMigrate is **`Migrating`** (exclusive), not concurrent Bridge+Topology.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| 0 | `CallMediaStatus` + cancel gen on Lifecycle; log `phase+status` |
+| 1 | Illegal-op gates on ScheduleStart / inbound attach / CompleteAttach |
+| 2 | Live/Failed ownership + chrome from Status |
+| 3 | SoftMigrate → `Migrating` |
+| 4 | Docs: Calling alias; cancel-gen ownership; race list |
+
+**Rationale:** Dogfood (brief hop audio then “direct” silence) came from Direct and Hop both armed after Accept chose P2P. One Status arming switch makes late hop StartSfu structurally illegal.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V036 MediaSeat; V021 SoftMigrate.
+
+---

@@ -263,6 +263,9 @@ Roe<void> CallSessionManager::HandleInboundAccept(const std::string& detail_json
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
     if (!topology_.OnRemoteAcceptJoined(accept->call_id, n_joined, identity)) {
+      if (lifecycle_) {
+        lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, accept->call_id);
+      }
       ScheduleStartDirectMedia(accept->call_id, identity, true);
     }
     // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.

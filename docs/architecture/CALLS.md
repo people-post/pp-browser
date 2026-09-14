@@ -94,7 +94,9 @@ sequenceDiagram
 | Conflict (2nd invite while outbound/in-call) | Conflict copy (`End & Accept` / `Ignore`); Accept implies leave-other-except; single active call |
 | Same-call duplicate pending | Keep in-call chrome; do not flip back to ring |
 
-Instrument: INFO `phase=… event=…` and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android (release emit floor promotes INFO → WARNING for `adb logcat -s pp-browser:W`).
+Instrument: INFO `phase=… status=… event=…` and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android (release emit floor promotes INFO → WARNING for `adb logcat -s pp-browser:W`).
+
+**State + Status ([V037](../../projects/p2p-av-calls/DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed)):** `CallPhase` is the chrome/shell State; `CallMediaStatus` arms exactly one media planner (Bridge vs Topology). JoinedLocal / MediaPending / MediaConnecting are **Calling-like** for arming until a future enum rename. SoftMigrate is Status `Migrating`, not a side flag.
 
 Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Two planes](#two-planes).
 
@@ -125,7 +127,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
 | Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
 
-**1:1 libp2p chrome:** Connected when signaling is joined/`InCall` **and** seat media is **Live** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch) Phase 2) — not `StartSfu` alone, not `ReleaseDirect` → `DirectConnected` alone. Bridge `CommitDirectConnected` / hop `CompleteAttach` call `NoteLive`; JoinedLocal + Idle → Calling.
+**1:1 libp2p chrome ([V037](../../projects/p2p-av-calls/DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed)):** Connected when `InCall` **and** Status is `DirectLive` or `HopLive` — not `StartSfu` alone, not TX-only (`DegradedTxOnly`), not seat Live alone when Status lags. Bridge / hop CompleteAttach report Live via Lifecycle; seat `NoteLive` remains the bind projection ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)).
 
 ---
 
@@ -391,14 +393,16 @@ These are architectural, not one-off hacks.
 | Race | Direction / symptom | Mitigation (home) |
 |------|---------------------|-------------------|
 | 1:1 enters SFU wait | “group needs media_relay” on direct call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 (V025) |
+| Direct + Hop both StartSfu | Brief hop audio then chrome “direct” / silence | **V037:** Status arms one planner; P2P Deciding bumps `media_cancel_gen`; inbound CallSfuAttach / CompleteAttach gated |
 | 1:1 connect fail / hang | Connecting forever | Mark connect-failed + ~75s timeout; UI Retry rebuilds offerer dial; tip via `PlatformUserHints` |
-| Mid-call invite from 2nd peer | Chrome gone after 45s | Initiator SoftMigrates on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait does not leave while migrate in flight |
+| Mid-call invite from 2nd peer | Chrome gone after 45s | Initiator SoftMigrates on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; Status `Migrating` exclusive (V037) |
 | macOS Local Network | Android↔Mac LAN libp2p dial | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
 | Accept on UI / ring stuck | Samsung frozen Accept dialog | CallLifecycle AcceptClicked + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
 | Answerer media before `CallMediaKey` | Hello rejected / silent call | `MediaDeferred` → key → `MediaConnecting`; offerer dial retry; **exhaustion → `ConnectFailed` + `call.error.media_key_timeout`** (not stuck MediaPending) |
 | N025 listen on UI tick | UI hitch; `/tcp/0` advertised | Late bind in fork; lifecycle desire; start listen on IO; mDNS after bound port |
 | Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context (inbound key fill may hop Normal); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
 | SoftMigrate ReleaseDirect vs duplex EOF | Local Detach then `on_failed` / ConnectFailed | Intentional Detach sets Detaching/Idle first; late `Fail` ignored when already detaching — bridge still suppresses ConnectFailed when SFU expected |
+| Seat Live vs TX-only | Connected chrome with no RX | Status `DegradedTxOnly` / health NoAudio overrides Connected (V037) |
 
 ### Transport session machines (V033 / N026)
 

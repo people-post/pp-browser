@@ -11,17 +11,20 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
-| ADRs | V001–**V036** |
+| ADRs | V001–**V037** |
 | **V035 SoftMigrate scope** | PreferLocal only for **LAN-confirmed Link**; Site/Wide → org seed; ignore stale CallSfuAttach/HopRefuse/**CallAccept** when another call is bound |
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
+| **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
-| **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed; gtest `call_lifecycle_test` |
+| **CallLifecycle orchestrator** | **V037 State+Status:** `CallPhase` + `CallMediaStatus`; one planner armed; `media_cancel_gen`; N025 from `WantEphemeralListen`; gtest `call_lifecycle_test` |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/realtime/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
-| **Call media health UI** | Quality bars + Fair/Poor/NoAudio; Call details **Path** = direct / punched / circuit / media_relay (not status-bar Direct); subtitle shows path when connected |
+| **Call media health UI** | Quality bars + Fair/Poor/NoAudio; Call details **Path** = direct / punched / circuit / media_relay (**`media_relay` only when hop.attached** — 1:1 Amp `sfu_mode` alone is not relay); subtitle shows path when seat Live; NoAudio/SendingOnly overrides Connected claim |
+| **1:1 NAT TX-only escalate** | After DirectConnected, if TX alive + RX=0 for ~4s on non-circuit path → force circuit Ensure + re-`BeginSession` (once per call) |
+| **1:1 vs stale CallSfuAttach** | Accept→P2P bumps migrate gen + clears SoftMigrate; inbound `CallSfuAttach` ignored unless N≥3 / WaitForAttach / SoftMigrate; stale CompleteAttach without flight ownership aborts StartSfu (dogfood: brief hop audio → chrome “direct”) |
 | **V034 libp2p video_lo** | H264 on same 1:1 duplex + SFU ch1; v2 frames; shared call media key (one encrypt / hop fan-out); hop never sheds audio for video; Immersive per-peer tiles |
 | Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
 
@@ -71,7 +74,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 ## Next agent — start here
 
-1. **V036 dogfood** — Leave→re-call Calling until NoteLive; SoftMigrate N=3 keep audio; path token gates (no ReleaseDirect without bind).
+1. **V037 / NAT dogfood** — 1:1: Status=Direct* blocks inbound CallSfuAttach StartSfu; Connected only DirectLive/HopLive; TX-only → DegradedTxOnly / circuit; SoftMigrate logs status=Migrating.
 2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.
 3. **m1** desktop / mDNS dial gaps if they block ship.
 
@@ -93,3 +96,5 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
 | Put Accept / Connect / PollInbox on Browser IO | Dedicated workers / hop off IO |
 | 1:1 auto SoftMigrate to `media_relay` | Circuit only for undialable 1:1; SFU is N≥3 |
+| Treat status-bar Direct / dialable as bidirectional audio | Dialable ≠ duplex; health path + RX frames decide; TX-only escalates via circuit |
+| Arm Bridge and Topology together after Accept | **V037** Status arms one planner; Deciding bumps `media_cancel_gen` |
