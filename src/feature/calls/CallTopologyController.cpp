@@ -112,7 +112,8 @@ void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
-  return awaiting_sfu_recovery_ || soft_migrate_in_flight_ || !sfu_attach_wait_call_id_.empty();
+  return awaiting_sfu_recovery_ || soft_migrate_in_flight_ || !sfu_attach_wait_call_id_.empty() ||
+         guest_reattach_in_flight_;
 }
 
 bool CallTopologyController::IsSfuAttached() const {
@@ -1184,6 +1185,7 @@ void CallTopologyController::OnGuestSfuTransportLost() {
                   << " call_id=" << call_id;
     // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
     host_.TopologySetLastMediaError(Tr("call.error.hop_unreachable_guest"));
+    host_.TopologyClearMediaActivity();
     return;
   }
   ++sfu_guest_reattach_attempts_;

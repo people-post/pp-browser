@@ -664,11 +664,16 @@ void CallController::RefreshPendingRing() {
 
     // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
     // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
-    // Media activity (hop find/switch) wins over Connected so SoftMigrate progress stays visible
-    // while the old path is still up.
+    // Media activity (hop find/switch / guest reattach) wins over Connected while in flight.
+    // Once media is healthy and nothing is awaiting recovery, clear sticky activity so
+    // "Reconnecting…" cannot override a working SFU call (e.g. exhausted reattach, no-mic).
     const bool media_connected = backend->Media().IsConnected() ||
                                  (backend->Phase() == CallPhase::InCall && backend->Media().IsActive());
-    const std::string activity = backend->PeekMediaActivity();
+    std::string activity = backend->PeekMediaActivity();
+    if (!activity.empty() && media_connected && !backend->IsAwaitingSfuRecovery()) {
+      backend->ClearMediaActivity();
+      activity.clear();
+    }
     if (mesh_messaging_failed) {
       in_call.elapsed = {};
       in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
@@ -686,7 +691,6 @@ void CallController::RefreshPendingRing() {
         in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
       }
     } else if (media_connected) {
-      backend->ClearMediaActivity();
       in_call.elapsed = FormatElapsed(backend->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
       in_call.show_retry = false;
@@ -1188,7 +1192,11 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
 
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
-  in_call.mic_hint = LevelHint(in_call.mic_level, false, muted).c_str();
+  if (!media.HasLocalCapture() && !muted) {
+    in_call.mic_hint = Tr("call.level.silent").c_str();
+  } else {
+    in_call.mic_hint = LevelHint(in_call.mic_level, false, muted).c_str();
+  }
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false).c_str();
   if (mesh_messaging_failed) {
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();

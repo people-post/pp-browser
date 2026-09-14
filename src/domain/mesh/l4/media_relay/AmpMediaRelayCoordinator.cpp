@@ -428,7 +428,8 @@ struct AmpMediaRelayCoordinator::Impl {
       client_.channel.reset();
       client_.subscriptions.clear();
       client_.reader_started = false;
-      handler = std::move(client_.transport_lost_handler);
+      // Keep the handler armed across reattach cycles (do not move it away).
+      handler = client_.transport_lost_handler;
     }
     (void)reason;
     if (handler) {

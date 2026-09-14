@@ -86,6 +86,25 @@ TEST(CallMediaHealthTest, MutedDoesNotFlagReceivingOnly) {
   EXPECT_EQ(v.quality, CallPathQuality::Excellent);
 }
 
+TEST(CallMediaHealthTest, NoCaptureDoesNotFlagReceivingOnly) {
+  auto in = BaseHealthyInput();
+  in.engine.tx_audio_frames = 0;
+  in.engine.last_tx_audio_ms = 0;
+  in.engine.muted = false;
+  in.engine.capture_available = false;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::None);
+  EXPECT_EQ(v.quality, CallPathQuality::Excellent);
+}
+
+TEST(CallMediaHealthTest, DebugSubtitleCapsStaleRxAge) {
+  auto in = BaseHealthyInput(100'000);
+  in.engine.last_rx_audio_ms = in.now_ms - 60'000;
+  const auto v = EvaluateCallMediaHealth(in);
+  const std::string sub = FormatCallDebugSubtitle(v, in.now_ms);
+  EXPECT_NE(sub.find("rx9999ms"), std::string::npos) << sub;
+}
+
 TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
   auto in = BaseHealthyInput();
   in.reconnecting = true;

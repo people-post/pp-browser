@@ -37,6 +37,8 @@ struct CallMediaEngineHealth {
   bool connected = false;
   bool sfu_mode = false;
   bool muted = false;
+  /** False when mic open failed / absent — silence may still be sent; not a TX fault. */
+  bool capture_available = true;
   double path_pressure = 0.0;
   int64_t opus_target_bps = 0;
   uint64_t outbound_drops = 0;

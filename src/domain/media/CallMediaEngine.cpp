@@ -1304,6 +1304,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.connected = impl_->connected.load(std::memory_order_relaxed);
   h.sfu_mode = impl_->sfu_mode;
   h.muted = impl_->muted.load(std::memory_order_relaxed);
+  h.capture_available = impl_->capture_available;
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
   h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);

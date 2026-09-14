@@ -44,7 +44,10 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
           : (in.engine.last_tx_audio_ms > 0 ? 0 : 1'000'000);
 
   const bool rx_alive = in.engine.rx_audio_frames > 0 && rx_age < 1500;
-  const bool tx_alive = in.engine.muted || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
+  // No mic (intentional headless / missing device) is not a TX fault — same as muted.
+  const bool tx_expected = !in.engine.muted && in.engine.capture_available;
+  const bool tx_alive =
+      !tx_expected || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
 
   if (in.reconnecting || (!in.engine.connected && in.engine.active)) {
     out.quality = CallPathQuality::Reconnecting;
@@ -53,7 +56,7 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.quality = CallPathQuality::NoAudio;
     out.asymmetry = CallAudioAsymmetry::SendingOnly;
     out.quality_bars = 0;
-  } else if (in.engine.active && in.engine.connected && rx_alive && !tx_alive && !in.engine.muted) {
+  } else if (in.engine.active && in.engine.connected && rx_alive && !tx_alive && tx_expected) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;
@@ -129,11 +132,17 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
   out << (v.engine.sfu_mode ? "SFU" : "P2P") << " · ";
   out << (v.engine.opus_target_bps / 1000) << "k · p";
   const double p = std::max(v.engine.path_pressure, v.hop.path_pressure);
-  out << std::fixed;
-  out.precision(1);
-  out << p;
+  {
+    std::ostringstream pressure;
+    pressure << std::fixed;
+    pressure.precision(1);
+    pressure << p;
+    out << pressure.str();
+  }
   if (rx_age >= 0) {
-    out << " · rx" << rx_age << "ms";
+    // Cap so a stalled peer does not look like a bogus multi-million counter.
+    const int64_t shown = rx_age > 9999 ? 9999 : rx_age;
+    out << " · rx" << shown << "ms";
   }
   return out.str();
 }
