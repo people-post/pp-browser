@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallTxOnlyEscalateLogic.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/SfuAttachFanout.h"
@@ -26,9 +27,6 @@ constexpr int kConnectAttemptTimeoutMs = 15000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
 constexpr int kMediaKeyInboxPollRounds = 90;
 constexpr int kInboundMediaKeyWaitMs = 8000;
-/** TX frames without any RX after connect — escalate "direct" via circuit (NAT one-way). */
-constexpr int64_t kTxOnlyEscalateGraceMs = 4000;
-constexpr uint64_t kTxOnlyEscalateMinTxFrames = 80;
 /**
  * Offerer prefers inbound (answerer reverse-dial). Grace must cover answerer dial reachability
  * (kDialWaitBudgetMs) plus a short MediaKey/settle margin — shorter grace caused fallback dial
@@ -339,37 +337,29 @@ void CallMediaBridge::PollMeshConnectHealth() {
 }
 
 void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
-  if (tx_only_escalation_done_ || host_.P2pIsSfuAttached() || stopping_.load()) {
-    return;
-  }
-  if (media_path_kind_ == "circuit") {
-    return; // already on circuit — further recovery is Retry / Leave
-  }
-  if (!circuit_reach_ || !direct_.IsActive()) {
-    return;
-  }
-  const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty() || media_call_id_ != call_id) {
-    return;
-  }
-  const auto snap = media_.HealthSnapshot();
-  if (snap.rx_audio_frames > 0) {
-    return;
-  }
-  if (snap.tx_audio_frames < kTxOnlyEscalateMinTxFrames) {
-    return;
-  }
-  const int64_t now = util::NowUnixMs();
-  if (direct_connected_at_ms_ <= 0 || now - direct_connected_at_ms_ < kTxOnlyEscalateGraceMs) {
-    return;
-  }
   std::string peer = media_peer_identity_;
-  if (peer.empty()) {
+  const std::string call_id = media_.ActiveCallId();
+  if (peer.empty() && !call_id.empty()) {
     if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
     }
   }
-  if (peer.empty()) {
+  const auto snap = media_.HealthSnapshot();
+  CallTxOnlyEscalateDecisionInput in;
+  in.already_done = tx_only_escalation_done_;
+  in.sfu_attached = host_.P2pIsSfuAttached();
+  in.stopping = stopping_.load();
+  in.media_path_kind = media_path_kind_;
+  in.has_circuit_reach = circuit_reach_ != nullptr;
+  in.direct_active = direct_.IsActive();
+  in.active_call_id = call_id;
+  in.media_call_id = media_call_id_;
+  in.rx_audio_frames = snap.rx_audio_frames;
+  in.tx_audio_frames = snap.tx_audio_frames;
+  in.direct_connected_at_ms = direct_connected_at_ms_;
+  in.now_ms = util::NowUnixMs();
+  in.peer_nonempty = !peer.empty();
+  if (!ShouldEscalateTxOnlyDirect(in)) {
     return;
   }
   tx_only_escalation_done_ = true;

@@ -240,13 +240,16 @@ stateDiagram-v2
 
 ### Remaining work (call-media / peer-honesty)
 
-| Item | Why not done yet |
-|------|------------------|
-| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; Connect wait and peer-reach (`EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`) no longer park MeshControl. Sync `Connect()` remains for tests/harnesses. |
-| **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
+Rewrite-debt tracking: [PHASES rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) / [V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3).
+
+| Item | Status |
+|------|--------|
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
+| **Inbound handler must not stall Normal** | **Open:** Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream; needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
+| **s4 circuit bridge SM** | Optional — only if Leave/abort hangs block dogfood (V038 D4). |
 
 ---
 

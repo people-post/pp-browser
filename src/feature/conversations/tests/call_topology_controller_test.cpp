@@ -1,6 +1,7 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallLifecycle.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
@@ -263,6 +264,10 @@ protected:
   }
 
   void TearDown() override {
+    if (topo_) {
+      topo_->SetLifecycle(nullptr);
+    }
+    lifecycle_.reset();
     topo_.reset();
     media_.reset();
     contacts_.reset();
@@ -319,7 +324,34 @@ protected:
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
   std::unique_ptr<CallTopologyController> topo_;
+  std::unique_ptr<CallLifecycle> lifecycle_;
 };
+
+TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {
+  // V037/V038: even with N≥3 in store, Direct* Status must not StartSfu on stale CallSfuAttach.
+  const std::string call_id = "call:direct-blocks-hop";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  lifecycle_ = std::make_unique<CallLifecycle>();
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  ASSERT_TRUE(lifecycle_->AllowsDirectPath());
+  ASSERT_FALSE(lifecycle_->AllowsHopPath());
+  topo_->SetLifecycle(lifecycle_.get());
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  attach.hop_multiaddr =
+      "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
+  dial_->force_dialable[attach.hop_peer_id] = true;
+
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_EQ(relay_->quote_calls, 0);
+  EXPECT_FALSE(topo_->IsSfuAttached());
+}
 
 TEST_F(CallTopologyControllerTest, LocalJoinedWithoutHintDoesNotQuote) {
   const std::string call_id = "call:wait";

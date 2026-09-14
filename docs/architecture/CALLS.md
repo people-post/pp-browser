@@ -7,9 +7,10 @@
 **Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallMediaBridge`.
 
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
-**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V034** — libp2p **video_lo**).  
+**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V038** — N=2 circuit for NAT; SoftMigrate N≥3 only).  
 **Host receive / QoS matrix:** [HOST_RECEIVE_POLICY.md](../../projects/p2p-av-calls/HOST_RECEIVE_POLICY.md) (V032 + V034 video frames / hop audio-priority drop).  
 **Transport session machines:** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033 s2a) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026 s3a+s3b) — circuit compose loopbacks green.  
+**Rewrite debt:** [PHASES rd](../../projects/p2p-av-calls/PHASES.md#rd--amp-call-media-rewrite-debt-v038) — D0–D4 automated gates (gtest / compose / `B-CALL-*` / `B-HARD-CALL`); OEM dogfood optional — [CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood).  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).  
@@ -179,20 +180,21 @@ flowchart TB
 
 ---
 
-## Topology rules (V021 + V026)
+## Topology rules (V021 + V026 + V038)
 
 | Joined N | Media path (target) | Notes |
 |----------|---------------------|-------|
 | 1 (ringing / solo) | No media yet | Invite outstanding |
-| **2** | **Direct libp2p** when dialable; else mesh hop / circuit | V026 libp2p-only product path |
-| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator) |
+| **2** | **Direct Amp call-media** when dialable; else **punch → circuit** nested Session | [V038](../../projects/p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) — never SoftMigrate for NAT |
+| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator); circuit may still reach the hop |
 
-- Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 libp2p direct after SFU attach.
+- Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 call-media after SFU attach.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
-- Legacy ICE-fail → SFU auto-recovery remains group-only; 1:1 recovery is libp2p dial/hop Retry (mesh).
-- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
+- Auto `media_relay` attach is **group-only**; 1:1 undialable recovery is Amp dial / punch / circuit (V025/V038).
+- **Hop dial:** SoftMigrate needs stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
+- **`CallMediaEngine::StartSfu`:** starts capture + duplex send fn for **both** 1:1 Amp and hop SFU — not “join SFU” alone (document-only name; V038).
 
-`CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes N thresholds (`ShouldUseMediaRelay` = N≥3 only) until 1:1 hop policy is retargeted under V026.
+`CallMediaTopology` (`ShouldUseMediaRelay` = N≥3 only) matches V038.
 
 ---
 
@@ -392,7 +394,7 @@ These are architectural, not one-off hacks.
 
 | Race | Direction / symptom | Mitigation (home) |
 |------|---------------------|-------------------|
-| 1:1 enters SFU wait | “group needs media_relay” on direct call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 (V025) |
+| 1:1 enters SFU wait | “group needs media_relay” on direct call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 (V025/V038) |
 | Direct + Hop both StartSfu | Brief hop audio then chrome “direct” / silence | **V037:** Status arms one planner; P2P Deciding bumps `media_cancel_gen`; inbound CallSfuAttach / CompleteAttach gated |
 | 1:1 connect fail / hang | Connecting forever | Mark connect-failed + ~75s timeout; UI Retry rebuilds offerer dial; tip via `PlatformUserHints` |
 | Mid-call invite from 2nd peer | Chrome gone after 45s | Initiator SoftMigrates on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; Status `Migrating` exclusive (V037) |

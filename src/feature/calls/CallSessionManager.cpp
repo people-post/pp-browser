@@ -1,5 +1,6 @@
 #include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallListenAddrsLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
@@ -792,15 +793,12 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
     }
   }
   if (local_listen_multiaddrs_) {
-    invite.listen_multiaddrs = local_listen_multiaddrs_();
+    FillCallListenFields(local_listen_multiaddrs_(), invite.libp2p_peer_id, invite.listen_multiaddrs);
   }
+  // Explicit mesh PeerId wins over /p2p/ suffix derived from listen MAs.
   if (local_mesh_peer_id_) {
-    invite.libp2p_peer_id = local_mesh_peer_id_();
-  }
-  if (invite.libp2p_peer_id.empty()) {
-    const auto ids = PeerIdsFromListenMultiaddrs(invite.listen_multiaddrs);
-    if (!ids.empty()) {
-      invite.libp2p_peer_id = ids.front();
+    if (const std::string pid = local_mesh_peer_id_(); !pid.empty()) {
+      invite.libp2p_peer_id = pid;
     }
   }
   if (local_peer_caps_) {
@@ -995,15 +993,11 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     (void)initiation_billing_->MarkOpen(inviter);
   }
   if (local_listen_multiaddrs_) {
-    accept.listen_multiaddrs = local_listen_multiaddrs_();
+    FillCallListenFields(local_listen_multiaddrs_(), accept.libp2p_peer_id, accept.listen_multiaddrs);
   }
   if (local_mesh_peer_id_) {
-    accept.libp2p_peer_id = local_mesh_peer_id_();
-  }
-  if (accept.libp2p_peer_id.empty()) {
-    const auto ids = PeerIdsFromListenMultiaddrs(accept.listen_multiaddrs);
-    if (!ids.empty()) {
-      accept.libp2p_peer_id = ids.front();
+    if (const std::string pid = local_mesh_peer_id_(); !pid.empty()) {
+      accept.libp2p_peer_id = pid;
     }
   }
   if (local_peer_caps_) {

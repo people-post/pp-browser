@@ -51,7 +51,10 @@ public:
   };
   using SfuSendFn = std::function<void(const SfuPacket&)>;
 
-  /** Blind SFU backend: capture/encode → SfuSendFn (V021/V024). */
+  /**
+   * Start capture + duplex send for Amp 1:1 call-media **or** media_relay hop (V038).
+   * Name is historical — not “join SFU” alone; Bridge and Topology both call this.
+   */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
   /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);

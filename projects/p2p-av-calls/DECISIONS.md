@@ -873,3 +873,31 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V036 MediaSeat; V021 SoftMigrate.
 
 ---
+
+## V038 — N=2 circuit for NAT; SoftMigrate reserved for N≥3
+
+**Date:** 2026-09-14  
+**Status:** Accepted  
+**Decision:** Lock the Amp call-media rewrite payoff path for undialable peers. **Circuit** and **`media_relay` SoftMigrate** are different layers — do not use SoftMigrate as 1:1 NAT recovery.
+
+| Joined N | Media path | NAT / undialable |
+|----------|------------|------------------|
+| **2** | Prefer **direct** Amp call-media (`/pp-browser/realtime/1.0.0`) | **publish → punch → circuit-carried nested Session** (A024); never auto SoftMigrate / `media_relay` attach for NAT alone |
+| **≥3** | SoftMigrate → blind **`media_relay`** star (V021) | Circuit may still be used underneath to *reach* the hop PeerId |
+| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021) |
+
+### Normative rules
+
+1. **Circuit enables PeerId dial** (opaque tunnel / nested carrier). Media remains A↔B E2E call-media under the call media key.
+2. **`media_relay` changes topology** (blind fan-out among joined peers). It is the multiparty SFU path, not the default 1:1 NAT fix.
+3. **Dialable ≠ duplex.** TX-only after DirectConnected escalates via **circuit Ensure** + re-`BeginSession` (once per call) — not SoftMigrate.
+4. **V037 Status** arms Bridge for Direct* / `DegradedTxOnly`; Topology for Hop* / `Migrating`. Inbound `CallSfuAttach` must not `StartSfu` while Status is Direct*.
+5. **`CallMediaEngine::StartSfu`** means start capture + duplex send fn for **both** 1:1 and hop — not “join SFU” alone (document-only; no rename campaign).
+
+**Rationale:** SoftMigrate-for-NAT mixed dialability with group topology, imported quote/attach/WaitForAttach UX onto plain 1:1, and misfired when no hop existed (V025). V026 already pointed undialable 1:1 at mesh hop/circuit; this ADR freezes that as the rewrite payoff requirement and bans reopening SoftMigrate-for-1:1 without a new ADR.
+
+**Alternatives:** Always SoftMigrate 1:1 to `media_relay` when undialable (rejected — false group path); revive WebRTC/ICE for NAT (rejected — V026 one peer stack).
+
+**Cross-link:** [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p); [V026](#v026--libp2p-only-call-media-http--libp2p-networking); [V037](#v037--calllifecycle-state--status-one-planner-armed); [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) (NAT → circuit; call over NAT → nested realtime); [CALL_MEDIA_CIRCUIT.md](../adp/CALL_MEDIA_CIRCUIT.md); [CALLS.md](../../docs/architecture/CALLS.md); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038).
+
+---
