@@ -8,16 +8,16 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Types.h>
 
 #include <cstdint>
 #include <functional>
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -44,60 +44,60 @@ public:
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
 
   struct ContactListRow {
-    Rml::String id;
-    Rml::String title;
-    Rml::String subtitle;
-    Rml::String trust;
+    ui::String id;
+    ui::String title;
+    ui::String subtitle;
+    ui::String trust;
     int unread_count = 0;
-    Rml::String unread_display;
+    ui::String unread_display;
     bool has_icon = false;
-    Rml::String icon_src;
-    Rml::String avatar_letter = "?";
+    ui::String icon_src;
+    ui::String avatar_letter = "?";
     int avatar_tone = 0;
   };
 
   struct ContactIdentityRow {
-    Rml::String label;
-    Rml::String value;
-    Rml::String kind;
+    ui::String label;
+    ui::String value;
+    ui::String kind;
     bool is_primary = false;
   };
 
   struct ContactThreadRow {
-    Rml::String id;
-    Rml::String title;
-    Rml::String channel_label;
-    Rml::String kind;
+    ui::String id;
+    ui::String title;
+    ui::String channel_label;
+    ui::String kind;
     int unread_count = 0;
-    Rml::String unread_display;
+    ui::String unread_display;
   };
 
   struct ContactDetail {
-    Rml::String id;
-    Rml::String title;
-    Rml::String subtitle;
-    Rml::String display_name;
-    Rml::String nickname;
-    Rml::String relay_id;
-    Rml::String peer_id;
-    Rml::String multiaddrs_text;
-    Rml::String multiaddrs_summary;
-    Rml::String trust;
-    Rml::String trust_key;
-    Rml::String signing_fingerprint;
-    Rml::String message_hint;
-    Rml::String remote_updated;
+    ui::String id;
+    ui::String title;
+    ui::String subtitle;
+    ui::String display_name;
+    ui::String nickname;
+    ui::String relay_id;
+    ui::String peer_id;
+    ui::String multiaddrs_text;
+    ui::String multiaddrs_summary;
+    ui::String trust;
+    ui::String trust_key;
+    ui::String signing_fingerprint;
+    ui::String message_hint;
+    ui::String remote_updated;
     std::vector<ContactIdentityRow> identities;
     std::vector<ContactThreadRow> threads;
     bool can_message = false;
     bool has_relay_id = false;
     bool has_icon = false;
-    Rml::String icon_src;
-    Rml::String avatar_letter = "?";
+    ui::String icon_src;
+    ui::String avatar_letter = "?";
     int avatar_tone = 0;
   };
 
-  bool RegisterModel(Rml::Context* context);
+  bool RegisterModel(ui::Context* context);
   void OnNavTabActivated();
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
@@ -108,20 +108,20 @@ public:
   void OnDetailDismissed();
 
 private:
-  static void SelectContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SecureMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void AddContactMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void FindSomeoneCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CopyIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ShareContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SetTrustCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RemoveContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnSearchChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnContactFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SyncRemoteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void StartChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SecureMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void AddContactMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void FindSomeoneCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ShareContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SetTrustCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RemoveContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnContactFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SyncRemoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
@@ -130,7 +130,7 @@ private:
   void OnBackToList();
   void OnStartChat();
   void OnSecureMessage();
-  void OnAddContactMenu(Rml::Event& ev);
+  void OnAddContactMenu(ui::Event& ev);
   void OnAddContact();
   void OnFindSomeone();
   void OnCopyId();
@@ -154,10 +154,10 @@ private:
   void NavigateToChatSession();
 
   std::vector<ContactListRow> contacts_;
-  Rml::String search_query_;
+  ui::String search_query_;
   bool compact_layout_ = false;
   ContactDetail selected_;
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
   MessagingContactsPorts contacts_ports_;

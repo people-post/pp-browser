@@ -3,8 +3,8 @@
 #include "foundation/platform/AndroidSystemChrome.h"
 #include "foundation/platform/AssetIO.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/ElementDocument.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/ElementDocument.h>
 
 #include <SDL3/SDL.h>
 
@@ -13,7 +13,7 @@ namespace pbr {
 namespace {
 
 AppearanceMode g_active_preference = AppearanceMode::System;
-Rml::Context* g_context = nullptr;
+ui::Context* g_context = nullptr;
 
 bool SystemPrefersDark() {
   switch (SDL_GetSystemTheme()) {
@@ -26,7 +26,7 @@ bool SystemPrefersDark() {
   }
 }
 
-void ActivateResolvedTheme(Rml::Context* context, bool dark) {
+void ActivateResolvedTheme(ui::Context* context, bool dark) {
   if (!context) {
     return;
   }
@@ -79,14 +79,14 @@ bool Theme::ResolveDark(AppearanceMode preference) {
   }
 }
 
-void Theme::ApplyAppearance(Rml::Context* context, AppearanceMode preference) {
+void Theme::ApplyAppearance(ui::Context* context, AppearanceMode preference) {
   g_active_preference = preference;
   g_context = context;
   ActivateResolvedTheme(context, ResolveDark(preference));
   AndroidSystemChrome::SetAppearance(ToAppearanceString(preference));
 }
 
-void Theme::SyncSystemTheme(Rml::Context* context) {
+void Theme::SyncSystemTheme(ui::Context* context) {
   if (g_active_preference != AppearanceMode::System) {
     return;
   }

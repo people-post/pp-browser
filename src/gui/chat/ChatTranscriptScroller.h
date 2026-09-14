@@ -3,7 +3,7 @@
 #include "domain/ui/ChatWidgetTypes.h"
 #include "feature/conversations/ConversationsFacade.h"
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <cstdint>
 #include <functional>
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace Rml {
+namespace ui {
 class Context;
 class Element;
 }
@@ -23,12 +23,12 @@ class ChatTranscriptScroller {
 public:
   struct View {
     bool& show_jump_to_latest;
-    Rml::String& jump_to_latest_label;
+    ui::String& jump_to_latest_label;
     std::vector<MessageDisplayRow>& messages;
     bool& has_turns;
   };
 
-  ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready);
+  ChatTranscriptScroller(ui::Context*& context, View view, bool& messaging_ready);
   void BindConversationsFacade(ConversationsFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
@@ -64,14 +64,14 @@ public:
   void ExpandLoadedMinFromOlderPage(const std::string& thread_id, int64_t before_display_order);
 
 private:
-  Rml::Element* FindMessagesScrollElement() const;
+  ui::Element* FindMessagesScrollElement() const;
   void UpdateJumpToLatestLabel();
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
   void LoadOlderLocalHistory();
 
-  Rml::Context*& context_;
+  ui::Context*& context_;
   View view_;
   bool& messaging_ready_;
   std::function<void()> dirty_turns_;

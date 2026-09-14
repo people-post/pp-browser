@@ -8,8 +8,8 @@
 #include "gui/ClientCompatController.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/FileInterface.h>
+#include <ui/Core.h>
+#include <ui/base/FileInterface.h>
 
 #include <cstddef>
 #include <string>
@@ -68,10 +68,10 @@ int PrimaryCjkFaceIndex() {
 /**
  * Process-lifetime buffer for the shared CJK collection. RmlUi's memory
  * LoadFontFace does not copy these bytes — they must outlive font faces
- * (valid until after Rml::Shutdown).
+ * (valid until after ui::Shutdown).
  */
-std::vector<Rml::byte>& CjkCollectionBytes() {
-  static std::vector<Rml::byte> bytes;
+std::vector<ui::byte>& CjkCollectionBytes() {
+  static std::vector<ui::byte> bytes;
   return bytes;
 }
 
@@ -82,13 +82,13 @@ bool EnsureCjkCollectionLoaded() {
   }
 
   const std::string path = IAssetLocator::Instance().Resolve(kCjkCollectionAsset);
-  Rml::FileInterface* files = Rml::GetFileInterface();
+  ui::FileInterface* files = ui::GetFileInterface();
   if (files == nullptr) {
     log().warning << "Deferred CJK load failed: no FileInterface (" << kCjkCollectionAsset << ")";
     return false;
   }
 
-  const Rml::FileHandle handle = files->Open(path);
+  const ui::FileHandle handle = files->Open(path);
   if (!handle) {
     log().warning << "Deferred CJK load failed: open " << path;
     return false;
@@ -123,8 +123,8 @@ void LoadCjkFaceFromCollection(int face_index, const char* phase_name) {
   auto& bytes = CjkCollectionBytes();
   // Empty family: FreeType fills family/style from the selected collection face.
   const bool ok =
-      Rml::LoadFontFace(Rml::Span<const Rml::byte>(bytes.data(), bytes.size()), "", Rml::Style::FontStyle::Normal,
-                        Rml::Style::FontWeight::Auto, true /*fallback_face*/, face_index);
+      ui::LoadFontFace(ui::Span<const ui::byte>(bytes.data(), bytes.size()), "", ui::Style::FontStyle::Normal,
+                        ui::Style::FontWeight::Auto, true /*fallback_face*/, face_index);
   if (!ok) {
     log().warning << "Deferred CJK face load failed: index=" << face_index;
   }
@@ -132,7 +132,7 @@ void LoadCjkFaceFromCollection(int face_index, const char* phase_name) {
 
 void LoadFallbackFace(const std::string& relative, const char* phase_name) {
   StartupPhase phase(phase_name);
-  const bool ok = Rml::LoadFontFace(IAssetLocator::Instance().Resolve(relative), true);
+  const bool ok = ui::LoadFontFace(IAssetLocator::Instance().Resolve(relative), true);
   if (!ok) {
     log().warning << "Deferred font load failed: " << relative;
   }

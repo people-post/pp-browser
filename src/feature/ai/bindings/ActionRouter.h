@@ -3,13 +3,13 @@
 #include "feature/ai/bindings/BindingsManifest.h"
 #include "common/Module.h"
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 #include <functional>
 #include <string>
 #include <unordered_map>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -21,7 +21,7 @@ class ActionRouter : public Module {
 public:
   ActionRouter();
 
-  void Attach(Rml::Context* context);
+  void Attach(ui::Context* context);
   void Detach();
 
   void SetManifest(const BindingsManifest& manifest);
@@ -32,7 +32,7 @@ public:
   void Invoke(const std::string& action);
 
 private:
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   BindingsManifest manifest_;
   ToolExecutor tool_executor_;
   std::function<void(const std::string& model, const std::string& binding)> model_dirty_callback_;

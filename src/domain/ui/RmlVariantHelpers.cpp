@@ -2,23 +2,23 @@
 
 namespace pbr {
 
-std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
+std::optional<int> EventArgAsInt(const ui::VariantList& args, size_t index) {
   if (args.size() <= index) {
     return std::nullopt;
   }
-  const Rml::Variant& value = args[index];
+  const ui::Variant& value = args[index];
   switch (value.GetType()) {
-  case Rml::Variant::INT:
+  case ui::Variant::INT:
     return value.Get<int>();
-  case Rml::Variant::INT64:
+  case ui::Variant::INT64:
     return static_cast<int>(value.Get<int64_t>());
-  case Rml::Variant::FLOAT:
+  case ui::Variant::FLOAT:
     return static_cast<int>(value.Get<float>());
-  case Rml::Variant::DOUBLE:
+  case ui::Variant::DOUBLE:
     return static_cast<int>(value.Get<double>());
-  case Rml::Variant::STRING:
+  case ui::Variant::STRING:
     try {
-      return std::stoi(std::string(value.Get<Rml::String>().c_str()));
+      return std::stoi(std::string(value.Get<ui::String>().c_str()));
     } catch (...) {
       return std::nullopt;
     }
@@ -27,11 +27,11 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
   }
 }
 
-std::optional<std::string> EventArgAsString(const Rml::VariantList& args, size_t index) {
-  if (args.size() <= index || args[index].GetType() != Rml::Variant::STRING) {
+std::optional<std::string> EventArgAsString(const ui::VariantList& args, size_t index) {
+  if (args.size() <= index || args[index].GetType() != ui::Variant::STRING) {
     return std::nullopt;
   }
-  return std::string(args[index].Get<Rml::String>().c_str());
+  return std::string(args[index].Get<ui::String>().c_str());
 }
 
 } // namespace pbr

@@ -25,11 +25,11 @@
 
 #include "domain/ui/ShellTypes.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/SystemInterface.h>
 
 #include <SDL3/SDL.h>
 
@@ -421,13 +421,13 @@ void ContactsController::NavigateToChatSession() {
   }
 }
 
-bool ContactsController::RegisterModel(Rml::Context* context) {
+bool ContactsController::RegisterModel(ui::Context* context) {
   if (!context) {
     return false;
   }
   context_ = context;
 
-  const bool registered = DataModelHost::Instance().Register(context, "contacts", [this](Rml::DataModelConstructor& ctor) {
+  const bool registered = DataModelHost::Instance().Register(context, "contacts", [this](ui::DataModelConstructor& ctor) {
     auto& controller = *this;
     if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
       list_handle.RegisterMember("id", &ContactListRow::id);
@@ -599,82 +599,82 @@ void ContactsController::OnNavTabActivated() {
   NotifySurfaceChanged();
 }
 
-void ContactsController::SelectContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                               const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ContactsController::SelectContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnSelectContact(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnSelectContact(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ContactsController::BackToListCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ContactsController::BackToListCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnBackToList();
 }
 
-void ContactsController::StartChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void ContactsController::StartChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   Instance().OnStartChat();
 }
 
-void ContactsController::SecureMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                               const Rml::VariantList& /*args*/) {
+void ContactsController::SecureMessageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
   Instance().OnSecureMessage();
 }
 
-void ContactsController::AddContactMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                              const Rml::VariantList& /*args*/) {
+void ContactsController::AddContactMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                              const ui::VariantList& /*args*/) {
   Instance().OnAddContactMenu(ev);
 }
 
-void ContactsController::FindSomeoneCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void ContactsController::FindSomeoneCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   Instance().OnFindSomeone();
 }
 
-void ContactsController::OnContactFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                         const Rml::VariantList& /*args*/) {
+void ContactsController::OnContactFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                         const ui::VariantList& /*args*/) {
   Instance().OnContactFieldChanged();
 }
 
-void ContactsController::SyncRemoteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ContactsController::SyncRemoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnSyncRemote();
 }
 
-void ContactsController::CopyIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                        const Rml::VariantList& /*args*/) {
+void ContactsController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                        const ui::VariantList& /*args*/) {
   Instance().OnCopyId();
 }
 
-void ContactsController::ShareContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                              const Rml::VariantList& /*args*/) {
+void ContactsController::ShareContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
   Instance().OnShareContact();
 }
 
-void ContactsController::SetTrustCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ContactsController::SetTrustCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnSetTrust(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnSetTrust(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ContactsController::RemoveContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                               const Rml::VariantList& /*args*/) {
+void ContactsController::RemoveContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
   Instance().OnRemoveContact();
 }
 
-void ContactsController::OpenThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ContactsController::OpenThreadCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnOpenThread(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnOpenThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ContactsController::OnSearchChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                 const Rml::VariantList& /*args*/) {
+void ContactsController::OnSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                 const ui::VariantList& /*args*/) {
   Instance().OnSearchChanged();
 }
 
@@ -832,8 +832,8 @@ bool ContactsController::FlushSelectedContact() {
   return true;
 }
 
-void ContactsController::OnAddContactMenu(Rml::Event& ev) {
-  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
+void ContactsController::OnAddContactMenu(ui::Event& ev) {
+  const ui::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   actions.push_back({
@@ -956,7 +956,7 @@ void ContactsController::OnCopyId() {
     ShowToast("No ID to copy");
     return;
   }
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
   ShowToast(std::string(label) + " copied");
@@ -990,7 +990,7 @@ void ContactsController::OnShareContact() {
     ShowToast("Nothing to share");
     return;
   }
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
   ShowToast("Contact copied");

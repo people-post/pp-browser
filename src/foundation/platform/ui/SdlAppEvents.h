@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -11,7 +11,7 @@ namespace pbr {
 class SdlAppEvents {
 public:
   static void Install();
-  static bool PreProcess(Rml::Context* context, SDL_Event& event, bool& propagate_event);
+  static bool PreProcess(ui::Context* context, SDL_Event& event, bool& propagate_event);
 };
 
 } // namespace pbr

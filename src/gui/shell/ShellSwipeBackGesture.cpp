@@ -1,10 +1,10 @@
 #include "gui/shell/ShellSwipeBackGesture.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/ID.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
+#include <ui/base/ID.h>
 
 #include <cstdio>
 
@@ -16,17 +16,17 @@ constexpr float kDismissThresholdRatio = 0.30f;
 constexpr float kEdgeSwipeWidthDp = 28.f;
 constexpr int kDragDeadzonePx = 8;
 
-int EventMouseX(const Rml::Event& event) {
+int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
 }
 
-int EventMouseY(const Rml::Event& event) {
+int EventMouseY(const ui::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
 }
 
 } // namespace
 
-void ShellSwipeBackGesture::Attach(Rml::Element* listen_surface, Rml::Context* context, AttachOptions options,
+void ShellSwipeBackGesture::Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options,
                                    DismissCallback on_dismiss) {
   Detach();
   if (!listen_surface || !context) {
@@ -39,7 +39,7 @@ void ShellSwipeBackGesture::Attach(Rml::Element* listen_surface, Rml::Context* c
   context_ = context;
   options_ = std::move(options);
   on_dismiss_ = std::move(on_dismiss);
-  surface_->AddEventListener(Rml::EventId::Mousedown, this);
+  surface_->AddEventListener(ui::EventId::Mousedown, this);
   attached_ = true;
   SetSurfaceOffset(0.f, false);
 }
@@ -47,7 +47,7 @@ void ShellSwipeBackGesture::Attach(Rml::Element* listen_surface, Rml::Context* c
 void ShellSwipeBackGesture::Detach() {
   Abort();
   if (attached_ && surface_) {
-    surface_->RemoveEventListener(Rml::EventId::Mousedown, this);
+    surface_->RemoveEventListener(ui::EventId::Mousedown, this);
   }
   surface_ = nullptr;
   transform_target_ = nullptr;
@@ -72,15 +72,15 @@ void ShellSwipeBackGesture::Abort() {
   SetSurfaceOffset(0.f, true);
 }
 
-Rml::Element* ShellSwipeBackGesture::TransformTarget() const {
+ui::Element* ShellSwipeBackGesture::TransformTarget() const {
   return transform_target_ ? transform_target_ : surface_;
 }
 
-bool ShellSwipeBackGesture::IsUnder(Rml::Element* ancestor, Rml::Element* target) const {
+bool ShellSwipeBackGesture::IsUnder(ui::Element* ancestor, ui::Element* target) const {
   if (!ancestor || !target) {
     return false;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == ancestor) {
       return true;
     }
@@ -93,11 +93,11 @@ void ShellSwipeBackGesture::SetDocumentDragCapture(bool enabled) {
     return;
   }
   if (enabled) {
-    document_->AddEventListener(Rml::EventId::Mousemove, this, true);
-    document_->AddEventListener(Rml::EventId::Mouseup, this, true);
+    document_->AddEventListener(ui::EventId::Mousemove, this, true);
+    document_->AddEventListener(ui::EventId::Mouseup, this, true);
   } else {
-    document_->RemoveEventListener(Rml::EventId::Mousemove, this, true);
-    document_->RemoveEventListener(Rml::EventId::Mouseup, this, true);
+    document_->RemoveEventListener(ui::EventId::Mousemove, this, true);
+    document_->RemoveEventListener(ui::EventId::Mouseup, this, true);
   }
   document_drag_capture_ = enabled;
 }
@@ -111,10 +111,10 @@ float ShellSwipeBackGesture::PixelDeltaToDp(int delta_px) const {
 }
 
 float ShellSwipeBackGesture::ResolveSurfaceWidthDp() const {
-  Rml::Element* target = TransformTarget();
+  ui::Element* target = TransformTarget();
   if (target && context_) {
     const float ratio = context_->GetDensityIndependentPixelRatio();
-    const float width_px = target->GetBox().GetSize(Rml::BoxArea::Border).x;
+    const float width_px = target->GetBox().GetSize(ui::BoxArea::Border).x;
     if (ratio > 0.f && width_px > 0.f) {
       return width_px / ratio;
     }
@@ -122,12 +122,12 @@ float ShellSwipeBackGesture::ResolveSurfaceWidthDp() const {
   return options_.width_dp_fallback;
 }
 
-bool ShellSwipeBackGesture::ShouldIgnoreTarget(Rml::Element* target) const {
+bool ShellSwipeBackGesture::ShouldIgnoreTarget(ui::Element* target) const {
   if (!target) {
     return true;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
-    const Rml::String& tag = node->GetTagName();
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    const ui::String& tag = node->GetTagName();
     if (tag == "textarea" || tag == "input" || tag == "select") {
       return true;
     }
@@ -138,7 +138,7 @@ bool ShellSwipeBackGesture::ShouldIgnoreTarget(Rml::Element* target) const {
       }
       return true;
     }
-    const Rml::String& id = node->GetId();
+    const ui::String& id = node->GetId();
     if (id == "draft-input") {
       return true;
     }
@@ -146,8 +146,8 @@ bool ShellSwipeBackGesture::ShouldIgnoreTarget(Rml::Element* target) const {
   return false;
 }
 
-bool ShellSwipeBackGesture::IsChromeRegion(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+bool ShellSwipeBackGesture::IsChromeRegion(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == surface_) {
       break;
     }
@@ -160,7 +160,7 @@ bool ShellSwipeBackGesture::IsChromeRegion(Rml::Element* target) const {
   return false;
 }
 
-bool ShellSwipeBackGesture::ShouldStartSwipe(Rml::Element* target, int x_px) const {
+bool ShellSwipeBackGesture::ShouldStartSwipe(ui::Element* target, int x_px) const {
   if (!context_ || !surface_) {
     return false;
   }
@@ -181,7 +181,7 @@ bool ShellSwipeBackGesture::ShouldStartSwipe(Rml::Element* target, int x_px) con
 }
 
 void ShellSwipeBackGesture::SetSurfaceOffset(float dx_dp, bool animate) {
-  Rml::Element* target = TransformTarget();
+  ui::Element* target = TransformTarget();
   if (!target) {
     return;
   }
@@ -207,7 +207,7 @@ void ShellSwipeBackGesture::BeginDrag(int x_px, int y_px, bool from_edge) {
   SetDocumentDragCapture(true);
 }
 
-void ShellSwipeBackGesture::UpdateDrag(int x_px, int y_px, Rml::Event& event) {
+void ShellSwipeBackGesture::UpdateDrag(int x_px, int y_px, ui::Event& event) {
   if (!tracking_ || !TransformTarget()) {
     return;
   }
@@ -282,14 +282,14 @@ void ShellSwipeBackGesture::EndDrag() {
   SetSurfaceOffset(0.f, true);
 }
 
-void ShellSwipeBackGesture::ProcessEvent(Rml::Event& event) {
+void ShellSwipeBackGesture::ProcessEvent(ui::Event& event) {
   if (!surface_) {
     return;
   }
 
   switch (event.GetId()) {
-  case Rml::EventId::Mousedown: {
-    Rml::Element* target = event.GetTargetElement();
+  case ui::EventId::Mousedown: {
+    ui::Element* target = event.GetTargetElement();
     if (ShouldIgnoreTarget(target)) {
       return;
     }
@@ -302,10 +302,10 @@ void ShellSwipeBackGesture::ProcessEvent(Rml::Event& event) {
     BeginDrag(EventMouseX(event), EventMouseY(event), from_edge);
     break;
   }
-  case Rml::EventId::Mousemove:
+  case ui::EventId::Mousemove:
     UpdateDrag(EventMouseX(event), EventMouseY(event), event);
     break;
-  case Rml::EventId::Mouseup:
+  case ui::EventId::Mouseup:
     EndDrag();
     break;
   default:

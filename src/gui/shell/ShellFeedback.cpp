@@ -49,7 +49,7 @@ void ShellFeedback::ShowToast(ShellState& state, const std::string& message, Toa
   const ShellConfig config;
   ToastEntry entry;
   entry.id = NextToastId(state);
-  entry.message = Rml::String(message.c_str());
+  entry.message = ui::String(message.c_str());
   entry.expires_at_ms = ResolveNowMs(now_ms) + DurationMs(duration);
   state.toasts.push_back(std::move(entry));
   while (state.toasts.size() > config.max_toasts) {
@@ -79,7 +79,7 @@ double ShellFeedback::SecondsUntilNextToastExpiry(const ShellState& state, float
 }
 
 void ShellFeedback::ShowBanner(ShellState& state, const std::string& message) {
-  state.banner_message = Rml::String(message.c_str());
+  state.banner_message = ui::String(message.c_str());
 }
 
 void ShellFeedback::DismissBanner(ShellState& state) {
@@ -90,9 +90,9 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
                               std::function<void()> on_ok, const std::string& ok_label) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Alert;
-  state.dialog.title = Rml::String(title.c_str());
-  state.dialog.message = Rml::String(message.c_str());
-  state.dialog.ok_label = Rml::String(ok_label.c_str());
+  state.dialog.title = ui::String(title.c_str());
+  state.dialog.message = ui::String(message.c_str());
+  state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = false;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
@@ -111,9 +111,9 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
                                 std::function<void(bool)> on_result, const std::string& ok_label) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
-  state.dialog.title = Rml::String(title.c_str());
-  state.dialog.message = Rml::String(message.c_str());
-  state.dialog.ok_label = Rml::String(ok_label.c_str());
+  state.dialog.title = ui::String(title.c_str());
+  state.dialog.message = ui::String(message.c_str());
+  state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
@@ -133,12 +133,12 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
                                             std::function<void(bool, bool)> on_result) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
-  state.dialog.title = Rml::String(title.c_str());
-  state.dialog.message = Rml::String(message.c_str());
+  state.dialog.title = ui::String(title.c_str());
+  state.dialog.message = ui::String(message.c_str());
   state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = true;
-  state.dialog.checkbox_label = Rml::String(checkbox_label.c_str());
+  state.dialog.checkbox_label = ui::String(checkbox_label.c_str());
   state.dialog.checkbox_checked = checkbox_default;
   state.dialog.show_prompt = false;
   state.dialog.prompt_value = {};
@@ -152,13 +152,13 @@ void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, cons
                                std::function<void(bool, std::string)> on_result) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
-  state.dialog.title = Rml::String(title.c_str());
-  state.dialog.message = Rml::String(message.c_str());
+  state.dialog.title = ui::String(title.c_str());
+  state.dialog.message = ui::String(message.c_str());
   state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.show_prompt = true;
-  state.dialog.prompt_value = Rml::String(default_value.c_str());
+  state.dialog.prompt_value = ui::String(default_value.c_str());
   state.dialog.on_result = {};
   state.dialog.on_prompt_result = std::move(on_result);
   SyncDialogChrome("dialog_open");

@@ -25,10 +25,10 @@
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Input.h>
+#include <ui/base/Types.h>
 
 #include <optional>
 #include <string>
@@ -37,7 +37,7 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 class Element;
 }
@@ -91,7 +91,7 @@ public:
 
   using SessionRow = SessionDisplayRow;
 
-  bool Setup(Rml::Context* context);
+  bool Setup(ui::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
   void BindConversationsFacade(ConversationsFacade* facade);
   /** App-wired hook so messaging tool registration stays in Application (no ui→hub registration edge). */
@@ -120,7 +120,7 @@ public:
   SessionStore& Store();
   const SessionStore& Store() const;
   void Update();
-  /** Call after Rml::Context::Update so follow-tail uses fresh layout heights. */
+  /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
   void Shutdown();
   void OnApplicationPause();
@@ -141,13 +141,13 @@ public:
 
 private:
   struct ChatState {
-    Rml::String draft;
-    Rml::String draft_placeholder;
-    Rml::String status;
-    Rml::String thread_title;
-    Rml::String thread_subtitle;
-    Rml::String peer_link_status;
-    Rml::String peer_link_banner;
+    ui::String draft;
+    ui::String draft_placeholder;
+    ui::String status;
+    ui::String thread_title;
+    ui::String thread_subtitle;
+    ui::String peer_link_status;
+    ui::String peer_link_banner;
     bool show_peer_link = false;
     bool show_peer_link_banner = false;
     bool show_retry_peer_dial = false;
@@ -160,7 +160,7 @@ private:
     bool composer_input_disabled = false;
     bool show_attach_button = false;
     bool attachment_uploading = false;
-    Rml::String attachment_draft_name;
+    ui::String attachment_draft_name;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -174,13 +174,13 @@ private:
     bool show_psk_import = false;
     bool psk_has_key = false;
     bool psk_verified = false;
-    Rml::String psk_fingerprint;
-    Rml::String psk_export_b64;
-    Rml::String psk_import_text;
+    ui::String psk_fingerprint;
+    ui::String psk_export_b64;
+    ui::String psk_import_text;
     bool sync_in_progress = false;
     bool show_older_history_hint = false;
     bool show_jump_to_latest = false;
-    Rml::String jump_to_latest_label;
+    ui::String jump_to_latest_label;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
     bool use_messages_layout = true;
@@ -191,9 +191,9 @@ private:
   struct ShellState {
     std::vector<SessionRow> sessions;
     bool working_set_active = false;
-    Rml::String working_set_title;
-    Rml::String working_set_subtitle;
-    Rml::String working_set_rml;
+    ui::String working_set_title;
+    ui::String working_set_subtitle;
+    ui::String working_set_rml;
     TurnWidgetState working_set;
   };
 
@@ -204,50 +204,50 @@ private:
     bool from_llm = false;
   };
 
-  static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleReactionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenEmojiInsertCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void AttachFileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DownloadAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RetryAttachmentCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SelectCalendarDayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenPeerSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ClearHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ForgetMemoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SyncWithPeerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RetryGapSyncCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void StartNewSecureChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PauseIntegrityCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CopyPskKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TogglePskImportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ImportPskCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void VerifyPskCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RotatePskExportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void LoadOlderHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RetryPeerDialCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void MessagesScrollCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void JumpToLatestCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DownloadAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RetryAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SubmitFormCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CalendarPrevCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CalendarNextCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SelectCalendarDayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void NewChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void NewMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenNewSessionMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenThreadActionsMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CloseThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RetryGapSyncCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void StartNewSecureChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PauseIntegrityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CopyPskKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TogglePskImportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ImportPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void VerifyPskCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RotatePskExportCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenWorkingSetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void LoadOlderHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RetryPeerDialCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void MessagesScrollCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void JumpToLatestCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
   void OnNewMessage();
-  void OnOpenNewSessionMenu(Rml::Event& ev);
-  void OnOpenThreadActionsMenu(Rml::Event& ev);
-  void OnOpenPeerSheet(Rml::Event& ev);
+  void OnOpenNewSessionMenu(ui::Event& ev);
+  void OnOpenThreadActionsMenu(ui::Event& ev);
+  void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
   void OnForgetMemory();
@@ -266,14 +266,14 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
-  void OpenEmojiInsertMenu(Rml::Event* ev);
+  void OpenEmojiInsertMenu(ui::Event* ev);
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
-  void OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position);
+  void OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position);
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);
@@ -316,7 +316,7 @@ private:
   void ShellSetPrimaryPane(const std::string& key);
   void ShellOpenCompactChat();
   void ShellCloseCompactChat();
-  void ShellSetActivity(bool visible, const Rml::String& message = {});
+  void ShellSetActivity(bool visible, const ui::String& message = {});
   void ShellRemountNavRail();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
   void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
@@ -338,7 +338,7 @@ private:
   /** Agent session + cloud/mock LLM usable (Brief/API key resolved). Peer relay ignores this. */
   bool AgentCloudReady() const;
 
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
   std::function<void(ToolRegistry&)> register_messaging_tools_;
   AgentUiPorts agent_ports_;

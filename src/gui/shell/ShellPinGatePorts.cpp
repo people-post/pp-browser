@@ -12,7 +12,7 @@ ShellPinGatePorts MakeShellPinGatePorts(ShellHost& shell) {
     shell.State().unlock_in_progress = in_progress;
     shell.ReconcileStartupCover();
   };
-  ports.set_activity = [&shell](const bool visible, const Rml::String& message) {
+  ports.set_activity = [&shell](const bool visible, const ui::String& message) {
     shell.SetActivity(visible, message);
   };
   ports.dirty_pin_gate = [&shell]() { shell.DirtyPinGate(); };

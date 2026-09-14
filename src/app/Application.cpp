@@ -88,19 +88,19 @@
 #include "common/StartupTiming.h"
 #include "domain/mesh/reachability/Reachability.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/TextLoupe.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/base/Input.h>
+#include <ui/base/TextLoupe.h>
 
 #include "foundation/platform/ui/RmlUi_Backend.h"
-#include "RmlUi_Renderer_GL3.h"
+#include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
 #include "FontEngineInterfaceHarfBuzz.h"
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
-#include <RmlUi/Debugger.h>
+#include <ui/Debugger.h>
 #endif
 
 #include <algorithm>
@@ -168,7 +168,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
   shell.SetOnAccountSheetClosed([&settings]() { settings.OnAccountSheetClosed(); });
 }
 
-bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
+bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
   if (!g_input_coordinator) {
     return true;
@@ -176,11 +176,11 @@ bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int ke
   return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority);
 }
 
-void ApplyUiDocumentLanguage(Rml::Context* context) {
+void ApplyUiDocumentLanguage(ui::Context* context) {
   if (!context || context->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* document = context->GetDocument(0);
+  ui::ElementDocument* document = context->GetDocument(0);
   if (!document) {
     return;
   }
@@ -308,7 +308,7 @@ std::string Application::AssetsPath(const std::string& relative) {
 }
 
 bool Application::InitializeUiHost(const char* window_title, int window_width, int window_height,
-                                   const BootstrapResult& bootstrap, Rml::Context*& context) {
+                                   const BootstrapResult& bootstrap, ui::Context*& context) {
   AppRuntime::InitializeUI();
 
   if (![&] {
@@ -322,7 +322,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   // UI delivery). WakeEventLoop alone is not enough on platforms where WaitEventTimeout lied.
   AppRuntime::SetUIWakeCallback([]() { Backend::RequestForceFrame(); });
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Platform::IsMobile()) {
     if (auto* window = Backend::GetWindow()) {
       if (!SetWindowIconFromAsset(window, kAppIconAsset)) {
@@ -332,11 +332,11 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   }
 #endif
 
-  Rml::SetSystemInterface(Backend::GetSystemInterface());
-  Rml::SetRenderInterface(Backend::GetRenderInterface());
+  ui::SetSystemInterface(Backend::GetSystemInterface());
+  ui::SetRenderInterface(Backend::GetRenderInterface());
 
-  if (Rml::FileInterface* packaged_files = PlatformHooks::PackagedFileInterface()) {
-    Rml::SetFileInterface(packaged_files);
+  if (ui::FileInterface* packaged_files = PlatformHooks::PackagedFileInterface()) {
+    ui::SetFileInterface(packaged_files);
   }
 
   harfbuzz_font_engine_ = std::make_unique<FontEngineInterfaceHarfBuzz>();
@@ -345,27 +345,27 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   harfbuzz_font_engine_->RegisterLanguage("zh-Hant", "Hant", TextFlowDirection::LeftToRight);
   harfbuzz_font_engine_->RegisterLanguage("ja", "Jpan", TextFlowDirection::LeftToRight);
   harfbuzz_font_engine_->RegisterLanguage("ko", "Kore", TextFlowDirection::LeftToRight);
-  Rml::SetFontEngineInterface(harfbuzz_font_engine_.get());
+  ui::SetFontEngineInterface(harfbuzz_font_engine_.get());
 
   if (![&] {
-        StartupPhase phase("Rml::Initialise");
-        return Rml::Initialise();
+        StartupPhase phase("ui::Initialise");
+        return ui::Initialise();
       }()) {
-    log().error << "Rml::Initialise failed";
+    log().error << "ui::Initialise failed";
     Backend::Shutdown();
     return false;
   }
   RegisterCallVideoTileElement();
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
-  Rml::Debugger::Initialise(Rml::CreateContext("debugger", Rml::Vector2i(0, 0)));
+  ui::Debugger::Initialise(ui::CreateContext("debugger", ui::Vector2i(0, 0)));
 #endif
 
   const std::string theme_path = AssetsPath(bootstrap.profile_prefs.theme);
   Theme::LoadBase(theme_path);
   {
     StartupPhase phase("LoadFontFace:LatoLatin");
-    Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
+    ui::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
   }
 
   {
@@ -377,15 +377,15 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
   }
 
-  context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
+  context = ui::CreateContext("main", ui::Vector2i(window_width, window_height));
   if (!context) {
-    log().error << "Rml::CreateContext failed";
-    Rml::Shutdown();
+    log().error << "ui::CreateContext failed";
+    ui::Shutdown();
     Backend::Shutdown();
     return false;
   }
 
-  context->SetTextLoupeRenderCallback([context](Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, Rml::RenderManager&) {
+  context->SetTextLoupeRenderCallback([context](ui::TextLoupePhase phase, const ui::TextLoupeState& state, ui::RenderManager&) {
     TextLoupeRenderer::Render(phase, state, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()),
       context->GetDensityIndependentPixelRatio());
   });
@@ -398,11 +398,11 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 
   SetAppEventHooks(AppEventHooks{
       .on_sync_system_theme =
-          [](Rml::Context* ctx) {
+          [](ui::Context* ctx) {
             Theme::SyncSystemTheme(ctx);
           },
       .on_context_pointer =
-          [](Rml::Context* ctx, int x, int y) {
+          [](ui::Context* ctx, int x, int y) {
             return ContextMenuHost::Instance().OnContextPointer(ctx, x, y);
           },
   });
@@ -412,7 +412,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   return true;
 }
 
-SettingsToolPorts Application::WireSettings(Rml::Context* context) {
+SettingsToolPorts Application::WireSettings(ui::Context* context) {
   action_router_->Attach(context);
   action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
@@ -524,7 +524,7 @@ SettingsToolPorts Application::WireSettings(Rml::Context* context) {
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
     // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
     AppRuntime::PostUI([appearance_pref]() {
-      if (auto* ctx = Rml::GetContext("main")) {
+      if (auto* ctx = ui::GetContext("main")) {
         Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
       }
     });
@@ -980,7 +980,7 @@ void Application::WireAgentAndConfig() {
   }
 }
 
-bool Application::MountPresenters(Rml::Context* context) {
+bool Application::MountPresenters(ui::Context* context) {
   if (!settings_->RegisterModel(context)) {
     log().error << "SettingsController RegisterModel failed";
     return false;
@@ -1136,15 +1136,15 @@ bool Application::MountPresenters(Rml::Context* context) {
       unlock_gate_->BindPorts({});
     }
     agent_session_.reset();
-    Rml::RemoveContext("main");
-    Rml::Shutdown();
+    ui::RemoveContext("main");
+    ui::Shutdown();
     Backend::Shutdown();
     return false;
   }
   return true;
 }
 
-void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap) {
+void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
   ConversationsHub& messaging = Conversations();
   ShellHost& shell = *shell_;
   ChatSessionPorts chat_ports;
@@ -1221,7 +1221,7 @@ void Application::WireHubLifecycle(Rml::Context* context, const BootstrapResult&
     settings_->RefreshLocalizedChrome();
     ViewCatalog::ClearCache();
     shell_->RequestSyncLayout(true);
-    if (auto* ctx = Rml::GetContext("main")) {
+    if (auto* ctx = ui::GetContext("main")) {
       ApplyUiDocumentLanguage(ctx);
     }
   });
@@ -1258,7 +1258,7 @@ bool Application::Initialize(const char* window_title) {
 
   log().info << "Initializing (" << window_width << "x" << window_height << ")";
 
-  Rml::Context* context = nullptr;
+  ui::Context* context = nullptr;
   if (!InitializeUiHost(window_title, window_width, window_height, bootstrap, context)) {
     return false;
   }
@@ -1283,16 +1283,16 @@ void Application::Run() {
     return;
   }
 
-  auto* context = Rml::GetContext("main");
+  auto* context = ui::GetContext("main");
   if (!context) {
     return;
   }
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
-  Backend::SetLiveResizeHandler(context, [](Rml::Context* ctx) {
+  Backend::SetLiveResizeHandler(context, [](ui::Context* ctx) {
     if (!ctx)
       return;
     Backend::SyncContext(ctx);
@@ -1350,7 +1350,7 @@ void Application::Run() {
       skip_log_countdown = 120;
     }
   }
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   Backend::SetLiveResizeHandler(nullptr, nullptr);
 #endif
 }
@@ -1490,7 +1490,7 @@ void Application::Shutdown() {
   }
 
   if (initialized_) {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
     Backend::SetLiveResizeHandler(nullptr, nullptr);
 #endif
     {
@@ -1530,11 +1530,11 @@ void Application::Shutdown() {
     {
       StartupPhase phase("Shutdown::RmlUi");
       action_router_->Detach();
-      Rml::RemoveContext("main");
+      ui::RemoveContext("main");
 #ifdef PPBROWSER_ENABLE_DEBUGGER
-      Rml::Debugger::Shutdown();
+      ui::Debugger::Shutdown();
 #endif
-      Rml::Shutdown();
+      ui::Shutdown();
       harfbuzz_font_engine_.reset();
     }
     AppRuntime::SetUIWakeCallback(nullptr);

@@ -79,19 +79,19 @@ bool IsDateInRange(int year, int month, int day, const std::string& min_date, co
   return true;
 }
 
-Rml::String MonthLabel(int month, int year) {
+ui::String MonthLabel(int month, int year) {
   if (month < 1 || month > 12) {
-    return Rml::String("Calendar");
+    return ui::String("Calendar");
   }
   std::ostringstream out;
   out << kMonthNames[static_cast<size_t>(month - 1)] << " " << year;
-  return Rml::String(out.str().c_str());
+  return ui::String(out.str().c_str());
 }
 
 void AppendWeeksFromFlatDays(CalendarWidgetState& state, std::vector<CalendarDayRow>& flat_days) {
   while (flat_days.size() % 7 != 0) {
     CalendarDayRow pad;
-    pad.label = Rml::String("");
+    pad.label = ui::String("");
     pad.available = false;
     flat_days.push_back(std::move(pad));
   }
@@ -139,11 +139,11 @@ CalendarWidgetState BuildCalendarState(const CalendarConfig& config) {
   CalendarWidgetState state;
   state.month = config.month;
   state.year = config.year;
-  state.min_date = Rml::String(config.min_date.c_str());
-  state.max_date = Rml::String(config.max_date.c_str());
+  state.min_date = ui::String(config.min_date.c_str());
+  state.max_date = ui::String(config.max_date.c_str());
   state.month_label = MonthLabel(config.month, config.year);
   for (const std::string& day : config.available_days) {
-    state.available_days.push_back(Rml::String(day.c_str()));
+    state.available_days.push_back(ui::String(day.c_str()));
   }
 
   std::vector<CalendarDayRow> flat_days;
@@ -152,7 +152,7 @@ CalendarWidgetState BuildCalendarState(const CalendarConfig& config) {
 
   for (int i = 0; i < leading; ++i) {
     CalendarDayRow pad;
-    pad.label = Rml::String("");
+    pad.label = ui::String("");
     pad.available = false;
     flat_days.push_back(std::move(pad));
   }
@@ -160,9 +160,9 @@ CalendarWidgetState BuildCalendarState(const CalendarConfig& config) {
   for (int day = 1; day <= days_in_month; ++day) {
     CalendarDayRow row;
     row.day = day;
-    row.label = Rml::String(std::to_string(day).c_str());
+    row.label = ui::String(std::to_string(day).c_str());
     const std::string iso = FormatIsoDate(config.year, config.month, day);
-    row.iso_date = Rml::String(iso.c_str());
+    row.iso_date = ui::String(iso.c_str());
 
     bool available = IsDateInRange(config.year, config.month, day, config.min_date, config.max_date);
     if (!config.available_days.empty()) {
@@ -194,7 +194,7 @@ void ShiftCalendarMonth(CalendarWidgetState& calendar, int delta_months) {
   config.year = year;
   config.min_date = std::string(calendar.min_date.c_str());
   config.max_date = std::string(calendar.max_date.c_str());
-  for (const Rml::String& day : calendar.available_days) {
+  for (const ui::String& day : calendar.available_days) {
     config.available_days.push_back(std::string(day.c_str()));
   }
   calendar = BuildCalendarState(config);

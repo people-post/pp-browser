@@ -28,8 +28,8 @@
 
 #include "common/Utilities.h"
 
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/Core.h>
+#include <ui/base/SystemInterface.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -1328,7 +1328,7 @@ void CallController::ShowCallDetails() {
         if (!ok) {
           return;
         }
-        if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(body.c_str());
           UserFeedback::Ok(Tr("call.details.copied"));
         }

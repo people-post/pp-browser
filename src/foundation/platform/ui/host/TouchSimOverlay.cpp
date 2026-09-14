@@ -1,9 +1,9 @@
 #include "TouchSimOverlay.h"
 
-#include "RmlUi_Include_GL3.h"
+#include "Include_GL3.h"
 
-#include <RmlUi/Core/Math.h>
-#include <RmlUi/Core/Vector2.h>
+#include <ui/base/Math.h>
+#include <ui/base/Vector2.h>
 
 #include <vector>
 
@@ -11,7 +11,7 @@
 
 namespace {
 
-#if defined(RMLUI_BACKEND_SIMULATE_TOUCH)
+#if defined(UI_BACKEND_SIMULATE_TOUCH)
 
 struct OverlayState {
 	bool initialized = false;
@@ -70,13 +70,13 @@ void BuildCircleTemplate(float radius, int segments)
 	g_state.circle_vertices.reserve(size_t(segments) * 2);
 	for (int i = 0; i < segments; ++i)
 	{
-		const float angle = float(i) / float(segments) * Rml::Math::RMLUI_PI * 2.f;
-		g_state.circle_vertices.push_back(Rml::Math::Cos(angle) * radius);
-		g_state.circle_vertices.push_back(Rml::Math::Sin(angle) * radius);
+		const float angle = float(i) / float(segments) * ui::Math::UI_PI * 2.f;
+		g_state.circle_vertices.push_back(ui::Math::Cos(angle) * radius);
+		g_state.circle_vertices.push_back(ui::Math::Sin(angle) * radius);
 	}
 }
 
-void DrawFilledCircle(Rml::Vector2f center, float radius, const float projection[16], float r, float g, float b, float a)
+void DrawFilledCircle(ui::Vector2f center, float radius, const float projection[16], float r, float g, float b, float a)
 {
 	glUseProgram(g_state.program);
 	glUniformMatrix4fv(g_state.uniform_projection, 1, GL_FALSE, projection);
@@ -111,7 +111,7 @@ void MakeProjectionMatrix(float width, float height, float out[16])
 	out[15] = 1.f;
 }
 
-Rml::Vector2f GetSimulatedTouchPosition(SDL_Window* window)
+ui::Vector2f GetSimulatedTouchPosition(SDL_Window* window)
 {
 	float mouse_x = 0.f;
 	float mouse_y = 0.f;
@@ -128,16 +128,16 @@ Rml::Vector2f GetSimulatedTouchPosition(SDL_Window* window)
 		return {};
 
 	// Match TouchEventToTouchList: normalized finger coords × pixel dimensions.
-	return Rml::Vector2f{(mouse_x / float(window_w)) * float(pixel_w), (mouse_y / float(window_h)) * float(pixel_h)};
+	return ui::Vector2f{(mouse_x / float(window_w)) * float(pixel_w), (mouse_y / float(window_h)) * float(pixel_h)};
 }
 
-#endif // RMLUI_BACKEND_SIMULATE_TOUCH
+#endif // UI_BACKEND_SIMULATE_TOUCH
 
 } // namespace
 
 void TouchSimOverlay::Initialize(SDL_Window* /*window*/)
 {
-#if defined(RMLUI_BACKEND_SIMULATE_TOUCH)
+#if defined(UI_BACKEND_SIMULATE_TOUCH)
 	if (g_state.initialized)
 		return;
 
@@ -161,7 +161,7 @@ void TouchSimOverlay::Initialize(SDL_Window* /*window*/)
 
 void TouchSimOverlay::Shutdown()
 {
-#if defined(RMLUI_BACKEND_SIMULATE_TOUCH)
+#if defined(UI_BACKEND_SIMULATE_TOUCH)
 	if (!g_state.initialized)
 		return;
 
@@ -176,7 +176,7 @@ void TouchSimOverlay::Shutdown()
 
 void TouchSimOverlay::Draw(SDL_Window* window, int viewport_w, int viewport_h)
 {
-#if defined(RMLUI_BACKEND_SIMULATE_TOUCH)
+#if defined(UI_BACKEND_SIMULATE_TOUCH)
 	if (!g_state.initialized || !window)
 		return;
 
@@ -194,7 +194,7 @@ void TouchSimOverlay::Draw(SDL_Window* window, int viewport_w, int viewport_h)
 	if (SDL_GetMouseFocus() != window)
 		return;
 
-	const Rml::Vector2f center = GetSimulatedTouchPosition(window);
+	const ui::Vector2f center = GetSimulatedTouchPosition(window);
 
 	float projection[16];
 	MakeProjectionMatrix(float(viewport_w), float(viewport_h), projection);

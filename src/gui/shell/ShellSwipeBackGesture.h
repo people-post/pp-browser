@@ -2,15 +2,15 @@
 
 #include "gui/shell/ShellGestureAxis.h"
 
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/EventListener.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/EventListener.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 #include <string>
 #include <vector>
 
-namespace Rml {
+namespace ui {
 class Context;
 class Event;
 class ElementDocument;
@@ -19,7 +19,7 @@ class ElementDocument;
 namespace pbr {
 
 /** Horizontal edge / chrome swipe-back for drill-down surfaces. */
-class ShellSwipeBackGesture : public Rml::EventListener {
+class ShellSwipeBackGesture : public ui::EventListener {
 public:
   using DismissCallback = std::function<void()>;
 
@@ -35,40 +35,40 @@ public:
      * Use when the listener is on a parent (e.g. settings pane) but only the detail
      * panel should translate.
      */
-    Rml::Element* transform_target = nullptr;
+    ui::Element* transform_target = nullptr;
     /**
      * Optional: only start when the event target is under this element (or chrome).
      * Useful when listening on a parent that also hosts non-drill-down chrome.
      */
-    Rml::Element* content_root = nullptr;
+    ui::Element* content_root = nullptr;
   };
 
-  void Attach(Rml::Element* listen_surface, Rml::Context* context, AttachOptions options,
+  void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options,
               DismissCallback on_dismiss);
   void Detach();
   void Abort();
 
-  void ProcessEvent(Rml::Event& event) override;
+  void ProcessEvent(ui::Event& event) override;
 
 private:
-  bool ShouldIgnoreTarget(Rml::Element* target) const;
-  bool ShouldStartSwipe(Rml::Element* target, int x_px) const;
-  bool IsChromeRegion(Rml::Element* target) const;
-  bool IsUnder(Rml::Element* ancestor, Rml::Element* target) const;
-  Rml::Element* TransformTarget() const;
+  bool ShouldIgnoreTarget(ui::Element* target) const;
+  bool ShouldStartSwipe(ui::Element* target, int x_px) const;
+  bool IsChromeRegion(ui::Element* target) const;
+  bool IsUnder(ui::Element* ancestor, ui::Element* target) const;
+  ui::Element* TransformTarget() const;
   void BeginDrag(int x_px, int y_px, bool from_edge);
-  void UpdateDrag(int x_px, int y_px, Rml::Event& event);
+  void UpdateDrag(int x_px, int y_px, ui::Event& event);
   void EndDrag();
   void SetSurfaceOffset(float dx_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
   float PixelDeltaToDp(int delta_px) const;
   float ResolveSurfaceWidthDp() const;
 
-  Rml::Element* surface_ = nullptr;
-  Rml::Element* transform_target_ = nullptr;
-  Rml::Element* content_root_ = nullptr;
-  Rml::ElementDocument* document_ = nullptr;
-  Rml::Context* context_ = nullptr;
+  ui::Element* surface_ = nullptr;
+  ui::Element* transform_target_ = nullptr;
+  ui::Element* content_root_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+  ui::Context* context_ = nullptr;
   AttachOptions options_;
   DismissCallback on_dismiss_;
   bool attached_ = false;

@@ -4,7 +4,7 @@
 #include "domain/ui/ChatWidgetTypes.h"
 #include "common/PbrCompat.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
+#include <ui/data/DataModelHandle.h>
 
 #include <map>
 #include <string>
@@ -16,6 +16,6 @@ CalendarWidgetState BuildCalendarWidgetState(const Object& config);
 
 void ApplyWidgetInits(const std::vector<WidgetInit>& inits, TurnWidgetState& state);
 
-void RegisterChatWidgetDataTypes(Rml::DataModelConstructor& ctor);
+void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor);
 
 } // namespace pbr

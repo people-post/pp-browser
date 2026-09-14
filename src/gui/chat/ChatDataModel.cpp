@@ -71,7 +71,7 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "working_set");
 }
 
-Rml::String SessionVisualKind(const Thread& thread) {
+ui::String SessionVisualKind(const Thread& thread) {
   switch (thread.kind) {
   case ThreadKind::Ai:
     return "ai";

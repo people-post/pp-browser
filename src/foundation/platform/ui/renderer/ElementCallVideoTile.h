@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RmlUi/Core/Element.h>
+#include <ui/dom/Element.h>
 
 namespace pbr {
 
@@ -10,17 +10,17 @@ namespace pbr {
  *
  * RML: <call-video-tile tile="remote|local|peer" stream="123" ...>
  */
-class ElementCallVideoTile : public Rml::Element {
+class ElementCallVideoTile : public ui::Element {
 public:
-  RMLUI_RTTI_DefineWithParent(ElementCallVideoTile, Rml::Element)
+  UI_RTTI_DefineWithParent(ElementCallVideoTile, ui::Element)
 
-  explicit ElementCallVideoTile(const Rml::String& tag);
+  explicit ElementCallVideoTile(const ui::String& tag);
 
 protected:
   void OnRender() override;
 };
 
-/** Register the `call-video-tile` instancer (call after Rml::Initialise). */
+/** Register the `call-video-tile` instancer (call after ui::Initialise). */
 void RegisterCallVideoTileElement();
 
 } // namespace pbr

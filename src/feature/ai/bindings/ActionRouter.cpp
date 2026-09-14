@@ -1,6 +1,6 @@
 #include "feature/ai/bindings/ActionRouter.h"
 
-#include <RmlUi/Core/Context.h>
+#include <ui/dom/Context.h>
 
 namespace pbr {
 
@@ -8,7 +8,7 @@ ActionRouter::ActionRouter() {
   redirectLogger("ActionRouter");
 }
 
-void ActionRouter::Attach(Rml::Context* context) {
+void ActionRouter::Attach(ui::Context* context) {
   context_ = context;
 }
 

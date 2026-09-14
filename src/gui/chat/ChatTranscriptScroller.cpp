@@ -5,9 +5,9 @@
 #include "common/chat/MessagingLimits.h"
 #include "gui/shell/DataModelHost.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
 
 #include <algorithm>
 #include <cmath>
@@ -20,7 +20,7 @@ void ChatTranscriptScroller::BindConversationsFacade(ConversationsFacade* facade
   facade_ = facade;
 }
 
-ChatTranscriptScroller::ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready)
+ChatTranscriptScroller::ChatTranscriptScroller(ui::Context*& context, View view, bool& messaging_ready)
     : context_(context), view_(view), messaging_ready_(messaging_ready) {}
 
 void ChatTranscriptScroller::Reset() {
@@ -43,7 +43,7 @@ void ChatTranscriptScroller::Reset() {
   view_.jump_to_latest_label = "";
 }
 
-Rml::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
+ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return nullptr;
   }
@@ -85,7 +85,7 @@ void ChatTranscriptScroller::RequestScrollToLatest() {
 }
 
 void ChatTranscriptScroller::ScrollMessagesToBottom() {
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
   }
@@ -99,7 +99,7 @@ void ChatTranscriptScroller::ScrollMessagesToBottom() {
 }
 
 void ChatTranscriptScroller::ApplyPolicy() {
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
   }
@@ -186,7 +186,7 @@ void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
       pending_scroll_to_bottom_) {
     return;
   }
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
   }
@@ -212,7 +212,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
     return;
   }
 
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (el) {
     pending_scroll_height_before_ = el->GetScrollHeight();
     pending_scroll_top_before_ = el->GetScrollTop();
@@ -256,7 +256,7 @@ void ChatTranscriptScroller::OnMessagesScroll() {
   if (suppress_scroll_handler_) {
     return;
   }
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
   }
@@ -383,7 +383,7 @@ bool ChatTranscriptScroller::TrimDomWindow(std::vector<MessageDisplayRow>& messa
 }
 
 void ChatTranscriptScroller::CaptureScrollBeforePrependIfUnpinned() {
-  Rml::Element* el = FindMessagesScrollElement();
+  ui::Element* el = FindMessagesScrollElement();
   if (el && !pinned_to_bottom_) {
     pending_scroll_height_before_ = el->GetScrollHeight();
     pending_scroll_top_before_ = el->GetScrollTop();

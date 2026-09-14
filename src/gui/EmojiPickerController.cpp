@@ -5,9 +5,9 @@
 #include "common/EmojiKey.h"
 #include "gui/shell/DataModelHost.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
 
 #include <algorithm>
 #include <stdexcept>
@@ -55,13 +55,13 @@ void EmojiPickerController::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
-bool EmojiPickerController::RegisterModel(Rml::Context* context) {
+bool EmojiPickerController::RegisterModel(ui::Context* context) {
   if (!context) {
     return false;
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "emoji_picker", [this](Rml::DataModelConstructor& ctor) {
+  return DataModelHost::Instance().Register(context, "emoji_picker", [this](ui::DataModelConstructor& ctor) {
     auto& controller = *this;
     if (auto cell = ctor.RegisterStruct<Cell>()) {
       cell.RegisterMember("glyph", &Cell::glyph);
@@ -247,7 +247,7 @@ void EmojiPickerController::EnsureWindowAround(int center_index) {
   const int prev_begin = window_begin_;
   ComputeSectionWindow(center_index, n, kWindowSectionSpan, window_end_, window_begin_, window_end_);
 
-  Rml::Element* body = FindScrollBody();
+  ui::Element* body = FindScrollBody();
   const bool unloading_above = window_begin_ > prev_begin;
   if (unloading_above && body) {
     pending_scroll_height_before_ = body->GetScrollHeight();
@@ -276,7 +276,7 @@ void EmojiPickerController::ApplyPendingScrollAdjust() {
   if (!pending_scroll_height_before_.has_value() || !pending_scroll_top_before_.has_value()) {
     return;
   }
-  Rml::Element* body = FindScrollBody();
+  ui::Element* body = FindScrollBody();
   if (!body) {
     pending_scroll_height_before_.reset();
     pending_scroll_top_before_.reset();
@@ -381,33 +381,33 @@ void EmojiPickerController::OnEmojiPicked(const std::string& glyph) {
   }
 }
 
-Rml::Element* EmojiPickerController::FindScrollBody() const {
+ui::Element* EmojiPickerController::FindScrollBody() const {
   if (!context_) {
     return nullptr;
   }
   for (int i = 0; i < context_->GetNumDocuments(); ++i) {
-    Rml::ElementDocument* d = context_->GetDocument(i);
+    ui::ElementDocument* d = context_->GetDocument(i);
     if (!d) {
       continue;
     }
-    if (Rml::Element* el = d->GetElementById("emoji-picker-body")) {
+    if (ui::Element* el = d->GetElementById("emoji-picker-body")) {
       return el;
     }
   }
   return nullptr;
 }
 
-Rml::Element* EmojiPickerController::FindSectionElement(const std::string& category_id) const {
+ui::Element* EmojiPickerController::FindSectionElement(const std::string& category_id) const {
   if (!context_) {
     return nullptr;
   }
-  const Rml::String id = ("emoji-section-" + category_id).c_str();
+  const ui::String id = ("emoji-section-" + category_id).c_str();
   for (int i = 0; i < context_->GetNumDocuments(); ++i) {
-    Rml::ElementDocument* d = context_->GetDocument(i);
+    ui::ElementDocument* d = context_->GetDocument(i);
     if (!d) {
       continue;
     }
-    if (Rml::Element* el = d->GetElementById(id)) {
+    if (ui::Element* el = d->GetElementById(id)) {
       return el;
     }
   }
@@ -415,7 +415,7 @@ Rml::Element* EmojiPickerController::FindSectionElement(const std::string& categ
 }
 
 void EmojiPickerController::UpdateActiveFromScroll() {
-  Rml::Element* body = FindScrollBody();
+  ui::Element* body = FindScrollBody();
   if (!body || sections_.empty()) {
     return;
   }
@@ -423,7 +423,7 @@ void EmojiPickerController::UpdateActiveFromScroll() {
 
   std::string best = sections_.front().id.c_str();
   for (const Section& section : sections_) {
-    Rml::Element* el = FindSectionElement(section.id.c_str());
+    ui::Element* el = FindSectionElement(section.id.c_str());
     if (!el) {
       continue;
     }
@@ -488,32 +488,32 @@ void EmojiPickerController::ScrollToCategory(const std::string& category_id) {
     AppRuntime::PostUI([]() { EmojiPickerController::Instance().ApplyPendingScrollAdjust(); });
   }
 
-  if (Rml::Element* el = FindSectionElement(category_id)) {
+  if (ui::Element* el = FindSectionElement(category_id)) {
     el->ScrollIntoView(true);
   }
 }
 
-void EmojiPickerController::SelectEmojiCallback(Rml::DataModelHandle, Rml::Event&,
-                                                const Rml::VariantList& args) {
+void EmojiPickerController::SelectEmojiCallback(ui::DataModelHandle, ui::Event&,
+                                                const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
-  Instance().OnEmojiPicked(args[0].Get<Rml::String>().c_str());
+  Instance().OnEmojiPicked(args[0].Get<ui::String>().c_str());
 }
 
-void EmojiPickerController::SelectCategoryCallback(Rml::DataModelHandle, Rml::Event&,
-                                                   const Rml::VariantList& args) {
+void EmojiPickerController::SelectCategoryCallback(ui::DataModelHandle, ui::Event&,
+                                                   const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
-  Instance().ScrollToCategory(args[0].Get<Rml::String>().c_str());
+  Instance().ScrollToCategory(args[0].Get<ui::String>().c_str());
 }
 
-void EmojiPickerController::OnScrollCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+void EmojiPickerController::OnScrollCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
   Instance().UpdateActiveFromScroll();
 }
 
-void EmojiPickerController::CancelCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+void EmojiPickerController::CancelCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
   Instance().Close();
 }
 
