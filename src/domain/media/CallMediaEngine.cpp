@@ -1157,12 +1157,13 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     abandoned_send = nullptr;
     // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
     // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
+    // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
     {
       std::lock_guard lock(impl_->mutex);
-      impl_->ClearAudioTracksLocked();
+      impl_->audio_tracks.erase(0);
       {
         std::lock_guard lg(impl_->sfu_rx_log_mu);
-        impl_->sfu_rx_logged_streams.clear();
+        impl_->sfu_rx_logged_streams.erase(0);
       }
     }
     // Android speaker / communication-mode route changes around SoftMigrate can leave the open

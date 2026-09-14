@@ -1121,5 +1121,66 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   AppRuntime::ShutdownUI();
 }
 
+TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAttach) {
+  // Dogfood: guest heard audio but UI stayed Connecting; media_health RX stalled while
+  // AcceptAndAttach/StartSfu repeated ~every 8s (CallSfuAttach fan-out / publisher announce).
+  // Once live on a hop, duplicate inbound attach must no-op (no second AcceptAndAttach) and
+  // clear media activity so chrome can leave Connecting.
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
+  const std::string call_id = "call:dup-inbound-attach";
+  SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+
+  const std::string hop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[hop] = "/ip4/1.2.3.4/tcp/443/p2p/" + hop;
+  dial_->force_dialable[hop] = true;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = false;
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = hop;
+  attach.hop_multiaddr = dial_->endpoints[hop];
+  attach.publisher_stream_id = PublisherStreamIdForIdentity("account:A");
+
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+  bool attached = false;
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (topo_->IsSfuAttached()) {
+      attached = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  ASSERT_TRUE(attached);
+  const int attaches_after_first = relay_->attach_calls;
+  ASSERT_GE(attaches_after_first, 1);
+  host_->media_activity = "Connecting…";
+
+  // Publisher announce / SoftMigrate re-fan-out of the same hop.
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(relay_->attach_calls, attaches_after_first)
+      << "duplicate CallSfuAttach must not AcceptAndAttach again";
+  EXPECT_TRUE(topo_->IsSfuAttached());
+  EXPECT_TRUE(host_->media_activity.empty()) << "must clear Connecting chrome once duplex is live";
+
+  // Explicit AttachLocalToSfu of same hop must also no-op.
+  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
+  EXPECT_EQ(relay_->attach_calls, attaches_after_first);
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
 } // namespace
 } // namespace pbr

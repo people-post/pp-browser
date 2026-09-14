@@ -1123,6 +1123,32 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
                << " have=" << migrate_generation_.load(std::memory_order_acquire)
                << " call_id=" << call_id;
   }
+  // Dogfood: parallel CallSfuAttach AcceptAndAttach storms re-enter StartSfu → send-swap clears
+  // RX tracks (intermittent audio) while UI stays Connecting (ReleaseDirect gated on stale gen).
+  const bool already_live = sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id &&
+                            !attached_hop_peer_id_.empty() && attached_hop_peer_id_ == attach.hop_peer_id;
+  if (already_live) {
+    log().info << "AttachLocalToSfu skip StartSfu (already live) call_id=" << call_id
+               << " hop=" << attach.hop_peer_id;
+    sfu_frames_ready->store(true, std::memory_order_release);
+    attaching_hop_peer_id_.clear();
+    awaiting_sfu_recovery_ = false;
+    if (!self_hop) {
+      active_guest_sfu_attach_ = attach;
+      active_sfu_call_id_ = call_id;
+      sfu_guest_reattach_attempts_ = 0;
+    }
+    NoteRemotePublisherFromAttach(attach);
+    SyncSfuSubscriptions(call_id);
+    AnnounceLocalPublisher(call_id, attach);
+    host_.TopologyClearMediaPeerIdentity();
+    ClearSfuAttachWait();
+    RefreshAdaptation(call_id);
+    host_.TopologyReleaseDirectMedia();
+    host_.TopologyClearMediaActivity();
+    log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
+    return {};
+  }
   if (!self_hop) {
     relay_deps_.relay->StartClientFrameReader();
     log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
@@ -1191,18 +1217,18 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   RefreshAdaptation(call_id);
   const uint64_t release_gen = gen_at_start;
   CallSfuAttachDetail release_fanout = BuildSfuAttachFanout(attach);
+  // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately.
+  // Do not gate on migrate gen — stampede leaves gen_at_start permanently stale (dogfood UI).
+  host_.TopologyReleaseDirectMedia();
+  host_.TopologyClearMediaActivity();
   auto do_release = [this, call_id, release_gen, release_fanout, self_hop]() {
-    if (!IsMigrateGenerationCurrent(release_gen)) {
-      return;
-    }
     if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
       return;
     }
-    if (self_hop) {
+    if (self_hop && IsMigrateGenerationCurrent(release_gen)) {
       if (auto local = host_.TopologyLocalIdentity()) {
         if (auto encoded = CallControlCodec::EncodeSfuAttach(release_fanout)) {
-          log().info << "AttachLocalToSfu pre-ReleaseDirect fan-out CallSfuAttach call_id="
-                     << call_id;
+          log().info << "AttachLocalToSfu delayed fan-out CallSfuAttach call_id=" << call_id;
           (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded,
                                              "Call SFU attach", *local);
         }
@@ -1240,6 +1266,16 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
   log().info << "AttachLocalToSfu begin call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " already_sfu=" << (sfu_attached_ ? 1 : 0);
+  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id &&
+      !attached_hop_peer_id_.empty() && attached_hop_peer_id_ == attach.hop_peer_id) {
+    log().info << "AttachLocalToSfu no-op already on hop=" << attach.hop_peer_id
+               << " call_id=" << call_id;
+    NoteRemotePublisherFromAttach(attach);
+    SyncSfuSubscriptions(call_id);
+    host_.TopologyClearMediaActivity();
+    on_done(Roe<void>());
+    return;
+  }
   attaching_hop_peer_id_ = attach.hop_peer_id;
 
   auto sfu_frames_ready = std::make_shared<std::atomic<bool>>(false);
@@ -2039,13 +2075,21 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
                << " media_active=" << media_.ActiveCallId();
     return {};
   }
-  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+  if (sfu_attached_ && media_.ActiveCallId() == call_id &&
+      (media_.IsSfuMode() || attached_hop_peer_id_ == attach.hop_peer_id)) {
     // Already attached (duplicate fan-out / late roster / peer publisher announce).
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
     ClearSfuAttachWait();
     host_.TopologyClearMediaActivity();
     host_.TopologyNotifyRingChanged();
+    return {};
+  }
+  // Same hop already dialing — coalesce even if soft_migrate_in_flight_ briefly cleared.
+  if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ == attach.hop_peer_id) {
+    log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
+               << " hop=" << attach.hop_peer_id;
+    BeginSfuAttachWait(call_id);
     return {};
   }
   // SoftMigrate PickHop may be mid-AcceptAndAttach. Bumping gen Detach's that stream and races
