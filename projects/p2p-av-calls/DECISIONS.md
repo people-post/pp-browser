@@ -792,7 +792,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V036 — MediaSeat / exclusive media epoch
 
 **Date:** 2026-09-14
-**Status:** Accepted (**Phase 2 implementing**)
+**Status:** Accepted (**Phase 3 landed**)
 **Decision:** One process-wide **MediaSeat** owns the exclusive bind between `call_id` and call media (engine + path). Signaling (lifecycle / session / roster) stays separate.
 
 | API | Meaning |
@@ -804,6 +804,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 | `NoteLive(call_id)` | Duplex ready — chrome **Connected** gate. |
 | `NoteFailed(call_id)` | Connect/attach failure for chrome. |
 | `BeginAttach` / `EndAttach*` | Single in-flight SFU attach (same hop coalesce; other hop defer). |
+| `MatchesToken` / `AllowsPathOp` | Strict epoch match vs path-op bind (survives NoteStart epoch bump). |
 | `IsBound(call_id)` / `IsLive(call_id)` / `State()` | Topology gates + dual-FSM chrome snapshot. |
 
 **Rules:**
@@ -813,12 +814,13 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 3. `CallSfuAttach` / SoftMigrate / StartSfu stale work is keyed by seat epoch (absorbs ad-hoc `MediaSessionGeneration` races).
 4. **Chrome (Phase 2):** Connected only from **(signaling joined × media Live)**. `ReleaseDirect` → `DirectConnected` advances lifecycle `InCall` but must **not** alone paint Connected; `NoteLive` is required (direct stream up or hop attach complete). Reconnecting while Live comes from media health, not demoting seat to Connecting.
 5. **Attach flight (Phase 2):** at most one hop AcceptAndAttach under the seat; parallel `CallSfuAttach` coalesces or defers.
+6. **Path demotion (Phase 3):** `CallDirectPath` / `CallHopPath` façades over Bridge / Topology; path Start/ReleaseTransport/CompleteAttach require `AllowsPathOp(token)`. CSM is **signaling-only** for duplex start/stop (`ScheduleStart` / `seat.Release`) — does not call `StopMeshMedia` when a seat is wired.
 
 **Dogfood drivers:** End left SFU capture running → next call Connected/reconnecting with zombie RX; Accept async Stop raced `StartSfu` → both sides Calling; topology vetoed new `CallSfuAttach` via leftover engine `ActiveCallId`; JoinedLocal + leftover TX with no attach → sticky Calling; `ReleaseDirect` promoted Connected without duplex.
 
 **Phase 1:** `CallMediaSeat` + wire Stop/Start/active gates; keep `CallMediaBridge` / `CallTopologyController` names as Direct/Hop path implementations.
 **Phase 2:** dual-FSM chrome snapshot + seat-owned attach flight.
-**Phase 3:** thin Path facades (token-gated).
+**Phase 3:** thin Path facades (token-gated) + CSM signaling-only for duplex start/stop.
 
 **Rationale:** Topology, Bridge, Lifecycle, and disk `Active` rows each held a partial “who owns media?” clock. An exclusive seat makes begin/end and SoftMigrate races structural rather than heuristic.
 

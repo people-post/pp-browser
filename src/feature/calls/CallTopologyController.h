@@ -57,9 +57,10 @@ public:
 };
 
 /**
- * SFU soft-migrate / attach-wait / hop pick (V021 + V025).
- * Pure who-picks / wait / fan-out live in base SoftMigrateLogic / SfuAttachWaitLogic /
- * SfuAttachFanout; this adapter owns IO + AppRuntime posting.
+ * SFU soft-migrate / attach-wait / hop pick (V021 + V025) — V036 Phase 3 **Hop path** plugin
+ * under CallMediaSeat. Pure who-picks / wait / fan-out live in base SoftMigrateLogic /
+ * SfuAttachWaitLogic / SfuAttachFanout; this adapter owns IO + AppRuntime posting.
+ * Attach StartSfu requires a seat token when the seat is wired.
  */
 class CallTopologyController : public Module {
 public:

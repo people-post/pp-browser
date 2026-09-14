@@ -712,8 +712,12 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   const std::string captured_call_id = call_id;
   const std::string captured_peer = peer_identity;
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
+  CallMediaSeat::Token seat_token;
   if (media_seat_) {
-    media_seat_->Acquire(call_id);
+    seat_token = media_seat_->Acquire(call_id);
+    if (!media_seat_->AllowsPathOp(seat_token)) {
+      return Error("media seat token rejected for direct path");
+    }
   }
   if (auto started = media_.StartSfu(call_id, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
         if (pkt.channel_id > kCallMediaChannelVideoLo) {
@@ -1038,6 +1042,25 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
 }
 
 void CallMediaBridge::ReleaseDirectTransport() {
+  if (media_seat_) {
+    ReleaseDirectTransport(media_seat_->CurrentToken());
+    return;
+  }
+  ReleaseDirectTransportBody();
+}
+
+void CallMediaBridge::ReleaseDirectTransport(const CallMediaSeat::Token& token) {
+  if (media_seat_) {
+    if (!media_seat_->AllowsPathOp(token)) {
+      log().info << "ReleaseDirectTransport skip (token not bound) call_id=" << token.call_id
+                 << " bound=" << media_seat_->BoundCallId();
+      return;
+    }
+  }
+  ReleaseDirectTransportBody();
+}
+
+void CallMediaBridge::ReleaseDirectTransportBody() {
   // SoftMigrate: drop 1:1 transport; keep CallMediaEngine capture feeding media_relay.
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();

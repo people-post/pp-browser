@@ -17,6 +17,7 @@ namespace pbr {
  *
  * Phase 2: MediaState drives chrome (Connected only when Live). Attach flight
  * serializes SoftMigrate / CallSfuAttach under the seat (one hop at a time).
+ * Phase 3: Direct/Hop path plugins take a seat Token (`AllowsPathOp` / `MatchesToken`).
  */
 class CallMediaSeat : public Module {
 public:
@@ -91,6 +92,13 @@ public:
 
   bool IsBound(const std::string& call_id) const;
   bool IsLive(const std::string& call_id) const;
+  /** Strict: epoch + call_id match CurrentToken (Release / stale Stop). */
+  bool MatchesToken(const Token& token) const;
+  /**
+   * Path ops (Direct StartSfu / ReleaseTransport / Hop CompleteAttach) after NoteStart
+   * bumps epoch — still valid while call_id remains bound.
+   */
+  bool AllowsPathOp(const Token& token) const;
   std::string BoundCallId() const;
   uint64_t Epoch() const;
   PathKind Path() const;

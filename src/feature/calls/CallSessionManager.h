@@ -31,8 +31,10 @@
 namespace pbr {
 
 /**
- * Call session lifecycle façade (a2 / V014 / a4).
- * Topology + mesh media live in CallTopologyController / CallMediaBridge.
+ * Call session lifecycle façade (a2 / V014 / a4) — V036 Phase 3 **signaling** owner.
+ * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
+ * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
+ * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
  */
 class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
 public:

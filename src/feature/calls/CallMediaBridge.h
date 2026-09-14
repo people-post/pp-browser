@@ -21,8 +21,9 @@
 namespace pbr {
 
 /**
- * 1:1 call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
- * with Opus frames over ICallMediaTransport (Amp; [A020]).
+ * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
+ * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
+ * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
 class CallMediaBridge : public Module {
 public:
@@ -48,13 +49,19 @@ public:
   /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
   void OnMediaKeyReady(const std::string& call_id);
 
-  void StopMeshMedia(const std::string& call_id);
-
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
+   * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
   void ReleaseDirectTransport();
+  /** V036 Phase 3: token-gated SoftMigrate release (no-op when token not bound). */
+  void ReleaseDirectTransport(const CallMediaSeat::Token& token);
 
+  /**
+   * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
+   * CallSessionManager Leave/Accept must use seat.Release, not this.
+   */
+  void StopMeshMedia(const std::string& call_id);
   /**
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.
@@ -115,6 +122,7 @@ private:
   void CommitDirectConnected(const std::string& call_id);
   void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
                                  const std::vector<uint8_t>& payload);
+  void ReleaseDirectTransportBody();
 
   CallMediaHost& host_;
   CallSessionStore& sessions_;

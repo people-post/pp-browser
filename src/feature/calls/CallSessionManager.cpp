@@ -1,3 +1,4 @@
+#include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallSessionManager.h"
 
 #include "foundation/crypto/CryptoUtil.h"
@@ -98,13 +99,10 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
     NotifyRingChanged();
     return;
   }
+  // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  if (offerer) {
-    call_media_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
-  } else {
-    call_media_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
-  }
+  CallDirectPath(call_media_bridge_, media_seat_).ScheduleStart(call_id, peer_identity, offerer);
 }
 
 CallHopHealth CallSessionManager::HopHealth() const {
@@ -544,11 +542,12 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
-  // V036: seat owns Detach-then-Stop; hooks call topology OnMediaStopped + bridge StopMeshMedia.
+  // V036 Phase 3: CSM signaling-only for duplex stop — seat.Release owns Detach-then-Stop.
   if (media_seat_) {
     media_seat_->Release(call_id);
     return;
   }
+  // Tests / incomplete wiring without a seat.
   topology_.OnMediaStopped(call_id);
   if (call_media_bridge_) {
     call_media_bridge_->StopMeshMedia(call_id);
@@ -1533,8 +1532,9 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
 }
 
 void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
+  // Hop path bind — CallHopPath façade (Acquire under seat).
   if (media_seat_ && !call_id.empty()) {
-    media_seat_->Acquire(call_id);
+    (void)CallHopPath(&topology_, media_seat_).BindForAttach(call_id);
   }
 }
 
@@ -1542,12 +1542,16 @@ void CallSessionManager::TopologyClearMediaPeerIdentity() {
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
+  // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
+  if (!call_media_bridge_) {
+    return;
+  }
   if (media_seat_) {
-    media_seat_->NotePath(CallMediaSeat::PathKind::Hop);
+    (void)CallDirectPath(call_media_bridge_, media_seat_)
+        .ReleaseTransport(media_seat_->CurrentToken());
+    return;
   }
-  if (call_media_bridge_) {
-    call_media_bridge_->ReleaseDirectTransport();
-  }
+  call_media_bridge_->ReleaseDirectTransport();
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {

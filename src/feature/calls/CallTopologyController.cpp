@@ -1155,8 +1155,14 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   const std::string captured_call = call_id;
   host_.TopologyNoteMediaAttempted(call_id);
   host_.TopologyBindMediaCallId(call_id);
+  CallMediaSeat::Token hop_token;
   if (media_seat_) {
-    media_seat_->Acquire(call_id);
+    hop_token = media_seat_->Acquire(call_id);
+    if (!media_seat_->AllowsPathOp(hop_token)) {
+      log().info << "AttachLocalToSfu aborted (seat token rejected) call_id=" << call_id;
+      relay_deps_.relay->Detach();
+      return Error("media seat token rejected for hop path");
+    }
   }
   // After AcceptAndAttach succeeded, finish StartSfu whenever this call is still the active
   // topology call. migrate_generation_ stampede (duplicate CallSfuAttach / SoftMigrate) must not
@@ -1265,6 +1271,14 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   if (media_seat_) {
     media_seat_->NoteStart(call_id);
     media_seat_->NotePath(CallMediaSeat::PathKind::Hop);
+    // NoteStart bumps epoch — AllowsPathOp (call_id bind) still holds; MatchesToken would not.
+    if (!media_seat_->IsBound(call_id)) {
+      log().info << "AttachLocalToSfu aborted after StartSfu (seat unbound) call_id=" << call_id;
+      relay_deps_.relay->Detach();
+      media_.Stop();
+      sfu_attached_ = false;
+      return Error("attach aborted");
+    }
   }
   if (!IsActiveCallForTopology(call_id)) {
     log().info << "AttachLocalToSfu aborted after StartSfu (call inactive) call_id=" << call_id

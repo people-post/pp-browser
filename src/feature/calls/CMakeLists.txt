@@ -6,6 +6,7 @@ pp_browser_add_feature_library(pp_feature_calls
     AmpMediaRelayClient.cpp
     CallMediaBridge.cpp
     CallMediaSeat.cpp
+    CallMediaPaths.cpp
     CallLifecycle.cpp
     BroadcastSessionCoordinator.cpp
     CallInboundHandlers.cpp

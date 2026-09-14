@@ -295,6 +295,16 @@ bool CallMediaSeat::IsLive(const std::string& call_id) const {
   return !call_id.empty() && bound_call_id_ == call_id && state_ == MediaState::Live;
 }
 
+bool CallMediaSeat::MatchesToken(const Token& token) const {
+  std::lock_guard lock(mu_);
+  return !token.call_id.empty() && token.call_id == bound_call_id_ && token.epoch == epoch_;
+}
+
+bool CallMediaSeat::AllowsPathOp(const Token& token) const {
+  std::lock_guard lock(mu_);
+  return !token.call_id.empty() && token.call_id == bound_call_id_;
+}
+
 std::string CallMediaSeat::BoundCallId() const {
   std::lock_guard lock(mu_);
   return bound_call_id_;

@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallMediaPaths.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -118,6 +119,45 @@ TEST(CallMediaSeatTest, DualFsmNoteLiveAndRelease) {
   seat.Release("call:1");
   EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Idle);
   EXPECT_FALSE(seat.IsLive("call:1"));
+}
+
+TEST(CallMediaSeatTest, PathTokenAllowsAfterNoteStart) {
+  // Phase 3: NoteStart bumps epoch so MatchesToken fails; AllowsPathOp still holds.
+  CallMediaSeat seat;
+  auto token = seat.Acquire("call:1");
+  EXPECT_TRUE(seat.MatchesToken(token));
+  EXPECT_TRUE(seat.AllowsPathOp(token));
+  seat.NoteStart("call:1");
+  EXPECT_FALSE(seat.MatchesToken(token));
+  EXPECT_TRUE(seat.AllowsPathOp(token));
+  EXPECT_TRUE(seat.AllowsPathOp(seat.CurrentToken()));
+
+  CallMediaSeat::Token stale;
+  stale.call_id = "call:other";
+  stale.epoch = seat.Epoch();
+  EXPECT_FALSE(seat.AllowsPathOp(stale));
+}
+
+TEST(CallMediaPathsTest, HopBindAndDirectReleaseRequiresToken) {
+  CallMediaSeat seat;
+  CallHopPath hop(nullptr, &seat);
+  auto token = hop.BindForAttach("call:1");
+  EXPECT_FALSE(token.call_id.empty());
+  EXPECT_TRUE(hop.Allows(token));
+
+  CallDirectPath direct(nullptr, &seat);
+  // No bridge → error; token still required for the seat NotePath path.
+  auto released = direct.ReleaseTransport(token);
+  EXPECT_FALSE(released);
+
+  CallMediaSeat::Token unbound;
+  unbound.call_id = "call:other";
+  unbound.epoch = 1;
+  // Unbound token: no-op success (skip) even without bridge… actually bridge null errors first.
+  // Bind wrong call then ReleaseTransport skips AllowsPathOp before bridge check when seat set.
+  seat.Acquire("call:2");
+  auto skip = CallDirectPath(nullptr, &seat).ReleaseTransport(token);
+  EXPECT_TRUE(skip); // AllowsPathOp false → early {}
 }
 
 TEST(CallMediaSeatTest, AttachFlightSerializesHops) {

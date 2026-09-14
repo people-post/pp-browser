@@ -13,7 +13,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
 | ADRs | V001–**V036** |
 | **V035 SoftMigrate scope** | PreferLocal only for **LAN-confirmed Link**; Site/Wide → org seed; ignore stale CallSfuAttach/HopRefuse/**CallAccept** when another call is bound |
-| **V036 MediaSeat** | **Phase 2 landed** — dual-FSM chrome (`Idle\|Connecting\|Live\|Failed`); Connected only when seat Live; seat `BeginAttach` serializes hop attach; Phase 1 bind/Release/`NoteStart` retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
+| **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
@@ -71,7 +71,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 ## Next agent — start here
 
-1. **V036 Phase 2 dogfood** — Leave→re-call shows Calling until NoteLive; SoftMigrate N=3 keep audio without Connected flash from ReleaseDirect; then Phase 3 path facades.
+1. **V036 dogfood** — Leave→re-call Calling until NoteLive; SoftMigrate N=3 keep audio; path token gates (no ReleaseDirect without bind).
 2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.
 3. **m1** desktop / mDNS dial gaps if they block ship.
 
