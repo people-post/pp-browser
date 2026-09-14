@@ -199,6 +199,7 @@ private:
   void P2pNotifyRingChanged() override;
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                                   const std::string& peer_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;

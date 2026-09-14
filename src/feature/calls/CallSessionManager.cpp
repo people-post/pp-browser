@@ -1643,6 +1643,28 @@ Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const
   return PeerIdentityForCall(call_id);
 }
 
+Roe<std::optional<std::string>> CallSessionManager::MeshPeerIdForAccount(const std::string& account) const {
+  if (account.empty() || account.rfind("account:", 0) != 0) {
+    return std::optional<std::string>{};
+  }
+  for (const auto& [peer_id, relay] : peer_id_to_relay_) {
+    if (relay == account && !peer_id.empty()) {
+      return std::optional<std::string>{peer_id};
+    }
+  }
+  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
+  if (!found) {
+    return found.error();
+  }
+  if (found->has_value()) {
+    const std::string peer_id = PeerIdFromContact(**found);
+    if (!peer_id.empty()) {
+      return std::optional<std::string>{peer_id};
+    }
+  }
+  return std::optional<std::string>{};
+}
+
 Roe<std::optional<std::string>> CallSessionManager::RelayIdentityForMeshPeerId(
     const std::string& call_id, const std::string& peer_id) const {
   if (peer_id.empty()) {

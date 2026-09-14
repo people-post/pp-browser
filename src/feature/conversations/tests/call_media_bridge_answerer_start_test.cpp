@@ -54,6 +54,9 @@ public:
                                                              const std::string& /*peer_id*/) const override {
     return std::optional<std::string>("account:peer");
   }
+  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& /*account*/) const override {
+    return std::optional<std::string>{};
+  }
   bool P2pIsAwaitingSfuRecovery() const override { return false; }
   bool P2pExpectGroupSfuMigration(const std::string& /*call_id*/) const override { return false; }
   void P2pNoteExpectSfuAttach(const std::string& /*call_id*/) override {}
