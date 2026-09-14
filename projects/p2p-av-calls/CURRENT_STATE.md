@@ -74,7 +74,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 ## Next agent — start here
 
-1. **V037 / NAT dogfood** — 1:1: Status=Direct* blocks inbound CallSfuAttach StartSfu; Connected only DirectLive/HopLive; TX-only → DegradedTxOnly / circuit; SoftMigrate logs status=Migrating.
+1. **V037 / NAT dogfood** — 1:1: after Accept expect `KickAnswererDirectMediaIfArmed` + `BeginSession` (not stuck `JoinedLocal`/`DirectConnecting` with seat Idle / `tx_frames=0`); Status=Direct* blocks hop StartSfu; Connected only DirectLive/HopLive.
 2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.
 3. **m1** desktop / mDNS dial gaps if they block ship.
 

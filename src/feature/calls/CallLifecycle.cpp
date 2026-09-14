@@ -493,8 +493,21 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   case CallLifecycleEvent::AcceptSucceeded:
     accepting_call_id_.clear();
-    SetPhase(CallPhase::JoinedLocal, call_id, ev);
+    // Do not clobber MediaPending/MediaConnecting if answerer ScheduleStart already
+    // deferred (MediaDeferred) or keyed (MediaKeyReady) on the UI queue ahead of us.
+    if (phase_ != CallPhase::MediaPending && phase_ != CallPhase::MediaConnecting &&
+        phase_ != CallPhase::InCall) {
+      SetPhase(CallPhase::JoinedLocal, call_id, ev);
+    } else {
+      log().info << "AcceptSucceeded keep phase=" << CallPhaseName(phase_)
+                 << " status=" << CallMediaStatusName(status_) << " call_id=" << call_id_;
+    }
     NotifyChrome();
+    // Answerer media must start on UI after Status is visible (worker ScheduleStart alone
+    // can PostUI before AcceptSucceeded and silently no-op if Status/session race).
+    if (sessions_ && AllowsDirectPath()) {
+      sessions_->KickAnswererDirectMediaIfArmed(call_id_.empty() ? call_id : call_id_);
+    }
     break;
 
   case CallLifecycleEvent::AcceptFailed:

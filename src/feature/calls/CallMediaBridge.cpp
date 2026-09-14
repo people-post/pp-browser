@@ -758,6 +758,9 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   }
   auto key = LoadActiveMediaKey(call_id);
   if (!key) {
+    log().warning << "BeginSession LoadActiveMediaKey failed call_id=" << call_id
+                  << " role=" << (offerer ? "offerer" : "answerer")
+                  << " err=" << key.error().message;
     return key.error();
   }
 
@@ -1004,10 +1007,25 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
   AppRuntime::PostUI([this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+      log().info << "ScheduleStartMediaAsAnswerer skip (no active session) call_id=" << call_id
+                 << " has_session=" << (session && session->has_value() ? 1 : 0)
+                 << " state="
+                 << (session && session->has_value() ? static_cast<int>((*session)->state) : -1);
       return;
     }
     if (media_.IsActive() && media_.ActiveCallId() == call_id && media_.IsSfuMode()) {
+      log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id;
       return;
+    }
+    // Worker may have SetMediaStatus before this PostUI; if Status is still None, arm Bridge now.
+    if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+      const auto phase = lifecycle_->Phase();
+      if (phase == CallPhase::Accepting || phase == CallPhase::JoinedLocal ||
+          phase == CallPhase::MediaPending || phase == CallPhase::MediaConnecting) {
+        log().info << "ScheduleStartMediaAsAnswerer re-arm DirectConnecting call_id=" << call_id
+                   << " was_status=" << CallMediaStatusName(lifecycle_->Status());
+        lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+      }
     }
     auto key = LoadActiveMediaKey(call_id);
     if (!key) {

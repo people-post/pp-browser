@@ -116,6 +116,25 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   CallDirectPath(call_media_bridge_, media_seat_).ScheduleStart(call_id, peer_identity, offerer);
 }
 
+void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
+  if (call_id.empty()) {
+    return;
+  }
+  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+    return;
+  }
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    return;
+  }
+  auto peer = PeerIdentityForCall(call_id);
+  if (!peer || !peer->has_value() || (*peer)->empty()) {
+    log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
+    return;
+  }
+  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << **peer;
+  ScheduleStartDirectMedia(call_id, **peer, false);
+}
+
 CallHopHealth CallSessionManager::HopHealth() const {
   if (!topology_.IsSfuAttached()) {
     return {};

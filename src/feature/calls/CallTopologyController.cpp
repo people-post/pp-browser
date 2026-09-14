@@ -1271,6 +1271,26 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   // Dogfood 1cee3df4: zombie AcceptAndAttach (gen 85→169 across Leave cycles) still StartSfu'd
   // onto a fresh 1:1 — brief media_relay audio then chrome flipped to "direct" / silence.
   // Stampede (duplicate CallSfuAttach) still owns attaching_hop or soft_migrate_flight_gen_.
+  // V037: Status is authority — never StartSfu when Direct* even if migrate gen "owns flight".
+  if (lifecycle_ && !lifecycle_->AllowsHopPath()) {
+    log().info << "AttachLocalToSfu abort StartSfu (Status disallows Hop before StartSfu) call_id="
+               << call_id << " status=" << CallMediaStatusName(lifecycle_->Status());
+    relay_deps_.relay->Detach();
+    if (media_seat_) {
+      media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+    }
+    return Error("attach aborted");
+  }
+  if (lifecycle_ && lifecycle_->MediaCancelGen() != cancel_gen_at_start) {
+    log().info << "AttachLocalToSfu abort StartSfu (media_cancel_gen moved before StartSfu) call_id="
+               << call_id << " want=" << cancel_gen_at_start
+               << " have=" << lifecycle_->MediaCancelGen();
+    relay_deps_.relay->Detach();
+    if (media_seat_) {
+      media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+    }
+    return Error("attach aborted");
+  }
   if (!gen_current && !duplex_live) {
     const bool owns_flight =
         soft_migrate_flight_gen_ == gen_at_start ||

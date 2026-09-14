@@ -130,6 +130,12 @@ public:
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
+  /**
+   * V037: Lifecycle AcceptSucceeded (UI) re-arms answerer ScheduleStart when Status already
+   * AllowsDirectPath — covers worker PostUI races that left seat bound Idle / no BeginSession.
+   */
+  void KickAnswererDirectMediaIfArmed(const std::string& call_id);
+
   bool IsAwaitingSfuRecovery() const;
   bool IsSoftMigrateInFlight() const;
   bool IsSfuAttachWaitActive() const;

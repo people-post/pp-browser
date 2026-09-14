@@ -66,6 +66,19 @@ TEST_F(CallLifecycleTest, AcceptSucceededMediaPathToInCall) {
   EXPECT_TRUE(life_.WantEphemeralListen());
 }
 
+TEST_F(CallLifecycleTest, AcceptSucceededKeepsMediaPending) {
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
+
+  // Late AcceptSucceeded (UI queue after answerer Defer) must not regress to JoinedLocal.
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
+  EXPECT_TRUE(life_.AllowsDirectPath());
+}
+
 TEST_F(CallLifecycleTest, SetMediaStatusHopPathArmsTopology) {
   life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
   const uint64_t gen0 = life_.MediaCancelGen();

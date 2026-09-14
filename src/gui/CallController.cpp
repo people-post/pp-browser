@@ -715,11 +715,14 @@ void CallController::RefreshPendingRing() {
         in_call.subtitle = Tr("call.status.calling").c_str();
       } else if (backend->IsSoftMigrateInFlight() || backend->IsSfuAttachWaitActive() ||
                  media_connecting) {
-        if (backend->IsSoftMigrateInFlight() ||
-            backend->MediaStatus() == CallMediaStatus::Migrating) {
+        // V037: Status Migrating / HopWaiting own chrome; soft_migrate_in_flight_ is latch only.
+        if (backend->MediaStatus() == CallMediaStatus::Migrating ||
+            (backend->MediaStatus() != CallMediaStatus::HopWaiting &&
+             backend->MediaStatus() != CallMediaStatus::HopAttaching &&
+             backend->IsSoftMigrateInFlight())) {
           in_call.subtitle = Tr("call.status.setting_up_group").c_str();
-        } else if (backend->IsSfuAttachWaitActive() ||
-                   backend->MediaStatus() == CallMediaStatus::HopWaiting) {
+        } else if (backend->MediaStatus() == CallMediaStatus::HopWaiting ||
+                   backend->IsSfuAttachWaitActive()) {
           in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
         } else {
           in_call.subtitle = Tr("call.status.connecting").c_str();
