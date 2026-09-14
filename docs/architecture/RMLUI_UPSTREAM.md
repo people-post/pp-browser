@@ -74,9 +74,8 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 
 | Feature | Location (in pp-cpp-ui) | Usage |
 |---------|-------------------------|--------|
-| Text selection in static content | `include/ui/dom/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
+| Text selection in static content | `include/ui/dom/SelectionController.h`, `SelectionTypes.h` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
 | User-agent baseline styles | `src/dom/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
-| List markers (workaround) | `src/dom/ListMarker.*`, layout inline box | `ul`/`ol` bullets until `list-style` exists |
 
 **Workaround marker locations** (search `FORK_WORKAROUND` in pp-cpp-ui):
 
