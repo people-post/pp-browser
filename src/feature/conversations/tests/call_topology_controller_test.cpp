@@ -159,6 +159,9 @@ public:
     if (!attach_ok) {
       return Error(attach_error);
     }
+    if (before_accept_done) {
+      before_accept_done();
+    }
     attached_ = true;
     MediaRelayAttachResult r;
     r.ok = true;
@@ -226,6 +229,7 @@ public:
   std::vector<uint32_t> subscribed_streams;
   std::vector<uint16_t> subscribed_channels;
   std::function<void()> transport_lost_handler;
+  std::function<void()> before_accept_done;
 
 private:
   bool attached_ = false;
@@ -989,6 +993,37 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
+}
+
+TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
+  // Dogfood 12:33: AcceptAndAttach ok then stale gen want=170 have=226 aborted StartSfu →
+  // ReportSfuAttachFailed → "looking for another media path" while caller Connected.
+  const std::string call_id = "call:gen-stampede";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  // Prime migrate_generation_ — IsMigrateGenerationCurrent treats gen==0 as always current.
+  topo_->OnMediaStopped("call:prime");
+  topo_->BeginSfuAttachWait(call_id);
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  attach.hop_multiaddr =
+      "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
+  dial_->force_dialable[attach.hop_peer_id] = true;
+
+  // Stampede migrate_generation_ after AcceptAndAttach, before StartSfu (same as dogfood).
+  relay_->before_accept_done = [this, call_id]() {
+    for (int i = 0; i < 56; ++i) {
+      topo_->OnMediaStopped("call:unrelated-zombie");
+    }
+    topo_->BeginSfuAttachWait(call_id);
+  };
+
+  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach)) << "must StartSfu while call still active";
+  EXPECT_TRUE(topo_->IsSfuAttached());
+  EXPECT_GE(relay_->attach_calls, 1);
 }
 
 TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {

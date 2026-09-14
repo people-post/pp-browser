@@ -1107,12 +1107,21 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   const std::string captured_call = call_id;
   host_.TopologyNoteMediaAttempted(call_id);
   host_.TopologyBindMediaCallId(call_id);
-  if (!IsMigrateGenerationCurrent(gen_at_start)) {
-    log().info << "AttachLocalToSfu aborted before StartSfu (stale migrate gen want=" << gen_at_start
-               << " have=" << migrate_generation_.load(std::memory_order_acquire)
-               << ") call_id=" << call_id;
+  // After AcceptAndAttach succeeded, finish StartSfu whenever this call is still the active
+  // topology call. migrate_generation_ stampede (duplicate CallSfuAttach / SoftMigrate) must not
+  // abort duplex — dogfood: caller Connected, guest stuck "looking for another media path".
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "AttachLocalToSfu aborted before StartSfu (call inactive) call_id=" << call_id
+               << " gen_want=" << gen_at_start
+               << " gen_have=" << migrate_generation_.load(std::memory_order_acquire);
     relay_deps_.relay->Detach();
     return Error("attach aborted");
+  }
+  if (!IsMigrateGenerationCurrent(gen_at_start)) {
+    log().info << "AttachLocalToSfu continuing StartSfu despite stale migrate gen want="
+               << gen_at_start
+               << " have=" << migrate_generation_.load(std::memory_order_acquire)
+               << " call_id=" << call_id;
   }
   if (!self_hop) {
     relay_deps_.relay->StartClientFrameReader();
@@ -1150,10 +1159,10 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     relay_deps_.relay->Detach();
     return started.error();
   }
-  if (!IsMigrateGenerationCurrent(gen_at_start)) {
-    log().info << "AttachLocalToSfu aborted after StartSfu (stale migrate gen want=" << gen_at_start
-               << " have=" << migrate_generation_.load(std::memory_order_acquire)
-               << ") call_id=" << call_id;
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "AttachLocalToSfu aborted after StartSfu (call inactive) call_id=" << call_id
+               << " gen_want=" << gen_at_start
+               << " gen_have=" << migrate_generation_.load(std::memory_order_acquire);
     relay_deps_.relay->Detach();
     media_.Stop();
     sfu_attached_ = false;
@@ -1231,6 +1240,7 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
   log().info << "AttachLocalToSfu begin call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " already_sfu=" << (sfu_attached_ ? 1 : 0);
+  attaching_hop_peer_id_ = attach.hop_peer_id;
 
   auto sfu_frames_ready = std::make_shared<std::atomic<bool>>(false);
   const std::string captured_call = call_id;
@@ -2046,6 +2056,12 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
                  << " pending_call=" << soft_migrate_call_id_ << " call_id=" << call_id;
       return {};
     }
+    if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ == attach.hop_peer_id) {
+      log().info << "OnInboundSfuAttach coalesce (already attaching same hop) call_id=" << call_id
+                 << " hop=" << attach.hop_peer_id;
+      BeginSfuAttachWait(call_id);
+      return {};
+    }
     pending_inbound_sfu_attach_ = attach;
     pending_inbound_sfu_attach_call_id_ = call_id;
     log().info << "OnInboundSfuAttach deferred (SoftMigrate in flight) call_id=" << call_id;
@@ -2084,8 +2100,22 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   soft_migrate_call_id_ = call_id;
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, attach, gen](Roe<void> ok) {
     if (!IsMigrateGenerationCurrent(gen)) {
-      log().info << "OnInboundSfuAttach worker skip stale gen=" << gen;
-      AppRuntime::PostUI([this, gen, call_id, attach]() {
+      log().info << "OnInboundSfuAttach worker gen moved want=" << gen
+                 << " have=" << migrate_generation_.load(std::memory_order_acquire)
+                 << " attached=" << (sfu_attached_ ? 1 : 0) << " ok=" << (ok ? 1 : 0);
+      AppRuntime::PostUI([this, gen, call_id, attach, ok]() {
+        // StartSfu may have completed despite migrate_generation_ stampede.
+        if (ok && sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+          soft_migrate_in_flight_ = false;
+          soft_migrate_call_id_.clear();
+          pending_inbound_sfu_attach_.reset();
+          pending_inbound_sfu_attach_call_id_.clear();
+          ClearSfuAttachWait();
+          SyncSfuSubscriptions(call_id);
+          host_.TopologyClearMediaActivity();
+          host_.TopologyNotifyRingChanged();
+          return;
+        }
         if (soft_migrate_flight_gen_ == gen) {
           soft_migrate_in_flight_ = false;
           soft_migrate_call_id_.clear();
@@ -2124,6 +2154,7 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
       pending_inbound_sfu_attach_.reset();
       pending_inbound_sfu_attach_call_id_.clear();
       SyncSfuSubscriptions(call_id);
+      host_.TopologyClearMediaActivity();
       host_.TopologyNotifyRingChanged();
     });
   });
