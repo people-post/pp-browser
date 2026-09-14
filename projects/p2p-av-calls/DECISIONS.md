@@ -791,29 +791,33 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 ## V036 — MediaSeat / exclusive media epoch
 
-**Date:** 2026-09-14  
-**Status:** Accepted (**Phase 1 implementing**)  
+**Date:** 2026-09-14
+**Status:** Accepted (**Phase 2 implementing**)
 **Decision:** One process-wide **MediaSeat** owns the exclusive bind between `call_id` and call media (engine + path). Signaling (lifecycle / session / roster) stays separate.
 
 | API | Meaning |
 |-----|---------|
-| `Acquire(call_id)` | Exclusive bind. Releases any other bound call first. Returns a token (`epoch` + `call_id`). |
-| `Release(call_id \| token)` | Ordered teardown: topology Detach / `OnMediaStopped`, then engine `Stop` (UI). Bumps seat epoch. Stale token → no-op. |
-| `NoteStart(call_id)` | Confirms duplex start under the bind; bumps epoch so in-flight `Release` cannot kill the new session. |
+| `Acquire(call_id)` | Exclusive bind. Releases any other bound call first. Returns a token (`epoch` + `call_id`). MediaState → `Connecting`. |
+| `Release(call_id \| token)` | Ordered teardown: topology Detach / `OnMediaStopped`, then engine `Stop` (UI). Clears bind → `Idle`. Stale token → no-op. |
+| `NoteStart(call_id)` | Confirms StartSfu under the bind; bumps epoch so in-flight `Release` cannot kill the new session. Stays `Connecting` until `NoteLive`. |
 | `NotePath(Direct \| Hop)` | SoftMigrate marks hop without `Release` (capture stays up). |
-| `IsBound(call_id)` | Sole “media-active” answer for topology gates (not leftover `CallMediaEngine::ActiveCallId` heuristics). |
+| `NoteLive(call_id)` | Duplex ready — chrome **Connected** gate. |
+| `NoteFailed(call_id)` | Connect/attach failure for chrome. |
+| `BeginAttach` / `EndAttach*` | Single in-flight SFU attach (same hop coalesce; other hop defer). |
+| `IsBound(call_id)` / `IsLive(call_id)` / `State()` | Topology gates + dual-FSM chrome snapshot. |
 
 **Rules:**
 
 1. SoftMigrate = **path replace under the same token** (`NotePath(Hop)` + `ReleaseDirect`) — never seat `Release` (that would Stop capture).
 2. Leave / Ended session / Accept leftover purge → seat `Release` only (no parallel Stop policy outside the seat).
 3. `CallSfuAttach` / SoftMigrate / StartSfu stale work is keyed by seat epoch (absorbs ad-hoc `MediaSessionGeneration` races).
-4. Chrome Phase 2 (follow-on): Connected only from **(signaling joined × media Live)** — not `ReleaseDirect` alone.
+4. **Chrome (Phase 2):** Connected only from **(signaling joined × media Live)**. `ReleaseDirect` → `DirectConnected` advances lifecycle `InCall` but must **not** alone paint Connected; `NoteLive` is required (direct stream up or hop attach complete). Reconnecting while Live comes from media health, not demoting seat to Connecting.
+5. **Attach flight (Phase 2):** at most one hop AcceptAndAttach under the seat; parallel `CallSfuAttach` coalesces or defers.
 
-**Dogfood drivers:** End left SFU capture running → next call Connected/reconnecting with zombie RX; Accept async Stop raced `StartSfu` → both sides Calling; topology vetoed new `CallSfuAttach` via leftover engine `ActiveCallId`.
+**Dogfood drivers:** End left SFU capture running → next call Connected/reconnecting with zombie RX; Accept async Stop raced `StartSfu` → both sides Calling; topology vetoed new `CallSfuAttach` via leftover engine `ActiveCallId`; JoinedLocal + leftover TX with no attach → sticky Calling; `ReleaseDirect` promoted Connected without duplex.
 
-**Phase 1:** `CallMediaSeat` + wire Stop/Start/active gates; keep `CallMediaBridge` / `CallTopologyController` names as Direct/Hop path implementations.  
-**Phase 2:** dual-FSM chrome snapshot.  
+**Phase 1:** `CallMediaSeat` + wire Stop/Start/active gates; keep `CallMediaBridge` / `CallTopologyController` names as Direct/Hop path implementations.
+**Phase 2:** dual-FSM chrome snapshot + seat-owned attach flight.
 **Phase 3:** thin Path facades (token-gated).
 
 **Rationale:** Topology, Bridge, Lifecycle, and disk `Active` rows each held a partial “who owns media?” clock. An exclusive seat makes begin/end and SoftMigrate races structural rather than heuristic.

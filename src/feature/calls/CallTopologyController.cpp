@@ -256,6 +256,9 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   // Invalidate in-flight SoftMigrate / AttachLocalToSfu so they cannot StartSfu after Leave
   // (Linux quit dogfood: double-free from SDL reopen during teardown).
   migrate_generation_.fetch_add(1, std::memory_order_acq_rel);
+  if (media_seat_) {
+    media_seat_->CancelAttachForCall(call_id);
+  }
   if (sfu_attached_ && relay_deps_.relay) {
     relay_deps_.relay->Detach();
   }
@@ -1040,7 +1043,20 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     log().info << "SoftMigrate try hop=" << hop.peer_id
                << " affinity=" << static_cast<int>(hop.affinity)
                << " ma=" << (hop_ma.empty() ? "(circuit)" : hop_ma);
+    // Seat BeginAttach runs inside AttachLocalToSfuAsync (single owner). If another hop is
+    // already attaching, skip this candidate so SoftMigrate does not stall on coalesce no-op.
+    if (media_seat_ && media_seat_->HasAttachInFlight() &&
+        media_seat_->AttachingHopPeerId() != hop.peer_id) {
+      log().info << "SoftMigrate defer hop (seat attach in flight) call_id=" << call_id
+                 << " hop=" << hop.peer_id
+                 << " in_flight=" << media_seat_->AttachingHopPeerId();
+      (*try_hop)(index + 1);
+      return;
+    }
     attaching_hop_peer_id_ = hop.peer_id;
+    if (media_seat_) {
+      media_seat_->NoteConnecting(call_id);
+    }
     host_.TopologySetMediaActivity(Tr("call.status.connecting_media_relay"));
     host_.TopologyNotifyRingChanged();
     CallSfuAttachDetail attach;
@@ -1195,6 +1211,10 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
     RefreshAdaptation(call_id);
     // Do not ReleaseDirect / DirectConnected again — duplicate completes flash chrome.
     host_.TopologyClearMediaActivity();
+    if (media_seat_) {
+      media_seat_->NoteLive(call_id);
+      media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+    }
     log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
     return {};
   }
@@ -1280,6 +1300,11 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   CallSfuAttachDetail release_fanout = BuildSfuAttachFanout(attach);
   // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately.
   // Do not gate on migrate gen — stampede leaves gen_at_start permanently stale (dogfood UI).
+  // V036 Phase 2: NoteLive before ReleaseDirect so chrome Connected is not ReleaseDirect alone.
+  if (media_seat_) {
+    media_seat_->NoteLive(call_id);
+    media_seat_->EndAttachIfMatching(call_id, attach.hop_peer_id);
+  }
   host_.TopologyReleaseDirectMedia();
   host_.TopologyClearMediaActivity();
   auto do_release = [this, call_id, release_gen, release_fanout, self_hop]() {
@@ -1340,9 +1365,39 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
     on_done(Roe<void>());
     return;
   }
-  // SoftMigrate sets attaching_hop before calling us — same hop means we own this attempt.
-  // A different in-flight hop must not start a parallel AcceptAndAttach (Detach kills RX).
-  if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ != attach.hop_peer_id) {
+  // SoftMigrate sets attaching_hop / seat BeginAttach before calling us — same hop means we
+  // own this attempt. A different in-flight hop must not start a parallel AcceptAndAttach.
+  if (media_seat_) {
+    CallMediaSeat::AttachTicket ticket;
+    const auto begin = media_seat_->BeginAttach(call_id, attach.hop_peer_id, &ticket);
+    if (begin == CallMediaSeat::AttachBeginResult::DeferredOtherHop) {
+      log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
+                 << " in_flight_hop=" << media_seat_->AttachingHopPeerId()
+                 << " requested=" << attach.hop_peer_id;
+      pending_inbound_sfu_attach_ = attach;
+      pending_inbound_sfu_attach_call_id_ = call_id;
+      NoteRemotePublisherFromAttach(attach);
+      BeginSfuAttachWait(call_id);
+      on_done(Roe<void>());
+      return;
+    }
+    if (begin == CallMediaSeat::AttachBeginResult::CoalescedSameHop) {
+      // SoftMigrate may have set attaching_hop before calling us; only skip when a *foreign*
+      // AcceptAndAttach already owns the hop (attaching set by a prior AttachLocalToSfuAsync).
+      // First claim for this hop always BeginAttach→Started; Coalesced means parallel entry.
+      log().info << "AttachLocalToSfu coalesce (same hop in flight) call_id=" << call_id
+                 << " hop=" << attach.hop_peer_id;
+      attaching_hop_peer_id_ = attach.hop_peer_id;
+      NoteRemotePublisherFromAttach(attach);
+      BeginSfuAttachWait(call_id);
+      on_done(Roe<void>());
+      return;
+    }
+    if (begin == CallMediaSeat::AttachBeginResult::Rejected) {
+      on_done(Error("attach rejected"));
+      return;
+    }
+  } else if (!attaching_hop_peer_id_.empty() && attaching_hop_peer_id_ != attach.hop_peer_id) {
     log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
                << " in_flight_hop=" << attaching_hop_peer_id_ << " requested=" << attach.hop_peer_id;
     NoteRemotePublisherFromAttach(attach);
@@ -1351,6 +1406,25 @@ void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
     return;
   }
   attaching_hop_peer_id_ = attach.hop_peer_id;
+  if (media_seat_) {
+    media_seat_->NoteConnecting(call_id);
+  }
+  // Clear seat attach flight on any failure so SoftMigrate / inbound can retry.
+  {
+    const std::string hop = attach.hop_peer_id;
+    auto user_done = std::move(on_done);
+    on_done = [this, call_id, hop, user_done = std::move(user_done)](Roe<void> r) mutable {
+      if (!r) {
+        if (attaching_hop_peer_id_ == hop) {
+          attaching_hop_peer_id_.clear();
+        }
+        if (media_seat_) {
+          media_seat_->EndAttachIfMatching(call_id, hop);
+        }
+      }
+      user_done(std::move(r));
+    };
+  }
 
   auto sfu_frames_ready = std::make_shared<std::atomic<bool>>(false);
   const std::string captured_call = call_id;
@@ -2160,6 +2234,20 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     return {};
   }
   // Same hop already dialing — coalesce even if soft_migrate_in_flight_ briefly cleared.
+  if (media_seat_ && media_seat_->HasAttachInFlight()) {
+    if (media_seat_->AttachingHopPeerId() == attach.hop_peer_id) {
+      log().info << "OnInboundSfuAttach coalesce (seat attaching same hop) call_id=" << call_id
+                 << " hop=" << attach.hop_peer_id;
+    } else {
+      pending_inbound_sfu_attach_ = attach;
+      pending_inbound_sfu_attach_call_id_ = call_id;
+      log().info << "OnInboundSfuAttach deferred (seat attach in flight) call_id=" << call_id
+                 << " in_flight_hop=" << media_seat_->AttachingHopPeerId()
+                 << " requested=" << attach.hop_peer_id;
+    }
+    BeginSfuAttachWait(call_id);
+    return {};
+  }
   if (!attaching_hop_peer_id_.empty()) {
     if (attaching_hop_peer_id_ == attach.hop_peer_id) {
       log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
@@ -2212,6 +2300,9 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   }
 
   BeginSfuAttachWait(call_id);
+  if (media_seat_) {
+    media_seat_->NoteConnecting(call_id);
+  }
   host_.TopologySetMediaActivity(Tr("call.status.connecting_media_relay"));
   host_.TopologyNotifyRingChanged();
   const uint64_t gen = migrate_generation_.fetch_add(1, std::memory_order_acq_rel) + 1;

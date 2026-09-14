@@ -254,6 +254,23 @@ std::string CallUiBackend::MediaPathKind() const {
   return {};
 }
 
+CallMediaSeat::MediaState CallUiBackend::SeatMediaState(const std::string& call_id) const {
+  if (auto* seat = stack_.MediaSeat()) {
+    if (call_id.empty() || !seat->IsBound(call_id)) {
+      return CallMediaSeat::MediaState::Idle;
+    }
+    return seat->State();
+  }
+  return CallMediaSeat::MediaState::Idle;
+}
+
+bool CallUiBackend::SeatMediaLive(const std::string& call_id) const {
+  if (auto* seat = stack_.MediaSeat()) {
+    return seat->IsLive(call_id);
+  }
+  return false;
+}
+
 const std::string& CallUiBackend::LastError() const {
   if (auto* life = stack_.Lifecycle()) {
     return life->LastError();

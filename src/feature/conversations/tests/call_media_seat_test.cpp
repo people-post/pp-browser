@@ -25,6 +25,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
   auto a = seat.Acquire("call:a");
   EXPECT_EQ(a.call_id, "call:a");
   EXPECT_TRUE(seat.IsBound("call:a"));
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
 
   auto b = seat.Acquire("call:b");
   AppRuntime::RunUITasks();
@@ -62,6 +63,8 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
   seat.NoteStart("call:new");
   EXPECT_NE(seat.Epoch(), epoch_before_release);
   EXPECT_TRUE(seat.IsBound("call:new"));
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
+  EXPECT_FALSE(seat.IsLive("call:new"));
 
   AppRuntime::RunUITasks();
   // Force prior Acquire teardown may have stopped old; the Release stop for old must no-op
@@ -94,6 +97,51 @@ TEST(CallMediaSeatTest, NotePathDoesNotRelease) {
   EXPECT_EQ(seat.Path(), CallMediaSeat::PathKind::Hop);
   EXPECT_TRUE(seat.IsBound("call:1"));
   EXPECT_EQ(stops, 0);
+}
+
+TEST(CallMediaSeatTest, DualFsmNoteLiveAndRelease) {
+  // Phase 2: Connected chrome requires Live; NoteStart alone stays Connecting.
+  CallMediaSeat seat;
+  seat.Acquire("call:1");
+  seat.NoteStart("call:1");
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
+  EXPECT_FALSE(seat.IsLive("call:1"));
+
+  seat.NoteLive("call:1");
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Live);
+  EXPECT_TRUE(seat.IsLive("call:1"));
+
+  // SoftMigrate reattach must not demote Live (health owns reconnecting chrome).
+  seat.NoteConnecting("call:1");
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Live);
+
+  seat.Release("call:1");
+  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Idle);
+  EXPECT_FALSE(seat.IsLive("call:1"));
+}
+
+TEST(CallMediaSeatTest, AttachFlightSerializesHops) {
+  CallMediaSeat seat;
+  CallMediaSeat::AttachTicket a;
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-a", &a), CallMediaSeat::AttachBeginResult::Started);
+  EXPECT_TRUE(seat.HasAttachInFlight());
+  EXPECT_EQ(seat.AttachingHopPeerId(), "hop-a");
+
+  CallMediaSeat::AttachTicket same;
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-a", &same),
+            CallMediaSeat::AttachBeginResult::CoalescedSameHop);
+  EXPECT_EQ(same.gen, a.gen);
+
+  CallMediaSeat::AttachTicket other;
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-b", &other),
+            CallMediaSeat::AttachBeginResult::DeferredOtherHop);
+
+  seat.EndAttach(a);
+  EXPECT_FALSE(seat.HasAttachInFlight());
+
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-b", &other), CallMediaSeat::AttachBeginResult::Started);
+  seat.EndAttachIfMatching("call:1", "hop-b");
+  EXPECT_FALSE(seat.HasAttachInFlight());
 }
 
 } // namespace

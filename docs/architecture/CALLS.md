@@ -125,7 +125,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
 | Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
 
-**1:1 libp2p chrome:** connected when lifecycle is `InCall` (after `DirectConnected`) and media capture is active — not `StartSfu` alone. Bridge `CommitDirectConnected` sets engine `connected` whenever the direct stream is up.
+**1:1 libp2p chrome:** Connected when signaling is joined/`InCall` **and** seat media is **Live** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch) Phase 2) — not `StartSfu` alone, not `ReleaseDirect` → `DirectConnected` alone. Bridge `CommitDirectConnected` / hop `CompleteAttach` call `NoteLive`; JoinedLocal + Idle → Calling.
 
 ---
 
@@ -265,7 +265,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | PC / Opus / H264 / SDL | `domain/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `domain/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
 | Call stack ownership (CSM + lifecycle + media bridge + CallMediaDirect + relay/dial/circuit clients) | `feature/messaging` | **`CallStack`** | Owns call-media unique_ptrs; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds it |
-| **Exclusive media bind (epoch)** | `feature/calls` | **`CallMediaSeat`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteStart`/`IsBound`; SoftMigrate = path replace under same token |
+| **Exclusive media bind (epoch)** | `feature/calls` | **`CallMediaSeat`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteStart`/`NoteLive`/`IsBound`; SoftMigrate = path replace under same token; MediaState `Idle\|Connecting\|Live\|Failed` + attach flight |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Thin orchestrator (signaling); media start/stop via seat |
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
 | 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** | Direct path under seat |
@@ -290,7 +290,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 **Should not own long-term:** libp2p stream lifecycle details, SFU quote/attach loops, or duplicated “if N≥3 …” trees in every accept path.
 
 ### CallMediaSeat (V036)
-Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`.
+Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach.
 
 ### CallMediaEngine
 Single A/V device for the process (owned by the seat’s bound call):

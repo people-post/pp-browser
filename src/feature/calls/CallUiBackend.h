@@ -6,6 +6,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallMediaSeat.h"
 
 #include <functional>
 #include <optional>
@@ -80,6 +81,9 @@ public:
   CallMediaEngine& Media();
   CallHopHealth HopHealth() const;
   std::string MediaPathKind() const;
+  /** V036 Phase 2 dual-FSM: chrome Connected only when SeatMediaLive. */
+  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const;
+  bool SeatMediaLive(const std::string& call_id) const;
 
   // Lifecycle
   const std::string& LastError() const;

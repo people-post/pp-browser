@@ -213,6 +213,10 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
     media_.SetConnectionState("connected");
   }
   ClearMeshConnectFailed();
+  // V036 Phase 2: seat Live is the chrome Connected gate — DirectConnected alone is signaling.
+  if (media_seat_ && media_.IsActive() && media_.ActiveCallId() == call_id) {
+    media_seat_->NoteLive(call_id);
+  }
   if (lifecycle_) {
     lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
   }
@@ -315,6 +319,9 @@ void CallMediaBridge::PollMeshConnectHealth() {
   log().warning << "Mesh connect timeout call_id=" << call_id;
   mesh_connect_failed_ = true;
   mesh_connect_missing_mic_ = !media_.HasLocalCapture();
+  if (media_seat_) {
+    media_seat_->NoteFailed(call_id);
+  }
   if (lifecycle_) {
     lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
   }
@@ -726,6 +733,10 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   if (media_seat_) {
     media_seat_->NoteStart(call_id);
     media_seat_->NotePath(CallMediaSeat::PathKind::Direct);
+    // Duplex Live only after direct stream (CommitDirectConnected) — not StartSfu alone.
+    if (!direct_.IsActive()) {
+      media_seat_->NoteConnecting(call_id);
+    }
   }
 
   // StartSfu marks connected immediately for SFU capture; 1:1 chrome waits on the direct stream.
@@ -814,6 +825,9 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
       mesh_connect_failed_ = true;
       host_.P2pSetLastMediaError(reason);
+      if (media_seat_) {
+        media_seat_->NoteFailed(captured_call_id);
+      }
       if (lifecycle_) {
         lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, captured_call_id);
       }
@@ -1041,6 +1055,8 @@ void CallMediaBridge::ReleaseDirectTransport() {
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
   // 1:1 on_audio is already ignored once P2pIsSfuAttached(); stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();
+  // V036 Phase 2: signaling may advance to InCall, but chrome Connected requires seat Live
+  // (set by CompleteAttachLocalToSfu NoteLive — not ReleaseDirect alone).
   if (lifecycle_ && media_.IsActive() && media_.IsSfuMode()) {
     lifecycle_->Apply(CallLifecycleEvent::DirectConnected, media_.ActiveCallId());
   }
