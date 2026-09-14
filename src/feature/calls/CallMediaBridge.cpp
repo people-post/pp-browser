@@ -26,6 +26,9 @@ constexpr int kConnectAttemptTimeoutMs = 15000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
 constexpr int kMediaKeyInboxPollRounds = 90;
 constexpr int kInboundMediaKeyWaitMs = 8000;
+/** TX frames without any RX after connect — escalate "direct" via circuit (NAT one-way). */
+constexpr int64_t kTxOnlyEscalateGraceMs = 4000;
+constexpr uint64_t kTxOnlyEscalateMinTxFrames = 80;
 /**
  * Offerer prefers inbound (answerer reverse-dial). Grace must cover answerer dial reachability
  * (kDialWaitBudgetMs) plus a short MediaKey/settle margin — shorter grace caused fallback dial
@@ -213,8 +216,13 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
     media_.SetConnectionState("connected");
   }
   ClearMeshConnectFailed();
+  if (direct_connected_at_ms_ <= 0) {
+    direct_connected_at_ms_ = util::NowUnixMs();
+  }
   // V036 Phase 2: seat Live is the chrome Connected gate — DirectConnected alone is signaling.
-  if (media_seat_ && media_.IsActive() && media_.ActiveCallId() == call_id) {
+  // Prefer Live only when the direct stream is actually up (not StartSfu alone).
+  if (media_seat_ && media_.IsActive() && media_.ActiveCallId() == call_id &&
+      (direct_.IsActive() || host_.P2pIsSfuAttached())) {
     media_seat_->NoteLive(call_id);
   }
   if (lifecycle_) {
@@ -290,6 +298,7 @@ void CallMediaBridge::PollMeshConnectHealth() {
   }
   if (media_.IsConnected() && direct_.IsActive()) {
     ClearMeshConnectFailed();
+    MaybeEscalateTxOnlyDirect();
     return;
   }
   const std::string call_id = media_.ActiveCallId();
@@ -303,6 +312,7 @@ void CallMediaBridge::PollMeshConnectHealth() {
       log().info << "Heal call-media connected from direct stream call_id=" << call_id;
       CommitDirectConnected(call_id);
     }
+    MaybeEscalateTxOnlyDirect();
     return;
   }
   auto joined = sessions_.CountJoined(call_id);
@@ -328,6 +338,84 @@ void CallMediaBridge::PollMeshConnectHealth() {
   host_.P2pNotifyRingChanged();
 }
 
+void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
+  if (tx_only_escalation_done_ || host_.P2pIsSfuAttached() || stopping_.load()) {
+    return;
+  }
+  if (media_path_kind_ == "circuit") {
+    return; // already on circuit — further recovery is Retry / Leave
+  }
+  if (!circuit_reach_ || !direct_.IsActive()) {
+    return;
+  }
+  const std::string call_id = media_.ActiveCallId();
+  if (call_id.empty() || media_call_id_ != call_id) {
+    return;
+  }
+  const auto snap = media_.HealthSnapshot();
+  if (snap.rx_audio_frames > 0) {
+    return;
+  }
+  if (snap.tx_audio_frames < kTxOnlyEscalateMinTxFrames) {
+    return;
+  }
+  const int64_t now = util::NowUnixMs();
+  if (direct_connected_at_ms_ <= 0 || now - direct_connected_at_ms_ < kTxOnlyEscalateGraceMs) {
+    return;
+  }
+  std::string peer = media_peer_identity_;
+  if (peer.empty()) {
+    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+      peer = **resolved;
+    }
+  }
+  if (peer.empty()) {
+    return;
+  }
+  tx_only_escalation_done_ = true;
+  log().warning << "Call-media TX-only on path=" << (media_path_kind_.empty() ? "unknown" : media_path_kind_)
+                << " — escalate via circuit call_id=" << call_id << " peer=" << peer
+                << " tx_frames=" << snap.tx_audio_frames;
+  EscalateTxOnlyViaCircuit(call_id, peer);
+}
+
+void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer) {
+  if (media_seat_) {
+    media_seat_->NoteConnecting(call_id);
+  }
+  media_.SetConnectionState("connecting");
+  media_path_kind_.clear();
+  force_circuit_ensure_ = true;
+  direct_connected_at_ms_ = 0;
+  if (dial_) {
+    dial_->ClearCallMediaCircuitHop(peer);
+    dial_->ClearDialBackoff(peer);
+  }
+  // Re-open transport under circuit without full engine Stop (keep capture).
+  connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  CancelConnectTimers();
+  direct_.Detach();
+  AppRuntime::PostUI([this, call_id, peer]() {
+    if (stopping_.load() || media_.ActiveCallId() != call_id) {
+      return;
+    }
+    log().info << "TX-only escalate BeginSession role=" << (session_offerer_ ? "offerer" : "answerer")
+               << " call_id=" << call_id;
+    if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
+      log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
+      host_.P2pSetLastMediaError(started.error().message);
+      if (media_seat_) {
+        media_seat_->NoteFailed(call_id);
+      }
+      mesh_connect_failed_ = true;
+      if (lifecycle_) {
+        lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      }
+      host_.P2pNotifyRingChanged();
+    }
+  });
+}
+
 bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/) const {
   return dial_ != nullptr;
 }
@@ -350,8 +438,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   if (seed_warm_) {
     seed_warm_();
   }
+  // TX-only escalate: peer may already be "dialable" on a one-way path — still force circuit.
+  const bool force_circuit = force_circuit_ensure_;
+  force_circuit_ensure_ = false;
   const bool dialable_before = dial_->IsDialable(peer_identity);
-  if (dialable_before) {
+  if (dialable_before && !force_circuit) {
     media_path_kind_ = "direct";
     log().info << "Call-media peer dialable peer=" << peer_identity;
     on_done({});
@@ -362,13 +453,17 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     on_done(Error("call-media aborted"));
     return;
   }
+  if (force_circuit) {
+    log().info << "Call-media force circuit ensure peer=" << peer_identity
+               << " dialable_before=" << (dialable_before ? 1 : 0);
+  }
 
   const int64_t deadline = util::NowUnixMs() + kDialWaitBudgetMs;
   auto last_error = std::make_shared<Error>(Error("call peer not dialable"));
   auto circuit_started = std::make_shared<bool>(false);
   auto tick = std::make_shared<std::function<void()>>();
   *tick = [this, peer_identity, connect_gen, on_done = std::move(on_done), deadline, last_error,
-           circuit_started, tick]() mutable {
+           circuit_started, force_circuit, tick]() mutable {
     if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
         stopping_.load(std::memory_order_acquire)) {
       on_done(Error("call-media aborted"));
@@ -378,7 +473,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       on_done(Error("dial registry not available"));
       return;
     }
-    if (dial_->IsDialable(peer_identity)) {
+    // While forcing circuit, ignore dialable until Ensure has run (or hop is installed).
+    const bool wait_for_circuit =
+        force_circuit && !*circuit_started && !dial_->HasCallMediaCircuitHop(peer_identity);
+    if (dial_->IsDialable(peer_identity) && !wait_for_circuit) {
       if (dial_->HasCallMediaCircuitHop(peer_identity)) {
         media_path_kind_ = "circuit";
       } else if (*circuit_started) {
@@ -660,9 +758,14 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
     return Error("call session not found");
   }
 
+  if (media_call_id_ != call_id) {
+    tx_only_escalation_done_ = false;
+  }
   media_attempted_calls_.insert(call_id);
   media_call_id_ = call_id;
   media_peer_identity_ = peer_identity;
+  session_offerer_ = offerer;
+  direct_connected_at_ms_ = 0;
   if (peer_identity.rfind("account:", 0) == 0) {
     const uint32_t stream = PublisherStreamIdForIdentity(peer_identity);
     inbound_remote_stream_.store(stream, std::memory_order_release);
@@ -1004,6 +1107,10 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   media_peer_identity_.clear();
   media_call_id_.clear();
   media_path_kind_.clear();
+  force_circuit_ensure_ = false;
+  session_offerer_ = false;
+  direct_connected_at_ms_ = 0;
+  tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
   media_attempted_calls_.erase(call_id);
 

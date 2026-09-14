@@ -1221,6 +1221,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (backend && backend->Available() && backend->SeatMediaLive(active_call_id_)) {
+    // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only.
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;
@@ -1273,7 +1274,21 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     in_call.quality_hint = "";
   }
 
-  // Always-on short path word next to elapsed / connected subtitle.
+  // Seat Live can still be TX-only (NAT one-way) — don't keep a Connected/elapsed claim.
+  const bool media_broken =
+      view.quality == CallPathQuality::NoAudio ||
+      view.asymmetry == CallAudioAsymmetry::SendingOnly ||
+      view.asymmetry == CallAudioAsymmetry::ReceivingOnly;
+  if (media_broken) {
+    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+      in_call.subtitle = Tr(hint_key).c_str();
+    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
+                                                                              label_key[0]) {
+      in_call.subtitle = Tr(label_key).c_str();
+    }
+  }
+
+  // Always-on short path word next to elapsed / connected / health subtitle.
   const char* path_key = nullptr;
   if (view.path_kind == "media_relay" || view.path_kind == "relay") {
     path_key = "call.details.path.media_relay";

@@ -123,6 +123,9 @@ private:
   void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
                                  const std::vector<uint8_t>& payload);
   void ReleaseDirectTransportBody();
+  /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
+  void MaybeEscalateTxOnlyDirect();
+  void EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer);
 
   CallMediaHost& host_;
   CallSessionStore& sessions_;
@@ -137,6 +140,11 @@ private:
   std::function<void()> seed_reserve_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
   std::string media_path_kind_;
+  /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
+  bool force_circuit_ensure_ = false;
+  bool session_offerer_ = false;
+  int64_t direct_connected_at_ms_ = 0;
+  bool tx_only_escalation_done_ = false;
 
   std::string media_peer_identity_;
   std::string media_call_id_;

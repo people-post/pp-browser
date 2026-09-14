@@ -934,12 +934,20 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
       n_joined = n_active;
     }
   }
-  if (!topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint)) {
+  const bool topology_took_media =
+      topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint);
+  if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
     }
+    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
+               << " inviter=" << inviter << " n_joined=" << n_joined;
     ScheduleStartDirectMedia(call_id, inviter, false);
+  } else {
+    log().info << "AcceptInvite topology owns media (no ScheduleStart) call_id=" << call_id
+               << " n_joined=" << n_joined
+               << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
   }
   NotifyRingChanged();
 

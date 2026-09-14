@@ -30,7 +30,8 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   CallMediaHealthView out;
   out.engine = in.engine;
   out.hop = in.hop;
-  if (in.engine.sfu_mode) {
+  // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.sfu_mode for capture.
+  if (in.hop.attached) {
     out.path_kind = "media_relay";
   } else if (!in.reach_path_kind.empty()) {
     out.path_kind = in.reach_path_kind;

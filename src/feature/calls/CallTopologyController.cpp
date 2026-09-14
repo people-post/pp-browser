@@ -2064,6 +2064,8 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
   }
   ClearSfuAttachWait();
   awaiting_sfu_recovery_ = false;
+  log().info << "OnLocalAcceptJoined → P2P ScheduleStart call_id=" << call_id
+             << " n=" << n_joined;
   return false;
 }
 

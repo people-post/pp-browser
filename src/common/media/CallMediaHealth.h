@@ -88,7 +88,7 @@ struct CallMediaHealthInput {
   bool reconnecting = false;
   /**
    * 1:1 reach mode from CallMediaBridge: direct | punched | circuit.
-   * Ignored when engine.sfu_mode (forces media_relay).
+   * Used when hop is not attached (1:1 Amp also sets engine.sfu_mode for capture).
    */
   std::string reach_path_kind;
 };
