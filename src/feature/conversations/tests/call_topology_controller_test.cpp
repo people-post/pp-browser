@@ -658,6 +658,14 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickLeavesPreferLocalForSharedPu
   EXPECT_GT(relay_->quote_calls, quotes);
   EXPECT_EQ(relay_->last_quote_hop, seed);
   EXPECT_FALSE(relay_->IsLocalHopAttached());
+
+  // Second hop-hint SoftMigrate must not Detach the healthy public hop (Connecting storm).
+  const int detaches_after = relay_->detach_calls;
+  const int quotes_after = relay_->quote_calls;
+  auto again = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, seed);
+  ASSERT_TRUE(again) << again.error().message;
+  EXPECT_EQ(relay_->detach_calls, detaches_after);
+  EXPECT_EQ(relay_->quote_calls, quotes_after);
 }
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachSkipsPrivateHopOffLan) {

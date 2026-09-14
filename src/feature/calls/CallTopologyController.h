@@ -220,12 +220,17 @@ private:
   bool soft_migrate_in_flight_ = false;
   /** Generation that currently owns soft_migrate_in_flight_ (stale workers must not clear newer). */
   uint64_t soft_migrate_flight_gen_ = 0;
+  /** Call id for the SoftMigrate that owns soft_migrate_in_flight_ (pending inbound must match). */
+  std::string soft_migrate_call_id_;
   std::atomic<uint64_t> migrate_generation_{0};
   /** Serializes AttachLocalToSfu (concurrent SoftMigrate + inbound CallSfuAttach). */
   std::mutex sfu_attach_mu_;
   /** Inbound CallSfuAttach while SoftMigrate PickHop is mid-AcceptAndAttach — apply after. */
   std::optional<CallSfuAttachDetail> pending_inbound_sfu_attach_;
   std::string pending_inbound_sfu_attach_call_id_;
+  /** Dedupe guest CallSfuAttachFailed → ReportSfuAttachFailed storms for the same hop. */
+  std::string last_reported_attach_fail_call_id_;
+  std::string last_reported_attach_fail_hop_;
   uint32_t local_publisher_stream_id_ = 0;
   /** Remote publisher streams learned from CallSfuAttach (roster may lag). */
   std::unordered_set<uint32_t> remote_publisher_stream_ids_;
