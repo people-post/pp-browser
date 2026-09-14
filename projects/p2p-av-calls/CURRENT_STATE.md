@@ -81,9 +81,9 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 |------|-------------------|--------|
 | **D2 policy** | Lifecycle + topology Status gates; `CallTxOnlyEscalateLogic` | **PASS** (gtest) |
 | **D3 dial without mDNS** | `CallListenAddrsLogic` + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
-| **D3 direct duplex** | `B-CALL-DIRECT`: `CallMediaDirectServiceTest` + `pp_call_direct_smoke` | Partial (Bridge still thin); smoke scaffold |
+| **D3 direct duplex** | `B-CALL-DIRECT`: Bridge answerer start + Kick logic gtests + `CallMediaDirectServiceTest` + `pp_call_direct_smoke` | **Improved** (ScheduleStart→StartSfu / MediaPending / HopLive gate); smoke scaffold for full Invite→Leave |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
-| **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold — **replaces** “two NATed phones” as regression wall |
+| **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |
 | **OEM sample** | Audio session / Android mic-speaker — `covered-above` for policy | Optional; m1 LAN mobile already claimed |
 
 **Do not** block rd on a second human NAT pair when hard-lab + hop smoke are green. Promote any future dogfood bug into gtest/compose in the same change.
@@ -96,8 +96,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. **Re-dogfood 1:1 NAT** with rebuilt `pp-browser`: expect `ScheduleStartMediaAsAnswerer UI enter` → `key ready — BeginSession` → `Call-media Connect` (not JoinedLocal+DirectConnecting / `tx_frames=0`). Caller should leave “connecting to media”.
-2. Keep **rd** green via gtest/compose/smoke/hard-lab purpose IDs — not new device checklists.
+1. Keep **rd** green: `./scripts/test/pp_local_test.sh run --suite unit` (expanded Bridge/Kick regex) + `--suite call` / `call-hop` / `hard` when exercising path.
+2. OEM sample only if packaging/Android mic path regresses — not required for V038 D3/D4 exit.
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps

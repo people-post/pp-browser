@@ -153,11 +153,12 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
+| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
@@ -254,18 +255,18 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test` (invite MAs without mDNS); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); product `CallMediaBridge` still thin as a unit |
+| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` (ScheduleStart→StartSfu / MediaPending / HopLive Status gate); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); full Invite→Leave product still needs smoke |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/test/pp_call_hop_msg_smoke.sh`](../../scripts/test/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_browser_smoke.sh`](../../scripts/test/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
-| B-HARD-CALL | **Scaffold** | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard`. **V038 D4 NAT stand-in** (replaces required human NAT-pair dogfood for regression). |
+| B-HARD-CALL | **Scaffold** (nightly gate) | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard`. **V038 D4 NAT stand-in** (A↛B netns → circuit). Prefer green hard-lab over human NAT-pair dogfood for regression; promote hard-lab failures into compose/gtest. |
 | B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
 | B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 
-**Product-glue hole:** `CallMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave. **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
+**Product-glue:** Answerer Kick gates + `ScheduleStartMediaAsAnswerer`→`BeginSession` covered in-process (`CallAnswererKick*` / `CallMediaBridgeAnswerer*`). Remaining hole is full CSM Invite→Leave E2E (smoke / hard-lab). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
 
 ---
 

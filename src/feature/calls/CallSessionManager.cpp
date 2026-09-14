@@ -1,6 +1,7 @@
 #include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallListenAddrsLogic.h"
+#include "feature/calls/CallAnswererKickLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
@@ -123,15 +124,6 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
     return;
   }
-  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
-    log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
-               << " status=" << CallMediaStatusName(lifecycle_->Status());
-    return;
-  }
-  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-    log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
-    return;
-  }
   std::string peer;
   if (pending_answerer_kick_call_id_ == call_id && !pending_answerer_kick_peer_.empty()) {
     peer = pending_answerer_kick_peer_;
@@ -141,8 +133,19 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
       peer = **resolved;
     }
   }
-  if (peer.empty()) {
-    log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
+  CallAnswererKickDecisionInput in;
+  in.allows_direct_path = !lifecycle_ || lifecycle_->AllowsDirectPath();
+  in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
+  in.peer_nonempty = !peer.empty();
+  if (!ShouldKickAnswererDirectMedia(in)) {
+    if (!in.allows_direct_path) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
+                 << " status=" << CallMediaStatusName(lifecycle_->Status());
+    } else if (in.media_already_active_same_call) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
+    } else {
+      log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
+    }
     return;
   }
   log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer

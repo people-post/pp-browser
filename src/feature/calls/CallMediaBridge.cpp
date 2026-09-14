@@ -1038,18 +1038,21 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
       AppRuntime::PostWorkerBackground([this, call_id]() {
         for (int i = 0; i < kMediaKeyInboxPollRounds; ++i) {
-          if (pending_answerer_call_id_ != call_id) {
+          if (stopping_.load(std::memory_order_acquire) || pending_answerer_call_id_ != call_id) {
             return;
           }
           host_.P2pRequestInboxSync();
-          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-          // Belt-and-suspenders if OnMediaKeyReady raced / was missed.
-          if (pending_answerer_call_id_ == call_id) {
-            if (auto deferred_key = LoadActiveMediaKey(call_id); deferred_key) {
-              log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
-              OnMediaKeyReady(call_id);
+          // Chunked sleep so PrepareForTeardown / Leave can abort without a 1s hang.
+          for (int slice = 0; slice < 20; ++slice) {
+            if (stopping_.load(std::memory_order_acquire) || pending_answerer_call_id_ != call_id) {
               return;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          }
+          if (auto deferred_key = LoadActiveMediaKey(call_id); deferred_key) {
+            log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
+            OnMediaKeyReady(call_id);
+            return;
           }
         }
         // Surface failure — do not leave chrome stuck in MediaPending forever.

@@ -128,7 +128,7 @@ Pay off post-V026/m2 migration so 1:1 Amp call-media is mature: frozen requireme
 - [x] D0 — V038 ADR + this phase; CURRENT_STATE next-agent → `rd`
 - [x] D1 — DESIGN / CALLS / SESSION_MACHINES / CURRENT_STATE: circuit vs `media_relay`; ConnectAsync landed; `StartSfu` naming note
 - [x] D2 — gtests: KickAnswerer Status gates; Direct* blocks hop StartSfu; TX-only circuit escalate
-- [x] D3 — **Automated:** `CallListenAddrsLogic` (invite MAs without mDNS) + `B-CALL-DIRECT` evidence; OEM sample optional
+- [x] D3 — **Automated:** `CallListenAddrsLogic` + Bridge answerer ScheduleStart/Kick gtests + `B-CALL-DIRECT` evidence; OEM sample optional
 - [x] D4 — **Automated:** `AmpCircuitCallMediaComposeTest` + `B-CALL-HOP` / `B-HARD-CALL` as NAT stand-in; CALLS V038; s4 deferred; no required human NAT pair
 
 **Non-goals:** `StartSfu` rename campaign; L3.5 multi-hop; SoftMigrate-for-1:1 reopen; s4 unless Leave hangs.  

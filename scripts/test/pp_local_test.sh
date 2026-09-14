@@ -29,7 +29,7 @@ BUILD_DIR="${PP_LOCAL_BUILD_DIR:-${ROOT}/build}"
 DOCKER_CONTEXT="${ROOT}/dist/pp-node/docker"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
 # gtest_discover_tests names are PascalCase fixture names (ctest -R is case-sensitive).
-CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|AmpDirectChat'
+CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat'
 
 SUITE="all"
 DOWN_AFTER=0
