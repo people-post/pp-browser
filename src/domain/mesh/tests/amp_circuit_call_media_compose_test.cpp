@@ -304,5 +304,24 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
   a_call_->DetachLeg(leg_id);
 }
 
+/** Double-NAT dogfood pattern: B holds Session to R before A StartBridge. */
+TEST_F(AmpCircuitCallMediaComposeTest, BridgeAfterAnswererWarmToRelay) {
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_TRUE(harness_->mgr_b().IsConnected("relay"));
+  ASSERT_TRUE(harness_->mgr_r().FindLinkByPeerId(harness_->peer_id_b) != nullptr);
+
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+  EXPECT_TRUE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
+}
+
 } // namespace
 } // namespace pbr

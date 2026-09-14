@@ -91,9 +91,17 @@ struct CircuitTunnelCoordinator::Impl {
     BridgeFinished on_finished;
     bool finished = false;
     bool local_cancel = false;
+    bool is_reserve = false;
+  };
+
+  struct Reservation {
+    std::shared_ptr<pp::amp::ChannelSession> session;
+    Clock::time_point deadline{};
   };
 
   std::unordered_map<uint64_t, std::unique_ptr<Tunnel>> tunnels;
+  /** Relay: PeerId → parked inbound circuit channel from answerer (op=reserve). */
+  std::unordered_map<std::string, Reservation> reservations;
 
   void PostIo(std::function<void()> task) {
     if (!runtime || !task) {
@@ -138,6 +146,7 @@ struct CircuitTunnelCoordinator::Impl {
   void TickDeadlines() {
     const auto now = Clock::now();
     std::vector<CircuitTunnelId> timed_out;
+    std::vector<std::string> expired_reserves;
     {
       std::lock_guard lock(mu);
       for (auto& [_, tunnel] : tunnels) {
@@ -147,17 +156,35 @@ struct CircuitTunnelCoordinator::Impl {
         if (tunnel->deadline.time_since_epoch().count() == 0) {
           continue;
         }
-        if (now >= tunnel->deadline && CircuitTunnelPhaseIsActive(tunnel->phase) &&
-            tunnel->phase != CircuitTunnelPhase::Bridging) {
+        if (now >= tunnel->deadline &&
+            (tunnel->phase == CircuitTunnelPhase::Reserved ||
+             (CircuitTunnelPhaseIsActive(tunnel->phase) && tunnel->phase != CircuitTunnelPhase::Bridging))) {
           timed_out.push_back(tunnel->id);
+        }
+      }
+      for (auto& [peer_id, res] : reservations) {
+        if (now >= res.deadline || !res.session || res.session->IsClosed()) {
+          expired_reserves.push_back(peer_id);
         }
       }
     }
     for (const auto id : timed_out) {
       std::lock_guard lock(mu);
       if (auto* tunnel = Find(id)) {
-        TearDown(*tunnel, false, false, "circuit-relay bridge timed out");
+        TearDown(*tunnel, false, false,
+                 tunnel->is_reserve ? "circuit-relay reserve timed out" : "circuit-relay bridge timed out");
       }
+    }
+    for (const auto& peer_id : expired_reserves) {
+      std::lock_guard lock(mu);
+      auto it = reservations.find(peer_id);
+      if (it == reservations.end()) {
+        continue;
+      }
+      if (it->second.session && !it->second.session->IsClosed()) {
+        it->second.session->CloseQuiet();
+      }
+      reservations.erase(it);
     }
   }
 
@@ -273,6 +300,19 @@ struct CircuitTunnelCoordinator::Impl {
               return false;
             }
             tunnel->resolved_multiaddr = root->getString("resolved_multiaddr").value_or("");
+            if (tunnel->is_reserve) {
+              tunnel->phase = CircuitTunnelPhase::Reserved;
+              CircuitTunnelBridgeResult ok;
+              ok.ok = true;
+              ok.session = tunnel->near_session;
+              // Notify once; keep tunnel + session until Cancel / TTL (do not mark finished).
+              if (tunnel->on_finished) {
+                auto cb = std::move(tunnel->on_finished);
+                tunnel->on_finished = nullptr;
+                cb(std::move(ok));
+              }
+              return true;
+            }
             // Client does not open far channel — relay splices. Treat near_session as both ends of local view:
             // payload handler stays on near_session; bridge is armed only on relay. Client enters Bridging with
             // near_session only (no ChannelBridge locally).
@@ -319,22 +359,26 @@ struct CircuitTunnelCoordinator::Impl {
     const auto deadline = tunnel.deadline;
     Object request;
     request.set("v", int64_t{1});
-    request.set("op", "bridge");
+    request.set("op", tunnel.is_reserve ? "reserve" : "bridge");
     request.set("timeout_ms",
                 int64_t{std::max<int64_t>(
                     1, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count())});
-    if (!tunnel.target.target_peer_id.empty()) {
-      request.set("target_peer_id", tunnel.target.target_peer_id);
+    if (!tunnel.is_reserve) {
+      if (!tunnel.target.target_peer_id.empty()) {
+        request.set("target_peer_id", tunnel.target.target_peer_id);
+      }
+      if (!tunnel.target.target_multiaddr.empty()) {
+        request.set("target_multiaddr", tunnel.target.target_multiaddr);
+      }
+      request.set("target_protocol", tunnel.target.target_protocol);
     }
-    if (!tunnel.target.target_multiaddr.empty()) {
-      request.set("target_multiaddr", tunnel.target.target_multiaddr);
-    }
-    request.set("target_protocol", tunnel.target.target_protocol);
     const std::string request_json = DumpJson(request);
 
     // Must not hold mu across OpenChannel — callback may run synchronously.
     runtime->Links().OpenChannel(
-        relay_key, kCircuitRelayProtocolId, PolicyForCircuitTarget(tunnel.target.target_protocol),
+        relay_key, kCircuitRelayProtocolId,
+        tunnel.is_reserve ? pp::amp::CircuitTunnelChannelPolicy()
+                          : PolicyForCircuitTarget(tunnel.target.target_protocol),
         [this, id, relay_key, deadline, request_json](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
           pp::amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
@@ -544,32 +588,58 @@ struct CircuitTunnelCoordinator::Impl {
                    return false;
                  }
                  PostIo([this, near_session, remote, root = *root]() mutable {
+                   const std::string op = root.getString("op").value_or("");
+                   CircuitAdmitContext admit;
+                   admit.service_started = started.load(std::memory_order_acquire) &&
+                                          serve_inbound.load(std::memory_order_acquire);
+                   admit.stopping = stopped.load(std::memory_order_acquire);
+                   admit.dialer_peer_id = remote;
+                   admit.op = op;
+                   {
+                     std::lock_guard lock(mu);
+                     admit.serve_scope_mask = admission.serve_scope_mask;
+                     admit.contact_peer_ids = admission.contact_peer_ids;
+                   }
+                   const auto decision = DecideCircuitAdmit(admit);
+                   auto refuse = [&](const std::string& message) {
+                     Object err;
+                     err.set("v", int64_t{1});
+                     err.set("ok", false);
+                     err.set("error", message);
+                     near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                     near_session->Close();
+                   };
+                   if (decision != CircuitAdmitDecision::Allow) {
+                     refuse(decision == CircuitAdmitDecision::RefuseStranger
+                                ? "relay scope: stranger refused"
+                                : (decision == CircuitAdmitDecision::RefuseBadOp
+                                       ? "unsupported op"
+                                       : "circuit-relay service not ready"));
+                     return;
+                   }
+
+                   if (op == "reserve") {
+                     const int timeout_ms =
+                         static_cast<int>(root.getNonNegInt("timeout_ms").value_or(30000));
+                     {
+                       std::lock_guard lock(mu);
+                       Reservation res;
+                       res.session = near_session;
+                       res.deadline =
+                           Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 30000);
+                       reservations[remote] = std::move(res);
+                     }
+                     Object ack;
+                     ack.set("v", int64_t{1});
+                     ack.set("ok", true);
+                     ack.set("op", "reserve");
+                     near_session->EnqueueOutbound(JsonToBody(DumpJson(ack)));
+                     return;
+                   }
+
                    CircuitTunnelId id{};
                    {
                      std::lock_guard lock(mu);
-                     CircuitAdmitContext admit;
-                     admit.service_started = started.load(std::memory_order_acquire) &&
-                                            serve_inbound.load(std::memory_order_acquire);
-                     admit.stopping = stopped.load(std::memory_order_acquire);
-                     admit.dialer_peer_id = remote;
-                     admit.op = root.getString("op").value_or("");
-                     admit.serve_scope_mask = admission.serve_scope_mask;
-                     admit.contact_peer_ids = admission.contact_peer_ids;
-                     const auto decision = DecideCircuitAdmit(admit);
-                     if (decision != CircuitAdmitDecision::Allow) {
-                       Object err;
-                       err.set("v", int64_t{1});
-                       err.set("ok", false);
-                       err.set("error", decision == CircuitAdmitDecision::RefuseStranger
-                                            ? "relay scope: stranger refused"
-                                            : (decision == CircuitAdmitDecision::RefuseBadOp
-                                                   ? "unsupported op"
-                                                   : "circuit-relay service not ready"));
-                       near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
-                       near_session->Close();
-                       return;
-                     }
-
                      auto tunnel = std::make_unique<Tunnel>();
                      tunnel->id = CircuitTunnelId{next_id.fetch_add(1, std::memory_order_relaxed)};
                      tunnel->role = CircuitTunnelRole::RelayServe;
@@ -658,6 +728,12 @@ void CircuitTunnelCoordinator::AbortInflight() {
         impl->TearDown(*tunnel, true, true, "circuit-relay aborted");
       }
     }
+    for (auto& [_, res] : impl->reservations) {
+      if (res.session && !res.session->IsClosed()) {
+        res.session->CloseQuiet();
+      }
+    }
+    impl->reservations.clear();
   });
 }
 
@@ -710,6 +786,46 @@ CircuitTunnelId CircuitTunnelCoordinator::StartBridge(const std::string& relay_p
       tunnel->on_closed = std::move(on_closed);
       tunnel->on_finished = std::move(on_finished);
       tunnel->deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
+      raw = tunnel.get();
+      impl->tunnels[id.value] = std::move(tunnel);
+    }
+    impl->BeginOutbound(*raw);
+  });
+  return id;
+}
+
+CircuitTunnelId CircuitTunnelCoordinator::StartReserve(const std::string& relay_peer_key,
+                                                       BridgeFinished on_finished, const int timeout_ms) {
+  if (!impl_->started.load(std::memory_order_acquire)) {
+    if (on_finished) {
+      runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
+        on_finished(Error("amp circuit-relay service not started"));
+      });
+    }
+    return {};
+  }
+  if (!runtime_.Links().GetLinkSnapshot(relay_peer_key).has_endpoint) {
+    if (on_finished) {
+      runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
+        on_finished(Error("relay peer endpoint not registered"));
+      });
+    }
+    return {};
+  }
+
+  const CircuitTunnelId id{impl_->next_id.fetch_add(1, std::memory_order_relaxed)};
+  impl_->PostIo([impl = impl_.get(), id, relay_peer_key, on_finished = std::move(on_finished),
+                 timeout_ms]() mutable {
+    CircuitTunnelCoordinator::Impl::Tunnel* raw = nullptr;
+    {
+      std::lock_guard lock(impl->mu);
+      auto tunnel = std::make_unique<CircuitTunnelCoordinator::Impl::Tunnel>();
+      tunnel->id = id;
+      tunnel->role = CircuitTunnelRole::Client;
+      tunnel->is_reserve = true;
+      tunnel->relay_peer_key = relay_peer_key;
+      tunnel->on_finished = std::move(on_finished);
+      tunnel->deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 30000);
       raw = tunnel.get();
       impl->tunnels[id.value] = std::move(tunnel);
     }

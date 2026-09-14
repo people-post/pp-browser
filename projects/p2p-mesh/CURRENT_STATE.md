@@ -23,6 +23,8 @@
 | **nf** | Contact-first circuit preference + provider admission (see below) |
 | **n4-media** | Blind `media_relay` + N021 framing + quote/attach + closed-set pick helpers (see below) |
 
+> **Consume vs host (2026-09):** `capabilities.circuit_relay` + Node = **host** ServeInbound / publish (“Help others connect”). Clients always get `AmpCircuitHopReach` when Amp circuit is started — org/contact circuit **consume** does not require the flag.
+
 ## n1 in code
 
 | Area | State |
@@ -72,7 +74,7 @@
 | Area | State |
 |------|-------|
 | Protocol | `/pp-browser/circuit/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
-| Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
+| Config | `libp2p.capabilities.circuit_relay` + JSON round-trip — **host only** (N009); CallStack consume independent |
 | UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
 | Auto-route | **nf** — `ConversationsHub::RequestCircuitBridgePreferred` |

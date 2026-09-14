@@ -30,7 +30,13 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   CallMediaHealthView out;
   out.engine = in.engine;
   out.hop = in.hop;
-  out.path_kind = in.engine.sfu_mode ? "relay" : "direct";
+  if (in.engine.sfu_mode) {
+    out.path_kind = "media_relay";
+  } else if (!in.reach_path_kind.empty()) {
+    out.path_kind = in.reach_path_kind;
+  } else {
+    out.path_kind = "direct";
+  }
 
   const double pressure = std::max(in.engine.path_pressure, in.hop.path_pressure);
   const int64_t now = in.now_ms;
@@ -129,7 +135,7 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
           ? (now_ms - v.engine.last_rx_audio_ms)
           : -1;
   std::ostringstream out;
-  out << (v.engine.sfu_mode ? "SFU" : "P2P") << " · ";
+  out << (v.path_kind.empty() ? (v.engine.sfu_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
   out << (v.engine.opus_target_bps / 1000) << "k · p";
   const double p = std::max(v.engine.path_pressure, v.hop.path_pressure);
   {

@@ -80,8 +80,15 @@ public:
 
   /** Keep dial/circuit pointers valid when ConversationsHub rewires deps (N025 listen sync). */
   void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
+  /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
+  void SetSeedWarm(std::function<void()> warm);
+  /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
+  void SetSeedReserve(std::function<void()> reserve);
 
   void SetLifecycle(CallLifecycle* lifecycle);
+
+  /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
+  std::string MediaPathKind() const { return media_path_kind_; }
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
@@ -114,6 +121,10 @@ private:
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;
+  std::function<void()> seed_warm_;
+  std::function<void()> seed_reserve_;
+  /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
+  std::string media_path_kind_;
 
   std::string media_peer_identity_;
   std::string media_call_id_;

@@ -113,12 +113,25 @@ TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
   EXPECT_EQ(v.quality_bars, 1);
 }
 
-TEST(CallMediaHealthTest, PathKindRelayWhenSfu) {
+TEST(CallMediaHealthTest, PathKindMediaRelayWhenSfu) {
   auto in = BaseHealthyInput();
   in.engine.sfu_mode = true;
   const auto v = EvaluateCallMediaHealth(in);
-  EXPECT_EQ(v.path_kind, "relay");
-  EXPECT_NE(FormatCallDebugSubtitle(v, in.now_ms).find("SFU"), std::string::npos);
+  EXPECT_EQ(v.path_kind, "media_relay");
+  EXPECT_NE(FormatCallDebugSubtitle(v, in.now_ms).find("media_relay"), std::string::npos);
+}
+
+TEST(CallMediaHealthTest, PathKindHonorsReachModes) {
+  auto in = BaseHealthyInput();
+  in.reach_path_kind = "circuit";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "circuit");
+  in.reach_path_kind = "punched";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "punched");
+  in.reach_path_kind = "direct";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "direct");
+  in.engine.sfu_mode = true;
+  in.reach_path_kind = "circuit";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "media_relay");
 }
 
 TEST(CallMediaHealthTest, DiagnosticsGate) {

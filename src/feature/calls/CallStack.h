@@ -114,6 +114,13 @@ public:
   Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
   /** L3.25c: upgrade call-media / hop from circuit R1 to direct via ACP. */
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
+  /**
+   * Register bootstrap ADP endpoints and EnsureAssociation (async, fire-and-forget).
+   * Call before punch/circuit so org seed holds Sessions for double-NAT splice.
+   */
+  void WarmBootstrapSeedSessions();
+  /** Answerer: StartReserve on dialable bootstrap seeds after warm. */
+  void ReserveOnBootstrapSeeds();
 
 private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;

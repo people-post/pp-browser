@@ -247,6 +247,13 @@ CallHopHealth CallUiBackend::HopHealth() const {
   return {};
 }
 
+std::string CallUiBackend::MediaPathKind() const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->MediaPathKind();
+  }
+  return {};
+}
+
 const std::string& CallUiBackend::LastError() const {
   if (auto* life = stack_.Lifecycle()) {
     return life->LastError();

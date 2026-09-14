@@ -1,4 +1,5 @@
 #include "foundation/data/Config.h"
+#include "foundation/data/MeshRole.h"
 #include "foundation/data/UserPreferences.h"
 #include "domain/messaging/AttachmentDownloadPolicy.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -33,6 +34,18 @@ TEST(ConversationsHubConfigTest, ProjectsNetworkSliceFromAppConfig) {
 
   other.mesh.node_enabled = true;
   EXPECT_NE(pbr::ConversationsHub::ProjectNetwork(other), slice);
+}
+
+/** N009: Client may store circuit_relay=true on disk; hosting still requires Node. Consume does not. */
+TEST(ConversationsHubConfigTest, ClientCircuitRelayFlagDoesNotImplyHostingRole) {
+  pbr::AppConfig config = pbr::Config::DefaultAppConfig();
+  config.mesh.node_enabled = false;
+  config.mesh.capabilities.circuit_relay = true;
+  EXPECT_EQ(pbr::ResolveMeshRole(config.mesh), pbr::MeshRole::Client);
+  EXPECT_TRUE(config.mesh.capabilities.circuit_relay);
+  // Host gate in ConversationsHub: role == Node && capabilities.circuit_relay.
+  EXPECT_FALSE(pbr::ResolveMeshRole(config.mesh) == pbr::MeshRole::Node &&
+               config.mesh.capabilities.circuit_relay);
 }
 
 TEST(ConversationsHubConfigTest, ProjectsPolicyAndNotificationPrefs) {

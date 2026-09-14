@@ -10,6 +10,9 @@
 #include "foundation/data/SchemaVersion.h"
 #include "domain/mesh/dht/DhtTypes.h"
 #include "domain/mesh/discovery/AmpDirectoryProtocol.h"
+#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "common/directory/RelayScope.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -230,6 +233,21 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
     ConfigurePpNodeAmpDht(*mesh, *identity, *config);
     ConfigurePpNodeAmpDirectory(*mesh, *identity, *config);
+    // Org seed: admit strangers for circuit + media (do not rely on empty contact set).
+    const RelayScopeMask org_serve = kRelayScopeShortTerm |
+                                     static_cast<RelayScopeMask>(RelayScope::Public);
+    if (auto* circuit = mesh->AmpCircuitTunnel()) {
+      CircuitRelayAdmissionPolicy policy;
+      policy.prefer_contacts_only = false;
+      policy.serve_scope_mask = org_serve;
+      circuit->SetAdmissionPolicy(std::move(policy));
+    }
+    if (auto* media = mesh->AmpMediaRelayCoord()) {
+      MediaRelayAdmissionPolicy policy;
+      policy.prefer_contacts_only = false;
+      policy.serve_scope_mask = org_serve;
+      media->SetAdmissionPolicy(std::move(policy));
+    }
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }

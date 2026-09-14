@@ -106,6 +106,13 @@ CallHopHealth CallSessionManager::HopHealth() const {
   return topology_.HopHealth();
 }
 
+std::string CallSessionManager::MediaPathKind() const {
+  if (!call_media_bridge_) {
+    return {};
+  }
+  return call_media_bridge_->MediaPathKind();
+}
+
 bool CallSessionManager::IsSfuAttached() const {
   return topology_.IsSfuAttached();
 }

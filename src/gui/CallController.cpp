@@ -1224,6 +1224,7 @@ CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media,
   in.engine = media.HealthSnapshot();
   if (backend && backend->Available()) {
     in.hop = backend->HopHealth();
+    in.reach_path_kind = backend->MediaPathKind();
   }
   in.now_ms = util::NowUnixMs();
   in.reconnecting = media_reconnect;
@@ -1256,6 +1257,26 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     in_call.quality_hint = Tr(hint_key).c_str();
   } else {
     in_call.quality_hint = "";
+  }
+
+  // Always-on short path word next to elapsed / connected subtitle.
+  const char* path_key = nullptr;
+  if (view.path_kind == "media_relay" || view.path_kind == "relay") {
+    path_key = "call.details.path.media_relay";
+  } else if (view.path_kind == "circuit") {
+    path_key = "call.details.path.circuit";
+  } else if (view.path_kind == "punched") {
+    path_key = "call.details.path.punched";
+  } else if (view.path_kind == "direct") {
+    path_key = "call.details.path.direct";
+  }
+  if (path_key && media.IsConnected()) {
+    const std::string path_label = Tr(path_key);
+    if (!in_call.subtitle.empty() && in_call.subtitle != path_label) {
+      in_call.subtitle = (std::string(in_call.subtitle.c_str()) + " · " + path_label).c_str();
+    } else if (in_call.subtitle.empty()) {
+      in_call.subtitle = path_label.c_str();
+    }
   }
 
   const bool diagnostics =
@@ -1312,8 +1333,12 @@ void CallController::ShowCallDetails() {
   CallDetailsCopy copy;
   copy.elapsed = in_call.elapsed.empty() ? std::string(in_call.subtitle.c_str())
                                          : std::string(in_call.elapsed.c_str());
-  copy.path_label = view.path_kind == "relay" ? Tr("call.details.path.relay")
-                                             : Tr("call.details.path.direct");
+  copy.path_label = view.path_kind == "media_relay" || view.path_kind == "relay"
+                        ? Tr("call.details.path.media_relay")
+                        : (view.path_kind == "circuit"
+                               ? Tr("call.details.path.circuit")
+                               : (view.path_kind == "punched" ? Tr("call.details.path.punched")
+                                                             : Tr("call.details.path.direct")));
   copy.quality_label = Tr(CallPathQualityDetailsLabelKey(view.quality));
   copy.mic_label = LevelHint(in_call.mic_level, false, in_call.muted);
   copy.incoming_label = LevelHint(in_call.peer_level, true, false);

@@ -79,6 +79,7 @@ public:
   /** Requires Available(); CallController still needs tiles/levels via CallMediaEngine. */
   CallMediaEngine& Media();
   CallHopHealth HopHealth() const;
+  std::string MediaPathKind() const;
 
   // Lifecycle
   const std::string& LastError() const;

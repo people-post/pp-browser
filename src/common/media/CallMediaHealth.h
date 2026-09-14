@@ -86,6 +86,11 @@ struct CallMediaHealthInput {
   int64_t now_ms = 0;
   /** True while lifecycle/media is in an explicit reconnect / connect-pending state. */
   bool reconnecting = false;
+  /**
+   * 1:1 reach mode from CallMediaBridge: direct | punched | circuit.
+   * Ignored when engine.sfu_mode (forces media_relay).
+   */
+  std::string reach_path_kind;
 };
 
 struct CallMediaHealthView {
@@ -93,7 +98,7 @@ struct CallMediaHealthView {
   CallAudioAsymmetry asymmetry = CallAudioAsymmetry::None;
   /** 0..4 segment fill (0 empty … 4 full) — same language as statusbar reach bars. */
   int quality_bars = 4;
-  /** `direct` or `relay`. */
+  /** direct | punched | circuit | media_relay (not status-bar Direct). */
   std::string path_kind = "direct";
   CallMediaEngineHealth engine;
   CallHopHealth hop;

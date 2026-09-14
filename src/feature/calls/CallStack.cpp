@@ -184,101 +184,98 @@ void CallStack::WireMediaRelayDeps() {
   }
   dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
   dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
+  // Clients consume punch/circuit regardless of capabilities.circuit_relay (N009 host-only flag).
   const bool use_amp_circuit =
       use_amp_relay && m->AmpCircuitTunnel() && m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
-  if (config().mesh.capabilities.circuit_relay) {
-    if (use_amp_circuit) {
-      auto circuit = m->CircuitDeps();
-      if (!circuit) {
-        circuit_hop_reach_.reset();
-      } else {
-        IChatPeerLinks* punch_links = &circuit->links;
-        circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
-            circuit->tunnel, circuit->hops, circuit->links, io_pump,
-            [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
-            [this, m, punch_links](const std::string& target_peer_id,
-                                  std::function<void(Roe<void>)> on_done) {
-              if (!on_done) {
-                return;
-              }
-              auto* punch = m->AmpPunch();
-              if (!punch || !punch->IsStarted()) {
-                on_done(Error("amp punch unavailable"));
-                return;
-              }
-              std::vector<std::string> contact_ids;
-              if (deps_.contacts) {
-                if (auto listed = deps_.contacts->List()) {
-                  for (const auto& hop : CollectContactHopCandidates(*listed)) {
-                    if (!hop.peer_id.empty()) {
-                      contact_ids.push_back(hop.peer_id);
-                    }
+  if (use_amp_circuit) {
+    auto circuit = m->CircuitDeps();
+    if (!circuit) {
+      circuit_hop_reach_.reset();
+    } else {
+      IChatPeerLinks* punch_links = &circuit->links;
+      circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
+          circuit->tunnel, circuit->hops, circuit->links, io_pump,
+          [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
+          [this, m, punch_links](const std::string& target_peer_id,
+                                std::function<void(Roe<void>)> on_done) {
+            if (!on_done) {
+              return;
+            }
+            auto* punch = m->AmpPunch();
+            if (!punch || !punch->IsStarted()) {
+              on_done(Error("amp punch unavailable"));
+              return;
+            }
+            std::vector<std::string> contact_ids;
+            if (deps_.contacts) {
+              if (auto listed = deps_.contacts->List()) {
+                for (const auto& hop : CollectContactHopCandidates(*listed)) {
+                  if (!hop.peer_id.empty()) {
+                    contact_ids.push_back(hop.peer_id);
                   }
                 }
               }
-              MeshConfig mesh_cfg = config().mesh;
-              NormalizeMeshConfig(mesh_cfg);
-              std::vector<std::string> seed_ids;
-              for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
-                if (!hop.peer_id.empty()) {
-                  seed_ids.push_back(hop.peer_id);
-                }
+            }
+            MeshConfig mesh_cfg = config().mesh;
+            NormalizeMeshConfig(mesh_cfg);
+            std::vector<std::string> seed_ids;
+            for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+              if (!hop.peer_id.empty()) {
+                seed_ids.push_back(hop.peer_id);
               }
-              auto intro = PickPunchIntroducer(
-                  contact_ids, seed_ids, target_peer_id,
-                  [punch_links](const std::string& id) {
-                    return punch_links->GetLinkSnapshot(id).has_endpoint;
-                  },
-                  [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
-              if (!intro) {
-                on_done(Error("no punch introducer"));
-                return;
-              }
-              punch->TryColdPunchAsync(
-                  *intro, target_peer_id, punch->LocalCandidateAddrs(),
-                  [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
-                    if (!punched) {
-                      on_done(Error(punched.error().message));
-                      return;
-                    }
-                    if (!punched->ok) {
-                      on_done(Error(punched->error.empty() ? "punch failed" : punched->error));
-                      return;
-                    }
-                    on_done(Roe<void>());
-                  },
-                  2000);
-            },
-            [m](const std::string& introducer_peer_key, const std::string& target_peer_id,
-                std::function<void(Roe<void>)> on_done) {
-              if (!on_done) {
-                return;
-              }
-              auto* punch = m->AmpPunch();
-              if (!punch || !punch->IsStarted()) {
-                on_done(Error("amp punch unavailable"));
-                return;
-              }
-              punch->TryUpgradePunchAsync(
-                  introducer_peer_key, target_peer_id, punch->LocalCandidateAddrs(),
-                  [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
-                    if (!punched) {
-                      on_done(Error(punched.error().message));
-                      return;
-                    }
-                    if (!punched->ok) {
-                      on_done(Error(punched->error.empty() ? "upgrade punch failed" : punched->error));
-                      return;
-                    }
-                    on_done(Roe<void>());
-                  },
-                  2000);
-            },
-            post_io);
-        log().info << "circuit-hop reach=amp";
-      }
-    } else {
-      circuit_hop_reach_.reset();
+            }
+            auto intro = PickPunchIntroducer(
+                contact_ids, seed_ids, target_peer_id,
+                [punch_links](const std::string& id) {
+                  return punch_links->GetLinkSnapshot(id).has_endpoint;
+                },
+                [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
+            if (!intro) {
+              on_done(Error("no punch introducer"));
+              return;
+            }
+            punch->TryColdPunchAsync(
+                *intro, target_peer_id, punch->LocalCandidateAddrs(),
+                [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+                  if (!punched) {
+                    on_done(Error(punched.error().message));
+                    return;
+                  }
+                  if (!punched->ok) {
+                    on_done(Error(punched->error.empty() ? "punch failed" : punched->error));
+                    return;
+                  }
+                  on_done(Roe<void>());
+                },
+                2000);
+          },
+          [m](const std::string& introducer_peer_key, const std::string& target_peer_id,
+              std::function<void(Roe<void>)> on_done) {
+            if (!on_done) {
+              return;
+            }
+            auto* punch = m->AmpPunch();
+            if (!punch || !punch->IsStarted()) {
+              on_done(Error("amp punch unavailable"));
+              return;
+            }
+            punch->TryUpgradePunchAsync(
+                introducer_peer_key, target_peer_id, punch->LocalCandidateAddrs(),
+                [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+                  if (!punched) {
+                    on_done(Error(punched.error().message));
+                    return;
+                  }
+                  if (!punched->ok) {
+                    on_done(Error(punched->error.empty() ? "upgrade punch failed" : punched->error));
+                    return;
+                  }
+                  on_done(Roe<void>());
+                },
+                2000);
+          },
+          post_io);
+      log().info << "circuit-hop reach=amp";
     }
   } else {
     circuit_hop_reach_.reset();
@@ -332,10 +329,14 @@ void CallStack::WireMediaRelayDeps() {
       media_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_media_bridge_->SetLifecycle(call_lifecycle_.get());
+      call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
+      call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
       log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
                  << " transport=amp)";
     } else {
       call_media_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
+      call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
+      call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
       if (call_lifecycle_) {
         call_media_bridge_->SetLifecycle(call_lifecycle_.get());
       }
@@ -543,6 +544,58 @@ std::vector<std::string> CallStack::CollectDialableCircuitRelayIds(const std::st
   return relay_ids;
 }
 
+void CallStack::WarmBootstrapSeedSessions() {
+  MeshHost* m = mesh();
+  if (!m) {
+    return;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    if (hop.peer_id.empty()) {
+      continue;
+    }
+    if (!hop.multiaddr.empty() && IsAdpMultiaddr(hop.multiaddr)) {
+      (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    }
+    if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      continue;
+    }
+    if (chat->links.IsConnected(hop.peer_id)) {
+      continue;
+    }
+    chat->links.EnsureAssociation(hop.peer_id, [](IChatPeerLinks::LinkRoe) {});
+  }
+}
+
+void CallStack::ReserveOnBootstrapSeeds() {
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  WarmBootstrapSeedSessions();
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    if (hop.peer_id.empty()) {
+      continue;
+    }
+    if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      continue;
+    }
+    (void)m->AmpCircuitTunnel()->StartReserve(hop.peer_id, {}, 30000);
+    log().info << "circuit reserve started on seed peer=" << hop.peer_id;
+  }
+}
+
 Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
   if (AppRuntime::IsShuttingDown()) {
     log().debug << "TryEnsureCircuitHopReachable rejected: shutting down";
@@ -550,9 +603,6 @@ Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id
   }
   if (!circuit_hop_reach_) {
     return Error("Amp circuit reach required");
-  }
-  if (!config().mesh.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
   }
   return circuit_hop_reach_->TryEnsureHopReachable(hop_peer_id);
 }
@@ -563,10 +613,7 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
     return Error("shutdown in progress");
   }
   if (!circuit_hop_reach_) {
-    return Error("Amp required");
-  }
-  if (!config().mesh.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
+    return Error("Amp circuit reach required");
   }
   if (peer_key.empty()) {
     return Error("missing call peer");
@@ -577,9 +624,6 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
 Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
   if (!circuit_hop_reach_) {
     return Error("amp circuit reach required");
-  }
-  if (!config().mesh.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
   }
   if (peer_key.empty()) {
     return Error("missing call peer");

@@ -5,6 +5,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "common/media/CallMediaHealth.h"
+#include "amp/link/Types.h"
 
 #include "common/Error.h"
 
@@ -78,6 +79,11 @@ public:
   virtual void ClearDialBackoff(const std::string& peer_key) = 0;
   virtual void AbortInflightDial(const std::string& peer_key) = 0;
   virtual void ClearCallMediaCircuitHop(const std::string& peer_key) = 0;
+  /** True when call-media nested circuit carrier hop is installed for peer. */
+  virtual bool HasCallMediaCircuitHop(const std::string& peer_key) const {
+    (void)peer_key;
+    return false;
+  }
 };
 
 /** L3: circuit bridge fallback when hop PeerId is not directly dialable. */
@@ -168,7 +174,14 @@ public:
   void ClearCallMediaCircuitHop(const std::string& peer_key) override {
     if (amp_hops_) {
       amp_hops_->Clear(peer_key, kCallMediaDirectProtocolId);
+      amp_hops_->Clear(peer_key, pp::amp::kAmpCircuitCarrierProtocolId);
     }
+  }
+
+  bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
+    return amp_hops_ &&
+           (static_cast<bool>(amp_hops_->Find(peer_key, pp::amp::kAmpCircuitCarrierProtocolId)) ||
+            amp_hops_->HasAny(peer_key));
   }
 
 private:

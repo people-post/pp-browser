@@ -66,6 +66,8 @@ PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 
 # Caps intentionally off:
 ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
+
+Org / production seed images should keep **circuit + media on** (`--expect-circuit=1 --expect-media=1` or defaults from compose). `NodeBootstrap` sets an explicit **Public|Org** serve mask so stranger dialers are admitted without relying on an empty contact set.
 ```
 
 Asserts: `ok`/`host_running`, non-empty `peer_id` + Amp ADP `listen` (`/udp/…/adp/…`), expected boolean caps. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.

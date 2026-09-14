@@ -147,6 +147,8 @@ public:
   CallMediaEngine& Media();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
+  /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
+  std::string MediaPathKind() const;
   bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);

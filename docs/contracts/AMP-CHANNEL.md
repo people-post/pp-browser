@@ -193,6 +193,16 @@ Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the rela
 
 `target_multiaddr` and/or `target_peer_id` required. `target_protocol` defaults to the circuit protocol id when omitted.
 
+### Reserve request (answerer park; double-NAT)
+
+Answerer opens a circuit channel and sends:
+
+```json
+{ "v": 1, "op": "reserve", "timeout_ms": 30000 }
+```
+
+Relay acks `{ "v": 1, "ok": true, "op": "reserve" }` and keeps the PeerLink so a later `bridge` to that PeerId can `EnsureAssociation` without dialing into the answerer’s NAT. Client API: `CircuitTunnelCoordinator::StartReserve`. TTL / `CancelTunnel` / channel close clears the park.
+
 ### Bridge result (second DATA, before splice)
 
 ```json

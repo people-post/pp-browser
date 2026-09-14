@@ -180,6 +180,14 @@ void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circui
   circuit_reach_ = circuit_reach;
 }
 
+void CallMediaBridge::SetSeedWarm(std::function<void()> warm) {
+  seed_warm_ = std::move(warm);
+}
+
+void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
+  seed_reserve_ = std::move(reserve);
+}
+
 void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
@@ -322,7 +330,12 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     on_done(Error("call-media aborted"));
     return;
   }
-  if (dial_->IsDialable(peer_identity)) {
+  if (seed_warm_) {
+    seed_warm_();
+  }
+  const bool dialable_before = dial_->IsDialable(peer_identity);
+  if (dialable_before) {
+    media_path_kind_ = "direct";
     log().info << "Call-media peer dialable peer=" << peer_identity;
     on_done({});
     return;
@@ -349,6 +362,9 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       return;
     }
     if (dial_->IsDialable(peer_identity)) {
+      if (media_path_kind_.empty()) {
+        media_path_kind_ = dial_->HasCallMediaCircuitHop(peer_identity) ? "circuit" : "direct";
+      }
       log().info << "Call-media peer dialable peer=" << peer_identity;
       on_done({});
       return;
@@ -373,7 +389,13 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     return;
                   }
                   if (via || (dial_ && dial_->IsDialable(peer_identity))) {
-                    log().info << "Call-media peer reachable via circuit peer=" << peer_identity;
+                    if (dial_ && dial_->HasCallMediaCircuitHop(peer_identity)) {
+                      media_path_kind_ = "circuit";
+                    } else {
+                      media_path_kind_ = "punched";
+                    }
+                    log().info << "Call-media peer reachable via circuit peer=" << peer_identity
+                               << " path=" << media_path_kind_;
                     on_done({});
                     return;
                   }
@@ -646,6 +668,14 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   log().info << "BeginSession role=" << (offerer ? "offerer" : "answerer") << " call_id=" << call_id
                 << " peer=" << peer_identity << " epoch=" << media_epoch
                 << " keep_inbound=" << (keep_inbound ? 1 : 0);
+
+  // Answerer first (and offerer): hold outbound Session to org seed for punch/circuit splice.
+  if (seed_warm_) {
+    seed_warm_();
+  }
+  if (!offerer && seed_reserve_) {
+    seed_reserve_();
+  }
 
   media_.SetOnStateChanged([this](const std::string& state) {
     if (state == "connected") {
@@ -932,6 +962,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   direct_.Detach();
   media_peer_identity_.clear();
   media_call_id_.clear();
+  media_path_kind_.clear();
   ClearMeshConnectFailed();
   media_attempted_calls_.erase(call_id);
 
