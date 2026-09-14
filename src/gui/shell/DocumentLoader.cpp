@@ -4,16 +4,16 @@
 #include "foundation/platform/AssetIO.h"
 #include "gui/shell/RmlMount.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/ElementDocument.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/ElementDocument.h>
 
 namespace pbr {
 
 namespace {
-Rml::ElementDocument* g_active = nullptr;
+ui::ElementDocument* g_active = nullptr;
 }
 
-Rml::ElementDocument* DocumentLoader::LoadFile(Rml::Context* context, const std::string& path) {
+ui::ElementDocument* DocumentLoader::LoadFile(ui::Context* context, const std::string& path) {
   if (!context) {
     return nullptr;
   }
@@ -26,7 +26,7 @@ Rml::ElementDocument* DocumentLoader::LoadFile(Rml::Context* context, const std:
   return LoadFromMemory(context, localized, path);
 }
 
-Rml::ElementDocument* DocumentLoader::LoadFromMemory(Rml::Context* context, const std::string& rml,
+ui::ElementDocument* DocumentLoader::LoadFromMemory(ui::Context* context, const std::string& rml,
                                                    const std::string& source_url) {
   if (!context) {
     return nullptr;
@@ -40,11 +40,11 @@ Rml::ElementDocument* DocumentLoader::LoadFromMemory(Rml::Context* context, cons
   return document;
 }
 
-bool DocumentLoader::MountFragment(Rml::Element* container, const std::string& rml, MountOptions opts) {
+bool DocumentLoader::MountFragment(ui::Element* container, const std::string& rml, MountOptions opts) {
   return RmlMount::MountInner(container, rml, opts);
 }
 
-void DocumentLoader::CloseActive(Rml::Context* context) {
+void DocumentLoader::CloseActive(ui::Context* context) {
   if (g_active) {
     RmlMount::ClearDocumentStyleState(g_active);
     g_active->Close();

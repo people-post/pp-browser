@@ -2,15 +2,15 @@
 
 #include "gui/chat/CalendarHelper.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
+#include <ui/data/DataModelHandle.h>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 namespace {
 
-Rml::String ToRmlString(const std::string& value) {
-  return Rml::String(value.c_str());
+ui::String ToRmlString(const std::string& value) {
+  return ui::String(value.c_str());
 }
 
 } // namespace
@@ -88,7 +88,7 @@ void ApplyWidgetInits(const std::vector<WidgetInit>& inits, TurnWidgetState& sta
   }
 }
 
-void RegisterChatWidgetDataTypes(Rml::DataModelConstructor& ctor) {
+void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
   if (auto option_handle = ctor.RegisterStruct<FormOptionRow>()) {
     option_handle.RegisterMember("label", &FormOptionRow::label);
     option_handle.RegisterMember("value", &FormOptionRow::value);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <cstdint>
 #include <string>
@@ -9,34 +9,34 @@
 namespace pbr {
 
 struct FormOptionRow {
-  Rml::String label;
-  Rml::String value;
+  ui::String label;
+  ui::String value;
 };
 
 struct FormFieldRow {
-  Rml::String id;
-  Rml::String label;
-  Rml::String field_type;
-  Rml::String value;
+  ui::String id;
+  ui::String label;
+  ui::String field_type;
+  ui::String value;
   bool checked = false;
   std::vector<FormOptionRow> options;
 };
 
 struct FormWidgetState {
-  Rml::String form_id;
-  Rml::String title;
-  Rml::String submit_label;
-  Rml::String submit_template;
+  ui::String form_id;
+  ui::String title;
+  ui::String submit_label;
+  ui::String submit_template;
   bool expired = false;
   std::vector<FormFieldRow> fields;
 };
 
 struct CalendarDayRow {
   int day = 0;
-  Rml::String label;
+  ui::String label;
   bool available = false;
   bool selected = false;
-  Rml::String iso_date;
+  ui::String iso_date;
 };
 
 struct CalendarWeekRow {
@@ -46,16 +46,16 @@ struct CalendarWeekRow {
 struct CalendarWidgetState {
   int month = 1;
   int year = 2000;
-  Rml::String month_label;
-  Rml::String min_date;
-  Rml::String max_date;
-  std::vector<Rml::String> available_days;
+  ui::String month_label;
+  ui::String min_date;
+  ui::String max_date;
+  std::vector<ui::String> available_days;
   std::vector<CalendarWeekRow> weeks;
 };
 
 struct TranscriptDisplayRow {
-  Rml::String user_content_rml;
-  Rml::String assistant_content_rml;
+  ui::String user_content_rml;
+  ui::String assistant_content_rml;
   bool has_assistant = false;
   bool has_form = false;
   FormWidgetState form;
@@ -64,11 +64,11 @@ struct TranscriptDisplayRow {
 };
 
 struct MessageDisplayRow {
-  Rml::String message_id;
-  Rml::String sender_label;
-  Rml::String content_rml;
-  Rml::String row_class;
-  Rml::String transport_badge;
+  ui::String message_id;
+  ui::String sender_label;
+  ui::String content_rml;
+  ui::String row_class;
+  ui::String transport_badge;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
   bool has_content = true;
@@ -79,13 +79,13 @@ struct MessageDisplayRow {
 };
 
 struct SessionDisplayRow {
-  Rml::String id;
-  Rml::String title;
-  Rml::String preview;
+  ui::String id;
+  ui::String title;
+  ui::String preview;
   /** Visual chat type: ai | private | public | group */
-  Rml::String kind;
+  ui::String kind;
   int unread_count = 0;
-  Rml::String unread_display;
+  ui::String unread_display;
   bool active = false;
   bool closable = false;
 };

@@ -4,4 +4,4 @@ pp_browser_add_feature_library(pp_feature_ai_bindings
     BindingsManifest.cpp
   PUBLIC_LIBS
     pp_domain_ui
-    RmlUi::Core)
+    ui::core)

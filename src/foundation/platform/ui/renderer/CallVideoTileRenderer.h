@@ -1,14 +1,14 @@
 #pragma once
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
 
-namespace Rml {
+namespace ui {
 class Element;
-} // namespace Rml
+} // namespace ui
 
 namespace pbr {
 
@@ -41,7 +41,7 @@ public:
   void RetainPeers(const std::vector<uint32_t>& keep);
 
   /** Upload if needed and letterbox-draw into `element`. UI thread, GL context current. */
-  void RenderTile(CallVideoTileKind kind, Rml::Element* element, uint32_t stream_id = 0);
+  void RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id = 0);
 
   void ReleaseGpuResources();
 
@@ -57,7 +57,7 @@ private:
   };
 
   void UploadIfNeeded(GpuTile& tile);
-  void DrawTile(Rml::Element* element, GpuTile& tile);
+  void DrawTile(ui::Element* element, GpuTile& tile);
   void ReleaseTile(GpuTile& tile);
 
   GpuTile remote_;

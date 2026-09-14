@@ -4,7 +4,7 @@
 #include "common/ui/WorkingSetTypes.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 #include <map>
@@ -19,9 +19,9 @@ class WorkingSetController {
 public:
   struct ShellView {
     bool& working_set_active;
-    Rml::String& working_set_title;
-    Rml::String& working_set_subtitle;
-    Rml::String& working_set_rml;
+    ui::String& working_set_title;
+    ui::String& working_set_subtitle;
+    ui::String& working_set_rml;
     TurnWidgetState& working_set;
   };
 

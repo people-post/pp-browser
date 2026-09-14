@@ -1,6 +1,6 @@
 #include "domain/ui/InputCoordinator.h"
 
-#include <RmlUi/Core/Context.h>
+#include <ui/dom/Context.h>
 
 #include <algorithm>
 
@@ -16,7 +16,7 @@ void InputCoordinator::Clear() {
   bindings_.clear();
 }
 
-bool InputCoordinator::ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
+bool InputCoordinator::ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
                                       bool priority_phase) {
   for (const KeyBinding& binding : bindings_) {
     if (binding.priority_phase != priority_phase) {

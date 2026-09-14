@@ -1,22 +1,22 @@
 #include "CallVideoTileRenderer.h"
 
-#include "GlBackend.h"
+#include <ui/render/GlBackend.h>
 #include "foundation/platform/ui/RmlUi_Backend.h"
-#include "RmlUi_Renderer_GL3.h"
+#include <ui/render/Renderer_GL3.h>
 
-#if defined(RMLUI_GL_ES3)
+#if defined(UI_GL_ES3)
 	#if defined(__APPLE__) && TARGET_OS_IPHONE
 		#include <OpenGLES/ES3/gl.h>
 	#else
 		#include <GLES3/gl3.h>
 	#endif
 #else
-	#include "RmlUi_Include_GL3.h"
+	#include "Include_GL3.h"
 #endif
 
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/Mesh.h>
-#include <RmlUi/Core/MeshUtilities.h>
+#include <ui/dom/Element.h>
+#include <ui/paint/Mesh.h>
+#include <ui/paint/MeshUtilities.h>
 
 namespace pbr {
 
@@ -130,26 +130,26 @@ void CallVideoTileRenderer::UploadIfNeeded(GpuTile& tile) {
   tile.uploaded_seq = frame.seq;
 }
 
-void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile) {
+void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile) {
   if (!element || tile.gl_tex == 0 || tile.uploaded_seq == 0) {
     return;
   }
 
-  Rml::RenderInterface* render_interface = Backend::GetRenderInterface();
+  ui::RenderInterface* render_interface = Backend::GetRenderInterface();
   auto* renderer = dynamic_cast<RenderInterface_GL3*>(render_interface);
   if (!renderer) {
     return;
   }
 
-  const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
-  const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+  const ui::Vector2f offset = element->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f) {
     return;
   }
 
   // Letterbox / pillarbox into the tile so frames keep their native aspect ratio.
-  Rml::Vector2f draw_size = size;
-  Rml::Vector2f draw_offset = offset;
+  ui::Vector2f draw_size = size;
+  ui::Vector2f draw_offset = offset;
   if (tile.tex_width > 0 && tile.tex_height > 0) {
     const float tex_aspect =
         static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
@@ -163,16 +163,16 @@ void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile) {
     }
   }
 
-  Rml::Mesh mesh;
-  Rml::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size,
-                                   Rml::ColourbPremultiplied(255, 255, 255, 255));
-  const Rml::CompiledGeometryHandle handle = renderer->CompileGeometry(mesh.vertices, mesh.indices);
-  renderer->RenderGeometry(handle, Rml::Vector2f(0.f, 0.f),
-                           static_cast<Rml::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));
+  ui::Mesh mesh;
+  ui::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size,
+                                   ui::ColourbPremultiplied(255, 255, 255, 255));
+  const ui::CompiledGeometryHandle handle = renderer->CompileGeometry(mesh.vertices, mesh.indices);
+  renderer->RenderGeometry(handle, ui::Vector2f(0.f, 0.f),
+                           static_cast<ui::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));
   renderer->ReleaseGeometry(handle);
 }
 
-void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, Rml::Element* element, uint32_t stream_id) {
+void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id) {
   GpuTile* tile = nullptr;
   if (kind == CallVideoTileKind::Local) {
     tile = &local_;

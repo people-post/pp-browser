@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RmlUi/Core/FileInterface.h>
+#include <ui/base/FileInterface.h>
 
 namespace pbr {
 
@@ -9,7 +9,7 @@ public:
   static void Register();
 
   /// Non-null on Android/iOS; desktop uses RmlUi default FileInterface.
-  static Rml::FileInterface* PackagedFileInterface();
+  static ui::FileInterface* PackagedFileInterface();
 };
 
 } // namespace pbr

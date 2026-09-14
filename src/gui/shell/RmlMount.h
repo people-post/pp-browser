@@ -1,12 +1,12 @@
 #pragma once
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-namespace Rml {
+namespace ui {
 class Element;
 class ElementDocument;
 }
@@ -20,30 +20,30 @@ struct MountOptions {
 };
 
 struct MountState {
-  Rml::String focused_id;
-  std::vector<std::pair<Rml::String, Rml::Vector2f>> scroll_positions;
+  ui::String focused_id;
+  std::vector<std::pair<ui::String, ui::Vector2f>> scroll_positions;
 };
 
 class RmlMount {
 public:
-  static bool MountInner(Rml::Element* target, const std::string& rml, MountOptions opts = {});
+  static bool MountInner(ui::Element* target, const std::string& rml, MountOptions opts = {});
 
-  static bool InjectRcss(Rml::ElementDocument* doc, const std::string& rcss, const std::string& source_tag = "dynamic");
+  static bool InjectRcss(ui::ElementDocument* doc, const std::string& rcss, const std::string& source_tag = "dynamic");
 
-  static MountState CaptureState(Rml::Element* subtree);
-  static void RestoreState(Rml::Element* subtree, const MountState& state);
+  static MountState CaptureState(ui::Element* subtree);
+  static void RestoreState(ui::Element* subtree, const MountState& state);
 
-  static void ClearDocumentStyleState(Rml::ElementDocument* doc);
+  static void ClearDocumentStyleState(ui::ElementDocument* doc);
 
 private:
   struct DocumentStyleState;
 
-  static bool IsDescendantOf(Rml::Element* ancestor, Rml::Element* node);
-  static void CollectScrollState(Rml::Element* element, MountState& state);
-  static void RestoreScrollState(Rml::Element* element, const MountState& state);
-  static bool ReapplyInjectedStyles(Rml::ElementDocument* doc, DocumentStyleState& state);
+  static bool IsDescendantOf(ui::Element* ancestor, ui::Element* node);
+  static void CollectScrollState(ui::Element* element, MountState& state);
+  static void RestoreScrollState(ui::Element* element, const MountState& state);
+  static bool ReapplyInjectedStyles(ui::ElementDocument* doc, DocumentStyleState& state);
 
-  static std::unordered_map<Rml::ElementDocument*, DocumentStyleState> style_state_;
+  static std::unordered_map<ui::ElementDocument*, DocumentStyleState> style_state_;
 };
 
 } // namespace pbr

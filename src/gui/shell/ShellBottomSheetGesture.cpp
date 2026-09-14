@@ -1,9 +1,9 @@
 #include "gui/shell/ShellBottomSheetGesture.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Event.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
 
 #include <cstdio>
 
@@ -15,17 +15,17 @@ constexpr float kDismissThresholdRatio = 0.25f;
 constexpr int kDragDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 
-int EventMouseX(const Rml::Event& event) {
+int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
 }
 
-int EventMouseY(const Rml::Event& event) {
+int EventMouseY(const ui::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
 }
 
 } // namespace
 
-void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context, float sheet_height_dp,
+void ShellBottomSheetGesture::Attach(ui::Element* sheet, ui::Context* context, float sheet_height_dp,
                                      DismissCallback on_dismiss, ShellGestureAxisLock* axis_lock) {
   Detach();
   if (!sheet || !context) {
@@ -37,7 +37,7 @@ void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context,
   sheet_height_dp_ = sheet_height_dp;
   on_dismiss_ = std::move(on_dismiss);
   axis_lock_ = axis_lock;
-  sheet_->AddEventListener(Rml::EventId::Mousedown, this);
+  sheet_->AddEventListener(ui::EventId::Mousedown, this);
   attached_ = true;
   SetSheetOffset(0.f, false);
 }
@@ -47,7 +47,7 @@ void ShellBottomSheetGesture::Detach() {
   SetClickSuppress(false);
   SetDismissOwnsTopOverscroll(false);
   if (attached_ && sheet_) {
-    sheet_->RemoveEventListener(Rml::EventId::Mousedown, this);
+    sheet_->RemoveEventListener(ui::EventId::Mousedown, this);
   }
   sheet_ = nullptr;
   document_ = nullptr;
@@ -68,11 +68,11 @@ void ShellBottomSheetGesture::SetDocumentDragCapture(bool enabled) {
     return;
   }
   if (enabled) {
-    document_->AddEventListener(Rml::EventId::Mousemove, this, true);
-    document_->AddEventListener(Rml::EventId::Mouseup, this, true);
+    document_->AddEventListener(ui::EventId::Mousemove, this, true);
+    document_->AddEventListener(ui::EventId::Mouseup, this, true);
   } else {
-    document_->RemoveEventListener(Rml::EventId::Mousemove, this, true);
-    document_->RemoveEventListener(Rml::EventId::Mouseup, this, true);
+    document_->RemoveEventListener(ui::EventId::Mousemove, this, true);
+    document_->RemoveEventListener(ui::EventId::Mouseup, this, true);
   }
   document_drag_capture_ = enabled;
 }
@@ -82,9 +82,9 @@ void ShellBottomSheetGesture::SetClickSuppress(bool enabled) {
     return;
   }
   if (enabled) {
-    document_->AddEventListener(Rml::EventId::Click, this, true);
+    document_->AddEventListener(ui::EventId::Click, this, true);
   } else {
-    document_->RemoveEventListener(Rml::EventId::Click, this, true);
+    document_->RemoveEventListener(ui::EventId::Click, this, true);
   }
   click_suppress_listener_ = enabled;
 }
@@ -100,7 +100,7 @@ float ShellBottomSheetGesture::PixelDeltaToDp(int delta_px) const {
 float ShellBottomSheetGesture::ResolveSheetHeightDp() const {
   if (sheet_ && context_) {
     const float ratio = context_->GetDensityIndependentPixelRatio();
-    const float height_px = sheet_->GetBox().GetSize(Rml::BoxArea::Border).y;
+    const float height_px = sheet_->GetBox().GetSize(ui::BoxArea::Border).y;
     if (ratio > 0.f && height_px > 0.f) {
       return height_px / ratio;
     }
@@ -108,12 +108,12 @@ float ShellBottomSheetGesture::ResolveSheetHeightDp() const {
   return sheet_height_dp_;
 }
 
-bool ShellBottomSheetGesture::ShouldIgnoreTarget(Rml::Element* target) const {
+bool ShellBottomSheetGesture::ShouldIgnoreTarget(ui::Element* target) const {
   if (!target) {
     return true;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
-    const Rml::String& tag = node->GetTagName();
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    const ui::String& tag = node->GetTagName();
     if (tag == "textarea" || tag == "input" || tag == "select") {
       return true;
     }
@@ -131,11 +131,11 @@ bool ShellBottomSheetGesture::ShouldIgnoreTarget(Rml::Element* target) const {
   return false;
 }
 
-bool ShellBottomSheetGesture::IsUnderSheet(Rml::Element* target) const {
+bool ShellBottomSheetGesture::IsUnderSheet(ui::Element* target) const {
   if (!sheet_ || !target) {
     return false;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == sheet_) {
       return true;
     }
@@ -143,8 +143,8 @@ bool ShellBottomSheetGesture::IsUnderSheet(Rml::Element* target) const {
   return false;
 }
 
-bool ShellBottomSheetGesture::IsChromeRegion(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+bool ShellBottomSheetGesture::IsChromeRegion(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == sheet_) {
       break;
     }
@@ -155,8 +155,8 @@ bool ShellBottomSheetGesture::IsChromeRegion(Rml::Element* target) const {
   return false;
 }
 
-bool ShellBottomSheetGesture::ScrollAncestorsAtTop(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+bool ShellBottomSheetGesture::ScrollAncestorsAtTop(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f) {
       if (node->GetScrollTop() > kScrollTopEpsilonPx) {
         return false;
@@ -173,7 +173,7 @@ void ShellBottomSheetGesture::PinScrollAncestorsAtTop() {
   if (!arm_target_) {
     return;
   }
-  for (Rml::Element* node = arm_target_; node; node = node->GetParentNode()) {
+  for (ui::Element* node = arm_target_; node; node = node->GetParentNode()) {
     if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f && node->GetScrollTop() < kScrollTopEpsilonPx) {
       node->SetScrollTop(0.f);
     }
@@ -203,7 +203,7 @@ void ShellBottomSheetGesture::SetDismissOwnsTopOverscroll(bool owns) {
   }
 }
 
-bool ShellBottomSheetGesture::ShouldStartSwipe(Rml::Element* target) const {
+bool ShellBottomSheetGesture::ShouldStartSwipe(ui::Element* target) const {
   if (!IsUnderSheet(target)) {
     return false;
   }
@@ -223,7 +223,7 @@ void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
   sheet_->SetProperty("transform", buffer);
 }
 
-void ShellBottomSheetGesture::BeginArm(int x_px, int y_px, Rml::Element* target) {
+void ShellBottomSheetGesture::BeginArm(int x_px, int y_px, ui::Element* target) {
   tracking_ = true;
   dragging_ = false;
   arm_target_ = target;
@@ -256,7 +256,7 @@ void ShellBottomSheetGesture::AbortArm(bool unlock_axis) {
   }
 }
 
-void ShellBottomSheetGesture::UpdateDrag(int x_px, int y_px, Rml::Event& event) {
+void ShellBottomSheetGesture::UpdateDrag(int x_px, int y_px, ui::Event& event) {
   if (!tracking_ || !sheet_) {
     return;
   }
@@ -354,13 +354,13 @@ void ShellBottomSheetGesture::EndDrag() {
   SetSheetOffset(0.f, true);
 }
 
-void ShellBottomSheetGesture::ProcessEvent(Rml::Event& event) {
+void ShellBottomSheetGesture::ProcessEvent(ui::Event& event) {
   if (!sheet_) {
     return;
   }
 
   switch (event.GetId()) {
-  case Rml::EventId::Mousedown:
+  case ui::EventId::Mousedown:
     if (ShouldIgnoreTarget(event.GetTargetElement())) {
       return;
     }
@@ -369,13 +369,13 @@ void ShellBottomSheetGesture::ProcessEvent(Rml::Event& event) {
     }
     BeginArm(EventMouseX(event), EventMouseY(event), event.GetTargetElement());
     break;
-  case Rml::EventId::Mousemove:
+  case ui::EventId::Mousemove:
     UpdateDrag(EventMouseX(event), EventMouseY(event), event);
     break;
-  case Rml::EventId::Mouseup:
+  case ui::EventId::Mouseup:
     EndDrag();
     break;
-  case Rml::EventId::Click:
+  case ui::EventId::Click:
     if (suppress_click_) {
       event.StopImmediatePropagation();
       suppress_click_ = false;

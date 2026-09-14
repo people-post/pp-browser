@@ -1,9 +1,9 @@
 #include "TextLoupeRenderer.h"
 
-#include "GlBackend.h"
-#include "RmlUi_Renderer_GL3.h"
+#include <ui/render/GlBackend.h>
+#include <ui/render/Renderer_GL3.h>
 
-#if defined(RMLUI_GL_ES3)
+#if defined(UI_GL_ES3)
 	#define LOUPE_SHADER_HEADER PP_BROWSER_SHADER_HEADER_GLES
 	#if defined(__APPLE__) && TARGET_OS_IPHONE
 		#include <OpenGLES/ES3/gl.h>
@@ -12,13 +12,13 @@
 	#endif
 #else
 	#define LOUPE_SHADER_HEADER "#version 330 core\n"
-	#include "RmlUi_Include_GL3.h"
+	#include "Include_GL3.h"
 #endif
 
-#include <RmlUi/Core/Log.h>
-#include <RmlUi/Core/Math.h>
-#include <RmlUi/Core/MeshUtilities.h>
-#include <RmlUi/Core/RenderManager.h>
+#include <ui/base/Log.h>
+#include <ui/base/Math.h>
+#include <ui/paint/MeshUtilities.h>
+#include <ui/paint/RenderManager.h>
 
 #include <algorithm>
 #include <vector>
@@ -153,7 +153,7 @@ void EnsureCaptureTarget(int texture_size)
 	glGenFramebuffers(1, &g_state.capture_framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, g_state.capture_framebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_state.capture_texture, 0);
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+#if defined(UI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 	{
 		const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
 		glDrawBuffers(1, &draw_buffer);
@@ -161,7 +161,7 @@ void EnsureCaptureTarget(int texture_size)
 #endif
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 	{
-		Rml::Log::Message(Rml::Log::LT_ERROR, "TextLoupe capture framebuffer is incomplete.");
+		ui::Log::Message(ui::Log::LT_ERROR, "TextLoupe capture framebuffer is incomplete.");
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -206,12 +206,12 @@ void BuildCircleMesh(float center_x, float center_y, float radius, int segments,
 	out_vertices.reserve(size_t(segments) * 4);
 	for (int i = 0; i < segments; ++i)
 	{
-		const float angle0 = float(i) / float(segments) * Rml::Math::RMLUI_PI * 2.f;
-		const float angle1 = float(i + 1) / float(segments) * Rml::Math::RMLUI_PI * 2.f;
-		const float x0 = center_x + Rml::Math::Cos(angle0) * radius;
-		const float y0 = center_y + Rml::Math::Sin(angle0) * radius;
-		const float x1 = center_x + Rml::Math::Cos(angle1) * radius;
-		const float y1 = center_y + Rml::Math::Sin(angle1) * radius;
+		const float angle0 = float(i) / float(segments) * ui::Math::UI_PI * 2.f;
+		const float angle1 = float(i + 1) / float(segments) * ui::Math::UI_PI * 2.f;
+		const float x0 = center_x + ui::Math::Cos(angle0) * radius;
+		const float y0 = center_y + ui::Math::Sin(angle0) * radius;
+		const float x1 = center_x + ui::Math::Cos(angle1) * radius;
+		const float y1 = center_y + ui::Math::Sin(angle1) * radius;
 		out_vertices.push_back(center_x);
 		out_vertices.push_back(center_y);
 		out_vertices.push_back(x0);
@@ -221,35 +221,35 @@ void BuildCircleMesh(float center_x, float center_y, float radius, int segments,
 	}
 }
 
-Rml::Rectanglei ComputeCaptureRegion(const Rml::TextLoupeState& state, float dp_ratio, int viewport_width, int viewport_height, int& out_capture_size)
+ui::Rectanglei ComputeCaptureRegion(const ui::TextLoupeState& state, float dp_ratio, int viewport_width, int viewport_height, int& out_capture_size)
 {
 	const float radius_px = kLoupeRadiusDp * dp_ratio;
-	const int capture_size = Rml::Math::Max(1, Rml::Math::RoundUpToInteger((radius_px * 2.f) / kLoupeZoom));
+	const int capture_size = ui::Math::Max(1, ui::Math::RoundUpToInteger((radius_px * 2.f) / kLoupeZoom));
 	out_capture_size = capture_size;
 
 	const int center_x = int(state.anchor.x);
 	const int center_y = int(state.anchor.y);
-	Rml::Rectanglei region;
+	ui::Rectanglei region;
 	region.p0.x = center_x - capture_size / 2;
 	region.p0.y = center_y - capture_size / 2;
 	region.p1.x = region.p0.x + capture_size;
 	region.p1.y = region.p0.y + capture_size;
 
-	region.p0.x = Rml::Math::Clamp(region.p0.x, 0, viewport_width);
-	region.p0.y = Rml::Math::Clamp(region.p0.y, 0, viewport_height);
-	region.p1.x = Rml::Math::Clamp(region.p1.x, 0, viewport_width);
-	region.p1.y = Rml::Math::Clamp(region.p1.y, 0, viewport_height);
+	region.p0.x = ui::Math::Clamp(region.p0.x, 0, viewport_width);
+	region.p0.y = ui::Math::Clamp(region.p0.y, 0, viewport_height);
+	region.p1.x = ui::Math::Clamp(region.p1.x, 0, viewport_width);
+	region.p1.y = ui::Math::Clamp(region.p1.y, 0, viewport_height);
 	return region;
 }
 
-float ComputeLoupeCenterY(const Rml::TextLoupeState& state, float dp_ratio, int viewport_height)
+float ComputeLoupeCenterY(const ui::TextLoupeState& state, float dp_ratio, int viewport_height)
 {
 	const float center_y = state.anchor.y - (kLoupeOffsetYDp * dp_ratio);
-	return Rml::Math::Clamp(center_y, kLoupeRadiusDp * dp_ratio, float(viewport_height) - kLoupeRadiusDp * dp_ratio);
+	return ui::Math::Clamp(center_y, kLoupeRadiusDp * dp_ratio, float(viewport_height) - kLoupeRadiusDp * dp_ratio);
 }
 
 void DrawCircle(GLuint program, GLint projection_location, GLint center_location, GLint radius_location, GLint color_location,
-	const float projection[16], Rml::Vector2f center, float radius, float r, float g, float b, float a)
+	const float projection[16], ui::Vector2f center, float radius, float r, float g, float b, float a)
 {
 	static std::vector<float> vertices;
 	BuildCircleMesh(center.x, center.y, radius, 48, vertices);
@@ -278,7 +278,7 @@ void ReleaseGpuResources()
 	g_state = {};
 }
 
-void Render(Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, RenderInterface_GL3& renderer, float dp_ratio)
+void Render(ui::TextLoupePhase phase, const ui::TextLoupeState& state, RenderInterface_GL3& renderer, float dp_ratio)
 {
 	if (!state.active)
 		return;
@@ -288,13 +288,13 @@ void Render(Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, RenderI
 	const int viewport_width = renderer.GetViewportWidth();
 	const int viewport_height = renderer.GetViewportHeight();
 	int capture_size = 0;
-	const Rml::Rectanglei capture_region = ComputeCaptureRegion(state, dp_ratio, viewport_width, viewport_height, capture_size);
+	const ui::Rectanglei capture_region = ComputeCaptureRegion(state, dp_ratio, viewport_width, viewport_height, capture_size);
 	if (!capture_region.Valid())
 		return;
 
 	EnsureCaptureTarget(capture_size);
 
-	if (phase == Rml::TextLoupePhase::Capture)
+	if (phase == ui::TextLoupePhase::Capture)
 	{
 		renderer.BlitTopLayerRegion(capture_region, g_state.capture_framebuffer, capture_size, capture_size);
 		return;
@@ -315,7 +315,7 @@ void Render(Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, RenderI
 	};
 
 	const float radius_px = kLoupeRadiusDp * dp_ratio;
-	const Rml::Vector2f loupe_center(state.anchor.x, ComputeLoupeCenterY(state, dp_ratio, viewport_height));
+	const ui::Vector2f loupe_center(state.anchor.x, ComputeLoupeCenterY(state, dp_ratio, viewport_height));
 
 	DrawCircle(g_state.shadow_program, g_state.uniform_projection, g_state.uniform_shadow_center, g_state.uniform_shadow_radius,
 		g_state.uniform_shadow_color, projection, loupe_center, radius_px + 4.f * dp_ratio, 0.f, 0.f, 0.f, 0.28f);

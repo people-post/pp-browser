@@ -1,7 +1,7 @@
 #include "gui/shell/DataModelHost.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/DataModelHandle.h>
+#include <ui/dom/Context.h>
+#include <ui/data/DataModelHandle.h>
 
 namespace pbr {
 
@@ -10,7 +10,7 @@ DataModelHost& DataModelHost::Instance() {
   return host;
 }
 
-bool DataModelHost::Register(Rml::Context* context, const std::string& name, DataModelSetupFn setup) {
+bool DataModelHost::Register(ui::Context* context, const std::string& name, DataModelSetupFn setup) {
   if (!context || !setup) {
     return false;
   }
@@ -23,7 +23,7 @@ bool DataModelHost::Register(Rml::Context* context, const std::string& name, Dat
   return true;
 }
 
-Rml::DataModelHandle DataModelHost::Get(const std::string& name) const {
+ui::DataModelHandle DataModelHost::Get(const std::string& name) const {
   auto it = models_.find(name);
   if (it == models_.end()) {
     return {};

@@ -3,7 +3,7 @@
 #include "domain/ui/ChatWidgetTypes.h"
 #include "feature/conversations/ConversationsFacade.h"
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <chrono>
 #include <cstdint>
@@ -20,12 +20,12 @@ namespace pbr {
 class ChatThreadChrome {
 public:
   struct View {
-    Rml::String& draft_placeholder;
-    Rml::String& status;
-    Rml::String& thread_title;
-    Rml::String& thread_subtitle;
-    Rml::String& peer_link_status;
-    Rml::String& peer_link_banner;
+    ui::String& draft_placeholder;
+    ui::String& status;
+    ui::String& thread_title;
+    ui::String& thread_subtitle;
+    ui::String& peer_link_status;
+    ui::String& peer_link_banner;
     bool& show_peer_link;
     bool& show_peer_link_banner;
     bool& show_retry_peer_dial;
@@ -49,9 +49,9 @@ public:
     bool& show_psk_import;
     bool& psk_has_key;
     bool& psk_verified;
-    Rml::String& psk_fingerprint;
-    Rml::String& psk_export_b64;
-    Rml::String& psk_import_text;
+    ui::String& psk_fingerprint;
+    ui::String& psk_export_b64;
+    ui::String& psk_import_text;
     bool& sync_in_progress;
     bool& show_older_history_hint;
     std::vector<TranscriptDisplayRow>& turns;

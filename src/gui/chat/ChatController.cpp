@@ -65,19 +65,19 @@
 #include "gui/contacts/ContactsController.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/base/SystemInterface.h>
 #include "gui/SettingsController.h"
 
 #include "common/ValueJson.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
-#include <RmlUi/Core/StringUtilities.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/widgets/ElementFormControlTextArea.h>
+#include <ui/base/StringUtilities.h>
+#include <ui/base/SystemInterface.h>
 
 #include <optional>
 #include <string>
@@ -355,14 +355,14 @@ void ChatController::InsertEmojiIntoDraft(const std::string& emoji, bool restore
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
-  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  ui::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(el);
   if (!draft) {
     return;
   }
   draft->SetValue(next.c_str());
-  const Rml::String value = draft->GetValue();
-  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+  const ui::String value = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
   if (!restore_composer_focus) {
     // Keyboard-panel multi-insert: caret only (unfocused SetSelectionRange does not OSK).
     draft->SetSelectionRange(end, end);
@@ -555,7 +555,7 @@ void ChatController::ShellCloseCompactChat() {
   }
 }
 
-void ChatController::ShellSetActivity(const bool visible, const Rml::String& message) {
+void ChatController::ShellSetActivity(const bool visible, const ui::String& message) {
   if (shell_navigation_.set_activity) {
     shell_navigation_.set_activity(visible, message);
   }
@@ -610,43 +610,43 @@ const SessionStore& ChatController::Store() const {
 }
 
 
-void ChatController::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::OpenWorkingSetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
   const std::optional<int> block_index = EventArgAsInt(args, 1);
   if (!block_index || *block_index < 0) {
     return;
   }
-  Instance().working_set_.Open(std::string(args[0].Get<Rml::String>().c_str()), *block_index);
+  Instance().working_set_.Open(std::string(args[0].Get<ui::String>().c_str()), *block_index);
 }
 
-void ChatController::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& /*args*/) {
+void ChatController::SendMessageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& /*args*/) {
   Instance().OnSendMessage();
 }
 
-void ChatController::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::SendSuggestionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SendUserText(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::SubmitFormCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                  const Rml::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+void ChatController::SubmitFormCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                  const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SubmitForm(std::string(args[0].Get<Rml::String>().c_str()),
-                        std::string(args[1].Get<Rml::String>().c_str()));
+  Instance().SubmitForm(std::string(args[0].Get<ui::String>().c_str()),
+                        std::string(args[1].Get<ui::String>().c_str()));
 }
 
-void ChatController::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::SendChatActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
 
@@ -655,98 +655,98 @@ void ChatController::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml:
     return;
   }
 
-  Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
+  Instance().SendChatAction(std::string(args[0].Get<ui::String>().c_str()), *action_index);
 }
 
-void ChatController::ToggleReactionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+void ChatController::ToggleReactionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().ToggleReaction(std::string(args[0].Get<Rml::String>().c_str()),
-                            std::string(args[1].Get<Rml::String>().c_str()));
+  Instance().ToggleReaction(std::string(args[0].Get<ui::String>().c_str()),
+                            std::string(args[1].Get<ui::String>().c_str()));
 }
 
-void ChatController::OpenEmojiInsertCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                             const Rml::VariantList& /*args*/) {
+void ChatController::OpenEmojiInsertCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                             const ui::VariantList& /*args*/) {
   Instance().OpenEmojiInsertMenu(&ev);
 }
 
-void ChatController::AttachFileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ChatController::AttachFileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   Instance().OnAttachFile();
 }
 
-void ChatController::OpenAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::OpenAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OpenAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OpenAttachment(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::RetryAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::RetryAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().RetryAttachmentDownload(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().RetryAttachmentDownload(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::DownloadAttachmentCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::DownloadAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().DownloadAttachment(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().DownloadAttachment(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::CalendarPrevCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().CalendarPrev(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().CalendarPrev(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::CalendarNextCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::CalendarNextCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().CalendarNext(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().CalendarNext(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::SelectCalendarDayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                         const Rml::VariantList& args) {
-  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+void ChatController::SelectCalendarDayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                         const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING || args[1].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SelectCalendarDay(std::string(args[0].Get<Rml::String>().c_str()),
-                               std::string(args[1].Get<Rml::String>().c_str()));
+  Instance().SelectCalendarDay(std::string(args[0].Get<ui::String>().c_str()),
+                               std::string(args[1].Get<ui::String>().c_str()));
 }
 
-void ChatController::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
+void ChatController::NewChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& /*args*/) {
   Instance().OnNewChat();
 }
 
-void ChatController::NewMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                        const Rml::VariantList& /*args*/) {
+void ChatController::NewMessageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                        const ui::VariantList& /*args*/) {
   Instance().OnNewMessage();
 }
 
-void ChatController::OpenNewSessionMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                const Rml::VariantList& /*args*/) {
+void ChatController::OpenNewSessionMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                const ui::VariantList& /*args*/) {
   Instance().OnOpenNewSessionMenu(ev);
 }
 
-void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                   const Rml::VariantList& /*args*/) {
+void ChatController::OpenThreadActionsMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                   const ui::VariantList& /*args*/) {
   Instance().OnOpenThreadActionsMenu(ev);
 }
 
-void ChatController::StartCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                       const Rml::VariantList& /*args*/) {
+void ChatController::StartCallCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                       const ui::VariantList& /*args*/) {
   ChatController& self = Instance();
   const std::string thread_id = self.ActiveThreadId();
   if (thread_id.empty()) {
@@ -765,78 +765,78 @@ void ChatController::StartCallCallback(Rml::DataModelHandle /*model*/, Rml::Even
       });
 }
 
-void ChatController::OpenPeerSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                           const Rml::VariantList& /*args*/) {
+void ChatController::OpenPeerSheetCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                           const ui::VariantList& /*args*/) {
   Instance().OnOpenPeerSheet(ev);
 }
 
-void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ChatController::SelectThreadCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnSelectThread(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnSelectThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev, const Rml::VariantList& args) {
+void ChatController::CloseThreadCallback(ui::DataModelHandle /*model*/, ui::Event& ev, const ui::VariantList& args) {
   ev.StopPropagation();
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnCloseThread(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnCloseThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::ClearHistoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ChatController::ClearHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   Instance().OnClearHistory();
 }
 
-void ChatController::ForgetMemoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ChatController::ForgetMemoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   Instance().OnForgetMemory();
 }
 
-void ChatController::SyncWithPeerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ChatController::SyncWithPeerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   Instance().OnSyncWithPeer();
 }
 
-void ChatController::RetryGapSyncCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void ChatController::RetryGapSyncCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   Instance().OnRetryGapSync();
 }
 
-void ChatController::StartNewSecureChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& /*args*/) {
+void ChatController::StartNewSecureChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
   Instance().OnStartNewSecureChat();
 }
 
-void ChatController::PauseIntegrityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ChatController::PauseIntegrityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnPauseIntegrityOnly();
 }
 
-void ChatController::CopyPskKeyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ChatController::CopyPskKeyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   Instance().OnCopyPskKey();
 }
 
-void ChatController::TogglePskImportCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void ChatController::TogglePskImportCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   Instance().OnTogglePskImport();
 }
 
-void ChatController::ImportPskCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                     const Rml::VariantList& /*args*/) {
+void ChatController::ImportPskCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                     const ui::VariantList& /*args*/) {
   Instance().OnImportPsk();
 }
 
-void ChatController::VerifyPskCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                       const Rml::VariantList& /*args*/) {
+void ChatController::VerifyPskCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                       const ui::VariantList& /*args*/) {
   Instance().OnVerifyPsk();
 }
 
-void ChatController::RotatePskExportCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void ChatController::RotatePskExportCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   Instance().OnRotatePskExport();
 }
 
@@ -1039,7 +1039,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
               "../icons/trash.svg",
               true,
           });
-          ContextMenuHost::Instance().ShowActions(Rml::Vector2i(120, 120), std::move(actions));
+          ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
           NotifySurfaceChanged();
         });
     return;
@@ -1133,13 +1133,13 @@ void ChatController::OnForgetMemory() {
       });
 }
 
-void ChatController::LoadOlderHistoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                              const Rml::VariantList& /*args*/) {
+void ChatController::LoadOlderHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
   Instance().OnLoadOlderHistory();
 }
 
-void ChatController::RetryPeerDialCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void ChatController::RetryPeerDialCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   Instance().OnRetryPeerDial();
 }
 
@@ -1240,13 +1240,13 @@ void ChatController::OnJumpToLatest() {
   scroller_.OnJumpToLatest();
 }
 
-void ChatController::MessagesScrollCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ChatController::MessagesScrollCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnMessagesScroll();
 }
 
-void ChatController::JumpToLatestCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ChatController::JumpToLatestCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   Instance().OnJumpToLatest();
 }
 
@@ -1601,10 +1601,10 @@ namespace {
 
 const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
 
-std::string FindMessageIdFromElement(Rml::Element* element) {
-  for (Rml::Element* cur = element; cur; cur = cur->GetParentNode()) {
+std::string FindMessageIdFromElement(ui::Element* element) {
+  for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
     if (cur->HasAttribute("message-id")) {
-      const Rml::String value = cur->GetAttribute("message-id", Rml::String());
+      const ui::String value = cur->GetAttribute("message-id", ui::String());
       return std::string(value.c_str());
     }
   }
@@ -1696,7 +1696,7 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
       });
 }
 
-void ChatController::OpenReactPresetMenu(const std::string& message_id, Rml::Vector2i position) {
+void ChatController::OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position) {
   if (message_id.empty()) {
     return;
   }
@@ -1718,7 +1718,7 @@ void ChatController::OpenReactPresetMenu(const std::string& message_id, Rml::Vec
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
-void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
+void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
   if (chat_.compose_disabled) {
     return;
   }
@@ -1727,7 +1727,7 @@ void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
     return;
   }
   // Fallback when picker is not wired (tests / headless): keep preset strip.
-  const Rml::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : Rml::Vector2i(120, 120);
+  const ui::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : ui::Vector2i(120, 120);
   std::vector<ContextMenuAction> actions;
   for (const char* emoji : kReactionPresets) {
     actions.push_back({
@@ -1740,8 +1740,8 @@ void ChatController::OpenEmojiInsertMenu(Rml::Event* ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
-void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
-  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
+void ChatController::OnOpenNewSessionMenu(ui::Event& ev) {
+  const ui::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   actions.push_back({
@@ -1768,9 +1768,9 @@ void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
-void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
+void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   // Anchor near the right edge of the trigger so the menu stays in the header corner.
-  const Rml::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
+  const ui::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   if (chat_.thread_is_public && messaging_ready_ && facade_) {
@@ -1821,7 +1821,7 @@ void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
-void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
+void ChatController::OnOpenPeerSheet(ui::Event& ev) {
   if (!messaging_ready_ || !chat_.show_peer_sheet) {
     return;
   }
@@ -1830,7 +1830,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     return;
   }
 
-  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
+  const ui::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   if (thread->kind == ThreadKind::Direct) {
@@ -1933,7 +1933,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "Copy ID",
           nullptr,
           [this, peer_id]() {
-            if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
               system->SetClipboardText(peer_id.c_str());
             }
             ShowToast("ID copied");
@@ -2100,14 +2100,14 @@ void ChatController::OnShellLayoutSynced() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
-  auto* draft = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(el);
+  ui::Element* el = context_->GetDocument(0)->GetElementById("draft-input");
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(el);
   if (!draft) {
     return;
   }
   draft->Focus();
-  const Rml::String value = draft->GetValue();
-  const int end = Rml::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+  const ui::String value = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
   draft->SetSelectionRange(end, end);
 }
 
@@ -2467,7 +2467,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     DirtyChatChrome();
     break;
   case AgentEventType::ToolActivity:
-    chat_.status = Rml::String(ToolActivityLabel(event.tool_name, event.status).c_str());
+    chat_.status = ui::String(ToolActivityLabel(event.tool_name, event.status).c_str());
     ShellSetActivity(true, chat_.status);
     DirtyChatChrome();
     break;
@@ -2723,7 +2723,7 @@ void ChatController::WireMessagingBindings() {
   RefreshLlmSetupBanner();
 }
 
-bool ChatController::Setup(Rml::Context* context) {
+bool ChatController::Setup(ui::Context* context) {
   StartupPhase setup_phase("ChatController::Setup");
   if (!context) {
     return false;
@@ -2744,7 +2744,7 @@ bool ChatController::Setup(Rml::Context* context) {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
-  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
+  shell_.sessions = {{ui::String("Chat"), ui::String("Ask anything...")}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
   StartupMark("chat_after_agent_ports");
@@ -2761,15 +2761,15 @@ bool ChatController::Setup(Rml::Context* context) {
   // people_picker handles; a full Clear made DirtyNavChrome/DirtyCallChrome no-ops (handle=0) while
   // MountInner still updated live Context models — mute/speaker icons stuck until remount.
 
-  const auto register_enter_send = [this](Rml::Input::KeyIdentifier key) {
+  const auto register_enter_send = [this](ui::Input::KeyIdentifier key) {
     if (!input_) {
       return;
     }
     input_->Register(KeyBinding{
         .key = key,
-        .forbidden_modifiers = Rml::Input::KM_SHIFT,
-        .when = [](Rml::Context* ctx) {
-          Rml::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+        .forbidden_modifiers = ui::Input::KM_SHIFT,
+        .when = [](ui::Context* ctx) {
+          ui::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
           return focus && focus->GetId() == "draft-input";
         },
         .action = [this]() {
@@ -2779,10 +2779,10 @@ bool ChatController::Setup(Rml::Context* context) {
         .priority = 50,
     });
   };
-  register_enter_send(Rml::Input::KI_RETURN);
-  register_enter_send(Rml::Input::KI_NUMPADENTER);
+  register_enter_send(ui::Input::KI_RETURN);
+  register_enter_send(ui::Input::KI_NUMPADENTER);
 
-  if (!DataModelHost::Instance().Register(context, "chat", [this](Rml::DataModelConstructor& ctor) {
+  if (!DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
         auto& controller = *this;
         RegisterChatWidgetDataTypes(ctor);
         ctor.Bind("draft", &controller.chat_.draft);
@@ -2867,7 +2867,7 @@ bool ChatController::Setup(Rml::Context* context) {
     return false;
   }
 
-  if (!DataModelHost::Instance().Register(context, "shell", [this](Rml::DataModelConstructor& ctor) {
+  if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         auto& controller = *this;
         RegisterChatWidgetDataTypes(ctor);
         if (auto working_set_handle = ctor.RegisterStruct<TurnWidgetState>()) {
@@ -2921,7 +2921,7 @@ bool ChatController::Setup(Rml::Context* context) {
     if (message_id.empty()) {
       return actions;
     }
-    const Rml::Vector2i pos = request.position;
+    const ui::Vector2i pos = request.position;
     actions.push_back({
         "react_message",
         "React…",

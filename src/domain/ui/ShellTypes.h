@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 #include <string>
@@ -91,7 +91,7 @@ struct PaneSpec {
   std::string key;
   std::string rml_path;
   PaneRole role = PaneRole::Primary;
-  Rml::String toolbar_label;
+  ui::String toolbar_label;
   bool provides_composer = false;
   /**
    * When non-empty, PushLayer stores this element id for RestoreFocus on close
@@ -122,23 +122,23 @@ struct OverlayEntry {
 
 struct ToastEntry {
   int id = 0;
-  Rml::String message;
+  ui::String message;
   float expires_at_ms = 0.f;
 };
 
 struct DialogState {
   bool active = false;
   OverlayKind kind = OverlayKind::Alert;
-  Rml::String title;
-  Rml::String message;
+  ui::String title;
+  ui::String message;
   /** When non-empty, used as the primary button label instead of common.ok. */
-  Rml::String ok_label;
+  ui::String ok_label;
   bool show_cancel = false;
   bool show_checkbox = false;
-  Rml::String checkbox_label;
+  ui::String checkbox_label;
   bool checkbox_checked = false;
   bool show_prompt = false;
-  Rml::String prompt_value;
+  ui::String prompt_value;
   std::function<void(bool confirmed, bool checkbox_checked)> on_result;
   std::function<void(bool confirmed, std::string prompt_value)> on_prompt_result;
 };
@@ -152,12 +152,12 @@ struct PinGateState {
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
   bool link_paste_mode = false;
-  Rml::String title;
-  Rml::String message;
-  Rml::String error;
-  Rml::String pin;
-  Rml::String pin_confirm;
-  Rml::String link_payload;
+  ui::String title;
+  ui::String message;
+  ui::String error;
+  ui::String pin;
+  ui::String pin_confirm;
+  ui::String link_payload;
   std::function<void(bool unlocked)> on_result;
 };
 
@@ -171,34 +171,34 @@ struct CallRingState {
   bool show_pricing = false;
   /** Take-all enabled only when settlement rails exist. */
   bool accept_charge_enabled = false;
-  Rml::String call_id;
-  Rml::String caller_label;
-  Rml::String media_label;
+  ui::String call_id;
+  ui::String caller_label;
+  ui::String media_label;
   /** True when initiator allowed video for this session (V035). */
   bool video_allowed = false;
-  Rml::String eyebrow;
-  Rml::String conflict_hint;
-  Rml::String accept_label;
-  Rml::String decline_label;
-  Rml::String pricing_label;
-  Rml::String accept_charge_label;
-  Rml::String accept_charge_hint;
+  ui::String eyebrow;
+  ui::String conflict_hint;
+  ui::String accept_label;
+  ui::String decline_label;
+  ui::String pricing_label;
+  ui::String accept_charge_label;
+  ui::String accept_charge_hint;
 };
 
 /** One row in the in-call participant roster strip. */
 struct CallRosterParticipantState {
-  Rml::String name;
+  ui::String name;
   /** Decimal publisher stream_id for Immersive peer tiles. */
-  Rml::String stream_id;
+  ui::String stream_id;
   /** Communicating identity (not bound in RML). */
-  Rml::String identity;
+  ui::String identity;
   bool audio_muted = false;
   bool video_enabled = false;
   bool is_local = false;
   bool has_remote_video = false;
   bool has_avatar = false;
-  Rml::String avatar_src;
-  Rml::String avatar_letter = "?";
+  ui::String avatar_src;
+  ui::String avatar_letter = "?";
   int avatar_tone = 0;
 };
 
@@ -252,22 +252,22 @@ struct CallInProgressState {
   int minimized_corner = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
-  Rml::String call_id;
-  Rml::String title;
-  Rml::String subtitle;
+  ui::String call_id;
+  ui::String title;
+  ui::String subtitle;
   /** Secondary tip under subtitle (Local Network / mic / firewall). */
-  Rml::String status_hint;
-  Rml::String elapsed;
-  Rml::String peer_label;
+  ui::String status_hint;
+  ui::String elapsed;
+  ui::String peer_label;
   /** Quantized mic level 0..5 for speaking meter bars. */
   int mic_level = 0;
   /** Quantized remote audio level 0..5. */
   int peer_level = 0;
-  Rml::String mic_hint;
-  Rml::String peer_hint;
-  Rml::String remote_placeholder;
+  ui::String mic_hint;
+  ui::String peer_hint;
+  ui::String remote_placeholder;
   /** Bound mode name for data-model / tests (`expanded` / `minimized` / `immersive`). */
-  Rml::String mode_str = "expanded";
+  ui::String mode_str = "expanded";
   /**
    * Path quality bars 0..4 (statusbar reach language). Label omitted when good
    * (`quality_label` empty); Fair/Poor/NoAudio set a short status string.
@@ -276,11 +276,11 @@ struct CallInProgressState {
   bool quality_ok = true;
   bool quality_warn = false;
   bool quality_error = false;
-  Rml::String quality_label;
-  Rml::String quality_hint;
+  ui::String quality_label;
+  ui::String quality_hint;
   /** Debug-only subtitle under elapsed (`SFU · 24k · …`). */
   bool show_debug_subtitle = false;
-  Rml::String debug_subtitle;
+  ui::String debug_subtitle;
 };
 
 struct PaneVisibility {
@@ -297,15 +297,15 @@ struct NavBadgeState {
   /** Reserved for contacts-tab queues (intro requests, pending invites). Not chat unread; always 0 until those exist. */
   int contacts_unread = 0;
   bool me_attention = false;
-  Rml::String sessions_unread_display;
-  Rml::String contacts_unread_display;
+  ui::String sessions_unread_display;
+  ui::String contacts_unread_display;
 };
 
 struct ShellState {
   LayoutMode layout_mode = LayoutMode::Expanded;
-  Rml::String layout_mode_str = "expanded";
+  ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
-  Rml::String nav_tab_str = "home";
+  ui::String nav_tab_str = "home";
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;
@@ -316,9 +316,9 @@ struct ShellState {
   bool auxiliary_available = false;
   bool transient_active = false;
 
-  Rml::String primary_pane_key;
+  ui::String primary_pane_key;
 
-  Rml::String banner_message;
+  ui::String banner_message;
   std::vector<ToastEntry> toasts;
   DialogState dialog;
   PinGateState pin_gate;
@@ -349,37 +349,37 @@ struct ShellState {
   bool statusbar_inbound_off = false;
   bool statusbar_load_circuit_visible = false;
   bool statusbar_load_media_visible = false;
-  Rml::String statusbar_load_circuit_label;
-  Rml::String statusbar_load_media_label;
-  Rml::String statusbar_load_circuit_title;
-  Rml::String statusbar_load_media_title;
+  ui::String statusbar_load_circuit_label;
+  ui::String statusbar_load_media_label;
+  ui::String statusbar_load_circuit_title;
+  ui::String statusbar_load_media_title;
   /** Sparse word for off/degraded states; empty when healthy. */
-  Rml::String statusbar_label;
+  ui::String statusbar_label;
   bool statusbar_label_warn = false;
   bool statusbar_label_error = false;
-  Rml::String statusbar_activity;
+  ui::String statusbar_activity;
   /** Accessible names for icon-only slots (data-attr-title). */
-  Rml::String statusbar_brief_title;
-  Rml::String statusbar_direct_title;
-  Rml::String statusbar_help_title;
-  Rml::String statusbar_inbound_title;
-  Rml::String statusbar_cluster_title;
+  ui::String statusbar_brief_title;
+  ui::String statusbar_direct_title;
+  ui::String statusbar_help_title;
+  ui::String statusbar_inbound_title;
+  ui::String statusbar_cluster_title;
   /** Hybrid status popover (network-status-chrome s2). */
   bool statusbar_popover_open = false;
-  Rml::String statusbar_popover_brief_label;
-  Rml::String statusbar_popover_direct_label;
-  Rml::String statusbar_popover_reach_label;
-  Rml::String statusbar_popover_reach_summary;
+  ui::String statusbar_popover_brief_label;
+  ui::String statusbar_popover_direct_label;
+  ui::String statusbar_popover_reach_label;
+  ui::String statusbar_popover_reach_summary;
   bool statusbar_popover_help_visible = false;
-  Rml::String statusbar_popover_help_label;
+  ui::String statusbar_popover_help_label;
   bool statusbar_popover_upnp_visible = false;
-  Rml::String statusbar_popover_upnp_label;
+  ui::String statusbar_popover_upnp_label;
   bool statusbar_popover_error_visible = false;
-  Rml::String statusbar_popover_error;
+  ui::String statusbar_popover_error;
   bool statusbar_popover_load_visible = false;
-  Rml::String statusbar_popover_circuit_load;
-  Rml::String statusbar_popover_media_sessions;
-  Rml::String statusbar_popover_media_participants;
+  ui::String statusbar_popover_circuit_load;
+  ui::String statusbar_popover_media_sessions;
+  ui::String statusbar_popover_media_participants;
 
   NavBadgeState nav_badges;
 

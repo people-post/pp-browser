@@ -4,7 +4,7 @@
 
 #include <functional>
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -17,11 +17,11 @@ namespace pbr {
  * Ports must not return mutable ShellHost::State references.
  */
 struct ShellSetupPorts {
-  std::function<void(Rml::Context* context)> initialize;
+  std::function<void(ui::Context* context)> initialize;
   std::function<void(bool)> set_fonts_ready;
   std::function<bool()> fonts_ready;
   std::function<void(const PaneSpec& spec)> register_pane;
-  std::function<void(Rml::Context* context)> update;
+  std::function<void(ui::Context* context)> update;
   std::function<void()> sync_layout;
 };
 

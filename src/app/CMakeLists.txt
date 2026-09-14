@@ -26,7 +26,7 @@ else()
 endif()
 pp_browser_apply_warnings(${PP_BROWSER_APP_TARGET})
 
-set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
+set(_pp_browser_compile_defs UI_STATIC_LIB)
 if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
   list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
 elseif(NOT PP_BROWSER_IS_MOBILE)
@@ -69,7 +69,7 @@ endif()
 
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
-  ${PP_LIB_RMLUI_ROOT}/Source/Core/FontEngineHarfBuzz
+  ${PP_LIB_UI_ROOT}/src/font/harfbuzz
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
@@ -79,7 +79,7 @@ target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_pbr_common
   pp_domain_ui
   pp_domain_mesh
-  RmlUi::Core
+  ui::core
   CURL::libcurl
   Threads::Threads
 )
@@ -93,7 +93,7 @@ if(PPBROWSER_LOCAL_LLM)
   message(STATUS "PPBROWSER_LOCAL_LLM requested; implementation deferred")
 endif()
 if(PPBROWSER_ENABLE_DEBUGGER)
-  target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE RmlUi::Debugger)
+  target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE ui::debugger)
   target_compile_definitions(${PP_BROWSER_APP_TARGET} PRIVATE PPBROWSER_ENABLE_DEBUGGER=1)
 endif()
 

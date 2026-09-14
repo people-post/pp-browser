@@ -17,7 +17,7 @@ struct ShellPinGatePorts {
   /** Read-only copy of shell-bound PIN fields (data-value writes into ShellHost). */
   std::function<PinGateState()> pin_gate_snapshot;
   std::function<void(bool in_progress)> set_unlock_in_progress;
-  std::function<void(bool visible, const Rml::String& message)> set_activity;
+  std::function<void(bool visible, const ui::String& message)> set_activity;
   /** PIN gate + unlock_in_progress bindings (not grab-bag DirtyWindow). */
   std::function<void()> dirty_pin_gate;
   /** Presence remount into #shell-pin-gate-mount (not full SyncLayout). */

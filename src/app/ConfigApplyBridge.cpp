@@ -3,9 +3,9 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/ui/Theme.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/ElementDocument.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/dom/ElementDocument.h>
 
 namespace pbr {
 
@@ -101,14 +101,14 @@ void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
 
   if (theme_changed && resolve_asset_) {
     Theme::LoadBase(resolve_asset_(next.theme));
-    if (auto* ctx = Rml::GetContext("main")) {
+    if (auto* ctx = ui::GetContext("main")) {
       if (ctx->GetNumDocuments() > 0) {
         ctx->GetDocument(0)->UpdateDocument();
       }
     }
   }
   if (appearance_changed) {
-    if (auto* ctx = Rml::GetContext("main")) {
+    if (auto* ctx = ui::GetContext("main")) {
       Theme::ApplyAppearance(ctx, Theme::ParseAppearance(next.appearance));
     }
   }

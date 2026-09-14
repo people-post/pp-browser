@@ -24,7 +24,7 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.request_dismiss_instant = [&shell]() { return shell.RequestDismiss(DismissStyle::Instant); };
   navigation.refresh_dismiss_gestures = [&shell]() { shell.RefreshDismissGestures(); };
   navigation.request_remount_nav_rail = [&shell]() { shell.RequestRemountNavRail(); };
-  navigation.set_activity = [&shell](const bool visible, const Rml::String& message) {
+  navigation.set_activity = [&shell](const bool visible, const ui::String& message) {
     shell.SetActivity(visible, message);
   };
   navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {

@@ -14,9 +14,9 @@
 #include "gui/shell/ShellGestureAxis.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Types.h>
 
 #include <chrono>
 #include <functional>
@@ -25,7 +25,7 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 class Element;
 }
@@ -85,7 +85,7 @@ public:
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);
 
-  void Initialize(Rml::Context* context);
+  void Initialize(ui::Context* context);
   void SyncLayout();
   void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
   /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
@@ -95,9 +95,9 @@ public:
   void RemountDialogChrome();
   /** Mount/clear PIN gate into #shell-pin-gate-mount (not full SyncLayout). */
   void RemountPinGateChrome();
-  void Update(Rml::Context* context);
-  /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
-  void NotifyFrameEnd(Rml::Context* context);
+  void Update(ui::Context* context);
+  /** Call after ui::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
+  void NotifyFrameEnd(ui::Context* context);
 
   ShellState& State() { return state_; }
   const ShellState& State() const { return state_; }
@@ -166,7 +166,7 @@ public:
   void RequestRemountNavRail();
   void SetActivityVisible(bool visible);
   /** Busy indicator: top strip (compact/mobile) and status-bar activity text (desktop expanded). */
-  void SetActivity(bool visible, const Rml::String& message = {});
+  void SetActivity(bool visible, const ui::String& message = {});
   void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
@@ -178,7 +178,7 @@ public:
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
-  void RefreshSafeAreaInsets(Rml::Context* context);
+  void RefreshSafeAreaInsets(ui::Context* context);
 
   /**
    * Mobile/compact IME-replacement bottom panel (no scrim, remount-only).
@@ -194,55 +194,55 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
-  static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void SelectNavTabCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CompactChatBackCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenAccountSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CloseAccountSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PopTransientCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CloseLayerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DismissBannerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DialogOkCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DialogCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DialogToggleCheckboxCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateSubmitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateSetPinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateUseDefaultCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateIdentityNewCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void PinGateIdentityLinkCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallAcceptCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallAcceptChargeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallDeclineCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallLeaveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallRetryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallMuteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallCameraCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallSpeakerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallInviteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallExpandCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallImmersiveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallRestoreCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CallDetailsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                             const Rml::VariantList& args);
-  static void DismissStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                              const Rml::VariantList& args);
-  static void RetestStatusbarReachabilityCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                                  const Rml::VariantList& args);
-  static void OpenNetworkSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                          const Rml::VariantList& args);
+  static void ToggleAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SelectNavTabCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CompactChatBackCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CloseAccountSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PopTransientCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CloseLayerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DismissBannerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DialogOkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DialogCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DialogToggleCheckboxCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateSubmitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateCancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateSetPinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateUseDefaultCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateIdentityNewCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void PinGateIdentityLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallAcceptCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallAcceptChargeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallDeclineCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallLeaveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallRetryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallMuteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallCameraCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallSpeakerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallInviteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallExpandCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallImmersiveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallRestoreCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallDetailsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TitlebarMinimizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TitlebarToggleMaximizeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TitlebarCloseCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
+                                             const ui::VariantList& args);
+  static void DismissStatusbarPopoverCallback(ui::DataModelHandle model, ui::Event& ev,
+                                              const ui::VariantList& args);
+  static void RetestStatusbarReachabilityCallback(ui::DataModelHandle model, ui::Event& ev,
+                                                  const ui::VariantList& args);
+  static void OpenNetworkSettingsCallback(ui::DataModelHandle model, ui::Event& ev,
+                                          const ui::VariantList& args);
 
-  bool RegisterWindowModel(Rml::Context* context);
+  bool RegisterWindowModel(ui::Context* context);
 
 private:
 
-  Rml::Element* ShellRoot() const;
+  ui::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
   std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false) const;
   std::string SerializeExpandedBase() const;
@@ -268,7 +268,7 @@ private:
   void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
-  void ApplyLayoutModeFromContext(Rml::Context* context);
+  void ApplyLayoutModeFromContext(ui::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
   int AllocateOverlayId();
@@ -307,7 +307,7 @@ private:
     std::chrono::steady_clock::time_point at;
   };
 
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   ShellState state_;
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
@@ -327,7 +327,7 @@ private:
   float elapsed_ms_ = 0.f;
   std::optional<PendingDismiss> pending_dismiss_;
   std::vector<LocalBackEntry> local_back_stack_;
-  Rml::String saved_focus_id_;
+  ui::String saved_focus_id_;
   bool sync_pending_ = false;
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;

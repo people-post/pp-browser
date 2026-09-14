@@ -2,7 +2,7 @@
 
 #include "common/thread/ThreadTypes.h"
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 
 namespace pbr {
 
@@ -13,6 +13,6 @@ void DirtyChat();
 void DirtyShell();
 
 /** Sidebar / header visual type: ai | private | public | group */
-Rml::String SessionVisualKind(const Thread& thread);
+ui::String SessionVisualKind(const Thread& thread);
 
 } // namespace pbr
