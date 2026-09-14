@@ -204,6 +204,15 @@ TEST(MeshHopPolicyTest, PreferInCallMediaHopsPutsCallMemberFirst) {
   EXPECT_EQ(ranked[2].peer_id, "12D3KooWLinux");
 }
 
+TEST(MeshHopPolicyTest, MultiaddrHasPrivateIpv4Host) {
+  EXPECT_TRUE(MultiaddrHasPrivateIpv4Host("/ip4/192.168.1.132/udp/59286/adp/1.0.0/p2p/x"));
+  EXPECT_TRUE(MultiaddrHasPrivateIpv4Host("/ip4/10.0.0.1/tcp/18517/p2p/x"));
+  EXPECT_TRUE(MultiaddrHasPrivateIpv4Host("/ip4/172.16.0.5/tcp/1/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip4/54.198.185.139/udp/4001/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip4/1.2.3.4/tcp/443/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host(""));
+}
+
 TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {
   MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";

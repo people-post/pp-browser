@@ -163,6 +163,13 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
         }
       }
       hop.dialable = relay_deps_.dial->IsDialable(hop.peer_id);
+      // Directory / bootstrap seeds with a published MA are SoftMigrate candidates even before
+      // Amp address-book learn (cross-net PreferLocal fallback).
+      if (!hop.dialable && !hop.multiaddr.empty() &&
+          (hop.affinity == MeshHopAffinity::OrgSeed || hop.affinity == MeshHopAffinity::DirectoryNode ||
+           hop.affinity == MeshHopAffinity::DhtDiscovered)) {
+        hop.dialable = true;
+      }
     }
   }
   // V030: contacts need media_relay ads; org seeds always eligible; PreferLocal added later.
@@ -645,24 +652,31 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     return;
     }
   } else if (sfu_attached_) {
-    // Guest hint re-pick: never Detach a healthy PreferLocal session — that silenced already-
-    // attached guests (Moto) while Samsung hop-hints looped onto a non-media_relay seed.
+    // Guest hint re-pick: never Detach a healthy PreferLocal session unless the guest needs a
+    // different shared hop (cross-net cannot reach PreferLocal LAN MA).
     std::string local_pid;
     if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
       local_pid = *pid;
     }
     const bool prefer_self =
         !prefer_hop_peer_id.empty() && !local_pid.empty() && prefer_hop_peer_id == local_pid;
-    if (prefer_self || relay_deps_.relay->IsLocalHopAttached()) {
+    const bool prefer_other =
+        !prefer_hop_peer_id.empty() && !local_pid.empty() && prefer_hop_peer_id != local_pid;
+    if ((prefer_self || relay_deps_.relay->IsLocalHopAttached()) && !prefer_other) {
       log().info << "SoftMigrate re-pick no-op: keep PreferLocal call_id=" << call_id
                  << " prefer=" << prefer_hop_peer_id;
       SyncSfuSubscriptions(call_id);
       on_done(Error("keep_prefer_local"));
     return;
     }
+    if (prefer_other && relay_deps_.relay->IsLocalHopAttached()) {
+      log().info << "SoftMigrate re-pick leave PreferLocal for shared hop=" << prefer_hop_peer_id
+                 << " call_id=" << call_id;
+    }
     const bool prefer_dialable =
         relay_deps_.dial && !prefer_hop_peer_id.empty() &&
-        relay_deps_.dial->IsDialable(prefer_hop_peer_id);
+        (relay_deps_.dial->IsDialable(prefer_hop_peer_id) ||
+         !ResolveHopMultiaddr(prefer_hop_peer_id).empty());
     if (!prefer_dialable) {
       log().warning << "SoftMigrate re-pick aborted: prefer hop not dialable, keep current SFU hop="
                     << prefer_hop_peer_id;
@@ -757,6 +771,11 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     auto continue_hop = [this, call_id, local_peer_id, local, session, ranked_ptr, hop_failures, try_hop,
                          index, on_done, self_hop]() mutable {
     const MeshHopCandidate& hop = (*ranked_ptr)[index];
+    // Directory/org seeds publish MAs before Amp address-book learn — register then dial.
+    if (!self_hop && relay_deps_.dial && !hop.multiaddr.empty() &&
+        !relay_deps_.dial->IsDialable(hop.peer_id)) {
+      (void)relay_deps_.dial->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    }
     if (!self_hop && (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id))) {
       const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
       hop_failures->push_back(detail);
@@ -835,6 +854,10 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
     });
     };
 
+    if (!self_hop && relay_deps_.dial && !hop.multiaddr.empty() &&
+        !relay_deps_.dial->IsDialable(hop.peer_id)) {
+      (void)relay_deps_.dial->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    }
     if (!self_hop && relay_deps_.circuit_reach && relay_deps_.dial &&
         !relay_deps_.dial->IsDialable(hop.peer_id)) {
       const std::string hop_peer_id = hop.peer_id;
@@ -1750,6 +1773,37 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     host_.TopologyNotifyRingChanged();
     return {};
   }
+
+  // Cross-net: PreferLocal often fans a private LAN MA. Fail fast and ask owner to re-pick a
+  // shared public hop instead of waiting for media-relay timeout.
+  if (!attach.hop_multiaddr.empty() && MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
+    bool same_lan = false;
+    auto consider = [&](const std::string& local_ma) {
+      if (!local_ma.empty() && IsSameIpv4Subnet24(attach.hop_multiaddr, local_ma)) {
+        same_lan = true;
+      }
+    };
+    consider(relay_deps_.local_listen_multiaddr);
+    for (const std::string& ma : relay_deps_.local_advertise_multiaddrs) {
+      consider(ma);
+    }
+    if (relay_deps_.resolve_local_advertise) {
+      for (const std::string& ma : relay_deps_.resolve_local_advertise()) {
+        consider(ma);
+      }
+    }
+    if (!same_lan) {
+      log().warning << "OnInboundSfuAttach skip private hop MA (not same LAN) hop="
+                    << attach.hop_peer_id << " ma=" << attach.hop_multiaddr;
+      BeginSfuAttachWait(call_id);
+      host_.TopologySetMediaActivity(Tr("call.status.looking_for_another_path"));
+      host_.TopologyNotifyRingChanged();
+      ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id,
+                                       "hop multiaddr not reachable (private)");
+      return {};
+    }
+  }
+
   BeginSfuAttachWait(call_id);
   host_.TopologySetMediaActivity(Tr("call.status.connecting_media_relay"));
   host_.TopologyNotifyRingChanged();
@@ -1935,15 +1989,28 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
     return;
   }
 
-  // PreferLocal already hosting: eject the stranded guest; do not Detach (kills healthy peers).
-  if (relay_deps_.relay && relay_deps_.relay->IsLocalHopAttached()) {
-    log().warning << "Hop hint refuse (keep PreferLocal) guest=" << guest
-                  << " failed_hop=" << detail.failed_hop_peer_id
-                  << " prefer=" << decision.preferred_hop_peer_id;
-    if (!guest.empty()) {
-      RefuseGuestNoSharedHop(detail.call_id, guest);
+  std::string local_pid;
+  if (relay_deps_.relay) {
+    if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+      local_pid = *pid;
     }
-    return;
+  }
+  // PreferLocal LAN hop often unreachable for cross-net guests. If guest/owner share another
+  // dialable hop (directory/org seed), SoftMigrate off PreferLocal onto that hop.
+  if (relay_deps_.relay && relay_deps_.relay->IsLocalHopAttached()) {
+    const bool public_repick =
+        !decision.preferred_hop_peer_id.empty() && decision.preferred_hop_peer_id != local_pid;
+    if (!public_repick) {
+      log().warning << "Hop hint refuse (keep PreferLocal) guest=" << guest
+                    << " failed_hop=" << detail.failed_hop_peer_id
+                    << " prefer=" << decision.preferred_hop_peer_id;
+      if (!guest.empty()) {
+        RefuseGuestNoSharedHop(detail.call_id, guest);
+      }
+      return;
+    }
+    log().info << "Hop hint PreferLocal → shared public hop re-pick prefer="
+               << decision.preferred_hop_peer_id << " guest=" << guest;
   }
   if (soft_migrate_in_flight_) {
     log().info << "Hop hint re-pick skipped (SoftMigrate in flight) guest=" << guest;

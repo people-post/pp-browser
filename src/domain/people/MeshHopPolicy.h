@@ -79,6 +79,9 @@ RelayScopeMask ProviderServeScopeMask(MeshReachabilityClass reachability, bool n
 /** True when both multiaddrs share the same IPv4 /24 (v1 link scope inference). */
 bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multiaddr_b);
 
+/** True when multiaddr embeds a private IPv4 host (10/8, 172.16/12, 192.168/16). */
+bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr);
+
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);

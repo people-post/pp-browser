@@ -114,6 +114,11 @@ bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multi
   return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
 }
 
+bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr) {
+  const std::string ip = Ip4HostFromMultiaddr(multiaddr);
+  return !ip.empty() && IsPrivateIpv4Host(ip);
+}
+
 RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
   RelayScopeMask mask = 0;
