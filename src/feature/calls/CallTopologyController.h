@@ -2,6 +2,7 @@
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/CallHopPlan.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "domain/messaging/SoftMigrateLogic.h"
@@ -19,6 +20,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -94,6 +96,12 @@ public:
     std::function<bool(const std::string& peer_id)> peer_has_media_relay;
     /** PeerIds with media_relay=true ads (inject into SoftMigrate when missing from contacts). */
     std::function<std::vector<std::string>()> list_media_relay_peers;
+    /**
+     * V035: joined remotes’ invite/accept listen multiaddrs (identity → MAs).
+     * SoftMigrate InferCallHopScope; missing → Wide.
+     */
+    std::function<std::unordered_map<std::string, std::vector<std::string>>()>
+        resolve_remote_listen_by_peer;
   };
 
   CallTopologyController(CallTopologyHost& host, CallSessionStore& sessions, ContactsStore& contacts,
@@ -184,6 +192,12 @@ private:
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);
   std::vector<std::string> DialableHopPeerIds() const;
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
+  std::string ResolveLocalAdvertiseMa(const std::string& local_peer_id) const;
+  CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
+  void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
+                             const std::string& local_identity);
+  void FlushPendingHopPrefer(const std::string& call_id);
   /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
@@ -223,6 +237,11 @@ private:
   /** Call id for the SoftMigrate that owns soft_migrate_in_flight_ (pending inbound must match). */
   std::string soft_migrate_call_id_;
   std::atomic<uint64_t> migrate_generation_{0};
+  /** V035 migration FSM: hop currently attaching / successfully attached. */
+  std::string attaching_hop_peer_id_;
+  std::string attached_hop_peer_id_;
+  /** Coalesced hop-hint prefer while SoftMigrate in flight (flush once on completion). */
+  std::string pending_hop_prefer_;
   /** Serializes AttachLocalToSfu (concurrent SoftMigrate + inbound CallSfuAttach). */
   std::mutex sfu_attach_mu_;
   /** Inbound CallSfuAttach while SoftMigrate PickHop is mid-AcceptAndAttach — apply after. */

@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -143,6 +144,8 @@ private:
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   /** Lifecycle-driven N025 desire (mirrors old ConversationsHub::ephemeral_listen_desired_). */
   bool ephemeral_listen_desired_ = false;
+  /** Invite/accept listen multiaddrs by peer identity (V035 SoftMigrate scope). */
+  std::unordered_map<std::string, std::vector<std::string>> call_peer_listen_mas_;
 
   ICallMediaTransport* CallMediaTransport();
 };

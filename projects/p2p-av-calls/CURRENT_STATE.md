@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-09-14
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -11,7 +11,8 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
-| ADRs | V001–**V034** |
+| ADRs | V001–**V035** |
+| **V035 SoftMigrate scope** | First hop from Link/Site/Wide; PreferLocal only when remotes share LAN; Wide → org/directory public MA; migration FSM (no PreferLocal-first + hop-hint stampede) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |

@@ -593,9 +593,9 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 1. **Owner picks the hop** (sticky initiator SoftMigrate, unchanged V021/V022).
 2. **Admission:** the first dialer (or `AttachAsLocalHop`) that opens a `media_relay` session for `call_id` must pass normal contact/scope admission. **After** that session exists, further attaches to the same `call_id` are admitted even if the dialer is not in the hop’s contact set — including mid-call stranger joiners. Mobile remains non-Public for *new* sessions (V027); only join-to-existing-call is the exception.
-3. **Ranking:** when the initiator is a **durable Node** with `media_relay` started, prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds. **Not** for mobile ephemeral `media_relay` (V027) — phones must not SoftMigrate themselves into the SFU host role.
+3. **Ranking:** when the initiator is a **durable Node** with `media_relay` started **and call hop scope is Link/Site** (or Wide with non-private advertise MA), prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds. **Not** for mobile ephemeral `media_relay` (V027) — phones must not SoftMigrate themselves into the SFU host role. **Amended by [V035](#v035--scope-aware-softmigrate-hop-pick):** do not PreferLocal-first on Wide/cross-net calls.
 
-**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner **Node** as the default host when available; ephemeral mobile Start() alone must not claim PreferLocal (dogfood: Android hop crash → peer `Connection reset`).
+**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner **Node** as the default host when available on LAN; ephemeral mobile Start() alone must not claim PreferLocal (dogfood: Android hop crash → peer `Connection reset`).
 
 **Alternatives:** Require mutual contacts among all participants (rejected — UX); open mobile Public for new sessions (rejected — V027); signed owner attach tokens (deferred — same product rule, stronger crypto later).
 
@@ -606,15 +606,15 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Decision:** For N≥3 SoftMigrate / attach:
 
 1. **Owner picks + broadcasts** (`CallSfuAttach`) remains the sole attach authority (V021/V028).
-2. **Ranking:** PreferLocal only for **durable Node** (`prefer_local_as_hop`). Do **not** PreferInCall phones as SFU host (amends V027 “in-call hop” for group SFU). Then ranked contact∪seed hops.
+2. **Ranking:** PreferLocal only for **durable Node** (`prefer_local_as_hop`) when scope allows ([V035](#v035--scope-aware-softmigrate-hop-pick)). Do **not** PreferInCall phones as SFU host (amends V027 “in-call hop” for group SFU). Then ranked contact∪seed hops.
 3. **Guest attach failure:** guest sends `call_sfu_attach_failed` with ordered `preferred_hop_peer_ids` (dialable hops, capped). Owner intersects with its dialable rank (excluding the failed hop):
-   - Intersection non-empty → SoftMigrate re-pick (preferred hop first) + new `CallSfuAttach` fan-out.
+   - Intersection non-empty → SoftMigrate re-pick under migration FSM (preferred hop first; same hop = re-fan-out only) + new `CallSfuAttach` fan-out. **Amended by V035:** hop-hint is rare recovery after a wrong-band first pick, not the primary WAN path.
    - Empty → `call_hop_refuse` to guest + eject; friendly copy for guest and owner toast.
 4. **Mid-call add/remove:** same SoftMigrate / hint / refuse loop when hop must change.
 
 **Rationale:** Owner cannot know guest↛hop a priori; guest prefs turn attach failure into switch-or-refuse instead of blind thrash or silent leave. Phones must not PreferLocal/PreferInCall into the SFU host role (dogfood crash).
 
-**Cross-link:** V023 / V027 / V028; [CALLS.md](../../docs/architecture/CALLS.md) media_relay.
+**Cross-link:** V023 / V027 / V028 / V035; [CALLS.md](../../docs/architecture/CALLS.md) media_relay.
 
 ---
 
@@ -753,5 +753,36 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Rationale:** Voice path, hop framing, and camera stack already exist. The gap is encrypted send/receive + hop audio-priority queues + per-stream decode — not a second media stack. Group video stays **one seal per AU** so camera uplink stays a single stream regardless of roster size.
 
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); [PHASES.md](PHASES.md) **lv** (libp2p video).
+
+---
+
+## V035 — Scope-aware SoftMigrate hop pick
+
+**Date:** 2026-09-14  
+**Status:** Accepted (**implementing**)  
+**Decision:** SoftMigrate first-hop selection is **scope-aware** (N023 link → site → org), not PreferLocal-first with hop-hint recovery.
+
+1. **Call hop scope** — From joined peers’ invite/accept `listen_multiaddrs` vs local advertise:
+   - `Link` if every remote shares IPv4 /24 with local
+   - `Site` if every remote is private-IPv4 and local is private (v1)
+   - Else `Wide` (cross-net / unknown). **Empty remotes map or a remote with missing listen MAs → `Wide`** (fail closed toward public hop).
+2. **First hop** (`SelectCallMediaHop`):
+   - `Link`/`Site` + durable Node + local advertise MA → PreferLocal first
+   - `Wide` → **never** PreferLocal with a private advertise MA; pick first dialable OrgSeed / DirectoryNode / DhtDiscovered with non-private MA
+   - PreferLocal on `Wide` only when local advertise MA is non-private
+   - Contact hops remain V030-gated (`media_relay` ad)
+3. **Fan-out** — PreferLocal `CallSfuAttach` with RFC1918 MA only when hop is PreferLocal **and** scope is Link/Site.
+4. **Migration FSM** (per `call_id` on owner Topology):
+   - `Idle` → `Attaching(hop)` → `Attached(hop)`
+   - Same hop → re-fan-out only (no Detach)
+   - At most one SoftMigrate in flight; further hop-hints coalesce to `pending_hop_prefer_` and flush once
+   - `migrate_generation_` bumps on Leave/teardown — not on every hop-hint
+5. **Guest path** — Keep private-MA fail-fast off-LAN. Hop-hint is a rare re-pick after one attach failure to the *planned* hop, not the primary WAN path.
+
+**Supersedes / amends:** V028§3 PreferLocal-first ranking; V029 hop-hint as primary recovery (hints remain under FSM as rare re-pick). Keeps V021 owner pick, V025 no 1:1 auto-SFU, V027/V029 no phone PreferLocal host, V030 caps filter.
+
+**Rationale:** Cross-net dogfood PreferLocal-prepended private LAN MA into `CallSfuAttach` → guest timeout → hop-hint SoftMigrate gen stampede / stuck Connecting. Scope-aware first pick + idempotent migration matches [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md).
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021–V030; mesh N023.
 
 ---

@@ -16,6 +16,7 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -311,6 +312,7 @@ void CallStack::WireMediaRelayDeps() {
     }
     return call_sessions_->ListMediaRelayCapablePeerIds();
   };
+  deps.resolve_remote_listen_by_peer = [this]() { return call_peer_listen_mas_; };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
@@ -449,9 +451,13 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   if (identity.empty() || multiaddrs.empty()) {
     return;
   }
+  std::vector<std::string>& stored = call_peer_listen_mas_[identity];
   for (const std::string& ma : multiaddrs) {
     if (ma.empty()) {
       continue;
+    }
+    if (std::find(stored.begin(), stored.end(), ma) == stored.end()) {
+      stored.push_back(ma);
     }
     const std::string ip = IpHostFromMultiaddrPrefix(ma);
     if (IsLikelyUndialableLanIpv4(ip)) {

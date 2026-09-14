@@ -19,6 +19,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallSessionStore.cpp
     CallTypes.cpp
     SoftMigrateLogic.cpp
+    CallHopPlan.cpp
     SfuAttachFanout.cpp
     SfuAttachWaitLogic.cpp
     HopHintLogic.cpp
@@ -73,6 +74,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     pp_foundation_crypto
     pp_foundation_identity
     pp_foundation_platform
+    pp_domain_people
     sodium
     SQLite::SQLite3)
 
