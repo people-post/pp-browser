@@ -133,20 +133,32 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
       peer = **resolved;
     }
   }
+  const bool active_same = media_.IsActive() && media_.ActiveCallId() == call_id;
+  uint64_t tx = 0;
+  if (active_same) {
+    tx = media_.HealthSnapshot().tx_audio_frames;
+  }
+  const bool direct_up = call_media_bridge_ && call_media_bridge_->HasActiveDirectStream();
   CallAnswererKickDecisionInput in;
   in.allows_direct_path = !lifecycle_ || lifecycle_->AllowsDirectPath();
-  in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
+  in.media_live_same_call =
+      active_same && (media_.IsConnected() || tx > 0 || direct_up);
   in.peer_nonempty = !peer.empty();
   if (!ShouldKickAnswererDirectMedia(in)) {
     if (!in.allows_direct_path) {
       log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
                  << " status=" << CallMediaStatusName(lifecycle_->Status());
-    } else if (in.media_already_active_same_call) {
-      log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
+    } else if (in.media_live_same_call) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (media live) call_id=" << call_id
+                 << " tx=" << tx;
     } else {
       log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
     }
     return;
+  }
+  if (active_same && !in.media_live_same_call) {
+    log().info << "KickAnswererDirectMediaIfArmed restart dead StartSfu call_id=" << call_id
+               << " tx=" << tx << " connected=" << (media_.IsConnected() ? 1 : 0);
   }
   log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
              << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);

@@ -99,6 +99,8 @@ public:
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
+  /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
+  bool HasActiveDirectStream() const;
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);

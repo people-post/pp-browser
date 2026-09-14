@@ -512,16 +512,35 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
         log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
                    << " status=" << CallMediaStatusName(status_);
         sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-        // Worker PostUIFront can lose to leftover Stop / chrome; re-arm shortly if still Direct*.
-        AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), [this, kick_id]() {
+        // UI-queue retry (not coordinator — PauseBackgroundWork can drop one-shots).
+        AppRuntime::PostUI([this, kick_id]() {
+          if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
+            return;
+          }
+          const auto& media = sessions_->Media();
+          if (media.IsActive() && media.ActiveCallId() == kick_id) {
+            const auto snap = media.HealthSnapshot();
+            if (media.IsConnected() || snap.tx_audio_frames > 0) {
+              return;
+            }
+          }
+          log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
+                     << kick_id << " status=" << CallMediaStatusName(status_);
+          sessions_->KickAnswererDirectMediaIfArmed(kick_id);
+        });
+        AppRuntime::PostUI([this, kick_id]() {
           AppRuntime::PostUI([this, kick_id]() {
             if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
               return;
             }
-            if (sessions_->Media().IsActive() && sessions_->Media().ActiveCallId() == kick_id) {
-              return;
+            const auto& media = sessions_->Media();
+            if (media.IsActive() && media.ActiveCallId() == kick_id) {
+              const auto snap = media.HealthSnapshot();
+              if (media.IsConnected() || snap.tx_audio_frames > 0) {
+                return;
+              }
             }
-            log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
+            log().info << "AcceptSucceeded late retry KickAnswererDirectMedia StartSfu call_id="
                        << kick_id << " status=" << CallMediaStatusName(status_);
             sessions_->KickAnswererDirectMediaIfArmed(kick_id);
           });

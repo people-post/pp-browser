@@ -19,12 +19,20 @@ TEST(CallAnswererKickLogicTest, SkipsWhenStatusDisallowsBridge) {
   EXPECT_FALSE(ShouldKickAnswererDirectMedia(in));
 }
 
-TEST(CallAnswererKickLogicTest, SkipsWhenMediaAlreadyActive) {
+TEST(CallAnswererKickLogicTest, SkipsWhenMediaLive) {
   CallAnswererKickDecisionInput in;
   in.allows_direct_path = true;
-  in.media_already_active_same_call = true;
+  in.media_live_same_call = true;
   in.peer_nonempty = true;
   EXPECT_FALSE(ShouldKickAnswererDirectMedia(in));
+}
+
+TEST(CallAnswererKickLogicTest, KicksWhenActiveButDeadCapture) {
+  CallAnswererKickDecisionInput in;
+  in.allows_direct_path = true;
+  in.media_live_same_call = false; // IsActive but tx=0 / not connected
+  in.peer_nonempty = true;
+  EXPECT_TRUE(ShouldKickAnswererDirectMedia(in));
 }
 
 TEST(CallAnswererKickLogicTest, SkipsWhenNoPeer) {

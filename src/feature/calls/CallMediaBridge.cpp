@@ -196,6 +196,10 @@ std::string CallMediaBridge::MediaPathKind() const {
   return media_path_kind_;
 }
 
+bool CallMediaBridge::HasActiveDirectStream() const {
+  return direct_.IsActive();
+}
+
 void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
@@ -1007,9 +1011,17 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       return;
     }
     if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id
-                 << " sfu_mode=" << (media_.IsSfuMode() ? 1 : 0);
-      return;
+      const auto snap = media_.HealthSnapshot();
+      const bool live =
+          media_.IsConnected() || snap.tx_audio_frames > 0 || direct_.IsActive();
+      if (live) {
+        log().info << "ScheduleStartMediaAsAnswerer skip (already live) call_id=" << call_id
+                   << " tx=" << snap.tx_audio_frames << " sfu_mode=" << (media_.IsSfuMode() ? 1 : 0);
+        return;
+      }
+      log().info << "ScheduleStartMediaAsAnswerer restart dead StartSfu call_id=" << call_id
+                 << " tx=" << snap.tx_audio_frames;
+      media_.Stop();
     }
     // Worker may have SetMediaStatus before this PostUI; if Status is still None, arm Bridge now.
     if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
@@ -1079,13 +1091,25 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
+      if (lifecycle_) {
+        log().warning << "CallLifecycle answerer StartSfu failed call_id=" << call_id
+                      << " err=" << started.error().message;
+      }
       host_.P2pNotifyRingChanged();
+    } else if (lifecycle_) {
+      log().info << "CallLifecycle answerer StartSfu ok call_id=" << call_id
+                 << " direct=" << (direct_.IsActive() ? 1 : 0)
+                 << " engine=" << (media_.IsActive() ? 1 : 0);
     }
   };
-  // Always PostUIFront — never run StartSfu on the Accept worker even if CurrentlyOnUI is
-  // mis-bound (SequencedTaskRunner thread_id). Kick from AcceptSucceeded also lands here.
+  // Prefer inline when already on UI (AcceptSucceeded Kick) so StartSfu is not stuck behind
+  // chrome PostUI. Worker Accept always PostUIFront.
+  if (AppRuntime::CurrentlyOnUI()) {
+    run();
+    return;
+  }
   log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id
-             << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
+             << " on_ui=0";
   AppRuntime::PostUIFront(std::move(run));
 }
 
