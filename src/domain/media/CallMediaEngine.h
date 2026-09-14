@@ -115,6 +115,11 @@ public:
   /** Update chrome-facing SFU connection state (e.g. libp2p pending direct stream). */
   void SetConnectionState(const std::string& state);
   std::string ActiveCallId() const;
+  /**
+   * Bumped on each StartSfu. Posted StopMeshMedia must no-op if this advanced — otherwise
+   * AcceptInvite leftover Stop can kill the new call's duplex (dogfood: both sides Calling).
+   */
+  uint64_t MediaSessionGeneration() const;
   std::string ConnectionState() const;
   int64_t ConnectedAtMs() const;
   /** Wall time when StartSfu succeeded (0 if inactive). */

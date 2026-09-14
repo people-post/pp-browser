@@ -983,7 +983,15 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
   // (dogfood cbe535: End left SFU capture running → next call Connected/reconnecting,
   // zombie RX stream, no audio). One engine serves one call.
-  auto stop_engine = [this, call_id]() {
+  // Capture session generation so a later StartSfu (AcceptInvite SoftMigrate / CallSfuAttach)
+  // invalidates this Stop — otherwise PostUIFront Stop kills the new duplex (both sides Calling).
+  const uint64_t session_gen = media_.MediaSessionGeneration();
+  auto stop_engine = [this, call_id, session_gen]() {
+    if (media_.MediaSessionGeneration() != session_gen) {
+      log().info << "StopMeshMedia skip stale stop leave=" << call_id << " posted_gen=" << session_gen
+                 << " now=" << media_.MediaSessionGeneration();
+      return;
+    }
     if (!media_.IsActive() && !media_.IsSfuMode()) {
       return;
     }

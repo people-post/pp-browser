@@ -155,6 +155,8 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   bool sfu_mode = false;
+  /** Bumped on StartSfu so async StopMeshMedia can detect a newer session. */
+  std::atomic<uint64_t> session_generation{0};
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<SfuSendFn> sfu_send;
   /**
@@ -1133,6 +1135,8 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     if (!*next_send) {
       return Error("SFU send callback required");
     }
+    // Invalidate any in-flight StopMeshMedia posted for a prior call_id / leftover purge.
+    impl_->session_generation.fetch_add(1, std::memory_order_acq_rel);
     if (impl_->active) {
       if (impl_->call_id == call_id && impl_->sfu_mode) {
         // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
@@ -1542,6 +1546,10 @@ void CallMediaEngine::SetConnectionState(const std::string& state) {
 std::string CallMediaEngine::ActiveCallId() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->call_id;
+}
+
+uint64_t CallMediaEngine::MediaSessionGeneration() const {
+  return impl_->session_generation.load(std::memory_order_acquire);
 }
 
 std::string CallMediaEngine::ConnectionState() const {
