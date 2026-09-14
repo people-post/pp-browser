@@ -345,7 +345,8 @@ void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vecto
 }
 
 int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
-  auto client = MakeLocalClient();
+  // Bind all interfaces so WAN hops (not only loopback lab) are reachable via sendto.
+  auto client = MakeLanClient();
   if (!client) {
     std::cerr << "error: client amp start: " << client.error().message << "\n";
     return 1;
