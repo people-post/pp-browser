@@ -826,6 +826,16 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << cleared.error().message;
     return cleared.error();
   }
+  // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
+  // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
+  if (Media().IsActive() || Media().IsSfuMode()) {
+    const std::string leftover = Media().ActiveCallId();
+    if (leftover != call_id) {
+      log().info << "AcceptInvite stopping leftover media call_id=" << leftover
+                 << " accept=" << call_id;
+      StopMediaIfCall(leftover.empty() ? call_id : leftover);
+    }
+  }
   auto pending = sessions_.LoadPendingInvite(call_id, *local);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Pending call invite not found";
@@ -1116,9 +1126,14 @@ Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
+    // Still detach leftover SFU if the disk row is gone but capture is live.
+    StopMediaIfCall(call_id);
     return Error("Call session not found");
   }
   if ((*session)->state == CallSessionState::Ended) {
+    // Session already Ended (remote CallEnded / prior EndCallLocal) must still tear down
+    // media_relay — otherwise the next Accept inherits zombie RX and red "reconnecting".
+    StopMediaIfCall(call_id);
     return {};
   }
   StopMediaIfCall(call_id);

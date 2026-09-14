@@ -980,15 +980,28 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   media_attempted_calls_.erase(call_id);
 
   // CallMediaEngine::Stop tears down SDL capture — UI thread only (CALLS.md).
+  // Always stop leftover media_relay even when ActiveCallId drifted or is empty
+  // (dogfood cbe535: End left SFU capture running → next call Connected/reconnecting,
+  // zombie RX stream, no audio). One engine serves one call.
   auto stop_engine = [this, call_id]() {
-    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      media_.Stop();
+    if (!media_.IsActive() && !media_.IsSfuMode()) {
+      return;
     }
+    const std::string active = media_.ActiveCallId();
+    if (!active.empty() && !call_id.empty() && active != call_id) {
+      log().warning << "StopMeshMedia stopping mismatched engine call_id=" << active
+                    << " leave=" << call_id;
+    } else {
+      log().info << "StopMeshMedia stopping engine call_id=" << active << " leave=" << call_id;
+    }
+    media_.Stop();
   };
   if (AppRuntime::CurrentlyOnUI()) {
     stop_engine();
   } else {
-    AppRuntime::PostUI( std::move(stop_engine));
+    // Front of UI queue — Leave/Accept must not sit behind chrome refresh while capture
+    // keeps feeding a detached SFU (zombie TX + red reconnecting on the next call).
+    AppRuntime::PostUIFront(std::move(stop_engine));
   }
 }
 

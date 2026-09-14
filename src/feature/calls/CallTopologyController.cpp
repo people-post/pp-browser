@@ -491,20 +491,48 @@ bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id)
   if (call_id.empty()) {
     return false;
   }
-  // When media or an in-flight topology bind is set, only that call is active — do not fall
-  // through to ListActiveSessions (zombie non-Ended sessions from prior calls stay "Active").
+
+  auto session_still_active = [this](const std::string& id) -> bool {
+    if (id.empty()) {
+      return false;
+    }
+    if (auto active = sessions_.ListActiveSessions(); active) {
+      for (const CallSession& session : *active) {
+        if (session.call_id == id) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // Media bind for THIS call wins. Leftover media for an Ended call must not veto call:new
+  // (dogfood cbe535). Media for another still-Active session remains exclusive.
   const std::string media_id = media_.ActiveCallId();
   if (!media_id.empty()) {
-    return media_id == call_id;
+    if (media_id == call_id) {
+      return true;
+    }
+    if (session_still_active(media_id)) {
+      return false;
+    }
+    // Zombie engine (Ended/missing session) — fall through.
   }
+  // SoftMigrate / WaitForAttach are exclusive while in flight (zombie Active disk rows).
   if (!soft_migrate_call_id_.empty()) {
     return soft_migrate_call_id_ == call_id;
   }
   if (!sfu_attach_wait_call_id_.empty()) {
     return sfu_attach_wait_call_id_ == call_id;
   }
+  // Guest SFU attach bind: exclusive if that call is still Active; otherwise leftover.
   if (!active_sfu_call_id_.empty()) {
-    return active_sfu_call_id_ == call_id;
+    if (active_sfu_call_id_ == call_id) {
+      return true;
+    }
+    if (session_still_active(active_sfu_call_id_)) {
+      return false;
+    }
   }
   auto active = sessions_.ListActiveSessions();
   if (!active) {

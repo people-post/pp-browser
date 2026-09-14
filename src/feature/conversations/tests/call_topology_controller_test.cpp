@@ -468,6 +468,8 @@ TEST_F(CallTopologyControllerTest, EphemeralStartedDoesNotPreferLocalWithoutFlag
 }
 
 TEST_F(CallTopologyControllerTest, AttachSelfHopUsesLocalPublisher) {
+  SeedJoinedCall("call:self", {"account:A", "account:B"}, 1000);
+  host_->local_identity = "account:A";
   CallTopologyController::MediaRelayDeps deps;
   deps.relay = relay_.get();
   deps.dial = dial_.get();
@@ -1177,6 +1179,78 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   // Explicit AttachLocalToSfu of same hop must also no-op.
   ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
   EXPECT_EQ(relay_->attach_calls, attaches_after_first);
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
+  // Dogfood cbe535: End left CallMediaEngine on call:old (StopMeshMedia gated on ActiveCallId
+  // match). New call's CallSfuAttach was ignored as "not active" while chrome showed Connected
+  // + red reconnecting on the zombie RX stream.
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
+  const std::string old_id = "call:leftover-old";
+  const std::string new_id = "call:leftover-new";
+  SeedJoinedCall(old_id, {"account:A", "account:B"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+
+  const std::string hop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[hop] = "/ip4/1.2.3.4/tcp/443/p2p/" + hop;
+  dial_->force_dialable[hop] = true;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = false;
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail old_attach;
+  old_attach.call_id = old_id;
+  old_attach.hop_peer_id = hop;
+  old_attach.hop_multiaddr = dial_->endpoints[hop];
+  old_attach.publisher_stream_id = PublisherStreamIdForIdentity("account:A");
+
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(old_id, old_attach));
+  bool attached = false;
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (topo_->IsSfuAttached() && media_->ActiveCallId() == old_id) {
+      attached = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  ASSERT_TRUE(attached) << "prime leftover SFU on call:old";
+  const int attaches_old = relay_->attach_calls;
+
+  // End the disk session without OnMediaStopped — engine call_id stays on call:old.
+  auto old_session = sessions_->LoadSession(old_id);
+  ASSERT_TRUE(old_session && old_session->has_value());
+  (**old_session).state = CallSessionState::Ended;
+  ASSERT_TRUE(sessions_->UpsertSession(**old_session));
+
+  SeedJoinedCall(new_id, {"account:A", "account:B"}, 2000);
+
+  CallSfuAttachDetail new_attach = old_attach;
+  new_attach.call_id = new_id;
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(new_id, new_attach));
+
+  bool new_attached = false;
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (media_->ActiveCallId() == new_id) {
+      new_attached = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(new_attached) << "CallSfuAttach for call:new must not be vetoed by leftover media";
+  EXPECT_GT(relay_->attach_calls, attaches_old);
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
