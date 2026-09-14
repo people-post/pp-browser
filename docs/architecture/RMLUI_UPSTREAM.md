@@ -81,6 +81,6 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 
 - List marker generation / first-line prepend on `li`
 
-## Integration note (sibling develop)
+## Release pin
 
-Integration against unreleased pp-cpp-ui `develop` uses the sibling checkout (`../pp-cpp-ui`). After that branch is green in pp-browser CI, cut a release tag on pp-cpp-ui `main` and bump `PP_CPP_UI_GIT_TAG` here.
+FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.3.0`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.

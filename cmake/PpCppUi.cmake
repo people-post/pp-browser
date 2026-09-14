@@ -15,14 +15,14 @@ set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.2.1"
+pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.3.0"
   "Release tag on pp-cpp-ui main (not a branch name)")
 
-# RmlUi unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
+# UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
 # Enabling UI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
-# leaves rmlui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
+# leaves ui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
-set(UI_TESTS OFF CACHE BOOL "Build RmlUi unit tests" FORCE)
+set(UI_TESTS OFF CACHE BOOL "Build UI engine unit tests" FORCE)
 
 # FreeType: no WOFF2 (brotli). pp-cpp-ui v0.2.1+ always vendors zlib+libpng.
 set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
