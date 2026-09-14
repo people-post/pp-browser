@@ -4,6 +4,7 @@
 #include "foundation/data/Config.h"
 
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace pbr {
@@ -16,6 +17,9 @@ struct McpRuntime {
   void Start(const AppConfig& config, const AppConfig& defaults);
   McpClient* PromotedPtr();
   std::vector<McpClient*> CustomPtrs() const;
+
+private:
+  mutable std::mutex mu_;
 };
 
 bool StartMcpClient(McpClient& client, const McpConfig& config);
