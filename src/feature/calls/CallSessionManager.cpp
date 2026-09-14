@@ -81,6 +81,15 @@ void CallSessionManager::SetCallMediaBridge(CallMediaBridge* bridge) {
   call_media_bridge_ = bridge;
 }
 
+void CallSessionManager::SetMediaSeat(CallMediaSeat* seat) {
+  media_seat_ = seat;
+  topology_.SetMediaSeat(seat);
+}
+
+void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {
+  topology_.OnMediaStopped(call_id);
+}
+
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
   if (!call_media_bridge_) {
@@ -535,8 +544,11 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
-  // Detach media_relay BEFORE JoinCaptureThread. Capture may be blocked in BlockingWrite on the
-  // SFU stream; OnMediaStopped closes it so Stop/quit can finish (group-call hang).
+  // V036: seat owns Detach-then-Stop; hooks call topology OnMediaStopped + bridge StopMeshMedia.
+  if (media_seat_) {
+    media_seat_->Release(call_id);
+    return;
+  }
   topology_.OnMediaStopped(call_id);
   if (call_media_bridge_) {
     call_media_bridge_->StopMeshMedia(call_id);
@@ -1520,13 +1532,19 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   }
 }
 
-void CallSessionManager::TopologyBindMediaCallId(const std::string& /*call_id*/) {
+void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
+  if (media_seat_ && !call_id.empty()) {
+    media_seat_->Acquire(call_id);
+  }
 }
 
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
+  if (media_seat_) {
+    media_seat_->NotePath(CallMediaSeat::PathKind::Hop);
+  }
   if (call_media_bridge_) {
     call_media_bridge_->ReleaseDirectTransport();
   }

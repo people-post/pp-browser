@@ -10,6 +10,7 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -115,6 +116,8 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
+  /** V036 exclusive media bind / epoch. */
+  void SetMediaSeat(CallMediaSeat* seat);
 
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
@@ -236,6 +239,7 @@ private:
   ContactsStore& contacts_;
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
+  CallMediaSeat* media_seat_ = nullptr;
   MediaRelayDeps relay_deps_;
   int64_t last_quote_a_up_bps_ = 0;
   bool sfu_attached_ = false;

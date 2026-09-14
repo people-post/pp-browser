@@ -40,6 +40,7 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
   call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
+  call_media_seat_ = std::make_unique<CallMediaSeat>();
   return {};
 }
 
@@ -48,6 +49,34 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
+  if (call_media_seat_) {
+    call_sessions_->SetMediaSeat(call_media_seat_.get());
+    call_media_seat_->SetTeardownHooks(
+        [this](const std::string& call_id) {
+          if (call_sessions_) {
+            call_sessions_->TopologyOnMediaStoppedForSeat(call_id);
+          }
+        },
+        [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+          if (!force && call_media_seat_ && call_media_seat_->Epoch() != epoch_at_post) {
+            log().info << "MediaSeat stop skip stale call_id=" << call_id
+                       << " posted_epoch=" << epoch_at_post
+                       << " seat_epoch=" << call_media_seat_->Epoch();
+            return;
+          }
+          if (call_media_bridge_) {
+            call_media_bridge_->StopMeshMedia(call_id);
+            return;
+          }
+          if (!call_media_engine_) {
+            return;
+          }
+          if (!call_media_engine_->IsActive() && !call_media_engine_->IsSfuMode()) {
+            return;
+          }
+          call_media_engine_->Stop();
+        });
+  }
   if (deps_.bind_call_control) {
     CallControlInboundPorts inbound;
     inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
@@ -347,6 +376,9 @@ void CallStack::WireMediaRelayDeps() {
           call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
           *transport, dial_registry_.get(), circuit_hop_reach_.get());
       call_sessions_->SetCallMediaBridge(call_media_bridge_.get());
+      if (call_media_seat_) {
+        call_media_bridge_->SetMediaSeat(call_media_seat_.get());
+      }
       media_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_media_bridge_->SetLifecycle(call_lifecycle_.get());
@@ -356,6 +388,9 @@ void CallStack::WireMediaRelayDeps() {
                  << " transport=amp)";
     } else {
       call_media_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
+      if (call_media_seat_) {
+        call_media_bridge_->SetMediaSeat(call_media_seat_.get());
+      }
       call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
       call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
       if (call_lifecycle_) {
@@ -717,6 +752,10 @@ void CallStack::Shutdown() {
   circuit_hop_reach_.reset();
   call_lifecycle_.reset();
   call_sessions_.reset();
+  if (call_media_seat_) {
+    call_media_seat_->SetTeardownHooks({}, {});
+  }
+  call_media_seat_.reset();
   call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();

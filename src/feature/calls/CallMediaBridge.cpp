@@ -199,6 +199,9 @@ void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
 
+void CallMediaBridge::SetMediaSeat(CallMediaSeat* seat) {
+  media_seat_ = seat;
+}
 
 void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (call_id.empty()) {
@@ -702,6 +705,9 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   const std::string captured_call_id = call_id;
   const std::string captured_peer = peer_identity;
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
+  if (media_seat_) {
+    media_seat_->Acquire(call_id);
+  }
   if (auto started = media_.StartSfu(call_id, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
         if (pkt.channel_id > kCallMediaChannelVideoLo) {
           return;
@@ -716,6 +722,10 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       });
       !started) {
     return started;
+  }
+  if (media_seat_) {
+    media_seat_->NoteStart(call_id);
+    media_seat_->NotePath(CallMediaSeat::PathKind::Direct);
   }
 
   // StartSfu marks connected immediately for SFU capture; 1:1 chrome waits on the direct stream.

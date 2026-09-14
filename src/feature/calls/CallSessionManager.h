@@ -14,6 +14,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
@@ -71,6 +72,10 @@ public:
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetCallMediaBridge(CallMediaBridge* bridge);
+  /** V036 exclusive media epoch — Leave/Accept/Start gates. */
+  void SetMediaSeat(CallMediaSeat* seat);
+  /** Seat teardown hook: topology detach without re-entering seat.Release. */
+  void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
@@ -245,6 +250,7 @@ private:
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
   CallMediaBridge* call_media_bridge_ = nullptr;
+  CallMediaSeat* media_seat_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;

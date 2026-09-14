@@ -1,5 +1,6 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallMediaSeat.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
@@ -1185,11 +1186,13 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
 }
 
 TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
-  // Dogfood cbe535: End left CallMediaEngine on call:old (StopMeshMedia gated on ActiveCallId
-  // match). New call's CallSfuAttach was ignored as "not active" while chrome showed Connected
-  // + red reconnecting on the zombie RX stream.
+  // Dogfood cbe535: End left CallMediaEngine on call:old. With V036 MediaSeat, End/Leave must
+  // Release the seat; leftover engine ActiveCallId must not veto call:new attach.
   AppRuntime::Initialize();
   AppRuntime::InitializeUI();
+
+  CallMediaSeat seat;
+  topo_->SetMediaSeat(&seat);
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";
@@ -1225,13 +1228,18 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   }
   AppRuntime::RunUITasks();
   ASSERT_TRUE(attached) << "prime leftover SFU on call:old";
+  EXPECT_TRUE(seat.IsBound(old_id));
   const int attaches_old = relay_->attach_calls;
 
-  // End the disk session without OnMediaStopped — engine call_id stays on call:old.
+  // End disk session + Release seat (Leave/EndCallLocal path). Engine may still hold call:old
+  // if Stop was skipped — seat bind clear is what unblocks call:new.
   auto old_session = sessions_->LoadSession(old_id);
   ASSERT_TRUE(old_session && old_session->has_value());
   (**old_session).state = CallSessionState::Ended;
   ASSERT_TRUE(sessions_->UpsertSession(**old_session));
+  seat.Release(old_id);
+  EXPECT_TRUE(seat.BoundCallId().empty());
+  EXPECT_EQ(media_->ActiveCallId(), old_id) << "engine leftover without Stop is the dogfood case";
 
   SeedJoinedCall(new_id, {"account:A", "account:B"}, 2000);
 
@@ -1251,6 +1259,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   AppRuntime::RunUITasks();
   EXPECT_TRUE(new_attached) << "CallSfuAttach for call:new must not be vetoed by leftover media";
   EXPECT_GT(relay_->attach_calls, attaches_old);
+  EXPECT_TRUE(seat.IsBound(new_id));
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();

@@ -5,6 +5,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
@@ -86,6 +87,8 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
 
   void SetLifecycle(CallLifecycle* lifecycle);
+  /** V036 exclusive media epoch. */
+  void SetMediaSeat(CallMediaSeat* seat);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
@@ -121,6 +124,7 @@ private:
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;
+  CallMediaSeat* media_seat_ = nullptr;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */

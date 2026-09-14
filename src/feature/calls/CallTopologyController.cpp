@@ -113,6 +113,10 @@ void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
   media_keys_ = keys;
 }
 
+void CallTopologyController::SetMediaSeat(CallMediaSeat* seat) {
+  media_seat_ = seat;
+}
+
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
   return awaiting_sfu_recovery_ || soft_migrate_in_flight_ || !sfu_attach_wait_call_id_.empty() ||
          guest_reattach_in_flight_;
@@ -492,32 +496,6 @@ bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id)
     return false;
   }
 
-  auto session_still_active = [this](const std::string& id) -> bool {
-    if (id.empty()) {
-      return false;
-    }
-    if (auto active = sessions_.ListActiveSessions(); active) {
-      for (const CallSession& session : *active) {
-        if (session.call_id == id) {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  // Media bind for THIS call wins. Leftover media for an Ended call must not veto call:new
-  // (dogfood cbe535). Media for another still-Active session remains exclusive.
-  const std::string media_id = media_.ActiveCallId();
-  if (!media_id.empty()) {
-    if (media_id == call_id) {
-      return true;
-    }
-    if (session_still_active(media_id)) {
-      return false;
-    }
-    // Zombie engine (Ended/missing session) — fall through.
-  }
   // SoftMigrate / WaitForAttach are exclusive while in flight (zombie Active disk rows).
   if (!soft_migrate_call_id_.empty()) {
     return soft_migrate_call_id_ == call_id;
@@ -525,15 +503,41 @@ bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id)
   if (!sfu_attach_wait_call_id_.empty()) {
     return sfu_attach_wait_call_id_ == call_id;
   }
-  // Guest SFU attach bind: exclusive if that call is still Active; otherwise leftover.
-  if (!active_sfu_call_id_.empty()) {
-    if (active_sfu_call_id_ == call_id) {
+
+  // V036: seat bind is the media-active answer — never veto via leftover engine ActiveCallId.
+  if (media_seat_) {
+    if (media_seat_->IsBound(call_id)) {
       return true;
     }
-    if (session_still_active(active_sfu_call_id_)) {
+    const std::string bound = media_seat_->BoundCallId();
+    if (!bound.empty()) {
       return false;
     }
+  } else {
+    // Guest SFU attach bind without seat (unit tests): exclusive if that call is still Active.
+    auto session_still_active = [this](const std::string& id) -> bool {
+      if (id.empty()) {
+        return false;
+      }
+      if (auto active = sessions_.ListActiveSessions(); active) {
+        for (const CallSession& session : *active) {
+          if (session.call_id == id) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+    if (!active_sfu_call_id_.empty()) {
+      if (active_sfu_call_id_ == call_id) {
+        return true;
+      }
+      if (session_still_active(active_sfu_call_id_)) {
+        return false;
+      }
+    }
   }
+
   auto active = sessions_.ListActiveSessions();
   if (!active) {
     return false;
@@ -1135,6 +1139,9 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   const std::string captured_call = call_id;
   host_.TopologyNoteMediaAttempted(call_id);
   host_.TopologyBindMediaCallId(call_id);
+  if (media_seat_) {
+    media_seat_->Acquire(call_id);
+  }
   // After AcceptAndAttach succeeded, finish StartSfu whenever this call is still the active
   // topology call. migrate_generation_ stampede (duplicate CallSfuAttach / SoftMigrate) must not
   // abort duplex — dogfood: caller Connected, guest stuck "looking for another media path".
@@ -1212,6 +1219,10 @@ Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
   if (!started) {
     relay_deps_.relay->Detach();
     return started.error();
+  }
+  if (media_seat_) {
+    media_seat_->NoteStart(call_id);
+    media_seat_->NotePath(CallMediaSeat::PathKind::Hop);
   }
   if (!IsActiveCallForTopology(call_id)) {
     log().info << "AttachLocalToSfu aborted after StartSfu (call inactive) call_id=" << call_id

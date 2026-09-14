@@ -788,3 +788,36 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021–V030; mesh N023.
 
 ---
+
+## V036 — MediaSeat / exclusive media epoch
+
+**Date:** 2026-09-14  
+**Status:** Accepted (**Phase 1 implementing**)  
+**Decision:** One process-wide **MediaSeat** owns the exclusive bind between `call_id` and call media (engine + path). Signaling (lifecycle / session / roster) stays separate.
+
+| API | Meaning |
+|-----|---------|
+| `Acquire(call_id)` | Exclusive bind. Releases any other bound call first. Returns a token (`epoch` + `call_id`). |
+| `Release(call_id \| token)` | Ordered teardown: topology Detach / `OnMediaStopped`, then engine `Stop` (UI). Bumps seat epoch. Stale token → no-op. |
+| `NoteStart(call_id)` | Confirms duplex start under the bind; bumps epoch so in-flight `Release` cannot kill the new session. |
+| `NotePath(Direct \| Hop)` | SoftMigrate marks hop without `Release` (capture stays up). |
+| `IsBound(call_id)` | Sole “media-active” answer for topology gates (not leftover `CallMediaEngine::ActiveCallId` heuristics). |
+
+**Rules:**
+
+1. SoftMigrate = **path replace under the same token** (`NotePath(Hop)` + `ReleaseDirect`) — never seat `Release` (that would Stop capture).
+2. Leave / Ended session / Accept leftover purge → seat `Release` only (no parallel Stop policy outside the seat).
+3. `CallSfuAttach` / SoftMigrate / StartSfu stale work is keyed by seat epoch (absorbs ad-hoc `MediaSessionGeneration` races).
+4. Chrome Phase 2 (follow-on): Connected only from **(signaling joined × media Live)** — not `ReleaseDirect` alone.
+
+**Dogfood drivers:** End left SFU capture running → next call Connected/reconnecting with zombie RX; Accept async Stop raced `StartSfu` → both sides Calling; topology vetoed new `CallSfuAttach` via leftover engine `ActiveCallId`.
+
+**Phase 1:** `CallMediaSeat` + wire Stop/Start/active gates; keep `CallMediaBridge` / `CallTopologyController` names as Direct/Hop path implementations.  
+**Phase 2:** dual-FSM chrome snapshot.  
+**Phase 3:** thin Path facades (token-gated).
+
+**Rationale:** Topology, Bridge, Lifecycle, and disk `Active` rows each held a partial “who owns media?” clock. An exclusive seat makes begin/end and SoftMigrate races structural rather than heuristic.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021 SoftMigrate; V026 Amp media; V035 scope-aware hop.
+
+---
