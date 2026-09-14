@@ -184,6 +184,12 @@ public:
    */
   void OnJoinedCountObserved(const std::string& call_id, size_t n_joined);
 
+  /**
+   * Peer learned media_relay=true (caps). SoftMigrate re-pick for N≥3 / attach-wait only
+   * (V038 — never nudge plain 1:1 onto PreferLocal SoftMigrate).
+   */
+  void OnPeerMediaRelayCapLearned(const std::string& call_id, const std::string& peer_id);
+
   Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
   /** Guest attach failed with hop preferences (V029) — initiator only. */
   void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail);

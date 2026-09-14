@@ -512,38 +512,17 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
         log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
                    << " status=" << CallMediaStatusName(status_);
         sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-        // UI-queue retry (not coordinator — PauseBackgroundWork can drop one-shots).
+        // One follow-up Kick if the worker PostUIFront StartSfu has not armed the engine yet.
         AppRuntime::PostUI([this, kick_id]() {
           if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
             return;
           }
-          const auto& media = sessions_->Media();
-          if (media.IsActive() && media.ActiveCallId() == kick_id) {
-            const auto snap = media.HealthSnapshot();
-            if (media.IsConnected() || snap.tx_audio_frames > 0) {
-              return;
-            }
+          if (sessions_->Media().IsActive() && sessions_->Media().ActiveCallId() == kick_id) {
+            return;
           }
           log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
                      << kick_id << " status=" << CallMediaStatusName(status_);
           sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-        });
-        AppRuntime::PostUI([this, kick_id]() {
-          AppRuntime::PostUI([this, kick_id]() {
-            if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
-              return;
-            }
-            const auto& media = sessions_->Media();
-            if (media.IsActive() && media.ActiveCallId() == kick_id) {
-              const auto snap = media.HealthSnapshot();
-              if (media.IsConnected() || snap.tx_audio_frames > 0) {
-                return;
-              }
-            }
-            log().info << "AcceptSucceeded late retry KickAnswererDirectMedia StartSfu call_id="
-                       << kick_id << " status=" << CallMediaStatusName(status_);
-            sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-          });
         });
       } else {
         log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id

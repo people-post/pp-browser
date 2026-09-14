@@ -2,6 +2,7 @@
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallListenAddrsLogic.h"
 #include "feature/calls/CallAnswererKickLogic.h"
+#include "feature/calls/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
@@ -133,32 +134,21 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
       peer = **resolved;
     }
   }
-  const bool active_same = media_.IsActive() && media_.ActiveCallId() == call_id;
-  uint64_t tx = 0;
-  if (active_same) {
-    tx = media_.HealthSnapshot().tx_audio_frames;
-  }
-  const bool direct_up = call_media_bridge_ && call_media_bridge_->HasActiveDirectStream();
   CallAnswererKickDecisionInput in;
   in.allows_direct_path = !lifecycle_ || lifecycle_->AllowsDirectPath();
-  in.media_live_same_call =
-      active_same && (media_.IsConnected() || tx > 0 || direct_up);
+  // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
+  in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
   in.peer_nonempty = !peer.empty();
   if (!ShouldKickAnswererDirectMedia(in)) {
     if (!in.allows_direct_path) {
       log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
                  << " status=" << CallMediaStatusName(lifecycle_->Status());
-    } else if (in.media_live_same_call) {
-      log().info << "KickAnswererDirectMediaIfArmed skip (media live) call_id=" << call_id
-                 << " tx=" << tx;
+    } else if (in.media_already_active_same_call) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
     } else {
       log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
     }
     return;
-  }
-  if (active_same && !in.media_live_same_call) {
-    log().info << "KickAnswererDirectMediaIfArmed restart dead StartSfu call_id=" << call_id
-               << " tx=" << tx << " connected=" << (media_.IsConnected() ? 1 : 0);
   }
   log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
              << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
@@ -316,36 +306,10 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
   }
   const bool was = PeerHasMediaRelayCap(peer_id);
   peer_media_relay_caps_[peer_id] = media_relay;
-  // Phone initiator SoftMigrate may have run before this desktop Accept — nudge re-pick.
-  // Only for N≥3 / already waiting on hop. Dogfood 1:1: cap learn SoftMigrated PreferLocal
-  // ("Connecting group media…") while answerer stayed DirectConnecting → no duplex.
+  // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
   if (media_relay && !was) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
-      if (topology_.IsSfuAttachWaitActive() || !topology_.IsSfuAttached()) {
-        const std::string call_id = (*active)->call_id;
-        if (topology_.IsOnSfuForCall(call_id)) {
-          return;
-        }
-        size_t n_joined = 0;
-        if (auto joined = sessions_.CountJoined(call_id)) {
-          n_joined = *joined;
-        }
-        if (!CallMediaTopology::ShouldUseMediaRelay(n_joined) &&
-            !topology_.IsSfuAttachWaitActive()) {
-          log().info << "SoftMigrate relay-cap nudge skipped (1:1 stay Direct) call_id=" << call_id
-                     << " n_joined=" << n_joined << " peer=" << peer_id;
-          return;
-        }
-        // SoftMigrateAsync posts MeshControl work; do not park a Worker on quote/attach.
-        topology_.MaybeSoftMigrateToSfuAsync(
-            call_id, SoftMigrateTrigger::JoinedCountObserved, {}, 0,
-            [this](Roe<void> mig) {
-              if (!mig) {
-                log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
-              }
-              AppRuntime::PostUI([this]() { NotifyRingChanged(); });
-            });
-      }
+      topology_.OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
     }
   }
 }
@@ -996,24 +960,18 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
 
   // Runs on Accept worker thread (never Browser IO). Do not wait on ListenOn / PollInbox here.
   // ScheduleStart* only posts StartSfu onto UI — never run the engine on this thread.
-  auto joined_after = sessions_.CountJoined(call_id);
-  size_t n_joined = joined_after ? *joined_after : 0;
-  // Group invite seeds other callees as Ringing. CountJoined alone stays at 2 until they Accept,
-  // so we SoftMigrate/WaitForAttach when Joined+Ringing+Invited already implies N≥3.
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    size_t n_active = 0;
-    for (const CallParticipant& p : *all) {
-      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
-          p.state == CallParticipantState::Invited) {
-        ++n_active;
-      }
-    }
-    if (n_active > n_joined) {
-      n_joined = n_active;
-    }
+  // N→planner: Topology for N≥3 / hint; else Bridge Direct (CallMediaPlannerSelectLogic / V038).
+  size_t n_joined = 0;
+  if (auto joined_after = sessions_.CountJoined(call_id)) {
+    n_joined = *joined_after;
   }
+  size_t n_active = n_joined;
+  if (auto all = sessions_.ListParticipants(call_id); all) {
+    n_active = CountMediaPlannerActiveParticipants(*all);
+  }
+  const size_t planner_n = EffectiveMediaPlannerN(n_joined, n_active);
   const bool topology_took_media =
-      topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint);
+      topology_.OnLocalAcceptJoined(call_id, planner_n, row.sfu_hint);
   bool schedule_answerer_direct = false;
   if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
@@ -1034,7 +992,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     pending_answerer_kick_call_id_.clear();
     pending_answerer_kick_peer_.clear();
     log().info << "AcceptInvite topology owns media (no ScheduleStart) call_id=" << call_id
-               << " n_joined=" << n_joined
+               << " planner_n=" << planner_n
                << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
   }
   NotifyRingChanged();
@@ -1074,7 +1032,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
 
   if (schedule_answerer_direct) {
     log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
-               << " inviter=" << inviter << " n_joined=" << n_joined
+               << " inviter=" << inviter << " planner_n=" << planner_n
                << " listen_mas=" << accept.listen_multiaddrs.size()
                << " peer_id=" << (accept.libp2p_peer_id.empty() ? 0 : 1);
     ScheduleStartDirectMedia(call_id, inviter, false);
@@ -1774,30 +1732,22 @@ bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) 
   if (call_id.empty()) {
     return false;
   }
-  if (topology_.IsAwaitingSfuRecovery() || topology_.IsSfuAttached()) {
-    return true;
+  CallExpectGroupSfuInput in;
+  in.awaiting_sfu_recovery = topology_.IsAwaitingSfuRecovery();
+  in.sfu_attached = topology_.IsSfuAttached();
+  if (auto n = sessions_.CountJoined(call_id)) {
+    in.joined_count = *n;
   }
-  // SoftMigrate can start on the hop when Joined+Ringing+Invited ≥ 3 while a guest's
-  // CountJoined is still 2 (Samsung Accept not on roster yet). Treat that as expect.
   if (auto all = sessions_.ListParticipants(call_id); all) {
-    size_t n_active = 0;
-    for (const CallParticipant& p : *all) {
-      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
-          p.state == CallParticipantState::Invited) {
-        ++n_active;
-      }
-    }
-    if (n_active >= 3) {
-      return true;
-    }
-  } else if (auto n = sessions_.CountJoined(call_id); n && *n >= 3) {
-    return true;
+    in.active_roster_count = CountMediaPlannerActiveParticipants(*all);
+  } else {
+    in.active_roster_count = in.joined_count;
   }
   if (auto session = sessions_.LoadSession(call_id);
       session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
-    return true;
+    in.has_sfu_hint = true;
   }
-  return false;
+  return ShouldExpectGroupSfuMigration(in);
 }
 
 void CallSessionManager::P2pNoteExpectSfuAttach(const std::string& call_id) {

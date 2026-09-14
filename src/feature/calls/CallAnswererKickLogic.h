@@ -5,12 +5,8 @@ namespace pbr {
 /** Gates for CallSessionManager::KickAnswererDirectMediaIfArmed (V037 / product glue). */
 struct CallAnswererKickDecisionInput {
   bool allows_direct_path = false;
-  /**
-   * True only when duplex/capture is actually progressing for this call.
-   * IsActive alone is insufficient — dogfood 6b68 StartSfu left active with tx_frames=0 and
-   * Kick skipped forever while both sides stayed DirectConnecting.
-   */
-  bool media_live_same_call = false;
+  /** Engine already StartSfu'd for this call — do not Stop/restart (tx may still be 0 for ~1s). */
+  bool media_already_active_same_call = false;
   bool peer_nonempty = false;
 };
 
@@ -18,7 +14,7 @@ inline bool ShouldKickAnswererDirectMedia(const CallAnswererKickDecisionInput& i
   if (!in.allows_direct_path) {
     return false;
   }
-  if (in.media_live_same_call) {
+  if (in.media_already_active_same_call) {
     return false;
   }
   return in.peer_nonempty;

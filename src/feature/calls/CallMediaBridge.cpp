@@ -441,7 +441,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   const bool dialable_before = dial_->IsDialable(peer_identity);
   if (dialable_before && !force_circuit) {
     media_path_kind_ = "direct";
-    log().info << "Call-media peer dialable peer=" << peer_identity;
+    log().info << "CallLifecycle StartSfu peer dialable peer=" << peer_identity;
     on_done({});
     return;
   }
@@ -554,8 +554,8 @@ void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::strin
       return;
     }
     if (!connected) {
-      log().warning << "Call-media give up call_id=" << call_id << " role=" << role
-                    << " err=" << connected.error().message;
+    log().info << "CallLifecycle StartSfu Connect give up call_id=" << call_id << " role=" << role
+               << " err=" << connected.error().message;
       mesh_connect_failed_ = true;
       host_.P2pSetLastMediaError(connected.error().message);
       if (lifecycle_) {
@@ -602,12 +602,12 @@ void CallMediaBridge::OnConnectAttemptFinished(CallMediaDirectConnectParams para
     return;
   }
   if (connected || direct_.IsActive()) {
-    log().info << "Call-media Connect ok call_id=" << params.call_id
+    log().info << "CallLifecycle StartSfu Connect ok call_id=" << params.call_id
                << " role=" << (params.offerer ? "offerer" : "answerer");
     FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
     return;
   }
-  log().warning << "Call-media Connect failed attempt=" << attempt
+  log().warning << "CallLifecycle StartSfu Connect failed attempt=" << attempt
                 << " err=" << connected.error().message;
   if (dial_) {
     dial_->AbortInflightDial(params.peer_key);
@@ -685,7 +685,7 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
   if (!direct_.IsActive()) {
     direct_.Detach();
   }
-  log().info << "Call-media ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
+  log().info << "CallLifecycle StartSfu ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
              << " call_id=" << params.call_id << " peer=" << params.peer_key
              << " role=" << (params.offerer ? "offerer" : "answerer")
              << " timeout_ms=" << kConnectAttemptTimeoutMs;
@@ -717,14 +717,14 @@ void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
     }
-    log().info << "Offerer waiting for inbound call-media call_id=" << params.call_id
+    log().info << "CallLifecycle StartSfu Connect offerer wait inbound call_id=" << params.call_id
                << " grace_ms=" << kOffererInboundGraceMs;
     const int64_t grace_deadline = util::NowUnixMs() + kOffererInboundGraceMs;
     ScheduleOffererGracePoll(std::move(params), std::move(cbs), gen, grace_deadline);
     return;
   }
-  log().info << "Connect sequence enter call_id=" << params.call_id << " peer=" << params.peer_key
-             << " role=answerer";
+  log().info << "CallLifecycle StartSfu Connect answerer dial call_id=" << params.call_id
+             << " peer=" << params.peer_key;
   BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
 }
 
@@ -786,19 +786,27 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   // answerer-only dial often negotiates the stream before BeginSession runs on the offerer
   // (dogfood: Detach raced inbound → phone never read hello → "Failed to read call-media frame header").
   const bool keep_inbound = direct_.IsActive();
+  const bool restarting =
+      media_.IsActive() || connect_worker_inflight_.load(std::memory_order_acquire);
   if (media_.IsActive()) {
     media_.Stop();
   }
   if (!offerer && !keep_inbound) {
     direct_.Detach();
   }
+  // Abort in-flight Connect from a prior BeginSession (Kick thrash used to Stop without bumping).
+  if (restarting && !keep_inbound) {
+    connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+    CancelConnectTimers();
+    connect_worker_inflight_.store(false, std::memory_order_release);
+  }
 
   const uint32_t media_epoch = (*session)->media_epoch;
   const ByteVector media_key = *key;
 
-  log().info << "BeginSession role=" << (offerer ? "offerer" : "answerer") << " call_id=" << call_id
-                << " peer=" << peer_identity << " epoch=" << media_epoch
-                << " keep_inbound=" << (keep_inbound ? 1 : 0);
+  log().info << "CallLifecycle StartSfu BeginSession role=" << (offerer ? "offerer" : "answerer")
+             << " call_id=" << call_id << " peer=" << peer_identity << " epoch=" << media_epoch
+             << " keep_inbound=" << (keep_inbound ? 1 : 0);
 
   // Answerer first (and offerer): hold outbound Session to org seed for punch/circuit splice.
   if (seed_warm_) {
@@ -1011,17 +1019,10 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       return;
     }
     if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      const auto snap = media_.HealthSnapshot();
-      const bool live =
-          media_.IsConnected() || snap.tx_audio_frames > 0 || direct_.IsActive();
-      if (live) {
-        log().info << "ScheduleStartMediaAsAnswerer skip (already live) call_id=" << call_id
-                   << " tx=" << snap.tx_audio_frames << " sfu_mode=" << (media_.IsSfuMode() ? 1 : 0);
-        return;
-      }
-      log().info << "ScheduleStartMediaAsAnswerer restart dead StartSfu call_id=" << call_id
-                 << " tx=" << snap.tx_audio_frames;
-      media_.Stop();
+      log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id
+                 << " sfu_mode=" << (media_.IsSfuMode() ? 1 : 0)
+                 << " direct=" << (direct_.IsActive() ? 1 : 0);
+      return;
     }
     // Worker may have SetMediaStatus before this PostUI; if Status is still None, arm Bridge now.
     if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
@@ -1102,14 +1103,12 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                  << " engine=" << (media_.IsActive() ? 1 : 0);
     }
   };
-  // Prefer inline when already on UI (AcceptSucceeded Kick) so StartSfu is not stuck behind
-  // chrome PostUI. Worker Accept always PostUIFront.
+  // Prefer inline when already on UI (AcceptSucceeded Kick). Worker Accept → PostUIFront.
   if (AppRuntime::CurrentlyOnUI()) {
     run();
     return;
   }
-  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id
-             << " on_ui=0";
+  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id;
   AppRuntime::PostUIFront(std::move(run));
 }
 

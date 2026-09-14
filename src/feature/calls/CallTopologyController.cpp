@@ -1,4 +1,5 @@
 #include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallMediaPlannerSelectLogic.h"
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallHopPlan.h"
@@ -2103,7 +2104,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     });
     return true;
   }
-  if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
+  if (ShouldArmHopPlanner(n_joined)) {
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
     host_.TopologySetMediaActivity(Tr("call.status.setting_up_group"));
@@ -2290,6 +2291,40 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   awaiting_sfu_recovery_ = false;
   host_.TopologyClearMediaActivity();
   return false;
+}
+
+void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_id,
+                                                        const std::string& peer_id) {
+  if (call_id.empty()) {
+    return;
+  }
+  size_t n_joined = 0;
+  if (auto joined = sessions_.CountJoined(call_id)) {
+    n_joined = *joined;
+  }
+  size_t n_active = n_joined;
+  if (auto all = sessions_.ListParticipants(call_id); all) {
+    n_active = CountMediaPlannerActiveParticipants(*all);
+  }
+  CallRelayCapNudgeInput in;
+  in.media_relay_newly_true = true;
+  in.effective_n = EffectiveMediaPlannerN(n_joined, n_active);
+  in.sfu_attach_wait_active = IsSfuAttachWaitActive();
+  in.sfu_attached = IsSfuAttached();
+  in.already_on_sfu_for_call = IsOnSfuForCall(call_id);
+  if (!ShouldNudgeSoftMigrateOnRelayCap(in)) {
+    log().info << "SoftMigrate relay-cap nudge skipped (1:1 stay Direct) call_id=" << call_id
+               << " n=" << in.effective_n << " peer=" << peer_id;
+    return;
+  }
+  MaybeSoftMigrateToSfuAsync(
+      call_id, SoftMigrateTrigger::JoinedCountObserved, {}, 0,
+      [this](Roe<void> mig) {
+        if (!mig) {
+          log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
+        }
+        AppRuntime::PostUI([this]() { host_.TopologyNotifyRingChanged(); });
+      });
 }
 
 void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, size_t n_joined) {
