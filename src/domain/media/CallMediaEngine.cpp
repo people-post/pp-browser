@@ -5,6 +5,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
+#include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
@@ -559,10 +560,8 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnsureAudioSubsystem() {
-    if (!SDL_WasInit(SDL_INIT_AUDIO)) {
-      if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
-      }
+    if (!EnsureSdlAudioSubsystem()) {
+      return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
     }
     return {};
   }

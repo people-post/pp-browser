@@ -636,10 +636,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       log().info << "CallLifecycle StartSfu EnsureAssociation start peer=" << peer_identity;
       dial_->EnsureAssociation(
           peer_identity, [this, peer_identity, connect_gen, finish, settled, last_error, assoc_done,
-                          tick](Roe<void> assoc) mutable {
+                          assoc_started, tick](Roe<void> assoc) mutable {
             AppRuntime::PostCoordinatorNormal(
                 [this, peer_identity, connect_gen, finish = std::move(finish), settled, last_error,
-                 assoc_done, tick, assoc = std::move(assoc)]() mutable {
+                 assoc_done, assoc_started, tick, assoc = std::move(assoc)]() mutable {
                   if (settled->load(std::memory_order_acquire)) {
                     return;
                   }
@@ -662,6 +662,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     *last_error = assoc.error();
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
+                    // Allow a later tick to retry EnsureAssociation after amp remint / drop.
+                    *assoc_started = false;
                   }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
@@ -692,8 +694,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     finish(Error("call-media aborted"));
                     return;
                   }
-                  if (via || (dial_ && dial_->IsConnected(peer_identity))) {
-                    if (dial_ && dial_->HasCallMediaCircuitHop(peer_identity)) {
+                  // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b: via_ok=1
+                  // then OpenChannel hung on connected=0.
+                  if (dial_ && dial_->IsConnected(peer_identity)) {
+                    if (dial_->HasCallMediaCircuitHop(peer_identity)) {
                       media_path_kind_ = "circuit";
                     } else {
                       media_path_kind_ = "punched";
@@ -704,9 +708,15 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     finish({});
                     return;
                   }
-                  *last_error = via ? Error("call peer not connected") : via.error();
+                  if (!via) {
+                    *last_error = via.error();
+                  } else {
+                    *last_error = Error("call peer not connected after circuit/punch");
+                  }
                   log().info << "CallLifecycle StartSfu Ensure circuit/punch miss peer=" << peer_identity
-                             << " err=" << last_error->message;
+                             << " err=" << last_error->message
+                             << " via_ok=" << (via ? 1 : 0)
+                             << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
                 });
@@ -913,6 +923,7 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
   // "invalid connect params" with no leg outbound begin).
   CallMediaDirectConnectParams connect_params = params;
   CallMediaDirectCallbacks connect_cbs = cbs;
+  const bool offerer_role = connect_params.offerer;
   direct_.ConnectAsync(
       connect_params, connect_cbs,
       [this, params = std::move(params), cbs = std::move(cbs), gen, attempt, connect_peer,
@@ -934,10 +945,10 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
       },
       kConnectAttemptTimeoutMs);
   // Bridge-side watchdog: CallMediaLeg TickDeadlines may not fire while OpenChannel/dial is stuck
-  // on nested MeshRuntime::Pump (dogfood 19f845: no ConnectAsync done for ~46s).
+  // on nested MeshRuntime::Pump (dogfood 19f845/612b: no ConnectAsync done until Leave).
   (void)AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(kConnectAttemptTimeoutMs + 1000),
-      [this, gen, connect_peer, connect_call]() {
+      [this, gen, attempt, connect_peer, connect_call, offerer_role]() {
         if (connect_generation_.load(std::memory_order_acquire) != gen ||
             stopping_.load(std::memory_order_acquire)) {
           return;
@@ -945,9 +956,13 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
         if (!connect_worker_inflight_.load(std::memory_order_acquire)) {
           return;
         }
-        log().warning << "CallLifecycle StartSfu ConnectAsync watchdog detach call_id=" << connect_call
-                      << " peer=" << connect_peer;
+        log().warning << "CallLifecycle StartSfu ConnectAsync watchdog call_id=" << connect_call
+                      << " peer=" << connect_peer << " attempt=" << attempt;
         direct_.Detach();
+        // Detach may not deliver on_finished if Mesh IO is wedged — force sequence progress.
+        FinishConnectSequence(gen, connect_call,
+                              Error("amp call-media connect timed out (watchdog)"),
+                              offerer_role ? "offerer" : "answerer");
       });
 }
 
