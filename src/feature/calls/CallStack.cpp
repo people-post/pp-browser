@@ -511,13 +511,22 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   if (identity.empty() || multiaddrs.empty()) {
     return;
   }
+  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so
+  // PreferredMultiaddr lands on global /ip6 (or public /ip4) ahead of private LAN.
+  const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs);
   std::vector<std::string>& stored = call_peer_listen_mas_[identity];
-  for (const std::string& ma : multiaddrs) {
+  for (const std::string& ma : ranked) {
     if (ma.empty()) {
       continue;
     }
     if (std::find(stored.begin(), stored.end(), ma) == stored.end()) {
       stored.push_back(ma);
+    }
+  }
+  for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
+    const std::string& ma = *it;
+    if (ma.empty()) {
+      continue;
     }
     const std::string ip = IpHostFromMultiaddrPrefix(ma);
     if (IsLikelyUndialableLanIpv4(ip)) {
