@@ -26,10 +26,11 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | `--suite hard-w3` | stale-addr → seed-only |
 | `docker-compose.hard-lab-cgnat.yml` | Dual SNAT gw-a/gw-b + public hop; status **18628** |
 | `Dockerfile.hard-gw` / `hard-gw-entrypoint.sh` | MASQUERADE + no unsolicited inbound |
-| `pp_hard_nat_smoke.sh` | N-HARD-CGNAT-ISH + B-HARD-CALL-NAT (warm-hop + peer-id-only + min-rx) |
-| `--suite hard-w5` | CGNAT-ish dual-NAT call; `PP_HARD_NAT_CALL_EXPECT=fail` reproduce mode |
-| `pp-call-probe` NAT flags | `--warm-hop`, `--peer-id-only`, `--min-rx-frames` |
+| `pp_hard_nat_smoke.sh` | N-HARD-CGNAT-ISH + B-HARD-CALL-NAT (+PRODUCT); `--phase circuit\|product\|both` |
+| `--suite hard-w5` | CGNAT-ish dual-NAT; default `--phase both`; `PP_HARD_NAT_CALL_EXPECT=fail` reproduce mode |
+| `pp-call-probe` NAT flags | `--warm-hop`, `--peer-id-only`, `--min-rx-frames`, `--reach product` |
 | Nested-chat reachability | `AmpDirectChatTransport::IsPeerReachable` accepts `IsConnected` (circuit nested); gtest `AmpDirectChatCircuitNestedTest` |
+| AmpCircuitHopReach dual-NAT | Nested StartBridge is peer-id-only (no PreferredMultiaddr poison); call-media skips undialable has_endpoint EnsureAssociation |
 
 ## Gaps
 
@@ -37,11 +38,11 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 |------|-------|
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on directory lab hooks, DHT peers in hard nets, pp-node deploy-profile admission |
 | Wave 4+ multi-hop | Multi-hop blocked on L3.5 |
-| Wave 5 remainder | Hairpin policy; UPnP/v6/path-migrate; product punch→circuit path still later |
+| Wave 5 remainder | Hairpin policy; UPnP/v6/path-migrate |
 
 ## Next
 
-1. `--suite hard-w5` Phase-1 (`--via-hop --peer-id-only` + `--warm-hop`) is **green** on dual-SNAT; use `PP_HARD_NAT_CALL_EXPECT=fail` only when chasing a reproduce
-2. Phase-2: product publish→punch→circuit under CGNAT (no `--via-hop` shortcut) — closer to dogfood
+1. `--suite hard-w5` Phase-1 circuit + Phase-2 product punch→circuit are **green** on dual-SNAT (punch miss expected; circuit fall-through)
+2. Use `PP_HARD_NAT_CALL_EXPECT=fail` only when locking a reproduce
 3. **N-HARD-DIR** / **DHT** / **N-ADMIT-HARD** when product hooks exist
 4. Multi-hop hard-lab blocked on media-hop L3.5

@@ -235,7 +235,8 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-HARD-STALE-ADDR | **Scaffold** | [`pp_hard_disco_smoke.sh`](../../scripts/test/pp_hard_disco_smoke.sh) `--profile stale-addr`; `--suite hard-w3`. Stale direct fails; hop path with real MA. |
 | N-HARD-SEED-ONLY | **Scaffold** | `pp_hard_disco_smoke.sh --profile seed-only`; `--suite hard-w3`. Warm-hop + PeerId-only StartBridge. |
 | N-HARD-CGNAT-ISH | **Scaffold** | [`docker-compose.hard-lab-cgnat.yml`](../../packaging/pp-node/docker-compose.hard-lab-cgnat.yml) + [`pp_hard_nat_smoke.sh`](../../scripts/test/pp_hard_nat_smoke.sh); driver `--suite hard-w5`. Dual SNAT; hop public-only; A↛B + hop↛peer-private asserts. |
-| B-HARD-CALL-NAT | **Scaffold** | Same smoke: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. Status port **18628**. |
+| B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
+| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2 same smoke `--phase product` / default `both`: offerer `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---

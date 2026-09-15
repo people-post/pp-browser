@@ -214,6 +214,11 @@ void CallStack::WireMediaRelayDeps() {
   }
   dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
   dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
+  if (auto chat = m->ChatDeps()) {
+    dial_registry_->SetPostIo(chat->io.post_io);
+  } else {
+    dial_registry_->SetPostIo({});
+  }
   // Clients consume punch/circuit regardless of capabilities.circuit_relay (N009 host-only flag).
   const bool use_amp_circuit =
       use_amp_relay && m->AmpCircuitTunnel() && m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();

@@ -140,6 +140,8 @@ public:
 
   void SetAmpLinks(IChatPeerLinks* amp_links) { amp_links_ = amp_links; }
   void SetAmpCircuitHops(AmpCircuitHopRegistry* hops) { amp_hops_ = hops; }
+  /** MeshRuntime::PostToIo — EnsureAssociation must run on the Amp IO strand. */
+  void SetPostIo(std::function<void(std::function<void()>)> post_io) { post_io_ = std::move(post_io); }
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     if (amp_links_) {
@@ -177,22 +179,29 @@ public:
 
   void EnsureAssociation(const std::string& peer_key,
                          std::function<void(Roe<void>)> on_done) override {
-    if (!amp_links_) {
-      if (on_done) {
-        on_done(Error("dial registry not available"));
+    auto run = [this, peer_key, on_done = std::move(on_done)]() mutable {
+      if (!amp_links_) {
+        if (on_done) {
+          on_done(Error("dial registry not available"));
+        }
+        return;
       }
+      amp_links_->EnsureAssociation(peer_key, [on_done = std::move(on_done)](IChatPeerLinks::LinkRoe r) {
+        if (!on_done) {
+          return;
+        }
+        if (!r) {
+          on_done(Error(r.error().message));
+          return;
+        }
+        on_done({});
+      });
+    };
+    if (post_io_) {
+      post_io_(std::move(run));
       return;
     }
-    amp_links_->EnsureAssociation(peer_key, [on_done = std::move(on_done)](IChatPeerLinks::LinkRoe r) {
-      if (!on_done) {
-        return;
-      }
-      if (!r) {
-        on_done(Error(r.error().message));
-        return;
-      }
-      on_done({});
-    });
+    run();
   }
 
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
@@ -224,6 +233,7 @@ public:
 private:
   IChatPeerLinks* amp_links_ = nullptr;
   AmpCircuitHopRegistry* amp_hops_ = nullptr;
+  std::function<void(std::function<void()>)> post_io_;
 };
 
 /** Forwards to ConversationsHub / CallStack wiring. */

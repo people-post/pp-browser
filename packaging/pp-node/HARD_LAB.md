@@ -159,8 +159,10 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 
 
 **Landed (scaffold):** `docker-compose.hard-lab-cgnat.yml` + `Dockerfile.hard-gw` + `pp_hard_nat_smoke.sh` / `--suite hard-w5`.
-Dual SNAT gateways; hop on public net only; answerer `--warm-hop` + offerer `--via-hop --peer-id-only`; `--min-rx-frames` duplex gate.
-Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail` (or `--expect-call fail`) passes only when the call fails under this topo.
+Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
+- Phase-1 **B-HARD-CALL-NAT**: answerer `--warm-hop` + offerer `--via-hop --peer-id-only`
+- Phase-2 **B-HARD-CALL-NAT-PRODUCT**: same topo; offerer `--reach product` (punch via hop seed → nested circuit; punch miss is expected under dual-SNAT)
+Default `--phase both`. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail` (or `--expect-call fail`) passes only when the selected call phase fails.
 
 ### Wave 6 — Product stress on hard topology
 

@@ -426,11 +426,12 @@ run_hard_w5() {
   cmake_build_probes
   stage_hop_binary_if_newer
   ensure_docker_context
-  echo "=== suite hard-w5 (Wave 5: N-HARD-CGNAT-ISH + B-HARD-CALL-NAT) ==="
+  echo "=== suite hard-w5 (Wave 5: N-HARD-CGNAT-ISH + B-HARD-CALL-NAT + PRODUCT) ==="
   export PP_HARD_CGNAT_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL:-http://127.0.0.1:18628}"
   export PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node"
   export PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}"
   export PP_HARD_NAT_CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
+  export PP_HARD_NAT_PHASE="${PP_HARD_NAT_PHASE:-both}"
   # Smoke owns CGNAT compose up/build (separate project from Wave 1 hard-lab).
   bash "${ROOT}/scripts/test/pp_hard_nat_smoke.sh" --status-url "${PP_HARD_CGNAT_STATUS_URL}"
 }

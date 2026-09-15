@@ -589,6 +589,19 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     }
     on_done(std::move(result));
   };
+  // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
+  // never called back and poll ticks never hit "still not connected").
+  (void)AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(kDialWaitBudgetMs + 250),
+      [this, peer_identity, finish, settled, last_error]() mutable {
+        if (settled->load(std::memory_order_acquire)) {
+          return;
+        }
+        log().warning << "CallLifecycle StartSfu Ensure deadline watchdog peer=" << peer_identity
+                      << " last=" << last_error->message
+                      << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
+        finish(*last_error);
+      });
   auto tick = std::make_shared<std::function<void()>>();
   *tick = [this, peer_identity, connect_gen, finish, settled, deadline, last_error, circuit_started,
            assoc_started, assoc_done, force_circuit, tick]() mutable {
@@ -629,8 +642,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       finish(*last_error);
       return;
     }
-    // Endpoint known but PeerLink not Connected — kick EnsureAssociation (OpenChannel alone can
-    // hang without CallMediaLeg TickDeadlines completing ConnectAsync).
+    // Endpoint known but PeerLink not Connected — kick EnsureAssociation on Amp IO.
     if (!*assoc_started && dial_->IsDialable(peer_identity) && !wait_for_circuit) {
       *assoc_started = true;
       log().info << "CallLifecycle StartSfu EnsureAssociation start peer=" << peer_identity;
@@ -662,20 +674,17 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     *last_error = assoc.error();
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
-                    // Allow a later tick to retry EnsureAssociation after amp remint / drop.
                     *assoc_started = false;
                   }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
                 });
           });
-      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
-                                                   [tick]() { (*tick)(); });
-      return;
+      // Fall through: also start circuit/punch in parallel (do not wait forever on assoc).
     }
-    // Circuit/punch when forced, undialable, or ADP assoc finished without Connected.
+    // Circuit/punch when forced, undialable, or ADP assoc already kicked / finished.
     if (circuit_reach_ && !*circuit_started &&
-        (force_circuit || !dial_->IsDialable(peer_identity) ||
+        (force_circuit || !dial_->IsDialable(peer_identity) || *assoc_started ||
          (*assoc_done && !dial_->IsConnected(peer_identity)))) {
       *circuit_started = true;
       log().info << "CallLifecycle StartSfu Ensure circuit/punch start peer=" << peer_identity;
@@ -721,8 +730,6 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                       std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
                 });
           });
-      // Keep polling connected / deadline while Ensure is in flight (dogfood b2db: Ensure
-      // callback never arrived → old code never hit the 12s budget).
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
                                                    [tick]() { (*tick)(); });
       return;
