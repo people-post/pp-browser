@@ -88,6 +88,18 @@ bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr);
  */
 bool MultiaddrHasPublicDialHost(const std::string& multiaddr);
 
+/**
+ * Prefer dialable advertise MAs (H002/N013): global `/ip6` > public `/ip4` > other ADP >
+ * first non-empty. Used for directory/DHT/contact hop PreferredMultiaddr selection.
+ */
+std::string PreferredDialMultiaddr(const std::vector<std::string>& multiaddrs);
+
+/**
+ * Stable order for PeerLink RegisterEndpoint last-write-wins: worst → best so Preferred
+ * lands on global `/ip6` / public `/ip4`.
+ */
+std::vector<std::string> OrderDialMultiaddrsWorstToBest(std::vector<std::string> multiaddrs);
+
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);

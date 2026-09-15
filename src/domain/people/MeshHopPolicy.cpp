@@ -87,15 +87,16 @@ const RelayScope kEscalateOrder[] = {RelayScope::Link, RelayScope::Site, RelaySc
                                      RelayScope::Public};
 
 std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& peer_id) {
+  std::vector<std::string> matching;
   for (const std::string& ma : contact.multiaddrs) {
     if (PeerIdFromMultiaddr(ma) == peer_id) {
-      return ma;
+      matching.push_back(ma);
     }
   }
-  if (!contact.multiaddrs.empty()) {
-    return contact.multiaddrs.front();
+  if (!matching.empty()) {
+    return PreferredDialMultiaddr(matching);
   }
-  return {};
+  return PreferredDialMultiaddr(contact.multiaddrs);
 }
 
 } // namespace
@@ -160,6 +161,55 @@ bool MultiaddrHasPublicDialHost(const std::string& multiaddr) {
     return is_public_ipv4(ip);
   }
   return false;
+}
+
+int DialMultiaddrPreferenceRank(const std::string& multiaddr) {
+  if (multiaddr.empty()) {
+    return 100;
+  }
+  if (multiaddr.rfind("/ip6/", 0) == 0 && MultiaddrHasPublicDialHost(multiaddr)) {
+    return 0;
+  }
+  if (multiaddr.find("/ip4/") != std::string::npos && MultiaddrHasPublicDialHost(multiaddr)) {
+    return 10;
+  }
+  if (multiaddr.find("/adp/") != std::string::npos) {
+    return MultiaddrHasPrivateIpv4Host(multiaddr) ? 20 : 15;
+  }
+  if (multiaddr.find("/ip4/") != std::string::npos || multiaddr.rfind("/ip6/", 0) == 0) {
+    return 30;
+  }
+  return 50;
+}
+
+std::string PreferredDialMultiaddr(const std::vector<std::string>& multiaddrs) {
+  std::string best;
+  int best_rank = 100;
+  for (const std::string& ma : multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    const int rank = DialMultiaddrPreferenceRank(ma);
+    if (rank < best_rank) {
+      best_rank = rank;
+      best = ma;
+    }
+  }
+  return best;
+}
+
+std::vector<std::string> OrderDialMultiaddrsWorstToBest(std::vector<std::string> multiaddrs) {
+  std::stable_sort(multiaddrs.begin(), multiaddrs.end(),
+                   [](const std::string& a, const std::string& b) {
+                     const int ra = DialMultiaddrPreferenceRank(a);
+                     const int rb = DialMultiaddrPreferenceRank(b);
+                     // Higher rank = worse; register worst first for last-write-wins.
+                     if (ra != rb) {
+                       return ra > rb;
+                     }
+                     return a < b;
+                   });
+  return multiaddrs;
 }
 
 RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
@@ -238,15 +288,7 @@ std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::st
 }
 
 std::string PreferredDirectoryMultiaddr(const std::vector<std::string>& multiaddrs) {
-  for (const std::string& ma : multiaddrs) {
-    if (ma.find("/adp/") != std::string::npos) {
-      return ma;
-    }
-  }
-  if (!multiaddrs.empty()) {
-    return multiaddrs.front();
-  }
-  return {};
+  return PreferredDialMultiaddr(multiaddrs);
 }
 
 std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {

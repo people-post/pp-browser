@@ -662,7 +662,8 @@ void ConversationsHub::RegisterContactEndpoints() {
     if (target.peer_identity_value.empty()) {
       continue;
     }
-    for (const std::string& ma : contact.multiaddrs) {
+    // Last RegisterEndpoint wins PreferredMultiaddr — register worst→best (global /ip6 last).
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
       mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
     const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
@@ -678,7 +679,7 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
     return;
   }
   for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
-    for (const std::string& ma : node.multiaddrs) {
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(node.multiaddrs)) {
       if (ma.empty()) {
         continue;
       }
@@ -731,7 +732,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   if (!mesh_messaging_ || peer_id.empty()) {
     return;
   }
-  for (const std::string& ma : record.multiaddrs) {
+  for (const std::string& ma : OrderDialMultiaddrsWorstToBest(record.multiaddrs)) {
     if (ma.empty()) {
       continue;
     }
