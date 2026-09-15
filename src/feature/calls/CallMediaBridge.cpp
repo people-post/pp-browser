@@ -663,8 +663,11 @@ void CallMediaBridge::BeginConnectAttempt(CallMediaDirectConnectParams params,
   }
 
   // Prefer answerer reverse-dial progress on UI when reachable — coordinator can lag Pause/Resume.
+  // Copy peer_key before the call: init-captures may std::move(params) before peer_key is read
+  // (unspecified arg order — dogfood c438: Ensure saw peer="" → "missing call peer").
+  const std::string peer_key = params.peer_key;
   EnsurePeerReachableAsync(
-      params.peer_key, gen,
+      peer_key, gen,
       [this, params = std::move(params), cbs = std::move(cbs), gen, attempt](Roe<void> ready) mutable {
         auto cont = [this, params = std::move(params), cbs = std::move(cbs), gen, attempt,
                      ready = std::move(ready)]() mutable {
@@ -708,7 +711,12 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
     }
   }
   if (params.offerer) {
-    host_.P2pResendMediaKey(params.call_id, params.peer_key);
+    // MediaKey is addressed by roster account:, not the mesh dial PeerId.
+    const std::string key_peer =
+        (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0)
+            ? media_peer_identity_
+            : params.peer_key;
+    host_.P2pResendMediaKey(params.call_id, key_peer);
   }
   if (!direct_.IsActive()) {
     direct_.Detach();
