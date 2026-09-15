@@ -5,6 +5,8 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
@@ -20,8 +22,9 @@
 namespace pbr {
 
 /**
- * 1:1 call media (m1 / V026). Uses CallMediaEngine SFU-mode capture/playback
- * with Opus frames over ICallMediaTransport (Amp; [A020]).
+ * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
+ * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
+ * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
 class CallMediaBridge : public Module {
 public:
@@ -47,13 +50,19 @@ public:
   /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
   void OnMediaKeyReady(const std::string& call_id);
 
-  void StopMeshMedia(const std::string& call_id);
-
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
+   * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
   void ReleaseDirectTransport();
+  /** V036 Phase 3: token-gated SoftMigrate release (no-op when token not bound). */
+  void ReleaseDirectTransport(const CallMediaSeat::Token& token);
 
+  /**
+   * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
+   * CallSessionManager Leave/Accept must use seat.Release, not this.
+   */
+  void StopMeshMedia(const std::string& call_id);
   /**
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.
@@ -86,9 +95,18 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
 
   void SetLifecycle(CallLifecycle* lifecycle);
+  /** V036 exclusive media epoch. */
+  void SetMediaSeat(CallMediaSeat* seat);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
+  /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
+  bool HasActiveDirectStream() const;
+
+  /** V039 Direct planner Apply — product callbacks on UI. */
+  void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
+             const std::string& peer_identity = {});
+  CallDirectPlannerPhase DirectPlannerPhase() const { return direct_planner_phase_; }
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
@@ -112,6 +130,18 @@ private:
   void CommitDirectConnected(const std::string& call_id);
   void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
                                  const std::vector<uint8_t>& payload);
+  void ReleaseDirectTransportBody();
+  /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
+  void MaybeEscalateTxOnlyDirect();
+  void EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer);
+  void SetDirectPlannerPhase(CallDirectPlannerPhase next, CallDirectPlannerEvent ev,
+                             const std::string& call_id);
+  CallDirectPlannerApplyContext BuildDirectPlannerContext(const std::string& call_id,
+                                                          const std::string& peer_identity) const;
+  /** Arm health / TX-only / connect-timeout timer (pm3). */
+  void ArmDirectHealthTimer();
+  void CancelDirectHealthTimer();
+  void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
   CallSessionStore& sessions_;
@@ -121,10 +151,16 @@ private:
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;
+  CallMediaSeat* media_seat_ = nullptr;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
   std::string media_path_kind_;
+  /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
+  bool force_circuit_ensure_ = false;
+  bool session_offerer_ = false;
+  int64_t direct_connected_at_ms_ = 0;
+  bool tx_only_escalation_done_ = false;
 
   std::string media_peer_identity_;
   std::string media_call_id_;
@@ -141,6 +177,8 @@ private:
   std::atomic<bool> stopping_{false};
   uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
+  uint64_t direct_health_timer_id_ = 0;
+  CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */

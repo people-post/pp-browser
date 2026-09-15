@@ -14,7 +14,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | # | Topic | First-slice behavior |
 |---|--------|-------------|
 | 1 | Scope | 1:1 + group, voice + video, mobile included — one first slice, phased delivery |
-| 2 | Media stack | **Hybrid (Option C):** mesh signaling + WebRTC-shaped media; mesh SFU/TURN fallback |
+| 2 | Media stack | **HTTP + Amp/libp2p only (V026):** mesh signaling + Amp call-media; blind `media_relay` for N≥3; circuit for undialable 1:1 (V038) |
 | 3 | Start authority | Any **group member** may start a call linked to that group; 1:1 either peer |
 | 4 | Guests / late join | **Invite only** — join without joining the chat group; mid-call invites OK |
 | 5 | Host model | **Hostless** — call ends when last participant leaves |
@@ -25,19 +25,19 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 10 | Media key | One shared call media key; **rotate on every leave**; overlapping epochs for UX |
 | 11 | Recording | Out of v1 |
 | 12 | SFU hosts | Org `pp-node` + desktop **`media_relay`** (blind forwarder; volunteer default on) (V008 / V020 / V021 / N018) |
-| 13 | Delivery | a2–a3 LAN 1:1 P2P done; **a4** group via blind SFU (V020/V021) — no full-mesh |
+| 13 | Delivery | **m1** Amp LAN 1:1 voice (mobile claimed); **a4** group via blind SFU (V020/V021) — no full-mesh; rewrite debt [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
-| 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
-| 17 | a3 scope | LAN 1:1 video done (Win + **macOS** + Android dogfood incl. **Win↔Mac**; **iOS** wiring); **iOS** device optional (V016, 2026-07-31) |
+| 16 | Media libs | **libopus + SDL** + Amp call-media / `media_relay` (V026/m2 — libdatachannel removed) |
+| 17 | a3 scope | Historical LAN 1:1 **WebRTC** video (Win/macOS/Android); product video is **V034** on Amp (lv) |
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
 | 19 | Video UI path | SDL camera → `CameraCaptureOrientation` → platform HW H264 → persistent GL texture + letterbox tiles (V018) |
-| 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
-| 21 | a4 topology | Blind forwarder for N≥3; 1:1 P2P + Retry on fail (V025); soft-migrate on 3rd (V021) |
+| 20 | Call media shape | Always Opus + H264 video_lo on Amp (V019/V034); Voice/Video = entry UX only; audio mandatory / video best-effort |
+| 21 | Topology | N=2 Amp direct → punch → **circuit** (V038); N≥3 SoftMigrate `media_relay` (V021); no SoftMigrate-for-NAT |
 | 22 | Relay privacy | Relay never holds call media keys / never decodes payloads (V021) |
 | 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019) |
 | 24 | Hop pick | Closed set contacts∪seed short-term; risk-aware score; pricing regulates later (V023 / N020) |
-| 25 | Adaptive media | **Same policy** for 1:1 P2P and SFU (audio ≫ lo ≫ hi; producer first); backends differ (V024 / N021) |
+| 25 | Adaptive media | **Same policy** for 1:1 Amp and SFU (audio ≫ lo ≫ hi; producer first); backends differ (V024 / N021) |
 
 Detail and rationale: [DECISIONS.md](DECISIONS.md). Do not duplicate the code-module diagram here — see [CALLS.md](../../docs/architecture/CALLS.md).
 
@@ -47,8 +47,8 @@ Detail and rationale: [DECISIONS.md](DECISIONS.md). Do not duplicate the code-mo
 
 | Plane | Transport | Purpose |
 |-------|-----------|---------|
-| **Signaling** | Mesh / E2E messaging (direct + optional origin-thread system msgs) | Invite, accept, leave, roster, media-key epochs, SFU hints |
-| **Media** | WebRTC-shaped (ICE + DTLS-SRTP / equivalent) or blind SFU | Always Opus + **H264** m-lines (V019); 1:1 P2P; N≥3 via `media_relay` (V021) |
+| **Signaling** | Mesh / E2E messaging (direct + optional origin-thread system msgs) | Invite, accept, leave, roster, media-key epochs, SFU attach hints |
+| **Media** | Amp call-media (direct / punch / circuit) or blind `media_relay` | Opus + **H264 video_lo** (V034); 1:1 E2E; N≥3 SoftMigrate (V021/V038) |
 
 **Call roster ≠ chat roster.** Guests appear only on `call_participants`. They do not receive group chat history or group membership events.
 
@@ -114,13 +114,14 @@ Schema details land with a1 (migrations + store API).
    Offline / background: call_wake push → app fetches invite → incoming-call UI
 
 3. Accept / decline / miss
-   Accept → CallJoin (caps) → receive current media_key + ICE/SFU hints → media bring-up
+   Accept → CallJoin (caps) → receive current media_key + dial hints → media bring-up
    Decline → CallDecline
    Timeout → missed; optional history hint later
 
 4. Media
-   Prefer direct ICE; else org/friend SFU (contact-first, then seed — mesh N014)
-   Encrypt media under shared media_key / SRTP master derived from it (V001)
+   N=2: direct Amp call-media when dialable; else punch → circuit (V038) — never SoftMigrate for NAT
+   N≥3: SoftMigrate to media_relay (contact-first, then seed — V023/N020)
+   Encrypt media under shared call media key (app AEAD; V004)
 
 5. Mid-call
    Mute / camera; CallInvite for guests or late joiners
@@ -151,7 +152,7 @@ Delivered as E2E **direct** `ChatPayload` **system** messages (V012) to each tar
 
 Invitees who are not in the origin group still use **direct** E2E only.
 
-ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as needed at a2; if latency is unacceptable, revisit a dedicated libp2p signal protocol then.
+`call_sdp` / `call_ice` are **legacy** (ignored inbound after m2). Reachability is Amp mesh (mDNS / listen_multiaddrs / punch / circuit) — not ICE trickle.
 
 ### History system messages (origin thread)
 
@@ -166,25 +167,25 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 
 ## Media plane
 
-### Stack (V001)
+### Stack (V026 / V038)
 
 - **Signaling / discovery:** mesh + call events above  
-- **Media:** WebRTC-compatible ICE + encrypted media (DTLS-SRTP or equivalent profile locked at a2)  
+- **Media:** Amp **call-media** duplex (direct PeerLink or circuit nested Session — A024) + app AEAD under call media key; group path = blind **`media_relay`**  
 - **Codecs:** Opus audio required; video **H264** Constrained Baseline via **platform HW** (V017: Win MF / macOS VideoToolbox / Android MediaCodec; Linux VA-API best-effort — no soft-codec product fallback).  
-- **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
+- **Frame shape (V034):** Opus + H264 video_lo on the same Amp streams (v2 frames). Mute/camera change content only. Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
-- **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps. **All calls** use adaptive priority per **V024** (audio ≫ video_lo ≫ video_hi) — 1:1 P2P and SFU share one policy module, two backends.  
-- **Topology:** 1:1 **P2P** when N=2 (ICE fail → timeout + Retry on P2P, not SFU — V025); **N≥3** uses **`media_relay`** (V020/V021). Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1).  
+- **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps. **All calls** use adaptive priority per **V024** (audio ≫ video_lo ≫ video_hi) — 1:1 Amp and SFU share one policy module, two backends.  
+- **Topology (V038):** N=2 **direct → punch → circuit** call-media (never SoftMigrate for NAT); **N≥3** SoftMigrate to **`media_relay`** (V021). Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1).  
 
 ### Adaptive media — shared policy (V024)
 
 **Agents: one policy module, two backends.** Do not implement “group-only” adaptation and leave 1:1 on a fixed bitrate.
 
-| | 1:1 P2P | SFU / group |
-|--|---------|-------------|
-| Backend | libdatachannel PC / RTP | N021 `media_relay` channels |
+| | 1:1 Amp call-media | SFU / group |
+|--|--------------------|-------------|
+| Backend | `/pp-browser/realtime/1.0.0` (direct / circuit) | N021 `media_relay` channels |
 | Producer | audio; then lo/hi by uplink | same |
-| Receiver demand | signaling / DC feedback | subscribe `(stream_id, channel_id)` |
+| Receiver demand | health / focus | subscribe `(stream_id, channel_id)` |
 | Path QoS | local rate + playout; drop stale video, FIFO audio | relay `latest_lossy` / `reliable_ordered` |
 
 | Layer | Role |
@@ -202,7 +203,7 @@ Consumes p2p-mesh **n4-media** (N017–N021):
 | Capability | Call use |
 |------------|----------|
 | `media_relay` | Generic multiplexed forwarder — framing/QoS (N021); ↑/↓ budgets (N019); call maps A/V (V024) |
-| Circuit relay (n3) | Help dial SFU / peers when NATed |
+| Circuit relay | Help dial peers / SFU hops when NATed (N=2 call-media carrier — V038; also SoftMigrate hop reach) |
 | Contact-first (N014) | Intent: prefer friends; **media algorithm = N020 / V023** |
 
 **Blindness:** Relay never holds call media keys and never decodes payloads. Clear metadata is **QoS/routing only** (`channel_type` ≠ codec). Clients AEAD payloads under the shared call key (V004/V021).
@@ -339,6 +340,6 @@ Honest mobile / group video needs mesh progress roughly:
 
 Exact capability JSON keys in [p2p-mesh DESIGN § Configuration](../p2p-mesh/DESIGN.md#configuration); media relay behavior in [§ Services — Media relay](../p2p-mesh/DESIGN.md#media-relay).
 
-**LAN dogfood (a2/a3 without SFU):** Two devices on the same LAN with mutually reachable ICE host candidates. Group (a4) does **not** use LAN full-mesh — waits on SFU.
+**LAN dogfood (m1 Amp voice):** Two devices with Amp dialability (LAN mDNS and/or invite `listen_multiaddrs`). Group (a4) uses SoftMigrate → `media_relay` — not LAN full-mesh. Historical a2/a3 ICE LAN video is not the product path after m2.
 
 **Push:** Relay should emit **`call_wake`** when storing/forwarding a call-invite class envelope (or on dedicated call-invite accept path). Spec detail with push project at a1 — opaque body only (V006).

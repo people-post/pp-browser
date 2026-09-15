@@ -5,6 +5,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
+#include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
@@ -155,6 +156,8 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   bool sfu_mode = false;
+  /** Bumped on StartSfu so async StopMeshMedia can detect a newer session. */
+  std::atomic<uint64_t> session_generation{0};
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<SfuSendFn> sfu_send;
   /**
@@ -557,10 +560,8 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnsureAudioSubsystem() {
-    if (!SDL_WasInit(SDL_INIT_AUDIO)) {
-      if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
-      }
+    if (!EnsureSdlAudioSubsystem()) {
+      return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
     }
     return {};
   }
@@ -1133,6 +1134,8 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     if (!*next_send) {
       return Error("SFU send callback required");
     }
+    // Invalidate any in-flight StopMeshMedia posted for a prior call_id / leftover purge.
+    impl_->session_generation.fetch_add(1, std::memory_order_acq_rel);
     if (impl_->active) {
       if (impl_->call_id == call_id && impl_->sfu_mode) {
         // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
@@ -1157,12 +1160,13 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     abandoned_send = nullptr;
     // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
     // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
+    // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
     {
       std::lock_guard lock(impl_->mutex);
-      impl_->ClearAudioTracksLocked();
+      impl_->audio_tracks.erase(0);
       {
         std::lock_guard lg(impl_->sfu_rx_log_mu);
-        impl_->sfu_rx_logged_streams.clear();
+        impl_->sfu_rx_logged_streams.erase(0);
       }
     }
     // Android speaker / communication-mode route changes around SoftMigrate can leave the open
@@ -1541,6 +1545,10 @@ void CallMediaEngine::SetConnectionState(const std::string& state) {
 std::string CallMediaEngine::ActiveCallId() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->call_id;
+}
+
+uint64_t CallMediaEngine::MediaSessionGeneration() const {
+  return impl_->session_generation.load(std::memory_order_acquire);
 }
 
 std::string CallMediaEngine::ConnectionState() const {

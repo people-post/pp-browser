@@ -7,6 +7,7 @@
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "domain/mesh/l4/call_media/CallMediaSessionLogic.h"
 #include "common/LengthPrefixedCodec.h"
+#include "common/Logger.h"
 
 #include "common/ValueJson.h"
 
@@ -25,6 +26,30 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+/** Dogfood filter matches CallLifecycle|StartSfu — keep that token in messages. */
+logging::Logger& CallMediaLegLog() {
+  static logging::Logger log = logging::getLogger("CallMediaLeg");
+  return log;
+}
+
+const char* BundlePhaseName(const CallMediaBundlePhase phase) {
+  switch (phase) {
+  case CallMediaBundlePhase::Idle:
+    return "Idle";
+  case CallMediaBundlePhase::OutboundHello:
+    return "OutboundHello";
+  case CallMediaBundlePhase::InboundHello:
+    return "InboundHello";
+  case CallMediaBundlePhase::AwaitingMedia:
+    return "AwaitingMedia";
+  case CallMediaBundlePhase::MediaReady:
+    return "MediaReady";
+  case CallMediaBundlePhase::Closing:
+    return "Closing";
+  }
+  return "?";
+}
 
 std::vector<uint8_t> Utf8Body(const std::string& utf8) {
   return std::vector<uint8_t>(utf8.begin(), utf8.end());
@@ -388,9 +413,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         }
         // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
         // Do not treat Handshaking as lost (FindLink still present until DropLink).
+        // OutboundHello may not have FindLink yet while EnsureAssociation starts — prefer the
+        // connect deadline over peer-link-lost (avoids racing TearDown vs dial).
         if (PeerLinkMissing(*bundle)) {
-          link_lost.push_back(call_id);
-          continue;
+          const bool outbound_dialing =
+              bundle->phase == CallMediaBundlePhase::OutboundHello &&
+              runtime->Links().GetLinkSnapshot(bundle->params.peer_key).has_endpoint;
+          if (!outbound_dialing) {
+            link_lost.push_back(call_id);
+            continue;
+          }
         }
         if (bundle->finished) {
           continue;
@@ -419,6 +451,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (!bundle || bundle->finished) {
         continue;
       }
+      CallMediaLegLog().info << "CallLifecycle StartSfu leg timeout call_id=" << call_id
+                             << " peer=" << bundle->params.peer_key
+                             << " phase=" << BundlePhaseName(bundle->phase)
+                             << " role=" << (bundle->offerer ? "offerer" : "answerer");
       TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/false,
                      "amp call-media connect timed out");
     }
@@ -678,6 +714,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       const auto decision = DecideCallMediaInboundHello(ctx);
 
       if (decision == CallMediaInboundHelloDecision::RejectBusy) {
+        CallMediaLegLog().info << "CallLifecycle StartSfu leg inbound hello reject call_id="
+                               << hello_call_id << " peer=" << link->PeerKey() << " reason=busy";
         (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "busy")));
         DropRole(*target, CallMediaChannelRole::InboundControl);
         if (!target->outbound_control && target->phase == CallMediaBundlePhase::Idle) {
@@ -686,6 +724,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         return;
       }
       if (decision == CallMediaInboundHelloDecision::RejectGlare) {
+        CallMediaLegLog().info << "CallLifecycle StartSfu leg inbound hello reject call_id="
+                               << hello_call_id << " peer=" << link->PeerKey() << " reason=glare";
         (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, "glare")));
         DropRole(*target, CallMediaChannelRole::InboundControl);
         return;
@@ -702,6 +742,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (target->deadline.time_since_epoch().count() == 0) {
         target->deadline = Clock::now() + std::chrono::seconds(15);
       }
+      CallMediaLegLog().info << "CallLifecycle StartSfu leg inbound hello call_id=" << hello_call_id
+                             << " peer=" << link->PeerKey()
+                             << " decision="
+                             << (decision == CallMediaInboundHelloDecision::AcceptAndYield ? "yield"
+                                 : decision == CallMediaInboundHelloDecision::Accept        ? "accept"
+                                                                                            : "other")
+                             << " local_offerer=" << (target->offerer ? 1 : 0);
     }
 
     CallMediaDirectConnectParams params;
@@ -935,9 +982,28 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       bundles.emplace(params.call_id, std::move(bundle));
     }
 
+    {
+      const auto snap = runtime->Links().GetLinkSnapshot(peer_key);
+      const bool connected = runtime->Links().IsConnected(peer_key);
+      std::string ma;
+      if (auto preferred = runtime->Links().PreferredMultiaddr(peer_key)) {
+        ma = *preferred;
+      }
+      CallMediaLegLog().info << "CallLifecycle StartSfu leg outbound begin call_id=" << call_id
+                             << " peer=" << peer_key
+                             << " role=" << (params.offerer ? "offerer" : "answerer")
+                             << " has_endpoint=" << (snap.has_endpoint ? 1 : 0)
+                             << " connected=" << (connected ? 1 : 0)
+                             << " ma=" << (ma.empty() ? "(none)" : ma);
+    }
+
     auto open_control = std::make_shared<std::function<void(int)>>();
     *open_control = [this, self = shared_from_this(), leg_id, peer_key, call_id, params, deadline,
                      open_control](const int retries) {
+      if (retries == 0) {
+        CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel invoke call_id=" << call_id
+                               << " peer=" << peer_key;
+      }
       runtime->Links().OpenChannel(
           peer_key, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
           [this, self, leg_id, peer_key, call_id, params, deadline, retries,
@@ -948,19 +1014,35 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
               return;
             }
             if (!channel) {
-              if (pp::amp::PeerLinkManager::IsAssociationNotReady(channel.error()) && retries < 500
-                  && !bundle->finished) {
+              const bool assoc_not_ready =
+                  pp::amp::PeerLinkManager::IsAssociationNotReady(channel.error());
+              if (assoc_not_ready && retries < 500 && !bundle->finished && Clock::now() < deadline) {
+                if (retries == 0 || (retries % 50) == 0) {
+                  CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel wait call_id="
+                                         << call_id << " peer=" << peer_key
+                                         << " retries=" << retries
+                                         << " err=" << channel.error().message;
+                }
                 lock.unlock();
                 PostIo([open_control, retries]() { (*open_control)(retries + 1); });
                 return;
               }
+              CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel fail call_id="
+                                     << call_id << " peer=" << peer_key << " retries=" << retries
+                                     << " err=" << channel.error().message;
               if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
                 TearDownBundle(*bundle, false, false, channel.error().message);
               }
               return;
             }
+            if (retries > 0) {
+              CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel ok call_id=" << call_id
+                                     << " peer=" << peer_key << " after_retries=" << retries;
+            }
             auto* link = runtime->Links().FindLink(peer_key);
             if (!link) {
+              CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel ok but link missing call_id="
+                                     << call_id << " peer=" << peer_key;
               if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
                 TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
               }
@@ -985,6 +1067,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                       auto* link = runtime->Links().FindLink(peer_key);
                                       if (!open) {
                                         if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
+                                          CallMediaLegLog().info
+                                              << "CallLifecycle StartSfu leg channel open failed call_id="
+                                              << call_id << " peer=" << peer_key;
                                           TearDownBundle(*bundle, false, false,
                                                          "amp call-media: channel open failed");
                                         } else if (link && link->Mux()) {
@@ -1005,7 +1090,15 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                       BindControlChannel(*bundle, *link, channel, CallMediaChannelRole::OutboundControl);
                                       if (!bundle->outbound_control ||
                                           !bundle->outbound_control->EnqueueOutbound(Utf8Body(BuildHelloJson(params)))) {
+                                        CallMediaLegLog().info
+                                            << "CallLifecycle StartSfu leg hello write failed call_id="
+                                            << call_id << " peer=" << peer_key;
                                         TearDownBundle(*bundle, false, false, "amp call-media: hello write failed");
+                                      } else {
+                                        CallMediaLegLog().info
+                                            << "CallLifecycle StartSfu leg hello sent call_id=" << call_id
+                                            << " peer=" << peer_key
+                                            << " role=" << (params.offerer ? "offerer" : "answerer");
                                       }
                                     });
           });
@@ -1090,6 +1183,12 @@ CallMediaLegId CallMediaLegCoordinator::StartLeg(const CallMediaDirectConnectPar
   }
   if (params.peer_key.empty() || params.call_id.empty() || params.media_key.empty()) {
     if (on_finished) {
+      const char* which = params.peer_key.empty()   ? "peer_key"
+                          : params.call_id.empty()  ? "call_id"
+                                                    : "media_key";
+      CallMediaLegLog().info << "CallLifecycle StartSfu leg reject invalid params missing=" << which
+                             << " call_id=" << params.call_id << " peer=" << params.peer_key
+                             << " media_key_len=" << params.media_key.size();
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
         on_finished(Error("amp call-media: invalid connect params"));
       });

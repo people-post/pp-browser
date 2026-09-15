@@ -16,6 +16,7 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -39,6 +40,7 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
   call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
+  call_media_seat_ = std::make_unique<CallMediaSeat>();
   return {};
 }
 
@@ -47,6 +49,34 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
+  if (call_media_seat_) {
+    call_sessions_->SetMediaSeat(call_media_seat_.get());
+    call_media_seat_->SetTeardownHooks(
+        [this](const std::string& call_id) {
+          if (call_sessions_) {
+            call_sessions_->TopologyOnMediaStoppedForSeat(call_id);
+          }
+        },
+        [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+          if (!force && call_media_seat_ && call_media_seat_->Epoch() != epoch_at_post) {
+            log().info << "MediaSeat stop skip stale call_id=" << call_id
+                       << " posted_epoch=" << epoch_at_post
+                       << " seat_epoch=" << call_media_seat_->Epoch();
+            return;
+          }
+          if (call_media_bridge_) {
+            call_media_bridge_->StopMeshMedia(call_id);
+            return;
+          }
+          if (!call_media_engine_) {
+            return;
+          }
+          if (!call_media_engine_->IsActive() && !call_media_engine_->IsSfuMode()) {
+            return;
+          }
+          call_media_engine_->Stop();
+        });
+  }
   if (deps_.bind_call_control) {
     CallControlInboundPorts inbound;
     inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
@@ -184,6 +214,11 @@ void CallStack::WireMediaRelayDeps() {
   }
   dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
   dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
+  if (auto chat = m->ChatDeps()) {
+    dial_registry_->SetPostIo(chat->io.post_io);
+  } else {
+    dial_registry_->SetPostIo({});
+  }
   // Clients consume punch/circuit regardless of capabilities.circuit_relay (N009 host-only flag).
   const bool use_amp_circuit =
       use_amp_relay && m->AmpCircuitTunnel() && m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
@@ -311,6 +346,26 @@ void CallStack::WireMediaRelayDeps() {
     }
     return call_sessions_->ListMediaRelayCapablePeerIds();
   };
+  deps.resolve_remote_listen_by_peer = [this]() { return call_peer_listen_mas_; };
+  deps.peer_lan_confirmed = [this](const std::string& peer_id) {
+    if (peer_id.empty()) {
+      return false;
+    }
+    if (call_lan_confirmed_peers_.count(peer_id) > 0) {
+      return true;
+    }
+    // Amp already connected on link → PreferLocal safe (true LAN SoftMigrate).
+    MeshHost* m = mesh();
+    if (!m) {
+      return false;
+    }
+    if (auto chat = m->ChatDeps()) {
+      if (chat->links.IsConnected(peer_id)) {
+        return true;
+      }
+    }
+    return false;
+  };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
@@ -326,6 +381,9 @@ void CallStack::WireMediaRelayDeps() {
           call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
           *transport, dial_registry_.get(), circuit_hop_reach_.get());
       call_sessions_->SetCallMediaBridge(call_media_bridge_.get());
+      if (call_media_seat_) {
+        call_media_bridge_->SetMediaSeat(call_media_seat_.get());
+      }
       media_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_media_bridge_->SetLifecycle(call_lifecycle_.get());
@@ -335,6 +393,9 @@ void CallStack::WireMediaRelayDeps() {
                  << " transport=amp)";
     } else {
       call_media_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
+      if (call_media_seat_) {
+        call_media_bridge_->SetMediaSeat(call_media_seat_.get());
+      }
       call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
       call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
       if (call_lifecycle_) {
@@ -449,9 +510,13 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   if (identity.empty() || multiaddrs.empty()) {
     return;
   }
+  std::vector<std::string>& stored = call_peer_listen_mas_[identity];
   for (const std::string& ma : multiaddrs) {
     if (ma.empty()) {
       continue;
+    }
+    if (std::find(stored.begin(), stored.end(), ma) == stored.end()) {
+      stored.push_back(ma);
     }
     const std::string ip = IpHostFromMultiaddrPrefix(ma);
     if (IsLikelyUndialableLanIpv4(ip)) {
@@ -653,6 +718,7 @@ void CallStack::EnsureCallLifecycleBound() {
   }
   call_lifecycle_->Bind(call_sessions_.get());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
+  call_sessions_->SetLifecycle(call_lifecycle_.get());
   if (call_media_bridge_) {
     call_media_bridge_->SetLifecycle(call_lifecycle_.get());
   }
@@ -692,6 +758,10 @@ void CallStack::Shutdown() {
   circuit_hop_reach_.reset();
   call_lifecycle_.reset();
   call_sessions_.reset();
+  if (call_media_seat_) {
+    call_media_seat_->SetTeardownHooks({}, {});
+  }
+  call_media_seat_.reset();
   call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();

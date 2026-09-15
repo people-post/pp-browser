@@ -412,8 +412,7 @@ void CallController::RefreshPendingRing() {
     UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
   }
 
-  backend->PollPendingSfuAttach();
-  backend->PollP2pConnectHealth();
+  // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick.
 
   auto top = backend->TopPendingInvite();
   if (top && top->has_value()) {
@@ -662,13 +661,18 @@ void CallController::RefreshPendingRing() {
                                     backend->IsAwaitingSfuRecovery() || backend->Media().IsSfuMode();
     in_call.show_retry = mesh_messaging_failed && !backend->IsAwaitingSfuRecovery() && !backend->Media().IsSfuMode();
 
-    // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
-    // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
-    // Media activity (hop find/switch / guest reattach) wins over Connected while in flight.
-    // Once media is healthy and nothing is awaiting recovery, clear sticky activity so
-    // "Reconnecting…" cannot override a working SFU call (e.g. exhausted reattach, no-mic).
-    const bool media_connected = backend->Media().IsConnected() ||
-                                 (backend->Phase() == CallPhase::InCall && backend->Media().IsActive());
+    // V037: Connected when Lifecycle MediaChromeLive (InCall + DirectLive|HopLive).
+    // Seat Live remains a fallback while Status catches up; activity still wins in flight.
+    const auto seat_media = backend->SeatMediaState(active_call_id_);
+    const bool media_live =
+        backend->MediaChromeLive() || seat_media == CallMediaSeat::MediaState::Live;
+    const bool media_connecting =
+        backend->MediaStatus() == CallMediaStatus::DirectConnecting ||
+        backend->MediaStatus() == CallMediaStatus::HopAttaching ||
+        backend->MediaStatus() == CallMediaStatus::HopWaiting ||
+        backend->MediaStatus() == CallMediaStatus::Migrating ||
+        seat_media == CallMediaSeat::MediaState::Connecting;
+    const bool media_connected = media_live;
     std::string activity = backend->PeekMediaActivity();
     if (!activity.empty() && media_connected && !backend->IsAwaitingSfuRecovery()) {
       backend->ClearMediaActivity();
@@ -690,6 +694,10 @@ void CallController::RefreshPendingRing() {
       } else if (activity == Tr("call.status.looking_for_another_path")) {
         in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
       }
+    } else if (backend->MediaStatus() == CallMediaStatus::DegradedTxOnly) {
+      in_call.elapsed = {};
+      in_call.subtitle = Tr("call.quality.hint.sending_only").c_str();
+      in_call.status_hint = {};
     } else if (media_connected) {
       in_call.elapsed = FormatElapsed(backend->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
@@ -698,12 +706,28 @@ void CallController::RefreshPendingRing() {
     } else {
       in_call.elapsed = {};
       in_call.status_hint = {};
-      if (!backend->Media().IsActive()) {
+      if (seat_media == CallMediaSeat::MediaState::Failed ||
+          backend->MediaStatus() == CallMediaStatus::Failed) {
+        in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+      } else if (seat_media == CallMediaSeat::MediaState::Idle && !backend->Media().IsActive() &&
+                 backend->MediaStatus() == CallMediaStatus::None) {
         in_call.subtitle = Tr("call.status.calling").c_str();
-      } else if (backend->IsSoftMigrateInFlight()) {
-        in_call.subtitle = Tr("call.status.setting_up_group").c_str();
-      } else if (backend->IsSfuAttachWaitActive()) {
-        in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
+      } else if (backend->IsSoftMigrateInFlight() || backend->IsSfuAttachWaitActive() ||
+                 media_connecting) {
+        // V037: Status Migrating / HopWaiting own chrome; soft_migrate_in_flight_ is latch only.
+        if (backend->MediaStatus() == CallMediaStatus::Migrating ||
+            (backend->MediaStatus() != CallMediaStatus::HopWaiting &&
+             backend->MediaStatus() != CallMediaStatus::HopAttaching &&
+             backend->IsSoftMigrateInFlight())) {
+          in_call.subtitle = Tr("call.status.setting_up_group").c_str();
+        } else if (backend->MediaStatus() == CallMediaStatus::HopWaiting ||
+                   backend->IsSfuAttachWaitActive()) {
+          in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
+        } else {
+          in_call.subtitle = Tr("call.status.connecting").c_str();
+        }
+      } else if (!backend->Media().IsActive()) {
+        in_call.subtitle = Tr("call.status.calling").c_str();
       } else {
         const std::string state = backend->Media().ConnectionState();
         if (backend->IsAwaitingSfuRecovery()) {
@@ -736,6 +760,13 @@ void CallController::RefreshPendingRing() {
         log().info
             << "in-call subtitle=\"" << sub << "\" phase="
             << CallPhaseName(backend->Phase())
+            << " status=" << CallMediaStatusName(backend->MediaStatus())
+            << " seat_media="
+            << (seat_media == CallMediaSeat::MediaState::Live
+                    ? "Live"
+                    : seat_media == CallMediaSeat::MediaState::Connecting
+                          ? "Connecting"
+                          : seat_media == CallMediaSeat::MediaState::Failed ? "Failed" : "Idle")
             << " media_connected=" << (backend->Media().IsConnected() ? 1 : 0)
             << " media_active=" << (backend->Media().IsActive() ? 1 : 0)
             << " media_state=" << backend->Media().ConnectionState();
@@ -1204,9 +1235,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
-  } else if (media.IsConnected() ||
-             (backend && backend->Available() && backend->Phase() == CallPhase::InCall &&
-              media.IsActive())) {
+  } else if (backend && backend->Available() &&
+             (backend->MediaChromeLive() || backend->SeatMediaLive(active_call_id_))) {
+    // Prefer V037 MediaChromeLive; seat Live remains fallback during Status lag.
+    // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;
@@ -1259,7 +1291,23 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     in_call.quality_hint = "";
   }
 
-  // Always-on short path word next to elapsed / connected subtitle.
+  // Seat Live / Status Live can still be TX-only (NAT one-way) — don't keep Connected claim.
+  const bool media_broken =
+      view.quality == CallPathQuality::NoAudio ||
+      view.asymmetry == CallAudioAsymmetry::SendingOnly ||
+      view.asymmetry == CallAudioAsymmetry::ReceivingOnly ||
+      (backend && backend->Available() &&
+       backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
+  if (media_broken) {
+    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+      in_call.subtitle = Tr(hint_key).c_str();
+    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
+                                                                              label_key[0]) {
+      in_call.subtitle = Tr(label_key).c_str();
+    }
+  }
+
+  // Always-on short path word next to elapsed / connected / health subtitle.
   const char* path_key = nullptr;
   if (view.path_kind == "media_relay" || view.path_kind == "relay") {
     path_key = "call.details.path.media_relay";
@@ -1270,7 +1318,11 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
   } else if (view.path_kind == "direct") {
     path_key = "call.details.path.direct";
   }
-  if (path_key && media.IsConnected()) {
+  const bool show_path =
+      path_key && backend && backend->Available() &&
+      (backend->MediaChromeLive() || backend->SeatMediaLive(active_call_id_) ||
+       backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
+  if (show_path) {
     const std::string path_label = Tr(path_key);
     if (!in_call.subtitle.empty() && in_call.subtitle != path_label) {
       in_call.subtitle = (std::string(in_call.subtitle.c_str()) + " · " + path_label).c_str();

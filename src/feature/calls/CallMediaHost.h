@@ -27,6 +27,11 @@ public:
    */
   virtual Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(
       const std::string& call_id, const std::string& peer_id) const = 0;
+  /**
+   * Map call-roster account: → mesh PeerId for dial/Ensure (Invite/Accept libp2p_peer_id /
+   * contact PeerId). Empty if unknown — dial may still use account: alias when registered.
+   */
+  virtual Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const = 0;
   virtual bool P2pIsAwaitingSfuRecovery() const = 0;
   /**
    * True when 1:1 call-media close is expected during SoftMigrate (N≥3, sfu_hint, or attach-wait).

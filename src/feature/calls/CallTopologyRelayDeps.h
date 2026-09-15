@@ -75,6 +75,19 @@ public:
 
   virtual Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) = 0;
   virtual bool IsDialable(const std::string& peer_key) const = 0;
+  /** PeerLink Connected — stricter than IsDialable (has_endpoint alone is not enough). */
+  virtual bool IsConnected(const std::string& peer_key) const {
+    (void)peer_key;
+    return false;
+  }
+  /** Kick ADP dial/handshake; optional for fakes. */
+  virtual void EnsureAssociation(const std::string& peer_key,
+                                 std::function<void(Roe<void>)> on_done) {
+    (void)peer_key;
+    if (on_done) {
+      on_done(Error("ensure association not available"));
+    }
+  }
   virtual std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const = 0;
   virtual void ClearDialBackoff(const std::string& peer_key) = 0;
   virtual void AbortInflightDial(const std::string& peer_key) = 0;
@@ -127,6 +140,8 @@ public:
 
   void SetAmpLinks(IChatPeerLinks* amp_links) { amp_links_ = amp_links; }
   void SetAmpCircuitHops(AmpCircuitHopRegistry* hops) { amp_hops_ = hops; }
+  /** MeshRuntime::PostToIo — EnsureAssociation must run on the Amp IO strand. */
+  void SetPostIo(std::function<void(std::function<void()>)> post_io) { post_io_ = std::move(post_io); }
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     if (amp_links_) {
@@ -158,6 +173,37 @@ public:
     return amp_hops_ && static_cast<bool>(amp_hops_->Find(peer_key, kMediaRelayProtocolId));
   }
 
+  bool IsConnected(const std::string& peer_key) const override {
+    return amp_links_ && amp_links_->IsConnected(peer_key);
+  }
+
+  void EnsureAssociation(const std::string& peer_key,
+                         std::function<void(Roe<void>)> on_done) override {
+    auto run = [this, peer_key, on_done = std::move(on_done)]() mutable {
+      if (!amp_links_) {
+        if (on_done) {
+          on_done(Error("dial registry not available"));
+        }
+        return;
+      }
+      amp_links_->EnsureAssociation(peer_key, [on_done = std::move(on_done)](IChatPeerLinks::LinkRoe r) {
+        if (!on_done) {
+          return;
+        }
+        if (!r) {
+          on_done(Error(r.error().message));
+          return;
+        }
+        on_done({});
+      });
+    };
+    if (post_io_) {
+      post_io_(std::move(run));
+      return;
+    }
+    run();
+  }
+
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     if (amp_links_) {
       if (auto amp_ma = amp_links_->PreferredMultiaddr(peer_key)) {
@@ -187,6 +233,7 @@ public:
 private:
   IChatPeerLinks* amp_links_ = nullptr;
   AmpCircuitHopRegistry* amp_hops_ = nullptr;
+  std::function<void(std::function<void()>)> post_io_;
 };
 
 /** Forwards to ConversationsHub / CallStack wiring. */

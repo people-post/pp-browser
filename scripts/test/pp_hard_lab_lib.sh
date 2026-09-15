@@ -201,3 +201,122 @@ pp_hard_ensure_up() {
   echo "hop on net_a: ${HOP_IP_A}  net_b: ${HOP_IP_B}"
   echo "peer-a=${PEER_A_IP}  peer-b=${PEER_B_IP}"
 }
+
+# --- Wave 5 CGNAT-ish (dual SNAT) ---------------------------------------------
+# Separate compose family: packaging/pp-node/docker-compose.hard-lab-cgnat.yml
+# Fixed addressing (see compose):
+#   public 10.117.0.0/24  hop=.2  gw-a=.10  gw-b=.11
+#   priv-a 10.117.1.0/24  gw=.1   peer-a=.10
+#   priv-b 10.117.2.0/24  gw=.1   peer-b=.10
+
+PP_HARD_CGNAT_COMPOSE_FILE="${PP_HARD_CGNAT_COMPOSE_FILE:-${ROOT}/packaging/pp-node/docker-compose.hard-lab-cgnat.yml}"
+PP_HARD_CGNAT_COMPOSE_PROJECT="${PP_HARD_CGNAT_COMPOSE_PROJECT:-pp-hard-lab-cgnat}"
+PP_HARD_CGNAT_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL:-http://127.0.0.1:18628}"
+PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}"
+PP_HARD_CGNAT_HOP="${PP_HARD_CGNAT_HOP:-pp-hard-lab-cgnat-hop}"
+PP_HARD_CGNAT_PEER_A="${PP_HARD_CGNAT_PEER_A:-pp-hard-lab-cgnat-peer-a}"
+PP_HARD_CGNAT_PEER_B="${PP_HARD_CGNAT_PEER_B:-pp-hard-lab-cgnat-peer-b}"
+PP_HARD_CGNAT_GW_A="${PP_HARD_CGNAT_GW_A:-pp-hard-lab-cgnat-gw-a}"
+PP_HARD_CGNAT_GW_B="${PP_HARD_CGNAT_GW_B:-pp-hard-lab-cgnat-gw-b}"
+PP_HARD_CGNAT_NET_PUBLIC="${PP_HARD_CGNAT_NET_PUBLIC:-pp-hard-lab-cgnat-net-public}"
+PP_HARD_CGNAT_NET_PRIV_A="${PP_HARD_CGNAT_NET_PRIV_A:-pp-hard-lab-cgnat-net-priv-a}"
+PP_HARD_CGNAT_NET_PRIV_B="${PP_HARD_CGNAT_NET_PRIV_B:-pp-hard-lab-cgnat-net-priv-b}"
+PP_HARD_CGNAT_HOP_IP="${PP_HARD_CGNAT_HOP_IP:-10.117.0.2}"
+PP_HARD_CGNAT_PEER_A_IP="${PP_HARD_CGNAT_PEER_A_IP:-10.117.1.10}"
+PP_HARD_CGNAT_PEER_B_IP="${PP_HARD_CGNAT_PEER_B_IP:-10.117.2.10}"
+PP_HARD_CGNAT_GW_A_PRIV_IP="${PP_HARD_CGNAT_GW_A_PRIV_IP:-10.117.1.254}"
+PP_HARD_CGNAT_GW_B_PRIV_IP="${PP_HARD_CGNAT_GW_B_PRIV_IP:-10.117.2.254}"
+
+pp_hard_cgnat_compose() {
+  pp_hard_need_cmd docker
+  mkdir -p "${PP_HARD_CGNAT_SHARE_DIR}"
+  if [[ "${PP_HARD_PROBE_DIR}" != /* ]]; then
+    PP_HARD_PROBE_DIR="$(cd "${ROOT}/${PP_HARD_PROBE_DIR}" && pwd)"
+  fi
+  if [[ "${PP_HARD_CGNAT_SHARE_DIR}" != /* ]]; then
+    mkdir -p "${PP_HARD_CGNAT_SHARE_DIR}"
+    PP_HARD_CGNAT_SHARE_DIR="$(cd "${PP_HARD_CGNAT_SHARE_DIR}" && pwd)"
+  fi
+  PP_HARD_PROBE_DIR="${PP_HARD_PROBE_DIR}" PP_HARD_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR}" \
+    docker compose -p "${PP_HARD_CGNAT_COMPOSE_PROJECT}" -f "${PP_HARD_CGNAT_COMPOSE_FILE}" "$@"
+}
+
+pp_hard_cgnat_fix_peer_routes() {
+  # Docker's default gw is the bridge, not our SNAT gateway — replace it.
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" sh -c \
+    "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_A_PRIV_IP}"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" sh -c \
+    "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_B_PRIV_IP}"
+  echo "ok  peer default routes via SNAT gateways"
+}
+
+pp_hard_cgnat_resolve_topology() {
+  HOP_IP_PUBLIC="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_HOP}" "${PP_HARD_CGNAT_NET_PUBLIC}")"
+  PEER_A_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_NET_PRIV_A}")"
+  PEER_B_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_B}" "${PP_HARD_CGNAT_NET_PRIV_B}")"
+  [[ -n "${HOP_IP_PUBLIC}" ]] || pp_hard_die "cgnat hop missing public IP"
+  [[ -n "${PEER_A_IP}" && -n "${PEER_B_IP}" ]] || pp_hard_die "cgnat peers missing private IPs"
+  # Temporarily point status URL at cgnat hop for peer_id fetch.
+  local saved_status="${PP_HARD_STATUS_URL}"
+  PP_HARD_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL}"
+  HOP_PEER_ID="$(pp_hard_hop_peer_id)"
+  PP_HARD_STATUS_URL="${saved_status}"
+  HOP_MA_PUBLIC="$(pp_hard_hop_ma_for_ip "${HOP_IP_PUBLIC}" "${HOP_PEER_ID}")"
+}
+
+pp_hard_cgnat_assert_nat_shape() {
+  echo "=== N-HARD-CGNAT-ISH topology asserts ==="
+
+  # A cannot reach B private IP (isolated priv nets + no hairpin).
+  if pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" ping -c1 -W1 "${PEER_B_IP}" >/dev/null 2>&1; then
+    pp_hard_die "peer-a unexpectedly reached peer-b private ${PEER_B_IP}"
+  fi
+  echo "ok  direct A→B private blocked"
+
+  # Hop cannot ping peer private IPs (not on priv nets / no route).
+  if pp_hard_exec "${PP_HARD_CGNAT_HOP}" ping -c1 -W1 "${PEER_A_IP}" >/dev/null 2>&1; then
+    pp_hard_die "hop unexpectedly reached peer-a private ${PEER_A_IP}"
+  fi
+  if pp_hard_exec "${PP_HARD_CGNAT_HOP}" ping -c1 -W1 "${PEER_B_IP}" >/dev/null 2>&1; then
+    pp_hard_die "hop unexpectedly reached peer-b private ${PEER_B_IP}"
+  fi
+  echo "ok  hop↛peer private (no inbound without mapping)"
+
+  # Peers can reach hop public IP via SNAT gateways.
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" ping -c1 -W2 "${HOP_IP_PUBLIC}" >/dev/null \
+    || pp_hard_die "peer-a cannot ping hop public ${HOP_IP_PUBLIC} via SNAT"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" ping -c1 -W2 "${HOP_IP_PUBLIC}" >/dev/null \
+    || pp_hard_die "peer-b cannot ping hop public ${HOP_IP_PUBLIC} via SNAT"
+  echo "ok  A→hop and B→hop via SNAT"
+}
+
+pp_hard_cgnat_ensure_up() {
+  local skip_up="${1:-0}"
+  mkdir -p "${PP_HARD_CGNAT_SHARE_DIR}"
+  if [[ "${skip_up}" -eq 0 ]]; then
+    echo "=== hard-lab CGNAT compose up project=${PP_HARD_CGNAT_COMPOSE_PROJECT} ==="
+    if [[ ! -f "${ROOT}/dist/pp-node/docker/Dockerfile" ]]; then
+      pp_hard_die "missing dist/pp-node/docker; package with scripts/platform/pp_node_package_linux.sh all"
+    fi
+    pp_hard_cgnat_compose up -d --build --force-recreate
+  fi
+  echo "=== wait cgnat hop healthz ${PP_HARD_CGNAT_STATUS_URL} ==="
+  for _ in $(seq 1 60); do
+    if curl -fsS -m 2 "${PP_HARD_CGNAT_STATUS_URL}/healthz" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+  local saved_status="${PP_HARD_STATUS_URL}"
+  PP_HARD_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL}"
+  pp_hard_wait_healthz
+  PP_HARD_STATUS_URL="${saved_status}"
+
+  pp_hard_cgnat_fix_peer_routes
+  # Give gw entrypoints a moment to install iptables.
+  sleep 1
+  pp_hard_cgnat_resolve_topology
+  echo "cgnat hop peer_id=${HOP_PEER_ID} public=${HOP_IP_PUBLIC}"
+  echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP}"
+  echo "cgnat hop_ma=${HOP_MA_PUBLIC}"
+}

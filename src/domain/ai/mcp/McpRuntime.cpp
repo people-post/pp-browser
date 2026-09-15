@@ -2,6 +2,8 @@
 
 #include "foundation/platform/Platform.h"
 
+#include <mutex>
+
 namespace pbr {
 
 bool StartMcpClient(McpClient& client, const McpConfig& config) {
@@ -31,6 +33,7 @@ bool StartMcpClient(McpClient& client, const McpConfig& config) {
 }
 
 void McpRuntime::Stop() {
+  std::lock_guard lock(mu_);
   if (promoted) {
     promoted->Stop();
     promoted.reset();
@@ -44,7 +47,17 @@ void McpRuntime::Stop() {
 }
 
 void McpRuntime::Start(const AppConfig& config, const AppConfig& defaults) {
-  Stop();
+  std::lock_guard lock(mu_);
+  if (promoted) {
+    promoted->Stop();
+    promoted.reset();
+  }
+  for (std::unique_ptr<McpClient>& client : custom) {
+    if (client) {
+      client->Stop();
+    }
+  }
+  custom.clear();
 
   const McpConfig promoted_config = ResolvePromotedMcp(config, defaults);
   if (promoted_config.IsConfigured()) {
@@ -66,10 +79,12 @@ void McpRuntime::Start(const AppConfig& config, const AppConfig& defaults) {
 }
 
 McpClient* McpRuntime::PromotedPtr() {
+  std::lock_guard lock(mu_);
   return promoted && promoted->IsRunning() ? promoted.get() : nullptr;
 }
 
 std::vector<McpClient*> McpRuntime::CustomPtrs() const {
+  std::lock_guard lock(mu_);
   std::vector<McpClient*> out;
   for (const std::unique_ptr<McpClient>& client : custom) {
     if (client && client->IsRunning()) {

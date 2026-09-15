@@ -1,4 +1,5 @@
 #include "domain/media/CallRingtone.h"
+#include "domain/media/SdlAudioBootstrap.h"
 
 #include "foundation/platform/IAssetLocator.h"
 
@@ -210,17 +211,16 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
 }
 
 void CallRingtone::RunLoop() {
-  if (!SDL_WasInit(SDL_INIT_AUDIO)) {
-    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-      SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
-      playing_ = false;
-      return;
-    }
+  if (!EnsureSdlAudioSubsystem()) {
+    SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
+    playing_ = false;
+    return;
   }
   SDL_AudioSpec want{};
   want.freq = wav_freq_;
   want.format = SDL_AUDIO_S16;
   want.channels = static_cast<Uint8>(wav_channels_);
+  SDL_Log("CallRingtone: opening playback driver=%s", SDL_GetCurrentAudioDriver());
   SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
   if (!stream) {
     SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());

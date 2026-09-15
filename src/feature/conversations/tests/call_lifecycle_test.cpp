@@ -47,16 +47,99 @@ TEST_F(CallLifecycleTest, InviteClearedIgnoredOutsideRinging) {
 TEST_F(CallLifecycleTest, AcceptSucceededMediaPathToInCall) {
   life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::Deciding);
+  EXPECT_EQ(life_.ArmedPlanner(), CallArmedPlanner::Lifecycle);
 
   life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
 
   life_.Apply(CallLifecycleEvent::MediaKeyReady, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::MediaConnecting);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
+  EXPECT_TRUE(life_.AllowsDirectPath());
+  EXPECT_FALSE(life_.AllowsHopPath());
 
   life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::InCall);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectLive);
+  EXPECT_TRUE(life_.MediaChromeLive());
   EXPECT_TRUE(life_.WantEphemeralListen());
+}
+
+TEST_F(CallLifecycleTest, AcceptSucceededKeepsMediaPending) {
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
+
+  // Late AcceptSucceeded (UI queue after answerer Defer) must not regress to JoinedLocal.
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
+  EXPECT_TRUE(life_.AllowsDirectPath());
+}
+
+TEST_F(CallLifecycleTest, SetMediaStatusHopPathArmsTopology) {
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  const uint64_t gen0 = life_.MediaCancelGen();
+  life_.SetMediaStatus(CallMediaStatus::HopWaiting, "call:1");
+  EXPECT_EQ(life_.Status(), CallMediaStatus::HopWaiting);
+  EXPECT_TRUE(life_.AllowsHopPath());
+  EXPECT_FALSE(life_.AllowsDirectPath());
+  EXPECT_EQ(life_.MediaCancelGen(), gen0) << "HopWaiting must not bump cancel gen";
+
+  life_.SetMediaStatus(CallMediaStatus::Deciding, "call:1");
+  EXPECT_GT(life_.MediaCancelGen(), gen0);
+  EXPECT_EQ(life_.ArmedPlanner(), CallArmedPlanner::Lifecycle);
+}
+
+TEST_F(CallLifecycleTest, LeaveClearsStatusAndBumpsCancelGen) {
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  const uint64_t gen = life_.MediaCancelGen();
+  life_.Apply(CallLifecycleEvent::LeaveClicked, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::None);
+  EXPECT_GT(life_.MediaCancelGen(), gen);
+  EXPECT_FALSE(life_.MediaChromeLive());
+}
+
+TEST_F(CallLifecycleTest, DegradedTxOnlyNotChromeLive) {
+  life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
+  EXPECT_TRUE(life_.MediaChromeLive());
+  life_.SetMediaStatus(CallMediaStatus::DegradedTxOnly, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
+  EXPECT_FALSE(life_.MediaChromeLive());
+  EXPECT_TRUE(life_.AllowsDirectPath());
+}
+
+TEST_F(CallLifecycleTest, AcceptSucceededAloneDoesNotArmDirectKick) {
+  // AcceptSucceeded → JoinedLocal/Deciding. KickAnswererDirectMediaIfArmed only runs when
+  // AllowsDirectPath (DirectConnecting / DegradedTxOnly / DirectLive).
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  EXPECT_EQ(life_.Status(), CallMediaStatus::Deciding);
+  EXPECT_FALSE(life_.AllowsDirectPath());
+  EXPECT_FALSE(life_.AllowsHopPath());
+}
+
+TEST_F(CallLifecycleTest, AcceptSucceededKickEligibleWhenDirectConnecting) {
+  // Late AcceptSucceeded after MediaKeyReady / ScheduleStart armed DirectConnecting — Kick gate.
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  EXPECT_TRUE(life_.AllowsDirectPath());
+  EXPECT_FALSE(life_.AllowsHopPath());
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  EXPECT_TRUE(life_.AllowsDirectPath()) << "KickAnswererDirectMediaIfArmed may ScheduleStart";
+  EXPECT_FALSE(life_.AllowsHopPath());
+}
+
+TEST_F(CallLifecycleTest, DirectLiveBlocksHopPlanner) {
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectLive);
+  EXPECT_TRUE(life_.AllowsDirectPath());
+  EXPECT_FALSE(life_.AllowsHopPath());
 }
 
 TEST_F(CallLifecycleTest, MediaDeferredIgnoredFromIdle) {

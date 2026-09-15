@@ -2,6 +2,7 @@
 
 #include "common/Module.h"
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include "common/PbrCompat.h"
@@ -10,7 +11,10 @@ namespace pbr {
 
 class CallSessionManager;
 
-/** 1:1 call phase — sole management owner for ring/accept/media/listen sequencing. */
+/**
+ * Call chrome / shell State (V037). JoinedLocal / MediaPending / MediaConnecting are
+ * Calling-like for planner arming until a future rename.
+ */
 enum class CallPhase {
   Idle = 0,
   Ringing,
@@ -21,6 +25,29 @@ enum class CallPhase {
   MediaConnecting,
   InCall,
   ConnectFailed,
+};
+
+/**
+ * Media Status under Calling-like / InCall (V037). Arms at most one planner.
+ */
+enum class CallMediaStatus {
+  None = 0,
+  Deciding,
+  DirectConnecting,
+  HopWaiting,
+  HopAttaching,
+  DirectLive,
+  HopLive,
+  Migrating,
+  DegradedTxOnly,
+  Failed,
+};
+
+enum class CallArmedPlanner {
+  None = 0,
+  Lifecycle,
+  Bridge,
+  Topology,
 };
 
 enum class CallLifecycleEvent {
@@ -43,10 +70,12 @@ enum class CallLifecycleEvent {
 };
 
 const char* CallPhaseName(CallPhase phase);
+const char* CallMediaStatusName(CallMediaStatus status);
+const char* CallArmedPlannerName(CallArmedPlanner planner);
 const char* CallLifecycleEventName(CallLifecycleEvent ev);
 
 /**
- * Orchestrates 1:1 call phases and thread policy. Controllers post clicks here;
+ * Orchestrates call State + media Status (V037). Controllers post clicks here;
  * session/media/listen subsystems report outcomes here. Never calls ListenOn or
  * encrypt on the caller thread.
  */
@@ -64,6 +93,25 @@ public:
   void SetOnListenDesireChanged(ListenDesireFn fn);
 
   CallPhase Phase() const { return phase_; }
+  CallMediaStatus Status() const { return status_; }
+  CallArmedPlanner ArmedPlanner() const;
+  uint64_t MediaCancelGen() const { return media_cancel_gen_; }
+
+  /** Bridge may ScheduleStart / BeginSession. */
+  bool AllowsDirectPath() const;
+  /** Topology may SoftMigrate / inbound attach / hop StartSfu. */
+  bool AllowsHopPath() const;
+  /** Chrome Connected: InCall + DirectLive|HopLive. */
+  bool MediaChromeLive() const;
+
+  /**
+   * Set media Status (and bump cancel gen when entering Deciding).
+   * Live statuses also advance phase to InCall.
+   */
+  void SetMediaStatus(CallMediaStatus status, const std::string& call_id = {});
+  /** Bump cancel gen so late hop/direct workers abort StartSfu. */
+  uint64_t BumpMediaCancelGen();
+
   const std::string& ActiveCallId() const { return call_id_; }
   const std::string& AcceptingCallId() const { return accepting_call_id_; }
   const std::string& LastRingCallId() const { return last_ring_call_id_; }
@@ -81,6 +129,7 @@ public:
 
 private:
   void SetPhase(CallPhase next, const std::string& call_id, CallLifecycleEvent ev);
+  void SetStatusInternal(CallMediaStatus next, const std::string& call_id, const char* reason);
   void UpdateListenDesire();
   void NotifyChrome();
   void PostAcceptInvite(const std::string& call_id);
@@ -90,6 +139,8 @@ private:
 
   CallSessionManager* sessions_ = nullptr;
   CallPhase phase_ = CallPhase::Idle;
+  CallMediaStatus status_ = CallMediaStatus::None;
+  uint64_t media_cancel_gen_ = 0;
   std::string call_id_;
   std::string accepting_call_id_;
   std::string last_ring_call_id_;

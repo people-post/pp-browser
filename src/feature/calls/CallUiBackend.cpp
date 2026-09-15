@@ -49,12 +49,6 @@ void CallUiBackend::SweepExpiredInvites() {
   }
 }
 
-void CallUiBackend::PollPendingSfuAttach() {
-  if (auto* calls = stack_.Calls()) {
-    calls->PollPendingSfuAttach();
-  }
-}
-
 void CallUiBackend::PollP2pConnectHealth() {
   if (auto* calls = stack_.Calls()) {
     calls->PollP2pConnectHealth();
@@ -252,6 +246,37 @@ std::string CallUiBackend::MediaPathKind() const {
     return calls->MediaPathKind();
   }
   return {};
+}
+
+CallMediaSeat::MediaState CallUiBackend::SeatMediaState(const std::string& call_id) const {
+  if (auto* seat = stack_.MediaSeat()) {
+    if (call_id.empty() || !seat->IsBound(call_id)) {
+      return CallMediaSeat::MediaState::Idle;
+    }
+    return seat->State();
+  }
+  return CallMediaSeat::MediaState::Idle;
+}
+
+bool CallUiBackend::SeatMediaLive(const std::string& call_id) const {
+  if (auto* seat = stack_.MediaSeat()) {
+    return seat->IsLive(call_id);
+  }
+  return false;
+}
+
+bool CallUiBackend::MediaChromeLive() const {
+  if (auto* life = stack_.Lifecycle()) {
+    return life->MediaChromeLive();
+  }
+  return false;
+}
+
+CallMediaStatus CallUiBackend::MediaStatus() const {
+  if (auto* life = stack_.Lifecycle()) {
+    return life->Status();
+  }
+  return CallMediaStatus::None;
 }
 
 const std::string& CallUiBackend::LastError() const {
