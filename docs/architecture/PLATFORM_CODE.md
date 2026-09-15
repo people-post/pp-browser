@@ -47,6 +47,7 @@ Hard rules:
 | `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
 | `domain/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
 | `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
+| `domain/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |
 | `domain/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
 | `domain/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
 | `domain/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |

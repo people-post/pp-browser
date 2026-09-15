@@ -17,7 +17,8 @@ if(WIN32)
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Win32.cpp
     CallAudioSession_Default.cpp
-    CameraCaptureOrientation_Default.cpp)
+    CameraCaptureOrientation_Default.cpp
+    SdlAudioBootstrap_Default.cpp)
   target_link_libraries(pp_domain_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
   target_sources(pp_domain_media PRIVATE VideoCodec_Darwin.cpp)
@@ -29,24 +30,28 @@ elseif(APPLE)
   if(PP_BROWSER_IS_IOS)
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Ios.mm
-      CameraCaptureOrientation_Ios.mm)
+      CameraCaptureOrientation_Ios.mm
+      SdlAudioBootstrap_Default.cpp)
     target_link_libraries(pp_domain_media PRIVATE "-framework AVFoundation" "-framework UIKit")
   else()
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Default.cpp
-      CameraCaptureOrientation_Default.cpp)
+      CameraCaptureOrientation_Default.cpp
+      SdlAudioBootstrap_Default.cpp)
   endif()
 elseif(ANDROID)
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Android.cpp
     CallAudioSession_Android.cpp
-    CameraCaptureOrientation_Android.cpp)
+    CameraCaptureOrientation_Android.cpp
+    SdlAudioBootstrap_Default.cpp)
   target_link_libraries(pp_domain_media PRIVATE mediandk camera2ndk)
 else()
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Linux.cpp
     CallAudioSession_Default.cpp
-    CameraCaptureOrientation_Default.cpp)
+    CameraCaptureOrientation_Default.cpp
+    SdlAudioBootstrap_Linux.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
