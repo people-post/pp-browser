@@ -155,11 +155,18 @@ bool HasP2pSuffix(const std::string& ma) {
 }
 
 std::string RewriteWildcardListenHost(std::string multiaddr) {
-  const std::string from = "/ip4/0.0.0.0/";
-  const std::string to = "/ip4/127.0.0.1/";
-  const auto pos = multiaddr.find(from);
+  const std::string from4 = "/ip4/0.0.0.0/";
+  const std::string to4 = "/ip4/127.0.0.1/";
+  auto pos = multiaddr.find(from4);
   if (pos != std::string::npos) {
-    multiaddr.replace(pos, from.size(), to);
+    multiaddr.replace(pos, from4.size(), to4);
+    return multiaddr;
+  }
+  const std::string from6 = "/ip6/::/";
+  const std::string to6 = "/ip6/::1/";
+  pos = multiaddr.find(from6);
+  if (pos != std::string::npos) {
+    multiaddr.replace(pos, from6.size(), to6);
   }
   return multiaddr;
 }

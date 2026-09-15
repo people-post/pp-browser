@@ -87,7 +87,13 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
   if (boot.mesh) {
-    snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
+    // Prefer ranked advertised front (global /ip6 or LAN) over raw wildcard bind.
+    const auto advertised = boot.mesh->AdvertisedListenMultiaddrs();
+    if (!advertised.empty()) {
+      snap.listen_multiaddr = advertised.front();
+    } else {
+      snap.listen_multiaddr = boot.mesh->AmpListenMultiaddr();
+    }
     if (boot.mesh->Amp()) {
       snap.peer_id = boot.mesh->Amp()->LocalPeerId();
     }

@@ -211,6 +211,10 @@ TEST(MeshHopPolicyTest, MultiaddrHasPrivateIpv4Host) {
   EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip4/54.198.185.139/udp/4001/adp/1.0.0/p2p/x"));
   EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip4/1.2.3.4/tcp/443/p2p/x"));
   EXPECT_FALSE(MultiaddrHasPrivateIpv4Host(""));
+  // Global /ip6 is not a private IPv4 host (Wide PreferLocal / public-hop filters).
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip6/2001:db8::1/udp/4001/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip6/::1/udp/4001/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip6/fe80::1/udp/4001/adp/1.0.0/p2p/x"));
 }
 
 TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {

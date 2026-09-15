@@ -331,8 +331,15 @@ void CallStack::WireMediaRelayDeps() {
   deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
                              mesh_cfg.capabilities.media_relay && use_amp_relay &&
                              m->AmpMediaRelayCoord()->IsStarted();
-  if (m && !m->AmpListenMultiaddr().empty()) {
-    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+  // SoftMigrate PreferLocal needs a dialable MA — ranked advertise front (global /ip6 or
+  // LAN), not the raw wildcard Amp bind (`/ip6/::/` / `/ip4/0.0.0.0/`).
+  {
+    const std::vector<std::string> advertised = LocalCallListenMultiaddrs();
+    if (!advertised.empty()) {
+      deps.local_listen_multiaddr = advertised.front();
+    } else if (m && !m->AmpListenMultiaddr().empty()) {
+      deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+    }
   }
   // PreferLocal CallSfuAttach fan-out needs dialable LAN addrs (same as invite listen_multiaddrs).
   deps.local_advertise_multiaddrs = LocalCallListenMultiaddrs();
@@ -489,18 +496,9 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
     return {};
   }
 
-  const std::string peer_id = m->Amp()->LocalPeerId();
-  if (peer_id.empty()) {
-    return {};
-  }
-
-  std::vector<std::string> addrs = BuildAmpGlobalIpv6AdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
-  for (std::string& ma : BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id)) {
-    if (std::find(addrs.begin(), addrs.end(), ma) == addrs.end()) {
-      addrs.push_back(std::move(ma));
-    }
-  }
-  if (addrs.empty()) {
+  // Same ranked advertise set as DHT/directory (global /ip6 ahead of private /ip4).
+  std::vector<std::string> addrs = m->AdvertisedListenMultiaddrs();
+  if (addrs.empty() && !m->AmpListenMultiaddr().empty()) {
     addrs.push_back(m->AmpListenMultiaddr());
   }
   return RankAmpDialMultiaddrs(std::move(addrs));

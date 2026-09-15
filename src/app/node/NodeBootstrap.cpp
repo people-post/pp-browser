@@ -16,6 +16,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <unordered_set>
 #include <utility>
@@ -59,7 +60,8 @@ void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppCon
 
   AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
-  if (!mesh.AmpListenMultiaddr().empty()) {
+  cfg.listen_multiaddrs = mesh.AdvertisedListenMultiaddrs();
+  if (cfg.listen_multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
   }
   if (auto priv = identity.GetDeviceMlDsaPrivateKey()) {
@@ -109,11 +111,17 @@ void ConfigurePpNodeAmpDirectory(MeshHost& mesh, IdentityStore& identity, const 
   self.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
   DirectoryEndpoint ep;
   ep.peer_id = mesh.Amp()->LocalPeerId();
-  if (!mesh.AmpListenMultiaddr().empty()) {
+  for (const std::string& ma : mesh.AdvertisedListenMultiaddrs()) {
+    if (!ma.empty()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  if (ep.multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : config.mesh.advertise_multiaddrs) {
-    if (!ma.empty()) {
+    if (!ma.empty() &&
+        std::find(ep.multiaddrs.begin(), ep.multiaddrs.end(), ma) == ep.multiaddrs.end()) {
       ep.multiaddrs.push_back(ma);
     }
   }
@@ -269,8 +277,17 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (result.mesh->Amp()) {
     peer_id = result.mesh->Amp()->LocalPeerId();
   }
-  const std::string listen =
-      result.mesh->AmpListenMultiaddr().empty() ? std::string("(none)") : result.mesh->AmpListenMultiaddr();
+  const std::string listen = [&]() -> std::string {
+    if (!result.mesh) {
+      return "(none)";
+    }
+    const auto advertised = result.mesh->AdvertisedListenMultiaddrs();
+    if (!advertised.empty()) {
+      return advertised.front();
+    }
+    return result.mesh->AmpListenMultiaddr().empty() ? std::string("(none)")
+                                                     : result.mesh->AmpListenMultiaddr();
+  }();
   log.info << "pp-node listening on " << listen
            << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
            << " underlay=amp"

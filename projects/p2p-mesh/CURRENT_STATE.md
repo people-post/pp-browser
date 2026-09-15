@@ -64,7 +64,7 @@
 
 | Area | State |
 |------|-------|
-| IPv6 | Dual-stack Amp listen (`::` when global v6 present); `AdvertisedListenMultiaddrs` for DHT/directory/invite; register PreferredMultiaddr as global `/ip6` when mixed; Reachable-via-v6 = `has_global_ipv6` + `dial_back_ok` |
+| IPv6 | Dual-stack Amp listen (`::` when global v6 present); `AdvertisedListenMultiaddrs` for DHT/directory/invite/SoftMigrate/status; register PreferredMultiaddr as global `/ip6` when mixed; Reachable-via-v6 = `has_global_ipv6` + `dial_back_ok`; call_probe `/ip6` ParseListen + `::`→`::1` rewrite |
 | UPnP | Vendored `miniupnpc`; `TryUpnpTcpPortMapping`; auto-try once on Node enable |
 | UI | **Open port on router…** + re-test; skip UPnP on public listen IPs |
 | Fallback | Outbound-only help sheet (N012 manual forward copy) |

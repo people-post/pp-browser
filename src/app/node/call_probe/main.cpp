@@ -100,57 +100,35 @@ bool HasP2pSuffix(const std::string& ma) {
 }
 
 std::string RewriteWildcardListenHost(std::string multiaddr) {
-  const std::string from = "/ip4/0.0.0.0/";
-  const std::string to = "/ip4/127.0.0.1/";
-  const auto pos = multiaddr.find(from);
+  const std::string from4 = "/ip4/0.0.0.0/";
+  const std::string to4 = "/ip4/127.0.0.1/";
+  auto pos = multiaddr.find(from4);
   if (pos != std::string::npos) {
-    multiaddr.replace(pos, from.size(), to);
+    multiaddr.replace(pos, from4.size(), to4);
+    return multiaddr;
+  }
+  // Dual-stack Amp bind uses `/ip6/::/`; rewrite to loopback for local dial/register.
+  const std::string from6 = "/ip6/::/";
+  const std::string to6 = "/ip6/::1/";
+  pos = multiaddr.find(from6);
+  if (pos != std::string::npos) {
+    multiaddr.replace(pos, from6.size(), to6);
   }
   return multiaddr;
 }
 
-/** Parse `/ip4/H/udp/P/adp/1.0.0` with optional `/p2p/...` for answerer bind. */
+/** Parse `/ip4|ip6/H/udp/P/adp/1.0.0` with optional `/p2p/...` for answerer bind. */
 std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
   if (auto full = pp::amp::ParseAdpMultiaddr(ma)) {
     return full->endpoint;
   }
-  // Without /p2p/: /ip4/H/udp/P/adp/1.0.0
-  const std::string prefix = "/ip4/";
-  if (ma.rfind(prefix, 0) != 0) {
-    return std::nullopt;
+  // Without /p2p/: append a dummy peer so amp ParseAdpMultiaddr accepts /ip4|/ip6/...
+  if (ma.find("/p2p/") == std::string::npos && ma.find("/adp/") != std::string::npos) {
+    if (auto full = pp::amp::ParseAdpMultiaddr(ma + "/p2p/_")) {
+      return full->endpoint;
+    }
   }
-  const auto host_end = ma.find('/', prefix.size());
-  if (host_end == std::string::npos) {
-    return std::nullopt;
-  }
-  const std::string host = ma.substr(prefix.size(), host_end - prefix.size());
-  const std::string udp_tag = "/udp/";
-  if (ma.compare(host_end, udp_tag.size(), udp_tag) != 0) {
-    return std::nullopt;
-  }
-  const auto port_start = host_end + udp_tag.size();
-  const auto port_end = ma.find('/', port_start);
-  if (port_end == std::string::npos) {
-    return std::nullopt;
-  }
-  const int port = std::atoi(ma.substr(port_start, port_end - port_start).c_str());
-  if (port < 0 || port > 65535) {
-    return std::nullopt;
-  }
-  if (ma.find("/adp/") == std::string::npos) {
-    return std::nullopt;
-  }
-  unsigned a = 0;
-  unsigned b = 0;
-  unsigned c = 0;
-  unsigned d = 0;
-  if (std::sscanf(host.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) != 4 || a > 255 || b > 255 || c > 255 ||
-      d > 255) {
-    return std::nullopt;
-  }
-  return pp::adp::IpEndpoint::V4(static_cast<uint8_t>(a), static_cast<uint8_t>(b),
-                                  static_cast<uint8_t>(c), static_cast<uint8_t>(d),
-                                  static_cast<uint16_t>(port));
+  return std::nullopt;
 }
 
 pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
