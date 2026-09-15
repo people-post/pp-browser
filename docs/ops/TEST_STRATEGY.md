@@ -147,8 +147,9 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 |---------|-----------------|
 | Direct call-media | `call_media_direct_service_test` — [`src/domain/mesh/tests/call_media_direct_service_test.cpp`](../../src/domain/mesh/tests/call_media_direct_service_test.cpp) |
 | Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/circuit_media_relay_compose_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
+| AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
@@ -236,7 +237,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-HARD-SEED-ONLY | **Scaffold** | `pp_hard_disco_smoke.sh --profile seed-only`; `--suite hard-w3`. Warm-hop + PeerId-only StartBridge. |
 | N-HARD-CGNAT-ISH | **Scaffold** | [`docker-compose.hard-lab-cgnat.yml`](../../packaging/pp-node/docker-compose.hard-lab-cgnat.yml) + [`pp_hard_nat_smoke.sh`](../../scripts/test/pp_hard_nat_smoke.sh); driver `--suite hard-w5`. Dual SNAT; hop public-only; A↛B + hop↛peer-private asserts. |
 | B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
-| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2 same smoke `--phase product` / default `both`: offerer `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. |
+| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2 same smoke `--phase product` / default `both`: offerer `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. PR gate for the poison/EnsureAssociation policies: `amp_circuit_hop_reach_test` + ``PeerIdOnlyNestDoesNotPoisonRelayBookWithPrivateMa` / `PrivateTargetMultiaddrPoisonsRelayBook``. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---

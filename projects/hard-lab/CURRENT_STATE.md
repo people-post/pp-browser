@@ -31,6 +31,7 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | `pp-call-probe` NAT flags | `--warm-hop`, `--peer-id-only`, `--min-rx-frames`, `--reach product` |
 | Nested-chat reachability | `AmpDirectChatTransport::IsPeerReachable` accepts `IsConnected` (circuit nested); gtest `AmpDirectChatCircuitNestedTest` |
 | AmpCircuitHopReach dual-NAT | Nested StartBridge is peer-id-only (no PreferredMultiaddr poison); call-media skips undialable has_endpoint EnsureAssociation |
+| Lower-level NAT policy tests | `amp_circuit_hop_reach_test` + compose `PeerIdOnlyNestDoesNotPoisonRelayBookWithPrivateMa` / `PrivateTargetMultiaddrPoisonsRelayBook` (PR gate; hard-w5 remains topo wall) |
 
 ## Gaps
 
