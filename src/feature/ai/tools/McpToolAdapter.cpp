@@ -2,6 +2,7 @@
 
 #include "domain/ai/LlmClient.h"
 #include "domain/ai/mcp/SchemaAdapter.h"
+#include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
 #include <unordered_set>
@@ -33,6 +34,19 @@ std::string ResolveToolName(const std::unordered_set<std::string>& occupied, con
     return {};
   }
   return name;
+}
+
+Roe<std::string> CallMcpToolJson(McpClient& client, const std::string& name, const Object& arguments) {
+  auto result = client.CallTool(name, arguments);
+  if (!result) {
+    return result.error();
+  }
+
+  std::string result_json = DumpJson(*result);
+  if (result_json.size() > kMaxMcpToolResultBytes) {
+    return Error("MCP tool result exceeds limit of " + std::to_string(kMaxMcpToolResultBytes) + " bytes");
+  }
+  return result_json;
 }
 
 } // namespace
@@ -69,11 +83,7 @@ std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const M
         .mutating = risk != "read",
     };
     descriptor.execute = [&client, name = mcp_tool.name](const Object& arguments) -> Roe<std::string> {
-      auto result = client.CallTool(name, arguments);
-      if (!result) {
-        return result.error();
-      }
-      return DumpJson(*result);
+      return CallMcpToolJson(client, name, arguments);
     };
     out.push_back(std::move(descriptor));
   }

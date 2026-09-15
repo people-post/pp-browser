@@ -31,25 +31,26 @@ P3 complete: both profile-store files are size-checked before parsing and are re
 | `IdentityStore` | `identity.enc` | Encrypted profile payload capped at 4 MiB before decrypt/parse. |
 | `ContactsStore` | `contacts.json` | JSON file capped at 4 MiB before parse. |
 
-## MCP (`src/base/net/McpClient.*`, relay/directory bridges)
+## MCP (`src/domain/ai/mcp/McpClient.*`, `src/feature/ai/tools/McpToolAdapter.cpp`)
 
-| Issue | Today |
-|-------|--------|
-| Tool result JSON | No documented max size |
-| MCP relay send | Passes envelope JSON through without size check |
+P4 complete: serialized MCP tool results fail closed at 1 MiB before they enter the agent tool-result path.
 
-## AI parser output (`src/base/ai/StructuredTextParser.cpp`)
+| Item | Status |
+|------|--------|
+| Tool result JSON | Capped at 1 MiB after MCP result serialization; oversized results return a stable tool error. |
 
-| Issue | Today |
-|-------|--------|
-| Output RML size | **Unbounded** — can produce large `content_rml` for assistant bubbles |
-| Input text | Unbounded LLM content string |
+## AI parser output (`src/domain/ai/StructuredTextParser.cpp`)
+
+| Item | Status |
+|------|--------|
+| Output RML size | Capped at 512 KiB per parsed turn; overflow follows the existing failed parse result path. |
+| Input text | Bounded by the LLM response-body limit. |
 
 ## Composer structured actions
 
-| Issue | Today |
-|-------|--------|
-| `user_payload` | No size limit in `MessageRouter` / `ChatController` |
+| Item | Status |
+|------|--------|
+| `user_payload` | Capped at 64 KiB at `MessageRouter::Route`; ordinary message text is unaffected. |
 
 ## Directory / registration HTTP clients
 
