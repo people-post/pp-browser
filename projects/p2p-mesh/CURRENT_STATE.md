@@ -64,7 +64,7 @@
 
 | Area | State |
 |------|-------|
-| IPv6 | `EnumerateGlobalIpv6Addresses` + extra listen candidates on Node start |
+| IPv6 | `GlobalIpv6Addresses` → `/ip6` ADP advertise + dial-back probes; `RankAmpDialMultiaddrs` prefers global `/ip6` over private `/ip4`; Reachable-via-v6 = `has_global_ipv6` + `dial_back_ok` |
 | UPnP | Vendored `miniupnpc`; `TryUpnpTcpPortMapping`; auto-try once on Node enable |
 | UI | **Open port on router…** + re-test; skip UPnP on public listen IPs |
 | Fallback | Outbound-only help sheet (N012 manual forward copy) |
