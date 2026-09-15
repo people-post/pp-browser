@@ -8,6 +8,7 @@ add_library(pp_pbr_common STATIC
   chat/PeopleDiscoveryBlocks.cpp
   chat/RelayStreamKey.cpp
   directory/DirectoryJson.cpp
+  directory/MeshHopDial.cpp
   LengthPrefixedCodec.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)

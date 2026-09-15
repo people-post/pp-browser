@@ -231,6 +231,14 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     if (!snap.listen_multiaddr.empty()) {
       reach.set("listen", snap.listen_multiaddr);
     }
+    if (!snap.listen_multiaddrs.empty()) {
+      std::vector<Value> addrs;
+      addrs.reserve(snap.listen_multiaddrs.size());
+      for (const std::string& ma : snap.listen_multiaddrs) {
+        addrs.push_back(Value(ma));
+      }
+      reach.set("listen_addrs", ArrayValue(std::move(addrs)));
+    }
     if (!snap.peer_id.empty()) {
       reach.set("peer_id", snap.peer_id);
     }

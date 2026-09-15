@@ -662,7 +662,8 @@ void ConversationsHub::RegisterContactEndpoints() {
     if (target.peer_identity_value.empty()) {
       continue;
     }
-    for (const std::string& ma : contact.multiaddrs) {
+    // Last RegisterEndpoint wins PreferredMultiaddr — register worst→best (global /ip6 last).
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
       mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
     const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
@@ -678,7 +679,7 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
     return;
   }
   for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
-    for (const std::string& ma : node.multiaddrs) {
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(node.multiaddrs)) {
       if (ma.empty()) {
         continue;
       }
@@ -731,7 +732,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   if (!mesh_messaging_ || peer_id.empty()) {
     return;
   }
-  for (const std::string& ma : record.multiaddrs) {
+  for (const std::string& ma : OrderDialMultiaddrsWorstToBest(record.multiaddrs)) {
     if (ma.empty()) {
       continue;
     }
@@ -757,7 +758,8 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
 
   AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
-  if (!mesh_->AmpListenMultiaddr().empty()) {
+  cfg.listen_multiaddrs = mesh_->AdvertisedListenMultiaddrs();
+  if (cfg.listen_multiaddrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
   }
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
@@ -816,7 +818,12 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
   if (mesh.Amp()) {
     ep.peer_id = mesh.Amp()->LocalPeerId();
   }
-  if (!mesh.AmpListenMultiaddr().empty()) {
+  for (const std::string& ma : mesh.AdvertisedListenMultiaddrs()) {
+    if (!ma.empty()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  if (ep.multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
@@ -1661,8 +1668,11 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   }
 
   std::vector<std::string> listen_addrs;
-  if (mesh_ && !mesh_->AmpListenMultiaddr().empty()) {
-    listen_addrs.push_back(mesh_->AmpListenMultiaddr());
+  if (mesh_) {
+    listen_addrs = mesh_->AdvertisedListenMultiaddrs();
+    if (listen_addrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
+      listen_addrs.push_back(mesh_->AmpListenMultiaddr());
+    }
   }
   auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs);
   if (!applied) {

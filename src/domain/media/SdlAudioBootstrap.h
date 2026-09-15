@@ -5,19 +5,13 @@
 namespace pbr {
 
 /**
- * Linux: prefer ALSA when the user did not pin SDL_AUDIO_DRIVER.
- * pipewire-pulse + libpulse can abort the process in pa_make_fd_cloexec on open
+ * Prefer a stable SDL audio driver when unset (Linux: ALSA).
+ * pipewire-pulse + libpulse can abort in pa_make_fd_cloexec on open
  * (dogfood: RefreshPendingRing → CallRingtone → SDL_OpenAudioDeviceStream).
  * ALSA usually reaches the same PipeWire graph via the ALSA plugin.
+ * No-op on non-Linux backends (CMake source-selects SdlAudioBootstrap_*.cpp).
  */
-inline void PreferLinuxAlsaAudioDriverIfUnset() {
-#if defined(__linux__)
-  const char* driver = SDL_GetHint(SDL_HINT_AUDIO_DRIVER);
-  if (!driver || !driver[0]) {
-    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "alsa");
-  }
-#endif
-}
+void PreferLinuxAlsaAudioDriverIfUnset();
 
 inline bool EnsureSdlAudioSubsystem() {
   PreferLinuxAlsaAudioDriverIfUnset();

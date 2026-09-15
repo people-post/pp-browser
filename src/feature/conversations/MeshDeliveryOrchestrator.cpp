@@ -447,13 +447,14 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   };
   if (!contact.remote.endpoints.empty()) {
     for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      for (const std::string& ma : endpoint.multiaddrs) {
+      // Worst→best so PreferredMultiaddr prefers global /ip6 over private LAN.
+      for (const std::string& ma : OrderDialMultiaddrsWorstToBest(endpoint.multiaddrs)) {
         register_ma(endpoint.peer_id, ma);
         register_ma(target.peer_identity_value, ma);
       }
     }
   } else {
-    for (const std::string& ma : contact.multiaddrs) {
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
       register_ma(target.peer_identity_value, ma);
     }
   }

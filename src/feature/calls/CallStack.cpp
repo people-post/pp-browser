@@ -212,9 +212,11 @@ void CallStack::WireMediaRelayDeps() {
   if (!dial_registry_) {
     dial_registry_ = std::make_unique<PeerSessionDialRegistry>();
   }
-  dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
-  dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
-  if (auto chat = m->ChatDeps()) {
+  dial_registry_->SetAmpLinks(use_amp_relay && m && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
+  dial_registry_->SetAmpCircuitHops(use_amp_relay && m && m->AmpCircuitHops() ? m->AmpCircuitHops()
+                                                                              : nullptr);
+  // BuildSessions wires deps before mesh Start — mesh() is often null here (CI smoke / no Amp).
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
     dial_registry_->SetPostIo(chat->io.post_io);
   } else {
     dial_registry_->SetPostIo({});
@@ -331,8 +333,15 @@ void CallStack::WireMediaRelayDeps() {
   deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
                              mesh_cfg.capabilities.media_relay && use_amp_relay &&
                              m->AmpMediaRelayCoord()->IsStarted();
-  if (m && !m->AmpListenMultiaddr().empty()) {
-    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+  // SoftMigrate PreferLocal needs a dialable MA — ranked advertise front (global /ip6 or
+  // LAN), not the raw wildcard Amp bind (`/ip6/::/` / `/ip4/0.0.0.0/`).
+  {
+    const std::vector<std::string> advertised = LocalCallListenMultiaddrs();
+    if (!advertised.empty()) {
+      deps.local_listen_multiaddr = advertised.front();
+    } else if (m && !m->AmpListenMultiaddr().empty()) {
+      deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+    }
   }
   // PreferLocal CallSfuAttach fan-out needs dialable LAN addrs (same as invite listen_multiaddrs).
   deps.local_advertise_multiaddrs = LocalCallListenMultiaddrs();
@@ -367,7 +376,8 @@ void CallStack::WireMediaRelayDeps() {
     return false;
   };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
-  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
+  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
+      deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
   }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
@@ -488,21 +498,12 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
     return {};
   }
 
-  const std::string peer_id = m->Amp()->LocalPeerId();
-  if (peer_id.empty()) {
-    return {};
-  }
-
-  std::vector<std::string> addrs;
-  auto amp_lan = BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
-  if (!amp_lan.empty()) {
-    for (std::string& ma : amp_lan) {
-      addrs.push_back(std::move(ma));
-    }
-  } else {
+  // Same ranked advertise set as DHT/directory (global /ip6 ahead of private /ip4).
+  std::vector<std::string> addrs = m->AdvertisedListenMultiaddrs();
+  if (addrs.empty() && !m->AmpListenMultiaddr().empty()) {
     addrs.push_back(m->AmpListenMultiaddr());
   }
-  return addrs;
+  return RankAmpDialMultiaddrs(std::move(addrs));
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
@@ -510,13 +511,22 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   if (identity.empty() || multiaddrs.empty()) {
     return;
   }
+  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so
+  // PreferredMultiaddr lands on global /ip6 (or public /ip4) ahead of private LAN.
+  const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs);
   std::vector<std::string>& stored = call_peer_listen_mas_[identity];
-  for (const std::string& ma : multiaddrs) {
+  for (const std::string& ma : ranked) {
     if (ma.empty()) {
       continue;
     }
     if (std::find(stored.begin(), stored.end(), ma) == stored.end()) {
       stored.push_back(ma);
+    }
+  }
+  for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
+    const std::string& ma = *it;
+    if (ma.empty()) {
+      continue;
     }
     const std::string ip = IpHostFromMultiaddrPrefix(ma);
     if (IsLikelyUndialableLanIpv4(ip)) {

@@ -1,6 +1,6 @@
 #include "domain/messaging/CallHopPlan.h"
 
-#include "domain/people/MeshHopPolicy.h"
+#include "common/directory/MeshHopDial.h"
 
 #include <algorithm>
 
@@ -64,7 +64,7 @@ bool IsOrgOrDirectoryAffinity(MeshHopAffinity affinity) {
 }
 
 bool HopHasPublicMa(const MeshHopCandidate& hop) {
-  return !hop.multiaddr.empty() && !MultiaddrHasPrivateIpv4Host(hop.multiaddr);
+  return MultiaddrHasPublicDialHost(hop.multiaddr);
 }
 
 } // namespace
@@ -102,7 +102,7 @@ CallHopScope InferCallHopScope(
 
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas) {
   for (const std::string& ma : local_mas) {
-    if (!ma.empty() && !MultiaddrHasPrivateIpv4Host(ma) && ma.find("/ip4/") != std::string::npos) {
+    if (MultiaddrHasPublicDialHost(ma)) {
       return true;
     }
   }
@@ -124,10 +124,11 @@ bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
       // Coincidental same-/24 on different LANs is common — require positive LAN evidence.
       return lan_reachability_confirmed;
     }
-    return true;
+    // Non-private Link advertise (public /ip4 or global /ip6) may PreferLocal without LAN proof.
+    return MultiaddrHasPublicDialHost(local_advertise_ma);
   }
   // Wide: PreferLocal only when advertise MA is publicly dialable.
-  return !MultiaddrHasPrivateIpv4Host(local_advertise_ma);
+  return MultiaddrHasPublicDialHost(local_advertise_ma);
 }
 
 bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,

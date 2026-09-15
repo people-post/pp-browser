@@ -2,6 +2,7 @@
 
 #include "foundation/data/Config.h"
 #include "domain/people/ContactTypes.h"
+#include "common/directory/MeshHopDial.h"
 #include "common/directory/MeshHopTypes.h"
 #include "common/directory/RelayScope.h"
 
@@ -76,12 +77,6 @@ RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
 /** Provider advertisement cap from reachability (N023). */
 RelayScopeMask ProviderServeScopeMask(MeshReachabilityClass reachability, bool node_enabled);
 
-/** True when both multiaddrs share the same IPv4 /24 (v1 link scope inference). */
-bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multiaddr_b);
-
-/** True when multiaddr embeds a private IPv4 host (10/8, 172.16/12, 192.168/16). */
-bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr);
-
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);
@@ -97,16 +92,6 @@ std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candi
  */
 std::vector<MeshHopCandidate> PreferInCallMediaHops(std::vector<MeshHopCandidate> ranked,
                                                    const std::unordered_set<std::string>& in_call_peer_ids);
-
-/**
- * Soft-migrate: prepend local PeerId as hop (AttachAsLocalHop locally).
- * `local_multiaddr` is advertised in CallSfuAttach so remotes can dial this Node — leave empty
- * only in unit tests; production SoftMigrate must pass a LAN/advertise multiaddr.
- * No-op when local_peer_id empty. Dedupes if already present.
- */
-std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> ranked,
-                                                  const std::string& local_peer_id,
-                                                  const std::string& local_multiaddr = {});
 
 /** Preferred PeerId from a contact (newest directory endpoint, else first PeerId / multiaddr). */
 std::string PeerIdFromContact(const Contact& contact);

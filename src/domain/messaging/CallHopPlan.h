@@ -30,7 +30,7 @@ CallHopScope InferCallHopScope(
  * Scope-aware SoftMigrate hop order (V035).
  * PreferLocal only for confirmed Link (not Site; not unconfirmed same-/24).
  * Wide / Site → org/directory public MAs first. PreferLocal on Wide only when
- * local_advertise_ma is non-private.
+ * local_advertise_ma is publicly dialable (public /ip4 or global /ip6).
  */
 std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> ranked,
                                                  CallHopScope scope,
@@ -43,13 +43,13 @@ std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> r
  * PreferLocal eligibility (V035).
  * - Link + private advertise → only when lan_reachability_confirmed
  * - Site → never PreferLocal (different private subnets cannot dial PreferLocal MA)
- * - Wide → only when advertise MA is non-private
+ * - Wide → only when advertise MA is publicly dialable (public /ip4 or global /ip6)
  */
 bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
                                 const std::string& local_advertise_ma,
                                 bool lan_reachability_confirmed = false);
 
-/** True when local advertise includes a non-private IPv4 host. */
+/** True when local advertise includes a publicly dialable IPv4 or global IPv6 host. */
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas);
 
 /**

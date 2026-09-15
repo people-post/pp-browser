@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -34,6 +35,8 @@ struct StatusHttpAuthConfig {
 struct StatusHttpSnapshot {
   bool host_running = false;
   std::string listen_multiaddr;
+  /** Ranked advertised listen MAs (global /ip6 first when present). */
+  std::vector<std::string> listen_multiaddrs;
   std::string peer_id;
   bool circuit_relay = false;
   bool media_relay = false;

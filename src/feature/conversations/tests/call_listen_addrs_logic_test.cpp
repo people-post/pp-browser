@@ -50,5 +50,14 @@ TEST(CallListenAddrsLogicTest, InviteEncodeRoundTripKeepsListenMas) {
   EXPECT_EQ(dec->libp2p_peer_id, "12D3KooWBob");
 }
 
+TEST(CallListenAddrsLogicTest, Ipv6ListenAddrsSufficientForDirectDial) {
+  std::string peer_id;
+  std::vector<std::string> out;
+  FillCallListenFields({"/ip6/2001:db8::9/udp/19001/adp/1.0.0/p2p/12D3KooWIpv6"}, peer_id, out);
+  ASSERT_EQ(out.size(), 1u);
+  EXPECT_EQ(peer_id, "12D3KooWIpv6");
+  EXPECT_TRUE(InviteListenAddrsSufficientForDirectDial(out));
+}
+
 } // namespace
 } // namespace pbr

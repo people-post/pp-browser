@@ -150,6 +150,8 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
 | Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
+| Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
+| Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
