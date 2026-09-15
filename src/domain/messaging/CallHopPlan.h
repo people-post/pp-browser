@@ -49,7 +49,7 @@ bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
                                 const std::string& local_advertise_ma,
                                 bool lan_reachability_confirmed = false);
 
-/** True when local advertise includes a non-private IPv4 host. */
+/** True when local advertise includes a publicly dialable IPv4 or global IPv6 host. */
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas);
 
 /**

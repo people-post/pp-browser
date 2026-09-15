@@ -367,7 +367,8 @@ void CallStack::WireMediaRelayDeps() {
     return false;
   };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
-  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
+  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
+      deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
   }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
@@ -493,16 +494,16 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
     return {};
   }
 
-  std::vector<std::string> addrs;
-  auto amp_lan = BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
-  if (!amp_lan.empty()) {
-    for (std::string& ma : amp_lan) {
+  std::vector<std::string> addrs = BuildAmpGlobalIpv6AdvertisedAddrs(m->AmpListenMultiaddr(), peer_id);
+  for (std::string& ma : BuildAmpLanAdvertisedAddrs(m->AmpListenMultiaddr(), peer_id)) {
+    if (std::find(addrs.begin(), addrs.end(), ma) == addrs.end()) {
       addrs.push_back(std::move(ma));
     }
-  } else {
+  }
+  if (addrs.empty()) {
     addrs.push_back(m->AmpListenMultiaddr());
   }
-  return addrs;
+  return RankAmpDialMultiaddrs(std::move(addrs));
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,

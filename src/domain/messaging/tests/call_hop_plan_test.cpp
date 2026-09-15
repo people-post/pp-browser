@@ -124,5 +124,18 @@ TEST(CallHopPlanTest, GuestMayDialPrivateHopRejectsWhenLocalHasPublic) {
       "/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip4/10.0.0.1/tcp/1/p2p/local"}));
 }
 
+
+TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
+  EXPECT_TRUE(LocalAdvertiseHasPublicIpv4(
+      {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_FALSE(LocalAdvertiseHasPublicIpv4(
+      {"/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_FALSE(GuestMayDialPrivateHopMa(
+      "/ip4/192.168.1.132/udp/1/p2p/hop",
+      {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
+                                         "/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"));
+}
+
 } // namespace
 } // namespace pbr

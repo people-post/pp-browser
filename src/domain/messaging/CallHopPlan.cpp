@@ -101,8 +101,42 @@ CallHopScope InferCallHopScope(
 }
 
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas) {
+  auto ip6_host = [](const std::string& ma) -> std::string {
+    if (ma.rfind("/ip6/", 0) != 0) {
+      return {};
+    }
+    const size_t start = 5;
+    const size_t end = ma.find('/', start);
+    std::string host = ma.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (!host.empty() && host.front() == '[' && host.back() == ']') {
+      host = host.substr(1, host.size() - 2);
+    }
+    return host;
+  };
+  auto is_global_ipv6 = [](const std::string& addr) {
+    if (addr.empty() || addr.find(':') == std::string::npos) {
+      return false;
+    }
+    if (addr.rfind("fe80:", 0) == 0 || addr.rfind("FE80:", 0) == 0) {
+      return false;
+    }
+    if (addr.rfind("fc", 0) == 0 || addr.rfind("fd", 0) == 0 || addr.rfind("FC", 0) == 0 ||
+        addr.rfind("FD", 0) == 0) {
+      return false;
+    }
+    return addr != "::1";
+  };
   for (const std::string& ma : local_mas) {
-    if (!ma.empty() && !MultiaddrHasPrivateIpv4Host(ma) && ma.find("/ip4/") != std::string::npos) {
+    if (ma.empty()) {
+      continue;
+    }
+    if (ma.rfind("/ip6/", 0) == 0) {
+      if (is_global_ipv6(ip6_host(ma))) {
+        return true;
+      }
+      continue;
+    }
+    if (!MultiaddrHasPrivateIpv4Host(ma) && ma.find("/ip4/") != std::string::npos) {
       return true;
     }
   }
