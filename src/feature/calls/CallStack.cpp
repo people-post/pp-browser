@@ -212,9 +212,11 @@ void CallStack::WireMediaRelayDeps() {
   if (!dial_registry_) {
     dial_registry_ = std::make_unique<PeerSessionDialRegistry>();
   }
-  dial_registry_->SetAmpLinks(use_amp_relay && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
-  dial_registry_->SetAmpCircuitHops(use_amp_relay && m->AmpCircuitHops() ? m->AmpCircuitHops() : nullptr);
-  if (auto chat = m->ChatDeps()) {
+  dial_registry_->SetAmpLinks(use_amp_relay && m && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
+  dial_registry_->SetAmpCircuitHops(use_amp_relay && m && m->AmpCircuitHops() ? m->AmpCircuitHops()
+                                                                              : nullptr);
+  // BuildSessions wires deps before mesh Start — mesh() is often null here (CI smoke / no Amp).
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
     dial_registry_->SetPostIo(chat->io.post_io);
   } else {
     dial_registry_->SetPostIo({});
