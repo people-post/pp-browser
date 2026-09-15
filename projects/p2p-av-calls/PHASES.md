@@ -134,6 +134,19 @@ Pay off post-V026/m2 migration so 1:1 Amp call-media is mature: frozen requireme
 **Non-goals:** `StartSfu` rename campaign; L3.5 multi-hop; SoftMigrate-for-1:1 reopen; s4 unless Leave hangs.  
 **Dogfood:** never the only gate — [TESTING.md](../../docs/architecture/TESTING.md); purpose IDs in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md).
 
+## pm — Call planner machines (V039)
+
+Layered Apply FSMs under Lifecycle Status: Direct (`CallMediaBridge`) and Hop (`CallTopologyController`). Spec: [V039](DECISIONS.md#v039--call-directhop-planner-machines); [SESSION_MACHINES planner section](SESSION_MACHINES.md#planner-machines-v039). Transport SMs remain V033 — do not rewrite call-media duplex in the same PR as a planner strangler.
+
+- [x] pm0 — V039 ADR + SESSION_MACHINES planner section + this phase; CURRENT_STATE next-agent → `pm`
+- [x] pm1 — Direct `Apply` + `CallDirectPlannerLogic` + gtests; Schedule/Key/Connect/TX-only/Release through Apply
+- [x] pm2 — Hop `Apply` + `CallHopPlannerLogic`; SoftMigrate-as-event; inbound attach Status gates
+- [x] pm3 — SM-owned timers replace `PollMeshConnectHealth` / `PollPendingSfuAttach` primary path
+- [x] pm4 — Lifecycle/CSM thin Accept media router; CALLS.md critical races → planner phases + epochs
+
+**Non-goals:** `StartSfu` rename; SoftMigrate-for-1:1; host-wide inbound SM; Drive-by transport rewrites in planner PRs.  
+**Exit:** purpose IDs `B-CALL-DIRECT` / `B-CALL-HOP` / `B-HARD-CALL` green; illegal planner sequences covered in gtest.
+
 ## lv — Video on libp2p (V034)
 
 Voice-on-libp2p is green ([m1](#m1--libp2p-only-voice-v026)). Video reuses a3 capture/tiles and N021 channel 1; it does **not** revive WebRTC.

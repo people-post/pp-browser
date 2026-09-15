@@ -1172,6 +1172,12 @@ CallMediaLegId CallMediaLegCoordinator::StartLeg(const CallMediaDirectConnectPar
   }
   if (params.peer_key.empty() || params.call_id.empty() || params.media_key.empty()) {
     if (on_finished) {
+      const char* which = params.peer_key.empty()   ? "peer_key"
+                          : params.call_id.empty()  ? "call_id"
+                                                    : "media_key";
+      CallMediaLegLog().info << "CallLifecycle StartSfu leg reject invalid params missing=" << which
+                             << " call_id=" << params.call_id << " peer=" << params.peer_key
+                             << " media_key_len=" << params.media_key.size();
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
         on_finished(Error("amp call-media: invalid connect params"));
       });

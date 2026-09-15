@@ -901,3 +901,53 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p); [V026](#v026--libp2p-only-call-media-http--libp2p-networking); [V037](#v037--calllifecycle-state--status-one-planner-armed); [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) (NAT → circuit; call over NAT → nested realtime); [CALL_MEDIA_CIRCUIT.md](../adp/CALL_MEDIA_CIRCUIT.md); [CALLS.md](../../docs/architecture/CALLS.md); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038).
 
 ---
+
+## V039 — Call Direct/Hop planner machines
+
+**Date:** 2026-09-14  
+**Status:** Accepted (phased)  
+**Decision:** Layer **Apply-based planner machines** under `CallLifecycle` Status arming. Product chrome stays Lifecycle; N=2 media path is the **Direct planner** (today `CallMediaBridge`); N≥3 SoftMigrate/attach is the **Hop planner** (today `CallTopologyController`). Transport duplex/attach SMs remain under V033 / N026. No class rename campaign.
+
+### Layering
+
+| Layer | Owner | Role |
+|-------|--------|------|
+| Product State+Status | `CallLifecycle` | Phase chrome; Status arms one planner (V037) |
+| Direct planner | `CallMediaBridge` + `CallDirectPlannerLogic` | Schedule / key-wait / Connect / TX-only circuit / Release |
+| Hop planner | `CallTopologyController` + `CallHopPlannerLogic` | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
+| Transport | `CallMediaDirectService` / media_relay attach SM | Stream hello/duplex / AcceptAndAttach |
+
+### Invariants
+
+1. Events in, effects out (`Apply`); illegal events ignored + logged — never assert on mesh reorder.
+2. At most one planner armed (`CallMediaStatus`).
+3. Cross-planner cancel uses Lifecycle `media_cancel_gen`; each planner keeps attempt-local gens (`connect_generation_`, `migrate_generation_`).
+4. SoftMigrate is Hop `SoftMigrateRequested` → Status `Migrating` — never a Bridge side flag / 1:1 NAT path (V038).
+5. Planner `Apply` product callbacks run on **UI** (PostUIFront); transport stays MeshPump / MeshControl.
+6. Failed planner reports Lifecycle `ConnectFailedEvt` / Status `Failed` once; do not stick in Failed.
+7. Primary control path is events + SM-owned timers — UI-tick `Poll*` is backstop only after timers land.
+
+### Event catalogs (normative names)
+
+**Direct:** `ScheduleOfferer`, `ScheduleAnswerer`, `KeyReady`, `KeyTimeout`, `ConnectSucceeded`, `ConnectFailed`, `TxOnlyGraceExpired`, `CircuitEscalated`, `ReleaseTransport`, `Stop`.
+
+**Hop:** `LocalAcceptN3`, `RemoteAcceptN3`, `SfuAttachInbound`, `SoftMigrateRequested`, `AttachSucceeded`, `AttachFailed`, `AttachWaitExpired`, `HopRefuse`, `Stop`.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| pm0 | This ADR + SESSION_MACHINES planner section + PHASES `pm` |
+| pm1 | Direct `Apply` strangler + pure logic gtests |
+| pm2 | Hop `Apply` strangler + SoftMigrate-as-event |
+| pm3 | SM timers replace PollMeshConnectHealth / PollPendingSfuAttach primary path |
+| pm4 | Lifecycle/CSM thin Accept media router; CALLS race homes → planner phases |
+
+**Rationale:** Hybrid callback + Status gates + UI polls caused dogfood races (stale hop StartSfu, Kick thrash, SoftMigrate-on-1:1). Layered FSMs with epoch cancel match Amp/NAT/glare/SoftMigrate without a mega-SM.
+
+**Alternatives:** Single mega event bus (rejected — Leave vs late Connect); rename Bridge→DirectPlanner campaign (rejected — noise); SoftMigrate-for-NAT (rejected — V038).
+
+**Cross-link:** [V033](#v033--transport-session-machines-not-host-wide-inbound-sm); [V037](#v037--calllifecycle-state--status-one-planner-armed); [V038](#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); [SESSION_MACHINES.md](SESSION_MACHINES.md#planner-machines-v039); [CALLS.md](../../docs/architecture/CALLS.md); phase [pm](PHASES.md#pm--call-planner-machines-v039).
+
+---
+

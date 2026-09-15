@@ -302,6 +302,46 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 
 ---
 
+## Planner machines (V039)
+
+Product Status (V037) arms **one** planner. Planners are Apply-based FSMs above transport SMs.
+
+```mermaid
+flowchart TB
+  Life[CallLifecycle Apply]
+  Direct[CallMediaBridge Direct Apply]
+  Hop[CallTopologyController Hop Apply]
+  Xport[CallMediaDirectService SM]
+  Relay[MediaRelay attach SM]
+  Life -->|DirectStar| Direct
+  Life -->|HopStar_Migrating| Hop
+  Direct --> Xport
+  Hop --> Relay
+```
+
+### Frozen open questions (pm0)
+
+| Question | Decision |
+|----------|----------|
+| Planner Apply strand | **UI** for product callbacks (PostUIFront); transport MeshPump / MeshControl |
+| Failed planner | Report once → Lifecycle Failed / ConnectFailedEvt; do not stick |
+| SoftMigrate during Direct Connecting | Lifecycle Deciding bumps `media_cancel_gen`; Direct ignores late Connect; Hop owns attach |
+| Epochs | Lifecycle `media_cancel_gen` cross-planner; Bridge `connect_generation_` / Topology `migrate_generation_` attempt-local |
+| Class names | Keep `CallMediaBridge` / `CallTopologyController` (no rename campaign) |
+| UI Poll* | Backstop only after pm3 SM timers |
+
+### Direct planner phases
+
+`Idle` → `Arming` → `KeyWait` | `Connecting` → `Live` | `DegradedTxOnly` → `Stopping` → `Idle`.
+
+### Hop planner phases
+
+`Idle` → `WaitingAttach` | `Migrating` | `Attaching` → `Live` → `Stopping` → `Idle`.
+
+Event catalogs and phase checklist: [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines); delivery [PHASES pm](PHASES.md#pm--call-planner-machines-v039).
+
+---
+
 ## Success criteria
 
 | Signal | Meaning |
@@ -311,3 +351,4 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | Unit tests for illegal event sequences | Faked streams; no full mesh |
 | CALLS.md critical races point at SM phases | Races have a home |
 | Dogfood intent unchanged | Robustness without feature churn |
+| Planner logs `planner=Direct\|Hop phase=… event=…` | Product media path triage without Bridge/Topology archaeology |

@@ -12,6 +12,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallHopPlannerLogic.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -204,6 +205,10 @@ public:
   /** Hop health when SFU attached (V032). */
   CallHopHealth HopHealth() const;
 
+  /** V039 Hop planner Apply. */
+  void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});
+  CallHopPlannerPhase HopPlannerPhase() const { return hop_planner_phase_; }
+
 private:
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,
                                         const std::string& error);
@@ -223,6 +228,12 @@ private:
   /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
+  void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
+  CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t effective_n,
+                                                    bool has_sfu_hint) const;
+  void ArmAttachWaitTimer(const std::string& call_id, int64_t deadline_ms);
+  void CancelAttachWaitTimer();
+  void OnAttachWaitTimerFire(const std::string& call_id);
   /** First subscribe: ask publisher for an IDR (V034). */
   void MaybeRequestPublisherKeyframe(uint32_t stream_id);
   /** Learn publisher_stream_id from CallSfuAttach even when roster lacks that peer (dogfood). */
@@ -280,6 +291,8 @@ private:
   std::unordered_set<uint32_t> video_refresh_sent_streams_;
   std::string sfu_attach_wait_call_id_;
   int64_t sfu_attach_wait_deadline_ms_ = 0;
+  uint64_t attach_wait_timer_id_ = 0;
+  CallHopPlannerPhase hop_planner_phase_ = CallHopPlannerPhase::Idle;
   /** Last successful remote-hop attach (guest reattach after duplex death). */
   std::optional<CallSfuAttachDetail> active_guest_sfu_attach_;
   std::string active_sfu_call_id_;

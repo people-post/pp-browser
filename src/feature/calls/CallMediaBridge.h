@@ -6,6 +6,7 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
@@ -102,6 +103,11 @@ public:
   /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
   bool HasActiveDirectStream() const;
 
+  /** V039 Direct planner Apply — product callbacks on UI. */
+  void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
+             const std::string& peer_identity = {});
+  CallDirectPlannerPhase DirectPlannerPhase() const { return direct_planner_phase_; }
+
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
   /** Circuit/punch reach without parking MeshControl (TryEnsureCallMediaReachableAsync). */
@@ -128,6 +134,14 @@ private:
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
   void EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer);
+  void SetDirectPlannerPhase(CallDirectPlannerPhase next, CallDirectPlannerEvent ev,
+                             const std::string& call_id);
+  CallDirectPlannerApplyContext BuildDirectPlannerContext(const std::string& call_id,
+                                                          const std::string& peer_identity) const;
+  /** Arm health / TX-only / connect-timeout timer (pm3). */
+  void ArmDirectHealthTimer();
+  void CancelDirectHealthTimer();
+  void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
   CallSessionStore& sessions_;
@@ -163,6 +177,8 @@ private:
   std::atomic<bool> stopping_{false};
   uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
+  uint64_t direct_health_timer_id_ = 0;
+  CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */

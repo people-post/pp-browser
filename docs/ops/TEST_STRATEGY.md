@@ -155,11 +155,12 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
 | Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
 | N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
+| Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.

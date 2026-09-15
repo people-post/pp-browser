@@ -17,6 +17,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
 | **N→planner select** | `CallMediaPlannerSelectLogic` + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
+| **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
@@ -97,8 +98,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. Keep **rd** green: `./scripts/test/pp_local_test.sh run --suite unit` (expanded Bridge/Kick regex) + `--suite call` / `call-hop` / `hard` when exercising path.
-2. OEM sample only if packaging/Android mic path regresses — not required for V038 D3/D4 exit.
+1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` purpose IDs.
+2. Optional: remove CallController `PollPendingSfuAttach` tick entirely once attach-wait timer dogfood is trusted (pm3 left UI poll as backstop).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps
@@ -123,3 +124,5 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Treat status-bar Direct / dialable as bidirectional audio | Dialable ≠ duplex; health path + RX frames decide; TX-only escalates via circuit |
 | Arm Bridge and Topology together after Accept | **V037** Status arms one planner; Deciding bumps `media_cancel_gen` |
 | Block rd / V038 on human NAT-pair dogfood | Guard with gtest + compose + `B-CALL-HOP` / `B-HARD-CALL`; OEM sample optional |
+| Rewrite transport SM in same PR as planner Apply | V039 / V033 — one machine layer per PR |
+| Put SoftMigrate side effects on Bridge | Hop `Apply(SoftMigrateRequested)` only |
