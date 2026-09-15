@@ -1,4 +1,4 @@
-# Current state — as of 2026-06-29
+# Current state — as of 2026-09-16
 
 Gaps in **non-chat** platform layers. Chat-specific issues are in [chat-storage-and-memory/CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md).
 
@@ -11,14 +11,14 @@ Gaps in **non-chat** platform layers. Chat-specific issues are in [chat-storage-
 | Timeout | 120 s only |
 | Parse | `nlohmann::json::parse` on full response — no size pre-check |
 
-## HTTP client (`src/base/net/HttpClient.cpp`)
+## HTTP client (`src/domain/net/HttpClient.cpp`)
 
-| Issue | Today |
+| Item | Status |
 |-------|--------|
-| Response body | **Unbounded** append |
+| Response body | Capped at 8 MiB by default; callers may set a per-request ceiling or explicitly opt out. |
 | Request body | No client-side limit |
 | Timeout | 30 s |
-| Relay vs generic | Same client; relay POST can be arbitrarily large |
+| Relay vs generic | Chat relay keeps its existing message limits and can set its own HTTP response ceiling. |
 
 ## Profile JSON stores
 

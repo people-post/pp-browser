@@ -14,6 +14,8 @@ This document orients coding agents working in this repository.
 - When wire/disk/HTTP ships, **promote** into `docs/contracts/` (or the right docs tier) in the same PR; mark ADRs **superseded by** the stable doc; do not leave a second editable normative copy under `projects/`.
 - Index of active vs done projects: [`projects/README.md`](projects/README.md). Doc map: [`docs/README.md`](docs/README.md).
 
+`CURRENT_STATE.md` 标题必须使用 `Current state — as of YYYY-MM-DD` 的日期快照格式。阶段完成情况（例如 P1 complete）写在正文或进度表中，不得替换标题中的日期。
+
 ## Architecture
 
 pp-browser is a native AI-oriented UI shell:
