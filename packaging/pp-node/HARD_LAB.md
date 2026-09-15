@@ -235,4 +235,5 @@ pp-node-probe --mode bridge-target|bridge-via-hop|direct-expect-fail|media-recv|
 **Landed (Wave 1):** isolation + circuit/media force + product call + chat-during-call on forced nets.  
 **Landed (Wave 2 scaffold):** netem/tbf profiles + `N-HARD-LOSSY` / `ASYM` / `BW` via `--suite hard-w2`.  
 **Landed (Wave 3 scaffold):** `N-HARD-STALE-ADDR` / `SEED-ONLY` via `--suite hard-w3` (DIR/DHT/ADMIT-HARD still gated).  
+**Landed (Wave 5 scaffold):** dual-SNAT CGNAT-ish + B-HARD-CALL-NAT (+PRODUCT punch→circuit) via `--suite hard-w5`.  
 **Next:** Wave 3 remainder when directory/DHT/admit hooks exist — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
