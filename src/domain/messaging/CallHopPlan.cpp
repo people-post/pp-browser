@@ -1,6 +1,6 @@
 #include "domain/messaging/CallHopPlan.h"
 
-#include "domain/people/MeshHopPolicy.h"
+#include "common/directory/MeshHopDial.h"
 
 #include <algorithm>
 

@@ -74,7 +74,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     pp_foundation_crypto
     pp_foundation_identity
     pp_foundation_platform
-    pp_domain_people
     sodium
     SQLite::SQLite3)
 

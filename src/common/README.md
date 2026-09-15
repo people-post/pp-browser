@@ -20,7 +20,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 |--------|----------|
 | *(root)* | Small utilities: `ValueJson`, `PbrCompat`, `SettledWait`, `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `CodedFailure` |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
-| [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `IdentityTypes` |
+| [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`, `IdentityTypes` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |
 | [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, people-discovery blocks |
 | [`media/`](media/) | `CallMediaHealth` |
