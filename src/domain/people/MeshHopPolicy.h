@@ -82,6 +82,12 @@ bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multi
 /** True when multiaddr embeds a private IPv4 host (10/8, 172.16/12, 192.168/16). */
 bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr);
 
+/**
+ * True when multiaddr embeds a publicly dialable host: public IPv4 or global IPv6.
+ * False for private/link-local/ULA/loopback/wildcard and non-IP multiaddrs.
+ */
+bool MultiaddrHasPublicDialHost(const std::string& multiaddr);
+
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);

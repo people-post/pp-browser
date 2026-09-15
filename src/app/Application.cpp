@@ -548,6 +548,10 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       return {};
     }
     if (const MeshHost* mesh = facade.Hub().Mesh()) {
+      const auto advertised = mesh->AdvertisedListenMultiaddrs();
+      if (!advertised.empty()) {
+        return advertised.front();
+      }
       return mesh->AmpListenMultiaddr();
     }
     return {};

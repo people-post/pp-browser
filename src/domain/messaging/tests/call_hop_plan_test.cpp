@@ -135,6 +135,13 @@ TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
       {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
   EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
                                          "/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"));
+  // Link-local / loopback /ip6 must not count as publicly dialable PreferLocal.
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
+                                          "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
+                                          "/ip6/::1/udp/19001/adp/1.0.0/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Link, true,
+                                          "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local", true));
 }
 
 } // namespace

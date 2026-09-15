@@ -64,7 +64,7 @@ bool IsOrgOrDirectoryAffinity(MeshHopAffinity affinity) {
 }
 
 bool HopHasPublicMa(const MeshHopCandidate& hop) {
-  return !hop.multiaddr.empty() && !MultiaddrHasPrivateIpv4Host(hop.multiaddr);
+  return MultiaddrHasPublicDialHost(hop.multiaddr);
 }
 
 } // namespace
@@ -101,42 +101,8 @@ CallHopScope InferCallHopScope(
 }
 
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas) {
-  auto ip6_host = [](const std::string& ma) -> std::string {
-    if (ma.rfind("/ip6/", 0) != 0) {
-      return {};
-    }
-    const size_t start = 5;
-    const size_t end = ma.find('/', start);
-    std::string host = ma.substr(start, end == std::string::npos ? std::string::npos : end - start);
-    if (!host.empty() && host.front() == '[' && host.back() == ']') {
-      host = host.substr(1, host.size() - 2);
-    }
-    return host;
-  };
-  auto is_global_ipv6 = [](const std::string& addr) {
-    if (addr.empty() || addr.find(':') == std::string::npos) {
-      return false;
-    }
-    if (addr.rfind("fe80:", 0) == 0 || addr.rfind("FE80:", 0) == 0) {
-      return false;
-    }
-    if (addr.rfind("fc", 0) == 0 || addr.rfind("fd", 0) == 0 || addr.rfind("FC", 0) == 0 ||
-        addr.rfind("FD", 0) == 0) {
-      return false;
-    }
-    return addr != "::1";
-  };
   for (const std::string& ma : local_mas) {
-    if (ma.empty()) {
-      continue;
-    }
-    if (ma.rfind("/ip6/", 0) == 0) {
-      if (is_global_ipv6(ip6_host(ma))) {
-        return true;
-      }
-      continue;
-    }
-    if (!MultiaddrHasPrivateIpv4Host(ma) && ma.find("/ip4/") != std::string::npos) {
+    if (MultiaddrHasPublicDialHost(ma)) {
       return true;
     }
   }
@@ -158,10 +124,11 @@ bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
       // Coincidental same-/24 on different LANs is common — require positive LAN evidence.
       return lan_reachability_confirmed;
     }
-    return true;
+    // Non-private Link advertise (public /ip4 or global /ip6) may PreferLocal without LAN proof.
+    return MultiaddrHasPublicDialHost(local_advertise_ma);
   }
   // Wide: PreferLocal only when advertise MA is publicly dialable.
-  return !MultiaddrHasPrivateIpv4Host(local_advertise_ma);
+  return MultiaddrHasPublicDialHost(local_advertise_ma);
 }
 
 bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,

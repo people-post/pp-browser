@@ -29,6 +29,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -172,17 +173,38 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
 }
 
 std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
-  const std::string from0 = "/ip4/0.0.0.0/";
-  const std::string from1 = "/ip4/127.0.0.1/";
-  const std::string to = "/ip4/" + host + "/";
-  auto pos = multiaddr.find(from0);
-  if (pos != std::string::npos) {
-    multiaddr.replace(pos, from0.size(), to);
+  if (host.empty()) {
     return multiaddr;
   }
-  pos = multiaddr.find(from1);
-  if (pos != std::string::npos && host != "127.0.0.1") {
-    multiaddr.replace(pos, from1.size(), to);
+  const bool host_v6 = host.find(':') != std::string::npos;
+  if (host_v6) {
+    const std::string to = "/ip6/" + host + "/";
+    for (const char* from : {"/ip6/::/", "/ip6/::1/"}) {
+      const auto pos = multiaddr.find(from);
+      if (pos != std::string::npos) {
+        multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+        return multiaddr;
+      }
+    }
+    return multiaddr;
+  }
+  const std::string to = "/ip4/" + host + "/";
+  for (const char* from : {"/ip4/0.0.0.0/", "/ip4/127.0.0.1/"}) {
+    const auto pos = multiaddr.find(from);
+    if (pos != std::string::npos) {
+      if (std::string_view(from) == "/ip4/127.0.0.1/" && host == "127.0.0.1") {
+        continue;
+      }
+      multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+      return multiaddr;
+    }
+  }
+  for (const char* from : {"/ip6/::/", "/ip6/::1/"}) {
+    const auto pos = multiaddr.find(from);
+    if (pos != std::string::npos) {
+      multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+      return multiaddr;
+    }
   }
   return multiaddr;
 }

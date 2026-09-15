@@ -119,6 +119,49 @@ bool MultiaddrHasPrivateIpv4Host(const std::string& multiaddr) {
   return !ip.empty() && IsPrivateIpv4Host(ip);
 }
 
+bool MultiaddrHasPublicDialHost(const std::string& multiaddr) {
+  auto ip6_host = [](const std::string& ma) -> std::string {
+    if (ma.rfind("/ip6/", 0) != 0) {
+      return {};
+    }
+    const size_t start = 5;
+    const size_t end = ma.find('/', start);
+    std::string host = ma.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (!host.empty() && host.front() == '[' && host.back() == ']') {
+      host = host.substr(1, host.size() - 2);
+    }
+    return host;
+  };
+  auto is_global_ipv6 = [](const std::string& addr) {
+    if (addr.empty() || addr.find(':') == std::string::npos) {
+      return false;
+    }
+    if (addr.rfind("fe80:", 0) == 0 || addr.rfind("FE80:", 0) == 0) {
+      return false;
+    }
+    if (addr.rfind("fc", 0) == 0 || addr.rfind("fd", 0) == 0 || addr.rfind("FC", 0) == 0 ||
+        addr.rfind("FD", 0) == 0) {
+      return false;
+    }
+    return addr != "::1" && addr != "::";
+  };
+  auto is_public_ipv4 = [](const std::string& ip) {
+    if (ip.empty() || ip == "0.0.0.0" || ip == "127.0.0.1") {
+      return false;
+    }
+    return !IsPrivateIpv4Host(ip);
+  };
+
+  if (multiaddr.rfind("/ip6/", 0) == 0) {
+    return is_global_ipv6(ip6_host(multiaddr));
+  }
+  if (multiaddr.find("/ip4/") != std::string::npos) {
+    const std::string ip = Ip4HostFromMultiaddr(multiaddr);
+    return is_public_ipv4(ip);
+  }
+  return false;
+}
+
 RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
   RelayScopeMask mask = 0;

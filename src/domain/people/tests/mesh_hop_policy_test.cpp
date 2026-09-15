@@ -217,6 +217,18 @@ TEST(MeshHopPolicyTest, MultiaddrHasPrivateIpv4Host) {
   EXPECT_FALSE(MultiaddrHasPrivateIpv4Host("/ip6/fe80::1/udp/4001/adp/1.0.0/p2p/x"));
 }
 
+TEST(MeshHopPolicyTest, MultiaddrHasPublicDialHost) {
+  EXPECT_TRUE(MultiaddrHasPublicDialHost("/ip4/203.0.113.10/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_TRUE(MultiaddrHasPublicDialHost("/ip6/2001:db8::1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip4/10.0.0.1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip4/127.0.0.1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip6/fe80::1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip6/fd12::1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip6/::/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost("/ip6/::1/udp/1/adp/1.0.0/p2p/x"));
+  EXPECT_FALSE(MultiaddrHasPublicDialHost(""));
+}
+
 TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {
   MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";
