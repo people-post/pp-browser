@@ -2,14 +2,16 @@
 
 Gaps in **non-chat** platform layers. Chat-specific issues are in [chat-storage-and-memory/CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md).
 
-## LLM (`src/base/ai/LlmClient.cpp`)
+## LLM (`src/domain/ai/LlmClient.cpp`)
 
-| Issue | Today |
+P2 complete: request and response bodies now fail closed at their shared platform limits.
+
+| Item | Status |
 |-------|--------|
-| Response body size | **Unbounded** — `WriteCallback` appends entire response to `std::string` |
-| Request body size | **Unbounded** — `body.dump()` for tools + messages |
+| Response body size | Capped at 8 MiB in the libcurl write callback; oversized responses return a clear HTTP error. |
+| Request body size | Capped at 2 MiB after JSON serialization and before curl is initialized. |
 | Timeout | 120 s only |
-| Parse | `nlohmann::json::parse` on full response — no size pre-check |
+| Parse | Parses only the bounded response body. |
 
 ## HTTP client (`src/domain/net/HttpClient.cpp`)
 
