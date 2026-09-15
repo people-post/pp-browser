@@ -44,7 +44,7 @@ Depends on [media-hop-reachability L3.5](../media-hop-reachability/PHASES.md#l35
 ## h5 — Wave 5 NAT shapes
 
 - [ ] Explicit product policy for hairpin fallback (**N-HARD-HAIRPIN**)
-- [ ] **N-HARD-CGNAT-ISH** SNAT lab
+- [x] **N-HARD-CGNAT-ISH** SNAT lab + **B-HARD-CALL-NAT** (`pp_hard_nat_smoke.sh`, `--suite hard-w5`)
 - [ ] Optional **N-HARD-UPNP** / **N-HARD-V6** / **N-HARD-PATH-MIGRATE**
 - [ ] Hole punch remains non-goal until stack ships it
 

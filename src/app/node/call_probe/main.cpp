@@ -41,9 +41,11 @@ void PrintUsage(const char* argv0) {
       << "Usage:\n"
       << "  " << argv0 << " --role answerer --listen <adp-ma|/ip4/0.0.0.0/udp/PORT/adp/1.0.0>\n"
       << "                 [--advertise-host <ip>] [--call-id ID] [--ready-file PATH]\n"
+      << "                 [--warm-hop <adp-ma-with-p2p>] [--min-rx-frames N]\n"
       << "                 [--no-auto-detach] [--with-chat]\n"
       << "  " << argv0 << " --role offerer --peer <adp-ma-with-p2p> [--call-id ID] [--cycles K]\n"
-      << "                 [--via-hop <adp-ma-with-p2p>] [--hold-ms N] [--timeout-ms N]\n"
+      << "                 [--via-hop <adp-ma-with-p2p>] [--peer-id-only]\n"
+      << "                 [--hold-ms N] [--timeout-ms N]\n"
       << "                 [--expect ok|busy] [--with-chat]\n"
       << "\n"
       << "Amp thin-client B-CALL-DIRECT / B-CALL-HOP / B-CONFLICT / B-MSG+CALL\n"
@@ -52,7 +54,10 @@ void PrintUsage(const char* argv0) {
       << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
       << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
       << "  --with-chat     AmpDirectChatTransport ping during and after the call.\n"
-      << "                  With --via-hop, chat rides the nested Amp circuit link.\n";
+      << "                  With --via-hop, chat rides the nested Amp circuit link.\n"
+      << "  --warm-hop     Answerer dials hop first (NAT return-path / hop peer-book).\n"
+      << "  --peer-id-only Offerer StartBridge omits target multiaddr (hop book only).\n"
+      << "  --min-rx-frames Answerer fails if fewer audio frames received (duplex gate).\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -290,6 +295,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
                                      const std::string& peer_id, const std::string& peer_ma) {
   pbr::CircuitBridgeTarget target;
   target.target_peer_id = peer_id;
+  // Empty multiaddr = peer-id-only: hop must already know a dialable path (warm-hop / book).
   target.target_multiaddr = peer_ma;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
@@ -319,7 +325,8 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
 }
 
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
-                int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat) {
+                int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat,
+                const std::string& warm_hop_ma, int min_rx_frames) {
   if (sodium_init() < 0) {
     std::cerr << "error: sodium_init failed\n";
     return 1;
@@ -343,6 +350,33 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     advertise = RewriteListenHost(std::move(advertise), advertise_host);
   } else {
     advertise = RewriteWildcardListenHost(std::move(advertise));
+  }
+  // Publish advertise MA on ch0 so a warm hop can learn PeerId→addr (even if RFC1918).
+  (*peer)->Links().SetLocalListenMultiaddrs({advertise});
+
+  if (!warm_hop_ma.empty()) {
+    if (!HasP2pSuffix(warm_hop_ma) || warm_hop_ma.find("/adp/") == std::string::npos) {
+      std::cerr << "error: --warm-hop must be Amp ADP multiaddr with /p2p/<PeerId>\n";
+      return 2;
+    }
+    if (auto reg = (*peer)->Links().RegisterEndpoint("hop", RewriteWildcardListenHost(warm_hop_ma));
+        !reg) {
+      std::cerr << "error: register warm-hop: " << reg.error().message << "\n";
+      return 1;
+    }
+    AsyncWait<void> warm_wait;
+    (*peer)->Links().EnsureAssociation("hop", warm_wait.LinkFn());
+    if (!warm_wait.PumpUntilDone(**peer, 15000) || !warm_wait.result) {
+      std::cerr << "error: warm-hop associate: "
+                << (warm_wait.result ? "failed" : warm_wait.result.error().message) << "\n";
+      return 1;
+    }
+    // Allow hop peer-book ingest after association.
+    for (int i = 0; i < 50; ++i) {
+      (*peer)->Pump();
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::cout << "ok  warm-hop associated hop=" << warm_hop_ma << "\n";
   }
 
   auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime());
@@ -404,10 +438,21 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   std::cout.flush();
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
+  bool min_rx_met = false;
   while (std::chrono::steady_clock::now() < deadline) {
     (*peer)->Pump();
     if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
       media->Detach();
+    }
+    if (min_rx_frames > 0) {
+      std::lock_guard lock(mu);
+      if (cycles_done >= min_rx_frames) {
+        min_rx_met = true;
+      }
+    }
+    // NAT/hard-lab: once duplex RX gate is satisfied, exit so the driver need not SIGTERM us.
+    if (min_rx_met && !no_auto_detach) {
+      break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -418,14 +463,19 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   media->Stop();
   circuit->Stop();
   (*peer)->stack->Stop();
-  std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
+    std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
             << " chat_frames=" << chat_received.load() << "\n";
+  if (min_rx_frames > 0 && cycles_done < min_rx_frames) {
+    std::cerr << "error: answerer rx frames=" << cycles_done << " < min-rx-frames="
+              << min_rx_frames << " (duplex/NAT path gate)\n";
+    return 1;
+  }
   return 0;
 }
 
 int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycles,
                const std::string& hop_ma, int hold_ms, int timeout_ms, bool expect_busy,
-               bool with_chat) {
+               bool with_chat, bool peer_id_only) {
   if (cycles < 1 || cycles > 100) {
     std::cerr << "error: --cycles must be 1..100\n";
     return 2;
@@ -437,6 +487,10 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   const bool via_hop = !hop_ma.empty();
   if (via_hop && (!HasP2pSuffix(hop_ma) || hop_ma.find("/adp/") == std::string::npos)) {
     std::cerr << "error: --via-hop must be Amp ADP multiaddr with /p2p/<PeerId>\n";
+    return 2;
+  }
+  if (peer_id_only && !via_hop) {
+    std::cerr << "error: --peer-id-only requires --via-hop\n";
     return 2;
   }
   auto peer_id = PeerIdFromMultiaddr(peer_ma);
@@ -482,7 +536,8 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       std::cerr << "error: register hop: " << reg.error().message << "\n";
       return 1;
     }
-    std::cout << "pp-call-probe offerer via-hop=" << hop_ma << " peer=" << peer_ma << "\n";
+    std::cout << "pp-call-probe offerer via-hop=" << hop_ma << " peer=" << peer_ma
+              << " peer-id-only=" << (peer_id_only ? 1 : 0) << "\n";
   } else if (auto reg = (*offerer)->Links().RegisterEndpoint(peer_key, dial_peer_ma); !reg) {
     std::cerr << "error: register peer: " << reg.error().message << "\n";
     return 1;
@@ -491,7 +546,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   const pbr::ByteVector media_key(32, 0x42);
   for (int cycle = 0; cycle < cycles; ++cycle) {
     if (via_hop) {
-      auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, dial_peer_ma);
+      auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, (peer_id_only ? std::string() : dial_peer_ma));
       if (!nested) {
         std::cerr << "error: nested circuit cycle " << cycle << ": " << nested.error().message << "\n";
         return 1;
@@ -597,7 +652,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
     if (with_chat && chat) {
       if (via_hop) {
-        auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, dial_peer_ma);
+        auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, (peer_id_only ? std::string() : dial_peer_ma));
         if (!nested) {
           std::cerr << "error: chat hop after leave cycle " << cycle << ": " << nested.error().message
                     << "\n";
@@ -646,6 +701,9 @@ int main(int argc, char** argv) {
   bool expect_busy = false;
   bool with_chat = false;
   bool no_auto_detach = false;
+  bool peer_id_only = false;
+  std::string warm_hop_ma;
+  int min_rx_frames = 0;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -688,6 +746,12 @@ int main(int argc, char** argv) {
       with_chat = true;
     } else if (std::strcmp(argv[i], "--no-auto-detach") == 0) {
       no_auto_detach = true;
+    } else if (std::strcmp(argv[i], "--warm-hop") == 0 && i + 1 < argc) {
+      warm_hop_ma = argv[++i];
+    } else if (std::strcmp(argv[i], "--min-rx-frames") == 0 && i + 1 < argc) {
+      min_rx_frames = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
+      peer_id_only = true;
     } else {
       std::cerr << "Unknown argument: " << argv[i] << "\n";
       PrintUsage(argv[0]);
@@ -711,14 +775,15 @@ int main(int argc, char** argv) {
 
   if (role == "answerer") {
     return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,
-                       with_chat);
+                       with_chat, warm_hop_ma, min_rx_frames);
   }
   if (role == "offerer") {
     if (peer_ma.empty()) {
       std::cerr << "error: --peer required for offerer\n";
       return 2;
     }
-    return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat);
+    return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat,
+                       peer_id_only);
   }
   std::cerr << "error: --role answerer|offerer required\n";
   PrintUsage(argv[0]);

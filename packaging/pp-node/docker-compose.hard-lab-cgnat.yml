@@ -1,0 +1,138 @@
+# Hard lab Wave 5 — CGNAT-ish dual SNAT (both peers behind NAT, public hop).
+#
+#   peer-a ── net_priv_a ── gw-a ── net_public ── hop
+#   peer-b ── net_priv_b ── gw-b ──┘
+#                                    └── net_ops (status HTTP → host)
+#
+# Hop is NOT on private nets → cannot dial peer RFC1918 listen addrs.
+# Peers reach hop via SNAT; answerer must --warm-hop so hop learns return path.
+#
+# Ports default 18628 so Wave 1 hard-lab (18618) can coexist.
+# Driver: scripts/test/pp_hard_nat_smoke.sh / pp_local_test.sh --suite hard-w5
+# Design: HARD_LAB.md Wave 5 N-HARD-CGNAT-ISH / B-HARD-CALL-NAT
+
+name: pp-hard-lab-cgnat
+
+services:
+  hop:
+    build:
+      context: ../../dist/pp-node/docker
+      dockerfile: Dockerfile
+    image: pp-node:local
+    container_name: pp-hard-lab-cgnat-hop
+    restart: unless-stopped
+    environment:
+      PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
+      PP_NODE_AMP_UDP_PORT: ${PP_NODE_AMP_UDP_PORT:-18517}
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
+      PP_NODE_CAP_CIRCUIT_RELAY: ${PP_NODE_CAP_CIRCUIT_RELAY:-1}
+      PP_NODE_CAP_MEDIA_RELAY: ${PP_NODE_CAP_MEDIA_RELAY:-1}
+    volumes:
+      - pp-hard-lab-cgnat-hop-data:/var/lib/pp-node
+    networks:
+      net_public:
+        ipv4_address: 10.117.0.2
+      net_ops:
+    ports:
+      - "${PP_HARD_CGNAT_STATUS_HOST_PORT:-18628}:18518"
+
+  gw-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-gw
+    image: pp-hard-gw:local
+    container_name: pp-hard-lab-cgnat-gw-a
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.117.1.0/24
+      PP_HARD_GW_PUB_CIDR: 10.117.0.0/24
+    networks:
+      net_public:
+        ipv4_address: 10.117.0.10
+      net_priv_a:
+        ipv4_address: 10.117.1.254
+
+  gw-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-gw
+    image: pp-hard-gw:local
+    container_name: pp-hard-lab-cgnat-gw-b
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    environment:
+      PP_HARD_GW_PRIV_CIDR: 10.117.2.0/24
+      PP_HARD_GW_PUB_CIDR: 10.117.0.0/24
+    networks:
+      net_public:
+        ipv4_address: 10.117.0.11
+      net_priv_b:
+        ipv4_address: 10.117.2.254
+
+  peer-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-peer
+    image: pp-hard-peer:local
+    container_name: pp-hard-lab-cgnat-peer-a
+    cap_add:
+      - NET_ADMIN
+    networks:
+      net_priv_a:
+        ipv4_address: 10.117.1.10
+    volumes:
+      - ${PP_HARD_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+      - ${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}:/share
+    command: ["sleep", "infinity"]
+    depends_on:
+      - gw-a
+      - hop
+
+  peer-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.hard-peer
+    image: pp-hard-peer:local
+    container_name: pp-hard-lab-cgnat-peer-b
+    cap_add:
+      - NET_ADMIN
+    networks:
+      net_priv_b:
+        ipv4_address: 10.117.2.10
+    volumes:
+      - ${PP_HARD_PROBE_DIR:-../../build/src/app/node}:/probes:ro
+      - ${PP_HARD_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}:/share
+    command: ["sleep", "infinity"]
+    depends_on:
+      - gw-b
+      - hop
+
+networks:
+  net_public:
+    name: pp-hard-lab-cgnat-net-public
+    ipam:
+      config:
+        - subnet: 10.117.0.0/24
+  net_priv_a:
+    name: pp-hard-lab-cgnat-net-priv-a
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.117.1.0/24
+  net_priv_b:
+    name: pp-hard-lab-cgnat-net-priv-b
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.117.2.0/24
+  net_ops:
+    name: pp-hard-lab-cgnat-net-ops
+
+volumes:
+  pp-hard-lab-cgnat-hop-data:
