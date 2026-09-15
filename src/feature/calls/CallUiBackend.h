@@ -37,7 +37,7 @@ public:
   void SetOnChromeRefresh(std::function<void()> callback);
 
   void SweepExpiredInvites();
-  void PollPendingSfuAttach();
+  /** Chrome heal when media already reports failed (not a UI-tick poll). */
   void PollP2pConnectHealth();
 
   std::optional<std::string> TakeLastMediaError();

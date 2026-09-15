@@ -49,12 +49,6 @@ void CallUiBackend::SweepExpiredInvites() {
   }
 }
 
-void CallUiBackend::PollPendingSfuAttach() {
-  if (auto* calls = stack_.Calls()) {
-    calls->PollPendingSfuAttach();
-  }
-}
-
 void CallUiBackend::PollP2pConnectHealth() {
   if (auto* calls = stack_.Calls()) {
     calls->PollP2pConnectHealth();

@@ -142,8 +142,8 @@ public:
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
   Roe<void> RetryP2pMedia(const std::string& call_id);
+  /** Chrome heal when media already reports failed (not a UI-tick poll). */
   void PollP2pConnectHealth();
-  void PollPendingSfuAttach();
 
   std::optional<std::string> TakeLastMediaError();
   /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */

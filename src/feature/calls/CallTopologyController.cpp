@@ -286,7 +286,7 @@ void CallTopologyController::OnAttachWaitTimerFire(const std::string& call_id) {
     return;
   }
   Apply(CallHopPlannerEvent::AttachWaitExpired, call_id);
-  // Existing PollPendingSfuAttach expiry behavior — invoke poll once for eject / recovery.
+  // Attach-wait expiry runs PollPendingSfuAttach for eject / recovery (timer primary path).
   PollPendingSfuAttach();
 }
 

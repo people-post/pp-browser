@@ -328,7 +328,7 @@ flowchart TB
 | SoftMigrate during Direct Connecting | Lifecycle Deciding bumps `media_cancel_gen`; Direct ignores late Connect; Hop owns attach |
 | Epochs | Lifecycle `media_cancel_gen` cross-planner; Bridge `connect_generation_` / Topology `migrate_generation_` attempt-local |
 | Class names | Keep `CallMediaBridge` / `CallTopologyController` (no rename campaign) |
-| UI Poll* | Backstop only after pm3 SM timers |
+| UI Poll* | **Removed** from CallController tick — Direct health timer + Hop attach-wait timer only |
 
 ### Direct planner phases
 

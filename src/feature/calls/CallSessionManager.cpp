@@ -1389,10 +1389,6 @@ Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   return Error("Call media retry unavailable");
 }
 
-void CallSessionManager::PollPendingSfuAttach() {
-  topology_.PollPendingSfuAttach();
-}
-
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
   return sessions_.LoadSession(call_id);
 }

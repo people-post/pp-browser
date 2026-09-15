@@ -99,8 +99,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 ## Next agent — start here
 
 1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` purpose IDs.
-2. Optional: remove CallController `PollPendingSfuAttach` tick entirely once attach-wait timer dogfood is trusted (pm3 left UI poll as backstop).
-3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
+2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps
 
@@ -126,3 +125,4 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Block rd / V038 on human NAT-pair dogfood | Guard with gtest + compose + `B-CALL-HOP` / `B-HARD-CALL`; OEM sample optional |
 | Rewrite transport SM in same PR as planner Apply | V039 / V033 — one machine layer per PR |
 | Put SoftMigrate side effects on Bridge | Hop `Apply(SoftMigrateRequested)` only |
+| Reintroduce CallController PollPendingSfuAttach / PollP2pConnectHealth tick | V039 — Direct health timer + Hop attach-wait timer; chrome may heal once on media `failed` |

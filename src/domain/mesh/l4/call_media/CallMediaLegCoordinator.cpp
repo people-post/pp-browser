@@ -413,9 +413,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         }
         // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
         // Do not treat Handshaking as lost (FindLink still present until DropLink).
+        // OutboundHello may not have FindLink yet while EnsureAssociation starts — prefer the
+        // connect deadline over peer-link-lost (avoids racing TearDown vs dial).
         if (PeerLinkMissing(*bundle)) {
-          link_lost.push_back(call_id);
-          continue;
+          const bool outbound_dialing =
+              bundle->phase == CallMediaBundlePhase::OutboundHello &&
+              runtime->Links().GetLinkSnapshot(bundle->params.peer_key).has_endpoint;
+          if (!outbound_dialing) {
+            link_lost.push_back(call_id);
+            continue;
+          }
         }
         if (bundle->finished) {
           continue;
@@ -993,6 +1000,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     auto open_control = std::make_shared<std::function<void(int)>>();
     *open_control = [this, self = shared_from_this(), leg_id, peer_key, call_id, params, deadline,
                      open_control](const int retries) {
+      if (retries == 0) {
+        CallMediaLegLog().info << "CallLifecycle StartSfu leg OpenChannel invoke call_id=" << call_id
+                               << " peer=" << peer_key;
+      }
       runtime->Links().OpenChannel(
           peer_key, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
           [this, self, leg_id, peer_key, call_id, params, deadline, retries,

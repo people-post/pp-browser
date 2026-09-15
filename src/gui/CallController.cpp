@@ -412,8 +412,7 @@ void CallController::RefreshPendingRing() {
     UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
   }
 
-  backend->PollPendingSfuAttach();
-  backend->PollP2pConnectHealth();
+  // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick.
 
   auto top = backend->TopPendingInvite();
   if (top && top->has_value()) {
