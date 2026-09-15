@@ -598,12 +598,13 @@ void CallMediaBridge::ScheduleOffererGracePoll(CallMediaDirectConnectParams para
     return;
   }
   if (direct_.IsActive()) {
-    log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
+    log().info << "CallLifecycle StartSfu offerer inbound during grace call_id=" << params.call_id;
     FinishConnectSequence(gen, params.call_id, {}, "offerer");
     return;
   }
   if (util::NowUnixMs() >= grace_deadline_ms) {
-    log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
+    log().info << "CallLifecycle StartSfu offerer fallback dial call_id=" << params.call_id
+               << " peer=" << params.peer_key;
     BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
     return;
   }
@@ -725,14 +726,34 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
              << " call_id=" << params.call_id << " peer=" << params.peer_key
              << " role=" << (params.offerer ? "offerer" : "answerer")
              << " timeout_ms=" << kConnectAttemptTimeoutMs;
+  if (dial_) {
+    if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
+      log().info << "CallLifecycle StartSfu ConnectAsync ma=" << *ma << " peer=" << params.peer_key;
+    } else {
+      log().info << "CallLifecycle StartSfu ConnectAsync ma=(none) peer=" << params.peer_key
+                 << " dialable=" << (dial_->IsDialable(params.peer_key) ? 1 : 0);
+    }
+  }
+  const std::string connect_peer = params.peer_key;
+  const std::string connect_call = params.call_id;
   direct_.ConnectAsync(
       params, cbs,
-      [this, params, cbs, gen, attempt](Roe<void> connected) mutable {
-        AppRuntime::PostCoordinatorNormal([this, params = std::move(params), cbs = std::move(cbs), gen,
-                                           attempt, connected = std::move(connected)]() mutable {
+      [this, params = std::move(params), cbs = std::move(cbs), gen, attempt, connect_peer,
+       connect_call](Roe<void> connected) mutable {
+        // UI — not coordinator (Pause/backlog can drop Connect timeout → stuck Connecting).
+        auto cont = [this, params = std::move(params), cbs = std::move(cbs), gen, attempt,
+                     connected = std::move(connected), connect_peer, connect_call]() mutable {
+          log().info << "CallLifecycle StartSfu ConnectAsync done call_id=" << connect_call
+                     << " peer=" << connect_peer << " ok=" << (connected ? 1 : 0)
+                     << (connected ? "" : (" err=" + connected.error().message));
           OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
                                    std::move(connected));
-        });
+        };
+        if (AppRuntime::CurrentlyOnUI()) {
+          cont();
+          return;
+        }
+        AppRuntime::PostUI(std::move(cont));
       },
       kConnectAttemptTimeoutMs);
 }
@@ -913,18 +934,32 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   params.media_epoch = media_epoch;
   params.media_key = media_key;
   params.offerer = offerer;
-  // Dial/Ensure keyed by mesh PeerId; roster stream_id stays account: (media_peer_identity_).
-  if (peer_identity.rfind("account:", 0) == 0 && dial_ && !dial_->IsDialable(peer_identity)) {
+  // Prefer mesh PeerId for OpenChannel. Account: may be "dialable" via a stale alias while the
+  // Connected PeerLink lives under PeerId (dogfood 7bd62: AssociationNotReady forever).
+  if (peer_identity.rfind("account:", 0) == 0) {
     if (auto mapped = host_.MeshPeerIdForAccount(peer_identity);
         mapped && mapped->has_value() && !mapped->value().empty()) {
-      const std::string& mesh_peer = **mapped;
+      const std::string mesh_peer = **mapped;
+      const bool account_dialable = dial_ && dial_->IsDialable(peer_identity);
+      const bool mesh_dialable = dial_ && dial_->IsDialable(mesh_peer);
+      if (dial_ && account_dialable && !mesh_dialable) {
+        if (auto ma = dial_->PreferredMultiaddr(peer_identity)) {
+          (void)dial_->RegisterEndpoint(mesh_peer, *ma);
+        }
+      }
+      const bool mesh_after = dial_ && dial_->IsDialable(mesh_peer);
       log().info << "CallLifecycle StartSfu dial key account→PeerId account=" << peer_identity
-                 << " peer_id=" << mesh_peer
-                 << " dialable=" << (dial_->IsDialable(mesh_peer) ? 1 : 0);
-      params.peer_key = mesh_peer;
+                 << " peer_id=" << mesh_peer << " account_dialable=" << (account_dialable ? 1 : 0)
+                 << " peer_dialable=" << (mesh_after ? 1 : 0);
+      if (mesh_after || !account_dialable) {
+        params.peer_key = mesh_peer;
+      } else {
+        log().info << "CallLifecycle StartSfu dial key keep account (PeerId still undialable) account="
+                   << peer_identity;
+      }
     } else {
-      log().info << "CallLifecycle StartSfu dial key account (no PeerId map) account="
-                 << peer_identity;
+      log().info << "CallLifecycle StartSfu dial key account (no PeerId map) account=" << peer_identity
+                 << " dialable=" << (dial_ && dial_->IsDialable(peer_identity) ? 1 : 0);
     }
   }
 
