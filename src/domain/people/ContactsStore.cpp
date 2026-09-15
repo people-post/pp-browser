@@ -2,6 +2,7 @@
 
 #include "foundation/data/AtomicFileWrite.h"
 #include "domain/people/ContactJson.h"
+#include "common/PlatformLimits.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
@@ -49,9 +50,32 @@ Roe<void> ContactsStore::EnsureLoaded() const {
   bool needs_rewrite = false;
   {
     // Close the read handle before Save() — Windows cannot rename over an open file.
-    std::ifstream in(StorePath());
+    std::ifstream in(StorePath(), std::ios::binary);
     if (in) {
-      const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      std::error_code size_ec;
+      const auto file_size = std::filesystem::file_size(StorePath(), size_ec);
+      if (size_ec) {
+        return Error("Failed to determine contacts.json size");
+      }
+      if (file_size > kMaxProfileJsonFileBytes) {
+        return Error("contacts.json exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+      }
+
+      std::string content(static_cast<size_t>(file_size), '\0');
+      if (!content.empty()) {
+        in.read(content.data(), static_cast<std::streamsize>(content.size()));
+        if (in.gcount() != static_cast<std::streamsize>(content.size())) {
+          return Error("Failed to read contacts.json");
+        }
+      }
+      char extra = 0;
+      if (in.read(&extra, 1)) {
+        return Error("contacts.json exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+      }
+      if (!in.eof()) {
+        return Error("Failed to read contacts.json");
+      }
+
       auto root = TryParseObject(content);
       if (!root) {
         return Error("Invalid contacts.json");

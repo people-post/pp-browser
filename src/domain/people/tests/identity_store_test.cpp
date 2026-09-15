@@ -4,6 +4,7 @@
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/identity/PeerIdUtil.h"
+#include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -201,6 +202,60 @@ TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   auto identity = store.Get();
   ASSERT_FALSE(static_cast<bool>(identity));
   EXPECT_NE(identity.error().message.find("schema"), std::string::npos);
+}
+
+TEST_F(IdentityStoreTest, LoadsIdentityAtProfileJsonFileSizeLimit) {
+  const ByteVector dek = MakeTestDek();
+  IdentityStore created(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(created.SetDek(dek));
+  ASSERT_TRUE(created.LoadOrCreate());
+
+  const std::string aad = FileCipher::BuildAad("identity", "test-profile");
+  std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(in));
+  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto plaintext = FileCipher::Decrypt(dek, blob, aad);
+  ASSERT_TRUE(static_cast<bool>(plaintext)) << plaintext.error().message;
+  auto root = TryParseObject(std::string(plaintext->begin(), plaintext->end()));
+  ASSERT_TRUE(static_cast<bool>(root));
+
+  root->set("nickname", "");
+  const std::string base_json = DumpJson(*root, 2);
+  auto encrypted = FileCipher::Encrypt(dek, ByteVector(base_json.begin(), base_json.end()), aad);
+  ASSERT_TRUE(static_cast<bool>(encrypted)) << encrypted.error().message;
+  ASSERT_LE(encrypted->size(), kMaxProfileJsonFileBytes);
+  const size_t nickname_size = kMaxProfileJsonFileBytes - encrypted->size();
+  root->set("nickname", std::string(nickname_size, 'x'));
+  const std::string json = DumpJson(*root, 2);
+  encrypted = FileCipher::Encrypt(dek, ByteVector(json.begin(), json.end()), aad);
+  ASSERT_TRUE(static_cast<bool>(encrypted)) << encrypted.error().message;
+  ASSERT_EQ(encrypted->size(), kMaxProfileJsonFileBytes);
+  {
+    std::ofstream out(data_dir_ / "identity.enc", std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out.write(reinterpret_cast<const char*>(encrypted->data()), static_cast<std::streamsize>(encrypted->size()));
+  }
+
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(reloaded.SetDek(dek));
+  auto identity = reloaded.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+  EXPECT_EQ(identity->nickname.size(), nickname_size);
+}
+
+TEST_F(IdentityStoreTest, RejectsIdentityOverProfileJsonFileSizeLimit) {
+  std::filesystem::create_directories(data_dir_);
+  std::ofstream out(data_dir_ / "identity.enc", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(out));
+  std::string oversized(kMaxProfileJsonFileBytes + 1, 'x');
+  out.write(oversized.data(), static_cast<std::streamsize>(oversized.size()));
+  out.close();
+
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  auto identity = store.LoadOrCreate();
+  ASSERT_FALSE(static_cast<bool>(identity));
+  EXPECT_NE(identity.error().message.find("exceeds limit"), std::string::npos);
 }
 
 TEST_F(IdentityStoreTest, SeededMintIsDeterministicAndFailClosed) {

@@ -10,6 +10,7 @@
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
 #include "foundation/identity/PeerIdUtil.h"
+#include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -321,7 +322,30 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return {};
   }
 
-  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::error_code size_ec;
+  const auto file_size = std::filesystem::file_size(StorePath(), size_ec);
+  if (size_ec) {
+    return Error("Failed to determine identity.enc size");
+  }
+  if (file_size > kMaxProfileJsonFileBytes) {
+    return Error("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+  }
+
+  ByteVector blob(static_cast<size_t>(file_size));
+  if (!blob.empty()) {
+    in.read(reinterpret_cast<char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+    if (in.gcount() != static_cast<std::streamsize>(blob.size())) {
+      return Error("Failed to read identity.enc");
+    }
+  }
+  char extra = 0;
+  if (in.read(&extra, 1)) {
+    return Error("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+  }
+  if (!in.eof()) {
+    return Error("Failed to read identity.enc");
+  }
+
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto plaintext = FileCipher::Decrypt(dek_, blob, aad);
   if (!plaintext) {

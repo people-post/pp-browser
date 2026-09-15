@@ -1,11 +1,14 @@
 #include "domain/ai/LlmClient.h"
 
+#include "common/PlatformLimits.h"
+#include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
 #include "foundation/platform/CurlSsl.h"
-#include "common/ValueJson.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"
+
+#include <limits>
 
 namespace pbr {
 
@@ -15,9 +18,22 @@ std::string JsonStringOrDefault(const Object& json, const char* key, const std::
   return json.getString(key).value_or(default_value);
 }
 
-size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
+struct ResponseBuffer {
+  std::string body;
+  bool limit_exceeded = false;
+};
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* out) {
+  if (size != 0 && nmemb > std::numeric_limits<size_t>::max() / size) {
+    out->limit_exceeded = true;
+    return 0;
+  }
   const size_t total = size * nmemb;
-  out->append(static_cast<char*>(contents), total);
+  if (total > kMaxLlmResponseBytes || out->body.size() > kMaxLlmResponseBytes - total) {
+    out->limit_exceeded = true;
+    return 0;
+  }
+  out->body.append(static_cast<const char*>(contents), total);
   return total;
 }
 
@@ -215,7 +231,13 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   const std::string payload = DumpJson(body);
-  std::string response;
+  if (payload.size() > kMaxLlmRequestBytes) {
+    return AppError::Network(Err::Network::HttpError,
+                             "LLM request body exceeds limit of " + std::to_string(kMaxLlmRequestBytes) +
+                                 " bytes");
+  }
+
+  ResponseBuffer response;
 
   CURL* curl = curl_easy_init();
   if (!curl) {
@@ -246,19 +268,25 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
 
+  if (response.limit_exceeded) {
+    return AppError::Network(Err::Network::HttpError,
+                             "LLM response body exceeds limit of " + std::to_string(kMaxLlmResponseBytes) +
+                                 " bytes");
+  }
+
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
     return AppError::Network(Err::Network::Unreachable, std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
   if (http_code >= 400) {
-    log().error << "HTTP " << http_code << " (" << response.size() << " bytes) body="
-                << TruncateForLog(response, 500);
-    return MapHttpError(http_code, response);
+    log().error << "HTTP " << http_code << " (" << response.body.size() << " bytes) body="
+                << TruncateForLog(response.body, 500);
+    return MapHttpError(http_code, response.body);
   }
 
-  log().debug << "LLM response received (" << response.size() << " bytes)";
-  auto parsed = ParseChatCompletionResponse(response);
+  log().debug << "LLM response received (" << response.body.size() << " bytes)";
+  auto parsed = ParseChatCompletionResponse(response.body);
   if (parsed && !parsed->finish_reason.empty()) {
     log().debug << "LLM finish_reason=" << parsed->finish_reason;
   }

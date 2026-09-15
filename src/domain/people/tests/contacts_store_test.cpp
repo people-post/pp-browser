@@ -1,5 +1,6 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/ContactTypes.h"
+#include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -197,6 +198,42 @@ TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
   auto listed = store.List();
   ASSERT_FALSE(static_cast<bool>(listed));
   EXPECT_NE(listed.error().message.find("schema"), std::string::npos);
+}
+
+TEST_F(ContactsStoreTest, LoadsContactsAtProfileJsonFileSizeLimit) {
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(ContactsStore::kSchemaVersion));
+  root.set("contacts", ArrayValue({}));
+  root.set("padding", "");
+  const std::string base_json = DumpJson(root, 2);
+  root.set("padding", std::string(kMaxProfileJsonFileBytes - base_json.size(), 'x'));
+  const std::string json = DumpJson(root, 2);
+  ASSERT_EQ(json.size(), kMaxProfileJsonFileBytes);
+
+  std::filesystem::create_directories(data_dir_);
+  std::ofstream out(data_dir_ / "contacts.json", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(out));
+  out.write(json.data(), static_cast<std::streamsize>(json.size()));
+  out.close();
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
+  EXPECT_TRUE(listed->empty());
+}
+
+TEST_F(ContactsStoreTest, RejectsContactsOverProfileJsonFileSizeLimit) {
+  std::filesystem::create_directories(data_dir_);
+  std::ofstream out(data_dir_ / "contacts.json", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(out));
+  std::string oversized(kMaxProfileJsonFileBytes + 1, 'x');
+  out.write(oversized.data(), static_cast<std::streamsize>(oversized.size()));
+  out.close();
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_FALSE(static_cast<bool>(listed));
+  EXPECT_NE(listed.error().message.find("exceeds limit"), std::string::npos);
 }
 
 } // namespace
