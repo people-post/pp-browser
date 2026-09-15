@@ -24,10 +24,12 @@ P2 complete: request and response bodies now fail closed at their shared platfor
 
 ## Profile JSON stores
 
-| Store | Path | Issue |
+P3 complete: both profile-store files are size-checked before parsing and are read into bounded buffers (4 MiB maximum). Files that exceed the limit fail with an error; no max-contact-count policy was added because O004 remains open.
+
+| Store | Path | Status |
 |-------|------|--------|
-| `IdentityStore` | `identity.json` | Full file parse into memory; no size cap; private key base64 at rest |
-| `ContactsStore` | `contacts.json` | Full array load; no max contacts or file size |
+| `IdentityStore` | `identity.enc` | Encrypted profile payload capped at 4 MiB before decrypt/parse. |
+| `ContactsStore` | `contacts.json` | JSON file capped at 4 MiB before parse. |
 
 ## MCP (`src/base/net/McpClient.*`, relay/directory bridges)
 
