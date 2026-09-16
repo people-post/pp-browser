@@ -100,14 +100,14 @@ CrashReportEnvelope BuildCrashReportEnvelope(const std::string& dump_text) {
       continue;
     }
     if (!in_breadcrumbs) {
-      if (auto v = ValueAfterPrefix(line, "product="); !v.empty()) {
-        env.product = std::move(v);
-      } else if (auto v = ValueAfterPrefix(line, "version="); !v.empty()) {
-        env.version = std::move(v);
-      } else if (auto v = ValueAfterPrefix(line, "os="); !v.empty()) {
-        env.os = std::move(v);
-      } else if (auto v = ValueAfterPrefix(line, "reason="); !v.empty()) {
-        env.reason = std::move(v);
+      if (auto product = ValueAfterPrefix(line, "product="); !product.empty()) {
+        env.product = std::move(product);
+      } else if (auto version = ValueAfterPrefix(line, "version="); !version.empty()) {
+        env.version = std::move(version);
+      } else if (auto os = ValueAfterPrefix(line, "os="); !os.empty()) {
+        env.os = std::move(os);
+      } else if (auto reason = ValueAfterPrefix(line, "reason="); !reason.empty()) {
+        env.reason = std::move(reason);
       } else if (LooksLikeFrame(line) && env.frames.size() < kMaxFrames) {
         env.frames.push_back(line);
       }
