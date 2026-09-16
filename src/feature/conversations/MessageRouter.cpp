@@ -1,6 +1,7 @@
 #include "feature/conversations/MessageRouter.h"
 
 #include "domain/messaging/AtAiParser.h"
+#include "common/PlatformLimits.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
@@ -31,6 +32,13 @@ void MessageRouter::MarkSharedAiConfirmed(const std::string& thread_id) {
 
 bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
   return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
+}
+
+Roe<void> MessageRouter::ValidateUserPayload(const std::optional<std::string>& user_payload) {
+  if (user_payload && user_payload->size() > kMaxUserPayloadBytes) {
+    return Error("User payload exceeds limit of " + std::to_string(kMaxUserPayloadBytes) + " bytes");
+  }
+  return {};
 }
 
 Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt,
@@ -68,6 +76,10 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
                                std::optional<std::string> user_payload) {
   if (text.empty()) {
     return Error("Empty message");
+  }
+  auto payload_valid = ValidateUserPayload(user_payload);
+  if (!payload_valid) {
+    return payload_valid.error();
   }
 
   auto thread = store_.GetThread(thread_id);
