@@ -191,7 +191,7 @@
     "settings.security.link_device.export_done": "已复制关联载荷",
     "settings.security.link_device.not_ready": "请先解锁个人资料，再关联设备。",
     "settings.security.crash_reports.label": "发送崩溃报告",
-    "settings.security.crash_reports.help": "默认关闭。开启后，下次启动时如已配置上报地址，可上传本地崩溃摘要（版本、信号、近期日志——不含聊天内容）。",
+    "settings.security.crash_reports.help": "默认关闭。开启后，下次启动时可向 PP 网络上传精简崩溃摘要（版本、信号、堆栈指纹、近期日志组件名——不含聊天内容）。",
     "settings.storage.config_dir": "配置目录",
     "settings.storage.data_dir": "数据目录",
     "settings.storage.profile_dir": "个人资料目录",

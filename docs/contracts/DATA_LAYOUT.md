@@ -104,7 +104,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
 | `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
 | `recent_emojis` | `preferences.json` | string array, schema v12 — MRU glyphs for the in-app emoji picker (cap 36) |
-| `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of local crash dumps (`diagnostics/crash_pending.txt`) |
+| `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 
 `tool_permissions` shape:
 

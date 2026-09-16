@@ -73,6 +73,9 @@ Object ClientCompatDocumentToObject(const ClientCompatDocument& doc) {
   document.set("min_protocol_gen", static_cast<int64_t>(doc.min_protocol_gen));
   document.set("upgrade_url", doc.upgrade_url);
   document.set("message", doc.message);
+  if (!doc.crash_reports_url.empty()) {
+    document.set("crash_reports_url", doc.crash_reports_url);
+  }
   if (doc.support) {
     Object support;
     support.set("enabled", doc.support->enabled);
@@ -153,6 +156,9 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   }
   if (auto v = root->getString("message")) {
     doc.message = *v;
+  }
+  if (auto v = root->getString("crash_reports_url")) {
+    doc.crash_reports_url = *v;
   }
   if (const Object* support = root->getObject("support")) {
     ClientCompatSupport block;

@@ -41,6 +41,11 @@ struct ClientCompatDocument {
   int min_protocol_gen = 1;
   std::string upgrade_url;
   std::string message;
+  /**
+   * Optional absolute ingest URL for opt-in crash reports.
+   * Empty → client uses `{relay.base_url}/v1/crash-reports`.
+   */
+  std::string crash_reports_url;
   std::optional<ClientCompatSupport> support;
 };
 

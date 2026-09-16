@@ -141,8 +141,40 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
 | `message` | no | Empty → client locale strings |
+| `crash_reports_url` | no | Absolute opt-in crash ingest URL; empty → `{relay.base_url}/v1/crash-reports` |
+| `support` | no | Optional Support discovery block (`enabled`, `account_id`, `display_name`) |
 
 Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present.
+
+## HTTP crash reports (opt-in)
+
+Unauthenticated public POST (same org backend family as client-compat; no vault unlock required). Client only sends when Me → Security **Send crash reports** is on.
+
+`POST {relay.base_url}/v1/crash-reports`  
+(or absolute `crash_reports_url` from a fresh client-compat cache)
+
+```json
+{
+  "schema_version": 1,
+  "product": "pp-browser",
+  "version": "1.0.0-rc14",
+  "os": "linux",
+  "reason": "signal 11",
+  "fingerprint": "a1b2c3d4e5f60718",
+  "frames": ["0x7fff…", "0x7ffe…"],
+  "breadcrumb_tags": ["CallStack", "Application"],
+  "sample": "truncated raw dump text"
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `fingerprint` | Client FNV-1a of `version\|reason\|frames[]` for server clustering / dedupe |
+| `frames` | Raw addresses only (no symbols); capped |
+| `breadcrumb_tags` | Logger component names only — not chat content |
+| `sample` | Truncated local dump for triage |
+
+Server should cluster by `fingerprint` (+ version), keep a sample, increment counts. LLM summarization (if any) belongs server-side on new/growing clusters — not on the client crash path.
 
 ## HTTP device push (opaque wake)
 

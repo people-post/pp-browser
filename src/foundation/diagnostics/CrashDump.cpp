@@ -14,6 +14,10 @@
 #include <fstream>
 #include <string>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if !defined(_WIN32)
 #include <fcntl.h>
 #include <signal.h>
@@ -54,6 +58,23 @@ void EnsureDiagnosticsDir(const std::string& data_dir) {
   std::filesystem::create_directories(std::filesystem::path(data_dir) / "diagnostics", ec);
 }
 
+/** Compile-time OS label for dumps (signal-safe constant). */
+constexpr const char* CrashOsLabel() {
+#if defined(__ANDROID__)
+  return "android";
+#elif defined(_WIN32)
+  return "windows";
+#elif defined(__APPLE__)
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  return "ios";
+#else
+  return "macos";
+#endif
+#else
+  return "linux";
+#endif
+}
+
 #if !defined(_WIN32)
 void WriteAll(int fd, const char* data, std::size_t len) {
   while (len > 0) {
@@ -91,6 +112,8 @@ void WriteSignalDump(int signo) {
   WriteCString(fd, kProductSlug);
   WriteCString(fd, "\nversion=");
   WriteCString(fd, AppVersionString());
+  WriteCString(fd, "\nos=");
+  WriteCString(fd, CrashOsLabel());
   WriteCString(fd, "\nreason=signal ");
 
   char num[32];
@@ -137,8 +160,8 @@ LONG WINAPI OnUnhandledException(EXCEPTION_POINTERS* /*info*/) {
   if (f == nullptr) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
-  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\nreason=unhandled_exception\n",
-               kProductSlug, AppVersionString());
+  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\nos=%s\nreason=unhandled_exception\n",
+               kProductSlug, AppVersionString(), CrashOsLabel());
   std::fprintf(f, "--- breadcrumbs ---\n");
   char crumbs[kBreadcrumbDumpBytes];
   CrashBreadcrumbs::CopySignalSafe(crumbs, sizeof(crumbs));
@@ -250,6 +273,7 @@ void CrashDump::WritePending(const std::string& data_dir, const std::string& rea
   out << "pp-browser crash dump\n";
   out << "product=" << kProductSlug << "\n";
   out << "version=" << AppVersionString() << "\n";
+  out << "os=" << CrashOsLabel() << "\n";
   out << "reason=" << reason << "\n";
   out << "--- breadcrumbs ---\n";
   for (const std::string& line : CrashBreadcrumbs::Snapshot()) {

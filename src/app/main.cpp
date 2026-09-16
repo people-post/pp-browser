@@ -127,7 +127,9 @@ int main(int argc, char** argv) {
   pbr::StartupMark("after_session_store");
 
   pbr::MaybeUploadPendingCrashReport(app.Store().Snapshot().data_dir,
-                                     app.Store().Snapshot().profile_prefs.crash_reports_enabled);
+                                     app.Store().Snapshot().profile_data_dir,
+                                     app.Store().Snapshot().profile_prefs.crash_reports_enabled,
+                                     app.Store().Snapshot().config.relay.base_url);
 
   if (![&] {
         pbr::StartupPhase phase("Application::Initialize");
