@@ -12,7 +12,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
-#include "feature/calls/CallHopPlannerLogic.h"
+#include "domain/messaging/CallHopPlannerLogic.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

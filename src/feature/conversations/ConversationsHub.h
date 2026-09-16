@@ -21,7 +21,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/calls/CallStack.h"
-#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "common/chat/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"

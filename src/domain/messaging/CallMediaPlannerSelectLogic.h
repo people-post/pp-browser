@@ -1,6 +1,5 @@
 #pragma once
 
-#include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallTypes.h"
 
 #include <cstddef>
@@ -12,6 +11,9 @@ namespace pbr {
  * Pure N→planner selection (V037/V038).
  * N=2 → Bridge (direct/punch/circuit); N≥3 → Topology (SoftMigrate / media_relay).
  * CallSessionManager must not re-encode these trees on every Accept path.
+ *
+ * Threshold matches `CallMediaTopology::ShouldUseMediaRelay` (joined_count >= 3) without
+ * taking a domain/media peer edge.
  */
 
 /** Joined + Ringing + Invited count toward SoftMigrate / WaitForAttach (V021/V038). */
@@ -36,7 +38,7 @@ inline size_t EffectiveMediaPlannerN(size_t joined_count, size_t active_roster_c
 }
 
 inline bool ShouldArmHopPlanner(size_t effective_n) {
-  return CallMediaTopology::ShouldUseMediaRelay(effective_n);
+  return effective_n >= 3;
 }
 
 struct CallExpectGroupSfuInput {

@@ -1,5 +1,5 @@
 #include "gui/shell/ShellFeedback.h"
-#include "gui/shell/ShellInterruption.h"
+#include "domain/ui/ShellInterruption.h"
 #include "domain/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "domain/ui/ShellTypes.h"

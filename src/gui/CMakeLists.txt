@@ -37,7 +37,6 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellFeedback.cpp
     shell/ShellFeedbackPorts.cpp
     shell/ShellHost.cpp
-    shell/ShellInterruption.cpp
     shell/ShellNavigationPorts.cpp
     shell/ShellPinGatePorts.cpp
     shell/ShellSetupPorts.cpp

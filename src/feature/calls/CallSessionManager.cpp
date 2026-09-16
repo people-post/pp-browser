@@ -2,7 +2,7 @@
 #include "feature/calls/CallSessionManager.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
-#include "feature/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/messaging/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"

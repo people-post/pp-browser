@@ -16,7 +16,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
-| **N→planner select** | `CallMediaPlannerSelectLogic` + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
+| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
 | **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
@@ -108,7 +108,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
-| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + `CallMediaPlannerSelectLogic` |
+| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |

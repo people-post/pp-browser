@@ -140,7 +140,7 @@ Layered Apply FSMs under Lifecycle Status: Direct (`CallMediaBridge`) and Hop (`
 
 - [x] pm0 — V039 ADR + SESSION_MACHINES planner section + this phase; CURRENT_STATE next-agent → `pm`
 - [x] pm1 — Direct `Apply` + [`CallDirectPlannerLogic`](../../src/domain/messaging/CallDirectPlannerLogic.h) + gtests; Schedule/Key/Connect/TX-only/Release through Apply
-- [x] pm2 — Hop `Apply` + `CallHopPlannerLogic`; SoftMigrate-as-event; inbound attach Status gates
+- [x] pm2 — Hop `Apply` + [`CallHopPlannerLogic`](../../src/domain/messaging/CallHopPlannerLogic.h); SoftMigrate-as-event; inbound attach Status gates
 - [x] pm3 — SM-owned timers replace `PollMeshConnectHealth` / `PollPendingSfuAttach` primary path
 - [x] pm4 — Lifecycle/CSM thin Accept media router; CALLS.md critical races → planner phases + epochs
 

@@ -77,7 +77,7 @@ Two buckets only:
 
 | Bucket | Examples | Not here |
 |--------|----------|----------|
-| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
+| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
 | **Domain contracts** | Ports (`IThreadStore`-shaped APIs, blob/relay interfaces), shared ids/enums, narrow DTOs two+ peers must name | Full codecs, stores, hubs, UI ports |
 
 Guardrails:
@@ -125,7 +125,7 @@ crypto
 | `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
-| `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, calendar/form helpers, `UiEditSession` |
+| `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
 
 Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
 

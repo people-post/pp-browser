@@ -1,7 +1,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/UserPreferences.h"
-#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "common/chat/AttachmentDownloadPolicy.h"
 #include "feature/conversations/ConversationsHub.h"
 
 #include <gtest/gtest.h>
