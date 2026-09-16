@@ -1,8 +1,11 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
+#include "app/CrashReportUpload.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/media/CallMediaHealth.h"
+#include "foundation/data/AppPaths.h"
+#include "foundation/diagnostics/CrashDump.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/PlatformLogSink.h"
@@ -94,6 +97,9 @@ int main(int argc, char** argv) {
   }
   pbr::StartupMark("after_early_init");
 
+  // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
+  pbr::CrashDump::Install(pbr::AppPaths::DataDir());
+
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override
                  << "' (multi-profile UI is not shipped yet)";
@@ -119,6 +125,9 @@ int main(int argc, char** argv) {
 
   app.Store().Initialize(std::move(bootstrap_result.value()));
   pbr::StartupMark("after_session_store");
+
+  pbr::MaybeUploadPendingCrashReport(app.Store().Snapshot().data_dir,
+                                     app.Store().Snapshot().profile_prefs.crash_reports_enabled);
 
   if (![&] {
         pbr::StartupPhase phase("Application::Initialize");

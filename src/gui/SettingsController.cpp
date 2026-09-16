@@ -267,6 +267,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.language_label = bindings_.language_label.c_str();
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
+  ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
@@ -342,6 +343,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.language_label = ui_state_.language_label.c_str();
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
+  bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -522,6 +524,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("language_label", &controller.bindings_.language_label);
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
+    ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -567,6 +570,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
+    ctor.BindEventCallback("toggle_crash_reports", &SettingsController::ToggleCrashReportsCallback);
     ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
@@ -664,6 +668,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "language_label");
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
+  host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -1826,6 +1831,16 @@ void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*mod
       controller.bindings_.call_diagnostics == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("appearance");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleCrashReportsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.crash_reports_enabled =
+      controller.bindings_.crash_reports_enabled == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("security");
   controller.DirtyAll();
 }
 

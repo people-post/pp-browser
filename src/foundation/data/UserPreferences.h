@@ -36,7 +36,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 13;
+  static constexpr int kSchemaVersion = 14;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -54,6 +54,8 @@ struct ProfilePreferences {
    * OR'd with CLI `--debug` via CallDiagnosticsEnabled().
    */
   bool call_diagnostics = false;
+  /** When true, allow uploading local crash dumps on next launch (opt-in). */
+  bool crash_reports_enabled = false;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** R021 — attachment download: smart | always_auto | on_demand */

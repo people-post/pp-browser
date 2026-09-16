@@ -156,6 +156,7 @@ private:
     ui::String language_label = "System";
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
+    ui::String crash_reports_enabled = "off";
     ui::String profile_label;
     ui::String config_dir;
     ui::String data_dir;
@@ -218,6 +219,7 @@ private:
   static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleCrashReportsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleAutoRenewRegistrationCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnNetworkFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
