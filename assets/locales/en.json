@@ -190,6 +190,8 @@
     "settings.security.link_device.export_confirm_message": "Copies a 15-minute payload with your account keys and shared secret. Anyone with it can add a device. Paste it on the new device.",
     "settings.security.link_device.export_done": "Link payload copied",
     "settings.security.link_device.not_ready": "Unlock your profile before linking a device.",
+    "settings.security.crash_reports.label": "Send crash reports",
+    "settings.security.crash_reports.help": "Off by default. When on, a compact crash note (version, signal, stack fingerprint, recent log component tags — no chat content) may upload to the PP network on the next launch.",
     "settings.storage.config_dir": "Config directory",
     "settings.storage.data_dir": "Data directory",
     "settings.storage.profile_dir": "Profile directory",

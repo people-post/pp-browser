@@ -59,5 +59,14 @@
             {{i18n:settings.security.clear_undelivered}}
           </button>
         </div>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.security.crash_reports.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="crash_reports_enabled == 'on'"
+                  data-event-click="toggle_crash_reports()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.security.crash_reports.help}}</p>
       </div>
 

@@ -89,6 +89,8 @@ struct SettingsUiState {
   std::string reduce_transparency = "off";
   /** UI select value: `on` or `off` — call media diagnostics (V032). */
   std::string call_diagnostics = "off";
+  /** UI select value: `on` or `off` — opt-in crash dump upload. */
+  std::string crash_reports_enabled = "off";
   /** Display label for the language row / picker value. */
   std::string language_label = "System";
   std::string profile_label;

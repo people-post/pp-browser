@@ -36,6 +36,7 @@ TEST(ClientCompatParse, HappyPathIgnoresUnknownKeys) {
     "min_protocol_gen": 2,
     "upgrade_url": "https://example.com/upgrade",
     "message": "Please update",
+    "crash_reports_url": "https://example.com/api/relay/v1/crash-reports",
     "extra_future_field": true
   })";
   auto doc = ParseClientCompatDocument(json);
@@ -46,6 +47,7 @@ TEST(ClientCompatParse, HappyPathIgnoresUnknownKeys) {
   EXPECT_EQ(doc->min_protocol_gen, 2);
   EXPECT_EQ(doc->upgrade_url, "https://example.com/upgrade");
   EXPECT_EQ(doc->message, "Please update");
+  EXPECT_EQ(doc->crash_reports_url, "https://example.com/api/relay/v1/crash-reports");
 }
 
 TEST(ClientCompatParse, RejectsNewerSchemaVersion) {
